@@ -19,8 +19,10 @@ from .sanitize import has_fatal_sanitization_reason, sanitize_candidate
 NUEXTRACT_PROMPT = """Transcribe the complete crop in reading order as Markdown with HTML tables.
 Preserve every paragraph, list type, table section, empty cell, rowspan, colspan,
 spelling, punctuation, capitalization, number, coordinate, and mixed Cyrillic/alphanumeric token.
-Never translate, correct, summarize, infer, add, or repeat content. Use [unreadable]
-only for genuinely illegible source text. Return the transcription only."""
+Represent visible non-text imagery as <figure data-image="present"><figcaption>literal
+visual description</figcaption></figure>. Never emit img or invent an image URL. Never
+translate, correct, summarize, infer facts beyond visible content, add, or repeat content.
+Use [unreadable] only for genuinely illegible source text. Return the transcription only."""
 
 GEMMA_END_MARKER = "<!-- ECHO_EXTRACTION_END -->"
 GEMMA_PROMPT = f"""Transcribe the complete crop as bounded semantic HTML using only article,
@@ -72,6 +74,90 @@ class ModelAdapter(Protocol):
     name: str
 
     async def extract(self, request: ModelRequest) -> ModelResponse: ...
+
+
+class GatewayAdapter:
+    format: Literal["html"] = "html"
+
+    def __init__(
+        self,
+        gateway_url: str,
+        grant: str,
+        engine_id: str,
+        engine_name: str,
+        model_name: str,
+        request_profile: Literal["openai_vision", "ocr_gemma"],
+        instance_id: str,
+    ) -> None:
+        self.name = "semantic"
+        self.gateway_url = gateway_url.rstrip("/")
+        self.grant = grant
+        self.engine_id = engine_id
+        self.engine_name = engine_name
+        self.model_name = model_name
+        self.request_profile = request_profile
+        self.instance_id = instance_id
+
+    async def extract(self, request: ModelRequest) -> ModelResponse:
+        started = time.monotonic()
+        data = {
+            "grant": self.grant,
+            "request_id": request.request_id,
+            "page_id": request.page_id,
+            "unit_id": request.unit_id,
+            "prompt_version": request.prompt_version,
+            "retry": str(request.retry).lower(),
+        }
+        files = {"image": ("crop.png", request.image_png, "image/png")}
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                response = await client.post(
+                    f"{self.gateway_url}/internal/ocr/infer",
+                    data=data,
+                    files=files,
+                )
+                response.raise_for_status()
+            payload = response.json()
+            return ModelResponse(
+                request_id=request.request_id,
+                adapter=self.name,
+                format=self.format,
+                content=str(payload.get("content", "")),
+                termination=payload.get("finishReason"),
+                usage=ModelUsage(
+                    prompt_tokens=int(payload.get("promptTokens", 0)),
+                    completion_tokens=int(payload.get("completionTokens", 0)),
+                    total_tokens=int(payload.get("totalTokens", 0)),
+                ),
+                latency_ms=round((time.monotonic() - started) * 1000),
+                request_metadata={
+                    "engine_id": self.engine_id,
+                    "engine_name": self.engine_name,
+                    "model_id": self.model_name,
+                    "request_profile": self.request_profile,
+                    "instance_id": self.instance_id,
+                    "preferred_tiebreaker": True,
+                    "prompt_version": request.prompt_version,
+                    "retry": request.retry,
+                },
+            )
+        except Exception as error:
+            return ModelResponse(
+                request_id=request.request_id,
+                adapter=self.name,
+                format=self.format,
+                latency_ms=round((time.monotonic() - started) * 1000),
+                error=f"{type(error).__name__}: {str(error)[:160]}",
+                request_metadata={
+                    "engine_id": self.engine_id,
+                    "engine_name": self.engine_name,
+                    "model_id": self.model_name,
+                    "request_profile": self.request_profile,
+                    "instance_id": self.instance_id,
+                    "prompt_version": request.prompt_version,
+                    "retry": request.retry,
+                },
+            )
 
 
 class OpenAICompatibleAdapter:
@@ -189,6 +275,8 @@ class GemmaAdapter(OpenAICompatibleAdapter):
         payload = super()._request_body(request)
         payload["temperature"] = 0
         payload["seed"] = 0
+        payload["stop"] = [GEMMA_END_MARKER]
+        payload["include_stop_str_in_output"] = True
         if self.config.vision_budget:
             processor = dict(payload.get("mm_processor_kwargs", {}))
             processor["max_pixels"] = self.config.vision_budget * self.config.vision_budget
@@ -209,7 +297,7 @@ def response_to_evidence(response: ModelResponse, request: ModelRequest) -> Evid
     content = response.content
     if response.error:
         reasons.append("request_error")
-    if response.adapter == "gemma":
+    if response.adapter == "gemma" or response.request_metadata.get("request_profile") == "ocr_gemma":
         stripped = content.rstrip()
         if not stripped.endswith(GEMMA_END_MARKER):
             reasons.append("missing_end_marker")
@@ -258,6 +346,11 @@ def markdown_to_html(value: str) -> str:
         stripped = block.strip()
         if not stripped:
             continue
+        if stripped.casefold().startswith("<figure"):
+            figures = _normalized_figures(stripped)
+            if figures is not None:
+                root.extend(figures)
+                continue
         if stripped.casefold().startswith(("<table", "<article", "<section")):
             try:
                 fragments = html.fragments_fromstring(stripped)
@@ -292,6 +385,38 @@ def markdown_to_html(value: str) -> str:
         paragraph.text = std_html.unescape(stripped)
         root.append(paragraph)
     return html.tostring(root, encoding="unicode", method="html")
+
+
+def _normalized_figures(value: str) -> list[html.HtmlElement] | None:
+    try:
+        fragments = html.fragments_fromstring(value)
+    except (ValueError, etree.ParserError):
+        return None
+    figures = []
+    for fragment in fragments:
+        if isinstance(fragment, str):
+            if fragment.strip():
+                return None
+            continue
+        if fragment.tag.casefold() != "figure" or (fragment.tail and fragment.tail.strip()):
+            return None
+        figure = html.Element("figure", {"data-image": "present"})
+        caption = _figure_caption(fragment)
+        if caption:
+            etree.SubElement(figure, "figcaption").text = caption
+        figures.append(figure)
+    return figures or None
+
+
+def _figure_caption(figure: html.HtmlElement) -> str:
+    captions = figure.xpath("./figcaption")
+    if captions:
+        return " ".join(" ".join(captions[0].itertext()).split())
+    for image in figure.xpath(".//img[@alt]"):
+        caption = " ".join(image.get("alt", "").split())
+        if caption:
+            return caption
+    return ""
 
 
 def _text_content(markup: str) -> str:

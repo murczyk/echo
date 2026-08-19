@@ -36,6 +36,7 @@ const hoisted = vi.hoisted(() => ({
   catchUpFeedUnreadToTail: vi.fn(),
   loadFeedNewerMessages: vi.fn(() => Promise.resolve({ ok: true, addedCount: 0 })),
   loadFeedInitialMessages: vi.fn(() => Promise.resolve()),
+  flushPendingNewerMessages: vi.fn(),
   showArrowResult: vi.fn(),
   setWatchModeByFeedId: vi.fn(),
   setLoadingNewerFeedIds: vi.fn(),
@@ -190,6 +191,7 @@ function TestHarness(props: {
     applyFilter: vi.fn(),
     loadFeedInitialMessages: hoisted.loadFeedInitialMessages,
     loadFeedNewerMessages: hoisted.loadFeedNewerMessages,
+    flushPendingNewerMessages: hoisted.flushPendingNewerMessages,
     showArrowResult: hoisted.showArrowResult,
     columnRefsRef,
     setWatchModeByFeedId: hoisted.setWatchModeByFeedId,
@@ -319,7 +321,9 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledWith('mf-0');
     expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledWith('smooth');
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledWith('smooth', {
+      wakeIdleOffload: true,
+    });
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledTimes(1);
     expect(hoisted.loadFeedNewerMessages).toHaveBeenCalledWith(
       'mf-0',
@@ -431,7 +435,7 @@ describe('useRerDutyMessageActions', () => {
     });
 
     const click = apiRef.current!.handleArrowClick('mf-0');
-    expect(scrollToEnd).toHaveBeenCalledWith('smooth');
+    expect(scrollToEnd).toHaveBeenCalledWith('smooth', { wakeIdleOffload: true });
     expect(hoisted.beginFollowTail).toHaveBeenCalledWith('mf-0');
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
 
@@ -479,7 +483,9 @@ describe('useRerDutyMessageActions', () => {
     });
 
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth');
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
+      wakeIdleOffload: true,
+    });
     expect(hoisted.showArrowResult).toHaveBeenCalledWith('mf-0', 'Немає нових повідомлень');
     expect(hoisted.catchUpFeedUnreadToTail).toHaveBeenCalledWith('mf-0');
     expect(hoisted.loadFeedNewerMessages).not.toHaveBeenCalled();
@@ -516,7 +522,9 @@ describe('useRerDutyMessageActions', () => {
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(hoisted.fetchInboxCount).not.toHaveBeenCalled();
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth');
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
+      wakeIdleOffload: true,
+    });
     expect(hoisted.showArrowResult).toHaveBeenCalledWith(
       'mf-0',
       'Оновлення триває, спробуйте ще раз',
@@ -554,7 +562,9 @@ describe('useRerDutyMessageActions', () => {
 
     expect(hoisted.requestValidatedInboxCount).toHaveBeenCalledTimes(1);
     expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth');
+    expect(columnRefsRef.current['mf-0']?.scrollToEnd).toHaveBeenNthCalledWith(1, 'smooth', {
+      wakeIdleOffload: true,
+    });
     expect(hoisted.showArrowResult).toHaveBeenCalledWith(
       'mf-0',
       'Не вдалося перевірити нові повідомлення',

@@ -1734,6 +1734,9 @@ mod tests {
             created_at: Set(now),
             updated_at: Set(now),
             enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(false),
+            ocr_request_profile: Set("openai_vision".to_string()),
         }
         .insert(&env.dbx)
         .await

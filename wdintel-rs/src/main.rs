@@ -106,7 +106,7 @@ impl PgRuntimePoolRole {
 
     fn max_connections(self) -> u32 {
         match self {
-            Self::Web => PG_POOL_DEFAULT_MAX_CONNECTIONS,
+            Self::Web => PG_POOL_WEB_MAX_CONNECTIONS,
             Self::Bgworker | Self::ReportWorker => {
                 PG_POOL_BGWORKER_MAX_CONNECTIONS
             }
@@ -142,6 +142,19 @@ fn pg_pool_max_connections() -> u32 {
 
 fn pg_runtime_pool_role() -> Option<PgRuntimePoolRole> {
     PgRuntimePoolRole::from_u8(PG_RUNTIME_POOL_ROLE.load(Ordering::Relaxed))
+}
+
+#[cfg(test)]
+mod pg_pool_limit_tests {
+    use super::*;
+
+    #[test]
+    fn uses_role_specific_postgres_pool_limits() {
+        assert_eq!(PgRuntimePoolRole::Web.max_connections(), 50);
+        assert_eq!(PgRuntimePoolRole::Bgworker.max_connections(), 20);
+        assert_eq!(PgRuntimePoolRole::ReportWorker.max_connections(), 20);
+        assert_eq!(PG_POOL_DEFAULT_MAX_CONNECTIONS, 30);
+    }
 }
 
 pub async fn renew_tailscale_cert(
@@ -265,6 +278,13 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffPrepareInboxNetworkUniquenessPs {
+    /// Confirm deletion of duplicate links and online unique-index creation.
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 #[command(
     after_help = "Example:\n  wdintel-rs --mode=live oneoff-backfill-inbox-network-units-tui --start 2026-07-01"
 )]
@@ -295,6 +315,9 @@ pub struct OneoffBackfillInboxUnitLinksPs {
     /// End datetime in UTC (non-inclusive). Example: `2026-08-10T12:00:00`
     #[arg(long)]
     pub till_ts: Option<String>,
+    /// Resume after this inbox item ID (exclusive).
+    #[arg(long, default_value_t = 0)]
+    pub after_inbox_item_id: i64,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -957,6 +980,7 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
@@ -994,6 +1018,18 @@ pub async fn new_pg_pool_from_mode(
 ) -> Result<sea_orm::DatabaseConnection, AppError> {
     let config = read_config(mode).context(h!())?;
     new_pg_pool_from_config(&config).await
+}
+
+pub async fn new_pg_maintenance_connection_from_mode(
+    mode: Mode,
+) -> Result<sea_orm::DatabaseConnection, AppError> {
+    let config = read_config(mode).context(h!())?;
+    Ok(new_pg_pool_from_conn_string_with_max_connections(
+        mk_conn_string(&config),
+        1,
+    )
+    .await
+    .c(h!())?)
 }
 
 pub async fn new_pg_pool_from_config(
@@ -1365,8 +1401,15 @@ pub async fn new_redis_for_db(
     if !is_ok {
         bail!("Redis connection failed");
     }
-    let conn_manager =
-        redis_cli.get_connection_manager().await.context(h!())?;
+    let redis_config = redis::aio::ConnectionManagerConfig::new()
+        .set_pipeline_buffer_size(REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE)
+        .set_response_timeout(Some(std::time::Duration::from_secs(
+            REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS,
+        )));
+    let conn_manager = redis_cli
+        .get_connection_manager_with_config(redis_config)
+        .await
+        .context(h!())?;
     Ok(conn_manager)
 }
 
@@ -1680,6 +1723,12 @@ async fn async_main(
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
+        }
+        Cmd::OneoffPrepareInboxNetworkUniqueness(ps) => {
+            sigint::network::etalon_calc::oneoff::oneoff_prepare_inbox_network_uniqueness(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffBackfillInboxNetworkUnitsTui(ps) => {
             sigint::network::inbox_backfill_tui::run_inbox_network_unit_backfill_tui(

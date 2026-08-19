@@ -44,6 +44,7 @@ import {
   isSupportedOcrImage,
   MediaReprocessAction,
 } from '../attachment-preview/MediaReprocessAction';
+import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
 
 type StageSize = {
   width: number;
@@ -643,7 +644,6 @@ export function ImageAttachmentPreviewRenderer({
       fileName={previewFileName}
       openHref={currentHref}
       download={{ href: currentHref, fileName: downloadFileName }}
-      downloadItems={getOcrDownloadItems(currentImage.id, ocrStatus, previewFileName)}
       navigation={navigation}
       additionalActions={
         <>
@@ -651,6 +651,11 @@ export function ImageAttachmentPreviewRenderer({
             ocr={ocrStatus}
             active={ocrVisible}
             onClick={() => setOcrVisible((visible) => !visible)}
+          />
+          <MediaSummaryAction
+            status={summaryStatus}
+            active={summaryVisible}
+            onClick={() => setSummaryVisible((visible) => !visible)}
           />
           <ImageCopyAction
             status={copyStatus}
@@ -672,6 +677,9 @@ export function ImageAttachmentPreviewRenderer({
           }
           ocr={ocrStatus}
           onQueued={handleReprocessQueued}
+          downloadItems={getOcrDownloadItems(currentImage.id, ocrStatus, previewFileName)}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       }
       status={<ImageCopyStatus status={copyStatus} />}

@@ -202,6 +202,7 @@ async fn load_page(
     );
     let engines = ai_engine::Entity::find()
         .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::CallsignEnabled.eq(true))
         .order_by_asc(ai_engine::Column::Name)
         .all(dbx)
         .await
@@ -279,6 +280,7 @@ async fn validate_worker_engine(
     };
     let exists = ai_engine::Entity::find_by_id(ai_engine_id)
         .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::CallsignEnabled.eq(true))
         .one(dbx)
         .await
         .c(h!())?
@@ -353,6 +355,7 @@ async fn load_enabled_engines(
     let engines = ai_engine::Entity::find()
         .filter(ai_engine::Column::Id.is_in(ids.iter().copied()))
         .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::CallsignEnabled.eq(true))
         .order_by_asc(ai_engine::Column::Name)
         .all(dbx)
         .await
@@ -595,6 +598,7 @@ async fn validate_result_references(
         let count = ai_engine::Entity::find()
             .filter(ai_engine::Column::Id.is_in(engine_ids.iter().copied()))
             .filter(ai_engine::Column::Enabled.eq(true))
+            .filter(ai_engine::Column::CallsignEnabled.eq(true))
             .count(dbx)
             .await
             .c(h!())? as usize;

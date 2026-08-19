@@ -512,6 +512,8 @@ pollEvents lastEventId =
         request =
             { sessionId = "current"
             , lastEventId = lastEventId
+            , deploymentMaintenanceProtocol = Nothing
+            , knownDeploymentMaintenanceId = Nothing
             }
     in
     E.sendCmd <|

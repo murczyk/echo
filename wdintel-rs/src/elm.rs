@@ -36,6 +36,8 @@ const EVENT_MSG_INTELLIGENCE_REPORT_STRICT_DECODER: &str = r#"|> Json.Decode.and
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "intelligence_report" (Json.Decode.bool)))"#;
 const EVENT_MSG_INTELLIGENCE_REPORT_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "intelligence_report" (Json.Decode.bool), Json.Decode.succeed False ]))"#;
+const LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder))))"#;
+const LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "deployment_maintenance" (Json.Decode.nullable (deploymentMaintenanceDecoder)), Json.Decode.succeed Nothing ]))"#;
 
 pub fn main_gen_elm() -> Result<(), AppError> {
     let mut target = vec![];
@@ -381,6 +383,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::ListUnitsByIdRsp,
             crate::sigint::unit::types::UnitDuplicate,
             crate::sigint::unit::types::ListUnitDuplicatesRsp,
+            crate::sigint::unit::types::InconsistentUnit,
+            crate::sigint::unit::types::ListInconsistentUnitsRsp,
             crate::sigint::unit::types::CreateUnitReq,
             crate::sigint::unit::types::CreateUnitWithAutoNetworkReq,
             crate::sigint::unit::types::CreateUnitWithAutoNetworkRsp,
@@ -650,12 +654,14 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_callsign::types::SaveAiCallsignWorkerSettingsReq,
             crate::ocr::types::OcrStatusLogItem,
             crate::ocr::types::OcrMediaSummary,
+            crate::ocr::types::OcrEngineItem,
             crate::ocr::types::OcrSettingsItem,
             crate::ocr::types::OcrCounts,
             crate::ocr::types::OcrJobItem,
             crate::ocr::types::OcrPageRsp,
             crate::ocr::types::OcrPageReq,
             crate::ocr::types::SaveOcrSettingsReq,
+            crate::ocr::types::ReprocessMediaOcrReq,
             crate::media_summary::types::MediaSummaryStatus,
             crate::media_summary::types::MediaSummaryCoordinate,
             crate::media_summary::types::MediaSummaryCoordinatesResult,
@@ -681,6 +687,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
             crate::event_stream::types::EventMsg,
+            crate::event_stream::types::DeploymentMaintenance,
             crate::event_stream::types::LongPollReq,
             crate::event_stream::types::LongPollRsp,
             crate::messenger::types::EchoAccountF1,
@@ -1032,6 +1039,8 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::unit::types::ListUnitsByIdRsp,
             crate::sigint::unit::types::UnitDuplicate,
             crate::sigint::unit::types::ListUnitDuplicatesRsp,
+            crate::sigint::unit::types::InconsistentUnit,
+            crate::sigint::unit::types::ListInconsistentUnitsRsp,
             crate::sigint::unit::types::CreateUnitReq,
             crate::sigint::unit::types::CreateUnitWithAutoNetworkReq,
             crate::sigint::unit::types::CreateUnitWithAutoNetworkRsp,
@@ -1287,12 +1296,14 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::ai_callsign::types::SaveAiCallsignWorkerSettingsReq,
             crate::ocr::types::OcrStatusLogItem,
             crate::ocr::types::OcrMediaSummary,
+            crate::ocr::types::OcrEngineItem,
             crate::ocr::types::OcrSettingsItem,
             crate::ocr::types::OcrCounts,
             crate::ocr::types::OcrJobItem,
             crate::ocr::types::OcrPageRsp,
             crate::ocr::types::OcrPageReq,
             crate::ocr::types::SaveOcrSettingsReq,
+            crate::ocr::types::ReprocessMediaOcrReq,
             crate::media_summary::types::MediaSummaryStatus,
             crate::media_summary::types::MediaSummaryCoordinate,
             crate::media_summary::types::MediaSummaryCoordinatesResult,
@@ -1333,6 +1344,7 @@ pub fn main_gen_elm() -> Result<(), AppError> {
             crate::sigint::types::ZoneDatasourceGroupAddRsp,
             crate::event_stream::types::EventType,
             crate::event_stream::types::EventMsg,
+            crate::event_stream::types::DeploymentMaintenance,
             crate::event_stream::types::LongPollReq,
             crate::event_stream::types::LongPollRsp,
             crate::messenger::types::EchoAccountF1,
@@ -1479,5 +1491,9 @@ fn patch_backward_compatible_decoders(output: String) -> String {
         .replace(
             EVENT_MSG_ORIGIN_STRICT_DECODER,
             EVENT_MSG_ORIGIN_COMPAT_DECODER,
+        )
+        .replace(
+            LONG_POLL_DEPLOYMENT_MAINTENANCE_STRICT_DECODER,
+            LONG_POLL_DEPLOYMENT_MAINTENANCE_COMPAT_DECODER,
         )
 }

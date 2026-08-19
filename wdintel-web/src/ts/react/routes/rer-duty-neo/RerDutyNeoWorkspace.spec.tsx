@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, forwardRef } from 'react';
+import { act, forwardRef, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,7 +20,12 @@ vi.mock('./FeedColumn', () => ({
     { column },
     ref,
   ) {
-    renderedFeedColumns.set(column.feed.id, column);
+    useLayoutEffect(() => {
+      renderedFeedColumns.set(column.feed.id, column);
+      return () => {
+        renderedFeedColumns.delete(column.feed.id);
+      };
+    }, [column]);
     return <div ref={ref} data-testid={`feed-column-${column.feed.id}`} />;
   }),
 }));
@@ -435,7 +440,7 @@ describe('RerDutyNeoWorkspace', () => {
     expect(fab).not.toBeNull();
     expect(container.contains(fab)).toBe(true);
     expect(createMessageFabPropsHistory.at(-1)?.rightInset).toBe(5);
-    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
+    expect(renderedFeedColumns.has('feed-1')).toBe(false);
     expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
   });
@@ -467,9 +472,8 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
-    expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(false);
+    expect(renderedFeedColumns.has('feed-1')).toBe(false);
     expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(true);
-    expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('none');
     expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('above');
 
     await act(async () => {
@@ -488,10 +492,9 @@ describe('RerDutyNeoWorkspace', () => {
       );
     });
 
+    expect(renderedFeedColumns.has('feed-2')).toBe(false);
     expect(renderedFeedColumns.get('feed-1')?.view.scrollTrackingEnabled).toBe(true);
-    expect(renderedFeedColumns.get('feed-2')?.view.scrollTrackingEnabled).toBe(false);
     expect(renderedFeedColumns.get('feed-1')?.view.workspaceFabAvoidance).toBe('above');
-    expect(renderedFeedColumns.get('feed-2')?.view.workspaceFabAvoidance).toBe('none');
   });
 
   it('assigns add-feed to the last desktop header and removes it at the limit', async () => {

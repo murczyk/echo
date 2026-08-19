@@ -10,12 +10,14 @@ import time
 import uuid
 from pathlib import Path
 
+from .adapters import GatewayAdapter, GemmaAdapter, NuExtract3Adapter
 from .dependencies import DependencyChecker
 from .job_queue import Job, JobQueue
 from .metrics import ServiceMetrics
+from .models import Evidence
 from .ocr import PaddleEvidenceProvider
 from .package_archive import create_package_zip
-from .pipeline import ExtractionCancelled, Extractor
+from .pipeline import ExtractionCancelled, Extractor, InputManifest
 from .service_config import RuntimeConfig
 from .storage import StoragePressureError, directory_size, ensure_capacity, remove_job_directory
 
@@ -32,14 +34,12 @@ class LeaseHeartbeat:
         owner: str,
         interval: int,
         lease: int,
-        dependencies_json: str,
     ) -> None:
         self.queue = queue
         self.job = job
         self.owner = owner
         self.interval = interval
         self.lease = lease
-        self.dependencies_json = dependencies_json
         self.stop_event = threading.Event()
         self.lost = False
         self.thread = threading.Thread(target=self._run, name="job-heartbeat", daemon=True)
@@ -58,7 +58,6 @@ class LeaseHeartbeat:
                 if not self.queue.heartbeat(self.job.id, self.owner, self.lease):
                     self.lost = True
                     return
-                self.queue.update_worker(self.owner, True, True, self.dependencies_json)
             except Exception:
                 self.lost = True
                 return
@@ -78,6 +77,13 @@ class Worker:
             config.extraction.paddle_languages,
             config.extraction.paddle,
         )
+        self.adapters = [
+            NuExtract3Adapter(config.extraction.nu_extract, config.extraction.endpoint_concurrency),
+            GemmaAdapter(config.extraction.gemma, config.extraction.endpoint_concurrency),
+        ]
+        self.paddle_semaphore = asyncio.Semaphore(1)
+        self.active_tasks: set[asyncio.Task[None]] = set()
+        self.progress: dict[str, float] = {}
         if start_metrics:
             self.metrics.start(self.service.worker_metrics_host, self.service.worker_metrics_port)
 
@@ -89,6 +95,7 @@ class Worker:
         )
         last_cleanup = 0.0
         while True:
+            self._reap_tasks()
             self.queue.recover_expired(
                 settings.infrastructure_retries,
                 settings.retry_backoff_seconds,
@@ -96,30 +103,53 @@ class Worker:
             if time.monotonic() - last_cleanup >= 60:
                 self.cleanup_expired()
                 last_cleanup = time.monotonic()
-            statuses = await self.dependencies.check_all()
+            statuses = await self.dependencies.check_all(include_gemma=False)
             self.dependencies_json = json.dumps(
                 [status.__dict__ for status in statuses], separators=(",", ":")
             )
             for dependency in statuses:
                 self.metrics.dependency_up.labels(dependency=dependency.name).set(dependency.healthy)
-            self.queue.update_worker(self.owner, True, False, self.dependencies_json)
-            if not all(dependency.healthy for dependency in statuses):
-                self.metrics.update_queue(self.queue.counts())
+            if all(dependency.healthy for dependency in statuses):
+                self._start_jobs()
+            self._update_runtime_state()
+            if self.active_tasks:
+                await asyncio.wait(
+                    self.active_tasks,
+                    timeout=settings.poll_seconds,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            else:
                 await asyncio.sleep(settings.poll_seconds)
-                continue
-            job = self.queue.claim(self.owner, settings.lease_seconds)
+
+    def _reap_tasks(self) -> None:
+        completed = {task for task in self.active_tasks if task.done()}
+        self.active_tasks.difference_update(completed)
+        for task in completed:
+            task.result()
+
+    def _start_jobs(self) -> None:
+        settings = self.service.worker
+        while len(self.active_tasks) < settings.max_active_jobs:
+            job = self.queue.claim(
+                self.owner,
+                settings.lease_seconds,
+                settings.max_active_jobs,
+            )
             if not job:
-                self.metrics.worker_active.set(0)
-                self.metrics.update_queue(self.queue.counts())
-                await asyncio.sleep(settings.poll_seconds)
-                continue
-            self.queue.update_worker(self.owner, True, True, self.dependencies_json)
-            await self.process(job)
+                return
+            self.progress[job.id] = 0
+            self.active_tasks.add(asyncio.create_task(self.process(job), name=f"job-{job.id}"))
+
+    def _update_runtime_state(self) -> None:
+        active_jobs = len(self.active_tasks)
+        self.queue.update_worker(self.owner, True, active_jobs, self.dependencies_json)
+        self.metrics.worker_active.set(active_jobs)
+        progress = sum(self.progress.values()) / len(self.progress) if self.progress else 0
+        self.metrics.page_progress.set(progress)
+        self.metrics.update_queue(self.queue.counts())
 
     async def process(self, job: Job) -> None:
         settings = self.service.worker
-        self.metrics.worker_active.set(1)
-        self.metrics.page_progress.set(0)
         started = time.monotonic()
         heartbeat = LeaseHeartbeat(
             self.queue,
@@ -127,20 +157,16 @@ class Worker:
             self.owner,
             settings.heartbeat_seconds,
             settings.lease_seconds,
-            self.dependencies_json,
         )
         try:
             with heartbeat:
                 quality = await self._extract(job)
                 if heartbeat.lost:
                     raise InfrastructureFailure("job heartbeat lease was lost")
-            completed = self.queue.get(job.id)
             self.metrics.jobs.labels(state="completed", quality=quality).inc()
             self.metrics.job_duration.labels(state="completed", quality=quality).observe(
                 time.monotonic() - started
             )
-            if completed:
-                self.metrics.page_progress.set(1)
         except ExtractionCancelled as error:
             try:
                 self.queue.fail(
@@ -180,9 +206,7 @@ class Worker:
                         time.monotonic() - started
                     )
         finally:
-            self.queue.update_worker(self.owner, True, False, self.dependencies_json)
-            self.metrics.worker_active.set(0)
-            self.metrics.update_queue(self.queue.counts())
+            self.progress.pop(job.id, None)
 
     async def _extract(self, job: Job) -> str:
         root = Path(job.spool_path)
@@ -194,19 +218,24 @@ class Worker:
 
         async def page_boundary(processed: int, _: int | None) -> None:
             self.metrics.pages.inc()
-            self.metrics.page_progress.set(processed / job.total_pages)
+            self.progress[job.id] = processed / job.total_pages
             if self.queue.update_progress(job.id, self.owner, processed):
                 raise ExtractionCancelled("job cancelled at page boundary")
-            statuses = await self.dependencies.check_all()
+            statuses = await self.dependencies.check_all(
+                include_gemma=manifest is None or manifest_uses_legacy_gemma(manifest)
+            )
             if not all(dependency.healthy for dependency in statuses):
                 raise InfrastructureFailure("required router became unavailable")
 
+        adapters = self._adapters_for_manifest(manifest)
         extractor = Extractor(
             self.config.extraction,
+            adapters=adapters,
             artifact_dir=work,
             page_callback=page_boundary,
             metrics=self.metrics,
             ocr=self.ocr,
+            paddle_semaphore=self.paddle_semaphore,
         )
         result = await extractor.extract(inputs, manifest)
         paddle_failure = next(
@@ -216,11 +245,11 @@ class Worker:
         if paddle_failure:
             reason = next(iter(paddle_failure.rejection_reasons), "Paddle inference failed")
             raise InfrastructureFailure(reason)
-        if (
-            any("request_error" in item.rejection_reasons for item in result.evidence)
-            and job.attempts <= self.service.worker.infrastructure_retries
+        remote_families = {"nuextract3", adapters[-1].name}
+        if _all_remote_model_families_failed(result.evidence, remote_families) and (
+            job.attempts <= self.service.worker.infrastructure_retries
         ):
-            raise InfrastructureFailure("one or more model requests failed")
+            raise InfrastructureFailure("all remote model families failed")
         package.mkdir(mode=0o700)
         result.write_package(package)
         create_package_zip(package, result_path)
@@ -237,6 +266,26 @@ class Worker:
             result_path.stat().st_size,
         )
         return result.status.value
+
+    def _adapters_for_manifest(self, manifest: Path | None):
+        if manifest is None:
+            return self.adapters
+        parsed = InputManifest.model_validate(json.loads(manifest.read_text(encoding="utf-8")))
+        if parsed.ocr is None:
+            return self.adapters
+        ocr = parsed.ocr
+        return [
+            NuExtract3Adapter(self.config.extraction.nu_extract, self.config.extraction.endpoint_concurrency),
+            GatewayAdapter(
+                ocr.gateway_url,
+                ocr.grant,
+                ocr.engine_id,
+                ocr.engine_name,
+                ocr.model_name,
+                ocr.request_profile,
+                ocr.instance_id,
+            ),
+        ]
 
     def cleanup_expired(self) -> None:
         cutoff = time.time() - self.service.limits.retention_seconds
@@ -270,6 +319,24 @@ def _job_inputs(root: Path) -> tuple[list[Path], Path | None]:
     runtime_manifest = inputs_dir / ".manifest.json"
     runtime_manifest.write_text(json.dumps(manifest_data), encoding="utf-8")
     return [inputs_dir / name for name in names], runtime_manifest
+
+
+def _all_remote_model_families_failed(
+    evidence: list[Evidence], sources: set[str] | None = None
+) -> bool:
+    for source in sources or {"nuextract3", "gemma"}:
+        responses = [item for item in evidence if item.source == source]
+        if not responses or any(
+            not any(reason.startswith("request_error") for reason in item.rejection_reasons)
+            for item in responses
+        ):
+            return False
+    return True
+
+
+def manifest_uses_legacy_gemma(manifest: Path) -> bool:
+    parsed = InputManifest.model_validate(json.loads(manifest.read_text(encoding="utf-8")))
+    return parsed.ocr is None
 
 
 def _is_infrastructure(error: Exception) -> bool:

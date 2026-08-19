@@ -23,6 +23,8 @@ type AiEngineForm = {
   token: string;
   clearToken: boolean;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
 };
 
 const EMPTY_FORM: AiEngineForm = {
@@ -32,6 +34,8 @@ const EMPTY_FORM: AiEngineForm = {
   token: '',
   clearToken: false,
   enabled: true,
+  callsignEnabled: true,
+  ocrEnabled: false,
 };
 
 function errorMessage(error: unknown): string {
@@ -47,6 +51,8 @@ function initialForm(aiEngine?: AiEngineItem): AiEngineForm {
     token: '',
     clearToken: false,
     enabled: aiEngine.enabled,
+    callsignEnabled: aiEngine.callsignEnabled,
+    ocrEnabled: aiEngine.ocrEnabled,
   };
 }
 
@@ -102,6 +108,8 @@ export function AiEngineEditor({
             token,
             clearToken: form.clearToken,
             enabled: form.enabled,
+            callsignEnabled: form.callsignEnabled,
+            ocrEnabled: form.ocrEnabled,
           })
         : await createAiEngine({
             name: form.name.trim(),
@@ -109,6 +117,8 @@ export function AiEngineEditor({
             modelName: form.modelName.trim(),
             token,
             enabled: form.enabled,
+            callsignEnabled: form.callsignEnabled,
+            ocrEnabled: form.ocrEnabled,
           });
       onSaved(saved);
     } catch (saveError) {
@@ -181,6 +191,24 @@ export function AiEngineEditor({
             />
           }
           label="Увімкнений"
+        />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.callsignEnabled}
+              onChange={(_, checked) => patchForm({ callsignEnabled: checked })}
+            />
+          }
+          label="Використовувати для обробки позивних"
+        />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={form.ocrEnabled}
+              onChange={(_, checked) => patchForm({ ocrEnabled: checked })}
+            />
+          }
+          label="Використовувати для OCR"
         />
         <TextField
           fullWidth

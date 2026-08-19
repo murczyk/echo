@@ -21,9 +21,9 @@ import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../../Bind
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { isAbortError } from '../../../../services/api/client';
 import { getMediaOcrStatus } from '../../../../services/api/ocr';
-import type { AttachmentPreviewDownloadItem } from './MessageCardAttachmentPreviewHeader';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
 import { MediaSummaryAction, MediaSummaryOverlay } from './MediaSummaryPreview';
+import type { AttachmentPreviewDownloadItem } from './message-card-preview.types';
 
 const OCR_STATE_LABELS: Record<string, string> = {
   pending: 'У черзі',

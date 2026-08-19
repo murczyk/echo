@@ -28,6 +28,7 @@ class WorkerSettings(BaseModel):
     poll_seconds: float = Field(default=2.0, ge=0.1)
     lease_seconds: int = Field(default=300, ge=30)
     heartbeat_seconds: int = Field(default=30, ge=5)
+    max_active_jobs: int = Field(default=1, ge=1, le=4)
     infrastructure_retries: int = Field(default=3, ge=0, le=10)
     retry_backoff_seconds: tuple[int, ...] = (30, 120, 600)
 

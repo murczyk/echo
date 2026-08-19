@@ -666,6 +666,39 @@ pub fn filter_selected_units<Q>(
 where
     Q: QueryFilter,
 {
+    filter_selected_units_with_correlation(
+        q,
+        selected_units,
+        units_exact_match_only,
+        false,
+    )
+}
+
+pub(crate) fn filter_selected_units_correlated<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_units_with_correlation(
+        q,
+        selected_units,
+        units_exact_match_only,
+        true,
+    )
+}
+
+fn filter_selected_units_with_correlation<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    force_correlation: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
     let mut m_empty_filter = None;
     let mut m_filter = None;
     let selected_units = expand_unit_filter_values(selected_units);
@@ -678,6 +711,7 @@ where
                     sigint_unit::Column::Name,
                 ))
                 .is_not_null(),
+                force_correlation,
             )
             .not();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
@@ -694,7 +728,7 @@ where
                 !exact_match_only,
             );
             let in_subquery_condition =
-                message_has_linked_unit(linked_unit_match);
+                message_has_linked_unit(linked_unit_match, force_correlation);
 
             // якщо встановлено прапорець `units_exact_match_only`, то фільтруємо ТІЛЬКИ по підрозділам, які вказані через прив'язку по Еталонці
             let expr = if exact_match_only {
@@ -733,6 +767,39 @@ pub fn filter_denied_units<Q>(
 where
     Q: QueryFilter,
 {
+    filter_denied_units_with_correlation(
+        q,
+        denied_units,
+        units_exact_match_only,
+        false,
+    )
+}
+
+pub(crate) fn filter_denied_units_correlated<Q>(
+    q: Q,
+    denied_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_denied_units_with_correlation(
+        q,
+        denied_units,
+        units_exact_match_only,
+        true,
+    )
+}
+
+fn filter_denied_units_with_correlation<Q>(
+    q: Q,
+    denied_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    force_correlation: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
     let mut m_empty_filter = None;
     let mut m_filter = None;
     let denied_units = expand_unit_filter_values(denied_units);
@@ -745,6 +812,7 @@ where
                     sigint_unit::Column::Name,
                 ))
                 .is_not_null(),
+                force_correlation,
             )
             .not();
             let unit_is_not_in_message = sigint_inbox_item::Column::UnitV2
@@ -761,7 +829,8 @@ where
                 !exact_match_only,
             );
             let in_subquery_condition =
-                message_has_linked_unit(linked_unit_match).not();
+                message_has_linked_unit(linked_unit_match, force_correlation)
+                    .not();
 
             let expr = if exact_match_only {
                 in_subquery_condition
@@ -943,8 +1012,15 @@ fn sigint_unit_hierarchy_columns() -> [sigint_unit::Column; 5] {
     ]
 }
 
-fn message_has_linked_unit(filter_expr: SimpleExpr) -> SimpleExpr {
-    Expr::exists(select_sigint_units_by_names(filter_expr))
+fn message_has_linked_unit(
+    filter_expr: SimpleExpr,
+    force_correlation: bool,
+) -> SimpleExpr {
+    let mut query = select_sigint_units_by_names(filter_expr);
+    if force_correlation {
+        query.offset(0);
+    }
+    Expr::exists(query)
 }
 
 pub(super) fn selected_unit_network_ids_query(

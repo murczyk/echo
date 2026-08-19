@@ -179,6 +179,7 @@ init flagsResult route =
       , posts = NotAsked
       , toasts = Shared.Components.Toast.init
       , eventService = Core.EventService.init
+      , deploymentMaintenance = Nothing
       , pendingEvents = []
       , eventSubscriptions = Dict.empty
       , networks = NotAsked
@@ -367,11 +368,8 @@ update req msg model =
 
         SignOut ->
             ( { model | user = Nothing, userLoaded = False, eventService = Core.EventService.init }
-            , E.sendCmd <| Api.logout SignOutDone
+            , E.loadExternalUrl "/api/user/logout"
             )
-
-        SignOutDone _ ->
-            ( model, E.replaceRoutePath Route.Path.Login )
 
         GotLocation loc ->
             ( { model | location = Just loc }
@@ -581,7 +579,7 @@ update req msg model =
 
         EventServicePollEvents ->
             if model.eventService.isPolling then
-                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId model.deploymentMaintenance )
 
             else
                 ( model, E.none )
@@ -608,7 +606,10 @@ update req msg model =
                         |> List.map (\eventMsg -> E.sendCmd <| Task.perform (\_ -> eventMsg) (Task.succeed ()))
                         |> E.batch
             in
-            ( { model | eventService = newEventService }
+            ( { model
+                | eventService = newEventService
+                , deploymentMaintenance = response.deploymentMaintenance
+              }
             , E.batch
                 [ processEventsEffect
                 , if List.isEmpty inboxChangedEvents then
@@ -651,7 +652,7 @@ update req msg model =
 
         EventServiceRetryPolling ->
             if model.eventService.isPolling then
-                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId )
+                ( model, E.sendCmd <| pollEvents model.eventService.lastEventId model.deploymentMaintenance )
 
             else
                 ( model, E.none )
@@ -809,13 +810,15 @@ subscriptions _ _ =
 -- HTTP REQUESTS
 
 
-pollEvents : Maybe String -> Cmd Msg
-pollEvents lastEventId =
+pollEvents : Maybe String -> Maybe B.DeploymentMaintenance -> Cmd Msg
+pollEvents lastEventId deploymentMaintenance =
     let
         request : B.LongPollReq
         request =
             { sessionId = "current" -- We'll get this from session later
             , lastEventId = lastEventId
+            , deploymentMaintenanceProtocol = Just deploymentMaintenanceProtocolVersion
+            , knownDeploymentMaintenanceId = Maybe.map .id deploymentMaintenance
             }
     in
     Http.post
@@ -824,6 +827,10 @@ pollEvents lastEventId =
         , expect = leExpectJson EventServiceEventsReceived B.longPollRspDecoder
         }
 
+
+deploymentMaintenanceProtocolVersion : Int
+deploymentMaintenanceProtocolVersion =
+    1
 
 
 -- HELPERS

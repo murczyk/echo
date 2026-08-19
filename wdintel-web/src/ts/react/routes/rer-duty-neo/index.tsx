@@ -83,6 +83,7 @@ export function RerDutyNeoPage({
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
+  const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
@@ -91,10 +92,12 @@ export function RerDutyNeoPage({
         if (cancelled) return;
         setTagsLayout(prefs.tagsLayout);
         setAudioTranscriptionCollapsed(prefs.dutyAudioTranscriptionCollapsed ?? false);
+        setCollapseMediaPreviews(prefs.dutyCollapseMediaPreviews ?? false);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
+        setCollapseMediaPreviews(true);
       }
     };
     loadLayout();
@@ -108,6 +111,7 @@ export function RerDutyNeoPage({
         event as CustomEvent<{
           tagsLayout?: TagsLayoutVariant;
           dutyAudioTranscriptionCollapsed?: boolean;
+          dutyCollapseMediaPreviews?: boolean;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -115,6 +119,9 @@ export function RerDutyNeoPage({
       }
       if (typeof detail?.dutyAudioTranscriptionCollapsed === 'boolean') {
         setAudioTranscriptionCollapsed(detail.dutyAudioTranscriptionCollapsed);
+      }
+      if (typeof detail?.dutyCollapseMediaPreviews === 'boolean') {
+        setCollapseMediaPreviews(detail.dutyCollapseMediaPreviews);
       }
     };
 
@@ -171,6 +178,7 @@ export function RerDutyNeoPage({
       onLoadOlder: () => loadFeedOlderMessages(feedId),
       onLoadNewer: () =>
         loadFeedNewerMessages(feedId, { skipIfNewestExhausted: true, showLoading: false }),
+      onFlushPendingNewer: () => flushPendingNewerMessages(feedId, { urgent: true }),
       onRemoveColumn: () => removeMessageFeed(feedId),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         handleMessageBookmark(feedId, msgId, currentlyBookmarked),
@@ -205,6 +213,7 @@ export function RerDutyNeoPage({
             // Residual poll stock must not block watch-mode catch-up at the bottom.
             includeBeyondTailResidual: false,
           }) > 0 ||
+          (feed.pendingNewerItems?.length ?? 0) > 0 ||
           tailAvailability === 'available' ||
           tailAvailability === 'checking' ||
           tailAvailability === 'loading';
@@ -212,12 +221,14 @@ export function RerDutyNeoPage({
         if (preservePendingTail) {
           cancelFollowTail(feedId);
           setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: false }));
-          // Still fetch newer messages without auto-following so the badge can clear.
+          // Flush buffered pages into the window, then keep fetching without auto-follow.
+          flushPendingNewerMessages(feedId, { urgent: true });
           void loadFeedNewerMessages(feedId, {
             skipIfNewestExhausted: true,
             showLoading: false,
           });
         } else {
+          flushPendingNewerMessages(feedId, { markAllRead: true, urgent: true });
           ensureFollowTail(feedId);
           if (!dutyDisableAutoScroll) {
             setWatchModeByFeedId((prev) => ({ ...prev, [feedId]: true }));
@@ -262,6 +273,7 @@ export function RerDutyNeoPage({
     const stable: FeedColumnModel['actions'] = {
       onLoadOlder: () => latest().onLoadOlder(),
       onLoadNewer: () => latest().onLoadNewer?.(),
+      onFlushPendingNewer: () => latest().onFlushPendingNewer?.(),
       onRemoveColumn: () => latest().onRemoveColumn(),
       onMessageBookmark: (msgId, currentlyBookmarked) =>
         latest().onMessageBookmark(msgId, currentlyBookmarked),
@@ -306,6 +318,7 @@ export function RerDutyNeoPage({
         feed.items.length === 0 ? true : (physicallyAtBottomByFeedIdRef.current[feed.id] ?? false),
       tailAvailability: tailAvailabilityByFeedId[feed.id] ?? 'unknown',
       unreadPrefetchNeeded: feedNeedsUnreadPrefetch(feed),
+      pendingNewerFlushNeeded: (feed.pendingNewerItems?.length ?? 0) > 0,
     },
     filterPanel: {
       feedId: feed.id,
@@ -414,6 +427,7 @@ export function RerDutyNeoPage({
       profiles,
       featureStrictNetworks,
       tagsLayout,
+      collapseMediaPreviews,
       tagsMap,
       tagsOrder,
       botTagAction,
@@ -446,6 +460,7 @@ export function RerDutyNeoPage({
     reloadEditedFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
+    flushPendingNewerMessages,
     handleSaveFilter,
     handleApplySavedFilter,
     handleUpdateSelectedSavedFilter,
@@ -505,6 +520,14 @@ export function RerDutyNeoPage({
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
     ? activeFeedId
     : (messageFeeds[0]?.id ?? null);
+  const previousActiveFeedIdForFlushRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeFeedIdSafe) return;
+    // Desktop/narrow active-only: remounting a column should surface buffered newer pages.
+    if (previousActiveFeedIdForFlushRef.current === activeFeedIdSafe) return;
+    previousActiveFeedIdForFlushRef.current = activeFeedIdSafe;
+    flushPendingNewerMessages(activeFeedIdSafe, { urgent: true });
+  }, [activeFeedIdSafe, flushPendingNewerMessages]);
   useEffect(() => {
     const liveIds = new Set(messageFeeds.map((feed) => feed.id));
     for (const feedId of Object.keys(feedStableActionsRef.current)) {

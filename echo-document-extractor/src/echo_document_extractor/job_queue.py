@@ -110,10 +110,14 @@ class JobQueue:
                     heartbeat_at REAL NOT NULL,
                     paddle_ready INTEGER NOT NULL,
                     active INTEGER NOT NULL,
+                    active_jobs INTEGER NOT NULL DEFAULT 0,
                     dependencies_json TEXT NOT NULL
                 );
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(workers)").fetchall()}
+            if "active_jobs" not in columns:
+                connection.execute("ALTER TABLE workers ADD COLUMN active_jobs INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def transaction(self):
@@ -174,10 +178,11 @@ class JobQueue:
             row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return _job(row) if row else None
 
-    def claim(self, owner: str, lease_seconds: int) -> Job | None:
+    def claim(self, owner: str, lease_seconds: int, max_active_jobs: int = 1) -> Job | None:
         now = time.time()
         with self.transaction() as connection:
-            if connection.execute("SELECT 1 FROM jobs WHERE state = 'running' LIMIT 1").fetchone():
+            running = connection.execute("SELECT COUNT(*) FROM jobs WHERE state = 'running'").fetchone()[0]
+            if running >= max_active_jobs:
                 return None
             row = connection.execute(
                 """SELECT * FROM jobs
@@ -345,28 +350,39 @@ class JobQueue:
         self,
         owner: str,
         paddle_ready: bool,
-        active: bool,
+        active_jobs: int,
         dependencies_json: str,
     ) -> None:
         now = time.time()
         with self.connect() as connection:
             connection.execute(
                 """INSERT INTO workers (
-                    owner, started_at, heartbeat_at, paddle_ready, active, dependencies_json
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    owner, started_at, heartbeat_at, paddle_ready, active, active_jobs,
+                    dependencies_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(owner) DO UPDATE SET
                     heartbeat_at = excluded.heartbeat_at,
                     paddle_ready = excluded.paddle_ready,
                     active = excluded.active,
+                    active_jobs = excluded.active_jobs,
                     dependencies_json = excluded.dependencies_json""",
-                (owner, now, now, paddle_ready, active, dependencies_json),
+                (
+                    owner,
+                    now,
+                    now,
+                    paddle_ready,
+                    active_jobs > 0,
+                    active_jobs,
+                    dependencies_json,
+                ),
             )
 
     def workers(self, active_after: float) -> list[dict[str, object]]:
         with self.connect() as connection:
             connection.execute("DELETE FROM workers WHERE heartbeat_at < ?", (active_after,))
             rows = connection.execute(
-                """SELECT started_at, heartbeat_at, paddle_ready, active, dependencies_json
+                """SELECT started_at, heartbeat_at, paddle_ready, active, active_jobs,
+                    dependencies_json
                 FROM workers ORDER BY started_at"""
             ).fetchall()
         return [
@@ -375,6 +391,7 @@ class JobQueue:
                 "heartbeat_at": row["heartbeat_at"],
                 "paddle_ready": bool(row["paddle_ready"]),
                 "active": bool(row["active"]),
+                "active_jobs": row["active_jobs"],
                 "dependencies": row["dependencies_json"],
             }
             for row in rows

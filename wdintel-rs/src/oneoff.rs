@@ -76,10 +76,18 @@ pub async fn oneoff_restart_echo(
         restart_process("postgresql")?;
     }
     if ps.restart_messengers.unwrap_or(false) {
+        let config = crate::config::read_config(mode).c(h!())?;
+        let redis = crate::new_redis(&config).await.c(h!())?;
         let db = new_pg_pool_from_mode(mode).await.c(h!())?;
-        echo_im::restart_live_messengers_that_fall_behind(540, &db)
-            .await
-            .context(h!())?
+        let options = crate::messenger::signal_restart::signal_worker_options(
+            crate::messenger::signal_restart::RedisSignalRestartCoordinator::new(redis),
+            None,
+        );
+        echo_im::restart_live_messengers_that_fall_behind_with_options(
+            540, &db, &options,
+        )
+        .await
+        .context(h!())?
     }
     restart_process("wdintel-rs")?;
     restart_process_if_exists("wdintel-rs-bgworker")?;

@@ -66,13 +66,19 @@ pub async fn oneoff_backfill_inbox_unit_links(
     let till_ts = parse_optional_utc_ts(ps.till_ts.as_deref())
         .c(h!())?
         .unwrap_or(now);
-    info!("counting inbox unit link backfill items in [{start_ts}, {till_ts})");
+    info!(
+        "counting inbox unit link backfill items in [{start_ts}, {till_ts}) after inbox item {}",
+        ps.after_inbox_item_id,
+    );
     let progress = ProgressBar::new_spinner();
     progress.set_message("counting inbox items");
     progress.enable_steady_tick(StdDuration::from_millis(100));
     let total =
         crate::inbox::unit_resolution::count_inbox_unit_link_backfill_items(
-            &db, start_ts, till_ts,
+            &db,
+            start_ts,
+            till_ts,
+            ps.after_inbox_item_id,
         )
         .await
         .c(h!())?;
@@ -81,11 +87,15 @@ pub async fn oneoff_backfill_inbox_unit_links(
     progress.set_length(total);
     progress.set_position(0);
     progress.set_message("backfilling inbox unit links");
-    info!("backfilling {total} inbox unit links in [{start_ts}, {till_ts})");
+    info!(
+        "backfilling {total} inbox unit links in [{start_ts}, {till_ts}) after inbox item {}",
+        ps.after_inbox_item_id,
+    );
     let processed = crate::inbox::unit_resolution::backfill_inbox_unit_links(
         &db,
         start_ts,
         till_ts,
+        ps.after_inbox_item_id,
         Some(&progress),
     )
     .await
@@ -93,7 +103,10 @@ pub async fn oneoff_backfill_inbox_unit_links(
     progress.finish_with_message(format!(
         "backfilled {processed}/{total} inbox unit links"
     ));
-    info!("backfilled {processed}/{total} inbox unit links in [{start_ts}, {till_ts})");
+    info!(
+        "backfilled {processed}/{total} inbox unit links in [{start_ts}, {till_ts}) after inbox item {}",
+        ps.after_inbox_item_id,
+    );
     Ok(())
 }
 

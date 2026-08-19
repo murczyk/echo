@@ -1460,6 +1460,16 @@ async fn find_duplicate_for_edit(
     timestamp: NaiveDateTime,
     signal_message_id: i64,
 ) -> anyhow::Result<Option<(signal_message::Model, datasource_group::Model)>> {
+    let snapshot_body_for_dedupe =
+        dedupe::body_with_attachments_hash(body, snapshot_attachments_hash);
+    let body_for_dedupe =
+        dedupe::body_with_attachments_hash(body, attachments_hash);
+    crate::sigint::lock_signal_message_dedupe_keys(
+        txn,
+        [snapshot_body_for_dedupe.as_str(), body_for_dedupe.as_str()],
+    )
+    .await
+    .c(h!())?;
     let duplicate_of = find_duplicate(
         txn,
         redis,

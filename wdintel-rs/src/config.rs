@@ -13,6 +13,7 @@ pub const DEFAULT_PG_PASSWORD: &str = "fee_-_-_-FnoeKFBeebu87bf";
 pub const DEFAULT_PG_DBNAME: &str = "wd";
 pub const DEFAULT_PG_WDFILE_DBNAME: &str = "wd_files";
 pub const PG_POOL_DEFAULT_MAX_CONNECTIONS: u32 = 30;
+pub const PG_POOL_WEB_MAX_CONNECTIONS: u32 = 50;
 pub const PG_POOL_BGWORKER_MAX_CONNECTIONS: u32 = 20;
 pub const PG_WDFILE_POOL_MAX_CONNECTIONS: u32 = 10;
 pub const PG_WDFILE_MIGRATION_POOL_MAX_CONNECTIONS: u32 = 1;
@@ -179,10 +180,13 @@ pub const ECHO_AUDIO_TRANSCRIPTION_BGWORKER_SERVICE: &str =
     "wdintel-rs-bgworker.service";
 pub const OCR_SETTINGS_ID: i16 = 1;
 pub const OCR_TOKEN_ENV: &str = "ECHO_OCR_TOKEN";
+pub const OCR_GATEWAY_SIGNING_KEY_ENV: &str = "ECHO_OCR_GATEWAY_SIGNING_KEY";
 pub const OCR_DISCOVERY_DAYS: i64 = 7;
 pub const OCR_DISCOVERY_BATCH_SIZE: u64 = 100;
 pub const OCR_IDLE_SLEEP_MS: u64 = 30_000;
 pub const OCR_POLL_SLEEP_MS: u64 = 5_000;
+pub const OCR_DEFAULT_MAX_IN_FLIGHT_JOBS: usize = 1;
+pub const OCR_MAX_IN_FLIGHT_JOBS: usize = 4;
 pub const OCR_MAX_ATTEMPTS: i32 = 8;
 pub const OCR_RETRY_BASE_SECS: i64 = 10;
 pub const OCR_RETRY_MAX_SECS: i64 = 15 * 60;
@@ -210,6 +214,7 @@ pub const MEDIA_SUMMARY_RETRY_MAX_SECS: i64 = 5 * 60;
 pub const MEDIA_SUMMARY_LEASE_SECS: i64 = 15 * 60;
 pub const MEDIA_SUMMARY_IDLE_SLEEP_MS: u64 = 5_000;
 pub const MEDIA_SUMMARY_MAX_ERROR_CHARS: usize = 1_200;
+pub const MEDIA_SUMMARY_PUBLIC_ERROR: &str = "Internal server error";
 pub const MEDIA_SUMMARY_OUTPUT_TOKENS: u32 = 8_000;
 pub const MEDIA_SUMMARY_FIELD_MAX_CHARS: usize = 2_000;
 pub const MEDIA_SUMMARY_COORDINATE_TITLE_MAX_CHARS: usize = 120;
@@ -359,6 +364,10 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK: &str =
+    "Кілька прив’язок ORBIT";
+pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
+    "Нижчий ешелон ORBIT";
 pub const SIGINT_UNIT_DYNAMIC_REGEX_SIZE_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 pub const SIGINT_UNIT_DYNAMIC_REGEX_CHUNK_SIZE: usize = 2_000;
 /// Ukraine boundaries WGS84
@@ -398,7 +407,13 @@ pub const MESSENGER_UNLINKED_DATASOURCE_NOTIFICATION_STATE_REDIS_PREFIX: &str =
 pub const MESSENGER_UNLINKED_DATASOURCE_NOTIFICATION_STATE_TTL_SEC: u64 =
     24 * 60 * 60;
 pub const MESSENGER_CLEANUP_OK_SLEEP_SEC: u64 = 600;
-pub const MESSENGER_CLEANUP_ERR_SLEEP_SEC: u64 = 15;
+pub const SIGNAL_RESTART_MAINTENANCE_REDIS_PREFIX: &str =
+    "signal:restart:maintenance";
+pub const SIGNAL_RESTART_COOLDOWN_REDIS_PREFIX: &str =
+    "signal:restart:cooldown";
+pub const SIGNAL_RESTART_MAINTENANCE_TTL_SEC: u64 = 90;
+pub const SIGNAL_RESTART_COOLDOWN_TTL_SEC: u64 = 5 * 60;
+pub const SIGNAL_RESTART_MAINTENANCE_RETRY_SEC: u64 = 1;
 pub const MESSENGER_MEDIA_AUDIO_PNG_TMP_DIR: &str = "/tmp";
 pub const MESSENGER_MEDIA_CACHE_DIR_NAME: &str = "messenger_media_cache";
 pub const MESSENGER_MEDIA_CACHE_PREFLIGHT_HEADER: &str =
@@ -561,8 +576,13 @@ pub const GROUP_STATS_RECALCULATION_TASK_STALE_MINUTES: i64 = 120;
 pub const GROUP_STATS_RECALCULATION_TASK_CHUNK_DAYS: i64 = 1;
 /// Minimum time to keep a long-poll request open to accumulate events
 pub const LONG_POLL_MIN_RESPONSE_TIME_MS: u64 = 500;
+pub const REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE: usize = 256;
+pub const REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS: u64 = 5;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
+pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
+    "echo:deployment:maintenance";
+pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;
 pub const SESSION_STREAM_LIFETIME_SEC: i64 = 180;
 pub const EVENT_STREAM_ORIGIN_HEADER: &str = "x-echo-event-origin";
 pub const EVENT_STREAM_ORIGIN_MAX_BYTES: usize = 128;
@@ -597,6 +617,9 @@ pub const GENERATE_MESSAGE_UID_TILL_MAX_DAYS: i64 = 20;
 pub const UNKNOWN_GROUP_MASTER_KEY: &str = "undefined_group";
 pub const OPERATOR_INBOX_WORKER_LOOKBACK_HOURS: i64 = 3;
 pub const REDIS_MGS_ID_TTL: i32 = 3600;
+pub const SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_NAMESPACE: &str =
+    "signal-message-dedupe:";
+pub const SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_POLL_MS: u64 = 100;
 pub const SIGNOZ_METRICS_EXPORT_INTERVAL_SECS: u64 = 60;
 pub const SIGNOZ_METRICS_SERVICE_NAME: &str = "wdintel-rs";
 pub const SIGNOZ_METRICS_SERVICE_NAMESPACE: &str = "echo";
@@ -956,6 +979,14 @@ pub struct Config {
 pub struct OcrConfig {
     pub base_url: String,
     pub instance_id: String,
+    #[serde(default)]
+    pub gateway_url: Option<String>,
+    #[serde(default = "ocr_default_max_in_flight_jobs")]
+    pub max_in_flight_jobs: usize,
+}
+
+fn ocr_default_max_in_flight_jobs() -> usize {
+    OCR_DEFAULT_MAX_IN_FLIGHT_JOBS
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]

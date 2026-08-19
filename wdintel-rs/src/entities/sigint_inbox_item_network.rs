@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    #[sea_orm(unique_key = "sigint_inbox_item_network_network_inbox_uq")]
     pub sigint_inbox_item_id: i64,
+    #[sea_orm(unique_key = "sigint_inbox_item_network_network_inbox_uq")]
     pub sigint_network_id: i64,
     pub created_at: DateTime,
 }

@@ -8,10 +8,20 @@ import type {
   SignalProfileEntry,
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/inbox';
-import { appendWindowedMessageItems, prependWindowedMessageItems } from './utils';
+import {
+  appendNewerItemsToFeed,
+  appendWindowedMessageItems,
+  feedNewerSinceId,
+  feedPendingNewerItems,
+  flushPendingNewerItems,
+  mergePendingNewerItems,
+  prependWindowedMessageItems,
+  shouldBufferNewerMessages,
+} from './utils';
 import type { MessageCursor, MessageFeedState, MessageItem } from './utils';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
+import { commitFeedWindowUpdate, commitFeedWindowUpdateUrgent } from './feedWindowCommit';
 
 type NewerLoadOptions = {
   nolimit?: boolean;
@@ -93,6 +103,7 @@ type Params = {
   newestExhaustedCursorByFeedIdRef: MutableRefObject<Record<string, number>>;
   pendingScrollToEndRef: MutableRefObject<Record<string, number>>;
   nearBottomByFeedIdRef: MutableRefObject<Record<string, boolean>>;
+  physicallyAtBottomByFeedIdRef: MutableRefObject<Record<string, boolean>>;
   followTailByFeedIdRef: MutableRefObject<Record<string, boolean>>;
   followGenerationByFeedIdRef: MutableRefObject<Record<string, number>>;
   isFollowTailValid: (feedId: string, generation: number) => boolean;
@@ -104,6 +115,7 @@ type Params = {
     previousTailId: number,
     newTailId: number | null,
     addedCount: number,
+    options?: { keepLoadedTail?: boolean },
   ) => void;
 };
 
@@ -236,7 +248,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             }
           }
           if (accepted) {
-            runParams.setMessageFeeds((previous) =>
+            commitFeedWindowUpdate(runParams.setMessageFeeds, (previous) =>
               previous.map((feed) => {
                 if (feed.id !== feedId) return feed;
                 const windowed = prependWindowedMessageItems(feed.items, response.inboxItems);
@@ -338,7 +350,8 @@ export function useRerDutyDirectionalLoads(params: Params) {
           return;
         }
         const requestGeneration = runParams.getFeedLoadGeneration(feedId);
-        const requestedTailId = currentFeed.items.at(-1)![0];
+        const loadedTailId = currentFeed.items.at(-1)![0];
+        const requestedSinceId = feedNewerSinceId(currentFeed) ?? loadedTailId;
         const requestSignature = runParams.getFeedCountSignature(currentFeed);
         const isStillCurrent = () => {
           const latestFeed = runParams.messageFeedsRef.current.find(
@@ -347,13 +360,13 @@ export function useRerDutyDirectionalLoads(params: Params) {
           return Boolean(
             latestFeed &&
             runParams.getFeedLoadGeneration(feedId) === requestGeneration &&
-            latestFeed.items.at(-1)?.[0] === requestedTailId &&
+            latestFeed.items.at(-1)?.[0] === loadedTailId &&
             runParams.getFeedCountSignature(latestFeed) === requestSignature,
           );
         };
         if (
           operation.newerOptions.skipIfNewestExhausted &&
-          runParams.newestExhaustedCursorByFeedIdRef.current[feedId] === requestedTailId
+          runParams.newestExhaustedCursorByFeedIdRef.current[feedId] === requestedSinceId
         ) {
           operation.newerResult = { ok: true, addedCount: 0 };
           lane.active = null;
@@ -369,12 +382,12 @@ export function useRerDutyDirectionalLoads(params: Params) {
         const finishDebugActivity = beginDutyScrollDebugActivity(
           feedId,
           'newerMessages',
-          `since=${requestedTailId}; generation=${requestGeneration}; followRequested=${operation.newerOptions.scrollToEndAfterLoad}; followGeneration=${operation.newerOptions.followGeneration}; confirmed=${operation.newerOptions.confirmedTailAvailable}`,
+          `since=${requestedSinceId}; loadedTail=${loadedTailId}; generation=${requestGeneration}; followRequested=${operation.newerOptions.scrollToEndAfterLoad}; followGeneration=${operation.newerOptions.followGeneration}; confirmed=${operation.newerOptions.confirmedTailAvailable}`,
         );
         try {
           const response = await fetchInboxMessages(
             runParams.buildReqForFeed(currentFeed, {
-              sinceIdNoninclusive: requestedTailId,
+              sinceIdNoninclusive: requestedSinceId,
               nolimit: operation.newerOptions.nolimit || undefined,
             }),
           );
@@ -403,19 +416,38 @@ export function useRerDutyDirectionalLoads(params: Params) {
             return;
           }
           runParams.clearPollingFailure();
-          const previousTailId = requestedTailId;
-          const latestWindowed = appendWindowedMessageItems(latestFeed.items, response.inboxItems);
-          const addedCount = latestWindowed.addedItems.length;
-          operation.newerResult = { ok: true, addedCount };
-          const newestItem = latestWindowed.items.at(-1) ?? null;
+          const previousTailId = loadedTailId;
+          const pendingBefore = feedPendingNewerItems(latestFeed);
           const followTail = operation.newerOptions.scrollToEndAfterLoad && followStillValid;
           const markAllRead =
             (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) ||
             operation.newerOptions.markAllReadAfterAppend;
+          const bufferNewer = shouldBufferNewerMessages({
+            nearBottom: runParams.nearBottomByFeedIdRef.current[feedId] === true,
+            physicallyAtBottom: runParams.physicallyAtBottomByFeedIdRef.current[feedId] === true,
+            followTail,
+            markAllRead,
+          });
+          const nextPending = bufferNewer
+            ? mergePendingNewerItems(latestFeed, response.inboxItems)
+            : pendingBefore;
+          const liveAppendPreview = bufferNewer
+            ? null
+            : appendWindowedMessageItems(latestFeed.items, [
+                ...pendingBefore,
+                ...response.inboxItems,
+              ]);
+          const addedCount = bufferNewer
+            ? Math.max(0, nextPending.length - pendingBefore.length)
+            : (liveAppendPreview?.addedItems.length ?? 0);
+          operation.newerResult = { ok: true, addedCount };
+          const newestItem = bufferNewer
+            ? (nextPending.at(-1) ?? null)
+            : (liveAppendPreview?.items.at(-1) ?? null);
           recordDutyScrollDebugEvent(
             feedId,
             'newer:decision',
-            `accepted=${accepted}; added=${addedCount}; followValid=${followStillValid}; follow=${followTail}; markRead=${markAllRead}; near=${runParams.nearBottomByFeedIdRef.current[feedId] === true}`,
+            `accepted=${accepted}; added=${addedCount}; buffer=${bufferNewer}; followValid=${followStillValid}; follow=${followTail}; markRead=${markAllRead}; near=${runParams.nearBottomByFeedIdRef.current[feedId] === true}; physical=${runParams.physicallyAtBottomByFeedIdRef.current[feedId] === true}`,
           );
           if (markAllRead && newestItem != null) {
             runParams.advanceFeedReadCursor(
@@ -428,17 +460,27 @@ export function useRerDutyDirectionalLoads(params: Params) {
           if (addedCount > 0) {
             delete runParams.newestExhaustedCursorByFeedIdRef.current[feedId];
             runParams.setTailAvailability(feedId, 'unknown');
-            runParams.noteNewerAppendForTailPreview(
-              feedId,
-              previousTailId,
-              newestItem?.[0] ?? null,
-              addedCount,
-            );
+            if (bufferNewer) {
+              runParams.noteNewerAppendForTailPreview(
+                feedId,
+                previousTailId,
+                newestItem?.[0] ?? null,
+                addedCount,
+                { keepLoadedTail: true },
+              );
+            } else {
+              runParams.noteNewerAppendForTailPreview(
+                feedId,
+                previousTailId,
+                newestItem?.[0] ?? null,
+                addedCount,
+              );
+            }
           } else {
-            runParams.newestExhaustedCursorByFeedIdRef.current[feedId] = requestedTailId;
+            runParams.newestExhaustedCursorByFeedIdRef.current[feedId] = requestedSinceId;
             runParams.setTailAvailability(feedId, 'exhausted');
             runParams.invalidateTailPreview(feedId);
-            // Messages API is authoritative: nothing newer than the loaded tail.
+            // Messages API is authoritative: nothing newer than the loaded/pending tail.
             // Recompute local unread from the latest committed feed state so a concurrent
             // at-bottom mark-read cannot be overwritten with a stale residual stock.
             operation.commitExpected = true;
@@ -451,6 +493,9 @@ export function useRerDutyDirectionalLoads(params: Params) {
                   if (!feed.readIds.has(id)) nextLocal += 1;
                 }
                 nextLocal += feed.windowedUnreadItems?.size ?? 0;
+                for (const [id] of feedPendingNewerItems(feed)) {
+                  if (!feed.readIds.has(id)) nextLocal += 1;
+                }
                 localUnread = nextLocal;
                 return nextLocal === feed.unreadCount ? feed : { ...feed, unreadCount: nextLocal };
               }),
@@ -467,7 +512,7 @@ export function useRerDutyDirectionalLoads(params: Params) {
             recordDutyScrollDebugEvent(
               feedId,
               'newer:exhausted',
-              `localUnread=${localUnread}; tail=${requestedTailId}`,
+              `localUnread=${localUnread}; since=${requestedSinceId}`,
             );
           }
           if (followTail && runParams.isFollowTailValid(feedId, capturedFollowGeneration)) {
@@ -479,65 +524,44 @@ export function useRerDutyDirectionalLoads(params: Params) {
           }
           if (addedCount > 0 || markAllRead || followTail) {
             operation.commitExpected = true;
-            runParams.setMessageFeeds((previous) =>
-              previous.map((feed) => {
-                if (feed.id !== feedId) return feed;
-                const windowed = appendWindowedMessageItems(feed.items, response.inboxItems);
-                if (windowed.addedItems.length === 0) {
-                  if (markAllRead) {
-                    return {
-                      ...feed,
-                      readIds: new Set<number>([...feed.readIds, ...feed.items.map(([id]) => id)]),
-                      windowedUnreadItems: new Map<number, number>(),
-                      unreadCount: 0,
-                    };
+            if (bufferNewer) {
+              // Off-DOM buffer: keep `items` identity stable (no MessageCard remount).
+              runParams.setMessageFeeds((previous) => {
+                const next = previous.map((feed) => {
+                  if (feed.id !== feedId) return feed;
+                  const pendingNewerItems = mergePendingNewerItems(feed, response.inboxItems);
+                  if (pendingNewerItems.length === (feed.pendingNewerItems?.length ?? 0)) {
+                    return feed;
                   }
-                  if (followTail) return { ...feed };
-                  return feed;
-                }
-                // Start-trim drops rows from the previous window (above the retained
-                // viewport when loading newer). Mark those as read. Rows that arrived in
-                // this batch and were immediately trimmed (oversized page) stay unread.
-                const previousIds = new Set(feed.items.map(([id]) => id));
-                const trimmedPreviousUnreadIds = windowed.removedItems
-                  .filter(([id]) => previousIds.has(id) && !feed.readIds.has(id))
-                  .map(([id]) => id);
-                const readIds =
-                  markAllRead || trimmedPreviousUnreadIds.length > 0
-                    ? new Set<number>([
-                        ...feed.readIds,
-                        ...(markAllRead ? windowed.items.map(([id]) => id) : []),
-                        ...trimmedPreviousUnreadIds,
-                      ])
-                    : feed.readIds;
-                const unreadAddedCount = windowed.addedItems.filter(
-                  ([id]) => !readIds.has(id),
-                ).length;
-                const windowedUnreadItems = reconcileWindowedUnreadIds(
-                  { ...feed, readIds },
-                  windowed,
-                  false,
-                );
-                return {
-                  ...feed,
-                  items: windowed.items,
-                  readIds: markAllRead
-                    ? new Set<number>([...readIds, ...windowed.items.map(([id]) => id)])
-                    : readIds,
-                  unreadCount: markAllRead
-                    ? 0
-                    : Math.max(
-                        0,
-                        Math.max(feed.unreadCount, unreadAddedCount) -
-                          trimmedPreviousUnreadIds.length,
-                      ),
-                  windowedUnreadItems: markAllRead
-                    ? new Map<number, number>()
-                    : windowedUnreadItems,
-                  hasReachedStart: windowed.removedItems.length > 0 ? false : feed.hasReachedStart,
-                };
-              }),
-            );
+                  return { ...feed, pendingNewerItems };
+                });
+                // Poll catch-up awaits this promise before React paint; publish pending
+                // immediately so the next sinceId / runway sees the buffer.
+                runParams.messageFeedsRef.current = next;
+                return next;
+              });
+            } else {
+              // Live window commit: publish urgently + sync the ref so the next sinceId
+              // is not stuck on the pre-append tail while startTransition is deferred.
+              const physicallyAtBottom =
+                runParams.physicallyAtBottomByFeedIdRef.current[feedId] === true;
+              const commit =
+                physicallyAtBottom || followTail || markAllRead
+                  ? commitFeedWindowUpdateUrgent
+                  : commitFeedWindowUpdate;
+              commit(runParams.setMessageFeeds, (previous) => {
+                const next = previous.map((feed) => {
+                  if (feed.id !== feedId) return feed;
+                  return appendNewerItemsToFeed(
+                    feed,
+                    [...feedPendingNewerItems(feed), ...response.inboxItems],
+                    { markAllRead },
+                  );
+                });
+                runParams.messageFeedsRef.current = next;
+                return next;
+              });
+            }
           }
         } catch (error) {
           finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
@@ -601,9 +625,49 @@ export function useRerDutyDirectionalLoads(params: Params) {
     [invalidateFeedLoads],
   );
 
+  const flushPendingNewerMessages = useCallback(
+    (feedId: string, options?: { markAllRead?: boolean; urgent?: boolean }) => {
+      const feed = paramsRef.current.messageFeedsRef.current.find(
+        (candidate) => candidate.id === feedId,
+      );
+      if (!feed) return;
+      const pending = feedPendingNewerItems(feed);
+      if (pending.length === 0 && options?.markAllRead !== true) return;
+      const previousTailId = feed.items.at(-1)?.[0] ?? null;
+      const newTailId = pending.at(-1)?.[0] ?? null;
+      const pendingCount = pending.length;
+      const commit =
+        options?.urgent === true ? commitFeedWindowUpdateUrgent : commitFeedWindowUpdate;
+      commit(paramsRef.current.setMessageFeeds, (previous) => {
+        const next = previous.map((candidate) => {
+          if (candidate.id !== feedId) return candidate;
+          return flushPendingNewerItems(candidate, options);
+        });
+        // Keep sinceId / poll catch-up in sync when flushing urgently at the live edge.
+        paramsRef.current.messageFeedsRef.current = next;
+        return next;
+      });
+      if (previousTailId != null && pendingCount > 0) {
+        paramsRef.current.noteNewerAppendForTailPreview(
+          feedId,
+          previousTailId,
+          newTailId,
+          pendingCount,
+        );
+      }
+      recordDutyScrollDebugEvent(
+        feedId,
+        'newer:flushPending',
+        `pending=${pendingCount}; markRead=${options?.markAllRead === true}; urgent=${options?.urgent === true}`,
+      );
+    },
+    [],
+  );
+
   return {
     loadFeedOlderMessages,
     loadFeedNewerMessages,
+    flushPendingNewerMessages,
     invalidateFeedLoads,
     removeFeedLoads,
   };

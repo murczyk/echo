@@ -8,6 +8,10 @@ Issue: [#3059](https://github.com/echoua/echo/issues/3059).
 
 Scroll/commit performance notes (Virtuoso rollback, profile, next levers):
 [`archive/2026-08-12-duty-feed-scroll-perf/README.md`](../../archive/2026-08-12-duty-feed-scroll-perf/README.md).
+Cheap closed actions, `startTransition` window commits, and narrow active-only feed mounts are covered there.
+
+Implementation plan (active-only desktop → pending soak → cheap cards → optional TanStack):
+[`archive/2026-08-13-duty-scroll-perf-plan/README.md`](../../archive/2026-08-13-duty-scroll-perf-plan/README.md).
 
 ## What you need to know
 
@@ -17,6 +21,10 @@ Scroll/commit performance notes (Virtuoso rollback, profile, next levers):
 - **Badge** = loaded unread + trimmed unread + (beyond-tail preview when known). Near bottom **ignores** residual poll stock from a lagging read cursor; it **keeps** a real matching tail preview.
 - Mid-list read cursor advances from **DOM viewport-visible** rows. At bottom still marks through the **window tail** id.
 - Near bottom without watch: keep loading newer until there are **≥10 loaded-unread after last-seen** (or the server is exhausted). Watch + physical bottom still mark-all-read and drains the live tail.
+- **Pending newer buffer** (Elm `notRenderedMessagesYet`): while near-bottom but not following and **not** physically at the bottom, newer fetch results stay in `pendingNewerItems` (off the DOM). Prefetch runway counts pending unread. Flush into the window on scroll idle (~140ms), immediately at physical bottom / arrow / follow, and when a feed becomes the active column.
+- **Active-only card trees (narrow):** narrow multi-feed mounts MessageCards only for the active tab.
+- **Idle viewport offload (multi-feed):** after ~10s without pointer/wheel/touch on a feed, off-viewport rows in that column become height placeholders; interaction remounts the full 40-window. All columns stay visible.
+- **Collapsed media (Duty, [#3161](https://github.com/echoua/echo/issues/3161)):** optional setting (default of) hides audio / photo·video / coordinates behind a reveal banner until clicked. Toggle in Settings → Оперативний.
 - Arrow down: load (if needed) → follow → hard unread catch-up. FAB shows a spinner while newer `get-inbox` is in flight.
 
 ## Do not
@@ -26,15 +34,15 @@ Scroll/commit performance notes (Virtuoso rollback, profile, next levers):
 
 ## Code map
 
-| Concern | File |
-| --- | --- |
-| Zones, load arming, anchor restore | [`useWindowedFeedScroll.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useWindowedFeedScroll.ts) |
-| Duty buffers (640 / 160 / 25) | [`FeedColumnContent.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/FeedColumnContent.tsx) |
-| Near-bottom badge options, reach-bottom / follow | [`index.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx) |
-| Poll catch-up, cursor, `catchUpFeedUnreadToTail` | [`useRerDutyFeedState.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts) |
-| Newer/older loads, trim read rules | [`useRerDutyDirectionalLoads.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyDirectionalLoads.ts) |
-| Window limit, badge formula, prefetch min | [`utils.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/utils.ts) |
-| Arrow catch-up | [`useRerDutyFeedInteractionActions.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedInteractionActions.ts) |
+| Concern                                          | File                                                                                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Zones, load arming, anchor restore               | [`useWindowedFeedScroll.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useWindowedFeedScroll.ts)                       |
+| Duty buffers (640 / 160 / 25)                    | [`FeedColumnContent.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/FeedColumnContent.tsx)                             |
+| Near-bottom badge options, reach-bottom / follow | [`index.tsx`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/index.tsx)                                                     |
+| Poll catch-up, cursor, `catchUpFeedUnreadToTail` | [`useRerDutyFeedState.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedState.ts)                           |
+| Newer/older loads, trim read rules               | [`useRerDutyDirectionalLoads.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyDirectionalLoads.ts)             |
+| Window limit, badge formula, prefetch min        | [`utils.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/utils.ts)                                                       |
+| Arrow catch-up                                   | [`useRerDutyFeedInteractionActions.ts`](../../wdintel-web/src/ts/react/routes/rer-duty-neo/useRerDutyFeedInteractionActions.ts) |
 
 ## Full doc
 

@@ -362,9 +362,9 @@ fn should_start_bgworkers_in_server(_mode: Mode, no_bgworker: bool) -> bool {
     !no_bgworker
 }
 
-fn spawn_group_stats_worker(bg_set: &mut JoinSet<()>, mode: Mode) {
+fn spawn_group_stats_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
     spawn_named_worker("worker_calculate_group_stats", bg_set, async move {
-        crate::stats::worker::group_stats::worker_calculate_group_stats(mode)
+        crate::stats::worker::group_stats::worker_calculate_group_stats(env)
             .await;
     });
 }
@@ -506,40 +506,53 @@ fn spawn_background_workers(
     });
     let token_1 = cancel_token.clone();
     let shutdown_handle_1 = shutdown_handle.clone();
+    let messenger_receive_env = env.clone();
     spawn_named_worker("messenger_receive_worker", bg_set, async move {
         crate::messenger::worker::receive_thread_nofail(
-            mode,
+            messenger_receive_env,
             token_1,
             shutdown_handle_1,
         )
         .await;
     });
     let token_2 = cancel_token.clone();
+    let message_queue_env = env.clone();
     spawn_named_worker("process_queue_nofail", bg_set, async move {
-        crate::messenger::worker::queue::process_queue_nofail(mode, token_2)
+        crate::messenger::worker::queue::process_queue_nofail(
+            message_queue_env,
+            token_2,
+        )
+        .await;
+    });
+    let operator_env = env.clone();
+    spawn_named_worker("operator_inbox_worker", bg_set, async move {
+        crate::operator::worker::run_operator_inbox_worker_nofail(operator_env)
             .await;
     });
-    spawn_named_worker("operator_inbox_worker", bg_set, async move {
-        crate::operator::worker::run_operator_inbox_worker_nofail(mode).await;
-    });
+    let rer_duty_env = env.clone();
     spawn_named_worker(
         "rer_duty_historical_interceptions_worker",
         bg_set,
         async move {
-            crate::system_settings::worker::run_rer_duty_historical_interceptions_worker_nofail(mode).await;
+            crate::system_settings::worker::run_rer_duty_historical_interceptions_worker_nofail(rer_duty_env).await;
         },
     );
+    let cleanup_db = env.dbx.clone();
     spawn_named_worker("echo_im_cleanup", bg_set, async move {
-        crate::messenger::worker::cleanup::run_cleanup_worker(mode).await;
+        crate::messenger::worker::cleanup::run_cleanup_worker(cleanup_db).await;
     });
+    let recent_network_env = env.clone();
     spawn_named_worker("recent_inbox_network_worker", bg_set, async move {
-        crate::sigint::network::etalon_calc::worker::run_recent_inbox_network_worker_nofail(mode).await;
+        crate::sigint::network::etalon_calc::worker::run_recent_inbox_network_worker_nofail(recent_network_env).await;
     });
+    let old_network_env = env.clone();
     spawn_named_worker("old_inbox_network_worker", bg_set, async move {
-        crate::sigint::network::etalon_calc::worker::run_old_inbox_network_worker_nofail(mode).await;
+        crate::sigint::network::etalon_calc::worker::run_old_inbox_network_worker_nofail(old_network_env).await;
     });
+    let unit_tag_db = env.dbx.clone();
     spawn_named_worker("unit_tag_queue_worker", bg_set, async move {
-        crate::sigint::unit_tag::run_unit_tag_queue_worker_nofail(mode).await;
+        crate::sigint::unit_tag::run_unit_tag_queue_worker_nofail(unit_tag_db)
+            .await;
     });
     spawn_named_worker("failed_inbox_unit_worker", bg_set, async move {
         crate::inbox::unit_resolution::failed_inbox_unit_worker_nofail(
@@ -547,15 +560,16 @@ fn spawn_background_workers(
         )
         .await;
     });
+    let daily_network_env = env.clone();
     spawn_named_worker(
         "inbox_network_daily_consistency_worker",
         bg_set,
         async move {
-            crate::sigint::network::etalon_calc::worker::run_inbox_network_daily_consistency_worker_nofail(mode).await;
+            crate::sigint::network::etalon_calc::worker::run_inbox_network_daily_consistency_worker_nofail(daily_network_env).await;
         },
     );
     if should_spawn_group_stats_worker {
-        spawn_group_stats_worker(bg_set, mode);
+        spawn_group_stats_worker(bg_set, env.clone());
     }
     let rq2 = env.rq.clone();
     let tag_keyword_regex_cache = env.tag_keyword_regex_cache.clone();
@@ -898,6 +912,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::reprocess_media_ocr)
             .service(crate::ocr::admin_ocr_preview)
             .service(crate::ocr::admin_ocr_media)
+            .service(crate::ocr::gateway::infer)
             .service(crate::media_summary::admin_ocr_media_summary)
             .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)
@@ -997,6 +1012,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::organism::goi::integrations::download_current_user_goi_palettes)
             .service(crate::organism::goi::integrations::upload_current_user_goi_categories)
             .service(crate::organism::goi::integrations::list_current_user_goi_associations)
+            .service(crate::organism::goi::integrations::launch_current_user_goi_associations_report)
             .service(crate::organism::goi::integrations::list_current_user_goi_knowledge)
             .service(crate::organism::my_scope)
             .service(crate::organism::keyword_sets::list_keyword_sets)
@@ -1044,6 +1060,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             )
             .service(crate::sigint::unit::orbit::unit_orbit_children)
             .service(crate::sigint::unit::orbit::list_unit_duplicates)
+            .service(crate::sigint::unit::orbit::list_inconsistent_units)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)
             .service(
                 crate::sigint::unit::orbit::create_unit_duplicate_candidates,

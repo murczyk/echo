@@ -126,6 +126,11 @@ export function AiEngineDetails({
                 <DetailValue label="Модель" value={aiEngine.modelName} />
                 <DetailValue label="Base URL" value={aiEngine.url} />
                 <DetailValue label="Стан" value={aiEngine.enabled ? 'Увімкнено' : 'Вимкнено'} />
+                <DetailValue
+                  label="Обробка позивних"
+                  value={aiEngine.callsignEnabled ? 'Увімкнено' : 'Вимкнено'}
+                />
+                <DetailValue label="OCR" value={aiEngine.ocrEnabled ? 'Увімкнено' : 'Вимкнено'} />
                 <DetailValue label="Токен" value={aiEngine.hasToken ? 'Задано' : 'Не задано'} />
                 <DetailValue label="Створено" value={formatDate(aiEngine.createdAt)} />
                 <DetailValue label="Оновлено" value={formatDate(aiEngine.updatedAt)} />

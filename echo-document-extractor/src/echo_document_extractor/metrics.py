@@ -41,7 +41,7 @@ class ServiceMetrics:
         )
         self.worker_active = Gauge(
             "echo_document_extractor_worker_active",
-            "Whether the worker owns an active job",
+            "Number of active jobs owned by the worker",
             registry=self.registry,
         )
         self.jobs = Counter(
@@ -64,7 +64,7 @@ class ServiceMetrics:
         )
         self.page_progress = Gauge(
             "echo_document_extractor_page_progress_ratio",
-            "Progress ratio for the single active job",
+            "Average progress ratio across active jobs",
             registry=self.registry,
         )
         self.paddle_duration = Histogram(

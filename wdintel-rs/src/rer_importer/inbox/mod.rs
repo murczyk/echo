@@ -1184,9 +1184,10 @@ async fn query_inbox_digest_with_analytics(
     login: uuid::Uuid,
     env: actix_web::web::Data<Env>,
     req: InboxMessagesReq,
+    duty_uses_source_postgres: bool,
     postgres_query: String,
 ) -> Result<InboxDigest, AppError> {
-    if duty_inbox_request_uses_source_postgres(&env.dbx, &req).await {
+    if duty_uses_source_postgres {
         return query_inbox_digest(env.dbx.clone(), postgres_query).await;
     }
     if rer_duty_fresh_tail_request_supported(&req) {
@@ -1352,15 +1353,29 @@ async fn inbox_messages_count(
             first_element_ts: None,
         }));
     }
-    let q = build_inbox_digest_query(&login, &env, &req)
-        .await
-        .context(h!())?;
+    let duty_uses_source_postgres =
+        duty_inbox_request_uses_source_postgres(&env.dbx, &req).await;
+    let q = if duty_uses_source_postgres {
+        build_correlated_inbox_digest_query(&login, &env, &req)
+            .await
+            .context(h!())?
+    } else {
+        build_inbox_digest_query(&login, &env, &req)
+            .await
+            .context(h!())?
+    };
     let singleflight_key = format!("{:p}\n{q}", env.get_ref());
     let query_env = env.clone();
     let query_req = req.clone();
     let (quantity, first_element_ts) =
         query_inbox_digest_singleflight(singleflight_key, move || {
-            query_inbox_digest_with_analytics(login, query_env, query_req, q)
+            query_inbox_digest_with_analytics(
+                login,
+                query_env,
+                query_req,
+                duty_uses_source_postgres,
+                q,
+            )
         })
         .await
         .context(h!())?;

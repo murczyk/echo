@@ -2,25 +2,26 @@ use crate::config::*;
 use crate::entities::network_invalidation_task;
 use crate::entities::sea_orm_active_enums::NetworkInvalidationWorkerStatus;
 use crate::entities::*;
+use crate::h;
 use crate::types::{debug, error, info, warn};
-use crate::types::{Mode, ShortContext};
+use crate::types::{Env, ShortContext};
 use crate::utils::worker_watch;
-use crate::{h, new_pg_pool_from_mode, new_redis_for_db};
 use chrono::{NaiveDate, NaiveDateTime, Timelike, Utc};
 use echo_migration::Expr;
 use sea_orm::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 // Worker that keeps recent inbox items aligned with network definitions by
 // picking pending invalidation tasks, normalizing them (split/merge), and
 // executing them in a stable order.
 
-// No-fail worker loop: keep reconnecting, then run tasks every hour.
-pub async fn run_recent_inbox_network_worker_nofail(mode: Mode) {
+// No-fail worker loop: run tasks every hour and retry errors sooner.
+pub async fn run_recent_inbox_network_worker_nofail(env: Arc<Env>) {
     loop {
         let _loop_guard =
             worker_watch::loop_guard("run_recent_inbox_network_worker_nofail");
-        let sleep_secs = match run_recent_inbox_network_worker_inner(mode).await
+        let sleep_secs = match run_recent_inbox_network_worker_inner(&env).await
         {
             Ok(()) => NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
             Err(e) => {
@@ -37,9 +38,9 @@ pub async fn run_recent_inbox_network_worker_nofail(mode: Mode) {
 }
 
 async fn run_recent_inbox_network_worker_inner(
-    mode: Mode,
+    env: &Env,
 ) -> anyhow::Result<()> {
-    let config = read_config(mode).c(h!())?;
+    let config = &env.config;
     if !config
         .feature_calculate_sigint_inbox_item_networks
         .unwrap_or(true)
@@ -47,14 +48,17 @@ async fn run_recent_inbox_network_worker_inner(
         info!("run_recent_inbox_network_worker_nofail disabled, sleeping...");
         return Ok(());
     }
-    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     info!("run_inbox_network_worker_once started");
-    let result = run_inbox_network_worker_once(&db, false, &config).await;
+    let stats_redis =
+        crate::stats::redis::GroupStatsRedis::new(env.stats_redis.clone());
+    let result =
+        run_inbox_network_worker_once(&env.dbx, false, config, &stats_redis)
+            .await;
     if result.is_ok() {
         info!("run_inbox_network_worker_once completed");
     }
     update_worker_status(
-        &db,
+        &env.dbx,
         NetworkInvalidationWorkerStatus::Sleep,
         NETWORK_INVALIDATION_TASK_TAG_RECENT,
     )
@@ -101,11 +105,11 @@ async fn ensure_worker(
 }
 
 // Old worker: only handles tasks marked as is_for_old_worker and workers at worker hours (in config.rs).
-pub async fn run_old_inbox_network_worker_nofail(mode: Mode) {
+pub async fn run_old_inbox_network_worker_nofail(env: Arc<Env>) {
     loop {
         let _loop_guard =
             worker_watch::loop_guard("run_old_inbox_network_worker_nofail");
-        let sleep_secs = match run_old_inbox_network_worker_inner(mode).await {
+        let sleep_secs = match run_old_inbox_network_worker_inner(&env).await {
             Ok(()) => NETWORK_INBOX_WORKER_DEFAULT_SLEEP,
             Err(e) => {
                 error!(
@@ -120,8 +124,8 @@ pub async fn run_old_inbox_network_worker_nofail(mode: Mode) {
     }
 }
 
-async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
-    let config = read_config(mode).c(h!())?;
+async fn run_old_inbox_network_worker_inner(env: &Env) -> anyhow::Result<()> {
+    let config = &env.config;
     if !config
         .feature_calculate_sigint_inbox_item_networks
         .unwrap_or(true)
@@ -133,15 +137,18 @@ async fn run_old_inbox_network_worker_inner(mode: Mode) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
-    wait_until_worker_shift_start(&config).await;
+    wait_until_worker_shift_start(config).await;
     info!("run_old_inbox_network_worker_once started");
-    let result = run_inbox_network_worker_once(&db, true, &config).await;
+    let stats_redis =
+        crate::stats::redis::GroupStatsRedis::new(env.stats_redis.clone());
+    let result =
+        run_inbox_network_worker_once(&env.dbx, true, config, &stats_redis)
+            .await;
     if result.is_ok() {
         info!("run_old_inbox_network_worker_once completed");
     }
     update_worker_status(
-        &db,
+        &env.dbx,
         NetworkInvalidationWorkerStatus::Sleep,
         NETWORK_INVALIDATION_TASK_TAG_OLD,
     )
@@ -177,13 +184,13 @@ async fn ensure_network_invalidation_queue_within_limit(
 }
 
 // Daily checker: compare calculated networks to stored ones for today's messages.
-pub async fn run_inbox_network_daily_consistency_worker_nofail(mode: Mode) {
+pub async fn run_inbox_network_daily_consistency_worker_nofail(env: Arc<Env>) {
     loop {
         let _loop_guard = worker_watch::loop_guard(
             "run_inbox_network_daily_consistency_worker_nofail",
         );
         if let Err(e) =
-            run_inbox_network_daily_consistency_worker_inner(mode).await
+            run_inbox_network_daily_consistency_worker_inner(&env).await
         {
             error!(
                 "run_inbox_network_daily_consistency_worker_inner failed: {:#?}",
@@ -198,9 +205,9 @@ pub async fn run_inbox_network_daily_consistency_worker_nofail(mode: Mode) {
 }
 
 async fn run_inbox_network_daily_consistency_worker_inner(
-    mode: Mode,
+    env: &Env,
 ) -> anyhow::Result<()> {
-    let config = read_config(mode).c(h!())?;
+    let config = &env.config;
     if !config
         .feature_calculate_sigint_inbox_item_networks
         .unwrap_or(true)
@@ -212,11 +219,12 @@ async fn run_inbox_network_daily_consistency_worker_inner(
         return Ok(());
     }
 
-    let db = new_pg_pool_from_mode(mode).await.c(h!())?;
     info!("run_inbox_network_daily_consistency_worker_once started");
     if let Err(e) =
-        super::consistency::run_inbox_network_daily_consistency_worker_once(&db)
-            .await
+        super::consistency::run_inbox_network_daily_consistency_worker_once(
+            &env.dbx,
+        )
+        .await
     {
         error!(
             "run_inbox_network_daily_consistency_worker_once failed: {:#?}",
@@ -233,14 +241,11 @@ async fn run_inbox_network_worker_once(
     db: &DatabaseConnection,
     is_for_old_worker: bool,
     config: &Config,
+    stats_redis: &crate::stats::redis::GroupStatsRedis,
 ) -> anyhow::Result<()> {
     ensure_network_invalidation_queue_within_limit(db)
         .await
         .c(h!())?;
-    let stats_redis = new_redis_for_db(config, config.group_stats_redis_db())
-        .await
-        .c(h!())?;
-    let stats_redis = crate::stats::redis::GroupStatsRedis::new(stats_redis);
     let (tag, cutoff_days) = if is_for_old_worker {
         (
             NETWORK_INVALIDATION_TASK_TAG_OLD,
@@ -293,7 +298,7 @@ async fn run_inbox_network_worker_once(
                 started_tasks,
                 stats_invalidation,
                 db,
-                &stats_redis,
+                stats_redis,
             )
             .await
             .c(h!())?;
@@ -356,7 +361,7 @@ async fn run_inbox_network_worker_once(
         started_tasks,
         stats_invalidation,
         db,
-        &stats_redis,
+        stats_redis,
     )
     .await
     .c(h!())

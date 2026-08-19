@@ -940,8 +940,9 @@ fn goi_association_export_message(
 fn goi_association_original_message_for_export(
     row: &serde_json::Value,
 ) -> Option<String> {
-    crate::organism::goi::message_uid::association_original_message(row)
-        .and_then(|body| goi_association_row_text(row, Some(body)))
+    crate::organism::goi::message_uid::association_original_message_unescaped(
+        row,
+    )
 }
 
 fn goi_association_row_text(

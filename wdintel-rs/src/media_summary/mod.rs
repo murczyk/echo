@@ -2,8 +2,9 @@ pub mod types;
 pub mod worker;
 
 use crate::config::{
-    MEDIA_SUMMARY_SETTINGS_ID, MEDIA_SUMMARY_SOURCE_KIND_MAX_CHARS,
-    MEDIA_SUMMARY_SOURCE_MAX_CHARS, MEDIA_SUMMARY_TRUNCATION_MARKER,
+    MEDIA_SUMMARY_PUBLIC_ERROR, MEDIA_SUMMARY_SETTINGS_ID,
+    MEDIA_SUMMARY_SOURCE_KIND_MAX_CHARS, MEDIA_SUMMARY_SOURCE_MAX_CHARS,
+    MEDIA_SUMMARY_TRUNCATION_MARKER,
 };
 use crate::entities::{
     ai_engine, media_summary as media_summary_entity, media_summary_settings,
@@ -28,6 +29,12 @@ use sea_orm::{
 };
 use std::collections::HashMap;
 use uuid::Uuid;
+
+#[derive(Clone, Copy)]
+enum ErrorVisibility {
+    Public,
+    Admin,
+}
 
 pub async fn enqueue<C>(
     dbx: &C,
@@ -141,6 +148,21 @@ pub async fn load_statuses(
     dbx: &DatabaseConnection,
     media: &[signal_message_media::Model],
 ) -> anyhow::Result<HashMap<Uuid, MediaSummaryStatus>> {
+    load_statuses_with_visibility(dbx, media, ErrorVisibility::Public).await
+}
+
+pub async fn load_admin_statuses(
+    dbx: &DatabaseConnection,
+    media: &[signal_message_media::Model],
+) -> anyhow::Result<HashMap<Uuid, MediaSummaryStatus>> {
+    load_statuses_with_visibility(dbx, media, ErrorVisibility::Admin).await
+}
+
+async fn load_statuses_with_visibility(
+    dbx: &DatabaseConnection,
+    media: &[signal_message_media::Model],
+    error_visibility: ErrorVisibility,
+) -> anyhow::Result<HashMap<Uuid, MediaSummaryStatus>> {
     if media.is_empty() {
         return Ok(HashMap::new());
     }
@@ -151,7 +173,7 @@ pub async fn load_statuses(
         .await
         .c(h!())?
         .into_iter()
-        .map(|summary| (summary.media_id, status(&summary)))
+        .map(|summary| (summary.media_id, status(&summary, error_visibility)))
         .collect())
 }
 
@@ -217,7 +239,7 @@ pub async fn messenger_media_summary(
         .c(h!())?
         .ok_or(crate::error::AppError::NotFound)
         .c(h!())?;
-    Ok(Json(result(summary).c(h!())?))
+    Ok(Json(result(summary, ErrorVisibility::Public).c(h!())?))
 }
 
 #[get("/api/admin/ocr/{media_id}/summary")]
@@ -233,7 +255,7 @@ pub async fn admin_ocr_media_summary(
         .c(h!())?
         .ok_or(crate::error::AppError::NotFound)
         .c(h!())?;
-    Ok(Json(result(summary).c(h!())?))
+    Ok(Json(result(summary, ErrorVisibility::Admin).c(h!())?))
 }
 
 #[get("/api/messenger/media/{media_id}/summary/coordinates")]
@@ -285,10 +307,13 @@ pub async fn load_settings(
     })
 }
 
-fn status(summary: &media_summary_entity::Model) -> MediaSummaryStatus {
+fn status(
+    summary: &media_summary_entity::Model,
+    error_visibility: ErrorVisibility,
+) -> MediaSummaryStatus {
     MediaSummaryStatus {
         state: summary.state.clone(),
-        last_error: summary.last_error.clone(),
+        last_error: visible_last_error(&summary.last_error, error_visibility),
         has_coordinates: summary.state == "completed"
             && summary
                 .coordinates
@@ -299,18 +324,31 @@ fn status(summary: &media_summary_entity::Model) -> MediaSummaryStatus {
 
 fn result(
     summary: media_summary_entity::Model,
+    error_visibility: ErrorVisibility,
 ) -> anyhow::Result<MediaSummaryResult> {
     let coordinates = decode_coordinates(summary.coordinates).c(h!())?;
     Ok(MediaSummaryResult {
         state: summary.state,
         summary: summary.summary,
         coordinates,
-        last_error: summary.last_error,
+        last_error: visible_last_error(&summary.last_error, error_visibility),
         source_kind: summary.source_kind,
         source_char_count: summary.source_char_count,
         ai_engine_name: summary.ai_engine_name,
         model_name: summary.model_name,
     })
+}
+
+fn visible_last_error(
+    last_error: &Option<String>,
+    error_visibility: ErrorVisibility,
+) -> Option<String> {
+    match error_visibility {
+        ErrorVisibility::Public => last_error
+            .as_ref()
+            .map(|_| MEDIA_SUMMARY_PUBLIC_ERROR.to_string()),
+        ErrorVisibility::Admin => last_error.clone(),
+    }
 }
 
 fn decode_coordinates(
@@ -349,11 +387,11 @@ fn bound_source_text(text: &str) -> String {
 mod tests {
     use super::{
         bound_source_text, decode_coordinates, plain_text_from_sanitized_html,
-        result, status,
+        result, status, visible_last_error, ErrorVisibility,
     };
     use crate::config::{
-        MEDIA_SUMMARY_SETTINGS_ID, MEDIA_SUMMARY_SOURCE_MAX_CHARS,
-        MEDIA_SUMMARY_TRUNCATION_MARKER,
+        MEDIA_SUMMARY_PUBLIC_ERROR, MEDIA_SUMMARY_SETTINGS_ID,
+        MEDIA_SUMMARY_SOURCE_MAX_CHARS, MEDIA_SUMMARY_TRUNCATION_MARKER,
     };
     use crate::entities::{
         ai_engine, media_summary as media_summary_entity,
@@ -380,7 +418,7 @@ mod tests {
     #[test]
     fn sanitized_html_becomes_normalized_plain_text() {
         let text = plain_text_from_sanitized_html(
-            "<article><p> Перший   рядок </p><script>bad()</script><p>Другий</p></article>",
+            "<article><section><p> Перший   рядок </p><script>bad()</script><p>Другий</p></section></article>",
         )
         .unwrap();
         assert_eq!(text, "Перший рядок\nДругий");
@@ -409,6 +447,20 @@ mod tests {
         assert_eq!(coordinates[0].planned_means, None);
     }
 
+    #[test]
+    fn internal_errors_are_visible_only_to_admins() {
+        let error = Some(
+            "at wdintel-rs/src/media_summary/worker.rs line 166 column 55"
+                .to_string(),
+        );
+        assert_eq!(
+            visible_last_error(&error, ErrorVisibility::Public).as_deref(),
+            Some(MEDIA_SUMMARY_PUBLIC_ERROR)
+        );
+        assert_eq!(visible_last_error(&error, ErrorVisibility::Admin), error);
+        assert_eq!(visible_last_error(&None, ErrorVisibility::Public), None);
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn enqueue_is_generic_bounded_and_snapshots_the_selected_engine() {
@@ -423,6 +475,9 @@ mod tests {
             created_at: Set(now),
             updated_at: Set(now),
             enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(false),
+            ocr_request_profile: Set("openai_vision".to_string()),
         }
         .insert(&env.dbx)
         .await
@@ -436,6 +491,9 @@ mod tests {
             created_at: Set(now),
             updated_at: Set(now),
             enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(false),
+            ocr_request_profile: Set("openai_vision".to_string()),
         }
         .insert(&env.dbx)
         .await
@@ -513,7 +571,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(summary.ai_engine_id, Some(first_engine.id));
-        assert!(!status(&summary).has_coordinates);
+        assert!(!status(&summary, ErrorVisibility::Public).has_coordinates);
 
         let mut summary = summary.into_active_model();
         summary.state = Set("completed".to_string());
@@ -527,8 +585,8 @@ mod tests {
             "value": "X=5291456, Y=6662340"
         }]));
         let summary = summary.update(&env.dbx).await.unwrap();
-        assert!(status(&summary).has_coordinates);
-        let summary = result(summary).unwrap();
+        assert!(status(&summary, ErrorVisibility::Public).has_coordinates);
+        let summary = result(summary, ErrorVisibility::Public).unwrap();
         assert_eq!(summary.coordinates.len(), 1);
         assert_eq!(summary.coordinates[0].title, "Дамба");
         assert!(!super::enqueue(&env.dbx, media.id, "ocr_text", "  \n ")

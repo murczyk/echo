@@ -13,6 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import type { ProfilerOnRenderCallback } from 'react';
+import { flushSync } from 'react-dom';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -41,6 +42,7 @@ import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
 import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 import { useFeedColumnFab } from './feedColumnFab';
 
@@ -65,8 +67,13 @@ function filterOwnMessageComments(
   return filtered.length === 0 ? EMPTY_MESSAGE_COMMENTS : filtered;
 }
 
+export type FeedColumnContentScrollOptions = {
+  /** Wake idle offload before scrolling (scroll FAB / arrow). Follow/settle omit this. */
+  wakeIdleOffload?: boolean;
+};
+
 export type FeedColumnContentHandle = {
-  scrollToBottom: (behavior?: ScrollBehavior) => void;
+  scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => void;
 };
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
@@ -89,6 +96,7 @@ type DutyMessageCardItemProps = {
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
+  collapseMediaPreviews?: boolean;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -126,6 +134,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   feedId,
   feedCount,
   tagsLayout,
+  collapseMediaPreviews = false,
   botTagAction,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -176,6 +185,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       analysisDestination="neo"
       feedCount={feedCount}
       tagsLayout={tagsLayout}
+      collapseMediaPreviews={collapseMediaPreviews}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
       onMarkBotTagWrong={onMarkBotTagWrong}
@@ -260,6 +270,7 @@ type DutyMessageListProps = {
   feedId: string;
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
+  collapseMediaPreviews?: boolean;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
@@ -291,6 +302,9 @@ type DutyMessageListProps = {
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   listRef: RefObject<HTMLDivElement>;
+  /** When non-null, only these ids mount MessageCards; others use height placeholders. */
+  mountedItemIds: Set<number> | null;
+  placeholderHeightPx: (id: number) => number;
 };
 
 const DutyMessageList = memo(
@@ -299,6 +313,7 @@ const DutyMessageList = memo(
     feedId,
     feedCount,
     tagsLayout,
+    collapseMediaPreviews = false,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
@@ -330,54 +345,69 @@ const DutyMessageList = memo(
     onAddPointHighlightBlacklist,
     setItemRef,
     listRef,
+    mountedItemIds,
+    placeholderHeightPx,
   }: DutyMessageListProps) {
     return (
       <div
         ref={listRef}
         data-duty-feed-list="true"
+        data-duty-idle-offload={mountedItemIds != null ? 'true' : undefined}
         className="m-0 list-none rer-duty pt-2"
         style={{ boxSizing: 'border-box' }}
       >
-        {items.map(([id, msg]) => (
-          <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
-            <DutyMessageCardItem
-              id={id}
-              msg={msg}
-              feedId={feedId}
-              feedCount={feedCount}
-              tagsLayout={tagsLayout}
-              botTagAction={botTagAction}
-              onCancelBotTagAction={onCancelBotTagAction}
-              onMarkBotTagWrong={onMarkBotTagWrong}
-              referenceTimeMs={referenceTimeMs}
-              authUserName={authUserName}
-              tagContributionsOrganismId={tagContributionsOrganismId}
-              groupInfos={groupInfos}
-              profiles={profiles}
-              copiedFeedbackId={copiedFeedbackId}
-              networkDisplayMap={networkDisplayMap}
-              networkMap={networkMap}
-              unitsMap={unitsMap}
-              callsignInfoMap={callsignInfoMap}
-              networks={networks}
-              featureStrictNetworks={featureStrictNetworks}
-              tagsMap={tagsMap}
-              tagsOrder={tagsOrder}
-              filterState={filterState}
-              onMessageBookmark={onMessageBookmark}
-              onMessageImportant={onMessageImportant}
-              onMessageCopy={onMessageCopy}
-              onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
-              onMessageCreateReport={onMessageCreateReport}
-              onMessageEditReport={onMessageEditReport}
-              onMessageExcludeEntity={onMessageExcludeEntity}
-              onMessageToggleTag={onMessageToggleTag}
-              onMessageEdit={onMessageEdit}
-              onOpenPointsOnMap={onOpenPointsOnMap}
-              onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
-            />
-          </div>
-        ))}
+        {items.map(([id, msg]) => {
+          const mountCard = mountedItemIds == null || mountedItemIds.has(id);
+          return (
+            <div key={id} ref={setItemRef(id)} data-duty-message-id={id}>
+              {mountCard ? (
+                <DutyMessageCardItem
+                  id={id}
+                  msg={msg}
+                  feedId={feedId}
+                  feedCount={feedCount}
+                  tagsLayout={tagsLayout}
+                  collapseMediaPreviews={collapseMediaPreviews}
+                  botTagAction={botTagAction}
+                  onCancelBotTagAction={onCancelBotTagAction}
+                  onMarkBotTagWrong={onMarkBotTagWrong}
+                  referenceTimeMs={referenceTimeMs}
+                  authUserName={authUserName}
+                  tagContributionsOrganismId={tagContributionsOrganismId}
+                  groupInfos={groupInfos}
+                  profiles={profiles}
+                  copiedFeedbackId={copiedFeedbackId}
+                  networkDisplayMap={networkDisplayMap}
+                  networkMap={networkMap}
+                  unitsMap={unitsMap}
+                  callsignInfoMap={callsignInfoMap}
+                  networks={networks}
+                  featureStrictNetworks={featureStrictNetworks}
+                  tagsMap={tagsMap}
+                  tagsOrder={tagsOrder}
+                  filterState={filterState}
+                  onMessageBookmark={onMessageBookmark}
+                  onMessageImportant={onMessageImportant}
+                  onMessageCopy={onMessageCopy}
+                  onMessageAddFrequencyToFilter={onMessageAddFrequencyToFilter}
+                  onMessageCreateReport={onMessageCreateReport}
+                  onMessageEditReport={onMessageEditReport}
+                  onMessageExcludeEntity={onMessageExcludeEntity}
+                  onMessageToggleTag={onMessageToggleTag}
+                  onMessageEdit={onMessageEdit}
+                  onOpenPointsOnMap={onOpenPointsOnMap}
+                  onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
+                />
+              ) : (
+                <div
+                  aria-hidden
+                  data-duty-message-placeholder="true"
+                  style={{ height: placeholderHeightPx(id) }}
+                />
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   },
@@ -386,6 +416,7 @@ const DutyMessageList = memo(
     prev.feedId === next.feedId &&
     prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
+    prev.collapseMediaPreviews === next.collapseMediaPreviews &&
     prev.botTagAction === next.botTagAction &&
     prev.onCancelBotTagAction === next.onCancelBotTagAction &&
     prev.onMarkBotTagWrong === next.onMarkBotTagWrong &&
@@ -416,7 +447,9 @@ const DutyMessageList = memo(
     prev.onOpenPointsOnMap === next.onOpenPointsOnMap &&
     prev.onAddPointHighlightBlacklist === next.onAddPointHighlightBlacklist &&
     prev.setItemRef === next.setItemRef &&
-    prev.listRef === next.listRef,
+    prev.listRef === next.listRef &&
+    prev.mountedItemIds === next.mountedItemIds &&
+    prev.placeholderHeightPx === next.placeholderHeightPx,
 );
 
 type FeedColumnScrollFabProps = {
@@ -563,6 +596,7 @@ export const FeedColumnContent = memo(
       physicallyAtBottom = true,
       isWatchMode = false,
       unreadPrefetchNeeded = true,
+      pendingNewerFlushNeeded = false,
       workspaceFabAvoidance = 'none',
     } = view;
     const {
@@ -577,6 +611,7 @@ export const FeedColumnContent = memo(
       profiles,
       featureStrictNetworks,
       tagsLayout,
+      collapseMediaPreviews = false,
       tagsMap,
       tagsOrder,
       botTagAction,
@@ -588,6 +623,7 @@ export const FeedColumnContent = memo(
     const {
       onLoadOlder,
       onLoadNewer,
+      onFlushPendingNewer,
       onMessageBookmark,
       onMessageImportant,
       onMessageAddFrequencyToFilter,
@@ -625,6 +661,7 @@ export const FeedColumnContent = memo(
       hasReachedStart: feed.hasReachedStart,
       onLoadOlder,
       onLoadNewer,
+      onFlushPendingNewer,
       onScrollToTop,
       onReachedBottom,
       onLeftBottom,
@@ -640,6 +677,13 @@ export const FeedColumnContent = memo(
       atBottomThresholdPx: DUTY_FEED_AT_BOTTOM_THRESHOLD_PX,
       resetKey: feed.referenceTimeMs ?? feed.id,
       unreadPrefetchNeeded,
+      pendingNewerFlushNeeded,
+    });
+    const idleOffload = useFeedIdleViewportOffload({
+      // Multi-feed only: single-column Duty already fits; idle offload is for sibling columns.
+      enabled: scrollTrackingEnabled && (feedCount ?? 1) >= 2,
+      scrollerRef: scroll.scrollerRef,
+      itemIds,
     });
 
     const stableOnCancelBotTagAction = useStableCallback(onCancelBotTagAction);
@@ -660,9 +704,21 @@ export const FeedColumnContent = memo(
       workspaceFabAvoidance,
     });
 
-    useImperativeHandle(ref, () => ({ scrollToBottom: scroll.scrollToBottom }), [
-      scroll.scrollToBottom,
-    ]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => {
+          if (options?.wakeIdleOffload === true) {
+            // Remount cards before moving the viewport or the FAB lands on placeholders.
+            flushSync(() => {
+              idleOffload.wakeFromOffload();
+            });
+          }
+          scroll.scrollToBottom(behavior);
+        },
+      }),
+      [idleOffload.wakeFromOffload, scroll.scrollToBottom],
+    );
 
     if (feed.loading && feed.items.length === 0) {
       return (
@@ -683,6 +739,7 @@ export const FeedColumnContent = memo(
           feedId={feed.id}
           feedCount={feedCount}
           tagsLayout={tagsLayout}
+          collapseMediaPreviews={collapseMediaPreviews}
           botTagAction={botTagAction}
           onCancelBotTagAction={stableOnCancelBotTagAction}
           onMarkBotTagWrong={stableOnMarkBotTagWrong}
@@ -716,6 +773,8 @@ export const FeedColumnContent = memo(
           }
           setItemRef={scroll.setItemRef}
           listRef={scroll.listRef}
+          mountedItemIds={idleOffload.mountedItemIds}
+          placeholderHeightPx={idleOffload.placeholderHeightPx}
         />
       );
     const profiledMessageList =
@@ -809,6 +868,7 @@ export const FeedColumnContent = memo(
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||
+      prevView.pendingNewerFlushNeeded !== nextView.pendingNewerFlushNeeded ||
       prevView.workspaceFabAvoidance !== nextView.workspaceFabAvoidance
     ) {
       return false;
@@ -827,6 +887,7 @@ export const FeedColumnContent = memo(
       prevCard.profiles !== nextCard.profiles ||
       prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
       prevCard.tagsLayout !== nextCard.tagsLayout ||
+      prevCard.collapseMediaPreviews !== nextCard.collapseMediaPreviews ||
       prevCard.tagsMap !== nextCard.tagsMap ||
       prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction ||
@@ -842,6 +903,7 @@ export const FeedColumnContent = memo(
     if (
       prevActions.onLoadOlder !== nextActions.onLoadOlder ||
       prevActions.onLoadNewer !== nextActions.onLoadNewer ||
+      prevActions.onFlushPendingNewer !== nextActions.onFlushPendingNewer ||
       prevActions.onRemoveColumn !== nextActions.onRemoveColumn ||
       prevActions.onMessageBookmark !== nextActions.onMessageBookmark ||
       prevActions.onMessageImportant !== nextActions.onMessageImportant ||

@@ -3,6 +3,7 @@ import type {
   OcrPageRsp,
   OcrMediaSummary,
   OcrSettingsItem,
+  ReprocessMediaOcrReq,
   SaveOcrSettingsReq,
 } from '../../../../Bindings';
 import { getJson, postJson, type RequestOptions } from './client';
@@ -26,6 +27,7 @@ export function getMediaOcrStatus(
   );
 }
 
-export function reprocessMediaOcr(mediaId: string): Promise<OcrMediaSummary> {
-  return postJson<OcrMediaSummary>(`/api/admin/ocr/${encodeURIComponent(mediaId)}/reprocess`);
+export function reprocessMediaOcr(mediaId: string, aiEngineId?: string): Promise<OcrMediaSummary> {
+  const req: ReprocessMediaOcrReq = { aiEngineId: aiEngineId ?? null };
+  return postJson<OcrMediaSummary>(`/api/admin/ocr/${encodeURIComponent(mediaId)}/reprocess`, req);
 }

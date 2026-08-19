@@ -42,14 +42,22 @@ requires `Authorization: Bearer …`; submissions also require an
 - `GET /v1/status`: queue, worker, storage, Paddle, and exact router-model
   status.
 
+Manifest version one remains the compatibility path and uses the statically
+configured NuExtract3 plus OCR-Gemma adapters. Version two may carry an opaque
+Echo-issued OCR gateway grant and engine metadata; the extractor then uses
+NuExtract3 plus the gateway-selected semantic engine. It never receives or
+stores an engine credential. Paddle remains local supporting evidence in both
+paths.
+
 Queue states are `queued`, `running`, `retry_wait`, `completed`, `failed`, and
 `cancelled`; extraction quality remains independently `accepted`, `degraded`,
-or `failed`. SQLite uses WAL, a single worker owns leases with heartbeats, and
-abandoned jobs are recovered after restart. Infrastructure failures receive
-three backoff retries. Terminal data is retained for seven days.
+or `failed`. SQLite uses WAL, one worker owns up to two leases with heartbeats,
+and abandoned jobs are recovered after restart. Paddle calls remain serialized
+inside the worker. Infrastructure failures receive three backoff retries.
+Terminal data is retained for seven days.
 
 The service accepts at most 250 MiB and 200 pages/files per job, holds at most
-25 active queue records, and runs one job at a time. Admission stops at 70 GiB
+25 active queue records, and runs up to two jobs at a time. Admission stops at 70 GiB
 of spool data or below 20 GiB free; unexpired jobs are never evicted to admit a
 new request. Rasterization and extraction are page-serial, duplicate rasters
 are processed once, and large artifacts spill to private disk before atomic

@@ -9,7 +9,11 @@ from PIL import Image, ImageDraw
 from typer.testing import CliRunner
 
 from echo_document_extractor.adapters import markdown_to_html
-from echo_document_extractor.canonical import canonical_round_trip_preserves, parse_canonical_html
+from echo_document_extractor.canonical import (
+    blocks_from_html,
+    canonical_round_trip_preserves,
+    parse_canonical_html,
+)
 from echo_document_extractor.cli import app
 from echo_document_extractor.config import EndpointConfig, ExtractionConfig
 from echo_document_extractor.ingest import _pdf_text_evidence, crop, iter_ingest
@@ -23,7 +27,7 @@ from echo_document_extractor.models import (
     Status,
     TextBlock,
 )
-from echo_document_extractor.pipeline import Extractor
+from echo_document_extractor.pipeline import Extractor, _attach_visual_assets
 from echo_document_extractor.render import render_html, render_markdown
 from echo_document_extractor.sanitize import has_fatal_sanitization_reason, sanitize_candidate
 from echo_document_extractor.storage import count_pages
@@ -259,6 +263,76 @@ def test_markdown_and_canonical_round_trip_preserve_structure() -> None:
     assert "<h1>Title</h1>" in converted
     assert "<ol>" in converted
     assert "<table>" in converted
+
+
+def test_model_figure_description_is_combined_with_source_visual() -> None:
+    description = "An aerial photograph of an arid landscape."
+    converted = markdown_to_html(
+        f'<figure data-type="image" data-id="1"><img src="1.png" alt="{description}"/></figure>'
+    )
+    sanitized, reasons = sanitize_candidate(converted)
+
+    assert not has_fatal_sanitization_reason(reasons)
+    assert sanitized.count("<figure") == 1
+    assert '<figure data-image="present">' in sanitized
+    assert f"<figcaption>{description}</figcaption>" in sanitized
+    assert "<img" not in sanitized
+    assert "1.png" not in sanitized
+
+    blocks = blocks_from_html(sanitized, "p1", (0, 0, 100, 100), "decision-p1")
+    blocks, assets, decisions, _ = _attach_visual_assets(
+        Image.new("RGB", (100, 100), "white"),
+        "p1",
+        blocks,
+        [(0, 0, 100, 100)],
+    )
+    assert len(blocks) == 1
+    assert isinstance(blocks[0], TextBlock)
+    assert blocks[0].kind == "figure"
+    assert blocks[0].paragraphs == [description]
+    assert blocks[0].asset is not None
+    assert len(assets) == 1
+    assert decisions == []
+
+    digest = "a" * 64
+    document = Document(
+        id="doc-figure-description",
+        pages=[
+            Page(
+                id="p1",
+                source_name="source.png",
+                source_sha256=digest,
+                raster_sha256=digest,
+                instance=0,
+                width=100,
+                height=100,
+                blocks=blocks,
+            )
+        ],
+    )
+    result = ExtractionResult(
+        document=document,
+        status=Status.ACCEPTED,
+        canonical_html="",
+        markdown="",
+        quality=QualityReport(status=Status.ACCEPTED, page_count=1),
+        manifest=PackageManifest(
+            document_id=document.id,
+            status=Status.ACCEPTED,
+            inputs=["source.png"],
+            hardware_profile="split_gpu",
+        ),
+        assets=assets,
+    )
+    result.canonical_html = render_html(result)
+    result.markdown = render_markdown(result)
+
+    assert result.canonical_html.count("<figure") == 1
+    assert result.canonical_html.count("<img") == 1
+    assert result.canonical_html.count(description) == 1
+    assert "&lt;figure" not in result.canonical_html
+    assert result.markdown.count("![Source document region]") == 1
+    assert result.markdown.count(description) == 1
 
 
 def test_canonical_round_trip_preserves_multi_paragraph_visual_blocks() -> None:

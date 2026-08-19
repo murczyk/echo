@@ -48,6 +48,7 @@ public.ai_callsign_worker_job
 
 # OCR and media-summary settings, durable work queue, and encrypted OCR metadata.
 public.ocr_settings
+public.ocr_settings_ai_engine
 public.ocr_job
 public.media_summary_settings
 

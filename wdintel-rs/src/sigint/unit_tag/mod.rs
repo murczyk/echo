@@ -6,7 +6,7 @@ use crate::entities::sea_orm_active_enums::InterseptionKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{error, Mode, ShortContext};
+use crate::types::{error, ShortContext};
 use crate::utils::worker_watch;
 use chrono::{Duration, Utc};
 use itertools::Itertools;
@@ -113,9 +113,7 @@ where
     Ok(())
 }
 
-pub async fn run_unit_tag_queue_worker_nofail(mode: Mode) {
-    let (_config, _settlements, _rq, _redis, dbx) =
-        crate::utils::setup_worker(mode).await.unwrap();
+pub async fn run_unit_tag_queue_worker_nofail(dbx: DatabaseConnection) {
     loop {
         let _loop_guard = worker_watch::loop_guard("unit_tag_queue_worker");
         match run_unit_tag_queue_worker_once(&dbx).await {
@@ -298,13 +296,19 @@ where
         .collect::<HashSet<_>>();
     for network_id in desired_network_ids {
         if !existing_network_ids.contains(&network_id) {
-            sigint_inbox_item_network::ActiveModel {
-                id: NotSet,
-                sigint_inbox_item_id: Set(sigint_inbox_item_id),
-                sigint_network_id: Set(network_id),
-                created_at: NotSet,
-            }
-            .insert(db)
+            sigint_inbox_item_network::Entity::insert(
+                sigint_inbox_item_network::ActiveModel {
+                    id: NotSet,
+                    sigint_inbox_item_id: Set(sigint_inbox_item_id),
+                    sigint_network_id: Set(network_id),
+                    created_at: NotSet,
+                },
+            )
+            .on_conflict_do_nothing_on([
+                sigint_inbox_item_network::Column::SigintNetworkId,
+                sigint_inbox_item_network::Column::SigintInboxItemId,
+            ])
+            .exec(db)
             .await
             .c(h!())?;
         }

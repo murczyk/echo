@@ -1,6 +1,7 @@
 module Layouts.Navbar exposing (Model, Msg, Props, layout)
 
 import Auth
+import Bindings as B
 import Browser.Events
 import Core.Auth
 import Core.Types exposing (ApiError)
@@ -266,6 +267,10 @@ view user activeName shared route { toContentMsg, model, content } =
                               , case shared.changelogLastSeen of
                                     Just ls -> Encode.string ls
                                     Nothing -> Encode.null
+                              )
+                            , ( "deploymentMaintenance"
+                              , Maybe.withDefault Encode.null <|
+                                    Maybe.map B.deploymentMaintenanceEncoder shared.deploymentMaintenance
                               )
                             , ( "systemSettings"
                               , case shared.systemSettings of

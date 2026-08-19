@@ -649,6 +649,8 @@ async function renderCard(
     networkMap,
     tagsMap,
     filterState: emptyFilter(),
+    // Specs assert mounted media by default; Duty collapses unless a test opts in.
+    collapseMediaPreviews: false,
     onBookmark: vi.fn(),
     onImportant: vi.fn(),
     onCopyText: vi.fn(),

@@ -4,7 +4,6 @@ use crate::entities::*;
 use crate::location::SettlementsDataConfig;
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
-use crate::utils::setup_worker;
 use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -255,9 +254,17 @@ async fn delete_message_and_attachments_nofail(
 }
 
 pub async fn mk_message_processor_pool(
-    mode: Mode,
+    env: Arc<Env>,
 ) -> anyhow::Result<ProcessorPool> {
-    let ctx = Arc::new(mk_context(mode).await.c(h!())?);
+    let redis = crate::new_redis(&env.config).await.c(h!())?;
+    let ctx = Arc::new(WorkerContext {
+        config: env.config.clone(),
+        settlements: env.settlements.clone(),
+        rq: env.rq.clone(),
+        redis,
+        dbx: env.dbx.clone(),
+        s3: env.s3.clone(),
+    });
     let capacity = ctx
         .config
         .messenger_worker_pool_capacity
@@ -268,21 +275,6 @@ pub async fn mk_message_processor_pool(
         capacity,
         ctx,
     })
-}
-
-async fn mk_context(mode: Mode) -> anyhow::Result<WorkerContext> {
-    let context = setup_worker(mode).await.context(h!())?;
-    let (config, settlements, rq, redis, dbx) = context;
-    let s3 = mk_s3(&config).c(h!())?;
-    let result = WorkerContext {
-        config,
-        settlements,
-        rq,
-        redis,
-        dbx,
-        s3,
-    };
-    Ok(result)
 }
 
 // -------- Task-specific code --------
