@@ -14,6 +14,8 @@ let originalRect: typeof HTMLElement.prototype.getBoundingClientRect;
 let originalRaf: typeof requestAnimationFrame;
 let originalCancelRaf: typeof cancelAnimationFrame;
 let originalResizeObserver: typeof ResizeObserver | undefined;
+let originalIntersectionObserver: typeof IntersectionObserver | undefined;
+let measurementRuns = 0;
 
 function triggerResize() {
   act(() => observers.forEach((callback) => callback([], {} as ResizeObserver)));
@@ -47,17 +49,25 @@ beforeEach(() => {
   originalRaf = requestAnimationFrame;
   originalCancelRaf = cancelAnimationFrame;
   originalResizeObserver = globalThis.ResizeObserver;
+  originalIntersectionObserver = globalThis.IntersectionObserver;
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
     configurable: true,
     get: () => width,
   });
   HTMLElement.prototype.getBoundingClientRect = function () {
     const text = this.textContent ?? '';
-    const measuredWidth = text.includes('FIRST-OVERSIZED')
-      ? 140
-      : text.includes('SECOND')
-        ? 40
-        : 32;
+    if (this.hasAttribute('data-mrt-overflow-measured-item')) measurementRuns += 1;
+    const measuredWidth = text.includes('SAME')
+      ? this.querySelector('[data-testid="InfoIcon"]')
+        ? 125
+        : 60
+      : text.includes('NEXT')
+        ? 60
+        : text.includes('FIRST-OVERSIZED')
+          ? 140
+          : text.includes('SECOND')
+            ? 40
+            : 32;
     return {
       x: 0,
       y: 0,
@@ -79,6 +89,8 @@ beforeEach(() => {
     observe() {}
     disconnect() {}
   } as typeof ResizeObserver;
+  globalThis.IntersectionObserver = undefined as unknown as typeof IntersectionObserver;
+  measurementRuns = 0;
 });
 
 afterEach(() => {
@@ -89,10 +101,13 @@ afterEach(() => {
   globalThis.cancelAnimationFrame = originalCancelRaf;
   if (originalResizeObserver) globalThis.ResizeObserver = originalResizeObserver;
   else delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
+  if (originalIntersectionObserver) globalThis.IntersectionObserver = originalIntersectionObserver;
+  else
+    delete (globalThis as { IntersectionObserver?: typeof IntersectionObserver })
+      .IntersectionObserver;
 });
 
 it('keeps specialized callsign chips in compact mode for both consumers', async () => {
-  vi.useFakeTimers();
   const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -106,6 +121,7 @@ it('keeps specialized callsign chips in compact mode for both consumers', async 
     const node = column?.Cell?.({ row: { original: row } } as never);
     act(() => root.render(node));
     triggerResize();
+    vi.useFakeTimers();
     expect(container.querySelector('.MuiChip-root')).not.toBeNull();
     expect(container.textContent).toContain('FIRST-OVERSIZED-CALLSIGN');
     expect(container.querySelector('[data-testid="InfoIcon"]')).not.toBeNull();
@@ -146,5 +162,44 @@ it('keeps specialized callsign chips in compact mode for both consumers', async 
     errors.mockRestore();
     vi.useRealTimers();
     expect(output).not.toMatch(/warning|error|invalid prop|aria|nesting/i);
+  }
+});
+
+it('remeasures callsigns when width-affecting chip decoration changes', () => {
+  width = 150;
+  const undecorated = [
+    { callsign: 'same', tooltip: null, iconClass: '', isHighlighted: false },
+    { callsign: 'next', tooltip: null, iconClass: '', isHighlighted: false },
+  ];
+  const decorated = [
+    {
+      callsign: 'same',
+      tooltip: 'Декорована підказка',
+      iconClass: 'info-circle-fill',
+      isHighlighted: true,
+    },
+    { callsign: 'next', tooltip: null, iconClass: '', isHighlighted: false },
+  ];
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  try {
+    act(() => root.render(createElement(CallsignChipsCell, { callsigns: undecorated })));
+    triggerResize();
+    expect(container.querySelectorAll('.MuiChip-root')).toHaveLength(2);
+    expect(container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
+    const initialMeasurementRuns = measurementRuns;
+
+    act(() => root.render(createElement(CallsignChipsCell, { callsigns: decorated })));
+    triggerResize();
+    expect(measurementRuns).toBeGreaterThan(initialMeasurementRuns);
+    expect(container.querySelector('.MuiChip-root')).not.toBeNull();
+    expect(container.querySelector('[data-testid="InfoIcon"]')).not.toBeNull();
+    expect(container.querySelector('.MuiChip-filled')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Показати ще 1 значення"]')).not.toBeNull();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
   }
 });

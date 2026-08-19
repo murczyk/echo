@@ -524,6 +524,60 @@ describe('MRT rendered overflow components', () => {
     destroy(view);
   });
 
+  it('preserves click-away focus and does not restore a removed disclosure trigger', async () => {
+    itemWidths = { alpha: 60, beta: 60, 'Ще 1': 32, 'Ще 2': 32 };
+    availableWidth = 100;
+    const outside = document.createElement('button');
+    outside.type = 'button';
+    outside.textContent = 'Outside';
+    document.body.appendChild(outside);
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta'],
+        renderItem: (value) => createElement('span', null, value),
+        renderMeasurementItem: (value) => createElement('span', null, value),
+        getItemKey: (value) => value,
+        getItemText: (value) => value,
+      }),
+    );
+    try {
+      triggerResize();
+      flushFrames();
+      const trigger = view.container.querySelector<HTMLButtonElement>(
+        'button[aria-label="Показати ще 1 значення"]',
+      );
+      if (!trigger) throw new Error('Expected disclosure trigger');
+
+      act(() => trigger.click());
+      expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+      act(() => {
+        outside.focus();
+        outside.click();
+      });
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      });
+      expect(document.activeElement).toBe(outside);
+
+      act(() => trigger.click());
+      expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+      flushFrames();
+      act(() => outside.focus());
+      availableWidth = 300;
+      triggerResize();
+      expect(view.container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
+      expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      destroy(view);
+      outside.remove();
+    }
+  });
+
   it('treats a normal column gap as zero during rendered item measurement', () => {
     columnGap = 'normal';
     itemWidths = { alpha: 60, beta: 60, gamma: 60, 'Ще 1': 32, 'Ще 2': 32, 'Ще 3': 32 };

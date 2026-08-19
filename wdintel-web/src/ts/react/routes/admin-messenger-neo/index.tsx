@@ -57,6 +57,7 @@ import {
 import {
   type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
@@ -81,6 +82,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { GroupStatsTimelineCell } from '../admin-directions-neo/GroupStatsTimelineCell';
 import { AdminEchoMissingMessagesSection } from '../admin-echo-missing-messages';
 import { RestApiErrorsSection } from './RestApiErrorsSection';
+import { MessengerDescriptionCell } from './MessengerDescriptionCell';
 import { getSystemServicePrefix, useSystemServiceName } from './use-system-service-name';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -442,6 +444,22 @@ function MessengerIcon({ messenger }: { messenger: string }) {
   return <span title={label}>{label}</span>;
 }
 
+export function createMessengerDescriptionColumn(): AppMrtColumnDef<EchoAccountF1> {
+  return {
+    header: 'Опис',
+    accessorKey: 'description',
+    meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+    Cell: mrtCustomCell(({ row }) => (
+      <MessengerDescriptionCell
+        description={row.original.description}
+        endpoint={row.original.apiEndpoint}
+        showEndpoint={row.original.messenger === 'echo_operator'}
+      />
+    )),
+    size: 200,
+  };
+}
+
 function useMessengerColumns(
   timeline: ReturnType<typeof useDatasourceActivityTimeline>,
   isLoading: boolean,
@@ -513,29 +531,7 @@ function useMessengerColumns(
         }),
         size: 240,
       },
-      {
-        header: 'Опис',
-        accessorKey: 'description',
-        meta: { overflowMode: 'wrap' },
-        Cell: ({ row }) => {
-          const description = row.original.description;
-          const endpoint = row.original.apiEndpoint;
-          const trimmedDescription = description?.trim() || '';
-          return (
-            <div className="space-y-1 text-sm">
-              {trimmedDescription ? (
-                <span>{trimmedDescription}</span>
-              ) : (
-                <span className="text-muted-foreground">—</span>
-              )}
-              {row.original.messenger === 'echo_operator' && endpoint ? (
-                <div className="text-xs text-gray-500">Endpoint: {endpoint}</div>
-              ) : null}
-            </div>
-          );
-        },
-        size: 200,
-      },
+      createMessengerDescriptionColumn(),
       {
         header: 'Смуга відповідальності',
         accessorKey: 'aor',

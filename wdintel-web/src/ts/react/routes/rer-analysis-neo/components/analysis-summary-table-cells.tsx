@@ -84,6 +84,8 @@ export const callsignOverflowRenderer = {
   getItemText: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) =>
     entry.callsign.toUpperCase(),
   getItemKey: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) => entry.callsign,
+  getItemMeasurementKey: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) =>
+    JSON.stringify([entry.iconClass, Boolean(entry.tooltip), entry.isHighlighted]),
   renderItem: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) => (
     <CallsignChip entry={entry} />
   ),

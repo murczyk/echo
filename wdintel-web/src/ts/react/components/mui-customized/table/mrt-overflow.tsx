@@ -264,6 +264,7 @@ export function MrtOverflowItems<T>({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const spacerMeasureRef = useRef<HTMLElement>(null);
   const previousTriggerRef = useRef<HTMLElement | null>(null);
+  const restoreFocusTimeoutRef = useRef<number | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const surfaceId = `mrt-overflow-surface-${useId().replaceAll(':', '')}`;
   const measurementJobId = `mrt-overflow-measure-${surfaceId}`;
@@ -280,9 +281,20 @@ export function MrtOverflowItems<T>({
   const hiddenItemText = hiddenItems
     .map((item, index) => getItemText(item, representedCount + index))
     .join(', ');
-  const closeSurface = () => {
+  const cancelPendingFocusRestore = () => {
+    if (restoreFocusTimeoutRef.current == null) return;
+    window.clearTimeout(restoreFocusTimeoutRef.current);
+    restoreFocusTimeoutRef.current = null;
+  };
+  const closeSurface = (restoreFocus = false) => {
     setIsOpen(false);
-    window.setTimeout(() => previousTriggerRef.current?.focus(), 0);
+    cancelPendingFocusRestore();
+    if (restoreFocus) {
+      restoreFocusTimeoutRef.current = window.setTimeout(() => {
+        restoreFocusTimeoutRef.current = null;
+        previousTriggerRef.current?.focus();
+      }, 0);
+    }
   };
 
   const measurementSignature = [
@@ -368,7 +380,7 @@ export function MrtOverflowItems<T>({
       cancelMeasurementJob(measurementJobId);
       setIsMeasuring(false);
       setVisibleCount(0);
-      setIsOpen(false);
+      closeSurface();
     }
   }, [items.length, measurementJobId]);
 
@@ -390,6 +402,7 @@ export function MrtOverflowItems<T>({
   useEffect(
     () => () => {
       cancelMeasurementJob(measurementJobId);
+      cancelPendingFocusRestore();
     },
     [measurementJobId],
   );
@@ -428,7 +441,7 @@ export function MrtOverflowItems<T>({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
-      closeSurface();
+      closeSurface(true);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -447,6 +460,7 @@ export function MrtOverflowItems<T>({
   if (items.length === 0) return <Box component="span">{emptyValue}</Box>;
 
   const openSurface = () => {
+    cancelPendingFocusRestore();
     previousTriggerRef.current = triggerRef.current;
     setIsOpen(true);
   };
@@ -591,7 +605,7 @@ export function MrtOverflowItems<T>({
             placement="bottom-start"
             sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
           >
-            <ClickAwayListener onClickAway={closeSurface}>
+            <ClickAwayListener onClickAway={() => closeSurface()}>
               <Box
                 id={surfaceId}
                 ref={surfaceRef}

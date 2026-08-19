@@ -231,6 +231,13 @@ test.describe('Analysis Neo MRT overflow @smoke', () => {
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Додаткові значення' });
     await expect(dialog).toBeFocused();
+    const summaryTab = page.getByRole('tab', { name: 'Зведена таблиця' });
+    await summaryTab.click();
+    await expect(dialog).toHaveCount(0);
+    await expect(summaryTab).toBeFocused();
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    await expect(dialog).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
