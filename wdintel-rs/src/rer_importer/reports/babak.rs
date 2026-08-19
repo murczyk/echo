@@ -1283,6 +1283,16 @@ async fn load_babak_candidate_page(
                 .is_in(access.sigint_groups.clone()),
         )
         .filter(sigint_inbox_item::Column::Datetime.is_not_null());
+    let linked_message_ids = intel_prod::Entity::find()
+        .select_only()
+        .column(intel_prod::Column::SignalMessageId)
+        .filter(intel_prod::Column::RelationKind.is_in([
+            intel_prod::RELATION_KIND_COMMENT,
+            intel_prod::RELATION_KIND_REPORT,
+        ]))
+        .into_query();
+    query = query
+        .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
     if req.only_show_unprocessed == Some(true) {
         query =
             query.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -1520,10 +1530,10 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
         Query::select()
             .expr(Expr::value(1))
             .from(intel_prod::Entity)
-            .and_where(
-                intel_prod::Column::RelationKind
-                    .eq(intel_prod::RELATION_KIND_COMMENT),
-            )
+            .and_where(intel_prod::Column::RelationKind.is_in([
+                intel_prod::RELATION_KIND_COMMENT,
+                intel_prod::RELATION_KIND_REPORT,
+            ]))
             .and_where(
                 Expr::col((
                     intel_prod::Entity,
@@ -1680,7 +1690,7 @@ async fn load_babak_enrichment_batch(
                     join signal_message linked
                       on linked.id = link.signal_message_id
                     where link.parent_signal_message_id = candidate.id
-                      and link.relation_kind = 'comment'
+                      and link.relation_kind in ('comment', 'report')
                       and linked.deleted = false
                     union all
                     select
@@ -2326,6 +2336,48 @@ mod tests {
         )
         .await
         .unwrap();
+        let linked_comment = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("linked comment".to_string())),
+                created_at: Set(now + chrono::Duration::minutes(1)),
+                timestamp: Set(Some(now + chrono::Duration::minutes(1))),
+                sender: Set(Some(login.id.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_prod::ActiveModel {
+            signal_message_id: Set(linked_comment.id),
+            parent_signal_message_id: Set(message.id),
+            relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let linked_report = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("linked intelligence report".to_string())),
+                created_at: Set(now + chrono::Duration::minutes(2)),
+                timestamp: Set(Some(now + chrono::Duration::minutes(2))),
+                sender: Set(Some(login.id.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_prod::ActiveModel {
+            signal_message_id: Set(linked_report.id),
+            parent_signal_message_id: Set(message.id),
+            relation_kind: Set(intel_prod::RELATION_KIND_REPORT),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
 
         let datetime = inbox_item
             .datetime
@@ -2368,6 +2420,16 @@ mod tests {
         let unit = &res.units[0];
         assert_eq!(unit.unit.as_deref(), Some("TestUnit"));
         assert_eq!(unit.count, 2);
+        let comments: Vec<BabakComment> = serde_json::from_value(
+            unit.comments.clone().expect("expected Babak comments"),
+        )
+        .unwrap();
+        assert!(comments.iter().any(|comment| {
+            comment.comment.as_deref() == Some("linked comment")
+        }));
+        assert!(comments.iter().any(|comment| {
+            comment.comment.as_deref() == Some("linked intelligence report")
+        }));
         let single_unit = &single.units[0];
         assert_eq!(unit.unit, single_unit.unit);
         assert_eq!(unit.count, single_unit.count);
