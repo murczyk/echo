@@ -1,4 +1,7 @@
-use crate::{automation, error::ShortContext, h, messenger};
+use crate::{
+    automation, config::MESSENGER_SIGNAL_OUTBOX_WORKER_SLEEP_MILLIS,
+    error::ShortContext, h, messenger,
+};
 use sea_orm::DatabaseConnection;
 use tokio::time::{sleep, Duration};
 
@@ -7,8 +10,43 @@ const CLEANUP_WORKER_SLEEP_MS: u64 = 60_000;
 
 pub fn spawn_workers(db: DatabaseConnection) {
     tokio::spawn(messenger_worker(db.clone()));
+    tokio::spawn(signal_outbox_worker(db.clone()));
     tokio::spawn(cleanup_worker(db));
     tokio::spawn(echo_install_utils::tmpdir::cleanup_tmp_worker_nofail());
+}
+
+async fn signal_outbox_worker(db: DatabaseConnection) {
+    log::info!("starting echo-swapp Signal outbox worker");
+    loop {
+        if let Err(err) = signal_outbox_worker_tick(&db).await {
+            log::error!("echo-swapp Signal outbox worker tick failed: {err:#}");
+        }
+        sleep(Duration::from_millis(
+            MESSENGER_SIGNAL_OUTBOX_WORKER_SLEEP_MILLIS,
+        ))
+        .await;
+    }
+}
+
+async fn signal_outbox_worker_tick(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    if messenger::global_is_paused(db).await.c(h!())? {
+        return Ok(());
+    }
+    let names = messenger::signal_messengers_with_scheduled_messages(db)
+        .await
+        .c(h!())?;
+    for name in names {
+        if let Err(err) =
+            messenger::send_next_scheduled_signal_message(db, &name).await
+        {
+            log::error!(
+                "failed to send next scheduled Signal message for {name}: {err:#}"
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn messenger_worker(db: DatabaseConnection) {

@@ -894,6 +894,96 @@ pub async fn sync(db: &DatabaseConnection, name: &str) -> Result<()> {
     Ok(())
 }
 
+pub(crate) async fn send_next_scheduled_signal_message(
+    db: &DatabaseConnection,
+    name: &str,
+) -> Result<()> {
+    let client_name = owned_client_name(name);
+    let txn = begin_locked_integration_client_transaction(db, &client_name)
+        .await
+        .c(h!())?;
+    let messenger = load(&txn, name).await.c(h!())?;
+    ensure_messenger_kind(messenger.kind, MessengerKind::Signal).c(h!())?;
+    if sync_is_paused(&txn, &client_name).await.c(h!())?
+        || !has_scheduled_signal_message(&txn, &client_name)
+            .await
+            .c(h!())?
+    {
+        txn.commit().await.c(h!())?;
+        return Ok(());
+    }
+    echo_im::worker::signal_worker_tick_once(&client_name, db)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn signal_messengers_with_scheduled_messages(
+    db: &DatabaseConnection,
+) -> Result<Vec<String>> {
+    let rows = db
+        .query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            r#"
+            select distinct client.name
+            from echo_client client
+            join echo_outbox_message message
+                on message.client_id = client.id
+            join echo_outbox_message_instance instance
+                on instance.message_id = message.id
+            join echo_account account
+                on account.id = instance.account_id
+            where client.deleted = false
+                and client.name like 'echo-swapp-%'
+                and account.source = 'signal'
+                and instance.status = 'scheduled'
+            order by client.name
+            "#,
+        ))
+        .await
+        .c(h!())?;
+    rows.into_iter()
+        .map(|row| {
+            let client_name: String = row.try_get("", "name").c(h!())?;
+            public_client_name(&client_name).context(h!())
+        })
+        .collect()
+}
+
+async fn has_scheduled_signal_message<C>(
+    db: &C,
+    client_name: &str,
+) -> Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            select exists (
+                select 1
+                from echo_client client
+                join echo_outbox_message message
+                    on message.client_id = client.id
+                join echo_outbox_message_instance instance
+                    on instance.message_id = message.id
+                join echo_account account
+                    on account.id = instance.account_id
+                where client.name = $1
+                    and account.source = 'signal'
+                    and instance.status = 'scheduled'
+            ) as exists
+            "#,
+            [client_name.into()],
+        ))
+        .await
+        .c(h!())?
+        .context(h!())?;
+    row.try_get("", "exists").c(h!())
+}
+
 async fn tick_messenger_worker(
     db: &DatabaseConnection,
     client_name: &str,
