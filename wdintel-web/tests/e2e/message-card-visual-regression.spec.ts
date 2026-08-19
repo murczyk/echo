@@ -112,6 +112,29 @@ async function installVisualFixture(
 }
 
 test.describe('message card visual regression', () => {
+  test('keeps exclusion-menu labels readable at 14px', async ({ page }) => {
+    await openMessageCardPreviewHost(page, 'duty');
+
+    await page.getByRole('button', { name: 'Виключити…' }).click();
+    const menu = page.getByRole('menu', { name: 'Виключення з фільтрів' });
+    const menuItems = menu.locator('.MuiMenuItem-root');
+    const firstMenuItem = menuItems.first();
+    await expect(firstMenuItem).toBeVisible();
+    await expect(firstMenuItem).toHaveCSS('font-size', '14px');
+    await expect(firstMenuItem).toContainText('Виключити');
+    const menuItemWidth = await firstMenuItem.evaluate((item) => ({
+      clientWidth: item.clientWidth,
+      scrollWidth: item.scrollWidth,
+    }));
+    expect(menuItemWidth.scrollWidth).toBeLessThanOrEqual(menuItemWidth.clientWidth);
+
+    await firstMenuItem.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(menuItems.nth(1)).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
+  });
+
   for (const host of ['duty', 'analysis'] as const) {
     test(`keeps ${host} toolbar rows responsive through viewport changes`, async ({ page }) => {
       await page.setViewportSize({ width: 1280, height: 900 });
