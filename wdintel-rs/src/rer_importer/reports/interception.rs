@@ -665,6 +665,16 @@ async fn build_inbox_messages_report_sql(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         );
+    let linked_message_ids = intel_prod::Entity::find()
+        .select_only()
+        .column(intel_prod::Column::SignalMessageId)
+        .filter(intel_prod::Column::RelationKind.is_in([
+            intel_prod::RELATION_KIND_COMMENT,
+            intel_prod::RELATION_KIND_REPORT,
+        ]))
+        .into_query();
+    q = q
+        .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
 
     if req.without_model_tags == Some(true) {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());

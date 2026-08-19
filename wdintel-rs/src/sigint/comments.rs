@@ -1,3 +1,4 @@
+use crate::entities::sea_orm_active_enums::IntelProdRelationKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -58,6 +59,22 @@ pub async fn find_linked_message_comments<C>(
 where
     C: ConnectionTrait,
 {
+    find_linked_message_comments_by_relation_kinds(
+        dbx,
+        parent_signal_message_ids,
+        &[intel_prod::RELATION_KIND_COMMENT],
+    )
+    .await
+}
+
+async fn find_linked_message_comments_by_relation_kinds<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+    relation_kinds: &[IntelProdRelationKind],
+) -> Result<Vec<LinkedMessageComment>, AppError>
+where
+    C: ConnectionTrait,
+{
     if parent_signal_message_ids.is_empty() {
         return Ok(vec![]);
     }
@@ -67,10 +84,7 @@ where
             intel_prod::Column::ParentSignalMessageId
                 .is_in(parent_signal_message_ids.to_vec()),
         )
-        .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_COMMENT),
-        )
+        .filter(intel_prod::Column::RelationKind.is_in(relation_kinds.to_vec()))
         .order_by_asc(intel_prod::Column::CreatedAt)
         .order_by_asc(intel_prod::Column::SignalMessageId)
         .all(dbx)
@@ -163,9 +177,16 @@ pub async fn find_report_comments<C>(
 where
     C: ConnectionTrait,
 {
-    let comments = find_linked_message_comments(dbx, parent_signal_message_ids)
-        .await
-        .c(h!())?;
+    let comments = find_linked_message_comments_by_relation_kinds(
+        dbx,
+        parent_signal_message_ids,
+        &[
+            intel_prod::RELATION_KIND_COMMENT,
+            intel_prod::RELATION_KIND_REPORT,
+        ],
+    )
+    .await
+    .c(h!())?;
     Ok(comments
         .into_iter()
         .filter(|comment| {
