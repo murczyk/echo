@@ -123,8 +123,16 @@ vi.mock('@mui/material', () => ({
   },
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
   InputAdornment: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  MenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  MenuItem: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
   ),
@@ -292,7 +300,7 @@ function getBulkDialogInput(container: HTMLElement): HTMLInputElement | HTMLText
   return input as HTMLInputElement | HTMLTextAreaElement;
 }
 
-function openBulkDialog(container: HTMLElement, label?: string) {
+function openBulkMenu(container: HTMLElement, label?: string) {
   const menuButton = getBulkMenuButton(container, label);
   if (!menuButton) throw new Error('Bulk menu button not found');
 
@@ -300,7 +308,10 @@ function openBulkDialog(container: HTMLElement, label?: string) {
     menuButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     menuButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
+}
 
+function openBulkDialog(container: HTMLElement, label?: string) {
+  openBulkMenu(container, label);
   const menuItem = container.querySelector('[data-testid="bulk-menu"] button');
   if (!menuItem) throw new Error('Bulk menu item not found');
 
@@ -330,6 +341,77 @@ describe('PowerAutocomplete', () => {
     const { container } = renderAutocomplete({ bulkPaste: false });
 
     expect(getBulkMenuButton(container)).toBeNull();
+  });
+
+  it('does not render a copy action unless enabled', () => {
+    const { container } = renderAutocomplete({ bulkPaste: true });
+    openBulkMenu(container);
+
+    expect(container.textContent).not.toContain('Копіювати обрані значення');
+  });
+
+  it('disables the copy action when there are no selected values', () => {
+    const { container } = renderAutocomplete({ bulkPaste: true, bulkCopy: true });
+    openBulkMenu(container);
+
+    const copyItem = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    expect(copyItem?.disabled).toBe(true);
+  });
+
+  it('copies the current values through the opt-in callback', () => {
+    const onBulkCopy = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkCopy: true,
+      value: [options[0], options[1]],
+      onBulkCopy,
+    });
+    openBulkMenu(container);
+
+    const copyItem = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    if (!copyItem) throw new Error('Copy menu item not found');
+    act(() => copyItem.click());
+
+    expect(onBulkCopy).toHaveBeenCalledWith([options[0], options[1]]);
+  });
+
+  it('passes a copied newline list from one frequency column into another bulk flow', () => {
+    const copiedValues: string[] = [];
+    const onBulkPasteChange = vi.fn();
+    const first = renderAutocomplete({
+      bulkPaste: true,
+      bulkCopy: true,
+      value: [options[0], options[1]],
+      onBulkCopy: (selected: readonly Option[]) =>
+        copiedValues.push(...selected.map((option) => option.label)),
+    });
+
+    openBulkMenu(first.container);
+    const copyItem = [...first.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    if (!copyItem) throw new Error('Copy menu item not found');
+    act(() => copyItem.click());
+
+    const second = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteSeparators: [',', '\n'],
+      onBulkPasteChange,
+    });
+    openBulkDialog(second.container);
+    typeDialogValue(second.container, copiedValues.join('\n'));
+    const submitButton = [...second.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton) throw new Error('Submit button not found');
+    act(() => submitButton.click());
+
+    expect(copiedValues).toEqual(['111.1111', '222.2222']);
+    expect(onBulkPasteChange).toHaveBeenCalledWith([options[0], options[1]]);
   });
 
   it('adds the bulk menu button inside the input adornment when enabled', () => {

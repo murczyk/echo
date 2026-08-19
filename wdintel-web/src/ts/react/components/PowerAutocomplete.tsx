@@ -45,6 +45,9 @@ type PowerAutocompleteProps<T> = Omit<
   bulkPasteMenuLabel?: string;
   bulkPasteDialogTitle?: string;
   bulkPasteInputLabel?: string;
+  bulkCopy?: boolean;
+  bulkCopyMenuLabel?: string;
+  onBulkCopy?: (selected: readonly T[]) => Promise<void> | void;
   getBulkPasteOptionLabel?: (option: T) => string;
   onBulkPasteChange?: (nextValue: T[]) => void;
   onBulkPasteResolved?: (result: BulkPasteResolution<T>) => void;
@@ -277,6 +280,9 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     bulkPasteMenuLabel,
     bulkPasteDialogTitle,
     bulkPasteInputLabel,
+    bulkCopy = false,
+    bulkCopyMenuLabel = 'Копіювати обрані значення',
+    onBulkCopy,
     getBulkPasteOptionLabel,
     onBulkPasteChange,
     onBulkPasteResolved,
@@ -290,6 +296,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const isOptionEqualToValue = autocompleteProps.isOptionEqualToValue;
   const onChange = autocompleteProps.onChange;
   const selectedValue = value ?? [];
+  const hasBulkActions = bulkPaste || bulkCopy;
   const bulkPasteLabel = getBulkPasteOptionLabel ?? getOptionLabel;
   const menuLabel = bulkPasteMenuLabel ?? 'Додати кілька значень';
   const dialogTitle = bulkPasteDialogTitle ?? 'Додати кілька значень';
@@ -414,7 +421,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
       ...params,
       InputProps: {
         ...params.InputProps,
-        endAdornment: bulkPaste ? composeEndAdornment(endAdornment, menuButton) : endAdornment,
+        endAdornment: hasBulkActions ? composeEndAdornment(endAdornment, menuButton) : endAdornment,
       },
     });
   };
@@ -425,85 +432,98 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
         multiple
         {...autocompleteProps}
         onClose={onClose}
-        sx={bulkPaste ? mergeBulkAutocompleteSx(sx) : sx}
-        renderInput={bulkPaste ? renderInputWithBulkAction : renderInput}
+        sx={hasBulkActions ? mergeBulkAutocompleteSx(sx) : sx}
+        renderInput={hasBulkActions ? renderInputWithBulkAction : renderInput}
       />
-      {bulkPaste ? (
+      {hasBulkActions ? (
         <>
           <PowerMenu
             anchorEl={bulkMenuAnchorEl}
             open={bulkMenuAnchorEl != null}
             onClose={closeBulkMenu}
           >
-            <MenuItem onClick={openBulkDialog}>{menuLabel}</MenuItem>
-          </PowerMenu>
-          <Dialog
-            open={bulkDialogOpen}
-            onClose={closeBulkDialog}
-            fullWidth
-            maxWidth="sm"
-            disableRestoreFocus
-          >
-            <DialogTitle>{dialogTitle}</DialogTitle>
-            <DialogContent sx={{ pt: 2.5, pb: 0, overflow: 'visible' }}>
-              <Box sx={{ display: 'grid', gap: 2, pt: 1 }}>
-                <TextField
-                  autoFocus
-                  fullWidth
-                  label={inputLabel}
-                  multiline
-                  minRows={4}
-                  placeholder={formatBulkPastePlaceholder(bulkPasteSeparators)}
-                  value={bulkDialogInputValue}
-                  onChange={(event) => setBulkDialogInputValue(event.target.value)}
-                />
-                <Box sx={{ display: 'grid', gap: 1 }}>
-                  {selectedValue.length > 0 ? (
-                    <>
-                      <Typography variant="subtitle2">Вже у фільтрі</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatPreviewValues(selectedValue, bulkPasteLabel)}
-                      </Typography>
-                    </>
-                  ) : null}
-                  {bulkPreview.added.length > 0 ? (
-                    <>
-                      <Typography variant="subtitle2">Буде додано</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatPreviewValues(bulkPreview.added, bulkPasteLabel)}
-                      </Typography>
-                    </>
-                  ) : null}
-                  {bulkPreview.alreadySelected.length > 0 ? (
-                    <>
-                      <Typography variant="subtitle2">Вже обрано</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatPreviewValues(bulkPreview.alreadySelected, bulkPasteLabel)}
-                      </Typography>
-                    </>
-                  ) : null}
-                  {bulkPreview.missing.length > 0 ? (
-                    <>
-                      <Typography variant="subtitle2">Не знайдено</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {formatPreviewTokens(bulkPreview.missing)}
-                      </Typography>
-                    </>
-                  ) : null}
-                </Box>
-              </Box>
-            </DialogContent>
-            <DialogActions>
-              <PowerButton onClick={closeBulkDialog}>Скасувати</PowerButton>
-              <PowerButton
-                variant="contained"
-                disabled={bulkPreview.added.length === 0}
-                onClick={submitBulkDialog}
+            {bulkPaste ? <MenuItem onClick={openBulkDialog}>{menuLabel}</MenuItem> : null}
+            {bulkCopy ? (
+              <MenuItem
+                disabled={selectedValue.length === 0}
+                onClick={() => {
+                  closeBulkMenu();
+                  void onBulkCopy?.(selectedValue);
+                }}
               >
-                Додати
-              </PowerButton>
-            </DialogActions>
-          </Dialog>
+                {bulkCopyMenuLabel}
+              </MenuItem>
+            ) : null}
+          </PowerMenu>
+          {bulkPaste ? (
+            <Dialog
+              open={bulkDialogOpen}
+              onClose={closeBulkDialog}
+              fullWidth
+              maxWidth="sm"
+              disableRestoreFocus
+            >
+              <DialogTitle>{dialogTitle}</DialogTitle>
+              <DialogContent sx={{ pt: 2.5, pb: 0, overflow: 'visible' }}>
+                <Box sx={{ display: 'grid', gap: 2, pt: 1 }}>
+                  <TextField
+                    autoFocus
+                    fullWidth
+                    label={inputLabel}
+                    multiline
+                    minRows={4}
+                    placeholder={formatBulkPastePlaceholder(bulkPasteSeparators)}
+                    value={bulkDialogInputValue}
+                    onChange={(event) => setBulkDialogInputValue(event.target.value)}
+                  />
+                  <Box sx={{ display: 'grid', gap: 1 }}>
+                    {selectedValue.length > 0 ? (
+                      <>
+                        <Typography variant="subtitle2">Вже у фільтрі</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatPreviewValues(selectedValue, bulkPasteLabel)}
+                        </Typography>
+                      </>
+                    ) : null}
+                    {bulkPreview.added.length > 0 ? (
+                      <>
+                        <Typography variant="subtitle2">Буде додано</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatPreviewValues(bulkPreview.added, bulkPasteLabel)}
+                        </Typography>
+                      </>
+                    ) : null}
+                    {bulkPreview.alreadySelected.length > 0 ? (
+                      <>
+                        <Typography variant="subtitle2">Вже обрано</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatPreviewValues(bulkPreview.alreadySelected, bulkPasteLabel)}
+                        </Typography>
+                      </>
+                    ) : null}
+                    {bulkPreview.missing.length > 0 ? (
+                      <>
+                        <Typography variant="subtitle2">Не знайдено</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatPreviewTokens(bulkPreview.missing)}
+                        </Typography>
+                      </>
+                    ) : null}
+                  </Box>
+                </Box>
+              </DialogContent>
+              <DialogActions>
+                <PowerButton onClick={closeBulkDialog}>Скасувати</PowerButton>
+                <PowerButton
+                  variant="contained"
+                  disabled={bulkPreview.added.length === 0}
+                  onClick={submitBulkDialog}
+                >
+                  Додати
+                </PowerButton>
+              </DialogActions>
+            </Dialog>
+          ) : null}
         </>
       ) : null}
     </>

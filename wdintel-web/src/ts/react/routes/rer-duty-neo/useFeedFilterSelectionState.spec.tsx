@@ -105,6 +105,156 @@ describe('useFeedFilterSelectionState', () => {
     expect(onExcludeChange).not.toHaveBeenCalled();
   });
 
+  it('transfers include values to exclude in order and keeps local selections', async () => {
+    const apiRef: MutableRefObject<{
+      mode: 'include' | 'exclude';
+      localValue: string[];
+      setLocalValue: Dispatch<SetStateAction<string[]>>;
+      setMode: (mode: 'include' | 'exclude') => void;
+    } | null> = { current: null };
+    const onIncludeChange = vi.fn();
+    const onExcludeChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <Harness
+          apiRef={apiRef}
+          includeValues={['A', 'B']}
+          excludeValues={[]}
+          onIncludeChange={onIncludeChange}
+          onExcludeChange={onExcludeChange}
+        />,
+      );
+    });
+    await act(async () => apiRef.current?.setMode('exclude'));
+
+    expect(apiRef.current?.mode).toBe('exclude');
+    expect(apiRef.current?.localValue).toEqual(['A', 'B']);
+    expect(onExcludeChange).toHaveBeenCalledWith(['A', 'B']);
+    expect(onIncludeChange).toHaveBeenCalledWith([]);
+
+    await act(async () => {
+      root.render(
+        <Harness
+          apiRef={apiRef}
+          includeValues={[]}
+          excludeValues={['A', 'B']}
+          onIncludeChange={onIncludeChange}
+          onExcludeChange={onExcludeChange}
+        />,
+      );
+    });
+    expect(apiRef.current?.localValue).toEqual(['A', 'B']);
+  });
+
+  it('transfers object selections using parent identifiers', async () => {
+    const apiRef = { current: null } as MutableRefObject<{
+      mode: 'include' | 'exclude';
+      localValue: Array<{ id: string; label: string }>;
+      setLocalValue: Dispatch<SetStateAction<Array<{ id: string; label: string }>>>;
+      setMode: (mode: 'include' | 'exclude') => void;
+    } | null>;
+    const onIncludeChange = vi.fn();
+    const onExcludeChange = vi.fn();
+    const selected = [{ id: 'sender-a', label: 'Sender A' }];
+
+    function SenderHarness() {
+      const state = useFeedFilterSelectionState({
+        includeValues: ['sender-a'],
+        excludeValues: [],
+        onIncludeChange,
+        onExcludeChange,
+        toLocalValues: (values: readonly string[]) =>
+          values.map((id) => selected.find((option) => option.id === id) ?? { id, label: id }),
+        toParentValues: (values: typeof selected) => values.map((option) => option.id),
+      });
+      apiRef.current = state;
+      return null;
+    }
+
+    await act(async () => root.render(<SenderHarness />));
+    await act(async () => apiRef.current?.setMode('exclude'));
+
+    expect(onExcludeChange).toHaveBeenCalledWith(['sender-a']);
+    expect(onIncludeChange).toHaveBeenCalledWith([]);
+    expect(apiRef.current?.localValue).toEqual([{ id: 'sender-a', label: 'Sender A' }]);
+  });
+
+  it('transfers exclude values to include in order and keeps local selections', async () => {
+    const apiRef: MutableRefObject<{
+      mode: 'include' | 'exclude';
+      localValue: string[];
+      setLocalValue: Dispatch<SetStateAction<string[]>>;
+      setMode: (mode: 'include' | 'exclude') => void;
+    } | null> = { current: null };
+    const onIncludeChange = vi.fn();
+    const onExcludeChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <Harness
+          apiRef={apiRef}
+          includeValues={[]}
+          excludeValues={['A', 'B']}
+          onIncludeChange={onIncludeChange}
+          onExcludeChange={onExcludeChange}
+        />,
+      );
+    });
+    await act(async () => apiRef.current?.setMode('include'));
+
+    expect(apiRef.current?.mode).toBe('include');
+    expect(apiRef.current?.localValue).toEqual(['A', 'B']);
+    expect(onIncludeChange).toHaveBeenCalledWith(['A', 'B']);
+    expect(onExcludeChange).toHaveBeenCalledWith([]);
+
+    await act(async () => {
+      root.render(
+        <Harness
+          apiRef={apiRef}
+          includeValues={['A', 'B']}
+          excludeValues={[]}
+          onIncludeChange={onIncludeChange}
+          onExcludeChange={onExcludeChange}
+        />,
+      );
+    });
+    expect(apiRef.current?.localValue).toEqual(['A', 'B']);
+  });
+
+  it.each([
+    ['include', 'exclude'],
+    ['exclude', 'include'],
+  ] as const)('switches empty %s mode to %s without writing values', async (from, to) => {
+    const apiRef: MutableRefObject<{
+      mode: 'include' | 'exclude';
+      localValue: string[];
+      setLocalValue: Dispatch<SetStateAction<string[]>>;
+      setMode: (mode: 'include' | 'exclude') => void;
+    } | null> = { current: null };
+    const onIncludeChange = vi.fn();
+    const onExcludeChange = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <Harness
+          apiRef={apiRef}
+          includeValues={[]}
+          excludeValues={[]}
+          onIncludeChange={onIncludeChange}
+          onExcludeChange={onExcludeChange}
+        />,
+      );
+    });
+    await act(async () => apiRef.current?.setMode(from));
+    await act(async () => apiRef.current?.setMode(to));
+
+    expect(apiRef.current?.mode).toBe(to);
+    expect(apiRef.current?.localValue).toEqual([]);
+    expect(onIncludeChange).not.toHaveBeenCalled();
+    expect(onExcludeChange).not.toHaveBeenCalled();
+  });
+
   it('writes back user edits after a prop-driven resync', async () => {
     const apiRef: MutableRefObject<{
       mode: 'include' | 'exclude';

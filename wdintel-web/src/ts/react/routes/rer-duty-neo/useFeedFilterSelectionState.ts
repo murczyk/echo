@@ -37,11 +37,26 @@ export function useFeedFilterSelectionState<TLocal>({
     toLocalValues(initialMode === 'include' ? includeValues : excludeValues),
   );
   const skipWritebackRef = useRef(false);
+  const pendingModeTransferRef = useRef<{
+    mode: FeedFilterMode;
+    values: string[];
+  } | null>(null);
   const previousSelectionKeyRef = useRef<string | null>(null);
   const includeKey = useMemo(() => JSON.stringify(includeValues), [includeValues]);
   const excludeKey = useMemo(() => JSON.stringify(excludeValues), [excludeValues]);
 
   useLayoutEffect(() => {
+    const pendingTransfer = pendingModeTransferRef.current;
+    if (pendingTransfer != null && mode === pendingTransfer.mode) {
+      const transferredValues = pendingTransfer.values;
+      const activeValues = mode === 'include' ? includeValues : excludeValues;
+      const opposingValues = mode === 'include' ? excludeValues : includeValues;
+      if (sameSelection(activeValues, transferredValues) && opposingValues.length === 0) {
+        pendingModeTransferRef.current = null;
+        previousSelectionKeyRef.current = `${mode}:${mode === 'include' ? includeKey : excludeKey}`;
+      }
+      return;
+    }
     const nextMode: FeedFilterMode =
       mode === 'include'
         ? includeValues.length === 0 && excludeValues.length > 0
@@ -103,11 +118,23 @@ export function useFeedFilterSelectionState<TLocal>({
     localValue,
     setLocalValue,
     setMode: (nextMode) => {
+      if (nextMode === mode) return;
+      const transferredValues = toParentValues(localValue);
+      pendingModeTransferRef.current = { mode: nextMode, values: transferredValues };
+      skipWritebackRef.current = true;
       setMode(nextMode);
-      setLocalValue([]);
+      if (
+        transferredValues.length === 0 &&
+        includeValues.length === 0 &&
+        excludeValues.length === 0
+      ) {
+        return;
+      }
       if (nextMode === 'include') {
+        onIncludeChange(transferredValues);
         onExcludeChange([]);
       } else {
+        onExcludeChange(transferredValues);
         onIncludeChange([]);
       }
     },
