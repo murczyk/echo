@@ -38,7 +38,10 @@ import {
   createNetworkCallsignActivityMap,
 } from './network-callsigns.tab';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
-import { buildNetworkCallsignRelationFreqState } from './network-relations';
+import {
+  buildNetworkCallsignRelationFreqState,
+  resolveNetworkCallsignRelationFreqs,
+} from './network-relations';
 
 type ReloadGenerationRef = MutableRefObject<number>;
 
@@ -516,18 +519,20 @@ export function useRerNetworkDetailsNeoPageLoad(
             };
           }
 
+          const frequencyResolution = resolveNetworkCallsignRelationFreqs(
+            relations,
+            current.relationsEnabledFreqs,
+            current.relationsEnabledFreqsCustomized,
+          );
+
           return {
             ...current,
             relations,
             relationsLoaded: true,
             relationsLoading: false,
             relationsError: null,
-            relationsEnabledFreqs: deriveRelationsEnabledFreqs(
-              current.relationsEnabledFreqs,
-              current.relations,
-              relations,
-              current.relationsEnabledFreqsCustomized,
-            ),
+            relationsEnabledFreqs: frequencyResolution.enabledFreqs,
+            relationsEnabledFreqsCustomized: frequencyResolution.customized,
           };
         });
       } catch (error) {

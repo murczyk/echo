@@ -174,7 +174,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
         return {
           ...current,
-          relationsEnabledFreqs: [...relationsEnabledFreqs],
+          relationsEnabledFreqs: resolvedEnabledFreqs,
           relationsEnabledFreqsCustomized,
         };
       });
