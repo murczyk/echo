@@ -85,6 +85,7 @@ export function useAnalysisMapData({
   const mapDateRangeLoadVersionRef = useRef(0);
   const showSettlementsRef = useRef(false);
   const settlementToggleAbortRef = useRef<AbortController | null>(null);
+  const settlementToggleLoadVersionRef = useRef<number | null>(null);
   const settlementQueryKey = JSON.stringify([queryState, optionsFreqValues]);
   const settlementQueryKeyRef = useRef(settlementQueryKey);
   settlementQueryKeyRef.current = settlementQueryKey;
@@ -148,11 +149,12 @@ export function useAnalysisMapData({
       showSettlementsRef.current = enabled;
       setShowSettlementsState(enabled);
       if (!enabled) {
+        const toggleLoadVersion = settlementToggleLoadVersionRef.current;
         settlementToggleAbortRef.current?.abort();
         settlementToggleAbortRef.current = null;
-        mapDateRangeLoadVersionRef.current += 1;
+        settlementToggleLoadVersionRef.current = null;
         setMapSettlementsState([]);
-        setMapLoading(false);
+        if (mapDateRangeLoadVersionRef.current === toggleLoadVersion) setMapLoading(false);
         return;
       }
       const inboxReq = buildInboxReq(queryState, optionsFreqValues);
@@ -164,6 +166,7 @@ export function useAnalysisMapData({
       settlementToggleAbortRef.current?.abort();
       const abortController = new AbortController();
       settlementToggleAbortRef.current = abortController;
+      settlementToggleLoadVersionRef.current = loadVersion;
       setMapLoading(true);
       try {
         const rsp = await fetchAnalysisMapPoints(
@@ -199,6 +202,9 @@ export function useAnalysisMapData({
       } finally {
         if (settlementToggleAbortRef.current === abortController) {
           settlementToggleAbortRef.current = null;
+        }
+        if (settlementToggleLoadVersionRef.current === loadVersion) {
+          settlementToggleLoadVersionRef.current = null;
         }
         if (mapDateRangeLoadVersionRef.current === loadVersion) setMapLoading(false);
       }

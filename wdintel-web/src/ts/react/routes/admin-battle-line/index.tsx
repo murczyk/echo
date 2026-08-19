@@ -280,21 +280,20 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
   );
 }
 
-function UnlinkedTab() {
+function UnlinkedTab({ onError }: { onError: (message: string) => void }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<BattleLineUnlinkedInboxRsp | null>(null);
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setData(null);
     fetchBattleLineUnlinkedInbox({ page }, { signal: controller.signal })
       .then(setData)
       .catch((loadError) => {
-        if (!controller.signal.aborted) setError(toErrorMessage(loadError));
+        if (!controller.signal.aborted) onError(toErrorMessage(loadError));
       });
     return () => controller.abort();
-  }, [page]);
-  if (!data) return error ? <Alert severity="error">{error}</Alert> : <CircularProgress />;
+  }, [onError, page]);
+  if (!data) return <CircularProgress />;
   return (
     <Stack spacing={2}>
       {data.items.length === 0 ? (
@@ -315,21 +314,20 @@ function UnlinkedTab() {
   );
 }
 
-function UnresolvedTab() {
+function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<BattleLineUnresolvedLocationsRsp | null>(null);
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setData(null);
     fetchBattleLineUnresolvedLocations({ page }, { signal: controller.signal })
       .then(setData)
       .catch((loadError) => {
-        if (!controller.signal.aborted) setError(toErrorMessage(loadError));
+        if (!controller.signal.aborted) onError(toErrorMessage(loadError));
       });
     return () => controller.abort();
-  }, [page]);
-  if (!data) return error ? <Alert severity="error">{error}</Alert> : <CircularProgress />;
+  }, [onError, page]);
+  if (!data) return <CircularProgress />;
   return (
     <Stack spacing={2}>
       <Table size="small">
@@ -395,8 +393,8 @@ export function AdminBattleLinePage() {
       <Divider />
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         {tab === 0 ? state ? <LbzTab state={state} reload={reload} /> : <CircularProgress /> : null}
-        {tab === 1 ? <UnlinkedTab /> : null}
-        {tab === 2 ? <UnresolvedTab /> : null}
+        {tab === 1 ? <UnlinkedTab onError={setError} /> : null}
+        {tab === 2 ? <UnresolvedTab onError={setError} /> : null}
       </Box>
       <Snackbar open={error != null} autoHideDuration={8000} onClose={() => setError(null)}>
         <Alert severity="error" onClose={() => setError(null)}>

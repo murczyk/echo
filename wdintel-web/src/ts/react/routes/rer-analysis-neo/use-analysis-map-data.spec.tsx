@@ -144,7 +144,7 @@ describe('useAnalysisMapData settlement overlays', () => {
     expect(latest?.mapSettlements).toEqual([]);
   });
 
-  it('clears loading when disabling settlements invalidates a date-range request', async () => {
+  it('preserves a pending date-range refresh when disabling settlements', async () => {
     api.fetchAnalysisMapPoints.mockResolvedValueOnce(response());
     await renderHook();
     await act(async () => latest!.setShowSettlements(true));
@@ -159,11 +159,29 @@ describe('useAnalysisMapData settlement overlays', () => {
     expect(latest?.mapLoading).toBe(true);
 
     await act(async () => latest!.setShowSettlements(false));
-    expect(latest?.mapLoading).toBe(false);
+    expect(latest?.mapLoading).toBe(true);
 
-    request.resolve(response());
+    const point = {
+      messageId: 11,
+      messageUid: null,
+      id: 12,
+      lat: 49,
+      lng: 36,
+      mgrsCoords: 'MGRS',
+      sk42Coords: 'SK42',
+      freq: null,
+    };
+    const networkUnit = { name: 'unit', frequencies: ['1.0'] };
+    request.resolve({
+      points: [point],
+      networkUnits: [networkUnit],
+      settlements: [settlement],
+    });
     await act(async () => refreshPromise);
     expect(latest?.mapLoading).toBe(false);
+    expect(latest?.mapPoints).toEqual([point]);
+    expect(latest?.mapNetworkUnits).toEqual([networkUnit]);
+    expect(latest?.mapSettlements).toEqual([]);
   });
 
   it('does not retain markers when a date-range refresh fails', async () => {
