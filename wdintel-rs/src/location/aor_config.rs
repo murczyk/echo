@@ -271,9 +271,15 @@ pub async fn save_aor_location_config(
         }
     }
 
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
     refresh_settlements_aor_map(&env.dbx, env.settlements.clone())
         .await
         .c(h!())?;
+    crate::battle_line::requeue_settlement_links(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
 
     Ok(Json(AorLocationConfigItem {
         aor_id: aor.id,
