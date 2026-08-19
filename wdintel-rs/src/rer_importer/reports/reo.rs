@@ -312,6 +312,18 @@ async fn load_reo_inbox_messages(
     )
     .await
     .context(h!())?
+    .filter(
+        signal_message::Column::Id.not_in_subquery(
+            intel_prod::Entity::find()
+                .select_only()
+                .column(intel_prod::Column::SignalMessageId)
+                .filter(intel_prod::Column::RelationKind.is_in([
+                    intel_prod::RELATION_KIND_COMMENT,
+                    intel_prod::RELATION_KIND_REPORT,
+                ]))
+                .into_query(),
+        ),
+    )
     .select_only()
     .column_as(signal_message::Column::Id, "id")
     .column_as(signal_message::Column::Timestamp, "timestamp")
