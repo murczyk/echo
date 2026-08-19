@@ -119,10 +119,11 @@ fn location_texts(location_v2: Option<&str>) -> BTreeSet<String> {
 }
 
 pub async fn inbox_settlement_worker_nofail(env: Arc<Env>) {
+    let mut cursor = None;
     loop {
         let _loop_guard =
             crate::utils::worker_watch::loop_guard("inbox_settlement_worker");
-        match run_inbox_settlement_worker_once(&env).await {
+        match run_inbox_settlement_worker_once(&env, &mut cursor).await {
             Ok(true) => {}
             Ok(false) => {
                 tokio::time::sleep(std::time::Duration::from_secs(
@@ -143,14 +144,17 @@ pub async fn inbox_settlement_worker_nofail(env: Arc<Env>) {
 
 pub async fn run_inbox_settlement_worker_once(
     env: &Env,
+    cursor: &mut Option<i64>,
 ) -> anyhow::Result<bool> {
     if active_battle_line_id(&env.dbx).await.c(h!())?.is_none() {
+        *cursor = None;
         return Ok(false);
     }
     let catalog_txn = env.dbx.begin().await.c(h!())?;
     lock_updates(&catalog_txn).await.c(h!())?;
     if !has_pending_rows(&catalog_txn).await.c(h!())? {
         catalog_txn.commit().await.c(h!())?;
+        *cursor = None;
         return Ok(false);
     }
     crate::location::aor_config::refresh_settlements_aor_map(
@@ -159,7 +163,7 @@ pub async fn run_inbox_settlement_worker_once(
     )
     .await
     .c(h!())?;
-    let processed = process_pending_rows(env).await.c(h!())?;
+    let processed = process_pending_rows(env, cursor).await.c(h!())?;
     catalog_txn.commit().await.c(h!())?;
     Ok(processed)
 }
@@ -177,17 +181,20 @@ where
         .is_some())
 }
 
-async fn process_pending_rows(env: &Env) -> anyhow::Result<bool> {
+async fn process_pending_rows(
+    env: &Env,
+    cursor: &mut Option<i64>,
+) -> anyhow::Result<bool> {
     let mut processed = false;
-    let mut cursor = None;
     for _ in 0..INBOX_SETTLEMENT_WORKER_BATCH_SIZE {
         let txn = env.dbx.begin().await.c(h!())?;
-        let row = claim_pending_row(&txn, cursor).await.c(h!())?;
+        let row = claim_pending_row(&txn, *cursor).await.c(h!())?;
         let Some(row) = row else {
             txn.rollback().await.c(h!())?;
+            *cursor = None;
             break;
         };
-        cursor = Some(row.id);
+        *cursor = Some(row.id);
         let row_id = row.id;
         if let Err(error) = resolve_claimed_row(env, &txn, row).await {
             txn.rollback().await.c(h!())?;
