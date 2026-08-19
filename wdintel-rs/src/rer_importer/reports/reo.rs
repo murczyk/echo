@@ -988,7 +988,8 @@ async fn collect_report(
     for (id, message) in messages {
         let is_pure_peleng =
             message.coords.is_some() && message.callsign_tokens.is_empty();
-        if is_pure_peleng {
+        let has_comments = comments.contains_key(&id);
+        if is_pure_peleng && !has_comments {
             continue;
         }
 

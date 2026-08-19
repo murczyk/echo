@@ -370,6 +370,18 @@ async fn load_digest_messages(
     )
     .await
     .context(h!())?
+    .filter(
+        signal_message::Column::Id.not_in_subquery(
+            intel_prod::Entity::find()
+                .select_only()
+                .column(intel_prod::Column::SignalMessageId)
+                .filter(intel_prod::Column::RelationKind.is_in([
+                    intel_prod::RELATION_KIND_COMMENT,
+                    intel_prod::RELATION_KIND_REPORT,
+                ]))
+                .into_query(),
+        ),
+    )
     .select_only()
     .column_as(signal_message::Column::Id, "id")
     .column_as(signal_message::Column::MessageUid, "message_uid")
@@ -623,7 +635,9 @@ async fn collect_report(
     for (id, message) in &messages {
         let is_pure_peleng = message.coords.is_some()
             && message.callsign_tokens.clone().unwrap_or(vec![]).is_empty();
-        if is_pure_peleng {
+        let has_comments =
+            comments.iter().any(|(comment_id, _)| id == comment_id);
+        if is_pure_peleng && !has_comments {
             continue;
         }
         let (Some(master_key), Some(freq)) =
