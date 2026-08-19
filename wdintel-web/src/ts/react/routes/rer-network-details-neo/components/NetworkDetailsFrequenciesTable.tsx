@@ -23,6 +23,7 @@ import {
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import {
   renderMrtCellWithFallback,
   renderMrtCellTextValue,
@@ -105,20 +106,55 @@ function renderCategoryChip(label: string) {
   ));
 }
 
-function renderFrequencyCell(row: NetworkFreqTableRow) {
+export function NetworkFrequencyCell({ row }: { row: NetworkFreqTableRow }) {
   return (
     <Stack
       direction="row"
       spacing={1}
       alignItems="center"
-      sx={{ minWidth: 0, pl: row.kind === 'freq' && row.parentGroupId ? 4.5 : 0 }}
+      sx={{
+        width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        overflow: 'hidden',
+        pl: row.kind === 'freq' && row.parentGroupId ? 4.5 : 0,
+      }}
     >
       {renderFrequencyStatusIndicator(getRowIsActive(row))}
-      <Typography variant="body2" fontWeight={600}>
-        {row.displayFreq}
-      </Typography>
+      <MrtOverflowText
+        displayValue={row.displayFreq}
+        fullValue={row.displayFreq}
+        sx={{ minWidth: 0, flex: '1 1 auto', typography: 'body2', fontWeight: 600 }}
+      />
     </Stack>
   );
+}
+
+export function NetworkFrequencyCallsignCell({
+  row,
+  freqCallsignsById,
+  freqCallsignsStatus,
+}: {
+  row: NetworkFreqTableRow;
+  freqCallsignsById: Map<number, string[]>;
+  freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error';
+}) {
+  const label = getRowCallsignLabel(row);
+  const freqIds = row.kind === 'group' ? row.freqIds : [row.freq.networkFreqId];
+  const isLoaded = freqIds.every((freqId) => freqCallsignsById.has(freqId));
+  if (freqCallsignsStatus === 'loading' && !isLoaded) {
+    return <CircularProgress size={14} />;
+  }
+  if (freqCallsignsStatus === 'error' && !isLoaded) {
+    return (
+      <Box component="span" aria-label="Не завантажено">
+        <Typography variant="body2" color="error" fontWeight={600}>
+          Не завантажено
+        </Typography>
+      </Box>
+    );
+  }
+  return <MrtOverflowText displayValue={label || '—'} fullValue={label || '—'} />;
 }
 
 function resolveLastDatetimeLabel(lastDatetime: number | null): string {
@@ -191,7 +227,7 @@ export type NetworkDetailsFrequenciesTableProps = {
   onReloadFrequencies: () => void;
 };
 
-function buildColumns(
+export function buildNetworkDetailsFrequencyColumns(
   freqCallsignsById: Map<number, string[]>,
   freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error',
 ): AppMrtColumnDef<NetworkFreqTableRow>[] {
@@ -203,7 +239,7 @@ function buildColumns(
       size: 280,
       enableSorting: true,
       meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
-      Cell: mrtCustomCell(({ row }) => renderFrequencyCell(row.original)),
+      Cell: mrtCustomCell(({ row }) => <NetworkFrequencyCell row={row.original} />),
     },
     {
       header: 'Модуляція',
@@ -242,25 +278,13 @@ function buildColumns(
       size: 300,
       enableSorting: false,
       meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
-      Cell: mrtCustomCell(({ row }) => {
-        const label = getRowCallsignLabel(row.original);
-        const freqIds =
-          row.original.kind === 'group' ? row.original.freqIds : [row.original.freq.networkFreqId];
-        const isLoaded = freqIds.every((freqId) => freqCallsignsById.has(freqId));
-        if (freqCallsignsStatus === 'loading' && !isLoaded) {
-          return <CircularProgress size={14} />;
-        }
-        if (freqCallsignsStatus === 'error' && !isLoaded) {
-          return (
-            <Box component="span" aria-label="Не завантажено">
-              <Typography variant="body2" color="error" fontWeight={600}>
-                Не завантажено
-              </Typography>
-            </Box>
-          );
-        }
-        return label;
-      }),
+      Cell: mrtCustomCell(({ row }) => (
+        <NetworkFrequencyCallsignCell
+          row={row.original}
+          freqCallsignsById={freqCallsignsById}
+          freqCallsignsStatus={freqCallsignsStatus}
+        />
+      )),
     },
     {
       header: 'Остання акт.',
@@ -395,7 +419,7 @@ function NetworkDetailsFrequenciesTableContent({
   );
 
   const columns = useMemo<AppMrtColumnDef<NetworkFreqTableRow>[]>(() => {
-    return [...buildColumns(freqCallsignsById, freqCallsignsStatus)];
+    return [...buildNetworkDetailsFrequencyColumns(freqCallsignsById, freqCallsignsStatus)];
   }, [freqCallsignsById, freqCallsignsStatus]);
   const table = useAppMaterialReactTable({
     columns,

@@ -25,6 +25,7 @@ import {
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
 import { PowerAlert } from '../../../components/PowerAlert';
@@ -93,6 +94,47 @@ type Props = {
   inFlightUpdateIds: number[];
   inFlightDeleteIds: number[];
 };
+
+export function NetworkCallsignDecoratedCell({ row }: { row: NetworkCallsignRowView }) {
+  const callsign = formatMrtCellTextValue(row.callsign);
+
+  return (
+    <Stack
+      direction="row"
+      spacing={1.25}
+      alignItems="center"
+      sx={{ width: '100%', minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}
+    >
+      <NetworkCallsignStatusDot statusLabel={row.statusLabel} status={row.status} />
+      <MrtOverflowText
+        displayValue={callsign}
+        fullValue={callsign}
+        sx={{ minWidth: 0, flex: '1 1 auto', typography: 'body2', fontWeight: 700 }}
+      />
+      {row.mainRadioStation ? (
+        <Tooltip title="Головна радіостанція" arrow>
+          <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
+        </Tooltip>
+      ) : null}
+      {row.commandControl ? (
+        <Tooltip title="Ланка управління" arrow>
+          <MilitaryTechOutlinedIcon fontSize="small" sx={{ color: 'info.main', flexShrink: 0 }} />
+        </Tooltip>
+      ) : null}
+    </Stack>
+  );
+}
+
+export function createNetworkCallsignColumn(): AppMrtColumnDef<NetworkCallsignRowView> {
+  return {
+    header: 'Позивний',
+    accessorKey: 'callsign',
+    id: 'callsign',
+    size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
+    meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+    Cell: mrtCustomCell(({ row }) => <NetworkCallsignDecoratedCell row={row.original} />),
+  };
+}
 
 export function NetworkCallsignsNetworkTable({
   title,
@@ -214,37 +256,7 @@ function NetworkCallsignsNetworkTableContent({
   const titleCountLabel = countLabel ?? (isInitialLoading ? NO_DATA_LABEL : null);
   const columns = useMemo<AppMrtColumnDef<NetworkCallsignRowView>[]>(
     () => [
-      {
-        header: 'Позивний',
-        accessorKey: 'callsign',
-        id: 'callsign',
-        size: NETWORK_CALLSIGN_COLUMN_SIZES.callsign,
-        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
-        Cell: mrtCustomCell(({ row }) => (
-          <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-            <NetworkCallsignStatusDot
-              statusLabel={row.original.statusLabel}
-              status={row.original.status}
-            />
-            <Typography variant="body2" fontWeight={700}>
-              {formatMrtCellTextValue(row.original.callsign)}
-            </Typography>
-            {row.original.mainRadioStation ? (
-              <Tooltip title="Головна радіостанція" arrow>
-                <StarIcon fontSize="small" sx={{ color: 'warning.main', flexShrink: 0 }} />
-              </Tooltip>
-            ) : null}
-            {row.original.commandControl ? (
-              <Tooltip title="Ланка управління" arrow>
-                <MilitaryTechOutlinedIcon
-                  fontSize="small"
-                  sx={{ color: 'info.main', flexShrink: 0 }}
-                />
-              </Tooltip>
-            ) : null}
-          </Stack>
-        )),
-      },
+      createNetworkCallsignColumn(),
       {
         header: 'ПІП',
         accessorKey: 'fullName',
