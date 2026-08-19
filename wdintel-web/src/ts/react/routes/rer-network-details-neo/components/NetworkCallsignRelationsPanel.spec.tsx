@@ -375,6 +375,37 @@ describe('NetworkCallsignRelationsPanel', () => {
     expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).toBeNull();
   });
 
+  it('explains that the selected period has no visible relations without offering to clear defaults', () => {
+    const view = renderPanel(
+      {
+        nodes: [
+          relationNode({ id: 'ALPHA', label: 'ALPHA' }),
+          relationNode({ id: 'BRAVO', label: 'BRAVO' }),
+        ],
+        edges: [
+          {
+            id: 'ALPHA__BRAVO',
+            source: 'ALPHA',
+            target: 'BRAVO',
+            weight: 1,
+            byFreq: [{ freq: '652.111', weight: 1 }],
+          },
+        ],
+        freqs: [{ freq: '652.111', enabledByDefault: true }],
+      },
+      {
+        relationsSearch: '',
+        relationsEnabledFreqs: ['652.111'],
+        relationsMinIntensity: NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY,
+      },
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain("Немає зв'язків між позивними за вибраний період");
+    expect(view.container.textContent).not.toContain("Фільтри приховали всі зв'язки");
+    expect(view.container.querySelector('[data-testid="clear-empty-filters"]')).toBeNull();
+  });
+
   it('lets the user close an opened relation edge drill-down', () => {
     const view = renderPanel(undefined, {
       relationsSelectedEdgeId: 'ALPHA__BRAVO',
