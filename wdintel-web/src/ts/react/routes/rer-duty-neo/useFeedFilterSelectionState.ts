@@ -3,11 +3,17 @@ import type { Dispatch, SetStateAction } from 'react';
 
 export type FeedFilterMode = 'include' | 'exclude';
 
+export type FeedFilterModeTransfer = {
+  includeValues: string[];
+  excludeValues: string[];
+};
+
 type UseFeedFilterSelectionStateParams<TLocal> = {
   includeValues: readonly string[];
   excludeValues: readonly string[];
   onIncludeChange: (next: string[]) => void;
   onExcludeChange: (next: string[]) => void;
+  onModeTransfer: (next: FeedFilterModeTransfer) => void;
   toLocalValues: (values: readonly string[]) => TLocal[];
   toParentValues: (values: readonly TLocal[]) => string[];
 };
@@ -28,6 +34,7 @@ export function useFeedFilterSelectionState<TLocal>({
   excludeValues,
   onIncludeChange,
   onExcludeChange,
+  onModeTransfer,
   toLocalValues,
   toParentValues,
 }: UseFeedFilterSelectionStateParams<TLocal>): SelectionStateResult<TLocal> {
@@ -130,13 +137,11 @@ export function useFeedFilterSelectionState<TLocal>({
       ) {
         return;
       }
-      if (nextMode === 'include') {
-        onIncludeChange(transferredValues);
-        onExcludeChange([]);
-      } else {
-        onExcludeChange(transferredValues);
-        onIncludeChange([]);
-      }
+      onModeTransfer(
+        nextMode === 'include'
+          ? { includeValues: transferredValues, excludeValues: [] }
+          : { includeValues: [], excludeValues: transferredValues },
+      );
     },
   };
 }

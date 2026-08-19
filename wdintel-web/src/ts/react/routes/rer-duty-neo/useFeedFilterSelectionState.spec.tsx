@@ -7,6 +7,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
+import type { FeedFilterModeTransfer } from './useFeedFilterSelectionState';
 
 function flushMicrotasks(): Promise<void> {
   return Promise.resolve();
@@ -23,12 +24,19 @@ function Harness(props: {
   excludeValues: string[];
   onIncludeChange: (next: string[]) => void;
   onExcludeChange: (next: string[]) => void;
+  onModeTransfer?: (next: FeedFilterModeTransfer) => void;
 }) {
   const state = useFeedFilterSelectionState<string>({
     includeValues: props.includeValues,
     excludeValues: props.excludeValues,
     onIncludeChange: props.onIncludeChange,
     onExcludeChange: props.onExcludeChange,
+    onModeTransfer:
+      props.onModeTransfer ??
+      (({ includeValues, excludeValues }) => {
+        props.onIncludeChange(includeValues);
+        props.onExcludeChange(excludeValues);
+      }),
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -156,6 +164,7 @@ describe('useFeedFilterSelectionState', () => {
     } | null>;
     const onIncludeChange = vi.fn();
     const onExcludeChange = vi.fn();
+    const onModeTransfer = vi.fn();
     const selected = [{ id: 'sender-a', label: 'Sender A' }];
 
     function SenderHarness() {
@@ -164,6 +173,7 @@ describe('useFeedFilterSelectionState', () => {
         excludeValues: [],
         onIncludeChange,
         onExcludeChange,
+        onModeTransfer,
         toLocalValues: (values: readonly string[]) =>
           values.map((id) => selected.find((option) => option.id === id) ?? { id, label: id }),
         toParentValues: (values: typeof selected) => values.map((option) => option.id),
@@ -175,8 +185,12 @@ describe('useFeedFilterSelectionState', () => {
     await act(async () => root.render(<SenderHarness />));
     await act(async () => apiRef.current?.setMode('exclude'));
 
-    expect(onExcludeChange).toHaveBeenCalledWith(['sender-a']);
-    expect(onIncludeChange).toHaveBeenCalledWith([]);
+    expect(onModeTransfer).toHaveBeenCalledWith({
+      includeValues: [],
+      excludeValues: ['sender-a'],
+    });
+    expect(onExcludeChange).not.toHaveBeenCalled();
+    expect(onIncludeChange).not.toHaveBeenCalled();
     expect(apiRef.current?.localValue).toEqual([{ id: 'sender-a', label: 'Sender A' }]);
   });
 
@@ -372,6 +386,10 @@ describe('useFeedFilterSelectionState', () => {
         excludeValues: [],
         onIncludeChange: props.onIncludeChange,
         onExcludeChange: props.onExcludeChange,
+        onModeTransfer: ({ includeValues, excludeValues }) => {
+          props.onIncludeChange(includeValues);
+          props.onExcludeChange(excludeValues);
+        },
         toLocalValues: (values) =>
           values.map((id) => ({ id, label: `${id}-${props.labelSuffix}` })),
         toParentValues: (values) => values.map((option) => option.id),

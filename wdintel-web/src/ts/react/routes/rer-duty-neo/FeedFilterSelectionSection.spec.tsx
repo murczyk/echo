@@ -136,6 +136,10 @@ function DutyFrequencyHarness({
     excludeValues: freqsDenied,
     onIncludeChange: setFreqsSelected,
     onExcludeChange: setFreqsDenied,
+    onModeTransfer: ({ includeValues, excludeValues }) => {
+      setFreqsSelected(includeValues);
+      setFreqsDenied(excludeValues);
+    },
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -167,6 +171,10 @@ function DutyFrequencyColumnsHarness() {
     excludeValues: columnBExclude,
     onIncludeChange: setColumnBInclude,
     onExcludeChange: setColumnBExclude,
+    onModeTransfer: ({ includeValues, excludeValues }) => {
+      setColumnBInclude(includeValues);
+      setColumnBExclude(excludeValues);
+    },
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });

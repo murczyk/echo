@@ -78,14 +78,19 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   const {
     onGroupsChange,
     onDeniedGroupsChange,
+    onGroupsModeTransfer,
     onSendersChange,
     onDeniedSendersChange,
+    onSendersModeTransfer,
     onFreqsChange,
     onFreqsDeniedChange,
+    onFreqsModeTransfer,
     onPostsChange,
     onPostsDeniedChange,
+    onPostsModeTransfer,
     onUnitsChange,
     onUnitsDeniedChange,
+    onUnitsModeTransfer,
     onUnitsExactMatchOnlyChange,
     onAdjacentFreqsRangeChange,
     onHighlightSignalsChange,
@@ -107,6 +112,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.deniedGroups,
     onIncludeChange: onGroupsChange,
     onExcludeChange: onDeniedGroupsChange,
+    onModeTransfer: onGroupsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -115,6 +121,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.deniedSenders,
     onIncludeChange: onSendersChange,
     onExcludeChange: onDeniedSendersChange,
+    onModeTransfer: onSendersModeTransfer,
     toLocalValues: (values) =>
       values.map((id) => senderOptions.find((opt) => opt.id === id) ?? { id, label: id }),
     toParentValues: (values) => values.map((option) => option.id),
@@ -124,6 +131,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.freqsDenied,
     onIncludeChange: onFreqsChange,
     onExcludeChange: onFreqsDeniedChange,
+    onModeTransfer: onFreqsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -132,6 +140,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.postsDenied ?? [],
     onIncludeChange: onPostsChange ?? (() => {}),
     onExcludeChange: onPostsDeniedChange ?? (() => {}),
+    onModeTransfer: onPostsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -152,6 +161,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.unitsDenied ?? [],
     onIncludeChange: onUnitsChange ?? (() => {}),
     onExcludeChange: onUnitsDeniedChange ?? (() => {}),
+    onModeTransfer: onUnitsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
