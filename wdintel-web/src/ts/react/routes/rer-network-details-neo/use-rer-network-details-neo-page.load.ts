@@ -38,7 +38,10 @@ import {
   createNetworkCallsignActivityMap,
 } from './network-callsigns.tab';
 import { normalizeCallsignDisplay } from './network-callsigns.utils';
-import { buildNetworkCallsignRelationFreqState } from './network-relations';
+import {
+  buildNetworkCallsignRelationFreqState,
+  resolveNetworkCallsignRelationFreqs,
+} from './network-relations';
 
 type ReloadGenerationRef = MutableRefObject<number>;
 
@@ -139,10 +142,13 @@ export function deriveRelationsEnabledFreqs(
   currentRelationsEnabledFreqs: string[],
   currentRelations: NetworkCallsignRelationsRsp | null,
   relations: NetworkCallsignRelationsRsp,
+  preserveCurrentSelection = true,
 ): string[] {
   void currentRelations;
-  return buildNetworkCallsignRelationFreqState(relations, currentRelationsEnabledFreqs)
-    .resolvedEnabledFreqs;
+  return buildNetworkCallsignRelationFreqState(
+    relations,
+    preserveCurrentSelection ? currentRelationsEnabledFreqs : [],
+  ).resolvedEnabledFreqs;
 }
 
 export function isCurrentRelationsWindow(
@@ -513,17 +519,20 @@ export function useRerNetworkDetailsNeoPageLoad(
             };
           }
 
+          const frequencyResolution = resolveNetworkCallsignRelationFreqs(
+            relations,
+            current.relationsEnabledFreqs,
+            current.relationsEnabledFreqsCustomized,
+          );
+
           return {
             ...current,
             relations,
             relationsLoaded: true,
             relationsLoading: false,
             relationsError: null,
-            relationsEnabledFreqs: deriveRelationsEnabledFreqs(
-              current.relationsEnabledFreqs,
-              current.relations,
-              relations,
-            ),
+            relationsEnabledFreqs: frequencyResolution.enabledFreqs,
+            relationsEnabledFreqsCustomized: frequencyResolution.customized,
           };
         });
       } catch (error) {
@@ -725,6 +734,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           relationsError: null,
           relationsSearch: '',
           relationsEnabledFreqs: [],
+          relationsEnabledFreqsCustomized: false,
           relationsMinIntensity: 10,
           relationsShowLabels: true,
           relationsSelectedNodeId: null,

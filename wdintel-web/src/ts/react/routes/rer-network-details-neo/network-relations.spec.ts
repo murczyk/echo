@@ -13,6 +13,7 @@ import {
   limitGraphEdgesByWeight,
   normalizeNetworkCallsignRelationSearch,
   NETWORK_RELATIONS_RENDER_LIMITS,
+  resolveNetworkCallsignRelationFreqs,
   zoomRelationGraphViewBox,
 } from './network-relations';
 
@@ -87,6 +88,53 @@ function createGraph(): NetworkCallsignRelationsRsp {
 }
 
 describe('network relations helpers', () => {
+  it('uses new defaults when the previous selection was not customized', () => {
+    const nextGraph = {
+      ...createGraph(),
+      freqs: [
+        { freq: '652.111', enabledByDefault: true },
+        { freq: '852.111', enabledByDefault: true },
+      ],
+    };
+
+    expect(resolveNetworkCallsignRelationFreqs(nextGraph, ['652.111'], false)).toEqual({
+      enabledFreqs: ['652.111', '852.111'],
+      customized: false,
+    });
+  });
+
+  it('resets stale customized selections and keeps the reset automatic', () => {
+    const onlySecondFreq = {
+      ...createGraph(),
+      edges: [],
+      freqs: [{ freq: '852.111', enabledByDefault: true }],
+    };
+    const nextRange = {
+      ...createGraph(),
+      edges: [],
+      freqs: [
+        { freq: '852.111', enabledByDefault: true },
+        { freq: '954.111', enabledByDefault: true },
+      ],
+    };
+
+    expect(resolveNetworkCallsignRelationFreqs(onlySecondFreq, ['652.111'], true)).toEqual({
+      enabledFreqs: ['852.111'],
+      customized: false,
+    });
+    expect(resolveNetworkCallsignRelationFreqs(nextRange, ['852.111'], false)).toEqual({
+      enabledFreqs: ['852.111', '954.111'],
+      customized: false,
+    });
+  });
+
+  it('preserves a customized selection when it overlaps the next response', () => {
+    expect(resolveNetworkCallsignRelationFreqs(createGraph(), ['652.111'], true)).toEqual({
+      enabledFreqs: ['652.111'],
+      customized: true,
+    });
+  });
+
   it('keeps the graph point under the cursor fixed while zooming', () => {
     const viewBox = { x: 0, y: 0, width: 2000, height: 1000 };
     const focalPoint = getRelationGraphPointFromViewport(viewBox, 250, 100, 1000, 500);

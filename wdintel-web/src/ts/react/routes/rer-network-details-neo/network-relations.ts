@@ -22,6 +22,11 @@ export type NetworkCallsignRelationFreqState = {
   resolvedEnabledFreqs: string[];
 };
 
+export type NetworkCallsignRelationFreqResolution = {
+  enabledFreqs: string[];
+  customized: boolean;
+};
+
 export type NetworkCallsignRelationsNodeView = NetworkCallsignRelationNode & {
   matchedSearch: boolean;
   visible: boolean;
@@ -112,6 +117,27 @@ export function buildNetworkCallsignRelationFreqState(
     resolvedEnabledFreqs:
       resolvedEnabledFreqs.length > 0 ? resolvedEnabledFreqs : fallbackEnabledFreqs,
   };
+}
+
+export function resolveNetworkCallsignRelationFreqs(
+  graph: NetworkCallsignRelationsRsp,
+  previousSelectedFreqs: string[],
+  wasCustomized: boolean,
+): NetworkCallsignRelationFreqResolution {
+  const { availableFreqs, defaultEnabledFreqs } = buildNetworkCallsignRelationFreqState(graph, []);
+
+  if (!wasCustomized) {
+    return { enabledFreqs: defaultEnabledFreqs, customized: false };
+  }
+
+  const availableFreqSet = new Set(availableFreqs.map((freq) => normalizeEnabledFreq(freq.freq)));
+  const overlappingFreqs = [...new Set(previousSelectedFreqs.map(normalizeEnabledFreq))].filter(
+    (freq) => freq !== '' && availableFreqSet.has(freq),
+  );
+
+  return overlappingFreqs.length > 0
+    ? { enabledFreqs: overlappingFreqs, customized: true }
+    : { enabledFreqs: defaultEnabledFreqs, customized: false };
 }
 
 export function getDefaultNetworkCallsignRelationFreqs(
