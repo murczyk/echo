@@ -261,6 +261,103 @@ a {
   cursor: default;
 }
 
+/* Native tag chips for MessageCardTags hot path (avoid MUI Chip/emotion per card). */
+.message-card-tag-chip {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 6px;
+  min-height: 24px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 16px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: normal;
+  white-space: nowrap;
+  vertical-align: middle;
+  transition:
+    opacity 0.12s ease,
+    filter 0.12s ease;
+}
+
+.message-card-tag-chip__label {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.message-card-tag-chip[data-selected='false'] {
+  background-color: var(--color-background);
+  border-color: var(--text-color);
+  color: var(--text-color);
+  opacity: 0.75;
+}
+
+.message-card-tag-chip[data-selected='true'] {
+  background-color: var(--color-tag-selected);
+  border-color: var(--color-border-selected);
+  color: var(--neutral-900);
+  opacity: 1;
+}
+
+.message-card-tag-chip[data-interactive='true'] {
+  cursor: pointer;
+}
+
+.message-card-tag-chip[data-interactive='false'] {
+  cursor: text;
+  opacity: 1;
+}
+
+.message-card-tag-chip[data-interactive='true']:hover {
+  opacity: 1;
+  filter: brightness(0.95);
+}
+
+.message-card-tag-chip:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.message-card-tag-expand {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 27px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-action);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.43;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.message-card-tag-expand:hover {
+  background-color: color-mix(in srgb, var(--color-action) 8%, transparent);
+}
+
+.message-card-tag-expand:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.message-card-tag-expand .MuiSvgIcon-root {
+  font-size: 0.875rem;
+}
+
 .message-card-media-reveal {
   display: inline-flex;
   align-items: center;
