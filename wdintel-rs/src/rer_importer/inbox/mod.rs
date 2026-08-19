@@ -1752,6 +1752,7 @@ async fn ensure_submit_group_aor(
     let Some(aor_id) = aor_id else {
         return Ok(());
     };
+    crate::battle_line::lock_updates(txn).await.c(h!())?;
     let existing_aors = signal_group_aor::Entity::find()
         .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
         .count(txn)
