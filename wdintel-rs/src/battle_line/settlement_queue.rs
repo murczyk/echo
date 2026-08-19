@@ -148,14 +148,23 @@ pub async fn run_inbox_settlement_worker_once(
         return Ok(false);
     }
     let mut processed = false;
+    let mut cursor = None;
     for _ in 0..INBOX_SETTLEMENT_WORKER_BATCH_SIZE {
         let txn = env.dbx.begin().await.c(h!())?;
-        let row = claim_pending_row(&txn).await.c(h!())?;
+        let row = claim_pending_row(&txn, cursor).await.c(h!())?;
         let Some(row) = row else {
             txn.rollback().await.c(h!())?;
             break;
         };
-        resolve_claimed_row(env, &txn, row).await.c(h!())?;
+        cursor = Some(row.id);
+        let row_id = row.id;
+        if let Err(error) = resolve_claimed_row(env, &txn, row).await {
+            txn.rollback().await.c(h!())?;
+            warn!(
+                "Inbox settlement resolution error for row {row_id}: {error:#?}"
+            );
+            continue;
+        }
         txn.commit().await.c(h!())?;
         processed = true;
     }
@@ -164,15 +173,21 @@ pub async fn run_inbox_settlement_worker_once(
 
 async fn claim_pending_row<C>(
     dbx: &C,
+    after_id: Option<i64>,
 ) -> anyhow::Result<Option<sigint_inbox_item_settlement::Model>>
 where
     C: ConnectionTrait,
 {
-    sigint_inbox_item_settlement::Entity::find()
+    let mut query = sigint_inbox_item_settlement::Entity::find()
         .filter(sigint_inbox_item_settlement::Column::SettlementId.is_null())
         .filter(sigint_inbox_item_settlement::Column::IsUndefined.is_null())
         .order_by_asc(sigint_inbox_item_settlement::Column::Id)
-        .limit(1)
+        .limit(1);
+    if let Some(after_id) = after_id {
+        query =
+            query.filter(sigint_inbox_item_settlement::Column::Id.gt(after_id));
+    }
+    query
         .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
         .one(dbx)
         .await
@@ -688,12 +703,12 @@ mod tests {
         setup.commit().await.unwrap();
 
         let first_worker = dbx.begin().await.unwrap();
-        let first = claim_pending_row(&first_worker)
+        let first = claim_pending_row(&first_worker, None)
             .await
             .unwrap()
             .expect("first pending row");
         let second_worker = dbx.begin().await.unwrap();
-        let second = claim_pending_row(&second_worker)
+        let second = claim_pending_row(&second_worker, None)
             .await
             .unwrap()
             .expect("second pending row");
