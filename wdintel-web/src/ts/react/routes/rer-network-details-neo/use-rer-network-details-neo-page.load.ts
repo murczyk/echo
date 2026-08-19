@@ -139,10 +139,13 @@ export function deriveRelationsEnabledFreqs(
   currentRelationsEnabledFreqs: string[],
   currentRelations: NetworkCallsignRelationsRsp | null,
   relations: NetworkCallsignRelationsRsp,
+  preserveCurrentSelection = true,
 ): string[] {
   void currentRelations;
-  return buildNetworkCallsignRelationFreqState(relations, currentRelationsEnabledFreqs)
-    .resolvedEnabledFreqs;
+  return buildNetworkCallsignRelationFreqState(
+    relations,
+    preserveCurrentSelection ? currentRelationsEnabledFreqs : [],
+  ).resolvedEnabledFreqs;
 }
 
 export function isCurrentRelationsWindow(
@@ -523,6 +526,7 @@ export function useRerNetworkDetailsNeoPageLoad(
               current.relationsEnabledFreqs,
               current.relations,
               relations,
+              current.relationsEnabledFreqsCustomized,
             ),
           };
         });
@@ -725,6 +729,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           relationsError: null,
           relationsSearch: '',
           relationsEnabledFreqs: [],
+          relationsEnabledFreqsCustomized: false,
           relationsMinIntensity: 10,
           relationsShowLabels: true,
           relationsSelectedNodeId: null,
