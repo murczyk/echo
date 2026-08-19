@@ -147,6 +147,37 @@ pub async fn run_inbox_settlement_worker_once(
     if active_battle_line_id(&env.dbx).await.c(h!())?.is_none() {
         return Ok(false);
     }
+    let catalog_txn = env.dbx.begin().await.c(h!())?;
+    lock_updates(&catalog_txn).await.c(h!())?;
+    if !has_pending_rows(&catalog_txn).await.c(h!())? {
+        catalog_txn.commit().await.c(h!())?;
+        return Ok(false);
+    }
+    crate::location::aor_config::refresh_settlements_aor_map(
+        &catalog_txn,
+        env.settlements.clone(),
+    )
+    .await
+    .c(h!())?;
+    let processed = process_pending_rows(env).await.c(h!())?;
+    catalog_txn.commit().await.c(h!())?;
+    Ok(processed)
+}
+
+async fn has_pending_rows<C>(dbx: &C) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_inbox_item_settlement::Entity::find()
+        .filter(sigint_inbox_item_settlement::Column::SettlementId.is_null())
+        .filter(sigint_inbox_item_settlement::Column::IsUndefined.is_null())
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
+async fn process_pending_rows(env: &Env) -> anyhow::Result<bool> {
     let mut processed = false;
     let mut cursor = None;
     for _ in 0..INBOX_SETTLEMENT_WORKER_BATCH_SIZE {
