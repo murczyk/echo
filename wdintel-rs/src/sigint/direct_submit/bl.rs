@@ -1537,7 +1537,7 @@ mod tests {
                 .count(&env.dbx)
                 .await
                 .unwrap(),
-            1
+            2
         );
 
         let mut clear_device_payload = direct_submit_payload("updated body");
