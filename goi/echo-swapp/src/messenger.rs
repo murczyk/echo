@@ -912,7 +912,7 @@ pub(crate) async fn send_next_scheduled_signal_message(
         txn.commit().await.c(h!())?;
         return Ok(());
     }
-    echo_im::worker::signal_worker_tick_once(&client_name, db)
+    echo_im::worker::signal_outbox_worker_tick_once(&client_name, db)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
