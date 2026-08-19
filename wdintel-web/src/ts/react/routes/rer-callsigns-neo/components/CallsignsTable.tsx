@@ -35,6 +35,7 @@ import {
   renderDefaultMrtEmptyRowsFallback,
   withExplicitSelectAllOption,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import type { CallsignRowView, CallsignsSortState, OnSort, SortColumn } from '../types';
 import { formatDateTime } from '../helpers';
@@ -109,6 +110,30 @@ type Props = {
   onEdit: (row: CallsignRowView) => void;
   onDelete: (row: CallsignRowView) => void;
 };
+
+type CallsignSourceItem = {
+  kind: 'primary' | 'confirming';
+  key: string;
+  label: string;
+  isFirstConfirming: boolean;
+};
+
+function buildCallsignSourceItems(row: CallsignRowView): CallsignSourceItem[] {
+  return [
+    {
+      kind: 'primary',
+      key: `primary:${row.sourceId ?? 'none'}`,
+      label: formatMrtCellTextValue(row.sourceName),
+      isFirstConfirming: false,
+    },
+    ...row.callsignAdditionalSourceIds.map((sourceId, index) => ({
+      kind: 'confirming' as const,
+      key: `confirming:${sourceId}`,
+      label: row.callsignAdditionalSourceNames[index] ?? `#${sourceId}`,
+      isFirstConfirming: index === 0,
+    })),
+  ];
+}
 
 type Updater<T> = T | ((prev: T) => T);
 
@@ -258,13 +283,43 @@ function CallsignsTableComponent({
         enableColumnFilter: false,
         size: 260,
         meta: { overflowMode: 'items' },
-        Cell: mrtItemsCell<CallsignRowView, string>({
-          items: ({ row }) => [
-            formatMrtCellTextValue(row.original.sourceName),
-            ...row.original.callsignAdditionalSourceNames,
-          ],
-          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
-          getItemText: (label) => label,
+        Cell: mrtItemsCell<CallsignRowView, CallsignSourceItem>({
+          items: ({ row }) => buildCallsignSourceItems(row.original),
+          renderItem: (item) =>
+            item.kind === 'primary' ? (
+              <Box component="span" sx={{ minWidth: 0, whiteSpace: 'nowrap' }}>
+                Основне: {item.label}
+              </Box>
+            ) : (
+              <Box
+                component="span"
+                aria-label={`Підтверджено: ${item.label}`}
+                sx={{ alignItems: 'center', display: 'inline-flex', gap: 0.5, minWidth: 0 }}
+              >
+                {item.isFirstConfirming && 'Підтверджено:'}
+                <PowerChip
+                  label={item.label}
+                  size="small"
+                  interactive={false}
+                  unselectedBackgroundColor="transparent"
+                  unselectedOpacity={1}
+                  unselectedTextColor="text.primary"
+                  unselectedBorderColor="divider"
+                />
+              </Box>
+            ),
+          renderCompactItem: (item) =>
+            item.kind === 'primary' ? (
+              <MrtOverflowText
+                displayValue={`Основне: ${item.label}`}
+                fullValue={`Основне: ${item.label}`}
+              />
+            ) : null,
+          getItemKey: (item) => item.key,
+          getItemText: (item) =>
+            item.kind === 'primary'
+              ? `Основне джерело: ${item.label}`
+              : `Підтверджено: ${item.label}`,
         }),
       },
       {
