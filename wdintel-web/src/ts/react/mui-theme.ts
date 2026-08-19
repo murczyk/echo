@@ -136,6 +136,19 @@ export function useNeoMuiTheme() {
               }),
             },
           },
+          MuiMenuItem: {
+            styleOverrides: {
+              root: {
+                fontSize: '14px',
+                '& .MuiListItemText-primary': {
+                  fontSize: '14px',
+                },
+                '& .MuiTypography-body1, & .MuiTypography-body2': {
+                  fontSize: '14px',
+                },
+              },
+            },
+          },
           MuiTableCell: {
             styleOverrides: {
               root: {

@@ -203,6 +203,21 @@ vi.mock('../../../components/PowerChip', () => ({
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
   buildDefaultColumnOrder: ({ dataColumnIds }: { dataColumnIds: string[] }) => dataColumnIds,
   getDefaultMRTOptions: () => ({ displayColumnDefOptions: {} }),
+  mrtItemsCell:
+    ({
+      items,
+      renderItem,
+    }: {
+      items: (props: any) => any[];
+      renderItem: (item: any) => ReactNode;
+    }) =>
+    (props: any) =>
+      items(props).map(renderItem),
+  mrtTextCell: ({ displayValue }: { displayValue: (props: any) => ReactNode }) => displayValue,
+  useAppMaterialReactTable: (options: Record<string, unknown>) => {
+    capturedTableOptions.push(options);
+    return { ...options, options, getState: () => ({ isFullScreen: false }) };
+  },
   renderColumnActionsMenuItems: () => [],
 }));
 
@@ -583,7 +598,7 @@ describe('AnalysisSummaryTableCard', () => {
     expect(onRenameUnit).toHaveBeenCalledWith('100.100', '1 обрмп', '77 обрмп');
   });
 
-  it('collapses callsigns after the first three and expands on demand', async () => {
+  it('keeps complete item values available to the shared overflow primitive', async () => {
     const view = await renderComponent(
       buildProps({
         rows: [
@@ -597,17 +612,12 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(view.container.textContent).toContain('ALPHA');
     expect(view.container.textContent).toContain('CHARLIE');
-    expect(view.container.textContent).not.toContain('DELTA');
-    expect(view.container.textContent).not.toContain('FOXTROT');
-    expect(view.container.textContent).not.toContain('GOLF');
-    expect(view.container.textContent).toContain('+4 ще');
-
-    await click(getButton(view.container, '+4 ще'));
     expect(view.container.textContent).toContain('DELTA');
-    expect(view.container.textContent).toContain('Згорнути');
+    expect(view.container.textContent).toContain('FOXTROT');
+    expect(view.container.textContent).toContain('GOLF');
   });
 
-  it('shows expandable overflow controls for callsigns, units, and locations', async () => {
+  it('renders analysis item cells without fixed-count clipping', async () => {
     const view = await renderComponent(
       buildProps({
         rows: [
@@ -622,10 +632,10 @@ describe('AnalysisSummaryTableCard', () => {
     rendered.push(view);
 
     const row = getTableRow(view.container, 0);
-    expect(row.children[5].textContent).toContain('+4 ще');
+    expect(row.children[5].textContent).toContain('DELTA');
     expect(row.children[6].textContent).toContain('р/м Сокіл');
-    expect(row.children[6].textContent).toContain('+3 ще');
-    expect(row.children[7].textContent).toContain('+3 ще');
+    expect(row.children[6].textContent).toContain('unit-d');
+    expect(row.children[7].textContent).toContain('loc-e');
   });
 
   it('renders standalone callsign chip overflow control', async () => {
@@ -642,12 +652,7 @@ describe('AnalysisSummaryTableCard', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('+2 ще');
-    expect(getButton(view.container, '+2 ще').dataset.disableRipple).toBe('true');
-    expect(getButton(view.container, '+2 ще').dataset.disableTouchRipple).toBe('true');
-    await click(getButton(view.container, '+2 ще'));
     expect(view.container.textContent).toContain('DELTA');
-    expect(view.container.textContent).toContain('Згорнути');
   });
 
   it('renders standalone compact list overflow controls', async () => {
@@ -659,10 +664,7 @@ describe('AnalysisSummaryTableCard', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('+2 ще');
-    expect(view.container.textContent).toContain('+3 ще');
-
-    await click(getButton(view.container, '+2 ще'));
-    expect(view.container.textContent).toContain('Згорнути');
+    expect(view.container.textContent).toContain('unit-d');
+    expect(view.container.textContent).toContain('loc-e');
   });
 });

@@ -31,7 +31,7 @@ import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Menu, MenuItem, Typography } from '@mui/material';
 import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
-import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode, RefObject } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 
@@ -52,6 +52,8 @@ const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
 const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 30;
+const MESSAGE_CARD_ACTION_BUTTON_SIZE_PX = 30;
+const MESSAGE_CARD_ACTION_GROUP_BORDER_PX = 2;
 
 export type MessageCardDisplayMode = 'duty' | 'analysis';
 
@@ -77,6 +79,10 @@ type ActionIconsRowProps = {
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
+  headerRowRef: RefObject<HTMLDivElement | null>;
+  leftHeaderContentRef: RefObject<HTMLDivElement | null>;
+  rightHeaderContentRef: RefObject<HTMLDivElement | null>;
+  headerColumnGap: number;
 };
 
 type MenuAnchorPosition = {
@@ -158,6 +164,10 @@ function ActionIconsRow({
   onDelete,
   onEditDetails,
   onExcludeMessageEntity,
+  headerRowRef,
+  leftHeaderContentRef,
+  rightHeaderContentRef,
+  headerColumnGap,
 }: ActionIconsRowProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const excludeMenuId = useId();
@@ -173,7 +183,7 @@ function ActionIconsRow({
     useState<MenuAnchorPosition | null>(null);
   const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] =
     useState<MenuAnchorPosition | null>(null);
-  const [stackedLayout, setStackedLayout] = useState(compact);
+  const [stackedLayout, setStackedLayout] = useState(false);
   const canShowExcludeMenu =
     displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
   const canShowNavigationMenu = navigationMenuItems.length > 0;
@@ -369,18 +379,32 @@ function ActionIconsRow({
   const actionGridColumns = displayMode === 'duty' ? 4 : 3;
 
   useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) {
+    const headerRow =
+      headerRowRef.current ??
+      rootRef.current?.closest<HTMLDivElement>('[data-message-card-header-row]');
+    const leftHeaderContent =
+      leftHeaderContentRef.current ??
+      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-left]');
+    const rightHeaderContent =
+      rightHeaderContentRef.current ??
+      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-right]');
+    if (!headerRow || !leftHeaderContent || !rightHeaderContent) {
       return;
     }
 
-    const minInlineWidth = buttons.length * 32;
+    const minInlineWidth =
+      buttons.length * MESSAGE_CARD_ACTION_BUTTON_SIZE_PX + MESSAGE_CARD_ACTION_GROUP_BORDER_PX;
     let rafId: number | null = null;
     const updateLayout = () => {
-      if (root.clientWidth <= 0) {
+      if (headerRow.clientWidth <= 0) {
         return;
       }
-      setStackedLayout(root.clientWidth < minInlineWidth);
+      const availableActionWidth =
+        headerRow.clientWidth -
+        leftHeaderContent.scrollWidth -
+        rightHeaderContent.scrollWidth -
+        headerColumnGap * 2;
+      setStackedLayout(availableActionWidth < minInlineWidth);
     };
 
     const scheduleUpdateLayout = () => {
@@ -398,21 +422,25 @@ function ActionIconsRow({
     };
 
     updateLayout();
-    if (typeof ResizeObserver === 'undefined') {
+    const ResizeObserverConstructor =
+      typeof window === 'undefined' ? undefined : window.ResizeObserver;
+    if (!ResizeObserverConstructor) {
       return;
     }
 
-    const observer = new ResizeObserver(() => {
+    const observer = new ResizeObserverConstructor(() => {
       scheduleUpdateLayout();
     });
-    observer.observe(root);
+    observer.observe(headerRow);
+    observer.observe(leftHeaderContent);
+    observer.observe(rightHeaderContent);
     return () => {
       observer.disconnect();
       if (rafId != null && typeof cancelAnimationFrame !== 'undefined') {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [buttons.length, compact]);
+  }, [buttons.length, headerColumnGap, headerRowRef, leftHeaderContentRef, rightHeaderContentRef]);
 
   const overflowMenu =
     isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
@@ -869,6 +897,10 @@ function MessageCardHeaderComponent({
   onEditDetails,
   onExcludeMessageEntity,
 }: MessageCardHeaderProps) {
+  const headerRowRef = useRef<HTMLDivElement | null>(null);
+  const leftHeaderContentRef = useRef<HTMLDivElement | null>(null);
+  const rightHeaderContentRef = useRef<HTMLDivElement | null>(null);
+  const headerColumnGap = compact ? 16 : 32;
   const navigationMenuItems = buildMessageCardNavigationMenuItems(
     etalonDisplayModel.renderedNetworks,
     mapHref,
@@ -989,16 +1021,20 @@ function MessageCardHeaderComponent({
 
   const row1 = (
     <div
+      ref={headerRowRef}
+      data-message-card-header-row="true"
       style={{
         display: 'flex',
         alignItems: 'center',
-        columnGap: compact ? 16 : 32,
+        columnGap: headerColumnGap,
         width: '100%',
         minHeight: MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX,
       }}
     >
       <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', flex: '1 1 0' }}>
-        {dateTimeBlock}
+        <div ref={leftHeaderContentRef} data-message-card-header-left="true">
+          {dateTimeBlock}
+        </div>
       </div>
       {!readOnly ? (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1023,6 +1059,10 @@ function MessageCardHeaderComponent({
             onDelete={onDelete}
             onEditDetails={onEditDetails}
             onExcludeMessageEntity={onExcludeMessageEntity}
+            headerRowRef={headerRowRef}
+            leftHeaderContentRef={leftHeaderContentRef}
+            rightHeaderContentRef={rightHeaderContentRef}
+            headerColumnGap={headerColumnGap}
           />
         </div>
       ) : null}
@@ -1036,7 +1076,9 @@ function MessageCardHeaderComponent({
           flex: '1 1 0',
         }}
       >
-        {topRight ?? <div style={{ minHeight: 28 }} />}
+        <div ref={rightHeaderContentRef} data-message-card-header-right="true">
+          {topRight ?? <div style={{ minHeight: 28 }} />}
+        </div>
       </div>
     </div>
   );

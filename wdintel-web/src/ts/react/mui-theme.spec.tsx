@@ -8,6 +8,9 @@ import {
   Button,
   DialogActions,
   IconButton,
+  ListItemText,
+  Menu,
+  MenuItem,
   Slider,
   Table,
   TableBody,
@@ -124,6 +127,32 @@ function Harness() {
   );
 }
 
+function MenuTypographyHarness() {
+  return (
+    <NeoMuiThemeProvider>
+      <Menu
+        open
+        anchorReference="anchorPosition"
+        anchorPosition={{ top: 0, left: 0 }}
+        MenuListProps={{ 'aria-label': 'Typography menu fixture' }}
+      >
+        <MenuItem data-testid="plain-menu-item">Plain menu label</MenuItem>
+        <MenuItem>
+          <ListItemText primary="List item text label" data-testid="list-item-text" />
+        </MenuItem>
+        <MenuItem>
+          <Typography data-testid="typography-menu-label" variant="body2">
+            Typography menu label
+          </Typography>
+        </MenuItem>
+        <MenuItem disabled>
+          <ListItemText primary="Disabled menu label" data-testid="disabled-list-item-text" />
+        </MenuItem>
+      </Menu>
+    </NeoMuiThemeProvider>
+  );
+}
+
 describe('mui-theme', () => {
   let container: HTMLElement;
   let root: Root;
@@ -189,6 +218,40 @@ describe('mui-theme', () => {
     expect(messageCardFontSize).toBe('14px');
     expect(Number.parseFloat(captionFontSize)).toBeLessThan(Number.parseFloat(body2FontSize));
     expect(tableCellFontSize).toBe(body2FontSize);
+  });
+
+  it('keeps portalled menu labels at 14px when the document root is 16px', async () => {
+    document.documentElement.style.fontSize = '16px';
+    await act(async () => {
+      root.render(<MenuTypographyHarness />);
+    });
+
+    const plainItem = document.body.querySelector('[data-testid="plain-menu-item"]');
+    const listItemText = document.body.querySelector('[data-testid="list-item-text"]');
+    const typography = document.body.querySelector('[data-testid="typography-menu-label"]');
+    const disabledListItemText = document.body.querySelector(
+      '[data-testid="disabled-list-item-text"]',
+    );
+    if (
+      !(plainItem instanceof HTMLElement) ||
+      !(listItemText instanceof HTMLElement) ||
+      !(typography instanceof HTMLElement) ||
+      !(disabledListItemText instanceof HTMLElement)
+    ) {
+      throw new Error('Expected portalled menu typography fixture nodes');
+    }
+
+    expect(container.contains(plainItem)).toBe(false);
+    expect(plainItem.closest('[role="presentation"]')?.parentElement).toBe(document.body);
+    expect(window.getComputedStyle(plainItem).fontSize).toBe('14px');
+    expect(
+      window.getComputedStyle(listItemText.querySelector('.MuiListItemText-primary')!).fontSize,
+    ).toBe('14px');
+    expect(window.getComputedStyle(typography).fontSize).toBe('14px');
+    expect(
+      window.getComputedStyle(disabledListItemText.querySelector('.MuiListItemText-primary')!)
+        .fontSize,
+    ).toBe('14px');
   });
 
   it('provides the standard dialog footer spacing globally', async () => {

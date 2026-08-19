@@ -19,7 +19,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type {
@@ -32,6 +31,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import type { AppMrtColumnDef } from '../../components/mui-customized/table/get-default-table-options';
 import { HttpRequestError } from '../../services/api/client';
 import {
   DEFAULT_LIST_UNITS_REQ,
@@ -47,7 +47,7 @@ import {
 import { hasRole } from '../../utils/roles';
 import { SettingsNeoTable } from '../settings-neo/SettingsNeoTable';
 
-const DEFAULT_COLUMN_ORDER = ['mrt-row-numbers', 'unitTxt', 'quantity', 'note', 'mrt-row-actions'];
+const DEFAULT_COLUMN_ORDER = ['mrt-row-actions', 'mrt-row-numbers', 'unitTxt', 'quantity', 'note'];
 const DEFAULT_COLUMN_VISIBILITY = {
   unitTxt: true,
   quantity: true,
@@ -267,7 +267,10 @@ export function AdminUnitUnparsedPage({
       setError(null);
       try {
         const response = await listUnresolvedUnitLabels(
-          { page: pageIndex, archiveFilter: ARCHIVE_FILTER_REQ[archiveFilter] },
+          {
+            page: pageIndex,
+            archiveFilter: ARCHIVE_FILTER_REQ[archiveFilter],
+          },
           signal ? { signal } : undefined,
         );
         if (signal?.aborted) return;
@@ -403,12 +406,13 @@ export function AdminUnitUnparsedPage({
     }
   }
 
-  const columns = useMemo<MRT_ColumnDef<UnresolvedUnitLabel>[]>(
+  const columns = useMemo<AppMrtColumnDef<UnresolvedUnitLabel>[]>(
     () => [
       {
         accessorKey: 'unitTxt',
         header: 'Текст підрозділу',
         size: 520,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '')}
@@ -425,6 +429,7 @@ export function AdminUnitUnparsedPage({
         header: 'Нотатка',
         size: 360,
         enableSorting: false,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() || '—')}
@@ -445,7 +450,7 @@ export function AdminUnitUnparsedPage({
       <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: embedded ? 0 : 2 }}>
         <TablePageToolbar
           title="Нерозпізнані підрозділи"
-          trailingActionsBeforeInternal={
+          filter={
             <ArchiveFilterChips
               value={archiveFilter}
               onChange={(value) => {

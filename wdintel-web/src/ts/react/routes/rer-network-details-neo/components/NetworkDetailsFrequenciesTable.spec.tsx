@@ -57,7 +57,14 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
 }));
 
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
+  mrtCustomCell: (renderer: any) => renderer,
+  mrtTextCell: ({ displayValue }: any) => displayValue,
   getDefaultMRTOptions: () => ({ localization: {} }),
+  useAppMaterialReactTable: (options: Record<string, unknown>) => ({
+    ...options,
+    options,
+    getState: () => ({ isFullScreen: false }),
+  }),
   buildDefaultColumnOrder: ({
     dataColumnIds,
     withRowNumbers,

@@ -14,11 +14,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import {
-  MaterialReactTable,
-  type MRT_ColumnDef,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
@@ -34,7 +30,10 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtItemsCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -79,7 +78,7 @@ function LocationConfigsTable({
   onEdit: (row: AorLocationConfigItem) => void;
 }) {
   const tableStateContext = useTableStateContext();
-  const columns = useMemo<MRT_ColumnDef<AorLocationConfigItem>[]>(
+  const columns = useMemo<AppMrtColumnDef<AorLocationConfigItem>[]>(
     () => [
       { accessorKey: 'aorName', header: 'AOR (смуга відповідальності)', size: 260 },
       {
@@ -87,19 +86,20 @@ function LocationConfigsTable({
         accessorFn: (row) => formatSelectedConfigs(row.selectedConfigs),
         header: 'Файли settlements.json',
         size: 600,
-        Cell: ({ row }) => (
-          <Typography variant="body2">
-            {formatSelectedConfigs(row.original.selectedConfigs)}
-          </Typography>
-        ),
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<AorLocationConfigItem, string>({
+          items: ({ row }) => row.original.selectedConfigs,
+          renderItem: (config) => <Typography variant="body2">{config}</Typography>,
+          getItemKey: (config) => config,
+          getItemText: (config) => config,
+        }),
       },
     ],
     [],
   );
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: rows,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

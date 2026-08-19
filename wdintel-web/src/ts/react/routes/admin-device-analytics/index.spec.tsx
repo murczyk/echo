@@ -136,7 +136,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(generalTab?.getAttribute('aria-selected')).toBe('true');
     expect(tagsTab?.getAttribute('aria-selected')).toBe('false');
     expect(generalPanel?.hidden).toBe(false);
-    expect(generalPanel?.textContent).toBe('');
+    expect(generalPanel?.textContent).toContain('Налаштування відсутні');
     expect(tagsPanel?.hidden).toBe(true);
     expect(mocks.listTags).not.toHaveBeenCalled();
 

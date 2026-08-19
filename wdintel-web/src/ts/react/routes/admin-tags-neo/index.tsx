@@ -1,6 +1,6 @@
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, CircularProgress, Stack } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import { TagAdmin } from '../../../../Bindings';
@@ -17,7 +17,9 @@ import {
   getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -82,7 +84,7 @@ function buildTagLoadingRows(): TagAdmin[] {
   }));
 }
 
-function useTagColumns(): MRT_ColumnDef<TagAdmin>[] {
+function useTagColumns(): AppMrtColumnDef<TagAdmin>[] {
   return useMemo(
     () => [
       {
@@ -154,10 +156,9 @@ function TagsTable(props: { data: TagAdmin[]; loading: boolean }) {
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: props.loading ? buildTagLoadingRows() : props.data,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

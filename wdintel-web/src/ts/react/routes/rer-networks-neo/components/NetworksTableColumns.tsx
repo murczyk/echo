@@ -1,11 +1,14 @@
 import { Box } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useMemo } from 'react';
 
-import { getSharedFilterTextFieldProps } from '../../../components/mui-customized/table/get-default-table-options';
+import {
+  type AppMrtColumnDef,
+  getSharedFilterTextFieldProps,
+  mrtItemsCell,
+  mrtCustomCell,
+} from '../../../components/mui-customized/table/get-default-table-options';
 import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
 import {
-  AorCell,
   ActivityBars,
   FrequencyCell,
   LastActivityCell,
@@ -60,7 +63,7 @@ export function useNetworksTableColumns({
   onFrequencyHoverLeave,
   onLocationHoverEnter,
   onLocationHoverLeave,
-}: Props): MRT_ColumnDef<NetworkRowView>[] {
+}: Props): AppMrtColumnDef<NetworkRowView>[] {
   return useMemo(
     () => [
       {
@@ -69,7 +72,8 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.network.name,
         enableColumnFilter: true,
         enableSorting: true,
-        Cell: ({ row }) => <NetworkCell network={row.original} />,
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => <NetworkCell network={row.original} />),
       },
       {
         id: 'aors',
@@ -79,10 +83,16 @@ export function useNetworksTableColumns({
         enableColumnFilter: true,
         enableSorting: true,
         meta: {
+          overflowMode: 'items',
           activeFilterValueFormatter: (value: unknown) =>
             formatAorActiveFilterValue(value, aorOptions),
         },
-        Cell: ({ row }) => <AorCell labels={row.original.aorLabels} />,
+        Cell: mrtItemsCell<NetworkRowView, string>({
+          items: ({ row }) => row.original.aorLabels,
+          renderItem: (label) => <Box component="span">{label}</Box>,
+          getItemKey: (label) => label,
+          getItemText: (label) => label,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: aorFilterOptions,
         filterFn: 'arrIncludesSome',
@@ -126,13 +136,14 @@ export function useNetworksTableColumns({
           row.inactiveFrequencies.map((freq) => freq.freq).join(' '),
         enableColumnFilter: true,
         enableSorting: true,
-        Cell: ({ row }) => (
+        meta: { overflowMode: 'custom', overflowOwner: 'domain-hover' },
+        Cell: mrtCustomCell(({ row }) => (
           <FrequencyCell
             row={row.original}
             onPointerEnterAnchor={onFrequencyHoverEnter}
             onPointerLeaveAnchor={onFrequencyHoverLeave}
           />
-        ),
+        )),
       },
       {
         id: 'location',
@@ -140,13 +151,14 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.network.location,
         enableColumnFilter: true,
         enableSorting: true,
-        Cell: ({ row }) => (
+        meta: { overflowMode: 'custom', overflowOwner: 'domain-hover' },
+        Cell: mrtCustomCell(({ row }) => (
           <LocationCell
             row={row.original}
             onPointerEnterAnchor={onLocationHoverEnter}
             onPointerLeaveAnchor={onLocationHoverLeave}
           />
-        ),
+        )),
       },
       {
         id: 'activity',
@@ -154,6 +166,7 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.activityBars.reduce((sum, item) => sum + item.value, 0),
         enableColumnFilter: false,
         enableSorting: false,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <Box>
             {row.original.activityBars.some((bar) => bar.value > 0) ? (
@@ -170,13 +183,14 @@ export function useNetworksTableColumns({
         accessorFn: (row) => row.lastActivityLabel,
         enableColumnFilter: false,
         enableSorting: true,
-        Cell: ({ row }) => (
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
           <LastActivityCell
             label={row.original.lastActivityLabel}
             detail={row.original.lastActivityDetail}
             tooltip={row.original.lastActivityTooltip}
           />
-        ),
+        )),
       },
     ],
     [

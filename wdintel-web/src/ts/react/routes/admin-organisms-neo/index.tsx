@@ -13,7 +13,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -42,7 +42,11 @@ import {
 } from '../../components/mui-customized/table/custom-styles';
 import {
   buildExplicitSingleSelectColumnFilter,
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtItemsCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
   withExplicitSelectAllOption,
 } from '../../components/mui-customized/table/get-default-table-options';
@@ -203,7 +207,7 @@ function buildComputedGroupFilterOptions(
 }
 
 function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: LoadingStatus) {
-  return useMemo<MRT_ColumnDef<Organism>[]>(() => {
+  return useMemo<AppMrtColumnDef<Organism>[]>(() => {
     const groupFilterOptions = buildGroupFilterOptions(lookup.groupByKey.values());
     const computedGroupFilterOptions = buildComputedGroupFilterOptions(lookup.computedGroupsById);
 
@@ -224,12 +228,17 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         id: 'parent',
         accessorFn: (row) =>
           formatMrtCellTextValue(row.parentId ? lookup.parentById.get(row.parentId) : null),
-        Cell: ({ row }) => {
-          const parentName = row.original.parentId
-            ? lookup.parentById.get(row.original.parentId)
-            : null;
-          return <span>{formatMrtCellTextValue(parentName)}</span>;
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            formatMrtCellTextValue(
+              row.original.parentId ? lookup.parentById.get(row.original.parentId) : null,
+            ),
+          fullValue: ({ row }) =>
+            formatMrtCellTextValue(
+              row.original.parentId ? lookup.parentById.get(row.original.parentId) : null,
+            ),
+        }),
         size: 200,
       },
       {
@@ -237,17 +246,13 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         id: 'aors',
         accessorFn: (row) =>
           (row.aorIds ?? []).map((id) => formatAorLabel(lookup.aorById.get(id), id)),
-        Cell: ({ row }) => {
-          if (row.original.aorIds.length === 0) return <span>—</span>;
-          const labels = row.original.aorIds
-            .map((id) => formatAorLabel(lookup.aorById.get(id), id))
-            .join(', ');
-          return (
-            <Tooltip title={labels}>
-              <span>{labels}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<Organism, string>({
+          items: ({ row }) =>
+            row.original.aorIds.map((id) => formatAorLabel(lookup.aorById.get(id), id)),
+          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          getItemText: (label) => label,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: Array.from(lookup.aorById.values()).map((aor) => ({
           text: aor.name,
@@ -264,22 +269,16 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
           const computedGroups = lookup.computedGroupsById.get(row.id) ?? [];
           return computedGroups.map((group) => formatGroupLabel(group, group.masterKey));
         },
-        Cell: ({ row }) => {
-          const computedGroups = lookup.computedGroupsById.get(row.original.id) ?? [];
-          if (computedGroupsStatus === 'loading' && computedGroups.length === 0) {
-            return <CircularProgress size={16} />;
-          }
-          if (computedGroupsStatus === 'error') return <span>—</span>;
-          if (computedGroups.length === 0) return <span>—</span>;
-          const labels = computedGroups
-            .map((group) => formatGroupLabel(group, group.masterKey))
-            .join(', ');
-          return (
-            <Tooltip title={labels}>
-              <span>{labels}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<Organism, string>({
+          items: ({ row }) => {
+            const computedGroups = lookup.computedGroupsById.get(row.original.id) ?? [];
+            return computedGroups.map((group) => formatGroupLabel(group, group.masterKey));
+          },
+          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          getItemText: (label) => label,
+          emptyValue: computedGroupsStatus === 'loading' ? <CircularProgress size={16} /> : '—',
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: computedGroupFilterOptions,
         filterFn: 'arrIncludesSome',
@@ -290,31 +289,12 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         header: 'Ролі',
         id: 'roles',
         accessorFn: (row) => row.roles ?? [],
-        Cell: ({ row }) => {
-          if (row.original.roles.length === 0) return <span>—</span>;
-          return (
-            <div className="flex flex-wrap gap-1">
-              {row.original.roles.map((role) => (
-                <PowerChip
-                  key={role}
-                  size="small"
-                  label={role}
-                  title={role}
-                  interactive={false}
-                  unselectedOpacity={1}
-                  fontSize="0.75rem"
-                  fontWeight={500}
-                  labelPaddingX={0.5}
-                  labelPaddingY={0.25}
-                  unselectedBackgroundColor="#f1f5f9"
-                  unselectedTextColor="#475569"
-                  unselectedBorderColor="#cbd5e1"
-                  sx={{ lineHeight: 1 }}
-                />
-              ))}
-            </div>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<Organism, string>({
+          items: ({ row }) => row.original.roles,
+          renderItem: (role) => <PowerChip label={role} size="small" interactive={false} />,
+          getItemText: (role) => role,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: ROLE_OPTIONS,
         filterFn: 'arrIncludesSome',
@@ -324,6 +304,7 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         header: 'Активна',
         id: 'enabled',
         accessorFn: (row) => (row.enabled ? 'так' : 'ні'),
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <div className="flex justify-center">
             {row.original.enabled ? (
@@ -358,17 +339,17 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
           if (groupKeys.length === 0) return ['без обмежень'];
           return buildGroupLabels(groupKeys, lookup).map((item) => item.label);
         },
-        Cell: ({ row }) => {
-          const groupKeys = lookup.organismGroupKeysById.get(row.original.id) ?? [];
-          if (groupKeys.length === 0) return <span>без обмежень</span>;
-          const labels = buildGroupLabels(groupKeys, lookup).map((item) => item.label);
-          const labelText = labels.join(', ');
-          return (
-            <Tooltip title={labelText}>
-              <span>{labelText}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<Organism, string>({
+          items: ({ row }) => {
+            const groupKeys = lookup.organismGroupKeysById.get(row.original.id) ?? [];
+            return groupKeys.length === 0
+              ? ['без обмежень']
+              : buildGroupLabels(groupKeys, lookup).map((item) => item.label);
+          },
+          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          getItemText: (label) => label,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: [
           { text: 'без обмежень', value: 'без обмежень' },
@@ -387,7 +368,11 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         header: 'Створено',
         id: 'createdAt',
         accessorFn: (row) => row.createdAt,
-        Cell: ({ row }) => <span>{formatDate(row.original.createdAt)}</span>,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDate(row.original.createdAt),
+          fullValue: ({ row }) => formatDate(row.original.createdAt),
+        }),
         size: 140,
       },
     ];
@@ -445,10 +430,9 @@ function OrganismsTable(props: {
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: props.loading ? buildOrganismLoadingRows() : props.data,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

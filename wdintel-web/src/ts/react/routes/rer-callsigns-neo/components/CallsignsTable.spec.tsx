@@ -10,7 +10,7 @@ import type { CallsignRowView } from '../types';
 import { CallsignsTable, getCallsignsTableContainerOverflowY } from './CallsignsTable';
 
 vi.mock('@mui/material', () => ({
-  Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Box: ({ children, ...props }: { children?: ReactNode }) => <div {...props}>{children}</div>,
   Button: ({
     children,
     onClick,
@@ -32,7 +32,19 @@ vi.mock('@mui/material', () => ({
 
 vi.mock('material-react-table', () => ({
   MaterialReactTable: ({ table }: { table: any }) => (
-    <div data-testid="table">{table.renderRowActions?.({ row: { original: table.data[0] } })}</div>
+    <div data-testid="table">
+      {table.data.map((row: CallsignRowView) => {
+        const sourceColumn = table.columns.find(
+          (column: { id: string }) => column.id === 'sourceName',
+        );
+        return (
+          <div key={row.id} data-testid={`source-${row.id}`}>
+            {sourceColumn.Cell?.({ row: { original: row } })}
+            {table.renderRowActions?.({ row: { original: row } })}
+          </div>
+        );
+      })}
+    </div>
   ),
   useMaterialReactTable: (options: any) => ({
     ...options,
@@ -68,6 +80,21 @@ vi.mock('../../../components/SectionLoadingOverlay', () => ({
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
   buildDefaultColumnOrder: ({ dataColumnIds }: { dataColumnIds: string[] }) => dataColumnIds,
   getDefaultMRTOptions: () => ({ displayColumnDefOptions: {} }),
+  mrtTextCell: ({ displayValue }: { displayValue: (props: unknown) => ReactNode }) => displayValue,
+  mrtItemsCell:
+    ({
+      items,
+      renderItem,
+    }: {
+      items: (props: any) => unknown[];
+      renderItem: (item: any) => ReactNode;
+    }) =>
+    (props: any) => <>{items(props).map(renderItem)}</>,
+  useAppMaterialReactTable: (options: Record<string, unknown>) => ({
+    ...options,
+    options,
+    getState: () => ({ isFullScreen: false }),
+  }),
   buildExplicitSingleSelectColumnFilter: () => () => null,
   getFilterModeHelperText: () => '',
   withExplicitSelectAllOption: (options: unknown[]) => options,
@@ -110,6 +137,7 @@ function buildRow(id = 1): CallsignRowView {
     unitId: 1,
     sourceId: 1,
     callsignAdditionalSourceIds: [],
+    callsignAdditionalSourceNames: [],
   } as CallsignRowView;
 }
 
@@ -169,6 +197,30 @@ describe('CallsignsTable', () => {
     expect(
       container.querySelector('[data-opens-modal="true"][aria-label="Видалити"]'),
     ).toBeTruthy();
+
+    root.unmount();
+    container.remove();
+  });
+
+  it('renders primary and confirming sources with their distinct roles', () => {
+    const rowWithConfirmations = {
+      ...buildRow(1),
+      callsignAdditionalSourceIds: [2, 3],
+      callsignAdditionalSourceNames: ['Підтвердження 1', 'Підтвердження 2'],
+    };
+    const rowWithoutConfirmations = buildRow(2);
+    const { container, root } = renderTable([rowWithConfirmations, rowWithoutConfirmations]);
+
+    const confirmedSources = container.querySelector('[data-testid="source-1"]');
+    const primaryOnlySource = container.querySelector('[data-testid="source-2"]');
+
+    expect(confirmedSources?.textContent).toContain('Основне:');
+    expect(confirmedSources?.textContent).toContain('РО');
+    expect(confirmedSources?.textContent).toContain('Підтверджено:');
+    expect(confirmedSources?.textContent).toContain('Підтвердження 1');
+    expect(confirmedSources?.textContent).toContain('Підтвердження 2');
+    expect(primaryOnlySource?.textContent).toContain('Основне:');
+    expect(primaryOnlySource?.textContent).not.toContain('Підтверджено:');
 
     root.unmount();
     container.remove();

@@ -1,20 +1,17 @@
 import RefreshIcon from '@mui/icons-material/Refresh';
-import {
-  Box,
-  Card,
-  CardContent,
-  IconButton,
-  Link,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
+import { Box, Card, CardContent, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import type { InconsistentUnit } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
+import {
+  type AppMrtColumnDef,
+  mrtCustomCell,
+  mrtTextCell,
+} from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import { getInconsistentUnits } from '../../services/api/units';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
@@ -56,35 +53,53 @@ export function AdminUnitInconsistentPage({ embedded = false }: AdminUnitInconsi
     return () => controller.abort();
   }, [loadUnits]);
 
-  const columns = useMemo<MRT_ColumnDef<InconsistentUnit>[]>(
+  const columns = useMemo<AppMrtColumnDef<InconsistentUnit>[]>(
     () => [
       {
         id: 'name',
         accessorKey: 'name',
         header: 'Назва підрозділу',
         size: 320,
-        Cell: ({ row }) => {
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true },
+        Cell: mrtCustomCell<InconsistentUnit>(({ row }) => {
           const href = `/rer-units/${row.original.sigintUnitId}`;
+          const label = row.original.name.trim() || `#${row.original.sigintUnitId}`;
           return (
-            <Link href={href} onClick={(event) => handleNavigateWithinSpaClick(event, href)}>
-              {row.original.name.trim() || `#${row.original.sigintUnitId}`}
-            </Link>
+            <MrtOverflowText
+              displayValue={label}
+              fullValue={label}
+              interactive
+              component="a"
+              componentProps={{
+                href,
+                onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                  handleNavigateWithinSpaClick(event, href),
+              }}
+            />
           );
-        },
+        }),
       },
       {
         id: 'reasons',
         accessorFn: (row) => row.reasons?.join(', ') ?? '',
         header: 'Причина',
         size: 300,
-        Cell: ({ cell }) => String(cell.getValue() || '—'),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => String(cell.getValue() || '—'),
+          fullValue: ({ cell }) => String(cell.getValue() || '—'),
+        }),
       },
       {
         id: 'problematicEchelons',
         accessorFn: (row) => row.problematicEchelons?.join(', ') ?? '',
         header: 'Проблемні ешелони',
         size: 300,
-        Cell: ({ cell }) => String(cell.getValue() || '—'),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => String(cell.getValue() || '—'),
+          fullValue: ({ cell }) => String(cell.getValue() || '—'),
+        }),
       },
     ],
     [],

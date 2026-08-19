@@ -1,6 +1,6 @@
 import { Box, Button, CircularProgress } from '@mui/material';
 import type { MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
-import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useRef } from 'react';
 import type { PointerEvent } from 'react';
 
@@ -12,6 +12,7 @@ import {
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
@@ -89,8 +90,7 @@ export function NetworksTable({
   const showLoadMore = !isInitialLoading && !noMoreToLoad;
   const showTableOverlay = !isInitialLoading && (loadingMore || refreshing);
 
-  const table = useMaterialReactTable({
-    ...defaultMrtOptions,
+  const table = useAppMaterialReactTable({
     data: rows,
     columns,
     enableColumnActions: true,

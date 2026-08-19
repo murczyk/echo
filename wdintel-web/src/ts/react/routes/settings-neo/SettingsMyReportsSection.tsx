@@ -16,11 +16,7 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  type MRT_ColumnDef,
-  type MRT_ColumnFiltersState,
-  type MRT_SortingState,
-} from 'material-react-table';
+import { type MRT_ColumnFiltersState, type MRT_SortingState } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
 import { downloadBlob } from '../../utils/download-blob';
@@ -37,6 +33,10 @@ import {
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import {
+  mrtTextCell,
+  type AppMrtColumnDef,
+} from '../../components/mui-customized/table/get-default-table-options';
 import { SettingsNeoTable } from './SettingsNeoTable';
 import { CUSTOM_CELL_STYLES } from '../../components/mui-customized/table/custom-styles';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../components/mui-customized/table/custom-styles';
@@ -684,8 +684,8 @@ export function ReportHistoryTableSection({
     }
   }
 
-  const columns = useMemo<MRT_ColumnDef<ReportHistoryRow>[]>(() => {
-    const nextColumns: MRT_ColumnDef<ReportHistoryRow>[] = [
+  const columns = useMemo<AppMrtColumnDef<ReportHistoryRow>[]>(() => {
+    const nextColumns: AppMrtColumnDef<ReportHistoryRow>[] = [
       {
         id: 'actions',
         header: 'Дії',
@@ -698,6 +698,7 @@ export function ReportHistoryTableSection({
         enableColumnOrdering: false,
         enableResizing: false,
         enableHiding: false,
+        meta: { overflowMode: 'none' },
         muiTableHeadCellProps: {
           sx: {
             ...CUSTOM_CELL_STYLES,
@@ -748,28 +749,33 @@ export function ReportHistoryTableSection({
         id: 'reportKind',
         accessorFn: (row) => formatReportKind(row.reportKind),
         header: 'Вид',
-        Cell: ({ row }) => formatReportKind(row.original.reportKind),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportKind(row.original.reportKind),
+          fullValue: ({ row }) => formatReportKind(row.original.reportKind),
+        }),
       },
       {
         accessorKey: 'reportPeriod',
         header: 'Період',
         enableSorting: false,
         enableColumnFilter: false,
-        Cell: ({ row }) => row.original.reportPeriod ?? '',
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.reportPeriod ?? '',
+          fullValue: ({ row }) => row.original.reportPeriod ?? '',
+        }),
       },
       {
         accessorKey: 'details',
         header: 'Деталі',
         enableSorting: false,
         enableColumnFilter: false,
-        Cell: ({ row }) =>
-          row.original.details ? (
-            <Tooltip title={row.original.details}>
-              <Typography component="span" variant="body2">
-                {row.original.details}
-              </Typography>
-            </Tooltip>
-          ) : null,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.details ?? '',
+          fullValue: ({ row }) => row.original.details ?? '',
+        }),
       },
     ];
 
@@ -778,7 +784,11 @@ export function ReportHistoryTableSection({
         {
           accessorKey: 'requestedBy',
           header: 'Автор',
-          Cell: ({ row }) => row.original.requestedBy,
+          meta: { overflowMode: 'text' },
+          Cell: mrtTextCell({
+            displayValue: ({ row }) => row.original.requestedBy,
+            fullValue: ({ row }) => row.original.requestedBy ?? '',
+          }),
         },
         {
           id: 'errorLog',
@@ -786,6 +796,7 @@ export function ReportHistoryTableSection({
           header: 'Помилки',
           enableSorting: false,
           enableColumnFilter: false,
+          meta: { overflowMode: 'none' },
           Cell: ({ row }) => {
             if (!row.original.errorLog || row.original.errorLog.length === 0) return null;
             return (
@@ -802,12 +813,17 @@ export function ReportHistoryTableSection({
       {
         accessorKey: 'createdAt',
         header: 'Створено',
-        Cell: ({ row }) => formatReportDate(row.original.createdAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportDate(row.original.createdAt),
+          fullValue: ({ row }) => formatReportDate(row.original.createdAt),
+        }),
       },
       {
         id: 'status',
         accessorFn: (row) => formatReportStatus(row),
         header: 'Статус',
+        meta: { overflowMode: 'none' },
         ...(includeAuthor
           ? {
               filterVariant: 'multi-select' as const,
@@ -840,31 +856,51 @@ export function ReportHistoryTableSection({
         header: 'План',
         enableSorting: false,
         enableColumnFilter: false,
-        Cell: ({ row }) => formatReportDateOrDash(row.original.plannedForTs),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportDateOrDash(row.original.plannedForTs),
+          fullValue: ({ row }) => formatReportDateOrDash(row.original.plannedForTs),
+        }),
       },
       {
         accessorKey: 'startedAt',
         header: 'Почато',
         enableSorting: false,
         enableColumnFilter: false,
-        Cell: ({ row }) => formatReportDateOrDash(row.original.startedAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportDateOrDash(row.original.startedAt),
+          fullValue: ({ row }) => formatReportDateOrDash(row.original.startedAt),
+        }),
       },
       {
         accessorKey: 'queuePosition',
         header: 'Черга',
         enableSorting: false,
         enableColumnFilter: false,
-        Cell: ({ row }) => formatReportId(row.original.queuePosition),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportId(row.original.queuePosition),
+          fullValue: ({ row }) => formatReportId(row.original.queuePosition),
+        }),
       },
       {
         accessorKey: 'bgtaskId',
         header: 'ID задачі',
-        Cell: ({ row }) => formatReportId(row.original.bgtaskId),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportId(row.original.bgtaskId),
+          fullValue: ({ row }) => formatReportId(row.original.bgtaskId),
+        }),
       },
       {
         accessorKey: 'completedAt',
         header: 'Завершено',
-        Cell: ({ row }) => formatReportDate(row.original.completedAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportDate(row.original.completedAt),
+          fullValue: ({ row }) => formatReportDate(row.original.completedAt),
+        }),
       },
     );
 
@@ -875,7 +911,11 @@ export function ReportHistoryTableSection({
         header: 'Час виконання',
         enableSorting: false,
         enableColumnFilter: false,
-        Cell: ({ row }) => formatReportExecutionTime(row.original),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatReportExecutionTime(row.original),
+          fullValue: ({ row }) => formatReportExecutionTime(row.original),
+        }),
       });
     }
 

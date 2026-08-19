@@ -1,7 +1,8 @@
 import { Box, CircularProgress, Link, Typography } from '@mui/material';
-import type { MRT_ColumnDef, MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
-import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import type { MRT_ColumnOrderState, MRT_TableInstance } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useRef } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import { mrtRowActionsColumnSize } from '../../../components/MrtRowActionButton';
 import { PowerChip } from '../../../components/PowerChip';
@@ -17,8 +18,13 @@ import {
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
+  mrtCustomCell,
+  mrtTextCell,
+  type AppMrtColumnDef,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import type { useTableStateContext } from '../../../components/mui-customized/table/table-state-provider';
 import { DeviceRowActions } from './DeviceRowActions';
 import type { DeviceRowView } from '../helpers';
@@ -46,7 +52,7 @@ type Props = {
   columnOrder: MRT_ColumnOrderState;
 };
 
-function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
+function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
   return useMemo(
     () => [
       {
@@ -54,19 +60,24 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
         accessorFn: (row) => row.name,
         header: 'Назва',
         size: 260,
-        Cell: ({ row }) => {
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell<DeviceRowView>(({ row }) => {
           const href = `/devices/${row.original.id}`;
           return (
-            <Link
-              href={href}
-              underline="hover"
-              fontWeight={600}
-              onClick={(event) => handleNavigateWithinSpaClick(event, href)}
-            >
-              {row.original.name ?? 'Без назви'}
-            </Link>
+            <MrtOverflowText
+              displayValue={row.original.name ?? 'Без назви'}
+              fullValue={row.original.name ?? 'Без назви'}
+              interactive
+              component="a"
+              componentProps={{
+                href,
+                onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                  handleNavigateWithinSpaClick(event, href),
+              }}
+              sx={{ color: 'primary.main', fontWeight: 600, textDecoration: 'none' }}
+            />
           );
-        },
+        }),
       },
       {
         id: 'aors',
@@ -74,14 +85,11 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
         header: 'AOR',
         size: 240,
         enableSorting: false,
-        Cell: ({ cell }) => (
-          <Typography
-            variant="body2"
-            color={cell.getValue<string>() === '—' ? 'text.secondary' : undefined}
-          >
-            {cell.getValue<string>()}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<DeviceRowView>({
+          fullValue: ({ cell }) => cell.getValue() as string,
+          displayValue: ({ cell }) => cell.getValue() as string,
+        }),
       },
       {
         id: 'unit',
@@ -89,14 +97,11 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
         header: 'Підрозділ',
         size: 220,
         enableSorting: false,
-        Cell: ({ cell }) => (
-          <Typography
-            variant="body2"
-            color={cell.getValue<string>() === '—' ? 'text.secondary' : undefined}
-          >
-            {cell.getValue<string>()}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<DeviceRowView>({
+          fullValue: ({ cell }) => cell.getValue() as string,
+          displayValue: ({ cell }) => cell.getValue() as string,
+        }),
       },
       {
         id: 'createdBy',
@@ -110,14 +115,22 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
         accessorKey: 'createdAt',
         header: 'Створено',
         size: 170,
-        Cell: ({ row }) => row.original.createdAtLabel,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<DeviceRowView>({
+          displayValue: ({ row }) => row.original.createdAtLabel,
+          fullValue: ({ row }) => row.original.createdAtLabel,
+        }),
       },
       {
         id: 'updatedAt',
         accessorKey: 'updatedAt',
         header: 'Оновлено',
         size: 170,
-        Cell: ({ row }) => row.original.updatedAtLabel,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell<DeviceRowView>({
+          displayValue: ({ row }) => row.original.updatedAtLabel,
+          fullValue: ({ row }) => row.original.updatedAtLabel,
+        }),
       },
       {
         id: 'lifecycle',
@@ -125,6 +138,7 @@ function useDevicesTableColumns(): MRT_ColumnDef<DeviceRowView>[] {
         header: 'Стан',
         size: 120,
         enableSorting: false,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) =>
           row.original.archived ? (
             <PowerChip label="Архівний" color="warning" selected />
@@ -161,8 +175,7 @@ export function DevicesTable({
   const showTableOverlay =
     !isInitialLoading && (loadingMore || refreshing || mutatingDeviceId !== null);
 
-  const table = useMaterialReactTable({
-    ...defaultMrtOptions,
+  const table = useAppMaterialReactTable({
     data: rows,
     columns,
     enableColumnActions: true,
