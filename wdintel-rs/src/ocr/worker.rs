@@ -1008,6 +1008,7 @@ mod tests {
             size_bytes: Set(1),
             created_at: Set(now),
             is_encrypted: Set(true),
+            storage_key: NotSet,
         }
         .insert(&env.dbx)
         .await
