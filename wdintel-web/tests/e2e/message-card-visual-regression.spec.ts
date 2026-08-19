@@ -5,6 +5,7 @@ import type { InboxMessage } from '../../src/Bindings';
 import type { InboxMessagesRspRaw } from '../../src/ts/react/services/api/inbox-messages';
 import { minimalInboxMessage } from '../../src/ts/react/routes/rer-duty-neo/inbox-message-mocks';
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
+import { openMessageCardPreviewHost } from './message-card-media-preview.fixtures';
 
 function buildInboxMessage(id: number): InboxMessage {
   return minimalInboxMessage({
@@ -111,6 +112,30 @@ async function installVisualFixture(
 }
 
 test.describe('message card visual regression', () => {
+  for (const host of ['duty', 'analysis'] as const) {
+    test(`keeps ${host} toolbar rows responsive through viewport changes`, async ({ page }) => {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await openMessageCardPreviewHost(page, host);
+      const card = page.locator('.message-card-root').first();
+      const buttons = card.locator('[aria-label="Дії повідомлення"] .message-card-action-btn');
+      await expect(buttons.first()).toBeVisible();
+      const rowCount = () =>
+        buttons.evaluateAll(
+          (elements) =>
+            new Set(elements.map((element) => Math.round(element.getBoundingClientRect().top)))
+              .size,
+        );
+
+      expect(await rowCount()).toBe(1);
+      await page.setViewportSize({ width: 360, height: 900 });
+      await expect.poll(rowCount).toBeGreaterThan(1);
+      const narrowCard = await buildMetrics(card);
+      expect(narrowCard.scrollWidth).toBeLessThanOrEqual(narrowCard.clientWidth + 1);
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await expect.poll(rowCount).toBe(1);
+    });
+  }
+
   for (const viewportWidth of [360, 768, 1023, 1025, 1280]) {
     test(`keeps theme-relative typography at ${viewportWidth}px`, async ({ page }) => {
       await page.setViewportSize({ width: viewportWidth, height: 960 });
