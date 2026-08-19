@@ -1,6 +1,5 @@
 import { Box } from '@mui/material';
 import { useMemo } from 'react';
-import type { PointerEvent } from 'react';
 
 import {
   type AppMrtColumnDef,
@@ -9,7 +8,13 @@ import {
   mrtCustomCell,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
-import { ActivityBars, FrequencyCell, LastActivityCell, NetworkCell } from './NetworkCells';
+import {
+  ActivityBars,
+  FrequencyCell,
+  LastActivityCell,
+  LocationCell,
+  NetworkCell,
+} from './NetworkCells';
 
 function formatAorActiveFilterValue(
   value: unknown,
@@ -148,16 +153,11 @@ export function useNetworksTableColumns({
         enableSorting: true,
         meta: { overflowMode: 'custom', overflowOwner: 'domain-hover' },
         Cell: mrtCustomCell(({ row }) => (
-          <Box
-            component="span"
-            data-network-hover-anchor={row.original.network.location ? 'true' : undefined}
-            onPointerEnter={(event: PointerEvent<HTMLElement>) =>
-              onLocationHoverEnter(event.currentTarget, row.original)
-            }
-            onPointerLeave={onLocationHoverLeave}
-          >
-            {row.original.network.location || '—'}
-          </Box>
+          <LocationCell
+            row={row.original}
+            onPointerEnterAnchor={onLocationHoverEnter}
+            onPointerLeaveAnchor={onLocationHoverLeave}
+          />
         )),
       },
       {

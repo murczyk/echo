@@ -54,6 +54,7 @@ function renderFolderNameCell(
       <MrtOverflowText
         displayValue={formatText(row.name)}
         fullValue={formatText(row.name)}
+        interactive
         sx={{ flex: '1 1 auto', fontWeight: 700 }}
       />
       <PowerChip

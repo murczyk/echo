@@ -171,6 +171,9 @@ export function FrequencyCell({
                 {freq.freq}
               </Box>
             ))}
+            {group.hiddenCount > 0 ? (
+              <Box sx={{ color: 'text.secondary', flexShrink: 0 }}>{`+${group.hiddenCount}`}</Box>
+            ) : null}
           </Stack>
         ) : null;
       })}

@@ -9,7 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
 import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
-import { FrequencyCell, getLocationParts, LastActivityCell } from './components/NetworkCells';
+import {
+  FrequencyCell,
+  getLocationParts,
+  LastActivityCell,
+  LocationCell,
+} from './components/NetworkCells';
 import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
@@ -815,6 +820,103 @@ it('keeps frequency disclosure owned by the domain hover surface', () => {
   expect(onEnter).toHaveBeenCalledTimes(1);
   act(() => emptyRoot.unmount());
   empty.remove();
+});
+
+it('keeps frequency previews bounded while disclosing each active and inactive remainder', () => {
+  const onEnter = vi.fn();
+  const row = {
+    activeFrequencies: [
+      { id: 1, freq: '111.11' },
+      { id: 2, freq: '222.22' },
+      { id: 3, freq: '333.33' },
+    ],
+    inactiveFrequencies: [
+      { id: 4, freq: '444.44' },
+      { id: 5, freq: '555.55' },
+      { id: 6, freq: '666.66' },
+    ],
+  } as any;
+  const frequencyContainer = document.createElement('div');
+  document.body.appendChild(frequencyContainer);
+  const frequencyRoot = createRoot(frequencyContainer);
+  act(() => {
+    frequencyRoot.render(
+      createElement(FrequencyCell, {
+        row,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: vi.fn(),
+      }),
+    );
+  });
+
+  expect(frequencyContainer.textContent).toContain('111.11');
+  expect(frequencyContainer.textContent).toContain('222.22');
+  expect(frequencyContainer.textContent).toContain('444.44');
+  expect(frequencyContainer.textContent).toContain('555.55');
+  expect(frequencyContainer.textContent).not.toContain('333.33');
+  expect(frequencyContainer.textContent).not.toContain('666.66');
+  expect(frequencyContainer.textContent).toBe('111.11222.22+1444.44555.55+1');
+  const anchor = frequencyContainer.querySelector<HTMLElement>(
+    '[data-network-hover-anchor="true"]',
+  );
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })));
+  expect(onEnter).toHaveBeenCalledWith(anchor, row);
+  act(() => frequencyRoot.unmount());
+  frequencyContainer.remove();
+});
+
+it('keeps location previews bounded and enables domain hover only when values are hidden', () => {
+  const onEnter = vi.fn();
+  const onLeave = vi.fn();
+  const row = {
+    network: { location: 'Пункт зв’язку, Місто\nРайон, Область' },
+  } as any;
+  const locationContainer = document.createElement('div');
+  document.body.appendChild(locationContainer);
+  const locationRoot = createRoot(locationContainer);
+  act(() => {
+    locationRoot.render(
+      createElement(LocationCell, {
+        row,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  const anchor = locationContainer.querySelector<HTMLElement>('[data-network-hover-anchor="true"]');
+  expect(locationContainer.textContent).toContain('Пункт зв’язку');
+  expect(locationContainer.textContent).toContain('Місто');
+  expect(locationContainer.textContent).toContain('+2');
+  expect(locationContainer.textContent).not.toContain('Район');
+  expect(locationContainer.textContent).not.toContain('Область');
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })));
+  expect(onEnter).toHaveBeenCalledWith(anchor, row);
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })));
+  expect(onLeave).toHaveBeenCalledTimes(1);
+  act(() => locationRoot.unmount());
+  locationContainer.remove();
+
+  const shortLocation = document.createElement('div');
+  document.body.appendChild(shortLocation);
+  const shortLocationRoot = createRoot(shortLocation);
+  act(() => {
+    shortLocationRoot.render(
+      createElement(LocationCell, {
+        row: { network: { location: 'Пункт зв’язку, Місто' } } as any,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  expect(shortLocation.querySelector('[data-network-hover-anchor="true"]')).toBeNull();
+  act(() =>
+    shortLocation.firstElementChild?.dispatchEvent(
+      new PointerEvent('pointerover', { bubbles: true }),
+    ),
+  );
+  expect(onEnter).toHaveBeenCalledTimes(1);
+  act(() => shortLocationRoot.unmount());
+  shortLocation.remove();
 });
 
 it('keeps structured last activity visible and available through hover and focus', async () => {
