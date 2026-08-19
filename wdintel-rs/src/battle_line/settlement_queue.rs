@@ -221,17 +221,7 @@ pub async fn oneoff_link_inbox_settlements(
         .c(h!())?;
     let mut stats = OneoffLinkInboxSettlementsStats::default();
     for item in items {
-        let Some(location_v2) = item.location_v2.as_deref() else {
-            stats.skipped += 1;
-            continue;
-        };
-        if location_v2.trim() == "||"
-            || location_texts(Some(location_v2)).is_empty()
-        {
-            stats.skipped += 1;
-            continue;
-        }
-        process_oneoff_item(&env, item.id, location_v2, &mut stats)
+        process_oneoff_item(&env, item.id, &mut stats)
             .await
             .c(h!())?;
     }
@@ -245,16 +235,28 @@ pub async fn oneoff_link_inbox_settlements(
 async fn process_oneoff_item(
     env: &Env,
     item_id: i64,
-    location_v2: &str,
     stats: &mut OneoffLinkInboxSettlementsStats,
 ) -> anyhow::Result<()> {
     let txn = env.dbx.begin().await.c(h!())?;
     lock_updates(&txn).await.c(h!())?;
     ensure_active_battle_line(&txn).await.c(h!())?;
+    let location_v2 = sigint_inbox_item::Entity::find_by_id(item_id)
+        .lock(LockType::Update)
+        .one(&txn)
+        .await
+        .c(h!())?
+        .c(h!())?
+        .location_v2;
+    let settlement_texts = location_texts(location_v2.as_deref());
+    if settlement_texts.is_empty() {
+        txn.rollback().await.c(h!())?;
+        stats.skipped += 1;
+        return Ok(());
+    }
     let aor_context =
         resolve_inbox_item_aors(&txn, item_id, None).await.c(h!())?;
     let mut resolutions = vec![];
-    for settlement_text in location_texts(Some(location_v2)) {
+    for settlement_text in settlement_texts {
         let result = resolve_location_to_settlement_with_db(
             &txn,
             env,
@@ -265,7 +267,7 @@ async fn process_oneoff_item(
         .c(h!())?;
         resolutions.push((settlement_text, result.chosen_settlement_id));
     }
-    reconcile_item_locations(&txn, item_id, Some(location_v2))
+    reconcile_item_locations(&txn, item_id, location_v2.as_deref())
         .await
         .c(h!())?;
     sigint_inbox_item_settlement::Entity::update_many()

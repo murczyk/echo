@@ -1079,32 +1079,14 @@ fn features_to_wkt(
 ) -> anyhow::Result<String> {
     let features = features
         .iter()
-        .filter_map(|feature| match feature {
+        .map(|feature| match feature {
             ImportedGeometryFeature::Point(coordinate) => {
-                Some(validate_coordinate(coordinate).map(|_| {
+                validate_coordinate(coordinate).map(|_| {
                     format!("POINT({} {})", coordinate.lon, coordinate.lat)
-                }))
+                })
             }
             ImportedGeometryFeature::LineString(coordinates) => {
-                let valid = coordinates
-                    .iter()
-                    .map(validate_coordinate)
-                    .collect::<anyhow::Result<Vec<_>>>();
-                match valid {
-                    Ok(_) if line_has_length(coordinates) => Some(Ok(format!(
-                        "LINESTRING({})",
-                        coordinates
-                            .iter()
-                            .map(|coordinate| format!(
-                                "{} {}",
-                                coordinate.lon, coordinate.lat
-                            ))
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    ))),
-                    Ok(_) => None,
-                    Err(error) => Some(Err(error)),
-                }
+                line_string_to_wkt(coordinates)
             }
         })
         .collect::<anyhow::Result<Vec<_>>>()
@@ -1115,6 +1097,27 @@ fn features_to_wkt(
         );
     }
     Ok(format!("GEOMETRYCOLLECTION({})", features.join(",")))
+}
+
+fn line_string_to_wkt(
+    coordinates: &[ImportedCoordinate],
+) -> anyhow::Result<String> {
+    for coordinate in coordinates {
+        validate_coordinate(coordinate).c(h!())?;
+    }
+    if !line_has_length(coordinates) {
+        anyhow::bail!(
+            "LineString must contain at least two distinct coordinates"
+        );
+    }
+    Ok(format!(
+        "LINESTRING({})",
+        coordinates
+            .iter()
+            .map(|coordinate| format!("{} {}", coordinate.lon, coordinate.lat))
+            .collect::<Vec<_>>()
+            .join(",")
+    ))
 }
 
 fn validate_coordinate(coordinate: &ImportedCoordinate) -> anyhow::Result<()> {
@@ -1266,16 +1269,19 @@ mod tests {
     #[test]
     fn rejects_empty_or_degenerate_geometry() {
         assert!(features_to_wkt(&[]).is_err());
-        assert!(features_to_wkt(&[ImportedGeometryFeature::LineString(vec![
-            ImportedCoordinate {
-                lat: 49.0,
-                lon: 31.0,
-            },
-            ImportedCoordinate {
-                lat: 49.0,
-                lon: 31.0,
-            },
-        ])])
+        assert!(features_to_wkt(&[
+            ImportedGeometryFeature::Point(ImportedCoordinate {
+                lat: 50.0,
+                lon: 32.0,
+            }),
+            ImportedGeometryFeature::LineString(vec![
+                ImportedCoordinate {
+                    lat: 49.0,
+                    lon: 31.0,
+                };
+                2
+            ]),
+        ])
         .is_err());
     }
 
