@@ -326,6 +326,14 @@ async fn delete_cleared_edit_comment(
     )
     .await
     .c(h!())?;
+    super::delete_editable_sigint_comments(
+        txn,
+        signal_message_id,
+        login,
+        logins,
+    )
+    .await
+    .c(h!())?;
     message.extended_form = None;
     Ok(())
 }
