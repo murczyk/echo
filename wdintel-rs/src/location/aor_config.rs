@@ -111,10 +111,13 @@ pub async fn init_aor_location_config(
     Ok(())
 }
 
-pub async fn refresh_settlements_aor_map(
-    dbx: &DatabaseConnection,
+pub async fn refresh_settlements_aor_map<C>(
+    dbx: &C,
     settlements: Arc<RwLock<crate::location::types::SettlementsDataConfig>>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
     let rows = aor_location_config::Entity::find().all(dbx).await.c(h!())?;
 
     let mut settlements_lock =
@@ -239,9 +242,12 @@ pub async fn save_aor_location_config(
         .c(h!())?
         .c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
+
     let existing = aor_location_config::Entity::find()
         .filter(aor_location_config::Column::AorId.eq(req.aor_id))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?;
 
@@ -253,7 +259,7 @@ pub async fn save_aor_location_config(
             rec.settlements_configs =
                 Set(serde_json::json!(selected_configs.clone()));
             rec.updated_at = NotSet;
-            rec.update(&env.dbx).await.c(h!())?;
+            rec.update(&txn).await.c(h!())?;
         }
         None => {
             aor_location_config::ActiveModel {
@@ -265,15 +271,13 @@ pub async fn save_aor_location_config(
                 created_at: NotSet,
                 updated_at: NotSet,
             }
-            .insert(&env.dbx)
+            .insert(&txn)
             .await
             .c(h!())?;
         }
     }
 
-    let txn = env.dbx.begin().await.c(h!())?;
-    crate::battle_line::lock_updates(&txn).await.c(h!())?;
-    refresh_settlements_aor_map(&env.dbx, env.settlements.clone())
+    refresh_settlements_aor_map(&txn, env.settlements.clone())
         .await
         .c(h!())?;
     crate::battle_line::requeue_settlement_links(&txn)
