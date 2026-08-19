@@ -5,7 +5,7 @@ use crate::entities::{
     area_of_responsibility, login, organism, sigint_unit, system_settings,
 };
 use crate::file_registry::entities::{
-    analytics_tag, device_file_tag, file_analysis_state, file_entry,
+    analytics_tag, device_file_tag, file_entry,
     sea_orm_active_enums::FileEntryKind,
 };
 use crate::functest::tests::{
@@ -21,10 +21,8 @@ use actix_web::{
     http::StatusCode, test, web, App, HttpMessage, HttpRequest, HttpResponse,
 };
 use chrono::{NaiveDateTime, Utc};
-use sea_orm::sea_query::Expr;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-    IntoActiveModel, QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -42,7 +40,12 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::files::browse)
         .service(super::files::search)
         .service(super::files::journal)
-        .service(super::files::sync)
+        .service(super::files::sync_files)
+        .service(super::files::start_sync_session)
+        .service(super::files::sync_session_status)
+        .service(super::files::apply_sync_batch)
+        .service(super::files::complete_sync_session)
+        .service(super::files::sync_session_items)
         .service(super::analytics::list_tags)
         .service(super::analytics::create_tag)
         .service(super::analytics::update_tag)
@@ -53,6 +56,9 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::analytics::test_tag_rule)
         .service(super::analytics::reanalyze_all)
         .service(super::analytics::reanalyze_device)
+        .service(super::analytics::get_analysis_run)
+        .service(super::analytics::list_analysis_runs)
+        .service(super::analytics::list_analysis_run_files)
         .service(super::analytics::device_tags)
         .service(super::analytics::device_summary)
         .service(super::analytics::device_files);
@@ -83,6 +89,13 @@ fn analytics_root_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
+        revision: Set(None),
+        sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
+        source_file_state: Set(None),
+        source_file_state_settled_at: Set(None),
+        source_file_state_settled_by: Set(None),
     }
 }
 
@@ -113,6 +126,13 @@ fn analytics_file_entry(
         created_at: Set(timestamp),
         updated_at: Set(timestamp),
         content_path: Set(None),
+        revision: Set(None),
+        sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
+        source_file_state: Set(None),
+        source_file_state_settled_at: Set(None),
+        source_file_state_settled_by: Set(None),
     }
 }
 
@@ -352,7 +372,7 @@ async fn target_api_smoke_covers_all_routes() {
     assert_eq!(response.status(), StatusCode::OK);
     let sync: Value = test::read_body_json(response).await;
     assert_eq!(sync["results"][0]["status"], "rejected");
-    assert_eq!(sync["results"][0]["error"]["kind"], "validation");
+    assert_eq!(sync["results"][0]["code"], "validation");
     assert_eq!(sync["results"][1]["status"], "accepted");
     env.metrics.as_ref().unwrap().force_flush_for_test();
     assert_eq!(
@@ -380,7 +400,8 @@ async fn target_api_smoke_covers_all_routes() {
         .update(env.file_registry_db().unwrap().connection())
         .await
         .unwrap();
-    let root_id = sync["results"][1]["root"]["entry_id"]
+    assert!(sync["results"][1].get("root").is_none());
+    let root_id = sync["results"][1]["file"]["root_entry_id"]
         .as_str()
         .unwrap()
         .to_string();
@@ -719,28 +740,30 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         .insert(file_db)
         .await
         .unwrap();
-    analytics_file_entry(
-        tagged_file_id,
-        device.id,
-        root_id,
-        "tagged.pdf",
-        "pdf",
-        now.naive_utc(),
+    crate::file_registry::test_support::insert_entry(
+        file_db,
+        analytics_file_entry(
+            tagged_file_id,
+            device.id,
+            root_id,
+            "tagged.pdf",
+            "pdf",
+            now.naive_utc(),
+        ),
     )
-    .insert(file_db)
-    .await
-    .unwrap();
-    analytics_file_entry(
-        untagged_file_id,
-        device.id,
-        root_id,
-        "untagged.txt",
-        "txt",
-        now.naive_utc(),
+    .await;
+    crate::file_registry::test_support::insert_entry(
+        file_db,
+        analytics_file_entry(
+            untagged_file_id,
+            device.id,
+            root_id,
+            "untagged.txt",
+            "txt",
+            now.naive_utc(),
+        ),
     )
-    .insert(file_db)
-    .await
-    .unwrap();
+    .await;
 
     let active_tag_id = Uuid::now_v7();
     let archived_tag_id = Uuid::now_v7();
@@ -954,8 +977,9 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     let sparse_file_ids = (0..=100).map(|_| Uuid::now_v7()).collect::<Vec<_>>();
-    file_entry::Entity::insert_many(sparse_file_ids.iter().enumerate().map(
-        |(index, file_id)| {
+    for (index, file_id) in sparse_file_ids.iter().enumerate() {
+        crate::file_registry::test_support::insert_entry(
+            file_db,
             analytics_file_entry(
                 *file_id,
                 device.id,
@@ -963,26 +987,10 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
                 &format!("z-sparse-{index:03}.txt"),
                 "txt",
                 now.naive_utc(),
-            )
-        },
-    ))
-    .exec(file_db)
-    .await
-    .unwrap();
-    file_analysis_state::Entity::update_many()
-        .col_expr(
-            file_analysis_state::Column::AnalyzedSourceRevision,
-            Expr::col(file_analysis_state::Column::SourceRevision),
+            ),
         )
-        .col_expr(
-            file_analysis_state::Column::AnalyzedGeneration,
-            Expr::col(file_analysis_state::Column::RequiredGeneration),
-        )
-        .col_expr(file_analysis_state::Column::Pending, Expr::value(false))
-        .filter(file_analysis_state::Column::DeviceId.eq(device.id))
-        .exec(file_db)
-        .await
-        .unwrap();
+        .await;
+    }
     let sparse_tagged_file_id = *sparse_file_ids.last().unwrap();
     device_file_tag::ActiveModel {
         id: Set(Uuid::now_v7()),
@@ -1060,32 +1068,47 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         created_at: Set(now.naive_utc()),
         updated_at: Set(now.naive_utc()),
         content_path: Set(None),
+        revision: Set(None),
+        sync_id: Set(None),
+        analysis_input_revision: Set(None),
+        current_analysis_run_id: Set(None),
+        source_file_state: Set(None),
+        source_file_state_settled_at: Set(None),
+        source_file_state_settled_by: Set(None),
     }
     .insert(file_db)
     .await
     .unwrap();
-    file_entry::ActiveModel {
-        id: Set(nested_file_id),
-        device_id: Set(device.id),
-        parent_id: Set(Some(nested_directory_id)),
-        kind: Set(FileEntryKind::File),
-        name: Set("nested.pdf".to_string()),
-        absolute_path: Set(Some(r"C:\Nested\nested.pdf".to_string())),
-        hierarchy_path: Set(format!(
-            "{directory_hierarchy_path}.n{}",
-            nested_file_id.to_string().replace('-', ""),
-        )),
-        mime_type: Set(None),
-        extension: Set(Some("pdf".to_string())),
-        file_metadata_created_at: Set(None),
-        file_metadata_modified_at: Set(None),
-        created_at: Set(now.naive_utc()),
-        updated_at: Set(now.naive_utc()),
-        content_path: Set(None),
-    }
-    .insert(file_db)
-    .await
-    .unwrap();
+    crate::file_registry::test_support::insert_entry(
+        file_db,
+        file_entry::ActiveModel {
+            id: Set(nested_file_id),
+            device_id: Set(device.id),
+            parent_id: Set(Some(nested_directory_id)),
+            kind: Set(FileEntryKind::File),
+            name: Set("nested.pdf".to_string()),
+            absolute_path: Set(Some(r"C:\Nested\nested.pdf".to_string())),
+            hierarchy_path: Set(format!(
+                "{directory_hierarchy_path}.n{}",
+                nested_file_id.to_string().replace('-', ""),
+            )),
+            mime_type: Set(None),
+            extension: Set(Some("pdf".to_string())),
+            file_metadata_created_at: Set(None),
+            file_metadata_modified_at: Set(None),
+            created_at: Set(now.naive_utc()),
+            updated_at: Set(now.naive_utc()),
+            content_path: Set(None),
+            revision: Set(None),
+            sync_id: Set(None),
+            analysis_input_revision: Set(None),
+            current_analysis_run_id: Set(None),
+            source_file_state: Set(None),
+            source_file_state_settled_at: Set(None),
+            source_file_state_settled_by: Set(None),
+        },
+    )
+    .await;
     device_file_tag::ActiveModel {
         id: Set(Uuid::now_v7()),
         file_entry_id: Set(nested_file_id),
@@ -1255,7 +1278,40 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     );
     assert_eq!(response.status(), StatusCode::OK);
     let scheduled: Value = test::read_body_json(response).await;
-    assert_eq!(scheduled["scheduled_file_count"], 103);
+    let run_id = scheduled["run"]["run_id"].as_str().unwrap();
+    assert_eq!(scheduled["run"]["device_id"], device.id.to_string());
+    assert_eq!(scheduled["run"]["cause"], "manual_reanalysis");
+    assert_eq!(scheduled["run"]["target_source_sequence"], 104);
+    assert_eq!(scheduled["run"]["status"], "preparing");
+    assert_eq!(scheduled["run"]["item_count"], 0);
+    assert_eq!(scheduled["run"]["completed_count"], 0);
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/runs/get",
+        json!({"run_id": run_id})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let fetched: Value = test::read_body_json(response).await;
+    assert_eq!(fetched["run"], scheduled["run"]);
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/runs/list",
+        json!({"device_id": device.id, "limit": 1})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let listed: Value = test::read_body_json(response).await;
+    assert_eq!(listed["runs"], json!([scheduled["run"].clone()]));
+
+    let response = post_as!(
+        reader_cookie,
+        "/api/device/analytics/runs/files",
+        json!({"run_id": run_id, "limit": 1})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    let files: Value = test::read_body_json(response).await;
+    assert_eq!(files, json!({"files": [], "next_cursor": null}));
 
     let response = post_as!(
         admin_cookie,
@@ -1263,11 +1319,15 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
         json!({})
     );
     assert_eq!(response.status(), StatusCode::OK);
-    let scheduled: Value = test::read_body_json(response).await;
-    assert_eq!(scheduled["scheduled_file_count"], 0);
+    let scheduled_all: Value = test::read_body_json(response).await;
+    assert_eq!(
+        scheduled_all["definition_id"],
+        scheduled["run"]["definition_id"],
+    );
+    assert_eq!(scheduled_all["created_run_count"], 1);
 }
 
-const TARGET_ROUTES: [&str; 25] = [
+const TARGET_ROUTES: [&str; 28] = [
     "/api/device/list",
     "/api/device/unit-stats",
     "/api/device/aors",
@@ -1290,6 +1350,9 @@ const TARGET_ROUTES: [&str; 25] = [
     "/api/admin/device-analytics/tags/rule/test",
     "/api/admin/device-analytics/reanalyze/all",
     "/api/admin/device-analytics/reanalyze/device",
+    "/api/device/analytics/runs/get",
+    "/api/device/analytics/runs/list",
+    "/api/device/analytics/runs/files",
     "/api/device/analytics/tags",
     "/api/device/analytics/summary",
     "/api/device/analytics/files",

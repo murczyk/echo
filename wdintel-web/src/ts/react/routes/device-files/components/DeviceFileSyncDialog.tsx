@@ -11,6 +11,7 @@ import {
   Typography,
 } from '@mui/material';
 import dayjs from 'dayjs';
+import type { SyncSummary } from '../../../../../Bindings';
 
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
@@ -25,6 +26,7 @@ type Props = {
   submitting: boolean;
   batchError: string | null;
   transportUncertain: boolean;
+  syncSummary: SyncSummary | null;
   canSubmit: boolean;
   onClose: () => void;
   onAddRow: () => void;
@@ -51,7 +53,7 @@ function SyncRowFields({
       <Stack spacing={1.5}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="subtitle2">
-            {row.fileId === null ? 'Новий файл' : `Файл ${row.fileId}`}
+            {row.existing ? 'Оновлення метаданих файла' : 'Новий файл'}
           </Typography>
           {canRemove ? (
             <PowerIconButton
@@ -67,7 +69,7 @@ function SyncRowFields({
 
         {row.result?.kind === 'rejected' ? (
           <PowerAlert severity="error" autoHideDuration={null}>
-            {formatFileSyncError(row.result.error)}
+            {formatFileSyncError(row.result)}
           </PowerAlert>
         ) : null}
 
@@ -156,7 +158,8 @@ function AcceptedSyncRow({ row }: { row: DeviceFileSyncRow }) {
           {formatSyncOperation(row.result.operation)}: {row.result.file.absolutePath}
         </Typography>
         <Typography variant="caption">
-          Root ID: {row.result.root.entryId}; File ID: {row.result.file.fileId}
+          Root ID: {row.result.file.rootEntryId}; File ID: {row.result.fileId}; Revision:{' '}
+          {row.result.revision}
         </Typography>
       </Stack>
     </PowerAlert>
@@ -169,6 +172,7 @@ export function DeviceFileSyncDialog({
   submitting,
   batchError,
   transportUncertain,
+  syncSummary,
   canSubmit,
   onClose,
   onAddRow,
@@ -190,6 +194,13 @@ export function DeviceFileSyncDialog({
           {transportUncertain ? (
             <PowerAlert severity="warning" autoHideDuration={null}>
               Автоматичний повтор вимкнено, щоб не дублювати невизначений запис.
+            </PowerAlert>
+          ) : null}
+          {syncSummary ? (
+            <PowerAlert severity="info" autoHideDuration={null}>
+              Сесія {syncSummary.syncId}: прийнято {syncSummary.counts.accepted}, створено{' '}
+              {syncSummary.counts.created}, оновлено {syncSummary.counts.updated}, відхилено{' '}
+              {syncSummary.counts.rejected}.
             </PowerAlert>
           ) : null}
 

@@ -530,13 +530,23 @@ fn leading_spaces(line: &str) -> usize {
 }
 
 fn extract_tag_from_block(lines: &[String]) -> Option<String> {
-    for line in lines {
-        if let Some(tag) = extract_tag_from_string_encoder(line) {
-            return Some(tag);
+    for (index, line) in lines.iter().enumerate() {
+        let Some(position) = line.find("Json.Encode.object") else {
+            continue;
+        };
+        for (offset, candidate) in lines[index..].iter().enumerate() {
+            let candidate = if offset == 0 {
+                &candidate[position + "Json.Encode.object".len()..]
+            } else {
+                candidate.as_str()
+            };
+            if let Some(tag) = extract_string_literal(candidate) {
+                return Some(tag);
+            }
         }
     }
     for line in lines {
-        if let Some(tag) = extract_string_literal(line) {
+        if let Some(tag) = extract_tag_from_string_encoder(line) {
             return Some(tag);
         }
     }
@@ -863,4 +873,33 @@ fn is_valid_ts_ident(name: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '$')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_bindings, render_typescript};
+
+    #[test]
+    fn record_union_tag_comes_from_outer_object_key() {
+        let elm = r#"
+type FileSyncResult
+    = Accepted { fileId : String, revision : Int }
+    | Rejected { message : String, fieldErrors : List (String) }
+
+fileSyncResultEncoder : FileSyncResult -> Json.Encode.Value
+fileSyncResultEncoder enum =
+    case enum of
+        Accepted { fileId, revision } ->
+            Json.Encode.object [ ( "Accepted", Json.Encode.object [ ( "file_id", Json.Encode.string fileId ), ( "revision", Json.Encode.int revision ) ] ) ]
+        Rejected { message, fieldErrors } ->
+            Json.Encode.object [ ( "Rejected", Json.Encode.object [ ( "message", Json.Encode.string message ), ( "field_errors", Json.Encode.list (Json.Encode.string) fieldErrors ) ] ) ]
+"#;
+
+        let typescript = render_typescript(&parse_bindings(elm).unwrap());
+
+        assert!(typescript.contains("| { Accepted:"));
+        assert!(typescript.contains("| { Rejected:"));
+        assert!(!typescript.contains("| { revision:"));
+        assert!(!typescript.contains("| { field_errors:"));
+    }
 }

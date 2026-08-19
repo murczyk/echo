@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import type {
   DeviceFile,
-  DeviceFileRoot,
   DeviceFileTreeEntry,
-  FileSyncErrorKind,
+  FileSyncErrorCode,
   SyncDeviceFilesRsp,
+  SyncSummary,
 } from '../../../../Bindings';
 import { HttpRequestError } from '../../services/api/client';
 import {
@@ -25,6 +25,7 @@ const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const ENTRY_ID = '018f0000-0000-7000-8000-000000000002';
 const FILE_ID = '018f0000-0000-7000-8000-000000000003';
+const SYNC_ID = '018f0000-0000-7000-8000-000000000006';
 const NOW = '2026-07-24T08:00:00Z';
 const EMPTY_TAG_FILTER = { tagIds: [], tagMatch: 'any' as const, untagged: false };
 
@@ -44,19 +45,15 @@ function buildEntry(overrides: Partial<DeviceFileTreeEntry> = {}): DeviceFileTre
     fileMetadataModifiedAt: NOW,
     createdAt: NOW,
     updatedAt: NOW,
+    revision: 3,
+    syncId: SYNC_ID,
+    sourceFileState: {
+      state: 'downloaded',
+      settledAt: NOW,
+      settledBy: 'device-source',
+    },
+    tags: [],
     ...overrides,
-  };
-}
-
-function buildRoot(): DeviceFileRoot {
-  return {
-    entryId: ROOT_ID,
-    deviceId: DEVICE_ID,
-    parentEntryId: null,
-    kind: 'directory',
-    name: 'C:\\',
-    createdAt: NOW,
-    updatedAt: NOW,
   };
 }
 
@@ -76,15 +73,41 @@ function buildFile(absolutePath = 'C:\\data\\звіт %.log'): DeviceFile {
     fileMetadataModifiedAt: NOW,
     createdAt: NOW,
     updatedAt: NOW,
+    revision: 4,
+    syncId: SYNC_ID,
+    sourceFileState: null,
+    tags: [],
   };
 }
 
+function buildSyncSummary(overrides: Partial<SyncSummary> = {}): SyncSummary {
+  return {
+    syncId: SYNC_ID,
+    deviceId: DEVICE_ID,
+    mode: 'automatic',
+    status: 'completed_with_errors',
+    nextBatchIndex: 1,
+    counts: {
+      received: 2,
+      accepted: 1,
+      created: 1,
+      updated: 0,
+      rejected: 1,
+    },
+    createdAt: NOW,
+    updatedAt: NOW,
+    completedAt: NOW,
+    expiresAt: null,
+    ...overrides,
+  };
+}
 describe('device file request helpers', () => {
   it('builds direct-child browse requests without client path semantics', () => {
     expect(
       buildBrowseDeviceFilesReq({
         deviceId: DEVICE_ID,
         parentEntryId: ROOT_ID,
+
         cursor: 'next',
         tagFilter: EMPTY_TAG_FILTER,
       }),
@@ -165,7 +188,8 @@ describe('device file sync helpers', () => {
       const { req } = buildSyncDeviceFilesReq({ deviceId: DEVICE_ID, rows: [row] });
 
       expect(req.files[0].absolutePath).toBe(absolutePath);
-      expect(req.files[0].fileId).toBeNull();
+      expect(req.files[0]).not.toHaveProperty('fileId');
+      expect(req.files[0].sourceFileState).toBeNull();
     },
   );
 
@@ -173,11 +197,18 @@ describe('device file sync helpers', () => {
     const row = createDeviceFileSyncRowFromEntry(buildEntry());
 
     expect(row).toMatchObject({
-      fileId: FILE_ID,
+      existing: true,
       absolutePath: 'C:\\data\\звіт %.log',
       mimeType: 'text/plain',
       extension: 'log',
+      sourceFileState: {
+        state: 'downloaded',
+        settledBy: 'device-source',
+      },
     });
+    expect(
+      buildSyncDeviceFilesReq({ deviceId: DEVICE_ID, rows: [row] }).req.files[0].sourceFileState,
+    ).toEqual(buildEntry().sourceFileState);
   });
 
   it('maps ordered accepted and rejected results to the frozen submit snapshot', () => {
@@ -187,22 +218,22 @@ describe('device file sync helpers', () => {
     rejectedRow.absolutePath = 'C:\\rejected.log';
     const submittedRowIds = [acceptedRow.localId, rejectedRow.localId];
     const rsp: SyncDeviceFilesRsp = {
+      sync: buildSyncSummary(),
       results: [
         {
           Rejected: {
             index: 1,
-            error: {
-              kind: 'conflict',
-              message: 'conflict',
-              fieldErrors: [['files[1].absolute_path', 'already exists']],
-            },
+            code: 'validation',
+            message: 'conflict',
+            fieldErrors: [{ path: 'files[1].absolute_path', message: 'already exists' }],
           },
         },
         {
           Accepted: {
             index: 0,
             operation: 'created',
-            root: buildRoot(),
+            fileId: FILE_ID,
+            revision: 4,
             file: buildFile('C:\\accepted.log'),
           },
         },
@@ -219,16 +250,28 @@ describe('device file sync helpers', () => {
     ]);
   });
 
-  it.each<FileSyncErrorKind>(['validation', 'not_found', 'conflict', 'dependency', 'internal'])(
-    'preserves %s rejection kinds',
-    (kind) => {
+  it.each<FileSyncErrorCode>(['validation', 'duplicate_path_in_session'])(
+    'preserves %s rejection codes',
+    (code) => {
       const row = createEmptyDeviceFileSyncRow();
       const rows = applySyncDeviceFilesRsp([row], [row.localId], {
-        results: [{ Rejected: { index: 0, error: { kind, message: kind, fieldErrors: [] } } }],
+        sync: buildSyncSummary(),
+        results: [
+          {
+            Rejected: {
+              index: 0,
+              code,
+              message: code,
+              fieldErrors: [],
+            },
+          },
+        ],
       });
       expect(rows[0].result).toEqual({
         kind: 'rejected',
-        error: { kind, message: kind, fieldErrors: [] },
+        code,
+        message: code,
+        fieldErrors: [],
       });
     },
   );
@@ -236,7 +279,10 @@ describe('device file sync helpers', () => {
   it('binds top-level field errors and marks only transport failures uncertain', () => {
     const row = createEmptyDeviceFileSyncRow();
     const requestError = parseSyncRequestError(
-      new HttpRequestError(400, JSON.stringify([['files[0].absolute_path', 'invalid path']])),
+      new HttpRequestError(
+        400,
+        JSON.stringify([{ path: 'files[0].absolute_path', message: 'invalid path' }]),
+      ),
       [row.localId],
     );
     expect(requestError.batchError).toBe('Виправте помилки в рядках батча.');

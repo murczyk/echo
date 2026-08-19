@@ -1,10 +1,11 @@
 import type {
   DeviceFile,
-  DeviceFileRoot,
   DeviceFileTreeEntry,
   FileEntryKind,
-  FileSyncError,
+  FileSyncErrorCode,
+  FileSyncFieldError,
   FileSyncOperation,
+  SourceFileState,
   TagMatch,
 } from '../../../../Bindings';
 
@@ -47,19 +48,26 @@ export type DeviceFileSyncResult =
   | {
       kind: 'accepted';
       operation: FileSyncOperation;
-      root: DeviceFileRoot;
+      fileId: string;
+      revision: number;
       file: DeviceFile;
     }
-  | { kind: 'rejected'; error: FileSyncError };
+  | {
+      kind: 'rejected';
+      code: FileSyncErrorCode;
+      message: string;
+      fieldErrors: FileSyncFieldError[];
+    };
 
 export type DeviceFileSyncRow = {
   localId: string;
-  fileId: string | null;
+  existing: boolean;
   absolutePath: string;
   mimeType: string;
   extension: string;
   fileMetadataCreatedAt: string | null;
   fileMetadataModifiedAt: string | null;
+  sourceFileState: SourceFileState | null;
   fieldErrors: Partial<Record<DeviceFileSyncField, string>>;
   result: DeviceFileSyncResult | null;
 };

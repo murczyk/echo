@@ -9,10 +9,13 @@ import {
   createDevice,
   getDeviceDetail,
   getDeviceAnalyticsSummary,
+  getAnalysisRun,
   getDeviceUnitStats,
   listDeviceAors,
   listDeviceUnits,
   listAnalyticsTags,
+  listAnalysisRuns,
+  listAnalysisRunFiles,
   journalDeviceFiles,
   listDeviceFileRoots,
   listDevices,
@@ -29,6 +32,7 @@ const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const ENTRY_ID = '018f0000-0000-7000-8000-000000000002';
 const FILE_ID = '018f0000-0000-7000-8000-000000000003';
+const SYNC_ID = '018f0000-0000-7000-8000-000000000005';
 const TAG_ID = '018f0000-0000-7000-8000-000000000004';
 const CREATED_AT = '2026-07-24T06:00:00Z';
 const UPDATED_AT = '2026-07-24T07:00:00Z';
@@ -99,6 +103,10 @@ function mockFileResponse() {
     file_metadata_modified_at: UPDATED_AT,
     created_at: CREATED_AT,
     updated_at: UPDATED_AT,
+    revision: 1,
+    sync_id: SYNC_ID,
+    source_file_state: null,
+    tags: [],
   };
 }
 
@@ -106,6 +114,27 @@ beforeEach(() => {
   vi.restoreAllMocks();
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(mockDeviceDetailsResponse())));
 });
+
+function mockSyncSummaryResponse() {
+  return {
+    sync_id: SYNC_ID,
+    device_id: DEVICE_ID,
+    mode: 'automatic',
+    status: 'completed_with_errors',
+    next_batch_index: 1,
+    counts: {
+      received: 2,
+      accepted: 1,
+      created: 1,
+      updated: 0,
+      rejected: 1,
+    },
+    created_at: CREATED_AT,
+    updated_at: UPDATED_AT,
+    completed_at: UPDATED_AT,
+    expires_at: null,
+  };
+}
 
 describe('devices API service routes', () => {
   it('lists devices using only the target request and response fields', async () => {
@@ -370,6 +399,14 @@ describe('device filesystem API service routes', () => {
             absolute_path: '/report.log',
             has_content: true,
             synchronized_at: UPDATED_AT,
+            revision: 1,
+            sync_id: SYNC_ID,
+            source_file_state: {
+              state: 'downloaded',
+              settled_at: UPDATED_AT,
+              settled_by: 'device-source',
+            },
+            tags: [],
           },
         ],
         total_count: 12_345,
@@ -402,6 +439,14 @@ describe('device filesystem API service routes', () => {
           absolutePath: '/report.log',
           hasContent: true,
           synchronizedAt: UPDATED_AT,
+          revision: 1,
+          syncId: SYNC_ID,
+          sourceFileState: {
+            state: 'downloaded',
+            settledAt: UPDATED_AT,
+            settledBy: 'device-source',
+          },
+          tags: [],
         },
       ],
       totalCount: 12_345,
@@ -409,25 +454,25 @@ describe('device filesystem API service routes', () => {
     });
   });
 
-  it('omits a create file_id and normalizes tagged sync outcomes', async () => {
+  it('sends path identity and normalizes the sync summary and item outcomes', async () => {
     fetchMock().mockResolvedValueOnce(
       jsonResponse({
+        sync: mockSyncSummaryResponse(),
         results: [
           {
             status: 'accepted',
             index: 0,
             operation: 'created',
-            root: mockRootResponse(),
+            file_id: FILE_ID,
+            revision: 1,
             file: mockFileResponse(),
           },
           {
             status: 'rejected',
             index: 1,
-            error: {
-              kind: 'validation',
-              message: 'filesystem validation failed',
-              field_errors: [['files[1].absolute_path', 'invalid']],
-            },
+            code: 'validation',
+            message: 'file validation failed',
+            field_errors: [{ path: 'files[1].absolute_path', message: 'invalid' }],
           },
         ],
       }),
@@ -437,20 +482,24 @@ describe('device filesystem API service routes', () => {
       deviceId: DEVICE_ID,
       files: [
         {
-          fileId: null,
           absolutePath: 'C:\\report.log',
           mimeType: 'text/plain',
           extension: 'log',
           fileMetadataCreatedAt: CREATED_AT,
           fileMetadataModifiedAt: UPDATED_AT,
+          sourceFileState: {
+            state: 'downloaded',
+            settledAt: UPDATED_AT,
+            settledBy: 'device-source',
+          },
         },
         {
-          fileId: FILE_ID,
           absolutePath: 'C:\\moved.log',
           mimeType: null,
           extension: null,
           fileMetadataCreatedAt: null,
           fileMetadataModifiedAt: null,
+          sourceFileState: null,
         },
       ],
     });
@@ -464,40 +513,51 @@ describe('device filesystem API service routes', () => {
           extension: 'log',
           file_metadata_created_at: CREATED_AT,
           file_metadata_modified_at: UPDATED_AT,
+          source_file_state: {
+            state: 'downloaded',
+            settled_at: UPDATED_AT,
+            settled_by: 'device-source',
+          },
         },
         {
-          file_id: FILE_ID,
           absolute_path: 'C:\\moved.log',
           mime_type: null,
           extension: null,
           file_metadata_created_at: null,
           file_metadata_modified_at: null,
+          source_file_state: null,
         },
       ],
+    });
+    expect(rsp.sync).toMatchObject({
+      syncId: SYNC_ID,
+      mode: 'automatic',
+      counts: { accepted: 1, rejected: 1 },
     });
     expect(rsp.results).toEqual([
       {
         Accepted: {
           index: 0,
           operation: 'created',
-          root: expect.objectContaining({ entryId: ROOT_ID }),
+          fileId: FILE_ID,
+          revision: 1,
           file: expect.objectContaining({ fileId: FILE_ID, hasContent: false }),
         },
       },
       {
         Rejected: {
           index: 1,
-          error: {
-            kind: 'validation',
-            message: 'filesystem validation failed',
-            fieldErrors: [['files[1].absolute_path', 'invalid']],
-          },
+          code: 'validation',
+          message: 'file validation failed',
+          fieldErrors: [{ path: 'files[1].absolute_path', message: 'invalid' }],
         },
       },
     ]);
   });
   it('preserves Windows paths in sync request values', async () => {
-    fetchMock().mockResolvedValueOnce(jsonResponse({ results: [] }));
+    fetchMock().mockResolvedValueOnce(
+      jsonResponse({ sync: mockSyncSummaryResponse(), results: [] }),
+    );
     const absolutePath =
       'D:\\Counter-Strike Source v34 HD\\cstrike\\sound\\weapons\\csgo\\c4\\c4_plant.wav';
 
@@ -505,12 +565,12 @@ describe('device filesystem API service routes', () => {
       deviceId: DEVICE_ID,
       files: [
         {
-          fileId: null,
           absolutePath,
           mimeType: null,
           extension: null,
           fileMetadataCreatedAt: null,
           fileMetadataModifiedAt: null,
+          sourceFileState: null,
         },
       ],
     });
@@ -524,6 +584,7 @@ describe('device filesystem API service routes', () => {
           extension: null,
           file_metadata_created_at: null,
           file_metadata_modified_at: null,
+          source_file_state: null,
         },
       ],
     });
@@ -613,20 +674,111 @@ describe('device analytics API service routes', () => {
     });
   });
 
-  it('schedules device and global reanalysis through the admin routes', async () => {
+  it('creates device and global reanalysis runs through the admin routes', async () => {
+    const run = {
+      run_id: 'run-1',
+      device_id: DEVICE_ID,
+      cause: 'manual_reanalysis',
+      sync_id: null,
+      target_source_sequence: 11,
+      definition_id: 'definition-1',
+      analyzer_version: 1,
+      dsl_version: 1,
+      status: 'preparing',
+      item_count: 0,
+      completed_count: 0,
+      prepared_at: null,
+      completed_at: null,
+      created_at: CREATED_AT,
+    };
     fetchMock()
-      .mockResolvedValueOnce(jsonResponse({ scheduled_file_count: 2 }))
-      .mockResolvedValueOnce(jsonResponse({ scheduled_file_count: 5 }));
+      .mockResolvedValueOnce(jsonResponse({ run }))
+      .mockResolvedValueOnce(jsonResponse({ definition_id: 'definition-1', created_run_count: 5 }));
 
     const deviceRsp = await reanalyzeDevice({ deviceId: DEVICE_ID });
     const allRsp = await reanalyzeAll();
 
     expect(fetchMock().mock.calls[0][0]).toBe('/api/admin/device-analytics/reanalyze/device');
     expect(requestBody(0)).toEqual({ device_id: DEVICE_ID });
-    expect(deviceRsp).toEqual({ scheduledFileCount: 2 });
+    expect(deviceRsp.run.runId).toBe('run-1');
+    expect(deviceRsp.run).toMatchObject({
+      runId: 'run-1',
+      cause: 'manual_reanalysis',
+      syncId: null,
+      targetSourceSequence: 11,
+    });
     expect(fetchMock().mock.calls[1][0]).toBe('/api/admin/device-analytics/reanalyze/all');
     expect(requestBody(1)).toBeUndefined();
-    expect(allRsp).toEqual({ scheduledFileCount: 5 });
+    expect(allRsp).toEqual({ definitionId: 'definition-1', createdRunCount: 5 });
+  });
+
+  it('loads run status, device run history, and historical file results', async () => {
+    const run = {
+      run_id: 'run-1',
+      device_id: DEVICE_ID,
+      cause: 'manual_reanalysis',
+      sync_id: null,
+      target_source_sequence: 11,
+      definition_id: 'definition-1',
+      analyzer_version: 1,
+      dsl_version: 1,
+      status: 'completed',
+      item_count: 2,
+      completed_count: 2,
+      prepared_at: CREATED_AT,
+      completed_at: UPDATED_AT,
+      created_at: CREATED_AT,
+    };
+    fetchMock()
+      .mockResolvedValueOnce(jsonResponse({ run }))
+      .mockResolvedValueOnce(jsonResponse({ runs: [run], next_cursor: 'runs-next' }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          files: [
+            {
+              file_id: FILE_ID,
+              metadata_revision: 3,
+              analysis_input_revision: 2,
+              state: 'completed',
+              tag_ids: [TAG_ID],
+              metadata: {
+                name: 'report.log',
+                absolute_path: 'C:\\report.log',
+                extension: 'log',
+                mime_type: 'text/plain',
+                file_metadata_created_at: CREATED_AT,
+                file_metadata_modified_at: UPDATED_AT,
+                source_file_state: null,
+              },
+            },
+          ],
+          next_cursor: null,
+        }),
+      );
+
+    const getRsp = await getAnalysisRun({ runId: 'run-1' });
+    const listRsp = await listAnalysisRuns({
+      deviceId: DEVICE_ID,
+      limit: 25,
+      cursor: null,
+    });
+    const filesRsp = await listAnalysisRunFiles({
+      runId: 'run-1',
+      limit: 25,
+      cursor: null,
+    });
+
+    expect(requestBody(0)).toEqual({ run_id: 'run-1' });
+    expect(requestBody(1)).toEqual({ device_id: DEVICE_ID, limit: 25, cursor: null });
+    expect(requestBody(2)).toEqual({ run_id: 'run-1', limit: 25, cursor: null });
+    expect(getRsp.run.status).toBe('completed');
+    expect(listRsp).toMatchObject({ runs: [{ runId: 'run-1' }], nextCursor: 'runs-next' });
+    expect(filesRsp.files[0]).toMatchObject({
+      fileId: FILE_ID,
+      state: 'completed',
+      tagIds: [TAG_ID],
+      metadata: { absolutePath: 'C:\\report.log', sourceFileState: null },
+    });
   });
 });
 

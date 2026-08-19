@@ -1,116 +1,47 @@
-use super::types::{FileAnalysisInput, TagRuleDefinition};
-use super::{query, queue, rules};
-use crate::types::Env;
-use crate::utils::worker_watch;
-use anyhow::{ensure, Context};
-use sea_orm::{DatabaseConnection, DatabaseTransaction, TransactionTrait};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::Duration;
+use super::{queue, rules, rules::CompiledTagRules};
+use crate::{h, types::Env};
+use anyhow::{Context, Result};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+pub(crate) const WORKER_COUNT: usize = 4;
+const PREPARATION_PAGE_SIZE: u64 = 1_000;
+const CLAIM_BATCH_SIZE: u64 = 1_000;
+const LEASE_DURATION_SECS: i64 = 60;
+const INFRASTRUCTURE_ERROR_BACKOFF_SECS: u64 = 2;
+const MONITOR_INTERVAL_SECS: u64 = 60;
+const STUCK_RUN_ALERT_SECS: u64 = 15 * 60;
 const IDLE_SLEEP: Duration = Duration::from_millis(250);
-const ERROR_SLEEP: Duration = Duration::from_secs(2);
-
-#[derive(Clone)]
-pub(super) struct RuleSnapshot {
-    pub revision: i64,
-    pub rules: Arc<rules::CompiledTagRules>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum BatchOutcome {
-    Processed,
-    RuleSnapshotStale,
-}
 
 #[derive(Default)]
 pub(crate) struct RuleCache {
-    cached: RwLock<Option<RuleSnapshot>>,
+    cached: RwLock<HashMap<Uuid, Arc<CompiledTagRules>>>,
 }
 
 impl RuleCache {
-    pub(super) async fn load_rules(
+    async fn get(
         &self,
-        file_db: &DatabaseConnection,
-    ) -> anyhow::Result<RuleSnapshot> {
-        let observed_revision = query::rule_set_revision(file_db)
-            .await
-            .context("read analytics tag rule revision")?;
-        {
-            let cached = self.cached.read().await;
-            if let Some(cached) = cached.as_ref() {
-                if cached.revision == observed_revision {
-                    return Ok(cached.clone());
-                }
-            }
+        file_db: &sea_orm::DatabaseConnection,
+        definition_id: Uuid,
+    ) -> Result<Arc<CompiledTagRules>> {
+        if let Some(rules) = self.cached.read().await.get(&definition_id) {
+            return Ok(rules.clone());
         }
-
+        let snapshot = queue::load_rule_snapshot(file_db, definition_id)
+            .await
+            .context(h!())?;
+        let rules = Arc::new(snapshot.compile().context(h!())?);
         let mut cached = self.cached.write().await;
-        if let Some(cached) = cached.as_ref() {
-            if cached.revision == observed_revision {
-                return Ok(cached.clone());
-            }
-        }
-
-        let transaction = file_db
-            .begin()
-            .await
-            .context("begin analytics rule snapshot transaction")?;
-        let revision = query::lock_rule_set_revision(&transaction)
-            .await
-            .context("lock analytics tag rule revision")?;
-        if let Some(cached) = cached.as_ref() {
-            if cached.revision == revision {
-                transaction
-                    .commit()
-                    .await
-                    .context("commit cached analytics rule snapshot")?;
-                return Ok(cached.clone());
-            }
-        }
-
-        let active_rules = query::load_active_tag_rules(&transaction)
-            .await
-            .context("load active analytics tag rules")?;
-        let mut definitions = Vec::with_capacity(active_rules.len());
-        for active_rule in active_rules {
-            let rule_expression =
-                rules::deserialize_rule_expression(active_rule.rule_expression)
-                    .map_err(|error| {
-                        anyhow::anyhow!(
-                            "analytics tag {} has invalid rule {} at {}: {}",
-                            active_rule.tag_id,
-                            error.code,
-                            error.path,
-                            error.message
-                        )
-                    })?;
-            definitions.push(TagRuleDefinition {
-                tag_id: active_rule.tag_id,
-                rule_expression,
-            });
-        }
-        let rules = Arc::new(rules::compile_tag_rules(definitions).map_err(
-            |error| {
-                anyhow::anyhow!(
-                    "analytics rule validation failed with {} at {}: {}",
-                    error.code,
-                    error.path,
-                    error.message
-                )
-            },
-        )?);
-        transaction
-            .commit()
-            .await
-            .context("commit analytics rule snapshot")?;
-
-        let snapshot = RuleSnapshot { revision, rules };
-        *cached = Some(snapshot.clone());
-        Ok(snapshot)
+        Ok(cached
+            .entry(definition_id)
+            .or_insert_with(|| rules.clone())
+            .clone())
     }
 }
 
@@ -118,321 +49,205 @@ pub(crate) async fn run_nofail(
     env: Arc<Env>,
     cancellation_token: CancellationToken,
     rule_cache: Arc<RuleCache>,
-    batch_size: u64,
 ) {
-    log::info!(
-        "device_file_analytics_worker started with batch_size={batch_size}"
-    );
     loop {
         if cancellation_token.is_cancelled() {
-            log::info!(
-                "device_file_analytics_worker received cancellation token"
-            );
             break;
         }
-        let _loop_guard =
-            worker_watch::loop_guard("device_file_analytics_worker");
-        let sleep =
-            match run_tick_with(env.as_ref(), rule_cache.as_ref(), batch_size)
-                .await
-            {
-                Ok(true) => continue,
-                Ok(false) => IDLE_SLEEP,
-                Err(error) => {
-                    log::error!(
-                        "device_file_analytics_worker failed: {error:#}"
-                    );
-                    ERROR_SLEEP
+        match run_tick(
+            &env,
+            &rule_cache,
+            PREPARATION_PAGE_SIZE,
+            CLAIM_BATCH_SIZE,
+            LEASE_DURATION_SECS,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => break,
+                    () = tokio::time::sleep(IDLE_SLEEP) => {}
                 }
-            };
-        tokio::select! {
-            _ = cancellation_token.cancelled() => break,
-            _ = tokio::time::sleep(sleep) => {}
+            }
+            Err(error) => {
+                if let Some(metrics) = &env.metrics {
+                    metrics.record_file_analysis_worker_error();
+                }
+                log::error!("file analysis worker tick failed: {error:?}");
+                tokio::select! {
+                    () = cancellation_token.cancelled() => break,
+                    () = tokio::time::sleep(Duration::from_secs(
+                        INFRASTRUCTURE_ERROR_BACKOFF_SECS,
+                    )) => {}
+                }
+            }
         }
     }
 }
 
-#[cfg(test)]
-pub(in crate::devices) async fn run_tick(env: &Env) -> anyhow::Result<bool> {
-    run_tick_with(env, &RuleCache::default(), super::BATCH_SIZE).await
+pub(crate) async fn monitor_nofail(
+    env: Arc<Env>,
+    cancellation_token: CancellationToken,
+) {
+    let mut interval =
+        tokio::time::interval(Duration::from_secs(MONITOR_INTERVAL_SECS));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            () = cancellation_token.cancelled() => break,
+            _ = interval.tick() => {
+                if let Err(error) = record_operational_state(&env).await {
+                    if let Some(metrics) = &env.metrics {
+                        metrics.record_file_analysis_worker_error();
+                    }
+                    log::error!(
+                        "file analysis operational snapshot failed: {error:?}"
+                    );
+                }
+            }
+        }
+    }
 }
 
-pub(super) async fn run_tick_with(
+async fn record_operational_state(env: &Env) -> Result<()> {
+    let file_db = env.file_registry_db().context(h!())?.connection();
+    let snapshot = queue::load_operational_snapshot(file_db)
+        .await
+        .context(h!())?;
+    if let Some(metrics) = &env.metrics {
+        metrics.record_file_analysis_operational_state(
+            snapshot.sync_runs,
+            snapshot.manual_runs,
+            snapshot.preparing_runs,
+            snapshot.running_runs,
+            snapshot.completed_runs,
+            snapshot.active_leases,
+            snapshot.expired_leases,
+            snapshot.oldest_preparing_age_secs,
+            snapshot.oldest_running_age_secs,
+        );
+    }
+    if snapshot.expired_leases > 0 {
+        log::warn!(
+            "expired file analysis leases await reclaim: count={}",
+            snapshot.expired_leases,
+        );
+    }
+    let alert_age_secs = STUCK_RUN_ALERT_SECS as f64;
+    if snapshot.oldest_preparing_age_secs >= alert_age_secs {
+        log::warn!(
+            "file analysis preparation is persistently non-terminal: run_count={}, oldest_age_secs={:.0}",
+            snapshot.preparing_runs,
+            snapshot.oldest_preparing_age_secs,
+        );
+    }
+    if snapshot.oldest_running_age_secs >= alert_age_secs {
+        log::warn!(
+            "file analysis execution is persistently non-terminal: run_count={}, oldest_age_secs={:.0}",
+            snapshot.running_runs,
+            snapshot.oldest_running_age_secs,
+        );
+    }
+    if snapshot.unsupported_nonterminal_runs > 0 {
+        log::error!(
+            "unsupported file analysis definitions have non-terminal runs: count={}",
+            snapshot.unsupported_nonterminal_runs,
+        );
+    }
+    Ok(())
+}
+
+pub(crate) async fn run_tick(
     env: &Env,
     rule_cache: &RuleCache,
-    batch_size: u64,
-) -> anyhow::Result<bool> {
-    ensure!(batch_size > 0, "file analytics batch size must be positive");
-    let file_registry_db = env
-        .file_registry_db()
-        .context("file registry database is unavailable")?;
-    let file_db = file_registry_db.connection();
-    let backfilled =
-        queue::backfill_missing_analysis_state(file_db, batch_size)
-            .await
-            .context("backfill missing file analysis state")?;
-    let expanded =
-        queue::expand_next_legacy_reanalysis_job(file_db, batch_size)
-            .await
-            .context("expand legacy file reanalysis job")?;
-    let recovered_files =
-        queue::recover_expired_analysis_leases(file_db, batch_size)
-            .await
-            .context("recover expired file analysis leases")?;
-    let recovered_devices =
-        queue::recover_expired_analysis_device_leases(file_db, batch_size)
-            .await
-            .context("recover expired device analysis leases")?;
-    let rule_snapshot = rule_cache.load_rules(file_db).await?;
-    let Some(device) = queue::claim_pending_analysis_device(file_db)
+    preparation_page_size: u64,
+    claim_batch_size: u64,
+    lease_duration_secs: i64,
+) -> Result<bool> {
+    let file_db = env.file_registry_db().context(h!())?.connection();
+    let preparation_started_at = Instant::now();
+    let preparation = queue::prepare_next_page(file_db, preparation_page_size)
         .await
-        .context("claim pending device analytics row")?
-    else {
-        return Ok(backfilled
-            || expanded
-            || recovered_files > 0
-            || recovered_devices > 0);
+        .context(h!())?;
+    if let Some(metrics) = &env.metrics {
+        metrics.record_file_analysis_preparation(
+            preparation.inserted_count,
+            preparation_started_at.elapsed(),
+        );
+        if let Some(duration_secs) = preparation.completed_run_duration_secs {
+            metrics.record_file_analysis_run_completion_duration(duration_secs);
+        }
+    }
+    let claim_started_at = Instant::now();
+    let claimed = queue::claim_analysis_batch(
+        file_db,
+        claim_batch_size,
+        lease_duration_secs,
+    )
+    .await
+    .context(h!())?;
+    if let Some(metrics) = &env.metrics {
+        metrics.record_file_analysis_claim(claim_started_at.elapsed());
+    }
+    let Some(first) = claimed.first() else {
+        return Ok(preparation.did_work);
     };
-
-    if let Err(error) =
-        process_claimed_device(env, &rule_snapshot, &device, batch_size).await
-    {
-        let error_text = format!("{error:#}");
-        if let Err(release_error) =
-            queue::release_analysis_device_claim_with_error(
-                file_db,
-                &device,
-                &error_text,
-            )
+    let run_id = first.run_id;
+    let definition_id = first.definition_id;
+    let lease_token = first.lease_token;
+    if claimed.iter().any(|item| {
+        item.run_id != run_id
+            || item.definition_id != definition_id
+            || item.lease_token != lease_token
+    }) {
+        queue::release_analysis_batch(file_db, lease_token)
             .await
-        {
-            return Err(error.context(format!(
-                "additionally failed to release device analysis lease: {release_error}"
-            )));
-        }
-        return Err(error);
+            .context(h!())?;
+        return Err(anyhow::anyhow!(
+            "analysis claim crossed immutable batch boundaries"
+        ));
     }
-    Ok(true)
-}
-
-async fn process_claimed_device(
-    env: &Env,
-    rule_snapshot: &RuleSnapshot,
-    device: &queue::ClaimedAnalysisDevice,
-    batch_size: u64,
-) -> anyhow::Result<()> {
-    let file_db = env
-        .file_registry_db()
-        .context("file registry database is unavailable")?
-        .connection();
-    loop {
-        if queue::expand_next_device_reanalysis_job(file_db, device, batch_size)
-            .await
-            .context("expand device file reanalysis job")?
-        {
-            continue;
-        }
-
-        let batch =
-            queue::claim_pending_analysis_files(file_db, device, batch_size)
-                .await
-                .context("claim pending files for device analysis")?;
-        if batch.files.is_empty() {
-            let pending =
-                queue::complete_analysis_device_claim(file_db, device)
-                    .await
-                    .context("complete device analysis claim")?
-                    .context("device analysis claim was lost")?;
-            log::debug!(
-                "device file analytics completed device={} pending={pending}",
-                device.device_id,
-            );
-            return Ok(());
-        }
-
-        if process_claimed_batch(env, rule_snapshot, batch).await?
-            == BatchOutcome::RuleSnapshotStale
-        {
-            let released =
-                queue::release_analysis_device_claim(file_db, device)
-                    .await
-                    .context(
-                        "release device analysis after rule revision change",
-                    )?;
-            ensure!(
-                released == 1,
-                "released {released} device analysis claims after rule revision change"
-            );
-            return Ok(());
-        }
-    }
-}
-
-pub(super) async fn process_claimed_batch(
-    env: &Env,
-    rule_snapshot: &RuleSnapshot,
-    batch: queue::ClaimedAnalysisBatch,
-) -> anyhow::Result<BatchOutcome> {
-    let mut matched_tags_by_file = batch
-        .files
-        .iter()
-        .map(|file| {
-            let result = rules::analyze(
-                &rule_snapshot.rules,
-                &FileAnalysisInput {
-                    name: &file.name,
-                    absolute_path: file
-                        .absolute_path
-                        .as_deref()
-                        .unwrap_or_default(),
-                    extension: file.extension.as_deref(),
-                },
-            );
-            (file.file_entry_id, result.matched_tags)
-        })
-        .collect::<HashMap<_, _>>();
-
-    let file_db = env
-        .file_registry_db()
-        .context("file registry database is unavailable")?
-        .connection();
-    let transaction = file_db
-        .begin()
-        .await
-        .context("begin file analysis finalization transaction")?;
-    let result = finalize_claimed_batch(
-        rule_snapshot,
-        &batch,
-        &mut matched_tags_by_file,
-        &transaction,
-    )
-    .await;
-    match result {
-        Ok(outcome) => {
-            transaction
-                .commit()
-                .await
-                .context("commit file analysis finalization")?;
-            Ok(outcome)
-        }
+    let rules = match rule_cache.get(file_db, definition_id).await {
+        Ok(rules) => rules,
         Err(error) => {
-            if let Err(rollback_error) = transaction.rollback().await {
-                return Err(error.context(format!(
-                    "additionally failed to roll back file analysis finalization: {rollback_error}"
-                )));
-            }
-            Err(error)
+            let _ = queue::release_analysis_batch(file_db, lease_token).await;
+            return Err(error);
         }
-    }
-}
-
-async fn finalize_claimed_batch(
-    rule_snapshot: &RuleSnapshot,
-    batch: &queue::ClaimedAnalysisBatch,
-    matched_tags_by_file: &mut HashMap<Uuid, Vec<Uuid>>,
-    file_transaction: &DatabaseTransaction,
-) -> anyhow::Result<BatchOutcome> {
-    let file_entry_ids = batch
-        .files
+    };
+    let completed = claimed
         .iter()
-        .map(|file| file.file_entry_id)
-        .collect::<Vec<_>>();
-    let states = queue::lock_claim_states(
-        file_transaction,
-        batch.lease_token,
-        &file_entry_ids,
-    )
-    .await
-    .context("lock claimed file analysis state")?;
-    let claimed_by_id = batch
-        .files
-        .iter()
-        .map(|file| (file.file_entry_id, file))
-        .collect::<HashMap<_, _>>();
-    let valid_file_ids = states
-        .iter()
-        .filter_map(|state| {
-            let claimed = claimed_by_id.get(&state.file_entry_id)?;
-            (state.source_revision == claimed.source_revision
-                && state.required_generation == claimed.required_generation)
-                .then_some(state.file_entry_id)
+        .map(|item| queue::CompletedAnalysisFile {
+            run_id: item.run_id,
+            file_id: item.file_id,
+            metadata_revision: item.metadata_revision,
+            matched_tag_ids: rules::analyze(&rules, &item.input()).matched_tags,
         })
-        .collect::<HashSet<_>>();
-
-    if valid_file_ids.is_empty() {
-        queue::release_claim(file_transaction, batch.lease_token)
+        .collect::<Vec<_>>();
+    let completion =
+        match queue::complete_analysis_batch(file_db, lease_token, &completed)
             .await
-            .context("release stale file analysis claim")?;
-        return Ok(BatchOutcome::Processed);
-    }
-
-    let mut valid_files = batch
-        .files
-        .iter()
-        .filter(|file| valid_file_ids.contains(&file.file_entry_id))
-        .collect::<Vec<_>>();
-    valid_files.sort_unstable_by_key(|file| file.file_entry_id);
-    let valid_file_entry_ids = valid_files
-        .iter()
-        .map(|file| file.file_entry_id)
-        .collect::<Vec<_>>();
-    let mut assignments = Vec::new();
-    for file in valid_files {
-        let file_entry_created_at =
-            query::file_created_at_with_timezone(file.file_entry_created_at);
-        for tag_id in matched_tags_by_file
-            .remove(&file.file_entry_id)
-            .unwrap_or_default()
         {
-            assignments.push(query::FileTagAssignment {
-                file_entry_id: file.file_entry_id,
-                device_id: file.device_id,
-                file_entry_created_at,
-                tag_id,
-            });
-        }
+            Ok(completion) => completion,
+            Err(error) => {
+                let _ =
+                    queue::release_analysis_batch(file_db, lease_token).await;
+                return Err(error);
+            }
+        };
+    if let Some(metrics) = &env.metrics {
+        metrics.record_file_analysis_completion(
+            completion.completed_count,
+            completion.published_count,
+            completion.result_write_duration_secs,
+            completion.current_publish_duration_secs,
+            completion.run_completion_duration_secs,
+        );
     }
-
-    let current_rule_revision = query::lock_rule_set_revision(file_transaction)
-        .await
-        .context("lock analytics rule revision for finalization")?;
-    if current_rule_revision != rule_snapshot.revision {
-        queue::release_claim(file_transaction, batch.lease_token)
-            .await
-            .context("release claim after analytics rule revision change")?;
-        return Ok(BatchOutcome::RuleSnapshotStale);
-    }
-    let delta = query::reconcile_file_tags(
-        file_transaction,
-        &valid_file_entry_ids,
-        &assignments,
-    )
-    .await
-    .context("reconcile analyzed file tags")?;
-
-    let acknowledged = queue::acknowledge_claim(
-        file_transaction,
-        batch.lease_token,
-        &valid_file_entry_ids,
-        rule_snapshot.revision,
-    )
-    .await
-    .context("acknowledge file analysis claim")?;
-    ensure!(
-        acknowledged == valid_file_entry_ids.len() as u64,
-        "acknowledged {acknowledged} of {} file analytics rows",
-        valid_file_entry_ids.len()
-    );
-    queue::release_claim(file_transaction, batch.lease_token)
-        .await
-        .context("release stale rows from file analysis claim")?;
-
     log::debug!(
-        "device file analytics tag delta: files={}, inserted={}, deleted={}, unchanged={}",
-        valid_file_entry_ids.len(),
-        delta.inserted,
-        delta.deleted,
-        delta.unchanged,
+        "file analysis batch completed: run_id={run_id}, definition_id={definition_id}, run_sequence={}, item_count={}",
+        first.run_sequence,
+        completion.completed_count,
     );
-    Ok(BatchOutcome::Processed)
+    Ok(true)
 }

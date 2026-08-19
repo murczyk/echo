@@ -333,12 +333,8 @@ export function DeviceAnalyticsPanel({
     setReanalyzing(true);
     setReanalysisMessage(null);
     try {
-      const rsp = await reanalyzeDevice({ deviceId });
-      setReanalysisMessage(
-        rsp.scheduledFileCount > 0
-          ? `Повторний аналіз запущено у фоновому режимі для ${fileCountFormatter.format(rsp.scheduledFileCount)} файлів.`
-          : 'Немає завершених файлів, які можна поставити на повторний аналіз.',
-      );
+      await reanalyzeDevice({ deviceId });
+      setReanalysisMessage('Повторний аналіз запущено у фоновому режимі.');
     } catch (scheduleError) {
       setReanalysisMessage(
         toDeviceFileLoadError(scheduleError, 'Не вдалося запустити повторний аналіз').message,

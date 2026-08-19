@@ -6,24 +6,29 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize,
 )]
-#[sea_orm(table_name = "file_analysis_reanalysis_job")]
+#[sea_orm(table_name = "file_analysis_definition")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    pub device_id: Option<Uuid>,
-    pub target_rule_revision: i64,
     #[sea_orm(unique)]
-    pub generation: i64,
-    pub upper_file_entry_id: Uuid,
-    pub cursor_file_entry_id: Option<Uuid>,
-    pub scheduled_file_count: i64,
-    pub expanded_file_count: i64,
-    pub expanded_at: Option<DateTimeWithTimeZone>,
+    pub definition_sequence: i64,
+    pub analyzer_version: i32,
+    pub dsl_version: i32,
+    #[sea_orm(column_type = "JsonBinary")]
+    pub rules: Json,
     pub created_at: DateTimeWithTimeZone,
-    pub updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(has_many = "super::file_analysis_run::Entity")]
+    FileAnalysisRun,
+}
+
+impl Related<super::file_analysis_run::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::FileAnalysisRun.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

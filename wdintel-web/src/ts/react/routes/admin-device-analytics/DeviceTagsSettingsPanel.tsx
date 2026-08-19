@@ -189,7 +189,7 @@ export function DeviceTagsSettingsPanel() {
       const rsp = await reanalyzeAll();
       notify({
         severity: 'success',
-        message: `Заплановано повторний аналіз ${rsp.scheduledFileCount.toLocaleString('uk-UA')} файлів.`,
+        message: `Створено запусків повторного аналізу: ${rsp.createdRunCount.toLocaleString('uk-UA')}.`,
       });
     } catch (error) {
       notify({ severity: 'error', message: errorMessage(error) });

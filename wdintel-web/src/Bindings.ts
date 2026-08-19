@@ -1759,6 +1759,9 @@ export type DeviceFileTreeEntry = {
   fileMetadataModifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  revision: number | null;
+  syncId: string | null;
+  sourceFileState: SourceFileState | null;
   tags: Array<AnalyticsTag>;
 };
 
@@ -1777,6 +1780,9 @@ export type DeviceFile = {
   fileMetadataModifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  revision: number;
+  syncId: string;
+  sourceFileState: SourceFileState | null;
   tags: Array<AnalyticsTag>;
 };
 
@@ -1847,6 +1853,9 @@ export type DeviceFileJournalEntry = {
   absolutePath: string;
   hasContent: boolean;
   synchronizedAt: string;
+  revision: number;
+  syncId: string;
+  sourceFileState: SourceFileState | null;
   tags: Array<AnalyticsTag>;
 };
 
@@ -1865,13 +1874,25 @@ export type JournalDeviceFilesRsp = {
   nextCursor: string | null;
 };
 
+export type SourceFileStateKind =
+  | 'scanned'
+  | 'downloaded'
+  | 'changed'
+;
+
+export type SourceFileState = {
+  state: SourceFileStateKind;
+  settledAt: string;
+  settledBy: string;
+};
+
 export type SyncDeviceFileItem = {
-  fileId: string | null;
   absolutePath: string;
   mimeType: string | null;
   extension: string | null;
   fileMetadataCreatedAt: string | null;
   fileMetadataModifiedAt: string | null;
+  sourceFileState: SourceFileState | null;
 };
 
 export type FileSyncOperation =
@@ -1879,23 +1900,73 @@ export type FileSyncOperation =
   | 'updated'
 ;
 
-export type FileSyncErrorKind =
-  | 'validation'
-  | 'not_found'
-  | 'conflict'
-  | 'dependency'
-  | 'internal'
+export type FileSyncSessionMode =
+  | 'automatic'
+  | 'explicit'
 ;
 
-export type FileSyncError = {
-  kind: FileSyncErrorKind;
+export type FileSyncSessionStatus =
+  | 'open'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'expired'
+;
+
+export type FileSyncBatchStatus =
+  | 'processing'
+  | 'applied'
+  | 'applied_with_errors'
+;
+
+export type FileSyncErrorCode =
+  | 'validation'
+  | 'duplicate_path_in_session'
+;
+
+export type FileSyncFieldError = {
+  path: string;
   message: string;
-  fieldErrors: Array<[string, string]>;
+};
+
+export type SyncCounts = {
+  received: number;
+  accepted: number;
+  created: number;
+  updated: number;
+  rejected: number;
+};
+
+export type SyncSummary = {
+  syncId: string;
+  deviceId: string;
+  mode: FileSyncSessionMode;
+  status: FileSyncSessionStatus;
+  analysisRunId: string | null;
+  nextBatchIndex: number;
+  counts: SyncCounts;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  expiresAt: string | null;
+};
+
+export type BatchSummary = {
+  syncId: string;
+  batchIndex: number;
+  status: FileSyncBatchStatus;
+  counts: SyncCounts;
+  createdAt: string;
+  appliedAt: string | null;
 };
 
 export type FileSyncResult =
-  | { Accepted: { index: number; operation: FileSyncOperation; root: DeviceFileRoot; file: DeviceFile } }
-  | { Rejected: { index: number; error: FileSyncError } }
+  | { Accepted: { index: number; operation: FileSyncOperation; fileId: string; revision: number; file: DeviceFile } }
+  | { Rejected: { index: number; code: FileSyncErrorCode; message: string; fieldErrors: Array<FileSyncFieldError> } }
+;
+
+export type FileSyncSessionItemResult =
+  | { status: { batchIndex: number; itemIndex: number; operation: FileSyncOperation; fileId: string; revision: number; file: DeviceFile } }
+  | { status: { batchIndex: number; itemIndex: number; code: FileSyncErrorCode; message: string; fieldErrors: Array<FileSyncFieldError> } }
 ;
 
 export type SyncDeviceFilesReq = {
@@ -1904,7 +1975,36 @@ export type SyncDeviceFilesReq = {
 };
 
 export type SyncDeviceFilesRsp = {
+  sync: SyncSummary;
   results: Array<FileSyncResult>;
+};
+
+export type StartFileSyncSessionReq = {
+  deviceId: string;
+};
+
+export type FileSyncSessionRsp = {
+  sync: SyncSummary;
+};
+
+export type ApplyFileSyncBatchReq = {
+  files: Array<SyncDeviceFileItem>;
+};
+
+export type ApplyFileSyncBatchRsp = {
+  sync: SyncSummary;
+  batch: BatchSummary;
+  results: Array<FileSyncResult>;
+};
+
+export type CompleteFileSyncSessionReq = {
+  expectedBatchCount: number;
+};
+
+export type FileSyncSessionItemsRsp = {
+  sync: SyncSummary;
+  results: Array<FileSyncSessionItemResult>;
+  nextCursor: string | null;
 };
 
 export type RuleField =
@@ -1999,8 +2099,79 @@ export type ReanalyzeDeviceReq = {
   deviceId: string;
 };
 
-export type ReanalysisRsp = {
-  scheduledFileCount: number;
+export type AnalysisRun = {
+  runId: string;
+  deviceId: string;
+  cause: string;
+  syncId: string | null;
+  definitionId: string;
+  targetSourceSequence: number | null;
+  analyzerVersion: number;
+  dslVersion: number;
+  status: string;
+  itemCount: number;
+  completedCount: number;
+  createdAt: string;
+  preparedAt: string | null;
+  completedAt: string | null;
+};
+
+export type ReanalyzeDeviceRsp = {
+  run: AnalysisRun;
+};
+
+export type ReanalyzeAllRsp = {
+  definitionId: string;
+  createdRunCount: number;
+};
+
+export type GetAnalysisRunReq = {
+  runId: string;
+};
+
+export type GetAnalysisRunRsp = {
+  run: AnalysisRun;
+};
+
+export type ListAnalysisRunsReq = {
+  deviceId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type ListAnalysisRunsRsp = {
+  runs: Array<AnalysisRun>;
+  nextCursor: string | null;
+};
+
+export type ListAnalysisRunFilesReq = {
+  runId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type AnalysisRunFileMetadata = {
+  name: string;
+  absolutePath: string;
+  extension: string | null;
+  mimeType: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  sourceFileState: string | null;
+};
+
+export type AnalysisRunFile = {
+  fileId: string;
+  metadataRevision: number;
+  analysisInputRevision: number;
+  state: string;
+  metadata: AnalysisRunFileMetadata;
+  tagIds: Array<string> | null;
+};
+
+export type ListAnalysisRunFilesRsp = {
+  files: Array<AnalysisRunFile>;
+  nextCursor: string | null;
 };
 
 export type DeviceAnalyticsReq = {

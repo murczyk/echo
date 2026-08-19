@@ -1,6 +1,7 @@
 use crate::devices::files::{
     DirectoryEntry, DirectoryScope, DomainFileEntryKind, FileEntry,
-    FileJournalEntry, FilesystemError, RootEntry, TreeEntry,
+    FileJournalEntry, FilesystemError, NormalizedSourceFileState, RootEntry,
+    TreeEntry,
 };
 use crate::file_registry::entities::file_entry;
 
@@ -60,12 +61,19 @@ pub(in crate::devices::files) fn map_file_model(
     if entry.kind != DomainFileEntryKind::File {
         return Err(FilesystemError::Invariant("file_entry_non_file"));
     }
+    let source_file_state = map_source_file_state(&entry)?;
     let parent_entry_id = entry
         .parent_id
         .ok_or(FilesystemError::Invariant("file_parent_missing"))?;
     let absolute_path = entry
         .absolute_path
         .ok_or(FilesystemError::Invariant("file_absolute_path_missing"))?;
+    let revision = entry
+        .revision
+        .ok_or(FilesystemError::Invariant("file_revision_missing"))?;
+    let sync_id = entry
+        .sync_id
+        .ok_or(FilesystemError::Invariant("file_sync_id_missing"))?;
 
     Ok(FileEntry {
         file_id: entry.id,
@@ -81,6 +89,9 @@ pub(in crate::devices::files) fn map_file_model(
         file_metadata_modified_at: entry.file_metadata_modified_at,
         created_at: entry.created_at,
         updated_at: entry.updated_at,
+        revision,
+        sync_id,
+        source_file_state,
     })
 }
 
@@ -94,6 +105,9 @@ pub(in crate::devices::files) fn map_file_journal_model(
         absolute_path: file.absolute_path,
         has_content: file.has_content,
         synchronized_at: file.updated_at,
+        revision: file.revision,
+        sync_id: file.sync_id,
+        source_file_state: file.source_file_state,
     })
 }
 
@@ -152,9 +166,34 @@ fn ensure_directory_metadata_absent(
         && entry.file_metadata_created_at.is_none()
         && entry.file_metadata_modified_at.is_none()
         && entry.content_path.is_none()
+        && entry.revision.is_none()
+        && entry.sync_id.is_none()
+        && entry.source_file_state.is_none()
+        && entry.source_file_state_settled_at.is_none()
+        && entry.source_file_state_settled_by.is_none()
     {
         Ok(())
     } else {
         Err(FilesystemError::Invariant(invariant))
+    }
+}
+
+fn map_source_file_state(
+    entry: &file_entry::Model,
+) -> Result<Option<NormalizedSourceFileState>, FilesystemError> {
+    match (
+        entry.source_file_state.clone(),
+        entry.source_file_state_settled_at,
+        entry.source_file_state_settled_by.clone(),
+    ) {
+        (None, None, None) => Ok(None),
+        (Some(state), Some(settled_at), settled_by) => {
+            Ok(Some(NormalizedSourceFileState {
+                state,
+                settled_at,
+                settled_by,
+            }))
+        }
+        _ => Err(FilesystemError::Invariant("file_source_state_incomplete")),
     }
 }
