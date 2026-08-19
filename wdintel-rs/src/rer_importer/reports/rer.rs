@@ -1610,6 +1610,7 @@ mod tests {
             original_id: None,
             is_deduplicate_candidate: None,
             orbit_note: None,
+            is_inconsistent: false,
         }
     }
 

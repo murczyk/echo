@@ -218,6 +218,7 @@ vi.mock('../../services/api/user-settings', () => ({
     showAnalysisCallsignAddForm: false,
     showClassicDuty: false,
     showClassicAnalysis: false,
+    dutyCollapseMediaPreviews: true,
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -355,6 +356,7 @@ describe('SettingsNeoPage', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
     });
 
     await act(async () => {
@@ -396,6 +398,7 @@ describe('SettingsNeoPage', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
     });
   });
 
@@ -427,6 +430,7 @@ describe('SettingsNeoPage', () => {
       showAnalysisCallsignAddForm: true,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
     });
   });
 
@@ -458,6 +462,7 @@ describe('SettingsNeoPage', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
     });
 
     saveUserDutySettings.mockClear();
@@ -486,6 +491,7 @@ describe('SettingsNeoPage', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
     });
   });
 

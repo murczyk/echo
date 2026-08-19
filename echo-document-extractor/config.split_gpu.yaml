@@ -4,6 +4,7 @@ nu_extract:
   model_id: numind/NuExtract3
   revision: 2e9fca82ee641e6bb6e1f5d905241e994be27a07
   token_env: NUEXTRACT_API_KEY
+  max_tokens: 6000
   dtype: bfloat16
   temperature: 0.2
   seed: 0
@@ -16,9 +17,11 @@ gemma:
   model_id: echo/ocr-gemma-4-26B-A4B-it
   revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
   token_env: GEMMA_API_KEY
+  max_tokens: 6000
   dtype: fp8
   kv_cache_dtype: fp8
   vision_budget: 1120
   temperature: 0
   seed: 0
+endpoint_concurrency: 2
 enable_paddle: true

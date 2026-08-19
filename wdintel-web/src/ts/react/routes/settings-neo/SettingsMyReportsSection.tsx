@@ -271,6 +271,7 @@ const REPORT_KIND_LABELS: Record<string, string> = {
   geojson: 'GeoJSON',
   etalonka: 'Еталонний опис',
   goi: 'Звіт ГОІ',
+  goi_associations: 'Висновки ГОІ',
   legacy: 'Звіт',
 };
 

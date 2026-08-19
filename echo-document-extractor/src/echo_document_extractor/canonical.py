@@ -6,6 +6,7 @@ from pathlib import PurePosixPath
 
 from lxml import etree, html
 
+from .matching import align_text_sequences
 from .models import AssetRef, BBox, Block, Cell, CellStyle, Document, Page, Table, TextBlock
 
 
@@ -30,6 +31,13 @@ def blocks_from_html(
     ]
     table_skeletons = [block for block in skeleton or [] if isinstance(block, Table)]
     text_skeletons = [block for block in skeleton or [] if isinstance(block, TextBlock)]
+    text_nodes = [node for node in nodes if node.tag != "table"]
+    text_mapping = align_text_sequences(
+        [_text_block_value(block) for block in text_skeletons],
+        [_text_node_value(node) for node in text_nodes],
+        allow_source_skips=True,
+        assume_equal_positions=False,
+    )
     table_index = 0
     text_index = 0
     for order, node in enumerate(nodes):
@@ -39,7 +47,8 @@ def blocks_from_html(
             blocks.append(_table(node, block_id, table_skeleton or bbox, order, decision_id))
             table_index += 1
             continue
-        block_bbox = text_skeletons[text_index].bbox if text_index < len(text_skeletons) else bbox
+        skeleton_index = text_mapping.get(text_index)
+        block_bbox = text_skeletons[skeleton_index].bbox if skeleton_index is not None else bbox
         text_index += 1
         kind = (
             "heading"
@@ -79,6 +88,14 @@ def blocks_from_html(
             )
         )
     return blocks
+
+
+def _text_node_value(node: html.HtmlElement) -> str:
+    return " ".join(_text(node).split())
+
+
+def _text_block_value(block: TextBlock) -> str:
+    return " ".join(" ".join(block.paragraphs).split())
 
 
 def unreadable_block(page_id: str, bbox: BBox, png: bytes) -> tuple[TextBlock, dict[str, bytes]]:

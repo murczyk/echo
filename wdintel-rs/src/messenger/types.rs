@@ -195,6 +195,7 @@ pub struct WorkerStatus {
 pub struct SyncResult {
     pub is_healthy: bool,
     pub num_synced_inbox_messages: usize,
+    pub maintenance_skipped: bool,
 }
 
 #[derive(Default)]

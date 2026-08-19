@@ -25,6 +25,9 @@ import {
   feedNeedsUnreadPrefetch,
   DUTY_FEED_UNREAD_PREFETCH_MIN,
   feedsUnreadDisplayTotal,
+  flushPendingNewerItems,
+  mergePendingNewerItems,
+  shouldBufferNewerMessages,
   getPointEtalonsFromMessage,
   getShortStateIdFromUrl,
   isMessageEntityExcluded,
@@ -647,6 +650,99 @@ describe('rer-duty utils', () => {
     } satisfies MessageFeedState;
     expect(feedLoadedUnreadCount(feed)).toBe(DUTY_FEED_UNREAD_PREFETCH_MIN);
     expect(feedNeedsUnreadPrefetch(feed)).toBe(false);
+  });
+
+  it('counts pending newer unread toward the prefetch runway', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set([1]),
+      pendingNewerItems: Array.from({ length: DUTY_FEED_UNREAD_PREFETCH_MIN }, (_, index) => [
+        index + 2,
+        {} as InboxMessage,
+      ]),
+    });
+    expect(feedNeedsUnreadPrefetch(feed)).toBe(false);
+  });
+
+  it('buffers near-bottom newer pages while not following, but not at physical bottom', () => {
+    expect(
+      shouldBufferNewerMessages({
+        nearBottom: true,
+        physicallyAtBottom: false,
+        followTail: false,
+        markAllRead: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldBufferNewerMessages({
+        nearBottom: true,
+        physicallyAtBottom: true,
+        followTail: false,
+        markAllRead: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldBufferNewerMessages({
+        nearBottom: true,
+        physicallyAtBottom: false,
+        followTail: true,
+        markAllRead: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldBufferNewerMessages({
+        nearBottom: false,
+        physicallyAtBottom: false,
+        followTail: false,
+        markAllRead: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('merges and flushes pending newer items without double-counting ids', () => {
+    const feed = indicatorFeed({
+      items: [
+        [1, { timestamp: 100 } as InboxMessage],
+        [2, { timestamp: 200 } as InboxMessage],
+      ],
+      readIds: new Set([1, 2]),
+      unreadCount: 0,
+      pendingNewerItems: [[3, { timestamp: 300 } as InboxMessage]],
+    });
+    const merged = mergePendingNewerItems(feed, [
+      [3, { timestamp: 300 } as InboxMessage],
+      [4, { timestamp: 400 } as InboxMessage],
+    ]);
+    expect(merged.map(([id]) => id)).toEqual([3, 4]);
+
+    const flushed = flushPendingNewerItems({ ...feed, pendingNewerItems: merged });
+    expect(flushed.items.map(([id]) => id)).toEqual([1, 2, 3, 4]);
+    expect(flushed.pendingNewerItems).toEqual([]);
+    expect(flushed.unreadCount).toBe(2);
+  });
+
+  it('includes pending unread in the indicator when residual is used', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set([1]),
+      unreadCount: 2,
+      pendingNewerItems: [[2, {} as InboxMessage]],
+    });
+    expect(feedIndicatorUnreadCount(feed)).toBe(2);
+    expect(feedIndicatorUnreadCount(feed, undefined, { includeBeyondTailResidual: false })).toBe(1);
+  });
+
+  it('lets a matching loaded-tail preview cover buffered pending without double counting', () => {
+    const feed = indicatorFeed({
+      items: [[1, {} as InboxMessage]],
+      readIds: new Set([1]),
+      pendingNewerItems: [
+        [2, {} as InboxMessage],
+        [3, {} as InboxMessage],
+      ],
+    });
+    // keepLoadedTail buffering must leave preview.count as the full beyond-tail term.
+    expect(feedIndicatorUnreadCount(feed, { tailId: 1, count: 5 })).toBe(5);
   });
 
   it('does not expose raw server unread count when all loaded messages are read', () => {

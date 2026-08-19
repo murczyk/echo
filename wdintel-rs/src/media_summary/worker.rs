@@ -83,9 +83,16 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
             publish_inbox_change(env, job.media_id).await.c(h!())?;
         }
         Err(err) => {
-            let terminal = retry_or_fail(&env.dbx, &job, err.to_string())
-                .await
-                .c(h!())?;
+            let diagnostic = format!("{err:#}");
+            error!(
+                "media summary attempt failed: media_id={} attempt={} terminal={}: {}",
+                job.media_id,
+                job.attempts,
+                job.attempts >= MEDIA_SUMMARY_MAX_ATTEMPTS,
+                diagnostic
+            );
+            let terminal =
+                retry_or_fail(&env.dbx, &job, diagnostic).await.c(h!())?;
             if terminal {
                 publish_inbox_change(env, job.media_id).await.c(h!())?;
             }

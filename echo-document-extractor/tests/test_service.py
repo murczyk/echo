@@ -12,10 +12,12 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from echo_document_extractor.adapters import GEMMA_END_MARKER, GemmaAdapter, ModelRequest
 from echo_document_extractor.api import create_app
 from echo_document_extractor.config import EndpointConfig, ExtractionConfig, PaddleRuntimeConfig
 from echo_document_extractor.dependencies import DependencyChecker
 from echo_document_extractor.job_queue import IdempotencyConflictError, JobQueue, QueueFullError
+from echo_document_extractor.models import Evidence
 from echo_document_extractor.ocr import (
     PaddleEvidenceProvider,
     _create_ocr_pipeline,
@@ -25,7 +27,7 @@ from echo_document_extractor.package_archive import validate_package_zip
 from echo_document_extractor.pipeline import _resolve_inputs
 from echo_document_extractor.service_config import RuntimeConfig, ServiceLimits, ServiceSettings
 from echo_document_extractor.storage import StoragePressureError, ensure_capacity, parse_manifest
-from echo_document_extractor.worker import _job_inputs
+from echo_document_extractor.worker import _all_remote_model_families_failed, _job_inputs
 
 TOKEN = "a" * 48
 
@@ -263,6 +265,68 @@ def test_running_cancellation_is_observed_at_progress_boundary(tmp_path: Path) -
     assert queue.update_progress(running.id, "worker", 1)
     final = queue.fail(running.id, "worker", "cancelled", False, 3, (1, 2, 3))
     assert final.state == "cancelled"
+
+
+def test_queue_claims_up_to_configured_active_job_limit(tmp_path: Path) -> None:
+    queue = JobQueue(tmp_path / "jobs.sqlite3")
+    for index in range(3):
+        queue.submit(
+            f"00000000-0000-0000-0000-00000000000{index + 1}",
+            f"key-{index}",
+            f"digest-{index}",
+            tmp_path,
+            1,
+            1,
+        )
+
+    assert queue.claim("worker", 30, max_active_jobs=2) is not None
+    assert queue.claim("worker", 30, max_active_jobs=2) is not None
+    assert queue.claim("worker", 30, max_active_jobs=2) is None
+
+
+def test_gemma_request_stops_at_bounded_end_marker() -> None:
+    endpoint = EndpointConfig(
+        url="http://router.test/v1",
+        model_id="expected/model",
+        revision="revision",
+        token_env="ROUTER_TOKEN",
+        max_tokens=6000,
+    )
+    request = ModelRequest(
+        request_id="request",
+        unit_id="unit",
+        page_id="p1",
+        raster_sha256="0" * 64,
+        crop_bbox=(0, 0, 1, 1),
+        profile="split_gpu",
+        prompt_version="semantic-html-v2",
+        image_png=b"png",
+    )
+
+    payload = GemmaAdapter(endpoint)._request_body(request)
+
+    assert payload["stop"] == [GEMMA_END_MARKER]
+    assert payload["include_stop_str_in_output"] is True
+    assert payload["max_tokens"] == 6000
+
+
+def test_remote_failure_retries_only_when_both_model_families_failed() -> None:
+    nu_failure = Evidence(
+        id="nu",
+        source="nuextract3",
+        valid=False,
+        rejection_reasons=["request_error"],
+    )
+    gemma_failure = Evidence(
+        id="gemma",
+        source="gemma",
+        valid=False,
+        rejection_reasons=["request_error:TimeoutError"],
+    )
+    gemma_response = Evidence(id="gemma-ok", source="gemma", valid=True)
+
+    assert _all_remote_model_families_failed([nu_failure, gemma_failure])
+    assert not _all_remote_model_families_failed([nu_failure, gemma_response])
 
 
 def test_storage_pressure_never_removes_existing_jobs(tmp_path: Path) -> None:

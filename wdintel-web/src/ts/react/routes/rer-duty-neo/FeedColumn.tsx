@@ -29,7 +29,14 @@ export type FeedColumnProps = {
   column: FeedColumnModel;
 };
 
-export type FeedColumnHandle = { scrollToEnd: (behavior?: ScrollBehavior) => void };
+export type FeedColumnScrollOptions = {
+  /** Wake idle offload before scrolling (scroll FAB / arrow). Follow/settle omit this. */
+  wakeIdleOffload?: boolean;
+};
+
+export type FeedColumnHandle = {
+  scrollToEnd: (behavior?: ScrollBehavior, options?: FeedColumnScrollOptions) => void;
+};
 export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function FeedColumn(
   { column },
   ref,
@@ -160,9 +167,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   useImperativeHandle(
     ref,
     () => ({
-      scrollToEnd(behavior: ScrollBehavior = 'smooth') {
+      scrollToEnd(behavior: ScrollBehavior = 'smooth', options?: FeedColumnScrollOptions) {
         if (feed.items.length === 0) return;
-        contentRef.current?.scrollToBottom(behavior);
+        contentRef.current?.scrollToBottom(behavior, options);
       },
     }),
     [feed.items.length],

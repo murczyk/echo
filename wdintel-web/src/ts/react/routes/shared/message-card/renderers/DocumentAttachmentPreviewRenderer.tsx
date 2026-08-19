@@ -32,6 +32,7 @@ import { blurActiveAttachmentPreviewElement } from '../attachment-preview/messag
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import { MediaReprocessAction } from '../attachment-preview/MediaReprocessAction';
+import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
 import { MarkdownDocumentPreview, TxtDocumentPreview } from '../text-document-preview';
 import { CsvDocumentPreview } from './CsvDocumentPreview';
 import { DocxDocumentPreview } from './DocxDocumentPreview';
@@ -318,16 +319,22 @@ export function DocumentAttachmentPreviewRenderer({
       fileName={previewFileName}
       openHref={currentDocument.href}
       download={{ href: currentDocument.href, fileName: downloadFileName }}
-      downloadItems={getOcrDownloadItems(currentDocument.id, ocrStatus, previewFileName)}
       navigation={navigation}
       onInfoClick={handleInfoClick}
       infoSeverity={getOcrInfoSeverity(ocrStatus)}
       additionalActions={
-        <OcrPreviewAction
-          ocr={ocrStatus}
-          active={ocrVisible}
-          onClick={() => setOcrVisible((visible) => !visible)}
-        />
+        <>
+          <OcrPreviewAction
+            ocr={ocrStatus}
+            active={ocrVisible}
+            onClick={() => setOcrVisible((visible) => !visible)}
+          />
+          <MediaSummaryAction
+            status={summaryStatus}
+            active={summaryVisible}
+            onClick={() => setSummaryVisible((visible) => !visible)}
+          />
+        </>
       }
       overflowAction={
         <MediaReprocessAction
@@ -335,6 +342,9 @@ export function DocumentAttachmentPreviewRenderer({
           supported={currentDocument.kind === 'pdf'}
           ocr={ocrStatus}
           onQueued={handleReprocessQueued}
+          downloadItems={getOcrDownloadItems(currentDocument.id, ocrStatus, previewFileName)}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       }
       isFullscreen={dialogIsFullscreen}

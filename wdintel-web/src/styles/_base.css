@@ -180,6 +180,130 @@ a {
   container-type: inline-size;
 }
 
+.message-card-action-group {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--color-divider);
+  color: var(--color-action);
+}
+
+.message-card-action-group--stacked {
+  display: grid;
+  grid-template-columns: repeat(var(--message-card-action-cols, 4), 30px);
+  grid-auto-rows: 30px;
+  width: fit-content;
+  margin-inline: auto;
+}
+
+.message-card-action-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-right: 1px solid var(--color-divider);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-action);
+  cursor: pointer;
+  line-height: 0;
+}
+
+.message-card-action-group:not(.message-card-action-group--stacked)
+  > .message-card-action-btn:first-of-type {
+  border-top-left-radius: 4px;
+  border-bottom-left-radius: 4px;
+}
+
+.message-card-action-group:not(.message-card-action-group--stacked)
+  > .message-card-action-btn:last-of-type {
+  border-right: 0;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.message-card-action-group--stacked > .message-card-action-btn {
+  border-right: 1px solid var(--color-divider);
+  border-bottom: 1px solid var(--color-divider);
+  margin-right: -1px;
+  margin-bottom: -1px;
+}
+
+.message-card-action-btn[data-selected='true'] {
+  color: var(--color-action);
+  background-color: color-mix(in srgb, var(--color-action) 18%, transparent);
+}
+
+.message-card-action-btn:hover {
+  background-color: color-mix(in srgb, var(--color-action) 8%, transparent);
+}
+
+.message-card-action-btn[data-selected='true']:hover {
+  background-color: color-mix(in srgb, var(--color-action) 18%, transparent);
+}
+
+.message-card-action-btn .MuiSvgIcon-root {
+  font-size: 18px;
+}
+
+.message-card-relative-time {
+  font-size: 0.875rem;
+  line-height: 1.43;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.message-card-media-reveal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-divider);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-action) 8%, transparent);
+  color: var(--mui-palette-text-primary, inherit);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.43;
+  cursor: pointer;
+  text-align: left;
+}
+
+.message-card-media-reveal:hover {
+  background: color-mix(in srgb, var(--color-action) 14%, transparent);
+}
+
+.message-card-media-reveal:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.message-card-media-reveal__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-action);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.message-card-media-reveal__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .audio-transcription-beside-player .audio-transcription-layout {
   display: flex;
   align-items: flex-start;

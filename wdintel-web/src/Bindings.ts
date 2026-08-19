@@ -2165,6 +2165,8 @@ export type ListGoiAssociationsSortBy =
 export type ListGoiAssociationsReq = {
   limit: number | null;
   offset: number | null;
+  sinceDateInclusiveMs: number | null;
+  tillDateInclusiveMs: number | null;
   sortBy: ListGoiAssociationsSortBy | null;
   filterText: string | null;
   filterServer: string | null;
@@ -2197,6 +2199,7 @@ export type GoiAssociation = {
   author: string | null;
   sourceDateRaw: string | null;
   sourceDateMs: number | null;
+  originalMessage: string | null;
 };
 
 export type ListGoiAssociationsRsp = {
@@ -2703,6 +2706,17 @@ export type UnitDuplicate = {
 
 export type ListUnitDuplicatesRsp = {
   units: Array<UnitDuplicate>;
+};
+
+export type InconsistentUnit = {
+  sigintUnitId: number;
+  name: string;
+  reasons: Array<string>;
+  problematicEchelons: Array<string>;
+};
+
+export type ListInconsistentUnitsRsp = {
+  units: Array<InconsistentUnit>;
 };
 
 export type CreateUnitReq = {
@@ -4213,6 +4227,8 @@ export type AiEngineItem = {
   url: string;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
   hasToken: boolean;
   createdAt: number;
   updatedAt: number;
@@ -4232,6 +4248,8 @@ export type CreateAiEngineReq = {
   token: string | null;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
 };
 
 export type UpdateAiEngineReq = {
@@ -4242,6 +4260,8 @@ export type UpdateAiEngineReq = {
   clearToken: boolean;
   modelName: string;
   enabled: boolean;
+  callsignEnabled: boolean;
+  ocrEnabled: boolean;
 };
 
 export type AiChatSummary = {
@@ -4619,6 +4639,15 @@ export type OcrMediaSummary = {
   queueSize: number | null;
   attempts: number;
   statusLog: Array<OcrStatusLogItem>;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
+  modelName: string | null;
+};
+
+export type OcrEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
 };
 
 export type OcrSettingsItem = {
@@ -4626,6 +4655,9 @@ export type OcrSettingsItem = {
   configured: boolean;
   extractorReady: boolean;
   readinessError: string | null;
+  engines: Array<OcrEngineItem>;
+  selectedAiEngineIds: Array<string>;
+  mainAiEngineId: string | null;
 };
 
 export type OcrCounts = {
@@ -4654,6 +4686,9 @@ export type OcrJobItem = {
   completedAt: number | null;
   previewUrl: string | null;
   summary: MediaSummaryStatus | null;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
+  modelName: string | null;
 };
 
 export type OcrPageRsp = {
@@ -4669,6 +4704,12 @@ export type OcrPageReq = {
 
 export type SaveOcrSettingsReq = {
   workerEnabled: boolean;
+  aiEngineIds: Array<string>;
+  mainAiEngineId: string | null;
+};
+
+export type ReprocessMediaOcrReq = {
+  aiEngineId: string | null;
 };
 
 export type MediaSummaryStatus = {
@@ -4824,14 +4865,22 @@ export type EventMsg = {
   origin: string | null;
 };
 
+export type DeploymentMaintenance = {
+  id: string;
+  remainingMs: number;
+};
+
 export type LongPollReq = {
   sessionId: string;
   lastEventId: string | null;
+  deploymentMaintenanceProtocol: number | null;
+  knownDeploymentMaintenanceId: string | null;
 };
 
 export type LongPollRsp = {
   events: Array<EventMsg>;
   lastEventId: string | null;
+  deploymentMaintenance: DeploymentMaintenance | null;
 };
 
 export type EchoAccountF1 = {
@@ -5054,4 +5103,5 @@ export type UserDutySettingsDto = {
   showAnalysisCallsignAddForm: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  dutyCollapseMediaPreviews: boolean;
 };

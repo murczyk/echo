@@ -1,11 +1,11 @@
 import type { MouseEvent, ReactNode } from 'react';
 
-import type { MessageCardPreviewNavigation } from './message-card-preview.types';
-import {
-  MessageCardAttachmentPreviewHeader,
-  type AttachmentPreviewDownload,
-  type AttachmentPreviewDownloadItem,
-} from './MessageCardAttachmentPreviewHeader';
+import type {
+  AttachmentPreviewDownload,
+  AttachmentPreviewDownloadItem,
+  MessageCardPreviewNavigation,
+} from './message-card-preview.types';
+import { MessageCardAttachmentPreviewHeader } from './MessageCardAttachmentPreviewHeader';
 
 export type { AttachmentPreviewDownload, AttachmentPreviewDownloadItem };
 
@@ -13,7 +13,6 @@ export function MessageCardAttachmentPreviewActions(props: {
   fileName?: string | null;
   openHref?: string | null;
   download?: AttachmentPreviewDownload;
-  downloadItems?: AttachmentPreviewDownloadItem[];
   downloadKey?: string;
   navigation: MessageCardPreviewNavigation;
   additionalActions?: ReactNode;

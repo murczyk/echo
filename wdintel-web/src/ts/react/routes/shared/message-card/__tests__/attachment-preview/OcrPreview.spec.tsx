@@ -69,7 +69,11 @@ import {
   OcrPreviewAction,
   OcrSplitPreview,
 } from '../../attachment-preview/OcrPreview';
-import { MessageCardMediaSummary } from '../../attachment-preview/MediaSummaryPreview';
+import {
+  MediaSummaryOverlay,
+  MessageCardMediaSummary,
+  MessageCardMediaSummaryCarousel,
+} from '../../attachment-preview/MediaSummaryPreview';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -576,6 +580,164 @@ describe('OcrPreview', () => {
     expect(container.textContent).toContain('Новий опис');
     expect(container.textContent).not.toContain('Старий опис');
     expect(container.querySelector('[data-media-summary-inline="true"]')).not.toBeNull();
+    root.unmount();
+  });
+
+  it('hides technical summary errors from messenger users', async () => {
+    const internalError = 'at wdintel-rs/src/media_summary/worker.rs line 166 column 55';
+    getMediaSummary.mockRejectedValueOnce(new Error(internalError));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummary
+          mediaId="media-id"
+          status={{
+            state: 'failed',
+            lastError: internalError,
+            hasCoordinates: false,
+          }}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося завантажити стислий опис');
+    expect(container.textContent).not.toContain(internalError);
+    root.unmount();
+  });
+
+  it('keeps technical summary errors available in the OCR admin overlay', async () => {
+    const internalError = 'media summary response is not valid JSON';
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'failed',
+      summary: null,
+      coordinates: [],
+      lastError: internalError,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 10,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MediaSummaryOverlay
+          source={<div />}
+          mediaId="media-id"
+          status={{
+            state: 'failed',
+            lastError: internalError,
+            hasCoordinates: false,
+          }}
+          visible
+          onStatusChange={vi.fn()}
+          onClose={vi.fn()}
+          summaryAccess="admin-ocr"
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain(internalError);
+    root.unmount();
+  });
+
+  it('keeps all fifteen images in a carousel when only five have summaries', async () => {
+    getMediaSummary
+      .mockResolvedValueOnce({
+        state: 'completed',
+        summary: 'Перший опис',
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 10,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      })
+      .mockResolvedValueOnce({
+        state: 'completed',
+        summary: 'Другий опис',
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 10,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={[
+            ...Array.from({ length: 15 }, (_, index) => ({
+              id: `image-${index + 1}`,
+              summary:
+                index >= 3 && index < 8
+                  ? { state: 'completed', lastError: null, hasCoordinates: false }
+                  : null,
+            })),
+          ]}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.querySelectorAll('[data-media-summary-inline="true"]')).toHaveLength(1);
+    expect(container.textContent).toContain('4/15');
+    expect(container.textContent).toContain('Перший опис');
+    const previous = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Попередній стислий опис"]',
+    );
+    const next = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Наступний стислий опис"]',
+    );
+    expect(previous?.disabled).toBe(false);
+    expect(next?.disabled).toBe(false);
+
+    await act(async () => {
+      next?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('5/15');
+    expect(container.textContent).toContain('Другий опис');
+    expect(container.textContent).not.toContain('Перший опис');
+    expect(previous?.disabled).toBe(false);
+    expect(next?.disabled).toBe(false);
+    expect(getMediaSummary).toHaveBeenLastCalledWith(
+      'image-5',
+      { signal: expect.any(AbortSignal) },
+      'messenger',
+    );
+    root.unmount();
+  });
+
+  it('hides the summary carousel when no media has a summary', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={Array.from({ length: 4 }, (_, index) => ({
+            id: `image-${index + 1}`,
+            summary: null,
+          }))}
+        />,
+      );
+    });
+
+    expect(container.querySelector('[data-media-summary-carousel="true"]')).toBeNull();
     root.unmount();
   });
 });

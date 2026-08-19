@@ -37,6 +37,8 @@ const DEFAULT_COLUMN_ORDER = [
   'modelName',
   'url',
   'enabled',
+  'callsignEnabled',
+  'ocrEnabled',
   'hasToken',
   'updatedAt',
 ];
@@ -56,6 +58,8 @@ const DEFAULT_COLUMN_VISIBILITY = {
   modelName: true,
   url: true,
   enabled: true,
+  callsignEnabled: true,
+  ocrEnabled: true,
   hasToken: true,
   updatedAt: true,
 };
@@ -154,6 +158,18 @@ function AiEnginesTableBody({
         accessorFn: (aiEngine) => (aiEngine.enabled ? 'Увімкнено' : 'Вимкнено'),
         header: 'Стан',
         size: 140,
+      },
+      {
+        id: 'callsignEnabled',
+        accessorFn: (aiEngine) => (aiEngine.callsignEnabled ? 'Так' : 'Ні'),
+        header: 'Позивні',
+        size: 120,
+      },
+      {
+        id: 'ocrEnabled',
+        accessorFn: (aiEngine) => (aiEngine.ocrEnabled ? 'Так' : 'Ні'),
+        header: 'OCR',
+        size: 100,
       },
       {
         id: 'hasToken',

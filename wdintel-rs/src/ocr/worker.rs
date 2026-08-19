@@ -1,5 +1,8 @@
+use super::gateway::issue_grant;
 use super::package::stored_html_from_zip;
-use super::{ocr_result_key, runtime_config, OcrRuntimeConfig};
+use super::{
+    main_ocr_engine, ocr_result_key, runtime_config, OcrRuntimeConfig,
+};
 use crate::config::{
     OCR_DISCOVERY_BATCH_SIZE, OCR_DISCOVERY_DAYS, OCR_IDLE_SLEEP_MS,
     OCR_MAX_ATTEMPTS, OCR_MAX_ERROR_CHARS, OCR_MAX_RESULT_BYTES,
@@ -22,7 +25,7 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
     ColumnTrait, DatabaseBackend, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, Statement,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, Statement,
 };
 use serde::Deserialize;
 use std::sync::Arc;
@@ -103,17 +106,16 @@ async fn process_iteration(env: &Env) -> anyhow::Result<bool> {
     } else {
         0
     };
-    if let Some(job) = load_submitted(&env.dbx).await.c(h!())? {
-        if job.next_attempt_at > Utc::now().naive_utc() {
-            return Ok(discovered > 0);
-        }
-        return poll_submitted_job(env, job).await;
+    let mut processed = discovered > 0;
+    if let Some(job) = load_due_submitted(&env.dbx).await.c(h!())? {
+        processed = poll_submitted_job(env, job).await.c(h!())? || processed;
     }
+    let submitted_jobs = count_submitted(&env.dbx).await.c(h!())?;
     if !worker_enabled {
-        return Ok(false);
+        return Ok(processed || submitted_jobs > 0);
     }
     let Some(job) = load_due_queued(&env.dbx).await.c(h!())? else {
-        return Ok(discovered > 0);
+        return Ok(processed || submitted_jobs > 0);
     };
     let config = match runtime_config(env) {
         Ok(config) => config,
@@ -124,19 +126,51 @@ async fn process_iteration(env: &Env) -> anyhow::Result<bool> {
             return Ok(true);
         }
     };
-    if let Err(err) = extractor_readiness(&env.rq, &config).await {
+    if submitted_jobs >= u64::try_from(config.max_in_flight_jobs).c(h!())? {
+        return Ok(true);
+    }
+    if let Err(err) = extractor_readiness_for_job(
+        &env.rq,
+        &config,
+        job.ai_engine_id.is_none(),
+    )
+    .await
+    {
         postpone_for_dependency(&env.dbx, job, err.to_string())
             .await
             .c(h!())?;
         return Ok(true);
     }
-    submit_job(env, &config, job).await.c(h!())?;
+    if let Err(err) = submit_job(env, &config, job.clone()).await {
+        retry_submission_error(env, job, err).await.c(h!())?;
+    }
     Ok(true)
+}
+
+async fn retry_submission_error(
+    env: &Env,
+    job: ocr_job::Model,
+    error: anyhow::Error,
+) -> anyhow::Result<()> {
+    error!(
+        "OCR submission failed before extractor request media_id={} attempts={}: {error:#}",
+        job.media_id, job.attempts
+    );
+    retry_job(env, job, format!("OCR submission failed: {error:#}"), false)
+        .await
 }
 
 pub(crate) async fn extractor_readiness(
     client: &reqwest::Client,
     config: &OcrRuntimeConfig,
+) -> anyhow::Result<()> {
+    extractor_readiness_for_job(client, config, true).await
+}
+
+async fn extractor_readiness_for_job(
+    client: &reqwest::Client,
+    config: &OcrRuntimeConfig,
+    require_legacy_gemma: bool,
 ) -> anyhow::Result<()> {
     let response = client
         .get(format!("{}/v1/status", config.base_url))
@@ -159,6 +193,7 @@ pub(crate) async fn extractor_readiness(
     let unhealthy = status
         .routers
         .iter()
+        .filter(|router| require_legacy_gemma || router.name != "ocr-gemma")
         .filter(|router| !router.healthy)
         .map(|router| router.name.as_str())
         .collect::<Vec<_>>();
@@ -182,6 +217,9 @@ pub(crate) async fn worker_enabled(
 }
 
 async fn discover_jobs(dbx: &DatabaseConnection) -> anyhow::Result<usize> {
+    let Some(main_engine) = main_ocr_engine(dbx).await.c(h!())? else {
+        return Ok(0);
+    };
     let cutoff =
         (Utc::now() - ChronoDuration::days(OCR_DISCOVERY_DAYS)).naive_utc();
     let statement = Statement::from_sql_and_values(
@@ -230,6 +268,12 @@ limit $2
             completed_at: NotSet,
             updated_at: NotSet,
             force_summary: NotSet,
+            ai_engine_id: Set(Some(main_engine.id)),
+            ai_engine_name: Set(Some(main_engine.name.clone())),
+            model_name: Set(Some(main_engine.model_name.clone())),
+            ocr_request_profile: Set(Some(
+                main_engine.ocr_request_profile.clone(),
+            )),
         })
         .on_conflict_do_nothing()
         .exec(dbx)
@@ -240,14 +284,24 @@ limit $2
     Ok(inserted)
 }
 
-async fn load_submitted(
+async fn load_due_submitted(
     dbx: &DatabaseConnection,
 ) -> anyhow::Result<Option<ocr_job::Model>> {
     ocr_job::Entity::find()
         .filter(ocr_job::Column::State.eq("submitted"))
+        .filter(ocr_job::Column::NextAttemptAt.lte(Utc::now().naive_utc()))
+        .order_by_asc(ocr_job::Column::NextAttemptAt)
         .order_by_asc(ocr_job::Column::SubmittedAt)
         .order_by_asc(ocr_job::Column::MediaId)
         .one(dbx)
+        .await
+        .context(h!())
+}
+
+async fn count_submitted(dbx: &DatabaseConnection) -> anyhow::Result<u64> {
+    ocr_job::Entity::find()
+        .filter(ocr_job::Column::State.eq("submitted"))
+        .count(dbx)
         .await
         .context(h!())
 }
@@ -287,12 +341,16 @@ async fn submit_job(
         .file_name(source_file_name(&media))
         .mime_str(source_mime(&media))
         .context(h!())?;
+    let mut form = Form::new().part("files", part);
+    if let Some(manifest) = dynamic_manifest(config, &job, &media)? {
+        form = form.text("manifest", manifest);
+    }
     let response = env
         .rq
         .post(format!("{}/v1/jobs", config.base_url))
         .bearer_auth(&config.token)
         .header("Idempotency-Key", idempotency_key(config, &job))
-        .multipart(Form::new().part("files", part))
+        .multipart(form)
         .timeout(Duration::from_secs(crate::config::OCR_HTTP_TIMEOUT_SECS))
         .send()
         .await;
@@ -332,6 +390,59 @@ async fn submit_job(
     job.updated_at = Set(now);
     job.update(&env.dbx).await.context(h!())?;
     Ok(())
+}
+
+fn dynamic_manifest(
+    config: &OcrRuntimeConfig,
+    job: &ocr_job::Model,
+    media: &signal_message_media::Model,
+) -> anyhow::Result<Option<String>> {
+    let Some(engine_id) = job.ai_engine_id else {
+        return Ok(None);
+    };
+    let gateway_url = config
+        .gateway_url
+        .as_deref()
+        .context("OCR gateway URL is not configured")?;
+    let signing_key = config
+        .gateway_signing_key
+        .as_deref()
+        .context("OCR gateway signing key is not configured")?;
+    let engine_name = job
+        .ai_engine_name
+        .as_deref()
+        .context("OCR job has no engine name snapshot")?;
+    let model_name = job
+        .model_name
+        .as_deref()
+        .context("OCR job has no model snapshot")?;
+    let profile = job
+        .ocr_request_profile
+        .as_deref()
+        .context("OCR job has no request profile snapshot")?;
+    let grant = issue_grant(
+        signing_key,
+        job.media_id,
+        engine_id,
+        &config.instance_id,
+        job.discovered_at.and_utc().timestamp_micros(),
+    )?;
+    Ok(Some(
+        serde_json::json!({
+            "schema_version": 2,
+            "inputs": [source_file_name(media)],
+            "ocr": {
+                "gateway_url": gateway_url,
+                "grant": grant,
+                "engine_id": engine_id,
+                "engine_name": engine_name,
+                "model_name": model_name,
+                "request_profile": profile,
+                "instance_id": config.instance_id,
+            }
+        })
+        .to_string(),
+    ))
 }
 
 async fn poll_submitted_job(
@@ -766,7 +877,9 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{idempotency_key, retry_delay, retry_job};
+    use super::{
+        idempotency_key, retry_delay, retry_job, retry_submission_error,
+    };
     use crate::entities::{ocr_job, signal_message_media};
     use crate::ocr::OcrRuntimeConfig;
     use chrono::Utc;
@@ -786,6 +899,9 @@ mod tests {
             base_url: "https://ocr.example.test".to_string(),
             instance_id: "test-instance".to_string(),
             token: "token".to_string(),
+            max_in_flight_jobs: 2,
+            gateway_url: None,
+            gateway_signing_key: None,
         };
         let now = Utc::now().naive_utc();
         let job = ocr_job::Model {
@@ -805,6 +921,10 @@ mod tests {
             completed_at: None,
             updated_at: now,
             force_summary: false,
+            ai_engine_id: None,
+            ai_engine_name: None,
+            model_name: None,
+            ocr_request_profile: None,
         };
         let first = idempotency_key(&config, &job);
         let mut reprocessed = job;
@@ -861,5 +981,62 @@ mod tests {
         assert_eq!(job.attempts, 1);
         assert_eq!(job.extractor_job_id, None);
         assert_eq!(job.submitted_at, None);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn submission_error_is_backed_off_instead_of_blocking_queue() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let media = signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("image/jpeg".to_string()),
+            file_ext: Set(Some("jpg".to_string())),
+            file_name: Set(Some("unavailable.jpg".to_string())),
+            size_bytes: Set(1),
+            created_at: Set(now),
+            is_encrypted: Set(true),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let job = ocr_job::ActiveModel {
+            media_id: Set(media.id),
+            state: Set("queued".to_string()),
+            discovered_at: Set(now),
+            next_attempt_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        retry_submission_error(
+            &env,
+            job,
+            anyhow::anyhow!("Backblaze returned IncompleteBody"),
+        )
+        .await
+        .unwrap();
+
+        let job = ocr_job::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.state, "retry_wait");
+        assert_eq!(job.attempts, 1);
+        assert!(job.next_attempt_at > now);
+        assert!(job
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("IncompleteBody")));
     }
 }

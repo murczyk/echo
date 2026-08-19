@@ -209,8 +209,9 @@ class RankFactors(StrictModel):
     ocr_similarity: float = Field(ge=0.0)
     peer_median_similarity: float = Field(ge=0.0, le=1.0)
     nuextract3_tiebreaker: bool
+    preferred_tiebreaker: bool = False
 
-    def tuple(self) -> tuple[int, float, float, int, float, float, bool]:
+    def tuple(self) -> tuple[int, float, float, int, float, float, bool, bool]:
         return (
             self.hard_checks,
             self.geometry_compatibility,
@@ -219,6 +220,7 @@ class RankFactors(StrictModel):
             self.ocr_similarity,
             self.peer_median_similarity,
             self.nuextract3_tiebreaker,
+            self.preferred_tiebreaker,
         )
 
 
@@ -412,6 +414,8 @@ class PackageModel(StrictModel):
     id: str
     revision: str
     prompt_version: str
+    engine_id: str | None = None
+    engine_name: str | None = None
 
 
 class PackageManifest(StrictModel):

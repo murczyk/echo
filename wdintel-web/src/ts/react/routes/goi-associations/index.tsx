@@ -1,5 +1,8 @@
-import { Box, Stack } from '@mui/material';
+import { Box, CircularProgress, Stack } from '@mui/material';
 
+import { DateTimeRangeControl } from '../../components/DateTimeRangeControl';
+import { PowerButton } from '../../components/PowerButton';
+import { PowerAlert } from '../../components/PowerAlert';
 import { TableContentState } from '../../components/TableContentState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
@@ -9,7 +12,6 @@ import {
   GoiAssociationsTable,
 } from './GoiAssociationsTable';
 import { useGoiAssociationsPage } from './use-goi-associations-page';
-import { PowerAlert } from '../../components/PowerAlert';
 
 function GoiAssociationsPageBody() {
   const page = useGoiAssociationsPage();
@@ -38,6 +40,21 @@ function GoiAssociationsPageBody() {
           withGlobalTextFilter
           hideGlobalTextFilter={page.status !== 'success' && page.rows.length === 0}
           internalActionsDisabled={page.status !== 'success' && page.rows.length === 0}
+          filter={
+            <Box sx={{ width: { xs: '100%', sm: 320 }, maxWidth: '100%' }}>
+              <DateTimeRangeControl value={page.dateRange} onChange={page.onDateRangeChange} />
+            </Box>
+          }
+          actions={
+            <PowerButton
+              variant="contained"
+              disabled={page.reporting}
+              onClick={() => void page.onLaunchReport()}
+              startIcon={page.reporting ? <CircularProgress size={16} color="inherit" /> : null}
+            >
+              ЗВІТ
+            </PowerButton>
+          }
         />
 
         {page.notice ? (

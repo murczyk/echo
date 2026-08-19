@@ -55,12 +55,17 @@ Dev/Vite builds inflate absolute ms; the **shape** of the bottleneck is still re
 
 Ordered by expected impact on this profile:
 
-1. **Cheap closed cards** — fewer `Tooltip` / `ButtonBase` / Emotion paths on the default closed Duty row (largest sample share).
-2. **`startTransition` for window `items` updates** — keep scrolling responsive while the list commit runs (softens jank; does not remove CPU).
-3. **Freeze / unmount non-visible feeds** — especially narrow multi-feed: inactive columns must not keep full live card trees when practical (already: inactive must not arm loads / unread; extend toward not paying full commit cost).
-4. **Re-measure on a prod-like build** — confirm absolute timings without `jsxDEV` / `checkPropTypes`.
+1. **Cheap closed cards** — fewer `Tooltip` / `ButtonBase` / Emotion paths on the default closed Duty row (largest sample share). **Done (2026-08-13):** native action buttons + CSS group; duty relative time uses `title` instead of Tooltip/Typography.
+2. **`startTransition` for window `items` updates** — keep scrolling responsive while the list commit runs (softens jank; does not remove CPU). **Done (2026-08-13):** `commitFeedWindowUpdate` wraps older/newer window commits in `useRerDutyDirectionalLoads`.
+3. **Freeze / unmount non-visible feeds** — especially narrow multi-feed: inactive columns must not keep full live card trees when practical. **Done (2026-08-13):** narrow workspace mounts only the active `FeedColumn`. **Desktop:** do not hide columns — use idle viewport offload instead (below).
+4. **`pendingNewerItems` (Elm `notRenderedMessagesYet`)** — near-bottom non-follow newer pages stay off the DOM until scroll idle / follow / arrow. Prefetch counts pending unread. **Done (2026-08-13); idle flush + activate flush same day.**
+5. **Idle viewport offload** — multi-feed: after ~10s without pointer/wheel/touch on a feed, replace off-viewport MessageCards with height placeholders; wake remounts the window. **Done (2026-08-13).**
+6. **Re-measure on a prod-like build** — confirm absolute timings without `jsxDEV` / `checkPropTypes`. *(still open)*
 
 Do **not** prioritize more scroll-hook micro-opts as the primary fix; the profile points at **card render volume × MUI**, amplified by **multi-feed single-threaded commits**.
+
+Phased follow-up (desktop active-only, pending soak, cheap cards, optional TanStack):
+[`../2026-08-13-duty-scroll-perf-plan/README.md`](../2026-08-13-duty-scroll-perf-plan/README.md).
 
 ---
 
@@ -71,6 +76,10 @@ Do **not** prioritize more scroll-hook micro-opts as the primary fix; the profil
 | Window + anchor + load zones | `useWindowedFeedScroll.ts` |
 | List / card / FAB UI | `FeedColumnContent.tsx` |
 | FAB badge store (poll isolation) | `feedColumnFab.ts` |
-| List memo equality (ignore unread/readIds) | `utils.ts` → `feedListRenderStateEqual` |
+| Transition window commits | `feedWindowCommit.ts` |
+| Pending newer buffer / flush | `utils.ts` (`pendingNewerItems`, `flushPendingNewerItems`), `useRerDutyDirectionalLoads.ts` |
+| Narrow active-only column mount | `RerDutyNeoWorkspace.tsx` |
+| Idle viewport offload (multi-feed) | `useFeedIdleViewportOffload.ts`, `FeedColumnContent.tsx` |
+| List memo equality (ignore unread/readIds/pending) | `utils.ts` → `feedListRenderStateEqual` |
 | Hot-path rules | `rer-duty-neo/AGENTS.md` |
 | Message card hot path | `routes/shared/message-card/*` |

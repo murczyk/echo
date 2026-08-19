@@ -1,23 +1,26 @@
 pub mod export;
+pub mod gateway;
 pub mod package;
 pub mod types;
 pub mod worker;
 
 use crate::config::{
     OCR_ADMIN_DEFAULT_LIMIT, OCR_ADMIN_MAX_LIMIT, OCR_DISCOVERY_DAYS,
-    OCR_SETTINGS_ID, OCR_TOKEN_ENV,
+    OCR_GATEWAY_SIGNING_KEY_ENV, OCR_MAX_IN_FLIGHT_JOBS, OCR_SETTINGS_ID,
+    OCR_TOKEN_ENV,
 };
 use crate::entities::{
-    media_summary as media_summary_entity, ocr_job, ocr_settings,
-    signal_message, signal_message_media,
+    ai_engine, media_summary as media_summary_entity, ocr_job, ocr_settings,
+    ocr_settings_ai_engine, signal_message, signal_message_media,
 };
 use crate::event_stream::fanout_mult;
 use crate::event_stream::types::{EventMsg, EventType};
 use crate::h;
 use crate::ocr::package::sanitize_html;
 use crate::ocr::types::{
-    OcrCounts, OcrJobItem, OcrMediaSummary, OcrPageReq, OcrPageRsp,
-    OcrSettingsItem, OcrStatusLogItem, SaveOcrSettingsReq,
+    OcrCounts, OcrEngineItem, OcrJobItem, OcrMediaSummary, OcrPageReq,
+    OcrPageRsp, OcrSettingsItem, OcrStatusLogItem, ReprocessMediaOcrReq,
+    SaveOcrSettingsReq,
 };
 use crate::storage;
 use crate::types::{Env, ShortContext};
@@ -42,6 +45,9 @@ pub(crate) struct OcrRuntimeConfig {
     pub base_url: String,
     pub instance_id: String,
     pub token: String,
+    pub max_in_flight_jobs: usize,
+    pub gateway_url: Option<String>,
+    pub gateway_signing_key: Option<String>,
 }
 
 pub(crate) fn runtime_config(env: &Env) -> anyhow::Result<OcrRuntimeConfig> {
@@ -66,6 +72,9 @@ pub(crate) fn runtime_config(env: &Env) -> anyhow::Result<OcrRuntimeConfig> {
     {
         anyhow::bail!("OCR instance ID is invalid");
     }
+    if !(1..=OCR_MAX_IN_FLIGHT_JOBS).contains(&config.max_in_flight_jobs) {
+        anyhow::bail!("OCR max in-flight jobs must be between 1 and {OCR_MAX_IN_FLIGHT_JOBS}");
+    }
     let token = std::env::var(OCR_TOKEN_ENV).c(h!())?;
     let token = token.trim().to_string();
     if token.len() < 32 {
@@ -79,10 +88,35 @@ pub(crate) fn runtime_config(env: &Env) -> anyhow::Result<OcrRuntimeConfig> {
     {
         anyhow::bail!("encrypted B2/S3 storage is not configured for OCR");
     }
+    let gateway_url = config
+        .gateway_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches('/').to_string());
+    if let Some(gateway_url) = gateway_url.as_deref() {
+        let gateway = url::Url::parse(gateway_url).c(h!())?;
+        if !matches!(gateway.scheme(), "http" | "https")
+            || gateway.host_str().is_none()
+            || gateway.username() != ""
+            || gateway.password().is_some()
+            || gateway.query().is_some()
+            || gateway.fragment().is_some()
+        {
+            anyhow::bail!("OCR gateway URL is invalid");
+        }
+    }
+    let gateway_signing_key = std::env::var(OCR_GATEWAY_SIGNING_KEY_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| value.len() >= 32);
     Ok(OcrRuntimeConfig {
         base_url,
         instance_id,
         token,
+        max_in_flight_jobs: config.max_in_flight_jobs,
+        gateway_url,
+        gateway_signing_key,
     })
 }
 
@@ -189,6 +223,13 @@ pub async fn save_ocr_settings(
     if req.worker_enabled {
         runtime_config(env.as_ref()).c(h!())?;
     }
+    let (selected_ids, main_id) = validate_ocr_selection(
+        &env.dbx,
+        req.ai_engine_ids.clone(),
+        req.main_ai_engine_id.as_deref(),
+        req.worker_enabled,
+    )
+    .await?;
     let settings = ocr_settings::Entity::find_by_id(OCR_SETTINGS_ID)
         .one(&env.dbx)
         .await
@@ -196,8 +237,31 @@ pub async fn save_ocr_settings(
         .c(h!())?;
     let mut settings = settings.into_active_model();
     settings.worker_enabled = Set(req.worker_enabled);
+    settings.main_ai_engine_id = Set(main_id);
     settings.updated_at = Set(Utc::now().naive_utc());
-    settings.update(&env.dbx).await.c(h!())?;
+    let transaction = env.dbx.begin().await.c(h!())?;
+    settings.update(&transaction).await.c(h!())?;
+    ocr_settings_ai_engine::Entity::delete_many()
+        .filter(
+            ocr_settings_ai_engine::Column::OcrSettingsId.eq(OCR_SETTINGS_ID),
+        )
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+    if !selected_ids.is_empty() {
+        ocr_settings_ai_engine::Entity::insert_many(
+            selected_ids.into_iter().map(|ai_engine_id| {
+                ocr_settings_ai_engine::ActiveModel {
+                    ocr_settings_id: Set(OCR_SETTINGS_ID),
+                    ai_engine_id: Set(ai_engine_id),
+                }
+            }),
+        )
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+    }
+    transaction.commit().await.c(h!())?;
     Ok(Json(load_settings(env.as_ref()).await.c(h!())?))
 }
 
@@ -206,6 +270,7 @@ pub async fn reprocess_media_ocr(
     env: actix_web::web::Data<Env>,
     user: Identity,
     path: actix_web::web::Path<(Uuid,)>,
+    req: Option<Json<ReprocessMediaOcrReq>>,
 ) -> Result<Json<OcrMediaSummary>, crate::error::AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let media = signal_message_media::Entity::find_by_id(path.0)
@@ -220,23 +285,20 @@ pub async fn reprocess_media_ocr(
                 .to_string(),
         });
     }
-    let summary_settings = crate::media_summary::load_settings(&env.dbx)
+    let settings = load_ocr_selection(&env.dbx).await.c(h!())?;
+    let ai_engine_id = req
+        .and_then(|req| req.ai_engine_id.clone())
+        .as_deref()
+        .map(parse_uuid)
+        .transpose()?
+        .or(settings.main_ai_engine_id)
+        .ok_or_else(|| crate::error::AppError::BL {
+            msg: "Оберіть головний OCR-движок".to_string(),
+        })?;
+    let ai_engine = selected_ocr_engine(&env.dbx, ai_engine_id).await?;
+    let job = queue_media_reprocessing(&env.dbx, media.id, &ai_engine)
         .await
         .c(h!())?;
-    let has_enabled_engine =
-        summary_settings.ai_engine_id.as_ref().is_some_and(|id| {
-            summary_settings
-                .engines
-                .iter()
-                .any(|engine| &engine.id == id)
-        });
-    if !summary_settings.enabled || !has_enabled_engine {
-        return Err(crate::error::AppError::BL {
-            msg: "Спочатку увімкніть стислий опис документів і оберіть увімкнений ШІ движок"
-                .to_string(),
-        });
-    }
-    let job = queue_media_reprocessing(&env.dbx, media.id).await.c(h!())?;
     fanout_mult(
         &mut env.redis.clone(),
         vec![EventMsg::new(EventType::ETInboxChanged(
@@ -256,6 +318,7 @@ pub async fn reprocess_media_ocr(
 async fn queue_media_reprocessing(
     dbx: &DatabaseConnection,
     media_id: Uuid,
+    ai_engine: &ai_engine::Model,
 ) -> anyhow::Result<ocr_job::Model> {
     let transaction = dbx.begin().await.c(h!())?;
     let now = Utc::now().naive_utc();
@@ -263,9 +326,10 @@ async fn queue_media_reprocessing(
         DatabaseBackend::Postgres,
         r#"
 insert into ocr_job (
-    media_id, next_attempt_at, discovered_at, updated_at, force_summary
+    media_id, next_attempt_at, discovered_at, updated_at, force_summary,
+    ai_engine_id, ai_engine_name, model_name, ocr_request_profile
 )
-values ($1, $2, $2, $2, true)
+values ($1, $2, $2, $2, false, $3, $4, $5, $6)
 on conflict (media_id) do update
 set state = 'queued',
     extractor_job_id = null,
@@ -281,11 +345,22 @@ set state = 'queued',
     submitted_at = null,
     completed_at = null,
     updated_at = excluded.updated_at,
-    force_summary = true
+    force_summary = false,
+    ai_engine_id = excluded.ai_engine_id,
+    ai_engine_name = excluded.ai_engine_name,
+    model_name = excluded.model_name,
+    ocr_request_profile = excluded.ocr_request_profile
 where ocr_job.state in ('completed', 'failed')
 returning ocr_job.*
         "#,
-        [media_id.into(), now.into()],
+        [
+            media_id.into(),
+            now.into(),
+            ai_engine.id.into(),
+            ai_engine.name.clone().into(),
+            ai_engine.model_name.clone().into(),
+            ai_engine.ocr_request_profile.clone().into(),
+        ],
     );
     let job = ocr_job::Entity::find()
         .from_raw_sql(statement)
@@ -507,7 +582,7 @@ async fn load_page(env: &Env, limit: u64) -> anyhow::Result<OcrPageRsp> {
         .all(&env.dbx)
         .await
         .c(h!())?;
-    let summaries = crate::media_summary::load_statuses(&env.dbx, &media)
+    let summaries = crate::media_summary::load_admin_statuses(&env.dbx, &media)
         .await
         .c(h!())?;
     let media = media
@@ -543,6 +618,21 @@ async fn load_settings(env: &Env) -> anyhow::Result<OcrSettingsItem> {
         Ok(config) => worker::extractor_readiness(&env.rq, &config).await,
         Err(err) => Err(err),
     };
+    let selection = load_ocr_selection(&env.dbx).await.c(h!())?;
+    let engines = ai_engine::Entity::find()
+        .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::OcrEnabled.eq(true))
+        .order_by_asc(ai_engine::Column::Name)
+        .all(&env.dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|ai_engine| OcrEngineItem {
+            id: ai_engine.id.to_string(),
+            name: ai_engine.name,
+            model_name: ai_engine.model_name,
+        })
+        .collect();
     Ok(OcrSettingsItem {
         worker_enabled,
         configured,
@@ -550,7 +640,137 @@ async fn load_settings(env: &Env) -> anyhow::Result<OcrSettingsItem> {
         readiness_error: readiness
             .err()
             .map(|err| truncate_error(err.to_string())),
+        engines,
+        selected_ai_engine_ids: selection
+            .selected_ai_engine_ids
+            .into_iter()
+            .map(|id| id.to_string())
+            .collect(),
+        main_ai_engine_id: selection.main_ai_engine_id.map(|id| id.to_string()),
     })
+}
+
+struct OcrSelection {
+    selected_ai_engine_ids: Vec<Uuid>,
+    main_ai_engine_id: Option<Uuid>,
+}
+
+async fn load_ocr_selection(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<OcrSelection> {
+    let settings = ocr_settings::Entity::find_by_id(OCR_SETTINGS_ID)
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let selected_ai_engine_ids = ocr_settings_ai_engine::Entity::find()
+        .filter(
+            ocr_settings_ai_engine::Column::OcrSettingsId.eq(OCR_SETTINGS_ID),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|item| item.ai_engine_id)
+        .collect();
+    Ok(OcrSelection {
+        selected_ai_engine_ids,
+        main_ai_engine_id: settings.main_ai_engine_id,
+    })
+}
+
+async fn validate_ocr_selection(
+    dbx: &DatabaseConnection,
+    ids: Vec<String>,
+    main_id: Option<&str>,
+    worker_enabled: bool,
+) -> Result<(Vec<Uuid>, Option<Uuid>), crate::error::AppError> {
+    let mut selected = Vec::with_capacity(ids.len());
+    for id in ids {
+        let id = parse_uuid(&id)?;
+        if !selected.contains(&id) {
+            selected.push(id);
+        }
+    }
+    let main_id = main_id.map(parse_uuid).transpose()?;
+    if selected.is_empty() != main_id.is_none() {
+        return Err(crate::error::AppError::BL {
+            msg: "Оберіть OCR-движки та рівно один головний движок".to_string(),
+        });
+    }
+    if worker_enabled && main_id.is_none() {
+        return Err(crate::error::AppError::BL {
+            msg: "Для увімкнення OCR-воркера оберіть головний движок"
+                .to_string(),
+        });
+    }
+    if let Some(main_id) = main_id {
+        if !selected.contains(&main_id) {
+            return Err(crate::error::AppError::BL {
+                msg: "Головний OCR-движок має бути серед вибраних".to_string(),
+            });
+        }
+    }
+    if selected.is_empty() {
+        return Ok((selected, main_id));
+    }
+    let engines = ai_engine::Entity::find()
+        .filter(ai_engine::Column::Id.is_in(selected.iter().copied()))
+        .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::OcrEnabled.eq(true))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if engines.len() != selected.len() {
+        return Err(crate::error::AppError::BL {
+            msg: "Один або декілька OCR-движків вимкнено, не вибрано для OCR або видалено".to_string(),
+        });
+    }
+    Ok((selected, main_id))
+}
+
+async fn selected_ocr_engine(
+    dbx: &DatabaseConnection,
+    ai_engine_id: Uuid,
+) -> Result<ai_engine::Model, crate::error::AppError> {
+    let selected = ocr_settings_ai_engine::Entity::find()
+        .filter(
+            ocr_settings_ai_engine::Column::OcrSettingsId.eq(OCR_SETTINGS_ID),
+        )
+        .filter(ocr_settings_ai_engine::Column::AiEngineId.eq(ai_engine_id))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if !selected {
+        return Err(crate::error::AppError::BL {
+            msg: "Цей движок не вибрано в OCR-налаштуваннях".to_string(),
+        });
+    }
+    ai_engine::Entity::find_by_id(ai_engine_id)
+        .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::OcrEnabled.eq(true))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| crate::error::AppError::BL {
+            msg: "Вибраний OCR-движок вимкнено або видалено".to_string(),
+        })
+}
+
+pub(crate) async fn main_ocr_engine(
+    dbx: &DatabaseConnection,
+) -> anyhow::Result<Option<ai_engine::Model>> {
+    let selection = load_ocr_selection(dbx).await.c(h!())?;
+    let Some(main_id) = selection.main_ai_engine_id else {
+        return Ok(None);
+    };
+    ai_engine::Entity::find_by_id(main_id)
+        .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::OcrEnabled.eq(true))
+        .one(dbx)
+        .await
+        .c(h!())
 }
 
 async fn load_counts(dbx: &DatabaseConnection) -> anyhow::Result<OcrCounts> {
@@ -604,6 +824,9 @@ fn job_item(
         completed_at: job.completed_at.map(timestamp_ms),
         preview_url,
         summary,
+        ai_engine_id: job.ai_engine_id.map(|id| id.to_string()),
+        ai_engine_name: job.ai_engine_name,
+        model_name: job.model_name,
     }
 }
 
@@ -623,6 +846,9 @@ fn media_summary(
         queue_size,
         attempts: job.attempts,
         status_log,
+        ai_engine_id: job.ai_engine_id.map(|id| id.to_string()),
+        ai_engine_name: job.ai_engine_name,
+        model_name: job.model_name,
     }
 }
 
@@ -643,6 +869,9 @@ fn pending_media_summary(
             message: "Файл отримано; очікує додавання до OCR-черги."
                 .to_string(),
         }],
+        ai_engine_id: None,
+        ai_engine_name: None,
+        model_name: None,
     }
 }
 
@@ -739,6 +968,12 @@ fn media_is_ocr_eligible(media: &signal_message_media::Model) -> bool {
         [".pdf", ".jpg", ".jpeg", ".png"]
             .iter()
             .any(|extension| file_name.ends_with(extension))
+    })
+}
+
+fn parse_uuid(value: &str) -> Result<Uuid, crate::error::AppError> {
+    Uuid::parse_str(value).map_err(|_| crate::error::AppError::BL {
+        msg: "Некоректний UUID ШІ движка".to_string(),
     })
 }
 
@@ -894,7 +1129,8 @@ mod tests {
         pending_media_summary, queue_media_reprocessing, render_document,
     };
     use crate::entities::{
-        media_summary as media_summary_entity, ocr_job, signal_message_media,
+        ai_engine, media_summary as media_summary_entity, ocr_job,
+        signal_message_media,
     };
     use chrono::Utc;
     use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
@@ -1066,7 +1302,25 @@ mod tests {
         .await
         .unwrap();
 
-        let job = queue_media_reprocessing(&env.dbx, media.id).await.unwrap();
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            name: Set(format!("OCR test engine {}", Uuid::now_v7())),
+            url: Set("http://127.0.0.1:8000/v1".to_string()),
+            token: Set(None),
+            model_name: Set("test-model".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(true),
+            ocr_request_profile: Set("openai_vision".to_string()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let job = queue_media_reprocessing(&env.dbx, media.id, &ai_engine)
+            .await
+            .unwrap();
 
         assert_eq!(job.state, "queued");
         assert_eq!(job.attempts, 0);
@@ -1076,7 +1330,7 @@ mod tests {
         assert_eq!(job.total_pages, 0);
         assert_eq!(job.html_s3_key, None);
         assert_eq!(job.completed_at, None);
-        assert!(job.force_summary);
+        assert!(!job.force_summary);
         assert!(media_summary_entity::Entity::find_by_id(media.id)
             .one(&env.dbx)
             .await

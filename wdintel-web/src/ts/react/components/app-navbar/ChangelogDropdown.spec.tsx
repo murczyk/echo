@@ -20,6 +20,7 @@ afterEach(() => {
     });
     item.container.remove();
   }
+  vi.useRealTimers();
 });
 
 function renderComponent(props: any) {
@@ -31,6 +32,7 @@ function renderComponent(props: any) {
     root.render(<ChangelogDropdown {...props} />);
   });
 
+  rendered.push({ container, root });
   return { container, root };
 }
 
@@ -54,6 +56,70 @@ describe('ChangelogDropdown', () => {
       onOpenChangelog: vi.fn(),
     });
     expect(container.innerHTML).toBe('');
+  });
+
+  it('shows and opens the deployment maintenance notice once per maintenance', () => {
+    vi.useFakeTimers();
+    const setOpenDropdown = vi.fn();
+    const props = {
+      shared: {
+        deploymentMaintenance: { id: 'deploy-1', remaining_ms: 60000 },
+      },
+      openDropdown: null,
+      setOpenDropdown,
+      onOpenChangelog: vi.fn(),
+    };
+    const { container, root } = renderComponent(props);
+
+    expect(setOpenDropdown).toHaveBeenCalledTimes(1);
+    expect(setOpenDropdown).toHaveBeenCalledWith('changelog');
+    expect(container.querySelector('.bi-cone-striped')).not.toBeNull();
+
+    act(() => {
+      root.render(<ChangelogDropdown {...props} openDropdown="changelog" />);
+    });
+    expect(container.textContent).toContain('відбувається оновлення системи...');
+    expect(container.querySelector('[data-testid="construction-emoji"]')?.textContent).toBe('🚧');
+
+    act(() => {
+      vi.advanceTimersByTime(900);
+    });
+    expect(container.querySelector('[data-testid="construction-emoji"]')?.textContent).toBe('👷');
+
+    act(() => {
+      container
+        .querySelector('button[aria-label="Закрити сповіщення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      root.render(<ChangelogDropdown {...props} openDropdown={null} />);
+    });
+
+    expect(setOpenDropdown).toHaveBeenLastCalledWith(null);
+    expect(setOpenDropdown).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes an open maintenance notice when the deployment window ends', () => {
+    const setOpenDropdown = vi.fn();
+    const { root } = renderComponent({
+      shared: {
+        deploymentMaintenance: { id: 'deploy-1', remaining_ms: 60000 },
+      },
+      openDropdown: 'changelog',
+      setOpenDropdown,
+      onOpenChangelog: vi.fn(),
+    });
+
+    act(() => {
+      root.render(
+        <ChangelogDropdown
+          shared={{}}
+          openDropdown="changelog"
+          setOpenDropdown={setOpenDropdown}
+          onOpenChangelog={vi.fn()}
+        />,
+      );
+    });
+
+    expect(setOpenDropdown).toHaveBeenLastCalledWith(null);
   });
 
   it('shows unseen badge when changelogLastSeen does not match version', () => {

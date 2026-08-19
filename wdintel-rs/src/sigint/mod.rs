@@ -1,6 +1,7 @@
 use crate::config::{
     FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT, IMPORT_DIRECTION_FINDING_UUID,
-    REDIS_MGS_ID_TTL,
+    REDIS_MGS_ID_TTL, SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_NAMESPACE,
+    SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_POLL_MS,
 };
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
@@ -22,6 +23,7 @@ use regex::Regex;
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::*;
 use std::collections::BTreeSet;
+use std::time::Duration;
 use uuid::Uuid;
 
 pub mod aor;
@@ -416,6 +418,9 @@ pub async fn find_duplicate_of(
     manager: &mut ConnectionManager,
 ) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
 {
+    lock_signal_message_dedupe_keys(txn, [body_for_dedupe])
+        .await
+        .c(h!())?;
     let key = crate::messenger::dedupe::redis_key_for_body_for_dedupe(
         body_for_dedupe,
     );
@@ -436,101 +441,65 @@ pub async fn find_duplicate_of(
         if original_id == db_message_id {
             break;
         }
-        let mut retry_count = 3;
-        let mut original;
-        loop {
-            original = signal_message::Entity::find()
-                .find_with_related(datasource_group::Entity)
-                .filter(signal_message::Column::Id.eq(original_id))
-                .all(txn)
+        if let Some(original) = find_signal_message_with_group(txn, original_id)
+            .await
+            .c(h!())?
+        {
+            if !original.0.deleted {
+                info!("{db_message_id} is duplicate of {original_id}");
+                return Ok(Some(original));
+            }
+            if let Some(duplicate) =
+                find_active_split_child_for_deleted_message(txn, &original.0)
+                    .await
+                    .c(h!())?
+            {
+                if replace_signal_message_dedupe_key_if_value(
+                    manager,
+                    &key,
+                    original_id,
+                    duplicate.0.id,
+                )
                 .await
                 .c(h!())?
-                .into_iter()
-                .next()
-                .and_then(|(m, groups)| {
-                    groups.into_iter().next().map(|g| (m, g))
-                });
-            if let Some((message, _group)) = &original {
-                if message.deleted {
-                    if let Some(duplicate) =
-                        find_active_split_child_for_deleted_message(
-                            txn, message,
-                        )
-                        .await
-                        .c(h!())?
-                    {
-                        if replace_signal_message_dedupe_key_if_value(
-                            manager,
-                            &key,
-                            original_id,
-                            duplicate.0.id,
-                        )
-                        .await
-                        .c(h!())?
-                        {
-                            return Ok(Some(duplicate));
-                        }
-                        continue 'redis_key_loop;
-                    }
-                    warn!(
-                        "redis duplicate key {key} pointed to deleted signal_message id={original_id}; repairing canonical"
-                    );
-                    if let Some(duplicate) = find_duplicate_in_db(
-                        txn,
-                        body_for_dedupe,
-                        body,
-                        attachments_hash,
-                        m_timestamp,
-                    )
-                    .await
-                    .c(h!())?
-                    {
-                        if replace_signal_message_dedupe_key_if_value(
-                            manager,
-                            &key,
-                            original_id,
-                            duplicate.0.id,
-                        )
-                        .await
-                        .c(h!())?
-                        {
-                            return Ok(Some(duplicate));
-                        }
-                        continue 'redis_key_loop;
-                    }
-                    if replace_signal_message_dedupe_key_if_value(
-                        manager,
-                        &key,
-                        original_id,
-                        db_message_id,
-                    )
-                    .await
-                    .c(h!())?
-                    {
-                        return Ok(None);
-                    }
-                    continue 'redis_key_loop;
+                {
+                    return Ok(Some(duplicate));
                 }
-                break;
+                continue 'redis_key_loop;
             }
-            if retry_count < 1 {
-                error!(
-                    "unexpected error: {db_message_id} is duplicate of {original_id}, but {original_id} is missing in db"
-                );
-                break;
+            warn!(
+                "redis duplicate key {key} pointed to deleted signal_message id={original_id}; repairing canonical"
+            );
+        } else {
+            warn!(
+                "redis duplicate key {key} pointed to unavailable signal_message id={original_id}; repairing canonical"
+            );
+        }
+        let duplicate = find_duplicate_in_db(
+            txn,
+            body_for_dedupe,
+            body,
+            attachments_hash,
+            m_timestamp,
+        )
+        .await
+        .c(h!())?;
+        match repair_stale_signal_message_dedupe_key(
+            manager,
+            &key,
+            original_id,
+            db_message_id,
+            duplicate,
+        )
+        .await
+        .c(h!())?
+        {
+            StaleDedupeKeyRepair::Retry => continue 'redis_key_loop,
+            StaleDedupeKeyRepair::Duplicate(duplicate) => {
+                return Ok(Some(*duplicate));
             }
-            let sleep_time_ms = 100 + 1000 * (3 - retry_count); // 0.1s 1st time, 1.1s 2nd time, 2.1s 3rd time
-            tokio::time::sleep(tokio::time::Duration::from_millis(
-                sleep_time_ms,
-            ))
-            .await;
-            retry_count -= 1;
+            StaleDedupeKeyRepair::CurrentMessage => return Ok(None),
         }
-        if let Some(original) = original {
-            info!("{db_message_id} is duplicate of {original_id}");
-            return Ok(Some(original));
-        }
-        break;
     }
     info!("{db_message_id} is not a duplicate, with body {body_for_dedupe}");
     let duplicate = find_duplicate_in_db(
@@ -553,6 +522,100 @@ pub async fn find_duplicate_of(
         .c(h!())?;
     }
     Ok(duplicate)
+}
+
+pub(crate) async fn lock_signal_message_dedupe_keys<'a>(
+    txn: &DatabaseTransaction,
+    body_for_dedupes: impl IntoIterator<Item = &'a str>,
+) -> Result<(), AppError> {
+    let mut body_for_dedupes = body_for_dedupes.into_iter().collect_vec();
+    body_for_dedupes.sort_unstable();
+    body_for_dedupes.dedup();
+    for body_for_dedupe in body_for_dedupes {
+        loop {
+            let row = txn
+                .query_one_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0)) as acquired",
+                    [
+                        SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_NAMESPACE.into(),
+                        body_for_dedupe.into(),
+                    ],
+                ))
+                .await
+                .c(h!())?
+                .c(h!())?;
+            if row.try_get::<bool>("", "acquired").c(h!())? {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(
+                SIGNAL_MESSAGE_DEDUPE_ADVISORY_LOCK_POLL_MS,
+            ))
+            .await;
+        }
+    }
+    Ok(())
+}
+
+async fn find_signal_message_with_group(
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+) -> Result<Option<(signal_message::Model, datasource_group::Model)>, AppError>
+{
+    Ok(signal_message::Entity::find()
+        .find_with_related(datasource_group::Entity)
+        .filter(signal_message::Column::Id.eq(signal_message_id))
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .next()
+        .and_then(|(message, groups)| {
+            groups.into_iter().next().map(|group| (message, group))
+        }))
+}
+
+enum StaleDedupeKeyRepair {
+    Retry,
+    Duplicate(Box<(signal_message::Model, datasource_group::Model)>),
+    CurrentMessage,
+}
+
+async fn repair_stale_signal_message_dedupe_key(
+    manager: &mut ConnectionManager,
+    key: &str,
+    stale_message_id: i64,
+    db_message_id: i64,
+    duplicate: Option<(signal_message::Model, datasource_group::Model)>,
+) -> Result<StaleDedupeKeyRepair, AppError> {
+    if let Some(duplicate) = duplicate {
+        let replaced = replace_signal_message_dedupe_key_if_value(
+            manager,
+            key,
+            stale_message_id,
+            duplicate.0.id,
+        )
+        .await
+        .c(h!())?;
+        return Ok(if replaced {
+            StaleDedupeKeyRepair::Duplicate(Box::new(duplicate))
+        } else {
+            StaleDedupeKeyRepair::Retry
+        });
+    }
+    let replaced = replace_signal_message_dedupe_key_if_value(
+        manager,
+        key,
+        stale_message_id,
+        db_message_id,
+    )
+    .await
+    .c(h!())?;
+    Ok(if replaced {
+        StaleDedupeKeyRepair::CurrentMessage
+    } else {
+        StaleDedupeKeyRepair::Retry
+    })
 }
 
 async fn find_active_split_child_for_deleted_message(
@@ -1020,6 +1083,74 @@ mod tests {
         assert_eq!(bytes.clone(), from_base64(&base64(&bytes)).unwrap());
     }
 
+    async fn insert_staged_dedupe_test_message(
+        txn: &DatabaseTransaction,
+        datasource_group_id: i64,
+        body: &str,
+        timestamp: NaiveDateTime,
+    ) -> signal_message::Model {
+        mk_signal_message(
+            txn,
+            signal_message::ActiveModel {
+                body: Set(Some(body.to_string())),
+                datasource_group_id: Set(Some(datasource_group_id)),
+                timestamp: Set(Some(timestamp)),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn find_dedupe_test_duplicate(
+        txn: &DatabaseTransaction,
+        redis: &mut ConnectionManager,
+        body: &str,
+        timestamp: NaiveDateTime,
+        signal_message_id: i64,
+    ) -> Option<(signal_message::Model, datasource_group::Model)> {
+        find_duplicate_of(
+            txn,
+            body,
+            body,
+            None,
+            Some(timestamp),
+            signal_message_id,
+            redis,
+        )
+        .await
+        .unwrap()
+    }
+
+    async fn resolve_and_commit_dedupe_test_message(
+        txn: DatabaseTransaction,
+        mut redis: ConnectionManager,
+        body: String,
+        timestamp: NaiveDateTime,
+        group_master_key: String,
+        signal_message: signal_message::Model,
+    ) -> (bool, i64) {
+        let duplicate = find_dedupe_test_duplicate(
+            &txn,
+            &mut redis,
+            &body,
+            timestamp,
+            signal_message.id,
+        )
+        .await;
+        let result = crate::sigint::worker::unstage_message(
+            &txn,
+            &group_master_key,
+            signal_message,
+            duplicate,
+        )
+        .await
+        .unwrap();
+        txn.commit().await.unwrap();
+        (result.is_duplicate, result.message.id)
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn stale_dedupe_key_repair_uses_compare_and_swap() {
@@ -1053,6 +1184,187 @@ mod tests {
         assert!(replaced);
         assert!(!stale_replaced);
         assert_eq!(stored_signal_message_id, "11");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rolled_back_dedupe_key_is_replaced_by_current_message() {
+        let env = cleanup().await.unwrap();
+        let datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let body = format!("rolled back dedupe key {}", Uuid::new_v4());
+        let timestamp = Utc::now().naive_utc();
+        let key =
+            crate::messenger::dedupe::redis_key_for_body_for_dedupe(&body);
+        let mut redis = env.redis.clone();
+        let first_txn = env.dbx.begin().await.unwrap();
+        let first_message = insert_staged_dedupe_test_message(
+            &first_txn,
+            datasource_group.id,
+            &body,
+            timestamp,
+        )
+        .await;
+
+        let duplicate = find_dedupe_test_duplicate(
+            &first_txn,
+            &mut redis,
+            &body,
+            timestamp,
+            first_message.id,
+        )
+        .await;
+        assert!(duplicate.is_none());
+        first_txn.rollback().await.unwrap();
+
+        let second_txn = env.dbx.begin().await.unwrap();
+        let second_message = insert_staged_dedupe_test_message(
+            &second_txn,
+            datasource_group.id,
+            &body,
+            timestamp,
+        )
+        .await;
+        let duplicate = find_dedupe_test_duplicate(
+            &second_txn,
+            &mut redis,
+            &body,
+            timestamp,
+            second_message.id,
+        )
+        .await;
+        let stored_signal_message_id: String = redis.get(&key).await.unwrap();
+
+        assert!(duplicate.is_none());
+        assert_eq!(stored_signal_message_id, second_message.id.to_string());
+        crate::sigint::worker::unstage_message(
+            &second_txn,
+            &datasource_group.group_master_key,
+            second_message,
+            None,
+        )
+        .await
+        .unwrap();
+        second_txn.commit().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn concurrent_dedupe_waits_for_canonical_message_commit() {
+        let env = cleanup().await.unwrap();
+        let first_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let body = format!("concurrent dedupe {}", Uuid::new_v4());
+        let timestamp = Utc::now().naive_utc();
+        let key =
+            crate::messenger::dedupe::redis_key_for_body_for_dedupe(&body);
+        let mut first_redis = env.redis.clone();
+        let first_txn = env.dbx.begin().await.unwrap();
+        let first_message = insert_staged_dedupe_test_message(
+            &first_txn,
+            first_group.id,
+            &body,
+            timestamp,
+        )
+        .await;
+        let duplicate = find_dedupe_test_duplicate(
+            &first_txn,
+            &mut first_redis,
+            &body,
+            timestamp,
+            first_message.id,
+        )
+        .await;
+        assert!(duplicate.is_none());
+
+        let second_txn = env.dbx.begin().await.unwrap();
+        let second_message = insert_staged_dedupe_test_message(
+            &second_txn,
+            second_group.id,
+            &body,
+            timestamp,
+        )
+        .await;
+        second_txn
+            .execute_unprepared(&format!(
+                "set local lock_timeout = '{}ms'",
+                crate::config::POSTGRES_RUNTIME_LOCK_TIMEOUT_MS_DEFAULT
+            ))
+            .await
+            .unwrap();
+        let second_redis = env.redis.clone();
+        let second_body = body.clone();
+        let second_group_master_key = second_group.group_master_key.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let mut second = tokio::spawn(async move {
+            started_tx.send(()).unwrap();
+            resolve_and_commit_dedupe_test_message(
+                second_txn,
+                second_redis,
+                second_body,
+                timestamp,
+                second_group_master_key,
+                second_message,
+            )
+            .await
+        });
+        started_rx.await.unwrap();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(3_500)).await;
+        assert!(!second.is_finished());
+
+        let first_result = crate::sigint::worker::unstage_message(
+            &first_txn,
+            &first_group.group_master_key,
+            first_message,
+            None,
+        )
+        .await
+        .unwrap();
+        first_txn.commit().await.unwrap();
+        let second_result = tokio::time::timeout(
+            tokio::time::Duration::from_secs(5),
+            &mut second,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let stored_signal_message_id: String =
+            first_redis.get(&key).await.unwrap();
+        let active_messages = signal_message::Entity::find()
+            .filter(signal_message::Column::Body.eq(&body))
+            .filter(signal_message::Column::Deleted.eq(false))
+            .count(&env.dbx)
+            .await
+            .unwrap();
+
+        assert!(second_result.0);
+        assert_eq!(second_result.1, first_result.message.id);
+        assert_eq!(
+            stored_signal_message_id,
+            first_result.message.id.to_string()
+        );
+        assert_eq!(active_messages, 1);
     }
 
     #[tokio::test]

@@ -22,7 +22,6 @@ type alias ChangelogReleasePage =
 type Msg
     = SignIn B.User
     | SignOut
-    | SignOutDone (Result ApiError ())
     | GotUser (Result ApiError B.User)
     | GotServerInfo (Result ApiError B.ServerInfo)
     | GotSystemSettings (Result ApiError B.SystemSettingsCurrentRsp)

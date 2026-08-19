@@ -1,4 +1,3 @@
-import { Tooltip, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
@@ -131,6 +130,11 @@ export type MessageCardProps = {
   rightHeaderInsetPx?: number;
   analysisCallsignActions?: AnalysisCallsignActions;
   showCallsignAddForm?: boolean;
+  /**
+   * When true, Duty-style cards hide heavy media behind reveal banners until clicked.
+   * Defaults to true for `displayMode="duty"`.
+   */
+  collapseMediaPreviews?: boolean;
 };
 
 // Performance boundary: this component is repeated throughout Duty feeds.
@@ -183,6 +187,7 @@ function MessageCardComponent({
   rightHeaderInsetPx = 0,
   analysisCallsignActions,
   showCallsignAddForm = false,
+  collapseMediaPreviews,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const compactLayout = feedCount >= 3;
@@ -245,20 +250,12 @@ function MessageCardComponent({
     displayMode === 'duty' ? (
       isPresent(timeDistance) ? (
         <div className="flex-1 min-w-0 flex justify-end">
-          {tooltipTime === NO_DATA_LABEL ? (
-            <Typography variant="body2" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-              {timeDistance}
-            </Typography>
-          ) : (
-            <Tooltip title={tooltipTime} placement="top" enterDelay={300}>
-              <Typography
-                variant="body2"
-                sx={{ color: 'text.secondary', whiteSpace: 'nowrap', cursor: 'default' }}
-              >
-                {timeDistance}
-              </Typography>
-            </Tooltip>
-          )}
+          <span
+            className="message-card-relative-time"
+            title={tooltipTime === NO_DATA_LABEL ? undefined : tooltipTime}
+          >
+            {timeDistance}
+          </span>
         </div>
       ) : (
         <div className="min-h-[28px]" />
@@ -352,6 +349,7 @@ function MessageCardComponent({
           searchText={searchText}
           onOpenPointsOnMap={onOpenPointsOnMap}
           onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
+          collapseMediaPreviews={collapseMediaPreviews ?? false}
         />
       </MessageCardRoot>
     </li>

@@ -22,6 +22,7 @@ pub struct Model {
     pub show_analysis_callsign_add_form: bool,
     pub show_classic_duty: bool,
     pub show_classic_analysis: bool,
+    pub duty_collapse_media_previews: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

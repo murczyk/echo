@@ -1,7 +1,19 @@
 /** @vitest-environment happy-dom */
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../admin-unit-inconsistent', () => ({
+  AdminUnitInconsistentPage: () => <div>Неконсистентні дані</div>,
+}));
+
+vi.mock('../admin-unit-duplicates', () => ({
+  AdminUnitDuplicatesPage: () => <div>Дублікати дані</div>,
+}));
+
+vi.mock('../admin-unit-unparsed', () => ({
+  AdminUnitUnparsedPage: () => <div>Нерозпізнані дані</div>,
+}));
 
 import { AdminUnitsPage, readAdminUnitsTab } from './index';
 
@@ -26,6 +38,7 @@ describe('admin units routing', () => {
   it('defaults missing and invalid tabs to duplicates', () => {
     expect(readAdminUnitsTab('')).toBe('duplicates');
     expect(readAdminUnitsTab('?tab=unknown')).toBe('duplicates');
+    expect(readAdminUnitsTab('?tab=inconsistent')).toBe('inconsistent');
     expect(readAdminUnitsTab('?tab=unparsed')).toBe('unparsed');
   });
 
@@ -42,6 +55,7 @@ describe('admin units routing', () => {
 
   it.each([
     ['/admin/unit-duplicates', 'duplicates'],
+    ['/admin/unit-inconsistent', 'inconsistent'],
     ['/admin/unit-unparsed', 'unparsed'],
   ] as const)('replaces legacy route %s', async (pathname, tab) => {
     window.history.replaceState({}, '', pathname);
@@ -61,6 +75,13 @@ describe('admin units routing', () => {
     const root = createRoot(container);
 
     await act(async () => root.render(<AdminUnitsPage authUserRoles={[]} />));
+    expect(container.textContent).toContain('Неконсистентні підрозділи');
+    expect(container.textContent).toContain('Нерозпізнані підрозділи');
+    const inconsistentTab = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Неконсистентні підрозділи',
+    );
+    await act(async () => inconsistentTab?.click());
+    expect(window.location.search).toBe('?tab=inconsistent');
     const unparsedTab = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Нерозпізнані підрозділи',
     );

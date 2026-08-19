@@ -10,6 +10,8 @@ import {
   emptyFilter,
   DUTY_FEED_UNREAD_PREFETCH_MIN,
   feedLoadedUnreadCount,
+  feedPendingNewerUnreadCount,
+  feedNewerSinceId,
   findAllAdjacentFreqs,
   parseStateFromUrl,
 } from './utils';
@@ -356,6 +358,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                 readIds: new Set(candidate.items.map(([id]) => id)),
                 windowedUnreadItems: new Map<number, number>(),
                 unreadCount: 0,
+                pendingNewerItems: [],
               },
         ),
       );
@@ -370,11 +373,27 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   );
   /** Near-bottom catch-up: keep preview count in step with appended pages instead of clearing. */
   const noteNewerAppendForTailPreview = useCallback(
-    (feedId: string, previousTailId: number, newTailId: number | null, addedCount: number) => {
+    (
+      feedId: string,
+      previousTailId: number,
+      newTailId: number | null,
+      addedCount: number,
+      options?: { keepLoadedTail?: boolean },
+    ) => {
       const nearBottom = nearBottomByFeedIdRef.current[feedId] === true;
       const current = confirmedTailPreviewByFeedIdRef.current[feedId];
-      if (nearBottom && current?.tailId === previousTailId && addedCount > 0 && newTailId != null) {
+      if (nearBottom && current?.tailId === previousTailId && addedCount > 0) {
+        // Buffered pending stays beyond the loaded tail — keep preview count/tail as-is so
+        // feedIndicatorUnreadCount's matching-preview branch (which already covers pending)
+        // does not dip by the buffered page size.
+        if (options?.keepLoadedTail === true) {
+          return;
+        }
         const remaining = Math.max(0, current.count - addedCount);
+        if (newTailId == null) {
+          invalidateTailPreview(feedId);
+          return;
+        }
         setConfirmedTailPreview(feedId, {
           tailId: newTailId,
           count: remaining,
@@ -623,34 +642,40 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setFeedUnreadCursor,
   });
 
-  const { loadFeedOlderMessages, loadFeedNewerMessages, invalidateFeedLoads, removeFeedLoads } =
-    useRerDutyDirectionalLoads({
-      messageFeeds,
-      messageFeedsRef,
-      setMessageFeeds,
-      setError,
-      reportPollingFailure,
-      clearPollingFailure,
-      loadingNewerFeedIds,
-      setLoadingNewerFeedIds,
-      buildReqForFeed,
-      getFeedLoadGeneration,
-      mergeInboxCallsigns,
-      setProfiles,
-      setGroupInfos,
-      getFeedCountSignature: (feed) => buildFeedCountSignature(feed, freqs),
-      advanceFeedReadCursor,
-      newestExhaustedCursorByFeedIdRef,
-      pendingScrollToEndRef,
-      nearBottomByFeedIdRef,
-      followTailByFeedIdRef,
-      followGenerationByFeedIdRef,
-      isFollowTailValid,
-      setTailAvailability,
-      getTailAvailability: (feedId) => tailAvailabilityByFeedIdRef.current[feedId] ?? 'unknown',
-      invalidateTailPreview,
-      noteNewerAppendForTailPreview,
-    });
+  const {
+    loadFeedOlderMessages,
+    loadFeedNewerMessages,
+    flushPendingNewerMessages,
+    invalidateFeedLoads,
+    removeFeedLoads,
+  } = useRerDutyDirectionalLoads({
+    messageFeeds,
+    messageFeedsRef,
+    setMessageFeeds,
+    setError,
+    reportPollingFailure,
+    clearPollingFailure,
+    loadingNewerFeedIds,
+    setLoadingNewerFeedIds,
+    buildReqForFeed,
+    getFeedLoadGeneration,
+    mergeInboxCallsigns,
+    setProfiles,
+    setGroupInfos,
+    getFeedCountSignature: (feed) => buildFeedCountSignature(feed, freqs),
+    advanceFeedReadCursor,
+    newestExhaustedCursorByFeedIdRef,
+    pendingScrollToEndRef,
+    nearBottomByFeedIdRef,
+    physicallyAtBottomByFeedIdRef,
+    followTailByFeedIdRef,
+    followGenerationByFeedIdRef,
+    isFollowTailValid,
+    setTailAvailability,
+    getTailAvailability: (feedId) => tailAvailabilityByFeedIdRef.current[feedId] ?? 'unknown',
+    invalidateTailPreview,
+    noteNewerAppendForTailPreview,
+  });
   invalidateFeedLoadsRef.current = invalidateFeedLoads;
 
   useEffect(() => {
@@ -881,22 +906,26 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           if (nearBottomByFeedIdRef.current[feedId] !== true) return;
           const maxCatchUpPages = 20;
-          let unreadRunway = feedLoadedUnreadCount(currentFeed);
+          let unreadRunway =
+            feedLoadedUnreadCount(currentFeed) + feedPendingNewerUnreadCount(currentFeed);
           for (let page = 0; page < maxCatchUpPages; page++) {
             if (nearBottomByFeedIdRef.current[feedId] !== true) break;
             if (tailAvailabilityByFeedIdRef.current[feedId] === 'exhausted') break;
             const pageFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
             if (pageFeed) {
               // Prefer committed state when present; never let a stale ref shrink the runway.
-              unreadRunway = Math.max(unreadRunway, feedLoadedUnreadCount(pageFeed));
+              unreadRunway = Math.max(
+                unreadRunway,
+                feedLoadedUnreadCount(pageFeed) + feedPendingNewerUnreadCount(pageFeed),
+              );
             }
             // Prefer a loaded unread runway after last-seen over draining the whole backlog.
             if (unreadRunway >= DUTY_FEED_UNREAD_PREFETCH_MIN) break;
             const preview = confirmedTailPreviewByFeedIdRef.current[feedId];
             if (preview != null && preview.count <= 0) break;
-            const pageTailId = pageFeed?.items.at(-1)?.[0] ?? null;
-            if (pageTailId == null) break;
-            if (newestExhaustedCursorByFeedIdRef.current[feedId] === pageTailId) break;
+            const pageSinceId = pageFeed != null ? feedNewerSinceId(pageFeed) : null;
+            if (pageSinceId == null) break;
+            if (newestExhaustedCursorByFeedIdRef.current[feedId] === pageSinceId) break;
             const capturedFollowGeneration = followGenerationByFeedIdRef.current[feedId] ?? -1;
             const shouldFollow =
               !deps.disableAutoScroll &&
@@ -1068,6 +1097,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     reloadEditedFeeds,
     loadFeedOlderMessages,
     loadFeedNewerMessages,
+    flushPendingNewerMessages,
     requestValidatedInboxCount,
     catchUpFeedUnreadToTail,
     applyFilter: crud.applyFilter,

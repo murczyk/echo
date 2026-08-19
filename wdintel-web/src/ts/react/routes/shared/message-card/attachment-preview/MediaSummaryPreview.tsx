@@ -41,6 +41,7 @@ const COORDINATE_SYSTEM_LABELS: Record<string, string> = {
 };
 
 const EMPTY_COORDINATES: MediaSummaryCoordinate[] = [];
+const SUMMARY_LOAD_ERROR = 'Не вдалося завантажити стислий опис';
 
 function useCoordinateLocalities(
   coordinates: MediaSummaryCoordinate[],
@@ -240,9 +241,8 @@ export function MediaSummaryAction({
           color={active ? 'primary' : 'default'}
           onClick={onClick}
           sx={{
-            bgcolor: 'background.paper',
-            boxShadow: 1,
             color: active ? 'primary.main' : processing ? 'info.main' : 'text.secondary',
+            '&:hover': { color: active ? 'primary.dark' : 'text.primary' },
           }}
         >
           <DescriptionIcon fontSize="small" />
@@ -265,16 +265,18 @@ function SummaryContent({
   status,
   refreshing,
   refreshError,
+  showErrorDetails,
   onRefresh,
 }: {
   result: MediaSummaryResult | null;
   status: MediaSummaryStatus;
   refreshing: boolean;
   refreshError: string | null;
+  showErrorDetails: boolean;
   onRefresh: () => void;
 }) {
   const state = result?.state ?? status.state;
-  const lastError = result?.lastError ?? status.lastError;
+  const lastError = showErrorDetails ? (result?.lastError ?? status.lastError) : null;
   const coordinates = result?.coordinates ?? EMPTY_COORDINATES;
   const coordinateLocalities = useCoordinateLocalities(coordinates);
   if (state === 'completed' && result?.summary) {
@@ -407,9 +409,10 @@ function useMediaSummaryResult({
         });
       } catch (error) {
         if (controller.signal.aborted || isAbortError(error)) return;
-        const message = `Не вдалося завантажити стислий опис: ${
-          error instanceof Error ? error.message : String(error)
-        }`;
+        const message =
+          summaryAccess === 'admin-ocr'
+            ? `${SUMMARY_LOAD_ERROR}: ${error instanceof Error ? error.message : String(error)}`
+            : SUMMARY_LOAD_ERROR;
         setRefreshError(message);
         if (!quiet) notifyRef.current({ severity: 'error', message });
       } finally {
@@ -440,9 +443,11 @@ function useMediaSummaryResult({
 export function MessageCardMediaSummary({
   mediaId,
   status,
+  navigationOverlay = false,
 }: {
   mediaId?: string | null;
   status?: MediaSummaryStatus | null;
+  navigationOverlay?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { result, refreshing, refreshError, refresh } = useMediaSummaryResult({
@@ -453,7 +458,6 @@ export function MessageCardMediaSummary({
   });
   const state = result?.state ?? status?.state;
   const summary = result?.summary?.trim() ?? '';
-  const lastError = result?.lastError ?? status?.lastError;
   const expandable = summary.length > 280 || summary.split(/\r?\n/).length > 3;
 
   useEffect(() => setExpanded(false), [mediaId, summary]);
@@ -461,7 +465,10 @@ export function MessageCardMediaSummary({
   if (mediaId == null || status == null || state == null) return null;
 
   return (
-    <Box data-media-summary-inline="true" sx={{ mt: 0.5, width: 'min(460px, 100%)', minWidth: 0 }}>
+    <Box
+      data-media-summary-inline="true"
+      sx={{ mt: navigationOverlay ? 0 : 0.5, width: 'min(460px, 100%)', minWidth: 0 }}
+    >
       {state === 'completed' && summary !== '' ? (
         <Box
           component="blockquote"
@@ -476,7 +483,8 @@ export function MessageCardMediaSummary({
           }}
           sx={{
             m: 0,
-            px: 1,
+            pl: 1,
+            pr: navigationOverlay ? 10 : 1,
             py: 0.75,
             borderLeft: 3,
             borderColor: 'primary.main',
@@ -513,11 +521,16 @@ export function MessageCardMediaSummary({
           direction="row"
           spacing={0.75}
           alignItems="center"
-          sx={{ px: 1, py: 0.5, color: state === 'failed' ? 'error.main' : 'text.secondary' }}
+          sx={{
+            pl: 1,
+            pr: navigationOverlay ? 10 : 1,
+            py: 0.5,
+            color: state === 'failed' ? 'error.main' : 'text.secondary',
+          }}
         >
           {isMediaSummaryProcessing(state) || refreshing ? <CircularProgress size={14} /> : null}
           <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
-            {lastError || refreshError || STATE_LABELS[state] || state}
+            {refreshError || STATE_LABELS[state] || state}
           </Typography>
           {state === 'failed' || refreshError != null ? (
             <IconButton
@@ -531,6 +544,134 @@ export function MessageCardMediaSummary({
           ) : null}
         </Stack>
       )}
+    </Box>
+  );
+}
+
+export function MessageCardMediaSummaryCarousel({
+  media,
+  onIndexChange,
+}: {
+  media: Array<{
+    id?: string | null;
+    summary?: MediaSummaryStatus | null;
+  }>;
+  onIndexChange?: (index: number) => void;
+}) {
+  const mediaIds = media.map((item, itemIndex) => item.id ?? itemIndex).join('\0');
+  const firstSummaryIndex = media.findIndex((item) => item.id != null && item.summary != null);
+  const [index, setIndex] = useState(() => Math.max(0, firstSummaryIndex));
+
+  useEffect(() => {
+    const nextIndex = Math.max(0, firstSummaryIndex);
+    setIndex(nextIndex);
+    onIndexChange?.(nextIndex);
+  }, [firstSummaryIndex, mediaIds, onIndexChange]);
+
+  const resolvedIndex = Math.min(index, media.length - 1);
+  const current = media[resolvedIndex];
+  if (firstSummaryIndex < 0 || current == null) return null;
+  const hasCurrentSummary = current.id != null && current.summary != null;
+
+  const selectIndex = (nextIndex: number) => {
+    setIndex(nextIndex);
+    onIndexChange?.(nextIndex);
+  };
+
+  return (
+    <Box
+      data-media-summary-carousel="true"
+      sx={{
+        position: 'relative',
+        mt: 1,
+        width: hasCurrentSummary ? 'min(460px, 100%)' : 'fit-content',
+        maxWidth: '100%',
+        minWidth: 0,
+      }}
+    >
+      <Box
+        key={`${current.id ?? resolvedIndex}:${resolvedIndex}`}
+        data-media-summary-carousel-content="true"
+        sx={{
+          minHeight: hasCurrentSummary ? 72 : undefined,
+          animation: 'media-summary-carousel-in 160ms ease-out',
+          '@keyframes media-summary-carousel-in': {
+            from: { opacity: 0.55, transform: 'translateX(2px)' },
+            to: { opacity: 1, transform: 'translateX(0)' },
+          },
+        }}
+      >
+        {hasCurrentSummary ? (
+          <MessageCardMediaSummary
+            mediaId={current.id}
+            status={current.summary}
+            navigationOverlay={media.length > 1}
+          />
+        ) : (
+          <Box
+            data-media-summary-inline="true"
+            sx={{
+              width: 'fit-content',
+              maxWidth: '100%',
+              minWidth: 0,
+              pl: 1,
+              pr: 10,
+              py: 0.75,
+              borderLeft: 3,
+              borderColor: 'divider',
+              borderRadius: 0.5,
+              bgcolor: 'action.hover',
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              Стислий опис відсутній
+            </Typography>
+          </Box>
+        )}
+      </Box>
+      {media.length > 1 ? (
+        <Stack
+          data-media-summary-navigation="true"
+          direction="row"
+          spacing={0.25}
+          alignItems="center"
+          sx={{
+            position: 'absolute',
+            top: 4,
+            right: 4,
+            zIndex: 1,
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            boxShadow: 1,
+          }}
+        >
+          <IconButton
+            size="small"
+            aria-label="Попередній стислий опис"
+            disabled={resolvedIndex === 0}
+            onClick={() => selectIndex(Math.max(0, resolvedIndex - 1))}
+            sx={{ width: 24, height: 24, p: 0, fontSize: 14 }}
+          >
+            {'<'}
+          </IconButton>
+          <Typography
+            variant="caption"
+            aria-live="polite"
+            sx={{ minWidth: 30, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
+          >
+            {`${resolvedIndex + 1}/${media.length}`}
+          </Typography>
+          <IconButton
+            size="small"
+            aria-label="Наступний стислий опис"
+            disabled={resolvedIndex === media.length - 1}
+            onClick={() => selectIndex(Math.min(media.length - 1, resolvedIndex + 1))}
+            sx={{ width: 24, height: 24, p: 0, fontSize: 14 }}
+          >
+            {'>'}
+          </IconButton>
+        </Stack>
+      ) : null}
     </Box>
   );
 }
@@ -605,6 +746,7 @@ export function MediaSummaryOverlay({
             status={status}
             refreshing={refreshing}
             refreshError={refreshError}
+            showErrorDetails={summaryAccess === 'admin-ocr'}
             onRefresh={() => void refresh(false)}
           />
         </Box>

@@ -2872,12 +2872,12 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202608170916"
+version = "0.1.1-rc.202608181958"
 
 [[package]]
 name = "echo-gpu-client"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=f1a5d2a9ece1561b89afe7b0ae39e689508a67fe#f1a5d2a9ece1561b89afe7b0ae39e689508a67fe"
+source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=44990c61563f7232697cac4aeffd5294ef37e720#44990c61563f7232697cac4aeffd5294ef37e720"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2899,7 +2899,7 @@ dependencies = [
 [[package]]
 name = "echo-gpu-client-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=f1a5d2a9ece1561b89afe7b0ae39e689508a67fe#f1a5d2a9ece1561b89afe7b0ae39e689508a67fe"
+source = "git+ssh://git@github.com/echoua/echo-gpu.git?rev=44990c61563f7232697cac4aeffd5294ef37e720#44990c61563f7232697cac4aeffd5294ef37e720"
 dependencies = [
  "sea-orm",
  "sea-orm-migration",
@@ -2918,9 +2918,9 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "chrono",
- "echo-im-migration",
- "echo-im-signal",
- "echo-im-whatsapp",
+ "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=8758373ccd6e914d68ef4c22dd40d364392074ee)",
+ "echo-im-signal 0.1.1-rc.202608050747",
+ "echo-im-whatsapp 0.1.1-rc.202608050747",
  "lazy_static",
  "libc",
  "log",
@@ -2934,6 +2934,45 @@ dependencies = [
  "tokio",
  "uuid",
  "xshell",
+]
+
+[[package]]
+name = "echo-im"
+version = "0.1.1-rc.202608151343"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5#0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5)",
+ "echo-im-signal 0.1.1-rc.202608151343",
+ "echo-im-whatsapp 0.1.1-rc.202608151343",
+ "lazy_static",
+ "libc",
+ "log",
+ "qrcode",
+ "regex",
+ "reqwest 0.12.28",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "uuid",
+ "xshell",
+]
+
+[[package]]
+name = "echo-im-migration"
+version = "0.1.0"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5#0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5"
+dependencies = [
+ "async-std",
+ "clap",
+ "sea-orm",
+ "sea-orm-migration",
+ "tokio",
 ]
 
 [[package]]
@@ -2954,13 +2993,23 @@ version = "0.1.1-rc.202608050747"
 source = "git+ssh://git@github.com/echoua/echo-im.git?rev=8758373ccd6e914d68ef4c22dd40d364392074ee#8758373ccd6e914d68ef4c22dd40d364392074ee"
 
 [[package]]
+name = "echo-im-signal"
+version = "0.1.1-rc.202608151343"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5#0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5"
+
+[[package]]
 name = "echo-im-whatsapp"
 version = "0.1.1-rc.202608050747"
 source = "git+ssh://git@github.com/echoua/echo-im.git?rev=8758373ccd6e914d68ef4c22dd40d364392074ee#8758373ccd6e914d68ef4c22dd40d364392074ee"
 
 [[package]]
+name = "echo-im-whatsapp"
+version = "0.1.1-rc.202608151343"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5#0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5"
+
+[[package]]
 name = "echo-install"
-version = "0.1.1-rc.202608170916"
+version = "0.1.1-rc.202608181958"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3013,13 +3062,13 @@ dependencies = [
 
 [[package]]
 name = "echo-swapp"
-version = "0.1.1-rc.202608170916"
+version = "0.1.1-rc.202608181958"
 dependencies = [
  "actix-web",
  "anyhow",
  "base64 0.22.1",
  "chrono",
- "echo-im",
+ "echo-im 0.1.1-rc.202608050747",
  "echo-install-utils",
  "env_logger 0.11.9",
  "image 0.25.10",
@@ -3748,7 +3797,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202608170916"
+version = "0.1.1-rc.202608181958"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -9845,7 +9894,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202608170916"
+version = "0.1.1-rc.202608181958"
 dependencies = [
  "actix-files",
  "actix-identity",
@@ -9876,7 +9925,7 @@ dependencies = [
  "dirs",
  "docx-rs",
  "echo-gpu-client",
- "echo-im",
+ "echo-im 0.1.1-rc.202608151343",
  "echo-install-utils",
  "echo-migration",
  "elm_rs",
@@ -9888,6 +9937,7 @@ dependencies = [
  "fxhash",
  "geoconvert",
  "goi-echo-worker",
+ "hmac 0.12.1",
  "iggy",
  "indicatif 0.18.4",
  "infer",
@@ -9929,6 +9979,7 @@ dependencies = [
  "serde_ignored",
  "serde_json",
  "serial_test",
+ "sha2 0.10.9",
  "sha256",
  "sqlx 0.9.0",
  "ssh2",

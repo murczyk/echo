@@ -28,6 +28,10 @@ export type MessageActionsDeps = {
       followGeneration?: number;
     },
   ) => Promise<{ ok: boolean; addedCount: number }>;
+  flushPendingNewerMessages: (
+    feedId: string,
+    opts?: { markAllRead?: boolean; urgent?: boolean },
+  ) => void;
   showArrowResult: (feedId: string, message: string) => void;
   columnRefsRef: MutableRefObject<
     Record<string, { scrollToEnd: (behavior?: ScrollBehavior) => void } | null>

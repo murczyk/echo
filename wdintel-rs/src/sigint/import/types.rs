@@ -100,6 +100,7 @@ mod tests {
             orbit_note: None,
             army_region: "ЗС РФ".to_string(),
             military_district: "Західний ВО".to_string(),
+            is_inconsistent: false,
         };
         let etalon = EtalonData {
             area_of_responsibility: vec![],
@@ -136,6 +137,7 @@ mod tests {
             "platoon",
             "brigade",
             "corps",
+            "is_inconsistent",
         ] {
             unit.remove(field);
         }
@@ -151,5 +153,6 @@ mod tests {
         assert_eq!(imported.sigint_unit[0].platoon, "");
         assert_eq!(imported.sigint_unit[0].brigade, "");
         assert_eq!(imported.sigint_unit[0].corps, "");
+        assert!(!imported.sigint_unit[0].is_inconsistent);
     }
 }

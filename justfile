@@ -8,7 +8,7 @@ rust_log := if log_sql == "true" { "RUST_LOG=sqlx=trace,seaorm=trace " } else { 
 no_bgworker := "false"
 dev_back_args := if no_bgworker == "true" { "--no-bgworker" } else { "" }
 server := ""
-active_servers := "echo-staging echo-cbr echo-kharkiv2 echo-kupiansk echo-zp2 echo-siversk echo-pivnich echo-skhid"
+active_servers := "echo-staging echo-cbr-staging echo-cbr echo-kharkiv2 echo-kupiansk echo-zp2 echo-siversk echo-pivnich echo-skhid"
 target := ""
 backup_key_id := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key_id -f ./deploy/config-backup.toml; else echo ""; fi`
 backup_key := `if [ -f "./deploy/config-backup.toml" ]; then tomlq backup_key -f ./deploy/config-backup.toml; else echo ""; fi`
@@ -790,7 +790,8 @@ migrate-signal-bots-to-jvm server non_interactive="false" yolo="false":
     EOF
 
 [arg('server', long='server')]
-deploy _server_pos="" server:
+[arg('silent', long='silent', value='true')]
+deploy _server_pos="" server silent="false":
     #!/bin/bash
     set -euo pipefail
     # Enable tracing if DEBUG=1 or TRACE=1 is set in environment
@@ -831,11 +832,13 @@ deploy _server_pos="" server:
 
     printf "\n🚀🚀🚀 deploying %s 🚀🚀🚀\n\n" "$SERVER"
 
-    # Notify Discord at the start of deployment including local hostname
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
-      '{{ discord_webhook_infra }}' || true
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Notify Discord at the start of deployment including local hostname
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"deploying $SERVER (version $VERSION); waiting for CI from $(hostname)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
     # Helpful link to CI runs
     echo "CI: https://github.com/echoua/echo/actions"
@@ -891,6 +894,7 @@ deploy _server_pos="" server:
       fi
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
         if systemctl cat "$service" >/dev/null 2>&1; then
@@ -939,9 +943,9 @@ deploy _server_pos="" server:
 
       run_logged 600 "sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update" \
         sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs" \
+      run_logged 1200 "sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs" \
         sudo env DEBIAN_FRONTEND=noninteractive \
-          apt-get -o Dpkg::Lock::Timeout=120 -y -qq install echo-install wdintel-rs'
+          apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs'
 
     ssh "$SERVER" 'set -euo pipefail
       /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
@@ -1011,17 +1015,23 @@ deploy _server_pos="" server:
       fi
     '
     ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
+      echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
+    fi
     printf "\n⚠️⚠️⚠️ docs were not deployed. Run: just deploy-docs --server %s ⚠️⚠️⚠️\n" "$SERVER"
     echo "✅✅✅ deploy OK on $SERVER: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
 
-    # Success notification
-    curl -sS -X POST \
-      -H 'Content-Type: application/json' \
-      -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
-      '{{ discord_webhook_infra }}' || true
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Success notification
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"✅ Deployed $SERVER (version $VERSION) via apt-get\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
 [arg('server', long='server')]
-deploy-from-local _server_pos="" server:
+[arg('silent', long='silent', value='true')]
+deploy-from-local _server_pos="" server silent="false":
     #!/bin/bash
     set -euo pipefail
     if [[ "${DEBUG:-0}" == "1" || "${TRACE:-0}" == "1" ]]; then
@@ -1044,6 +1054,14 @@ deploy-from-local _server_pos="" server:
     DEB_NAME=""
 
     printf "\n🚀🚀🚀 deploying %s from local .deb 🚀🚀🚀\n\n" "$SERVER"
+
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Notify Discord at the start of deployment including local hostname
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"deploying $SERVER from local .deb from $(hostname)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
     echo "Building frontend assets..."
     (cd "{{ justfile_directory() }}" && just build-front)
@@ -1096,6 +1114,7 @@ deploy-from-local _server_pos="" server:
       fi
       echo "Java preflight OK: $(java -version 2>&1 | head -1)"
     '
+    bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" start "$SERVER"
     ssh "$SERVER" 'set -euo pipefail
       for service in wdintel-rs-report-worker.service wdintel-rs-bgworker.service; do
         if systemctl cat "$service" >/dev/null 2>&1; then
@@ -1121,10 +1140,10 @@ deploy-from-local _server_pos="" server:
     ssh "$SERVER" "set -euo pipefail
       export DEBIAN_FRONTEND=noninteractive
       cd /var/tmp
-      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
+      if ! sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'; then
         echo 'Initial local package install failed; updating APT indexes and retrying...'
         sudo apt-get -o Dpkg::Lock::Timeout=120 -qq update
-        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
+        sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install --reinstall --allow-downgrades './${REMOTE_DEB_NAME}'
       fi
       rm -f './${REMOTE_DEB_NAME}'
     "
@@ -1192,7 +1211,18 @@ deploy-from-local _server_pos="" server:
       echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, 8081 via systemd ✅✅✅"
     '
     ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
+      echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
+    fi
     RESTART_WORKERS_ON_FAILURE=0
+
+    if [[ "{{ silent }}" != "true" ]]; then
+      # Success notification
+      curl -sS -X POST \
+        -H 'Content-Type: application/json' \
+        -d "{\"content\":\"✅ Deployed $SERVER from local .deb ($DEB_NAME)\"}" \
+        '{{ discord_webhook_infra }}' || true
+    fi
 
 [arg('server', long='server')]
 deploy-docs-from-local _server_pos="" server:

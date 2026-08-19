@@ -80,6 +80,16 @@ publish_args=(
 for deb_file in "${deb_files[@]}"; do
   publish_args+=(--deb-path "$remote_dir/$(basename "$deb_file")")
 done
-ssh_echo_ci "$(join_shell_words "${publish_args[@]}")"
+
+if ! publish_output="$(ssh_echo_ci "$(join_shell_words "${publish_args[@]}")" 2>&1)"; then
+  printf '%s\n' "$publish_output" >&2
+  if [[ "$publish_output" == *"already exists with different content"* ]]; then
+    echo "::warning::Debian package version already published; keeping the existing package."
+    exit 0
+  fi
+  exit 1
+fi
+
+printf '%s\n' "$publish_output"
 
 echo "Published ${#deb_files[@]} package(s) to echo-ci repo $ECHO_CI_REPO"

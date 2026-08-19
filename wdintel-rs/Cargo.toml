@@ -59,6 +59,8 @@ calamine = "0.30.1"
 sqlx = { workspace = true }
 rand = "0.9.2"
 sha256 = "1.6.0"
+hmac = "0.12.1"
+sha2 = "0.10.9"
 md-5 = "0.10.6"
 sea-orm = { workspace = true }
 sea-orm-migration = { workspace = true }
@@ -125,11 +127,11 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "8758373ccd6e914d68ef4c22dd40d364392074ee"
+rev = "0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5"
 
 [dependencies.echo-gpu-client]
 git = "ssh://git@github.com/echoua/echo-gpu.git"
-rev = "f1a5d2a9ece1561b89afe7b0ae39e689508a67fe"
+rev = "44990c61563f7232697cac4aeffd5294ef37e720"
 
 [dependencies.milgeo-rs]
 git = "ssh://git@github.com/echoua/milgeo-rs.git"

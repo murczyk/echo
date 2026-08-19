@@ -7,7 +7,7 @@ use crate::{new_pg_runtime_pool_from_config, PgRuntimePoolRole};
 use actix_web::web::{Data, Json};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    EntityTrait, FromQueryResult, QueryFilter,
+    DbBackend, EntityTrait, FromQueryResult, QueryFilter, Statement,
 };
 use serial_test::serial;
 
@@ -54,6 +54,26 @@ async fn test_identity_login_id(
 ) -> uuid::Uuid {
     crate::users::login_id_by_name(&env.dbx, &test_identity.login)
         .await
+        .unwrap()
+}
+
+async fn fetch_correlated_inbox_count(
+    env: &Env,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+) -> i64 {
+    let query =
+        crate::rer_importer::inbox::query::build_correlated_inbox_digest_query(
+            login, env, req,
+        )
+        .await
+        .unwrap();
+    env.dbx
+        .query_one_raw(Statement::from_string(DbBackend::Postgres, query))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get("", "count")
         .unwrap()
 }
 
@@ -4825,6 +4845,20 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     .await
     .unwrap();
 
+    let cursor = mk_analysis_message(
+        db,
+        "msg-unit-filter-cursor",
+        "944.5",
+        test_dt(2026, 3, 2, 10, 4),
+        &[&fixture.group_x],
+        &[],
+        true,
+    )
+    .await
+    .unwrap();
+    let mut cursor: signal_message::ActiveModel = cursor.into();
+    cursor.deleted = Set(true);
+    let cursor = cursor.update(db).await.unwrap();
     let msg_child = mk_analysis_message(
         db,
         "msg-child-unit",
@@ -4922,6 +4956,57 @@ async fn rer_duty_unit_filter_includes_child_units_in_fuzzy_mode() {
     assert_eq!(
         items.iter().map(|item| item.id).collect_vec(),
         vec![msg_other.id]
+    );
+
+    let login = test_identity_login_id(&fixture.env, &test_identity).await;
+    let digest_req = InboxMessagesReq {
+        page_id: Some(RER_DUTY_PAGE_ID.to_string()),
+        since_id_noninclusive: Some(cursor.id),
+        sort_by: Some(InboxMessagesSortBy::IMSTimestamp),
+        selected_units: Some(vec!["2 бат 1 полк".to_string()]),
+        units_exact_match_only: Some(false),
+        ..Default::default()
+    };
+    assert_eq!(
+        fetch_correlated_inbox_count(&fixture.env, &login, &digest_req).await,
+        1
+    );
+    assert_eq!(
+        fetch_correlated_inbox_count(
+            &fixture.env,
+            &login,
+            &InboxMessagesReq {
+                units_exact_match_only: Some(true),
+                ..digest_req.clone()
+            },
+        )
+        .await,
+        0
+    );
+    assert_eq!(
+        fetch_correlated_inbox_count(
+            &fixture.env,
+            &login,
+            &InboxMessagesReq {
+                selected_units: None,
+                denied_units: Some(vec!["2 бат".to_string()]),
+                ..digest_req.clone()
+            },
+        )
+        .await,
+        1
+    );
+    assert_eq!(
+        fetch_correlated_inbox_count(
+            &fixture.env,
+            &login,
+            &InboxMessagesReq {
+                selected_units: Some(vec!["Не визначено".to_string()]),
+                ..digest_req
+            },
+        )
+        .await,
+        0
     );
 }
 

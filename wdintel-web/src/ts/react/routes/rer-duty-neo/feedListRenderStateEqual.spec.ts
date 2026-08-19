@@ -54,4 +54,17 @@ describe('feedListRenderStateEqual', () => {
 
     expect(feedListRenderStateEqual(prev, next)).toBe(false);
   });
+
+  it('treats pendingNewerItems-only updates as equal', () => {
+    const items: MessageFeedState['items'] = [[1, minimalInboxMessage({ timestamp: 1 })]];
+    const filter = emptyFilter();
+    const prev = baseFeed({ items, filter });
+    const next = baseFeed({
+      items,
+      filter,
+      pendingNewerItems: [[2, minimalInboxMessage({ timestamp: 2 })]],
+    });
+
+    expect(feedListRenderStateEqual(prev, next)).toBe(true);
+  });
 });

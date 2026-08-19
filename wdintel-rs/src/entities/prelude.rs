@@ -96,6 +96,7 @@ pub use super::network_invalidation_worker::Entity as NetworkInvalidationWorker;
 pub use super::nominatimres::Entity as Nominatimres;
 pub use super::ocr_job::Entity as OcrJob;
 pub use super::ocr_settings::Entity as OcrSettings;
+pub use super::ocr_settings_ai_engine::Entity as OcrSettingsAiEngine;
 pub use super::orbit_combat_unit_type::Entity as OrbitCombatUnitType;
 pub use super::orbit_grouping_of_forces::Entity as OrbitGroupingOfForces;
 pub use super::orbit_sync::Entity as OrbitSync;

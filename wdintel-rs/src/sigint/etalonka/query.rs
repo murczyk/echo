@@ -1278,6 +1278,35 @@ pub fn build_network_freq_join_condition(
     filter: Option<&NetworkFreqFilter>,
     till_inclusive: bool,
 ) -> Result<SimpleExpr, AppError> {
+    build_network_freq_join_condition_with_missing_active_to(
+        filter,
+        till_inclusive,
+        MissingActiveToBound::CurrentTime,
+    )
+}
+
+/// Builds the network frequency join while treating a missing `active_to` as unbounded.
+pub fn build_open_ended_network_freq_join_condition(
+    filter: Option<&NetworkFreqFilter>,
+    till_inclusive: bool,
+) -> Result<SimpleExpr, AppError> {
+    build_network_freq_join_condition_with_missing_active_to(
+        filter,
+        till_inclusive,
+        MissingActiveToBound::Unbounded,
+    )
+}
+
+enum MissingActiveToBound {
+    CurrentTime,
+    Unbounded,
+}
+
+fn build_network_freq_join_condition_with_missing_active_to(
+    filter: Option<&NetworkFreqFilter>,
+    till_inclusive: bool,
+    missing_active_to_bound: MissingActiveToBound,
+) -> Result<SimpleExpr, AppError> {
     let since_ms = filter.as_ref().and_then(|f| f.since_date_inclusive_ms);
     let till_ms = filter.as_ref().and_then(|f| f.till_date_inclusive_ms);
 
@@ -1301,9 +1330,6 @@ pub fn build_network_freq_join_condition(
                 .map(|till_dt| Expr::value(till_dt.naive_utc()))
         })
         .transpose()?;
-    let active_to_bound = Expr::cust(
-        "COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
-    );
     let period_till_inclusive = till_inclusive
         && filter.is_none_or(|filter| {
             filter.till_date_end == ReportPeriodEnd::Inclusive
@@ -1334,11 +1360,29 @@ pub fn build_network_freq_join_condition(
                     .equals((Alias::new("network_freqs"), Alias::new("freq"))),
             )
             .and(activity_datetime().gte(lower_bound))
-            .and({
-                if till_inclusive {
-                    activity_datetime().lte(active_to_bound)
-                } else {
-                    activity_datetime().lt(active_to_bound)
+            .and(match missing_active_to_bound {
+                MissingActiveToBound::CurrentTime => {
+                    let active_to_bound = Expr::cust(
+                        "COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
+                    );
+                    if till_inclusive {
+                        activity_datetime().lte(active_to_bound)
+                    } else {
+                        activity_datetime().lt(active_to_bound)
+                    }
+                }
+                MissingActiveToBound::Unbounded => {
+                    let active_to = || {
+                        Expr::col((
+                            Alias::new("network_freqs"),
+                            Alias::new("active_to"),
+                        ))
+                    };
+                    active_to().is_null().or(if till_inclusive {
+                        activity_datetime().lte(active_to())
+                    } else {
+                        activity_datetime().lt(active_to())
+                    })
                 }
             });
     if let Some(till_bound) = till_bound {

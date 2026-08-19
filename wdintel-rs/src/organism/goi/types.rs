@@ -54,6 +54,8 @@ pub enum ListGoiKnowledgeSortBy {
 pub struct ListGoiAssociationsReq {
     pub limit: Option<u64>,
     pub offset: Option<u64>,
+    pub since_date_inclusive_ms: Option<i64>,
+    pub till_date_inclusive_ms: Option<i64>,
     pub sort_by: Option<ListGoiAssociationsSortBy>,
     pub filter_text: Option<String>,
     pub filter_server: Option<String>,
@@ -107,6 +109,7 @@ pub struct GoiAssociation {
     pub author: Option<String>,
     pub source_date_raw: Option<String>,
     pub source_date_ms: Option<i64>,
+    pub original_message: Option<String>,
 }
 
 #[derive(

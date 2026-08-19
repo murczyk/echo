@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260813_181612_add_duty_collapse_media_previews": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
     "echo:m20260723_125003_palitra_highlight_blacklist": {
       "changes": [
         {
@@ -49,6 +57,11 @@
       "changes": []
     },
     "echo:m20260813_183642_sigint_unit_orbit_echelons": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260817_124312_sigint_unit_inconsistent": {
       "changes": [
         { "table": "public.sigint_unit", "strategy": "mirror_resync" }
       ]
@@ -205,10 +218,26 @@
         { "table": "public.media_summary_settings", "strategy": "excluded" },
         { "table": "public.media_summary", "strategy": "replicated_snapshot" }
       ]
+    },
+    "echo:m20260817_124312_sigint_unit_inconsistent": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260818_052317_shared_ai_engine_capabilities": {
+      "changes": [
+        { "table": "public.ai_engine", "strategy": "excluded" },
+        { "table": "public.ocr_settings", "strategy": "excluded" },
+        { "table": "public.ocr_settings_ai_engine", "strategy": "excluded" },
+        { "table": "public.ocr_job", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260818_081034_inbox_unit_backfill_lookup_indexes": {
+      "changes": []
     }
   },
   "dependencies": {
     "echo-im:8758373ccd6e914d68ef4c22dd40d364392074ee": { "changes": [] },
-    "echo-gpu:f1a5d2a9ece1561b89afe7b0ae39e689508a67fe": { "changes": [] }
+    "echo-gpu:44990c61563f7232697cac4aeffd5294ef37e720": { "changes": [] }
   }
 }

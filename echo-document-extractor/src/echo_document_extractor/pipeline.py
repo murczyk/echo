@@ -12,7 +12,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Protocol, TypeVar
+from typing import Any, Literal, Protocol, TypeVar
 
 import yaml
 from lxml import html
@@ -34,9 +34,12 @@ from .canonical import (
     table_dimensions,
     unreadable_block,
 )
-from .config import ExtractionConfig
+from .config import TEXT_BBOX_MAX_OCR_LINES, ExtractionConfig
 from .geometry import GeometryResult, detect_geometry
 from .ingest import RasterPage, crop_with_transform, iter_ingest
+from .matching import align_indices
+from .matching import align_text_sequences as _align_text_sequences
+from .matching import text_similarity as _text_similarity
 from .models import (
     AssetRef,
     BBox,
@@ -66,19 +69,30 @@ from .render import render_html, render_markdown
 from .sanitize import has_fatal_sanitization_reason, sanitize_candidate
 
 
+class OcrJobManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    gateway_url: str
+    grant: str = Field(min_length=32)
+    engine_id: str
+    engine_name: str
+    model_name: str
+    request_profile: Literal["openai_vision", "ocr_gemma"]
+    instance_id: str
+
+
 class InputManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: int = Field(default=1, ge=1, le=1)
+    schema_version: int = Field(default=1, ge=1, le=2)
     inputs: list[str] = Field(min_length=1)
     metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    ocr: OcrJobManifest | None = None
 
     @field_validator("inputs")
     @classmethod
     def safe_inputs(cls, values: list[str]) -> list[str]:
         return [safe_relative_path(value) for value in values]
-
-
 @dataclass
 class CandidateDocument:
     evidence: Evidence
@@ -124,6 +138,7 @@ class Extractor:
         page_callback: PageCallback | None = None,
         metrics: ExtractionMetrics | None = None,
         ocr: PaddleEvidenceProvider | None = None,
+        paddle_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self.config = config
         self.adapters = adapters or [
@@ -135,6 +150,7 @@ class Extractor:
             config.paddle_languages,
             config.paddle,
         )
+        self.paddle_semaphore = paddle_semaphore
         self._request_artifacts: dict[str, bytes] = {}
         self._single_spark_queue = asyncio.Semaphore(1) if config.hardware_profile == "single_spark" else None
         self.artifact_dir = artifact_dir
@@ -245,14 +261,7 @@ class Extractor:
                 source_hashes=[_sha256_file(path) for path in ordered_inputs],
                 raster_hashes=[page.raster_sha256 for page in pages],
                 hardware_profile=self.config.hardware_profile,
-                models=[
-                    {
-                        "id": endpoint.model_id,
-                        "revision": endpoint.revision,
-                        "prompt_version": endpoint.prompt_version,
-                    }
-                    for endpoint in (self.config.nu_extract, self.config.gemma)
-                ],
+                models=self._package_models(metadata),
                 metadata=metadata,
             ),
             assets=assets,
@@ -263,6 +272,37 @@ class Extractor:
             raise RuntimeError("canonical HTML round-trip lost IR relationships")
         result.markdown = render_markdown(result)
         return result
+
+    def _package_models(
+        self, metadata: dict[str, str | int | float | bool | None]
+    ) -> list[dict[str, str | None]]:
+        models: list[dict[str, str | None]] = [
+            {
+                "id": self.config.nu_extract.model_id,
+                "revision": self.config.nu_extract.revision,
+                "prompt_version": self.config.nu_extract.prompt_version,
+            }
+        ]
+        engine_id = metadata.get("ocr_engine_id")
+        if engine_id:
+            models.append(
+                {
+                    "id": str(metadata.get("ocr_model_name", "semantic")),
+                    "revision": str(engine_id),
+                    "prompt_version": str(metadata.get("ocr_prompt_version", "semantic-html-v2")),
+                    "engine_id": str(engine_id),
+                    "engine_name": str(metadata.get("ocr_engine_name", "")),
+                }
+            )
+        else:
+            models.append(
+                {
+                    "id": self.config.gemma.model_id,
+                    "revision": self.config.gemma.revision,
+                    "prompt_version": self.config.gemma.prompt_version,
+                }
+            )
+        return models
 
     def _spill_artifacts(self, page: ProcessedPage) -> ProcessedPage:
         if self.artifact_dir is None:
@@ -290,11 +330,19 @@ class Extractor:
         geometry = detect_geometry(raster.image, page_id)
         paddle_started = time.monotonic()
         try:
-            paddle = self.ocr.extract_all(
-                raster.image,
-                page_id,
-                use_table_recognition=not any(isinstance(block, Table) for block in geometry.blocks),
-            )
+            if self.paddle_semaphore is None:
+                paddle = self.ocr.extract_all(
+                    raster.image,
+                    page_id,
+                    use_table_recognition=not any(isinstance(block, Table) for block in geometry.blocks),
+                )
+            else:
+                async with self.paddle_semaphore:
+                    paddle = self.ocr.extract_all(
+                        raster.image,
+                        page_id,
+                        use_table_recognition=not any(isinstance(block, Table) for block in geometry.blocks),
+                    )
         except RuntimeError as error:
             paddle = None
             paddle_error = Evidence(
@@ -342,11 +390,30 @@ class Extractor:
             )
             decisions = [decision for decision in decisions if decision.unit_id not in removed_unit_ids]
             if decisions and not any(decision.hard_checks_passed for decision in decisions):
+                fallback = _strict_local_fallback(raster, page_id, page_bbox, supporting)
+                if fallback is not None:
+                    blocks, fallback_evidence, fallback_decisions, assets = fallback
+                    evidence.append(fallback_evidence)
+                    decisions.extend(fallback_decisions)
+                    return ProcessedPage(
+                        page_id,
+                        blocks,
+                        evidence,
+                        decisions,
+                        assets,
+                        {**_page_artifact(page_id, raster), **self._crop_artifacts(page_id)},
+                        degraded_reasons=[
+                            *degraded_reasons,
+                            "model candidates failed hard checks; used local evidence",
+                            "original raster retained",
+                        ],
+                    )
                 block, assets = unreadable_block(page_id, page_bbox, raster.png_bytes())
-                block = block.model_copy(update={"decision_id": f"decision-{page_id}-unreadable"})
+                decision_id = f"decision-{page_id}-unreadable"
+                block = block.model_copy(update={"decision_id": decision_id})
                 decisions.append(
                     Decision(
-                        id=f"decision-{page_id}-unreadable",
+                        id=decision_id,
                         unit_id=block.id,
                         reason="no extraction unit passed hard checks",
                         unresolved=True,
@@ -452,7 +519,7 @@ class Extractor:
             crop_bbox=bbox,
             source_transform=transform,
             profile=self.config.hardware_profile,
-            prompt_version="crop-conflict-v1" if retry else "semantic-html-v1",
+            prompt_version="crop-conflict-v1" if retry else "semantic-html-v2",
             image_png=image_png,
             retry=retry,
         )
@@ -1099,7 +1166,17 @@ def _resolve_inputs(
         if target != base and base not in target.parents:
             raise ValueError(f"manifest input escapes its directory: {relative}")
         paths.append(target)
-    return paths, parsed.inputs, parsed.metadata
+    metadata = dict(parsed.metadata)
+    if parsed.ocr is not None:
+        metadata.update(
+            {
+                "ocr_engine_id": parsed.ocr.engine_id,
+                "ocr_engine_name": parsed.ocr.engine_name,
+                "ocr_model_name": parsed.ocr.model_name,
+                "ocr_prompt_version": "semantic-html-v2",
+            }
+        )
+    return paths, parsed.inputs, metadata
 
 
 def _document_id(pages: list[Page]) -> str:
@@ -1232,6 +1309,52 @@ def _fallback_candidate(page_id: str, supporting: list[Evidence], bbox: BBox) ->
         valid=not has_fatal_sanitization_reason(reasons),
         rejection_reasons=reasons,
     )
+
+
+def _strict_local_fallback(
+    raster: RasterPage,
+    page_id: str,
+    bbox: BBox,
+    supporting: list[Evidence],
+) -> tuple[list[Block], Evidence, list[Decision], dict[str, bytes]] | None:
+    fallback = _fallback_candidate(page_id, supporting, bbox)
+    if fallback is None:
+        return None
+    raster_block, assets = unreadable_block(page_id, bbox, raster.png_bytes())
+    raster_decision_id = f"decision-{page_id}-raster-fallback"
+    raster_block = raster_block.model_copy(
+        update={"id": f"{page_id}-raster-fallback", "decision_id": raster_decision_id}
+    )
+    local_decision_id = f"decision-{page_id}-local-fallback"
+    local_blocks = blocks_from_html(
+        fallback.html,
+        f"{page_id}-local",
+        bbox,
+        local_decision_id,
+    )
+    if not local_blocks:
+        return None
+    local_blocks = [
+        block.model_copy(update={"reading_order": index + 1}) for index, block in enumerate(local_blocks)
+    ]
+    decisions = [
+        Decision(
+            id=raster_decision_id,
+            unit_id=raster_block.id,
+            reason="original raster retained beside local OCR fallback",
+            unresolved=True,
+            hard_checks_passed=False,
+        ),
+        Decision(
+            id=local_decision_id,
+            unit_id=local_blocks[0].id,
+            selected_evidence_id=fallback.id,
+            reason="model candidates failed hard checks; local OCR fallback",
+            unresolved=True,
+            hard_checks_passed=True,
+        ),
+    ]
+    return [raster_block, *local_blocks], fallback, decisions, assets
 
 
 def _matching_geometry_table(base: Table, blocks: list[Block]) -> Table | None:
@@ -1677,87 +1800,26 @@ def _block_text_value(paragraphs: list[str]) -> str:
     return " ".join(" ".join(value.split()) for value in paragraphs).strip()
 
 
-def _align_text_sequences(
-    sources: list[str],
-    targets: list[str],
-    allow_source_skips: bool = False,
-) -> dict[int, int]:
-    if len(sources) == len(targets):
-        return {index: index for index in range(len(sources))}
-    negative = float("-inf")
-    scores = [[negative] * (len(targets) + 1) for _ in range(len(sources) + 1)]
-    paths: list[list[list[tuple[int, int]] | None]] = [
-        [None] * (len(targets) + 1) for _ in range(len(sources) + 1)
-    ]
-    scores[0][0] = 0.0
-    paths[0][0] = []
-    for source in range(len(sources) + 1):
-        for target in range(len(targets) + 1):
-            if paths[source][target] is None:
-                continue
-            transitions: list[tuple[int, int, float, list[tuple[int, int]]]] = []
-            if source < len(sources) and target < len(targets):
-                transitions.append(
-                    (
-                        source + 1,
-                        target + 1,
-                        _text_alignment_score(sources[source], targets[target]),
-                        [*paths[source][target], (target, source)],
-                    )
-                )
-            if target < len(targets):
-                penalty = 0.0 if not targets[target].strip() else -1.5
-                transitions.append((source, target + 1, penalty, paths[source][target]))
-            if allow_source_skips and source < len(sources):
-                penalty = -0.25 if not sources[source].strip() else -1.5
-                transitions.append((source + 1, target, penalty, paths[source][target]))
-            for next_source, next_target, delta, path in transitions:
-                score = scores[source][target] + delta
-                if score > scores[next_source][next_target]:
-                    scores[next_source][next_target] = score
-                    paths[next_source][next_target] = path
-    return dict(paths[-1][-1] or [])
-
-
-def _text_alignment_score(source: str, target: str) -> float:
-    source = source.strip()
-    target = target.strip()
-    if not source and not target:
-        return 2.0
-    if not source or not target:
-        return -2.0
-    return 4.0 * _text_similarity(source, target) - 1.0
-
-
 def _align_blocks(base: list[Block], candidate: list[Block]) -> dict[int, Block]:
-    mapping: dict[int, Block] = {}
-    position = 0
-    for base_index, block in enumerate(base):
-        compatible = [
-            (index, value)
-            for index, value in enumerate(candidate[position:], start=position)
-            if isinstance(value, Table) == isinstance(block, Table)
-        ]
-        if not compatible:
-            continue
-        index, selected = max(
-            compatible[:3],
-            key=lambda item: _block_similarity(block, item[1]),
-        )
-        mapping[base_index] = selected
-        position = index + 1
-    return mapping
+    mapping = align_indices(
+        len(candidate),
+        len(base),
+        lambda source, target: _block_alignment_score(candidate[source], base[target]),
+        lambda _: -1.5,
+        lambda _: -1.5,
+    )
+    return {target: candidate[source] for target, source in mapping.items()}
 
 
-def _block_similarity(first: Block, second: Block) -> tuple[int, float]:
-    if isinstance(first, Table) and isinstance(second, Table):
-        return (
-            _topology(first) == _topology(second),
-            _text_similarity(_block_text(first), _block_text(second)),
-        )
-    if isinstance(first, TextBlock) and isinstance(second, TextBlock):
-        return (first.kind == second.kind, _text_similarity(_block_text(first), _block_text(second)))
-    return (0, 0.0)
+def _block_alignment_score(first: Block, second: Block) -> float:
+    if isinstance(first, Table) != isinstance(second, Table):
+        return -4.0
+    score = 4.0 * _text_similarity(_block_text(first), _block_text(second)) - 1.0
+    if isinstance(first, Table) and isinstance(second, Table) and _topology(first) == _topology(second):
+        return score + 0.2
+    if isinstance(first, TextBlock) and isinstance(second, TextBlock) and first.kind == second.kind:
+        return score + 0.2
+    return score
 
 
 def _evidence_for_text(parent: Evidence, block: TextBlock, unit_id: str, bbox: BBox) -> Evidence:
@@ -2050,7 +2112,6 @@ def _expanded_text_bbox(
     supporting: list[Evidence],
     column_split: float | None = None,
 ) -> BBox:
-    result = bbox
     side = _column_side(bbox, column_split)
     candidates = [
         item.bbox
@@ -2060,25 +2121,21 @@ def _expanded_text_bbox(
         and item.bbox is not None
         and _column_side(item.bbox, column_split) == side
     ]
-    changed = True
-    while changed:
-        changed = False
-        for candidate in candidates:
-            horizontal = max(0, min(result[2], candidate[2]) - max(result[0], candidate[0]))
-            candidate_width = max(1, candidate[2] - candidate[0])
-            gap = max(0, candidate[1] - result[3], result[1] - candidate[3])
-            if horizontal / candidate_width < 0.5 or gap > max(16, (result[3] - result[1]) * 0.75):
-                continue
-            expanded = (
-                min(result[0], candidate[0]),
-                min(result[1], candidate[1]),
-                max(result[2], candidate[2]),
-                max(result[3], candidate[3]),
-            )
-            if expanded != result:
-                result = expanded
-                changed = True
-    return result
+    nearby = []
+    for candidate in candidates:
+        horizontal = max(0, min(bbox[2], candidate[2]) - max(bbox[0], candidate[0]))
+        candidate_width = max(1, candidate[2] - candidate[0])
+        gap = max(0, candidate[1] - bbox[3], bbox[1] - candidate[3])
+        if horizontal / candidate_width >= 0.5 and gap <= max(16, (bbox[3] - bbox[1]) * 0.75):
+            nearby.append(candidate)
+    if not nearby:
+        return bbox
+    return (
+        min(bbox[0], *(candidate[0] for candidate in nearby)),
+        min(bbox[1], *(candidate[1] for candidate in nearby)),
+        max(bbox[2], *(candidate[2] for candidate in nearby)),
+        max(bbox[3], *(candidate[3] for candidate in nearby)),
+    )
 
 
 def _matching_text_bbox(
@@ -2103,7 +2160,10 @@ def _matching_text_bbox(
     ordered = sorted(candidates, key=lambda item: (item.bbox[1], item.bbox[0]))
     matches = []
     for start in range(len(ordered)):
-        for end in range(start + 1, min(len(ordered), start + 8) + 1):
+        for end in range(
+            start + 1,
+            min(len(ordered), start + TEXT_BBOX_MAX_OCR_LINES) + 1,
+        ):
             values = ordered[start:end]
             combined = "\n".join(item.text for item in values)
             matches.append((_text_similarity(text, combined), len(values), values))
@@ -2530,11 +2590,3 @@ def _markup_text(markup: str) -> str:
     except (ValueError, html.etree.ParserError):
         return ""
     return " ".join(part.strip() for part in root.itertext() if part.strip())
-
-
-def _text_similarity(first: str, second: str) -> float:
-    from difflib import SequenceMatcher
-
-    return SequenceMatcher(
-        None, " ".join(first.split()).casefold(), " ".join(second.split()).casefold()
-    ).ratio()

@@ -29,10 +29,25 @@ pub struct Model {
     pub completed_at: Option<DateTime>,
     pub updated_at: DateTime,
     pub force_summary: bool,
+    pub ai_engine_id: Option<Uuid>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub ai_engine_name: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub model_name: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub ocr_request_profile: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::ai_engine::Entity",
+        from = "Column::AiEngineId",
+        to = "super::ai_engine::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    AiEngine,
     #[sea_orm(
         belongs_to = "super::signal_message_media::Entity",
         from = "Column::MediaId",
@@ -41,6 +56,12 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     SignalMessageMedia,
+}
+
+impl Related<super::ai_engine::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiEngine.def()
+    }
 }
 
 impl Related<super::signal_message_media::Entity> for Entity {

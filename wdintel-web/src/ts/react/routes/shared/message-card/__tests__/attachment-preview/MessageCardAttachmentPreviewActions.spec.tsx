@@ -186,7 +186,7 @@ describe('MessageCardAttachmentPreviewActions', () => {
     });
 
     const cardDownload = container.querySelector('a[download="shared.txt"]');
-    const previewDownload = container.querySelector('button[aria-label="Скачати"]');
+    const previewDownload = container.querySelector('a[download="preview.png"]');
 
     await act(async () => {
       cardDownload?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -194,16 +194,17 @@ describe('MessageCardAttachmentPreviewActions', () => {
 
     expect(cardDownload?.getAttribute('aria-label')).toBe('Завантаження…');
     expect(previewDownload?.getAttribute('disabled')).not.toBeNull();
+    const duplicateEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
     await act(async () => {
-      previewDownload?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      previewDownload?.dispatchEvent(duplicateEvent);
     });
-    expect(container.querySelector('[role="menu"]')).toBeNull();
+    expect(duplicateEvent.defaultPrevented).toBe(true);
 
     root.unmount();
     fetchMock.mockRestore();
   });
 
-  it('shows the original first and OCR formats in the download menu', async () => {
+  it('downloads the original directly from the primary action', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -212,13 +213,6 @@ describe('MessageCardAttachmentPreviewActions', () => {
       root.render(
         <MessageCardAttachmentPreviewActions
           download={{ href: '/original', fileName: 'scan.png' }}
-          downloadItems={[
-            {
-              label: 'Скачати DOCX',
-              download: { href: '/ocr/docx', fileName: 'scan-ocr.docx' },
-              downloadKey: 'ocr:docx',
-            },
-          ]}
           navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
           onClose={vi.fn()}
           downloadKey="media:scan"
@@ -227,15 +221,10 @@ describe('MessageCardAttachmentPreviewActions', () => {
         />,
       );
     });
-    await act(async () => {
-      container
-        .querySelector('button[aria-label="Скачати"]')
-        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.querySelector('[role="menu"]')?.textContent).toBe(
-      'Скачати оригіналСкачати DOCX',
-    );
+    const download = container.querySelector('a[aria-label="Скачати"]');
+    expect(download?.getAttribute('href')).toBe('/original');
+    expect(download?.getAttribute('download')).toBe('scan.png');
+    expect(container.querySelector('[role="menu"]')).toBeNull();
     root.unmount();
   });
 

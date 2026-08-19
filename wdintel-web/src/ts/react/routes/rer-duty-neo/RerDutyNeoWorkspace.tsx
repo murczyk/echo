@@ -284,6 +284,27 @@ export function RerDutyNeoWorkspace({
     : -1;
   const showAddButton = messageFeeds.length < MAX_MESSAGE_FEEDS;
   const compactFeedTabs = messageFeeds.length >= DUTY_ICON_ONLY_FEED_TAB_MIN_FEEDS;
+  const narrowActiveFeed =
+    narrowScreen && messageFeeds.length > 0
+      ? (messageFeeds.find((feed) => feed.id === activeFeedId) ?? messageFeeds[0])
+      : null;
+  const narrowActiveColumn = narrowActiveFeed
+    ? (() => {
+        const column = buildFeedColumnModel(narrowActiveFeed);
+        return {
+          ...column,
+          view: {
+            ...column.view,
+            scrollTrackingEnabled: true,
+            workspaceFabAvoidance: 'above' as const,
+          },
+          actions: {
+            ...column.actions,
+            onCreateFeed: showAddButton ? createMessageFeed : undefined,
+          },
+        };
+      })()
+    : null;
 
   return (
     <Box className="flex flex-1 min-h-0 w-full overflow-hidden">
@@ -419,43 +440,26 @@ export function RerDutyNeoWorkspace({
             )}
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
               {narrowScreen ? (
-                messageFeeds.map((feed) => {
-                  const isActive = feed.id === activeFeedId;
-                  const column = buildFeedColumnModel(feed);
-                  const columnView: FeedColumnModel['view'] = {
-                    ...column.view,
-                    scrollTrackingEnabled: isActive,
-                    workspaceFabAvoidance: isActive ? 'above' : 'none',
-                  };
-                  return (
-                    <Box
-                      key={feed.id}
-                      data-duty-feed-column-active={isActive ? 'true' : undefined}
-                      sx={{
-                        position: 'absolute',
-                        inset: 0,
-                        // Inactive narrow feeds stay mounted to preserve state; scroll tracking is disabled explicitly.
-                        display: isActive ? 'flex' : 'none',
-                        minHeight: 0,
-                        minWidth: 0,
+                narrowActiveColumn && narrowActiveFeed ? (
+                  <Box
+                    key={narrowActiveFeed.id}
+                    data-duty-feed-column-active="true"
+                    sx={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      minHeight: 0,
+                      minWidth: 0,
+                    }}
+                  >
+                    <FeedColumn
+                      ref={(el) => {
+                        columnRefsRef.current[narrowActiveFeed.id] = el;
                       }}
-                    >
-                      <FeedColumn
-                        ref={(el) => {
-                          columnRefsRef.current[feed.id] = el;
-                        }}
-                        column={{
-                          ...column,
-                          view: columnView,
-                          actions: {
-                            ...column.actions,
-                            onCreateFeed: isActive && showAddButton ? createMessageFeed : undefined,
-                          },
-                        }}
-                      />
-                    </Box>
-                  );
-                })
+                      column={narrowActiveColumn}
+                    />
+                  </Box>
+                ) : null
               ) : (
                 <Box
                   className="h-full min-h-0 w-full overflow-hidden"

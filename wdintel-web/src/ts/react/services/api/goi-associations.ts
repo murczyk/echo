@@ -38,11 +38,15 @@ type GoiAssociationLike = {
   source_date_raw?: string | null;
   sourceDateMs?: number | string | null;
   source_date_ms?: number | string | null;
+  originalMessage?: string | null;
+  original_message?: string | null;
 };
 
 type ListGoiAssociationsReqBody = {
   limit: number | null;
   offset: number | null;
+  since_date_inclusive_ms: number | null;
+  till_date_inclusive_ms: number | null;
   sort_by: ListGoiAssociationsReq['sortBy'];
   filter_text: string | null;
   filter_server: string | null;
@@ -113,6 +117,7 @@ function normalizeGoiAssociation(raw: GoiAssociationLike | null | undefined): Go
     author: normalizeOptionalString(raw?.author),
     sourceDateRaw: normalizeOptionalString(raw?.sourceDateRaw ?? raw?.source_date_raw),
     sourceDateMs: normalizeOptionalNumber(raw?.sourceDateMs ?? raw?.source_date_ms),
+    originalMessage: normalizeOptionalString(raw?.originalMessage ?? raw?.original_message),
   };
 }
 
@@ -126,6 +131,8 @@ function toListGoiAssociationsReqBody(req: ListGoiAssociationsReq): ListGoiAssoc
   return {
     limit: req.limit ?? null,
     offset: req.offset ?? null,
+    since_date_inclusive_ms: req.sinceDateInclusiveMs ?? null,
+    till_date_inclusive_ms: req.tillDateInclusiveMs ?? null,
     sort_by: req.sortBy ?? null,
     filter_text: normalizeOptionalText(req.filterText),
     filter_server: normalizeOptionalText(req.filterServer),
@@ -152,4 +159,8 @@ export async function listCurrentUserGoiAssociations(
     items: (data?.items ?? []).map(normalizeGoiAssociation),
     hasMore: data?.hasMore ?? data?.has_more ?? false,
   };
+}
+
+export async function launchGoiAssociationsReport(req: ListGoiAssociationsReq): Promise<number> {
+  return postJson<number>('/api/goi/associations/report', toListGoiAssociationsReqBody(req));
 }

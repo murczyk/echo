@@ -1,7 +1,9 @@
-import { Box, Button, CircularProgress } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { Box, Button, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -10,7 +12,7 @@ import {
 import {
   buildDefaultColumnOrder,
   type AppMrtColumnDef,
-  getDefaultMRTOptions,
+  mrtCustomCell,
   mrtTextCell,
   useAppMaterialReactTable,
   renderColumnActionsMenuItems,
@@ -22,8 +24,6 @@ import { ELLIPSIS } from '../../utils/misc';
 import { GoiAssociationRowView } from './use-goi-associations-page';
 
 const LOADING_MORE_TEXT = `Завантаження${ELLIPSIS}`;
-
-const defaultMRTOptions = getDefaultMRTOptions<GoiAssociationRowView>();
 
 export const DEFAULT_GOI_ASSOCIATIONS_COLUMN_VISIBILITY = {
   sourceAssociationId: true,
@@ -37,6 +37,7 @@ export const DEFAULT_GOI_ASSOCIATIONS_COLUMN_VISIBILITY = {
   formation: true,
   associationCount: true,
   note: true,
+  originalMessage: true,
   createdAt: true,
 };
 
@@ -53,6 +54,7 @@ export const DEFAULT_GOI_ASSOCIATIONS_COLUMN_ORDER = buildDefaultColumnOrder({
     'formation',
     'associationCount',
     'note',
+    'originalMessage',
     'createdAt',
   ],
   withRowNumbers: true,
@@ -69,6 +71,56 @@ type Props = {
   onClearFilters: () => void;
 };
 
+function OriginalMessageCell({ value }: { value: string | null | undefined }) {
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
+  const text = value?.trim();
+  if (!text) return <Typography variant="body2">—</Typography>;
+
+  const copyLabel =
+    copyStatus === 'copied'
+      ? 'Повідомлення скопійовано'
+      : copyStatus === 'error'
+        ? 'Не вдалося скопіювати повідомлення'
+        : 'Копіювати повідомлення';
+
+  return (
+    <Box sx={{ position: 'relative', minWidth: 0, maxWidth: 520, pr: 3.5 }}>
+      <Tooltip title={text} placement="top-start">
+        <Typography
+          variant="body2"
+          sx={{
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            display: '-webkit-box',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 3,
+            overflow: 'hidden',
+          }}
+        >
+          {text}
+        </Typography>
+      </Tooltip>
+      <Tooltip title={copyLabel}>
+        <IconButton
+          size="small"
+          aria-label={copyLabel}
+          onClick={(event) => {
+            event.stopPropagation();
+            event.currentTarget.blur();
+            void copyTextToClipboard(text)
+              .then(() => setCopyStatus('copied'))
+              .catch(() => setCopyStatus('error'));
+          }}
+          onBlur={() => setCopyStatus('idle')}
+          onMouseLeave={() => setCopyStatus('idle')}
+          sx={{ position: 'absolute', top: -5, right: 0 }}
+        >
+          <ContentCopyIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+    </Box>
+  );
+}
 export function GoiAssociationsTable(props: Props) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -208,6 +260,18 @@ export function GoiAssociationsTable(props: Props) {
         }),
       },
       {
+        header: 'Оригінал повідомлення',
+        accessorKey: 'originalMessage',
+        id: 'originalMessage',
+        enableColumnFilter: false,
+        enableSorting: false,
+        size: 520,
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout', interactive: true },
+        Cell: mrtCustomCell(({ row }) => (
+          <OriginalMessageCell value={row.original.originalMessage} />
+        )),
+      },
+      {
         header: 'Імпортовано',
         accessorKey: 'createdAtLabel',
         id: 'createdAt',
@@ -268,6 +332,9 @@ export function GoiAssociationsTable(props: Props) {
         sx: {
           ...(baseProps as { sx?: object })?.sx,
           ...FULL_WIDTH_TABLE_PAPER_SX,
+          height: 'auto',
+          minHeight: '100%',
+          overflow: 'visible',
         },
       };
     },
@@ -275,6 +342,10 @@ export function GoiAssociationsTable(props: Props) {
       sx: {
         ...(CUSTOM_STYLES.muiTableContainerProps as { sx?: object })?.sx,
         ...PAGE_SCROLL_TABLE_CONTAINER_SX,
+        flex: 'none',
+        height: 'auto',
+        maxHeight: 'none',
+        overflow: 'visible',
       },
     },
     state: {
@@ -335,7 +406,7 @@ export function GoiAssociationsTable(props: Props) {
         sx={{
           position: 'relative',
           minHeight: '100%',
-          height: '100%',
+          height: 'auto',
           display: 'flex',
           flexDirection: 'column',
         }}

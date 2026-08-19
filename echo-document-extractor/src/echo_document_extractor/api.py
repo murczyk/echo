@@ -266,7 +266,10 @@ def create_app(config: RuntimeConfig, start_metrics: bool = False) -> FastAPI:
         metrics.update_queue(counts)
         return {
             "queue": counts,
-            "worker": {"instances": workers, "max_active_jobs": 1},
+            "worker": {
+                "instances": workers,
+                "max_active_jobs": service.worker.max_active_jobs,
+            },
             "paddle": {
                 "required": config.extraction.enable_paddle,
                 "ready": bool(workers) and all(worker["paddle_ready"] for worker in workers),
