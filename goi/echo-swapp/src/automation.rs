@@ -1671,9 +1671,6 @@ async fn send_matching_message(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
-    messenger::tick_after_send(db, &client_name, kind)
-        .await
-        .c(h!())?;
     if coordinate_screenshot_attempted || last_warning.is_none() {
         *last_warning = attachments.warning;
     }

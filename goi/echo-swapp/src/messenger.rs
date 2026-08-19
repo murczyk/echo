@@ -1041,7 +1041,6 @@ pub async fn send(
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
-    tick_after_send(db, name, kind).await.c(h!())?;
     Ok(())
 }
 
@@ -1083,22 +1082,6 @@ pub(crate) async fn enqueue(
         )
     })
     .c(h!())?;
-    Ok(())
-}
-
-pub(crate) async fn tick_after_send(
-    db: &DatabaseConnection,
-    name: &str,
-    kind: MessengerKind,
-) -> Result<()> {
-    let client_name = owned_client_name(name);
-    if kind == MessengerKind::Signal
-        && !sync_is_paused(db, &client_name).await.c(h!())?
-    {
-        echo_im::worker::signal_worker_tick_once(&client_name, db)
-            .await
-            .c(h!())?;
-    }
     Ok(())
 }
 
