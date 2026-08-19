@@ -258,6 +258,9 @@ pub struct OneoffReprocessCallsignTokensPs {
 }
 
 #[derive(clap::Parser, Debug)]
+#[command(
+    after_help = "Example:\n  wdintel-rs --mode=live oneoff-reprocess-callsigns --start 2026-08-08T00:00:00 --end 2026-08-09T00:00:00\n  wdintel-rs --mode=live oneoff-reprocess-callsigns-tui --start 2026-08-08T00:00:00 --end 2026-08-09T00:00:00"
+)]
 pub struct OneoffReprocessCallsignsPs {
     /// Start datetime (inclusive). Example: `2023-04-17T00:00:00`
     #[arg(long, value_enum)]
@@ -910,6 +913,8 @@ enum Cmd {
     OneoffFixKmz(OneoffFixKmzPs),
     OneoffDeltaCsvToKmz(OneoffDeltaCsvToKmzPs),
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
+    /// Reprocess inbox callsigns in a table TUI with before/after columns.
+    OneoffReprocessCallsignsTui(OneoffReprocessCallsignsPs),
     OneoffReprocessCallsignTokens(OneoffReprocessCallsignTokensPs),
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
     OneoffExportCommentedMessages(OneoffExportCommentedMessagesPs),
@@ -1531,6 +1536,9 @@ async fn async_main(
         }
         Cmd::OneoffReprocessCallsigns(ps) => {
             rer_importer::callsigns::oneoff_reprocess_callsigns(mode, &ps).await
+        }
+        Cmd::OneoffReprocessCallsignsTui(ps) => {
+            rer_importer::callsign_reprocess_tui::run(mode, &ps).await
         }
         Cmd::OneoffExportSigintComments(ps) => {
             sigint::comments::oneoff_export_sigint_comments(mode, &ps).await

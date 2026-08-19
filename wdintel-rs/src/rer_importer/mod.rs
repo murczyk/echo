@@ -30,6 +30,7 @@ pub mod analysis;
 pub mod bgworker;
 pub mod body_noheader;
 pub mod bookmark;
+pub mod callsign_reprocess_tui;
 pub mod callsigns;
 pub mod coordinates;
 pub mod datetime;
