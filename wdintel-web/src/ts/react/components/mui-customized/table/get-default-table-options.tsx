@@ -414,6 +414,7 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
   renderMeasurementItem,
   getItemKey,
   getItemText,
+  getItemMeasurementKey,
   emptyValue,
   containerProps,
 }: {
@@ -423,6 +424,7 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
   renderMeasurementItem?: (item: TItem, index: number) => ReactNode;
   getItemKey?: (item: TItem, index: number) => string | number;
   getItemText?: (item: TItem, index: number) => string;
+  getItemMeasurementKey?: (item: TItem, index: number) => string | number;
   emptyValue?: ReactNode;
   containerProps?: (props: any) => Record<string, unknown>;
 }): MrtItemsCellRenderer<TData> {
@@ -434,6 +436,7 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
       renderMeasurementItem={renderMeasurementItem}
       getItemKey={getItemKey}
       getItemText={getItemText}
+      getItemMeasurementKey={getItemMeasurementKey}
       emptyValue={emptyValue}
       containerProps={containerProps?.(props)}
     />

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, createElement } from 'react';
+import { act, createElement, StrictMode } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -160,10 +160,17 @@ describe('MRT rendered overflow components', () => {
   let nextFrame = 0;
   let observers: Array<{ callback: ResizeObserverCallback; disconnect: ReturnType<typeof vi.fn> }> =
     [];
+  let intersectionObservers: Array<{
+    callback: IntersectionObserverCallback;
+    observe: ReturnType<typeof vi.fn>;
+    unobserve: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+  }> = [];
   let originalClientWidth: PropertyDescriptor | undefined;
   let originalScrollWidth: PropertyDescriptor | undefined;
   let originalRect: typeof HTMLElement.prototype.getBoundingClientRect;
   let originalGetComputedStyle: typeof window.getComputedStyle;
+  let originalFonts: PropertyDescriptor | undefined;
 
   const flushFrames = () => {
     const pending = [...frames.values()];
@@ -176,11 +183,47 @@ describe('MRT rendered overflow components', () => {
     );
     flushFrames();
   };
+  const installIntersectionObserver = () => {
+    intersectionObservers = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        callback: IntersectionObserverCallback;
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+        constructor(callback: IntersectionObserverCallback) {
+          this.callback = callback;
+          intersectionObservers.push(this);
+        }
+      },
+    );
+  };
+  const setIntersection = (element: Element, isIntersecting: boolean) => {
+    act(() =>
+      intersectionObservers[0]?.callback(
+        [{ target: element, isIntersecting } as IntersectionObserverEntry],
+        intersectionObservers[0] as unknown as IntersectionObserver,
+      ),
+    );
+  };
+  const installFontReadyPromise = () => {
+    let resolveFonts: (() => void) | undefined;
+    const ready = new Promise<void>((resolve) => {
+      resolveFonts = resolve;
+    });
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { ready },
+    });
+    return () => resolveFonts?.();
+  };
 
   beforeEach(() => {
     frames = new Map();
     nextFrame = 0;
     observers = [];
+    intersectionObservers = [];
     availableWidth = 100;
     textWidth = 100;
     itemWidths = {};
@@ -189,6 +232,8 @@ describe('MRT rendered overflow components', () => {
     originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
     originalRect = HTMLElement.prototype.getBoundingClientRect;
     originalGetComputedStyle = window.getComputedStyle.bind(window);
+    originalFonts = Object.getOwnPropertyDescriptor(document, 'fonts');
+    Object.defineProperty(document, 'fonts', { configurable: true, value: undefined });
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get() {
@@ -245,6 +290,7 @@ describe('MRT rendered overflow components', () => {
         unobserve = vi.fn();
       },
     );
+    vi.stubGlobal('IntersectionObserver', undefined);
   });
 
   afterEach(() => {
@@ -254,6 +300,8 @@ describe('MRT rendered overflow components', () => {
     if (originalScrollWidth)
       Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
     HTMLElement.prototype.getBoundingClientRect = originalRect;
+    if (originalFonts) Object.defineProperty(document, 'fonts', originalFonts);
+    else delete (document as Document & { fonts?: unknown }).fonts;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     document.body.replaceChildren();
@@ -660,5 +708,230 @@ describe('MRT rendered overflow components', () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     expect(view.container.querySelector('[data-mrt-overflow-fade]')).toBeNull();
     destroy(view);
+  });
+
+  it('shares bounded measurement work across cells and caches stable item geometry', () => {
+    itemWidths = { alpha: 60, beta: 60, gamma: 60, 'Ще 1': 32, 'Ще 2': 32, 'Ще 3': 32 };
+    availableWidth = 100;
+    const renderCells = (suffix = '') =>
+      createElement(
+        'div',
+        null,
+        ...Array.from({ length: 12 }, (_, index) =>
+          createElement(MrtOverflowItems<string>, {
+            key: index,
+            items: [`alpha${suffix}`, `beta${suffix}`, `gamma${suffix}`],
+            renderItem: (value) => createElement('span', { 'data-cell-item': value }, value),
+            renderMeasurementItem: (value) =>
+              createElement('span', null, value.replace(suffix, '')),
+            getItemKey: (value) => value,
+            getItemText: (value) => value,
+          }),
+        ),
+      );
+    const view = render(createElement(StrictMode, null, renderCells()));
+
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-trigger-measure]')).toHaveLength(3);
+
+    for (let index = 0; index < 30; index += 1) flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-trigger-measure]')).toHaveLength(0);
+
+    act(() => view.root.render(createElement(StrictMode, null, renderCells())));
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+
+    availableWidth = 300;
+    triggerResize();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(view.container.querySelectorAll('[data-cell-item]')).toHaveLength(36);
+
+    act(() => view.root.render(createElement(StrictMode, null, renderCells('-changed'))));
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    destroy(view);
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+  });
+
+  it('defers offscreen jobs and lets a visible cell run ahead of them', () => {
+    installIntersectionObserver();
+    itemWidths = { deferred: 60, visible: 60, 'Ще 1': 32 };
+    const renderCell = (label: string) =>
+      createElement(MrtOverflowItems<string>, {
+        key: label,
+        items: [label, 'deferred'],
+        renderItem: (value) => createElement('span', null, value),
+        getItemKey: (value) => value,
+        getItemText: (value) => value,
+      });
+    const view = render(
+      createElement(
+        'div',
+        null,
+        ...Array.from({ length: 8 }, (_, index) => renderCell(`off-${index}`)),
+        renderCell('visible'),
+      ),
+    );
+    const cells = [...view.container.querySelectorAll('[data-mrt-overflow-items]')];
+    cells.forEach((cell) => setIntersection(cell, false));
+    expect(frames.size).toBe(0);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+
+    setIntersection(cells.at(-1)!, true);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    expect(document.body.querySelector('[data-mrt-overflow-measure]')?.textContent).toContain(
+      'visible',
+    );
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(frames.size).toBe(0);
+    destroy(view);
+  });
+
+  it('promotes a deferred job once and gives it priority after an active job finishes', () => {
+    installIntersectionObserver();
+    itemWidths = { active: 60, promoted: 60, deferred: 60, 'Ще 1': 32 };
+    const view = render(
+      createElement(
+        'div',
+        null,
+        ...['active', 'promoted', 'deferred'].map((label) =>
+          createElement(MrtOverflowItems<string>, {
+            key: label,
+            items: [label, 'deferred'],
+            renderItem: (value) => createElement('span', null, value),
+            getItemKey: (value) => value,
+            getItemText: (value) => value,
+          }),
+        ),
+      ),
+    );
+    const cells = [...view.container.querySelectorAll('[data-mrt-overflow-items]')];
+    cells.forEach((cell) => setIntersection(cell, false));
+    setIntersection(cells[0], true);
+    expect(document.body.querySelector('[data-mrt-overflow-measure]')?.textContent).toContain(
+      'active',
+    );
+    setIntersection(cells[1], true);
+    setIntersection(cells[1], true);
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    expect(document.body.querySelector('[data-mrt-overflow-measure]')?.textContent).toContain(
+      'promoted',
+    );
+    destroy(view);
+  });
+
+  it('keeps offscreen changes queued, and clears queued work when items become empty', () => {
+    installIntersectionObserver();
+    const renderCell = (items: string[]) =>
+      createElement(MrtOverflowItems<string>, {
+        items,
+        renderItem: (value) => createElement('span', null, value),
+        getItemKey: (value) => value,
+        getItemText: (value) => value,
+        emptyValue: 'порожньо',
+      });
+    const view = render(renderCell(['before']));
+    const cell = view.container.querySelector('[data-mrt-overflow-items]')!;
+    setIntersection(cell, false);
+    act(() => view.root.render(renderCell(['after'])));
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    setIntersection(cell, true);
+    expect(document.body.querySelector('[data-mrt-overflow-measure]')?.textContent).toContain(
+      'after',
+    );
+    act(() => view.root.render(renderCell([])));
+    expect(view.container.textContent).toBe('порожньо');
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(frames.size).toBe(0);
+    destroy(view);
+  });
+
+  it('invalidates for font readiness once without remeasuring on visibility changes', async () => {
+    installIntersectionObserver();
+    const resolveFonts = installFontReadyPromise();
+    itemWidths = { alpha: 60, beta: 60, 'Ще 1': 32, 'Ще 2': 32 };
+    availableWidth = 100;
+    const renderMeasurementItem = vi.fn((value: string) => createElement('span', null, value));
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta'],
+        renderItem: (value) => createElement('button', { 'data-item': value }, value),
+        renderMeasurementItem,
+        getItemKey: (value) => value,
+        getItemText: (value) => value,
+      }),
+    );
+    const cell = view.container.querySelector('[data-mrt-overflow-items]')!;
+    setIntersection(cell, true);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    flushFrames();
+    const initialMeasurementRenderCount = renderMeasurementItem.mock.calls.length;
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+
+    await act(async () => {
+      resolveFonts();
+      await Promise.resolve();
+    });
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    expect(renderMeasurementItem.mock.calls.length).toBeGreaterThan(initialMeasurementRenderCount);
+    flushFrames();
+    const settledMeasurementRenderCount = renderMeasurementItem.mock.calls.length;
+
+    setIntersection(cell, false);
+    setIntersection(cell, true);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(renderMeasurementItem).toHaveBeenCalledTimes(settledMeasurementRenderCount);
+
+    availableWidth = 300;
+    triggerResize();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(view.container.querySelectorAll('[data-item]')).toHaveLength(2);
+    destroy(view);
+  });
+
+  it('defers font invalidation while offscreen and ignores font readiness after unmount', async () => {
+    installIntersectionObserver();
+    const resolveFonts = installFontReadyPromise();
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta'],
+        renderItem: (value) => createElement('span', null, value),
+        getItemKey: (value) => value,
+        getItemText: (value) => value,
+      }),
+    );
+    const cell = view.container.querySelector('[data-mrt-overflow-items]')!;
+    setIntersection(cell, false);
+    await act(async () => {
+      resolveFonts();
+      await Promise.resolve();
+    });
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(frames.size).toBe(0);
+
+    setIntersection(cell, true);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    destroy(view);
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+
+    const resolveUnmountedFonts = installFontReadyPromise();
+    const unmounted = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha'],
+        renderItem: (value) => createElement('span', null, value),
+      }),
+    );
+    destroy(unmounted);
+    await act(async () => {
+      resolveUnmountedFonts();
+      await Promise.resolve();
+    });
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(frames.size).toBe(0);
   });
 });

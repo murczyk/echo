@@ -102,9 +102,108 @@ type OverflowItemsProps<T> = {
   renderMeasurementItem?: (item: T, index: number) => ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
   getItemText?: (item: T, index: number) => string;
+  getItemMeasurementKey?: (item: T, index: number) => string | number;
   emptyValue?: ReactNode;
   containerProps?: Record<string, unknown>;
 };
+
+type ItemMeasurements = {
+  signature: string;
+  itemWidths: number[];
+  triggerWidths: number[];
+  itemGap: number;
+  triggerGap: number;
+  spacerWidth: number;
+};
+
+type MeasurementJob = { start: () => void; priority: 'visible' | 'deferred' };
+
+const visibleMeasurementJobs = new Map<string, MeasurementJob>();
+const deferredMeasurementJobs = new Map<string, MeasurementJob>();
+let activeMeasurementJob: string | null = null;
+let cancelMeasurementDrain: (() => void) | null = null;
+const visibilityCallbacks = new Map<HTMLElement, (visible: boolean) => void>();
+let sharedIntersectionObserver: IntersectionObserver | null = null;
+
+function getSharedIntersectionObserver() {
+  if (typeof IntersectionObserver === 'undefined') return null;
+  if (!sharedIntersectionObserver) {
+    sharedIntersectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) =>
+          visibilityCallbacks.get(entry.target as HTMLElement)?.(entry.isIntersecting),
+        );
+      },
+      { rootMargin: '240px 0px' },
+    );
+  }
+  return sharedIntersectionObserver;
+}
+
+function observeMeasurementVisibility(element: HTMLElement, callback: (visible: boolean) => void) {
+  const observer = getSharedIntersectionObserver();
+  if (!observer) {
+    callback(true);
+    return () => undefined;
+  }
+  visibilityCallbacks.set(element, callback);
+  observer.observe(element);
+  return () => {
+    visibilityCallbacks.delete(element);
+    observer.unobserve(element);
+    if (visibilityCallbacks.size === 0) {
+      observer.disconnect();
+      sharedIntersectionObserver = null;
+    }
+  };
+}
+
+function drainMeasurementJobs() {
+  cancelMeasurementDrain = null;
+  if (activeMeasurementJob || visibleMeasurementJobs.size === 0) return;
+  const [jobId, job] = visibleMeasurementJobs.entries().next().value as [string, MeasurementJob];
+  visibleMeasurementJobs.delete(jobId);
+  activeMeasurementJob = jobId;
+  job.start();
+}
+
+function queueMeasurementJob(
+  jobId: string,
+  start: () => void,
+  priority: MeasurementJob['priority'],
+) {
+  if (activeMeasurementJob === jobId) return;
+  deferredMeasurementJobs.delete(jobId);
+  visibleMeasurementJobs.delete(jobId);
+  const queue = priority === 'visible' ? visibleMeasurementJobs : deferredMeasurementJobs;
+  queue.set(jobId, { start, priority });
+  if (priority === 'visible' && !activeMeasurementJob) {
+    drainMeasurementJobs();
+  }
+}
+
+function releaseMeasurementJob(jobId: string) {
+  if (activeMeasurementJob !== jobId) return;
+  activeMeasurementJob = null;
+  if (visibleMeasurementJobs.size > 0 && !cancelMeasurementDrain) {
+    cancelMeasurementDrain = scheduleFrame(drainMeasurementJobs);
+  }
+}
+
+function cancelMeasurementJob(jobId: string) {
+  visibleMeasurementJobs.delete(jobId);
+  deferredMeasurementJobs.delete(jobId);
+  if (activeMeasurementJob !== jobId) return;
+  activeMeasurementJob = null;
+  if (visibleMeasurementJobs.size > 0 && !cancelMeasurementDrain) {
+    cancelMeasurementDrain = scheduleFrame(drainMeasurementJobs);
+  }
+}
+
+function measurementSignaturePart(value: string | number): string {
+  const text = String(value);
+  return `${text.length}:${text}`;
+}
 
 function scheduleFrame(callback: () => void) {
   if (typeof requestAnimationFrame === 'function') {
@@ -155,6 +254,7 @@ export function MrtOverflowItems<T>({
   renderMeasurementItem = renderItem,
   getItemKey = (_, index) => index,
   getItemText = (_, index) => `Значення ${index + 1}`,
+  getItemMeasurementKey,
   emptyValue = '—',
   containerProps,
 }: OverflowItemsProps<T>) {
@@ -166,6 +266,10 @@ export function MrtOverflowItems<T>({
   const previousTriggerRef = useRef<HTMLElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const surfaceId = `mrt-overflow-surface-${useId().replaceAll(':', '')}`;
+  const measurementJobId = `mrt-overflow-measure-${surfaceId}`;
+  const measurementsRef = useRef<ItemMeasurements | null>(null);
+  const [isMeasuring, setIsMeasuring] = useState(false);
+  const [isVisible, setIsVisible] = useState(() => typeof IntersectionObserver === 'undefined');
   const [visibleCount, setVisibleCount] = useState(items.length);
   const [isOpen, setIsOpen] = useState(false);
   const compactFirstItem = visibleCount === 0;
@@ -181,12 +285,60 @@ export function MrtOverflowItems<T>({
     window.setTimeout(() => previousTriggerRef.current?.focus(), 0);
   };
 
+  const measurementSignature = [
+    measurementSignaturePart(items.length),
+    ...items.flatMap((item, index) => [
+      measurementSignaturePart(getItemKey(item, index)),
+      measurementSignaturePart(getItemText(item, index)),
+      measurementSignaturePart(getItemMeasurementKey?.(item, index) ?? ''),
+    ]),
+  ].join('|');
+
+  const updateVisibleCount = useCallback((measurements: ItemMeasurements) => {
+    const container = containerRef.current;
+    if (!container || container.clientWidth <= 0) return;
+    const nextCount = calculateVisibleItemCount({
+      itemWidths: measurements.itemWidths,
+      contentWidth: container.clientWidth,
+      triggerWidths: measurements.triggerWidths,
+      itemGap: measurements.itemGap,
+      triggerGap: measurements.triggerGap,
+      spacerWidth: measurements.spacerWidth,
+    });
+    setVisibleCount((current) => (current === nextCount ? current : nextCount));
+  }, []);
+
+  const queueMeasurement = useCallback(() => {
+    const container = containerRef.current;
+    if (items.length === 0 || !container || container.clientWidth <= 0) return;
+    const cachedMeasurements = measurementsRef.current;
+    if (cachedMeasurements?.signature === measurementSignature) {
+      updateVisibleCount(cachedMeasurements);
+      return;
+    }
+    queueMeasurementJob(
+      measurementJobId,
+      () => setIsMeasuring(true),
+      isVisible ? 'visible' : 'deferred',
+    );
+  }, [isVisible, items.length, measurementJobId, measurementSignature, updateVisibleCount]);
+  const queueMeasurementRef = useRef(queueMeasurement);
+  queueMeasurementRef.current = queueMeasurement;
+
   const measure = useCallback(() => {
     const container = containerRef.current;
     const measuredItems = measureRef.current?.children;
-    if (!container || !measuredItems) return;
+    if (items.length === 0 || !container || !measuredItems) {
+      setIsMeasuring(false);
+      releaseMeasurementJob(measurementJobId);
+      return;
+    }
     const availableWidth = container.clientWidth;
-    if (availableWidth <= 0) return;
+    if (availableWidth <= 0) {
+      setIsMeasuring(false);
+      releaseMeasurementJob(measurementJobId);
+      return;
+    }
     const itemWidths = Array.from(measuredItems)
       .slice(0, items.length)
       .map((item) => item.getBoundingClientRect().width);
@@ -196,19 +348,65 @@ export function MrtOverflowItems<T>({
       (trigger) => trigger?.getBoundingClientRect().width ?? 0,
     );
     const spacerWidth = spacerMeasureRef.current?.getBoundingClientRect().width ?? 0;
-    const nextCount = calculateVisibleItemCount({
+    const nextMeasurements = {
+      signature: measurementSignature,
       itemWidths,
-      contentWidth: availableWidth,
       triggerWidths,
       itemGap,
       triggerGap,
       spacerWidth,
+    };
+    measurementsRef.current = nextMeasurements;
+    updateVisibleCount(nextMeasurements);
+    setIsMeasuring(false);
+    releaseMeasurementJob(measurementJobId);
+  }, [items.length, measurementJobId, measurementSignature, updateVisibleCount]);
+
+  useLayoutEffect(() => {
+    if (items.length === 0) {
+      measurementsRef.current = null;
+      cancelMeasurementJob(measurementJobId);
+      setIsMeasuring(false);
+      setVisibleCount(0);
+      setIsOpen(false);
+    }
+  }, [items.length, measurementJobId]);
+
+  useLayoutEffect(() => {
+    const element = containerRef.current;
+    if (!element || items.length === 0) return;
+    return observeMeasurementVisibility(element, setIsVisible);
+  }, [items.length]);
+
+  useLayoutEffect(() => {
+    queueMeasurement();
+  }, [queueMeasurement]);
+
+  useLayoutEffect(() => {
+    if (!isMeasuring) return;
+    return scheduleFrame(measure);
+  }, [isMeasuring, measure]);
+
+  useEffect(
+    () => () => {
+      cancelMeasurementJob(measurementJobId);
+    },
+    [measurementJobId],
+  );
+
+  useEffect(() => {
+    const fonts = (document as Document & { fonts?: { ready: Promise<unknown> } }).fonts;
+    if (!fonts) return;
+    let mounted = true;
+    fonts.ready.then(() => {
+      if (!mounted) return;
+      measurementsRef.current = null;
+      queueMeasurementRef.current();
     });
-
-    setVisibleCount((current) => (current === nextCount ? current : nextCount));
-  }, [items]);
-
-  useLayoutEffect(() => scheduleFrame(measure), [measure]);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -216,14 +414,14 @@ export function MrtOverflowItems<T>({
     let cancelFrame: () => void = () => undefined;
     const observer = new ResizeObserver(() => {
       cancelFrame();
-      cancelFrame = scheduleFrame(measure);
+      cancelFrame = scheduleFrame(queueMeasurement);
     });
     observer.observe(element);
     return () => {
       cancelFrame();
       observer.disconnect();
     };
-  }, [measure]);
+  }, [queueMeasurement]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -254,7 +452,7 @@ export function MrtOverflowItems<T>({
   };
 
   const measurement =
-    typeof document !== 'undefined'
+    isMeasuring && typeof document !== 'undefined'
       ? createPortal(
           <Box
             ref={measureRef}
