@@ -1,14 +1,20 @@
 import MergeIcon from '@mui/icons-material/Merge';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Box, IconButton, Link, Stack, Tooltip } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import type { Unit, UnitDuplicate } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import {
+  mrtCustomCell,
+  mrtTextCell,
+  type AppMrtColumnDef,
+} from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import { getUnitDuplicates, mergeDuplicateUnit } from '../../services/api/units';
 import { handleNavigateWithinSpaClick } from '../../utils/browser';
 import { hasRole } from '../../utils/roles';
@@ -107,46 +113,64 @@ export function AdminUnitDuplicatesPage({
     }
   }
 
-  const columns = useMemo<MRT_ColumnDef<UnitDuplicate>[]>(
+  const columns = useMemo<AppMrtColumnDef<UnitDuplicate>[]>(
     () => [
       {
         id: 'sigintUnitName',
         accessorFn: (row) => row.sigintUnit?.name ?? '',
         header: 'Назва SIGINT підрозділу',
         size: 280,
-        Cell: ({ row }) => {
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell<UnitDuplicate>(({ row }) => {
           const href = `/rer-units/${row.original.sigintUnit.id}`;
           return (
-            <Link href={href} onClick={(event) => handleNavigateWithinSpaClick(event, href)}>
-              {row.original.sigintUnit.name}
-            </Link>
+            <MrtOverflowText
+              displayValue={row.original.sigintUnit.name}
+              fullValue={row.original.sigintUnit.name}
+              interactive
+              component="a"
+              componentProps={{
+                href,
+                onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                  handleNavigateWithinSpaClick(event, href),
+              }}
+            />
           );
-        },
+        }),
       },
       {
         id: 'sigintUnitSegments',
         accessorFn: (row) => (row.sigintUnit ? sigintUnitSegments(row.sigintUnit) : ''),
         header: 'Сегменти назви SIGINT',
         size: 360,
-        Cell: ({ cell }) => String(cell.getValue() || '—'),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => String(cell.getValue() || '—'),
+          fullValue: ({ cell }) => String(cell.getValue() || ''),
+        }),
       },
       {
         id: 'orbitUnitFullName',
         accessorFn: (row) => row.orbitUnitFullName,
         header: 'Повна назва Orbit підрозділу',
         size: 360,
-        Cell: ({ row }) => {
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+        Cell: mrtCustomCell<UnitDuplicate>(({ row }) => {
           const label = row.original.orbitUnitFullName.trim() || row.original.orbitUnitId;
           return (
-            <Link
-              href={`https://delta.mil.gov.ua/orbit/units/${row.original.orbitUnitId}/organizational-structure`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {label}
-            </Link>
+            <MrtOverflowText
+              displayValue={label}
+              fullValue={label}
+              interactive
+              component="a"
+              componentProps={{
+                href: `https://delta.mil.gov.ua/orbit/units/${row.original.orbitUnitId}/organizational-structure`,
+                target: '_blank',
+                rel: 'noopener noreferrer',
+              }}
+            />
           );
-        },
+        }),
       },
     ],
     [],
@@ -167,7 +191,7 @@ export function AdminUnitDuplicatesPage({
     >
       <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, p: embedded ? 0 : 2 }}>
         <TablePageToolbar
-          title="Дублікати Підрозділів"
+          title="Дублікати підрозділів"
           withGlobalTextFilter
           trailingActionsAfterInternal={
             <Tooltip title="Оновити">

@@ -239,6 +239,11 @@ export async function installAnalysisNeoApiMocks(
       return;
     }
 
+    if (pathname === '/api/tags/tags-list') {
+      await fulfillJson(route, []);
+      return;
+    }
+
     if (pathname === '/api/rer/analysis/saved-filters') {
       await fulfillJson(route, emptySavedFiltersResponse());
       return;

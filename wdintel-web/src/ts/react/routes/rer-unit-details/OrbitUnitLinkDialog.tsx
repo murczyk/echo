@@ -16,11 +16,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import {
-  type MRT_ColumnDef,
-  MaterialReactTable,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
@@ -35,7 +31,10 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtTextCell,
+  useAppMaterialReactTable,
   getFilterModeHelperText,
   getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
@@ -92,55 +91,49 @@ function useOrbitUnitColumns({
   loading: boolean;
   processingUnitId: string | null;
   onAction: (unit: OrbitUnitLinkCandidate) => void;
-}): MRT_ColumnDef<OrbitUnitLinkCandidate>[] {
+}): AppMrtColumnDef<OrbitUnitLinkCandidate>[] {
   return useMemo(
     () => [
       {
         header: 'Повна назва',
         accessorKey: 'fullName',
         size: 280,
-        Cell: ({ cell }) => (
-          <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-            {renderTextValue(cell.getValue())}
-          </Box>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => renderTextValue(cell.getValue()),
+          fullValue: ({ cell }) => renderTextValue(cell.getValue()),
+        }),
       },
       {
         header: 'Приналежність',
         accessorKey: 'generativeUnitNameFull',
         size: 320,
-        Cell: ({ cell }) => (
-          <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-            {renderTextValue(cell.getValue())}
-          </Box>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => renderTextValue(cell.getValue()),
+          fullValue: ({ cell }) => renderTextValue(cell.getValue()),
+        }),
       },
       {
         header: 'Підпорядкування',
         accessorKey: 'operationalUnitNameFull',
         size: 320,
-        Cell: ({ cell }) => (
-          <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-            {renderTextValue(cell.getValue())}
-          </Box>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => renderTextValue(cell.getValue()),
+          fullValue: ({ cell }) => renderTextValue(cell.getValue()),
+        }),
       },
       {
         header: 'ID',
         accessorKey: 'unitId',
         size: 280,
-        Cell: ({ cell }) => (
-          <Box
-            component="span"
-            sx={{
-              fontFamily: 'monospace',
-              fontSize: '0.8rem',
-              overflowWrap: 'anywhere',
-            }}
-          >
-            {renderTextValue(cell.getValue())}
-          </Box>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => renderTextValue(cell.getValue()),
+          fullValue: ({ cell }) => renderTextValue(cell.getValue()),
+          displaySx: { fontFamily: 'monospace', fontSize: '0.8rem' },
+        }),
       },
       {
         header: '',
@@ -149,6 +142,7 @@ function useOrbitUnitColumns({
         enableColumnActions: false,
         enableColumnFilter: false,
         enableSorting: false,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <Button
             size="small"
@@ -336,8 +330,7 @@ function OrbitUnitDialogBody(props: OrbitUnitDialogProps) {
     processingUnitId,
     onAction: handleAction,
   });
-  const table = useMaterialReactTable({
-    ...defaultMrtOptions,
+  const table = useAppMaterialReactTable({
     columns,
     data: units,
     enableSorting: true,

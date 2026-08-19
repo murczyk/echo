@@ -491,7 +491,36 @@ async fn parse_one(
     }
 }
 
-fn parse_callsigns(response_text: &str) -> Result<Vec<String>, String> {
+pub(crate) async fn extract_ai_callsigns(
+    ai_engine: &ai_engine::Model,
+    prompt: &str,
+    body: &str,
+) -> Result<Vec<String>, AppError> {
+    let response_text = request_ai_response(
+        ai_engine,
+        vec![
+            AiEngineMessage {
+                role: AI_CHAT_ROLE_SYSTEM.to_string(),
+                content: prompt.to_string(),
+            },
+            AiEngineMessage {
+                role: AI_CHAT_ROLE_USER.to_string(),
+                content: body.to_string(),
+            },
+        ],
+    )
+    .await
+    .c(h!())?;
+    let callsigns =
+        parse_callsigns(&response_text).map_err(|error| AppError::BL {
+            msg: format!("{error}; відповідь ШІ: {response_text}"),
+        })?;
+    Ok(worker::normalize_callsigns(callsigns))
+}
+
+pub(crate) fn parse_callsigns(
+    response_text: &str,
+) -> Result<Vec<String>, String> {
     let response_json = strip_json_code_fence(response_text);
     let value: serde_json::Value = serde_json::from_str(response_json)
         .map_err(|error| format!("Некоректний JSON: {error}"))?;

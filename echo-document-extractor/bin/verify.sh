@@ -3,7 +3,7 @@ set -euo pipefail
 TARGET_HOST=${1:-${TARGET_HOST:-echo-document-extractor}}
 ssh -o BatchMode=yes "$TARGET_HOST" sudo bash -s <<'REMOTE'
 set -euo pipefail
-units=(echo-document-extractor-firewall.service echo-document-extractor.service echo-document-extractor-worker.service echo-document-extractor-otel.service)
+units=(echo-document-extractor-firewall.service echo-document-extractor.service echo-document-extractor-worker.service echo-document-extractor-host-cpu-exporter.service echo-document-extractor-otel.service)
 /opt/echo-document-extractor/bin/configure-firewall.sh check >/dev/null
 systemd-analyze verify "${units[@]/#//lib/systemd/system/}"
 for unit in "${units[@]}"; do
@@ -28,6 +28,7 @@ for _ in $(seq 1 120); do
 done
 (( ready )) || { printf 'worker/Paddle/router readiness timed out\n' >&2; exit 1; }
 [[ $(curl -sS -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer invalid' "$base/v1/status") == 401 ]]
+curl -fsS http://127.0.0.1:9100/metrics | grep -F echo_host_cpu_seconds_total >/dev/null
 curl -fsS http://127.0.0.1:29000/metrics | grep -F echo_document_extractor_process_info >/dev/null
 worker_metrics_ready=0
 for _ in $(seq 1 60); do

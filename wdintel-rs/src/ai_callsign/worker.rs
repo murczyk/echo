@@ -30,9 +30,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
-struct WorkerConfig {
-    prompt: String,
-    ai_engine: ai_engine::Model,
+#[derive(Clone)]
+pub(crate) struct WorkerConfig {
+    pub prompt: String,
+    pub ai_engine: ai_engine::Model,
 }
 
 struct CallsignJobState {
@@ -198,7 +199,7 @@ async fn process_next(
     Ok(true)
 }
 
-async fn load_worker_config(
+pub(crate) async fn load_worker_config(
     dbx: &DatabaseConnection,
 ) -> Result<Option<WorkerConfig>, AppError> {
     let settings =
@@ -438,7 +439,7 @@ where
     Ok(())
 }
 
-fn normalize_callsigns(callsigns: Vec<String>) -> Vec<String> {
+pub(crate) fn normalize_callsigns(callsigns: Vec<String>) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut normalized = Vec::new();
     for callsign in callsigns {
@@ -450,7 +451,7 @@ fn normalize_callsigns(callsigns: Vec<String>) -> Vec<String> {
     normalized
 }
 
-fn merge_current_and_ai_callsigns(
+pub(crate) fn merge_current_and_ai_callsigns(
     current: Vec<String>,
     ai_callsigns: Vec<String>,
 ) -> Vec<String> {

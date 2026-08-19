@@ -170,7 +170,7 @@ describe('DeviceAnalyticsPanel', () => {
     mocks.listDeviceAnalyticsFiles
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ files: [], nextCursor: null });
-    mocks.reanalyzeDevice.mockResolvedValue({ scheduledFileCount: 42 });
+    mocks.reanalyzeDevice.mockResolvedValue({ run: { runId: 'run-1' } });
 
     renderPanel(vi.fn(), { isAdmin: true });
     await flush();
@@ -191,8 +191,6 @@ describe('DeviceAnalyticsPanel', () => {
     act(() => bodyButtonContaining('Запустити аналіз').click());
     await flush();
     expect(mocks.reanalyzeDevice).toHaveBeenCalledWith({ deviceId: 'device-1' });
-    expect(container.textContent).toContain(
-      'Повторний аналіз запущено у фоновому режимі для 42 файлів.',
-    );
+    expect(container.textContent).toContain('Повторний аналіз запущено у фоновому режимі.');
   });
 });

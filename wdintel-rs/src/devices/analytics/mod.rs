@@ -1,22 +1,20 @@
 mod bl;
 pub(in crate::devices) mod query;
 mod queue;
-mod rules;
+pub(in crate::devices) mod rules;
 #[cfg(test)]
 mod tests;
 pub mod types;
 pub(crate) mod worker;
 
-pub(crate) const WORKER_COUNT: usize = 4;
-pub(crate) const BATCH_SIZE: u64 = 1_000;
-const DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS: i32 = 10;
-
 use self::types::{
     AdminAnalyticsTag, AnalyticsTagIdReq, CreateAnalyticsTagReq,
     DeviceAnalyticsFilesReq, DeviceAnalyticsFilesRsp, DeviceAnalyticsReq,
-    DeviceAnalyticsSummaryRsp, DeviceAnalyticsTagsRsp,
-    ListAnalyticsTagTestFilesRsp, ListAnalyticsTagsRsp, ReanalysisRsp,
-    ReanalyzeDeviceReq, RuleTestFile, TestAnalyticsTagRuleRsp,
+    DeviceAnalyticsSummaryRsp, DeviceAnalyticsTagsRsp, GetAnalysisRunReq,
+    GetAnalysisRunRsp, ListAnalysisRunFilesReq, ListAnalysisRunFilesRsp,
+    ListAnalysisRunsReq, ListAnalysisRunsRsp, ListAnalyticsTagTestFilesRsp,
+    ListAnalyticsTagsRsp, ReanalyzeAllRsp, ReanalyzeDeviceReq,
+    ReanalyzeDeviceRsp, RuleTestFile, TestAnalyticsTagRuleRsp,
     UpdateAnalyticsTagReq,
 };
 use crate::devices::access;
@@ -32,6 +30,8 @@ pub(in crate::devices) use bl::{
     hydrate_active_tags, load_active_tag_memberships, matches_tag_filter,
     normalize_tag_filter,
 };
+pub(in crate::devices) use queue::ensure_sync_run;
+pub(crate) use queue::initialize_definition;
 pub(in crate::devices) use types::AnalyticsTag;
 
 #[post("/api/admin/device-analytics/tags/list")]
@@ -169,15 +169,13 @@ pub(crate) async fn test_tag_rule(
 pub(crate) async fn reanalyze_all(
     env: Data<Env>,
     user: Identity,
-) -> Result<Json<ReanalysisRsp>, AppError> {
+) -> Result<Json<ReanalyzeAllRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
-    Ok(Json(ReanalysisRsp {
-        scheduled_file_count: bl::schedule_all_reanalysis(
-            env.file_registry_db()?,
-        )
-        .await
-        .c(h!())?,
-    }))
+    Ok(Json(
+        bl::schedule_all_reanalysis(env.file_registry_db()?)
+            .await
+            .c(h!())?,
+    ))
 }
 
 #[post("/api/admin/device-analytics/reanalyze/device")]
@@ -185,14 +183,14 @@ pub(crate) async fn reanalyze_device(
     env: Data<Env>,
     user: Identity,
     Json(body): Json<ReanalyzeDeviceReq>,
-) -> Result<Json<ReanalysisRsp>, AppError> {
+) -> Result<Json<ReanalyzeDeviceRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
     let device_id = bl::parse_canonical_uuid(&body.device_id, "device_id")?;
-    Ok(Json(ReanalysisRsp {
-        scheduled_file_count: bl::schedule_device_reanalysis(
+    Ok(Json(
+        bl::schedule_device_reanalysis(
             &env.dbx,
             env.file_registry_db()?,
             &login,
@@ -200,7 +198,72 @@ pub(crate) async fn reanalyze_device(
         )
         .await
         .c(h!())?,
-    }))
+    ))
+}
+
+#[post("/api/device/analytics/runs/get")]
+pub(crate) async fn get_analysis_run(
+    env: Data<Env>,
+    user: Identity,
+    Json(body): Json<GetAnalysisRunReq>,
+) -> Result<Json<GetAnalysisRunRsp>, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    let run_id = bl::parse_canonical_uuid(&body.run_id, "run_id")?;
+    Ok(Json(
+        bl::get_analysis_run(&env.dbx, env.file_registry_db()?, &login, run_id)
+            .await
+            .c(h!())?,
+    ))
+}
+
+#[post("/api/device/analytics/runs/list")]
+pub(crate) async fn list_analysis_runs(
+    env: Data<Env>,
+    user: Identity,
+    Json(body): Json<ListAnalysisRunsReq>,
+) -> Result<Json<ListAnalysisRunsRsp>, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    let device_id = bl::parse_canonical_uuid(&body.device_id, "device_id")?;
+    Ok(Json(
+        bl::list_analysis_runs(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            device_id,
+            body.limit,
+            body.cursor,
+        )
+        .await
+        .c(h!())?,
+    ))
+}
+
+#[post("/api/device/analytics/runs/files")]
+pub(crate) async fn list_analysis_run_files(
+    env: Data<Env>,
+    user: Identity,
+    Json(body): Json<ListAnalysisRunFilesReq>,
+) -> Result<Json<ListAnalysisRunFilesRsp>, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    let run_id = bl::parse_canonical_uuid(&body.run_id, "run_id")?;
+    Ok(Json(
+        bl::list_analysis_run_files(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            run_id,
+            body.limit,
+            body.cursor,
+        )
+        .await
+        .c(h!())?,
+    ))
 }
 
 #[post("/api/device/analytics/tags")]

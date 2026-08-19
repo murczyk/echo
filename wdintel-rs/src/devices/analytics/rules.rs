@@ -131,6 +131,132 @@ pub(in crate::devices) fn deserialize_rule_expression(
         )
     })
 }
+pub(in crate::devices) fn canonicalize_tag_rules(
+    mut definitions: Vec<TagRuleDefinition>,
+) -> Result<Vec<TagRuleDefinition>, RuleValidationError> {
+    definitions.sort_by_key(|definition| definition.tag_id);
+    if definitions
+        .windows(2)
+        .any(|pair| pair[0].tag_id == pair[1].tag_id)
+    {
+        return Err(validation_error(
+            "rules",
+            "duplicate_tag_id",
+            "Набір правил містить повторюваний ідентифікатор тегу",
+        ));
+    }
+    for definition in &mut definitions {
+        let mut state = CompilerState { nodes: 0 };
+        definition.rule_expression = canonicalize_expression(
+            definition.rule_expression.clone(),
+            "rule_expression",
+            1,
+            &mut state,
+        )?;
+    }
+    compile_tag_rules(definitions.clone())?;
+    Ok(definitions)
+}
+
+pub(in crate::devices) fn evaluator_inputs_equal(
+    left: &FileAnalysisInput<'_>,
+    right: &FileAnalysisInput<'_>,
+) -> bool {
+    let left = NormalizedFileMetadata::from_input(left);
+    let right = NormalizedFileMetadata::from_input(right);
+    [
+        RuleField::FileName,
+        RuleField::DirectoryPath,
+        RuleField::FullPath,
+        RuleField::Extension,
+    ]
+    .into_iter()
+    .all(|field| left.field(field) == right.field(field))
+}
+
+fn canonicalize_expression(
+    expression: RuleExpression,
+    path: &str,
+    depth: usize,
+    state: &mut CompilerState,
+) -> Result<RuleExpression, RuleValidationError> {
+    if depth > MAX_RULE_DEPTH {
+        return Err(validation_error(
+            path,
+            "max_depth_exceeded",
+            "Правило має надто велику глибину",
+        ));
+    }
+    state.nodes += 1;
+    if state.nodes > MAX_RULE_NODES {
+        return Err(validation_error(
+            path,
+            "max_nodes_exceeded",
+            "Правило містить надто багато умов",
+        ));
+    }
+    match expression {
+        RuleExpression::RuleAll { children } => Ok(RuleExpression::RuleAll {
+            children: canonicalize_children(children, path, depth, state)?,
+        }),
+        RuleExpression::RuleAny { children } => Ok(RuleExpression::RuleAny {
+            children: canonicalize_children(children, path, depth, state)?,
+        }),
+        RuleExpression::Not { child } => Ok(RuleExpression::Not {
+            child: Box::new(canonicalize_expression(
+                *child,
+                &format!("{path}.child"),
+                depth + 1,
+                state,
+            )?),
+        }),
+        RuleExpression::Match {
+            field,
+            matcher,
+            values,
+        } => {
+            let mut values = normalize_values(values, matcher, path)?;
+            values.sort_by_cached_key(|value| value.to_lowercase());
+            Ok(RuleExpression::Match {
+                field,
+                matcher,
+                values,
+            })
+        }
+    }
+}
+
+fn canonicalize_children(
+    children: Vec<RuleExpression>,
+    path: &str,
+    depth: usize,
+    state: &mut CompilerState,
+) -> Result<Vec<RuleExpression>, RuleValidationError> {
+    if children.is_empty() {
+        return Err(validation_error(
+            &format!("{path}.children"),
+            "empty_group",
+            "Група правила повинна містити хоча б одну умову",
+        ));
+    }
+    let mut children = children
+        .into_iter()
+        .enumerate()
+        .map(|(index, child)| {
+            canonicalize_expression(
+                child,
+                &format!("{path}.children[{index}]"),
+                depth + 1,
+                state,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    children.sort_by_cached_key(|child| {
+        serde_json::to_string(child).expect("RuleExpression serializes")
+    });
+    children.dedup();
+    Ok(children)
+}
 
 pub(in crate::devices) fn compile_tag_rules(
     mut definitions: Vec<TagRuleDefinition>,

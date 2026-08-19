@@ -1,6 +1,6 @@
 import { Box } from '@mui/material';
 import type { MRT_VisibilityState } from 'material-react-table';
-import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
 import type { Palitra } from '../../../../../Bindings';
@@ -13,6 +13,7 @@ import {
 import {
   buildDefaultColumnOrder,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
@@ -156,10 +157,9 @@ export function PalitraTable({
     onSetSelectedPalitraIds([]);
   }, [tableStateContext.globalFilter, tableStateContext.columnFilters, tableStateContext.sorting]);
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: tableRows,
-    ...defaultMRTOptions,
     enablePagination: false,
     enableBottomToolbar: false,
     enableTopToolbar: false,

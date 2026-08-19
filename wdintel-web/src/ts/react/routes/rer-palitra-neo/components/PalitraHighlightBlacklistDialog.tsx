@@ -10,8 +10,8 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import type { MRT_ColumnDef, MRT_RowData } from 'material-react-table';
-import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import type { MRT_RowData } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useMemo, useState } from 'react';
 
 import type { Palitra, PalitraHighlightBlacklistEntry } from '../../../../../Bindings';
@@ -25,7 +25,10 @@ import {
   getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
 
@@ -66,7 +69,7 @@ export function PalitraHighlightBlacklistDialog({
   onClose,
 }: Props) {
   const [globalFilter, setGlobalFilter] = useState('');
-  const columns = useMemo<MRT_ColumnDef<BlacklistRow>[]>(
+  const columns = useMemo<AppMrtColumnDef<BlacklistRow>[]>(
     () => [
       {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -81,7 +84,11 @@ export function PalitraHighlightBlacklistDialog({
         minSize: 48,
         maxSize: 48,
         grow: false,
-        Cell: ({ row }) => row.index + 1,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => String(row.index + 1),
+          fullValue: ({ row }) => String(row.index + 1),
+        }),
       },
       {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
@@ -95,6 +102,7 @@ export function PalitraHighlightBlacklistDialog({
         minSize: 48,
         maxSize: 48,
         grow: false,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => {
           const pending = pendingEntryIds.has(row.original.id);
           return (
@@ -124,15 +132,18 @@ export function PalitraHighlightBlacklistDialog({
         enableGlobalFilter: false,
         enableColumnFilter: false,
         enableResizing: true,
-        Cell: ({ row }) => row.original.createdByLogin || '—',
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.createdByLogin || '—',
+          fullValue: ({ row }) => row.original.createdByLogin || '—',
+        }),
         minSize: 160,
         size: 220,
       },
     ],
     [mutationBlocked, onDelete, pendingEntryIds],
   );
-  const table = useMaterialReactTable({
-    ...defaultMRTOptions,
+  const table = useAppMaterialReactTable({
     columns,
     data: error || loading ? [] : entries,
     enablePagination: false,

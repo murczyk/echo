@@ -138,6 +138,7 @@ export type NetworkDetailsNeoPageState = {
   relationsError: string | null;
   relationsSearch: string;
   relationsEnabledFreqs: string[];
+  relationsEnabledFreqsCustomized: boolean;
   relationsMinIntensity: number;
   relationsShowLabels: boolean;
   relationsSelectedNodeId: string | null;
@@ -295,6 +296,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   relationsError: null,
   relationsSearch: '',
   relationsEnabledFreqs: [],
+  relationsEnabledFreqsCustomized: false,
   relationsMinIntensity: NETWORK_RELATIONS_DEFAULT_MIN_INTENSITY,
   relationsShowLabels: true,
   relationsSelectedNodeId: null,

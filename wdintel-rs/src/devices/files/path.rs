@@ -10,12 +10,14 @@ pub(in crate::devices) fn parse(
     absolute_path: String,
     field_path: &str,
 ) -> Result<ParsedSourcePath, FilesystemError> {
+    let absolute_path = absolute_path.trim().to_string();
     validate_absolute_path_limits(&absolute_path, field_path)?;
 
     let (root_name, components) = parse_windows_path(&absolute_path)
         .ok_or_else(|| invalid_absolute_path(field_path))?;
 
     validate_path_component_limits(&components, field_path)?;
+    let absolute_path = format!("{root_name}{}", components.join("\\"));
     let components = components.into_iter().map(str::to_string).collect();
 
     Ok(ParsedSourcePath {

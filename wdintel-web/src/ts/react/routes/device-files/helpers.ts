@@ -1,7 +1,6 @@
 import type {
   BrowseDeviceFilesReq,
   DeviceFileTreeEntry,
-  FileSyncError,
   SearchDeviceFilesReq,
   SyncDeviceFilesReq,
   SyncDeviceFilesRsp,
@@ -15,6 +14,7 @@ import {
   type DeviceFileSearchDraft,
   type DeviceFileSearchValidationErrors,
   type DeviceFileSyncField,
+  type DeviceFileSyncResult,
   type DeviceFileSyncRow,
 } from './types';
 
@@ -143,12 +143,13 @@ function createLocalSyncRowId(): string {
 export function createEmptyDeviceFileSyncRow(): DeviceFileSyncRow {
   return {
     localId: createLocalSyncRowId(),
-    fileId: null,
+    existing: false,
     absolutePath: '',
     mimeType: '',
     extension: '',
     fileMetadataCreatedAt: null,
     fileMetadataModifiedAt: null,
+    sourceFileState: null,
     fieldErrors: {},
     result: null,
   };
@@ -157,12 +158,13 @@ export function createEmptyDeviceFileSyncRow(): DeviceFileSyncRow {
 export function createDeviceFileSyncRowFromEntry(entry: DeviceFileTreeEntry): DeviceFileSyncRow {
   return {
     localId: createLocalSyncRowId(),
-    fileId: entry.fileId,
+    existing: true,
     absolutePath: entry.absolutePath ?? '',
     mimeType: entry.mimeType ?? '',
     extension: entry.extension ?? '',
     fileMetadataCreatedAt: entry.fileMetadataCreatedAt,
     fileMetadataModifiedAt: entry.fileMetadataModifiedAt,
+    sourceFileState: entry.sourceFileState,
     fieldErrors: {},
     result: null,
   };
@@ -182,12 +184,12 @@ export function buildSyncDeviceFilesReq(params: { deviceId: string; rows: Device
     req: {
       deviceId: params.deviceId,
       files: submittedRows.map((row) => ({
-        fileId: row.fileId,
         absolutePath: row.absolutePath,
         mimeType: emptyToNull(row.mimeType),
         extension: emptyToNull(row.extension),
         fileMetadataCreatedAt: row.fileMetadataCreatedAt,
         fileMetadataModifiedAt: row.fileMetadataModifiedAt,
+        sourceFileState: row.sourceFileState,
       })),
     },
     submittedRowIds: submittedRows.map((row) => row.localId),
@@ -203,11 +205,11 @@ const syncFieldByServerName: Record<string, DeviceFileSyncField> = {
 };
 
 function mapSyncFieldErrors(
-  fieldErrors: Array<[string, string]>,
+  fieldErrors: Array<{ path: string; message: string }>,
   submittedRowIds: string[],
 ): Map<string, Partial<Record<DeviceFileSyncField, string>>> {
   const result = new Map<string, Partial<Record<DeviceFileSyncField, string>>>();
-  for (const [path, message] of fieldErrors) {
+  for (const { path, message } of fieldErrors) {
     const match = /^files\[(\d+)]\.([a-z_]+)$/.exec(path);
     if (match === null) continue;
     const rowId = submittedRowIds[Number(match[1])];
@@ -233,7 +235,8 @@ export function applySyncDeviceFilesRsp(
         resultByRowId.set(rowId, {
           kind: 'accepted',
           operation: result.Accepted.operation,
-          root: result.Accepted.root,
+          fileId: result.Accepted.fileId,
+          revision: result.Accepted.revision,
           file: result.Accepted.file,
         });
       }
@@ -242,8 +245,13 @@ export function applySyncDeviceFilesRsp(
 
     const rowId = submittedRowIds[result.Rejected.index];
     if (rowId === undefined) continue;
-    resultByRowId.set(rowId, { kind: 'rejected', error: result.Rejected.error });
-    const mappedErrors = mapSyncFieldErrors(result.Rejected.error.fieldErrors, submittedRowIds).get(
+    resultByRowId.set(rowId, {
+      kind: 'rejected',
+      code: result.Rejected.code,
+      message: result.Rejected.message,
+      fieldErrors: result.Rejected.fieldErrors,
+    });
+    const mappedErrors = mapSyncFieldErrors(result.Rejected.fieldErrors, submittedRowIds).get(
       rowId,
     );
     if (mappedErrors !== undefined) fieldErrorsByRowId.set(rowId, mappedErrors);
@@ -256,16 +264,16 @@ export function applySyncDeviceFilesRsp(
   }));
 }
 
-function parseFieldErrorPayload(message: string): Array<[string, string]> {
+function parseFieldErrorPayload(message: string): Array<{ path: string; message: string }> {
   try {
     const payload: unknown = JSON.parse(message);
     if (!Array.isArray(payload)) return [];
     return payload.filter(
-      (item): item is [string, string] =>
-        Array.isArray(item) &&
-        item.length >= 2 &&
-        typeof item[0] === 'string' &&
-        typeof item[1] === 'string',
+      (item): item is { path: string; message: string } =>
+        item !== null &&
+        typeof item === 'object' &&
+        typeof (item as Record<string, unknown>).path === 'string' &&
+        typeof (item as Record<string, unknown>).message === 'string',
     );
   } catch {
     return [];
@@ -318,6 +326,8 @@ export function formatSyncOperation(operation: string): string {
   }
 }
 
-export function formatFileSyncError(error: FileSyncError): string {
-  return `${error.kind}: ${error.message}`;
+export function formatFileSyncError(
+  error: Extract<DeviceFileSyncResult, { kind: 'rejected' }>,
+): string {
+  return `${error.code}: ${error.message}`;
 }

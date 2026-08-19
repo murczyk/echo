@@ -5,7 +5,8 @@ PROJECT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 cd "$PROJECT_DIR"
 base_version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
 tree_hash=$(find \
-  bin/build-application-package.sh bin/configure-firewall.sh bin/run-api bin/run-worker \
+  bin/build-application-package.sh bin/configure-firewall.sh bin/host-cpu-exporter.py \
+  bin/run-api bin/run-worker \
   bin/sync-models.sh bin/sync-runtime.sh bin/verify-models.sh bin/verify-offline-paddle.sh \
   config/firewall-sources.conf config/models.env config/otel-collector.yaml config/otel.env \
   config/service.yaml packaging/application pyproject.toml schemas src systemd uv.lock versions.env \

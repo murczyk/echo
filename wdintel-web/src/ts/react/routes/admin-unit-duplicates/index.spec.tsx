@@ -39,7 +39,7 @@ describe('AdminUnitDuplicatesPage', () => {
 
     await act(async () => root.render(<AdminUnitDuplicatesPage authUserRoles={[]} />));
 
-    expect(container.textContent).toContain('Дублікати Підрозділів');
+    expect(container.textContent).toContain('Дублікати підрозділів');
     await act(async () => root.unmount());
   });
 });

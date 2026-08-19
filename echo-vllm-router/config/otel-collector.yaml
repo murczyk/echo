@@ -77,10 +77,9 @@ receivers:
   hostmetrics:
     collection_interval: 60s
     scrapers:
-      cpu:
-        metrics:
-          system.cpu.utilization:
-            enabled: true
+      # CPU scraper omitted: Incus limits.cpu: N reassigns host IDs in
+      # /proc/stat; hostmetrics ucal then fails forever on the missing
+      # TimesStat. Load/memory remain; :9100 is the disk-space workaround.
       disk: {}
       filesystem:
         metrics:

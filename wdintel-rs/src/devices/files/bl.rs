@@ -1,19 +1,13 @@
 use super::cursor;
 use super::error::{FilesystemError, FilesystemFieldError};
 use super::query;
-use super::sync_pipeline::sync_files;
 use super::types::{
     BrowseFilesCommand, BrowseFilesResult, EntryQueryScope, EntrySortKey,
     FileSearchFilters, JournalFilesCommand, JournalFilesResult,
     KeysetPageRequest, RootEntry, SearchEntry, SearchFilesCommand,
-    SearchFilesResult, SubtreeFileCount, SubtreeFileCountsCommand,
-    SyncFilesCommand, SyncFilesResult, TreeEntry,
+    SearchFilesResult, SubtreeFileCount, SubtreeFileCountsCommand, TreeEntry,
 };
-use super::validation::{
-    duplicate_file_ids, validate_subtree_count_directories,
-    validate_sync_batch_size,
-};
-use crate::devices::access;
+use super::validation::validate_subtree_count_directories;
 use crate::devices::analytics::types::TagFilter;
 use crate::devices::analytics::{
     hydrate_active_tags, load_active_tag_memberships, matches_tag_filter,
@@ -375,47 +369,6 @@ pub(in crate::devices) async fn search(
         tags_by_file,
     })
 }
-pub(in crate::devices) async fn sync(
-    main_db: &DatabaseConnection,
-    file_registry_db: &FileRegistryDb,
-    login: &login::Model,
-    command: SyncFilesCommand,
-) -> Result<SyncFilesResult, AppError> {
-    access::require_file_sync(&login.roles).c(h!())?;
-    validate_sync_batch_size(command.files.len())
-        .map_err(map_sync_error)
-        .c(h!())?;
-    let duplicate_file_ids = duplicate_file_ids(&command.files);
-    let SyncFilesCommand { device_id, files } = command;
-    let device_id = device_query::authorize_file_registry_access(
-        main_db,
-        login,
-        device_id,
-        FileRegistryDeviceAccess::FileSync,
-    )
-    .await
-    .c(h!())?;
-
-    let mut result =
-        sync_files(file_registry_db, device_id, files, duplicate_file_ids)
-            .await
-            .map_err(map_sync_error)?;
-    let file_entry_ids = result
-        .results
-        .iter()
-        .filter_map(|result| match &result.outcome {
-            super::types::SyncFileItemOutcome::Accepted { file, .. } => {
-                Some(file.file_id)
-            }
-            super::types::SyncFileItemOutcome::Rejected { .. } => None,
-        })
-        .collect::<Vec<_>>();
-    result.tags_by_file =
-        hydrate_active_tags(file_registry_db.connection(), &file_entry_ids)
-            .await
-            .c(h!())?;
-    Ok(result)
-}
 async fn filtered_browse_page(
     file_registry_db: &FileRegistryDb,
     scope: &super::types::DirectoryScope,
@@ -566,36 +519,19 @@ fn map_read_error(error: FilesystemError) -> AppError {
     }
 }
 
-fn map_sync_error(error: FilesystemError) -> AppError {
-    match error {
-        FilesystemError::Validation(errors) => validation_form(errors),
-        FilesystemError::NotFound => AppError::NotFound,
-        FilesystemError::Invariant(_) => AppError::BL {
-            msg: "device filesystem invariant violated".to_string(),
-        },
-        error @ (FilesystemError::Conflict
-        | FilesystemError::Dependency(_)
-        | FilesystemError::Internal(_)
-        | FilesystemError::CommitUncertain(_)) => AppError::AnyhowError {
-            source: anyhow::Error::new(error)
-                .context("failed to sync device filesystem"),
-        },
-    }
-}
-
 mod mapping {
     use super::super::types::FileEntryKind as FileEntryKindDto;
     use super::super::types::{
         BrowseDeviceFilesRsp, CountDeviceFileSubtreesRsp, DeviceFile,
         DeviceFileJournalEntry, DeviceFileRoot, DeviceFileSubtreeCount,
-        DeviceFileTreeEntry, FileBreadcrumb, FileSyncError, FileSyncErrorKind,
-        FileSyncOperation, FileSyncResult, JournalDeviceFilesRsp,
-        ListDeviceFileRootsRsp, SearchDeviceFilesRsp, SyncDeviceFilesRsp,
+        DeviceFileTreeEntry, FileBreadcrumb, JournalDeviceFilesRsp,
+        ListDeviceFileRootsRsp, SearchDeviceFilesRsp, SourceFileState,
+        SourceFileStateKind,
     };
     use super::super::{
-        Breadcrumb, BrowseFilesResult, FileEntry, JournalFilesResult,
-        RootEntry, SearchFilesResult, SubtreeFileCount, SyncFileItemOutcome,
-        SyncFileOperation, SyncFileRejectionKind, SyncFilesResult, TreeEntry,
+        Breadcrumb, BrowseFilesResult, DomainSourceFileStateKind, FileEntry,
+        JournalFilesResult, NormalizedSourceFileState, RootEntry,
+        SearchFilesResult, SubtreeFileCount, TreeEntry,
     };
     use crate::devices::analytics::AnalyticsTag;
     use crate::devices::types::format_datetime;
@@ -702,6 +638,11 @@ mod mapping {
                         has_content: entry.has_content,
                         synchronized_at: format_datetime(entry.synchronized_at),
                         tags,
+                        revision: entry.revision,
+                        sync_id: entry.sync_id.hyphenated().to_string(),
+                        source_file_state: entry
+                            .source_file_state
+                            .map(map_source_file_state),
                     }
                 })
                 .collect(),
@@ -710,67 +651,9 @@ mod mapping {
         }
     }
 
-    pub(in crate::devices) fn map_sync(
-        result: SyncFilesResult,
-    ) -> SyncDeviceFilesRsp {
-        let SyncFilesResult {
-            results,
-            mut tags_by_file,
-        } = result;
-        SyncDeviceFilesRsp {
-            results: results
-                .into_iter()
-                .map(|result| match result.outcome {
-                    SyncFileItemOutcome::Accepted {
-                        operation,
-                        root,
-                        file,
-                        path_components,
-                    } => {
-                        let tags = take_tags(&mut tags_by_file, file.file_id);
-                        FileSyncResult::Accepted {
-                            index: result.index,
-                            operation: map_sync_operation(operation),
-                            file: map_file(
-                                file,
-                                root.entry_id,
-                                path_components,
-                                tags,
-                            ),
-                            root: map_root(root),
-                        }
-                    }
-                    SyncFileItemOutcome::Rejected {
-                        kind,
-                        message,
-                        field_errors,
-                        ..
-                    } => {
-                        let kind = map_rejection_kind(kind);
-                        let field_errors =
-                            if kind == FileSyncErrorKind::Validation {
-                                field_errors
-                                    .into_iter()
-                                    .map(|error| (error.path, error.message))
-                                    .collect()
-                            } else {
-                                Vec::new()
-                            };
-                        FileSyncResult::Rejected {
-                            index: result.index,
-                            error: FileSyncError {
-                                kind,
-                                message,
-                                field_errors,
-                            },
-                        }
-                    }
-                })
-                .collect(),
-        }
-    }
-
-    fn map_root(root: RootEntry) -> DeviceFileRoot {
+    pub(in crate::devices::files) fn map_root(
+        root: RootEntry,
+    ) -> DeviceFileRoot {
         DeviceFileRoot {
             entry_id: root.entry_id.hyphenated().to_string(),
             device_id: root.device_id.hyphenated().to_string(),
@@ -815,6 +698,9 @@ mod mapping {
                 created_at: format_datetime(directory.created_at),
                 updated_at: format_datetime(directory.updated_at),
                 tags: Vec::new(),
+                revision: None,
+                sync_id: None,
+                source_file_state: None,
             },
             TreeEntry::File(file) => DeviceFileTreeEntry {
                 entry_id: file.file_id.hyphenated().to_string(),
@@ -835,12 +721,17 @@ mod mapping {
                     .map(format_datetime),
                 created_at: format_datetime(file.created_at),
                 updated_at: format_datetime(file.updated_at),
+                revision: Some(file.revision),
+                sync_id: Some(file.sync_id.hyphenated().to_string()),
+                source_file_state: file
+                    .source_file_state
+                    .map(map_source_file_state),
                 tags,
             },
         }
     }
 
-    fn map_file(
+    pub(in crate::devices::files) fn map_file(
         file: FileEntry,
         root_entry_id: uuid::Uuid,
         path_components: Vec<String>,
@@ -865,6 +756,11 @@ mod mapping {
                 .map(format_datetime),
             created_at: format_datetime(file.created_at),
             updated_at: format_datetime(file.updated_at),
+            revision: file.revision,
+            sync_id: file.sync_id.hyphenated().to_string(),
+            source_file_state: file
+                .source_file_state
+                .map(map_source_file_state),
             tags,
         }
     }
@@ -875,25 +771,31 @@ mod mapping {
         tags_by_file.remove(&file_entry_id).unwrap_or_default()
     }
 
-    fn map_sync_operation(operation: SyncFileOperation) -> FileSyncOperation {
-        match operation {
-            SyncFileOperation::Created => FileSyncOperation::Created,
-            SyncFileOperation::Updated => FileSyncOperation::Updated,
-        }
-    }
-
-    fn map_rejection_kind(kind: SyncFileRejectionKind) -> FileSyncErrorKind {
-        match kind {
-            SyncFileRejectionKind::Validation => FileSyncErrorKind::Validation,
-            SyncFileRejectionKind::NotFound => FileSyncErrorKind::NotFound,
-            SyncFileRejectionKind::Conflict => FileSyncErrorKind::Conflict,
-            SyncFileRejectionKind::Dependency => FileSyncErrorKind::Dependency,
-            SyncFileRejectionKind::Internal => FileSyncErrorKind::Internal,
+    fn map_source_file_state(
+        source_file_state: NormalizedSourceFileState,
+    ) -> SourceFileState {
+        SourceFileState {
+            state: match source_file_state.state {
+                DomainSourceFileStateKind::Scanned => {
+                    SourceFileStateKind::Scanned
+                }
+                DomainSourceFileStateKind::Downloaded => {
+                    SourceFileStateKind::Downloaded
+                }
+                DomainSourceFileStateKind::Changed => {
+                    SourceFileStateKind::Changed
+                }
+            },
+            settled_at: source_file_state
+                .settled_at
+                .with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true),
+            settled_by: source_file_state.settled_by,
         }
     }
 }
 
+pub(in crate::devices::files) use mapping::map_file;
 pub(in crate::devices) use mapping::{
     map_browse, map_journal, map_roots, map_search, map_subtree_counts,
-    map_sync,
 };

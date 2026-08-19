@@ -1,12 +1,15 @@
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import type { Dayjs } from 'dayjs';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { SignalRestapiErrorRow } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import {
+  mrtTextCell,
+  type AppMrtColumnDef,
+} from '../../components/mui-customized/table/get-default-table-options';
 import {
   loadLatestSignalRestapiErrorCreatedAt,
   listSignalRestapiErrorCounts,
@@ -50,25 +53,8 @@ function formatDateTime(value: string | null | undefined): string {
   return date ? date.toLocaleString('uk-UA') : '';
 }
 
-function clippedText(value: string | null | undefined, color?: 'error') {
-  const text = value ?? '';
-  return (
-    <Typography
-      component="span"
-      variant="body2"
-      color={color}
-      sx={{
-        display: 'block',
-        maxWidth: 620,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}
-      title={text}
-    >
-      {text}
-    </Typography>
-  );
+function clippedText(value: string | null | undefined) {
+  return value ?? '';
 }
 
 function RestApiErrorsTable({
@@ -80,7 +66,7 @@ function RestApiErrorsTable({
   rows: SignalRestapiErrorRow[];
   onRefresh: () => void;
 }) {
-  const columns = useMemo<MRT_ColumnDef<SignalRestapiErrorRow>[]>(
+  const columns = useMemo<AppMrtColumnDef<SignalRestapiErrorRow>[]>(
     () => [
       {
         accessorKey: 'id',
@@ -91,7 +77,11 @@ function RestApiErrorsTable({
         accessorKey: 'createdAt',
         header: TRANSLATIONS.createdAt,
         size: 180,
-        Cell: ({ cell }) => formatDateTime(cell.getValue<string>()),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => formatDateTime(cell.getValue()),
+          fullValue: ({ cell }) => formatDateTime(cell.getValue()),
+        }),
       },
       {
         accessorKey: 'source',
@@ -102,25 +92,41 @@ function RestApiErrorsTable({
         accessorKey: 'clientName',
         header: TRANSLATIONS.clientName,
         size: 180,
-        Cell: ({ cell }) => cell.getValue<string | null>() ?? '',
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => cell.getValue() ?? '',
+          fullValue: ({ cell }) => cell.getValue() ?? '',
+        }),
       },
       {
         accessorKey: 'responseText',
         header: TRANSLATIONS.responseText,
         size: 520,
-        Cell: ({ cell }) => clippedText(cell.getValue<string>(), 'error'),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => clippedText(cell.getValue()),
+          fullValue: ({ cell }) => cell.getValue() ?? '',
+        }),
       },
       {
         accessorKey: 'responseJson',
         header: TRANSLATIONS.responseJson,
         size: 520,
-        Cell: ({ cell }) => clippedText(cell.getValue<string | null>()),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => clippedText(cell.getValue()),
+          fullValue: ({ cell }) => cell.getValue() ?? '',
+        }),
       },
       {
         accessorKey: 'discordSentAt',
         header: TRANSLATIONS.discordSentAt,
         size: 180,
-        Cell: ({ cell }) => formatDateTime(cell.getValue<string | null>()),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => formatDateTime(cell.getValue()),
+          fullValue: ({ cell }) => formatDateTime(cell.getValue()),
+        }),
       },
     ],
     [],

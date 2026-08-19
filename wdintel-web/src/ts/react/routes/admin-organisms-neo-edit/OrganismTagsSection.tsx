@@ -2,7 +2,6 @@ import BlockIcon from '@mui/icons-material/Block';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useCallback, useMemo, useState } from 'react';
 
 import type { TagAdmin, TagUpsertReq } from '../../../../Bindings';
@@ -12,6 +11,7 @@ import { PowerButton } from '../../components/PowerButton';
 import { SectionEmptyState } from '../../components/SectionEmptyState';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { CUSTOM_STYLES } from '../../components/mui-customized/table/custom-styles';
+import type { AppMrtColumnDef } from '../../components/mui-customized/table/get-default-table-options';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -89,7 +89,7 @@ export function OrganismTagsSection({ organismId }: { organismId: number | null 
     [handleSave, editingTag],
   );
 
-  const columns = useMemo<MRT_ColumnDef<TagAdmin>[]>(() => {
+  const columns = useMemo<AppMrtColumnDef<TagAdmin>[]>(() => {
     const noWrapHeadCellProps = {
       sx: { ...CUSTOM_STYLES.muiTableHeadCellProps.sx, whiteSpace: 'nowrap' },
     };

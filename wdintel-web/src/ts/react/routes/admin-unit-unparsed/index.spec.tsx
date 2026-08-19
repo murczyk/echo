@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   resolve: vi.fn(),
   searchUnits: vi.fn(),
   updateNote: vi.fn(),
+  defaultColumnOrder: null as string[] | null,
 }));
 
 vi.mock('../../services/api/units', () => ({
@@ -26,7 +27,16 @@ vi.mock('../../services/api/unresolved-unit-labels', () => ({
 }));
 
 vi.mock('../../components/mui-customized/table/table-state-provider', () => ({
-  TableStateProvider: ({ children }: { children: ReactNode }) => children,
+  TableStateProvider: ({
+    children,
+    defaultColumnOrder,
+  }: {
+    children: ReactNode;
+    defaultColumnOrder: string[];
+  }) => {
+    mocks.defaultColumnOrder = defaultColumnOrder;
+    return children;
+  },
 }));
 
 vi.mock('../../components/TablePageToolbar', () => ({
@@ -176,6 +186,7 @@ beforeEach(() => {
   mocks.resolve.mockReset().mockResolvedValue({ affectedCount: 1 });
   mocks.searchUnits.mockReset().mockResolvedValue({ strict: [sigintUnit], relaxed: [] });
   mocks.updateNote.mockReset().mockResolvedValue({ affectedCount: 1 });
+  mocks.defaultColumnOrder = null;
 });
 
 afterEach(() => {
@@ -325,6 +336,20 @@ describe('AdminUnitUnparsedPage', () => {
     await act(async () => button('Архів').click());
 
     expect(document.body.textContent).toContain('Сервер відхилив запит');
+    act(() => root.unmount());
+  });
+
+  it('configures action and number columns first', async () => {
+    const root = await renderPage();
+
+    expect(mocks.defaultColumnOrder).toEqual([
+      'mrt-row-actions',
+      'mrt-row-numbers',
+      'unitTxt',
+      'quantity',
+      'note',
+    ]);
+    expect(mocks.defaultColumnOrder?.slice(0, 2)).toEqual(['mrt-row-actions', 'mrt-row-numbers']);
     act(() => root.unmount());
   });
 });

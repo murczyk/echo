@@ -1,26 +1,25 @@
 use super::types::{
-    ActiveTagRule, DeviceAnalyticsFileLink, DeviceAnalyticsProgress,
-    DeviceAnalyticsSummary,
+    DeviceAnalyticsFileLink, DeviceAnalyticsProgress, DeviceAnalyticsSummary,
+    RuleExpression, TagRuleDefinition,
 };
 use crate::file_registry::entities::{
-    analytics_tag, analytics_tag_rule_set_state, analytics_tag_test_file,
-    device_file_tag, file_analysis_state, file_entry,
-    sea_orm_active_enums::FileEntryKind,
+    analytics_tag, analytics_tag_test_file, device_file_tag,
+    file_analysis_definition, file_analysis_run, file_analysis_run_item,
+    file_entry, file_revision,
+    sea_orm_active_enums::{
+        FileEntryKind, SourceFileStateKind as DbSourceFileStateKind,
+    },
 };
 use chrono::{DateTime, FixedOffset, Utc};
-use sea_orm::sea_query::Expr;
 use sea_orm::{
     AccessMode, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait, ExprTrait,
+    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
     FromQueryResult, IntoActiveModel, IsolationLevel, JoinType, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait, Set,
     TransactionTrait,
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
-
-const LINK_INSERT_CHUNK_SIZE: usize = 1_000;
-const LINK_DELETE_CHUNK_SIZE: usize = 1_000;
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct PreparedRuleTestFile {
@@ -28,20 +27,6 @@ pub(super) struct PreparedRuleTestFile {
     pub absolute_path: String,
     pub extension: Option<String>,
     pub expected_match: bool,
-}
-
-pub(super) struct FileTagAssignment {
-    pub file_entry_id: Uuid,
-    pub device_id: Uuid,
-    pub file_entry_created_at: DateTime<FixedOffset>,
-    pub tag_id: Uuid,
-}
-
-#[derive(Debug, Default, Eq, PartialEq)]
-pub(super) struct FileTagDelta {
-    pub inserted: usize,
-    pub deleted: usize,
-    pub unchanged: usize,
 }
 
 pub(super) async fn list_tags<C>(
@@ -121,67 +106,6 @@ pub(super) async fn lock_tag(
         .await
 }
 
-pub(super) async fn lock_rule_set_revision(
-    transaction: &DatabaseTransaction,
-) -> Result<i64, DbErr> {
-    analytics_tag_rule_set_state::Entity::find_by_id(true)
-        .lock_shared()
-        .one(transaction)
-        .await?
-        .map(|state| state.revision)
-        .ok_or_else(|| {
-            DbErr::RecordNotFound(
-                "analytics_tag_rule_set_state singleton is missing".to_string(),
-            )
-        })
-}
-pub(super) async fn rule_set_revision<C>(file_db: &C) -> Result<i64, DbErr>
-where
-    C: ConnectionTrait,
-{
-    analytics_tag_rule_set_state::Entity::find_by_id(true)
-        .one(file_db)
-        .await?
-        .map(|state| state.revision)
-        .ok_or_else(|| {
-            DbErr::RecordNotFound(
-                "analytics_tag_rule_set_state singleton is missing".to_string(),
-            )
-        })
-}
-
-pub(super) async fn bump_rule_set_revision(
-    transaction: &DatabaseTransaction,
-) -> Result<i64, DbErr> {
-    let state = analytics_tag_rule_set_state::Entity::find_by_id(true)
-        .lock_exclusive()
-        .one(transaction)
-        .await?
-        .ok_or_else(|| {
-            DbErr::RecordNotFound(
-                "analytics_tag_rule_set_state singleton is missing".to_string(),
-            )
-        })?;
-    let revision = state.revision.checked_add(1).ok_or_else(|| {
-        DbErr::Custom("analytics tag rule revision overflow".to_string())
-    })?;
-    let mut state = state.into_active_model();
-    state.revision = Set(revision);
-    state.update(transaction).await?;
-    Ok(revision)
-}
-
-pub(super) async fn lock_tag_for_rule_set_mutation(
-    transaction: &DatabaseTransaction,
-    tag_id: Uuid,
-) -> Result<Option<analytics_tag::Model>, DbErr> {
-    // Writers take the revision lock before the tag lock. Workers hold the
-    // revision lock while applying cached rules, so this order prevents stale
-    // assignments without introducing a lock-order cycle.
-    bump_rule_set_revision(transaction).await?;
-    lock_tag(transaction, tag_id).await
-}
-
 pub(super) async fn create_tag(
     file_db: &DatabaseConnection,
     tag_id: Uuid,
@@ -259,116 +183,32 @@ where
         .await
 }
 
-pub(super) async fn load_active_tag_rules(
-    transaction: &DatabaseTransaction,
-) -> Result<Vec<ActiveTagRule>, DbErr> {
-    analytics_tag::Entity::find()
+pub(super) async fn load_active_rule_definitions<C>(
+    file_db: &C,
+) -> Result<Vec<TagRuleDefinition>, DbErr>
+where
+    C: ConnectionTrait,
+{
+    let tags = analytics_tag::Entity::find()
         .filter(analytics_tag::Column::ArchivedAt.is_null())
         .filter(analytics_tag::Column::RuleExpression.is_not_null())
         .order_by_asc(analytics_tag::Column::Id)
-        .lock_shared()
-        .all(transaction)
-        .await
-        .map(|tags| {
-            tags.into_iter()
-                .filter_map(|tag| {
-                    tag.rule_expression.map(|rule_expression| ActiveTagRule {
-                        tag_id: tag.id,
-                        rule_expression,
-                    })
-                })
-                .collect()
-        })
-}
-
-pub(super) async fn reconcile_file_tags(
-    transaction: &DatabaseTransaction,
-    file_entry_ids: &[Uuid],
-    assignments: &[FileTagAssignment],
-) -> Result<FileTagDelta, DbErr> {
-    if file_entry_ids.is_empty() {
-        if assignments.is_empty() {
-            return Ok(FileTagDelta::default());
-        }
-        return Err(DbErr::Custom(
-            "file tag assignments require file entry ids".to_string(),
-        ));
-    }
-
-    let existing_links = device_file_tag::Entity::find()
-        .filter(
-            device_file_tag::Column::FileEntryId
-                .is_in(file_entry_ids.iter().copied()),
-        )
-        .all(transaction)
+        .all(file_db)
         .await?;
-    let mut desired_by_key = HashMap::with_capacity(assignments.len());
-    for assignment in assignments {
-        let key = (assignment.file_entry_id, assignment.tag_id);
-        if desired_by_key.insert(key, assignment).is_some() {
-            return Err(DbErr::Custom(format!(
-                "duplicate file tag assignment for {} and {}",
-                assignment.file_entry_id, assignment.tag_id
-            )));
-        }
-    }
-
-    let mut delete_ids = Vec::new();
-    let mut insert_assignments = Vec::new();
-    let mut unchanged = 0;
-    for link in existing_links {
-        let key = (link.file_entry_id, link.tag_id);
-        match desired_by_key.remove(&key) {
-            Some(assignment)
-                if link.device_id == assignment.device_id
-                    && link.file_entry_created_at
-                        == assignment.file_entry_created_at =>
-            {
-                unchanged += 1;
-            }
-            Some(assignment) => {
-                delete_ids.push(link.id);
-                insert_assignments.push(assignment);
-            }
-            None => delete_ids.push(link.id),
-        }
-    }
-    insert_assignments.extend(desired_by_key.into_values());
-    insert_assignments.sort_unstable_by_key(|assignment| {
-        (assignment.file_entry_id, assignment.tag_id)
-    });
-
-    let mut deleted = 0;
-    for chunk in delete_ids.chunks(LINK_DELETE_CHUNK_SIZE) {
-        deleted += device_file_tag::Entity::delete_many()
-            .filter(device_file_tag::Column::Id.is_in(chunk.iter().copied()))
-            .exec(transaction)
-            .await?
-            .rows_affected as usize;
-    }
-
-    let now = Utc::now().fixed_offset();
-    for chunk in insert_assignments.chunks(LINK_INSERT_CHUNK_SIZE) {
-        let links =
-            chunk.iter().map(|assignment| device_file_tag::ActiveModel {
-                id: Set(Uuid::now_v7()),
-                file_entry_id: Set(assignment.file_entry_id),
-                device_id: Set(assignment.device_id),
-                file_entry_created_at: Set(assignment.file_entry_created_at),
-                tag_id: Set(assignment.tag_id),
-                created_at: Set(now),
-                updated_at: Set(now),
-            });
-        device_file_tag::Entity::insert_many(links)
-            .exec(transaction)
-            .await?;
-    }
-
-    Ok(FileTagDelta {
-        inserted: insert_assignments.len(),
-        deleted,
-        unchanged,
-    })
+    tags.into_iter()
+        .map(|tag| {
+            let expression = tag.rule_expression.ok_or_else(|| {
+                DbErr::Custom("active rule expression is missing".to_owned())
+            })?;
+            let rule_expression =
+                serde_json::from_value::<RuleExpression>(expression)
+                    .map_err(|error| DbErr::Custom(error.to_string()))?;
+            Ok(TagRuleDefinition {
+                tag_id: tag.id,
+                rule_expression,
+            })
+        })
+        .collect()
 }
 
 pub(in crate::devices) async fn load_active_tags_for_files<C>(
@@ -465,26 +305,15 @@ pub(super) async fn device_summary(
             Some(AccessMode::ReadOnly),
         )
         .await?;
-    let rule_revision = rule_set_revision(&transaction).await?;
     let total_file_count = file_entry::Entity::find()
         .filter(file_entry::Column::DeviceId.eq(device_id))
         .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
         .count(&transaction)
         .await?;
-    let analyzed_file_count = file_analysis_state::Entity::find()
-        .filter(file_analysis_state::Column::DeviceId.eq(device_id))
-        .filter(file_analysis_state::Column::Pending.eq(false))
-        .filter(
-            file_analysis_state::Column::AnalyzedRuleRevision.eq(rule_revision),
-        )
-        .filter(
-            Expr::col(file_analysis_state::Column::AnalyzedSourceRevision)
-                .equals(file_analysis_state::Column::SourceRevision),
-        )
-        .filter(
-            Expr::col(file_analysis_state::Column::AnalyzedGeneration)
-                .equals(file_analysis_state::Column::RequiredGeneration),
-        )
+    let analyzed_file_count = file_entry::Entity::find()
+        .filter(file_entry::Column::DeviceId.eq(device_id))
+        .filter(file_entry::Column::Kind.eq(FileEntryKind::File))
+        .filter(file_entry::Column::CurrentAnalysisRunId.is_not_null())
         .count(&transaction)
         .await?;
     let items = device_summary_items(&transaction, device_id).await?;
@@ -632,8 +461,142 @@ pub(super) async fn load_current_files(
         .map(|files| files.into_iter().map(|file| (file.id, file)).collect())
 }
 
-pub(super) fn file_created_at_with_timezone(
-    created_at: chrono::NaiveDateTime,
-) -> DateTime<FixedOffset> {
-    DateTime::<Utc>::from_naive_utc_and_offset(created_at, Utc).fixed_offset()
+pub(super) async fn find_analysis_run<C>(
+    file_db: &C,
+    run_id: Uuid,
+) -> Result<
+    Option<(file_analysis_run::Model, file_analysis_definition::Model)>,
+    DbErr,
+>
+where
+    C: ConnectionTrait,
+{
+    file_analysis_run::Entity::find_by_id(run_id)
+        .find_also_related(file_analysis_definition::Entity)
+        .one(file_db)
+        .await?
+        .map(|(run, definition)| {
+            definition
+                .map(|definition| (run, definition))
+                .ok_or_else(|| {
+                    DbErr::RecordNotFound("file_analysis_definition".to_owned())
+                })
+        })
+        .transpose()
+}
+
+pub(super) async fn list_analysis_runs<C>(
+    file_db: &C,
+    device_id: Uuid,
+    before_run_sequence: Option<i64>,
+    limit: u64,
+) -> Result<
+    Vec<(file_analysis_run::Model, file_analysis_definition::Model)>,
+    DbErr,
+>
+where
+    C: ConnectionTrait,
+{
+    let mut query = file_analysis_run::Entity::find()
+        .find_also_related(file_analysis_definition::Entity)
+        .filter(file_analysis_run::Column::DeviceId.eq(device_id))
+        .order_by_desc(file_analysis_run::Column::RunSequence)
+        .limit(limit);
+    if let Some(before_run_sequence) = before_run_sequence {
+        query = query.filter(
+            file_analysis_run::Column::RunSequence.lt(before_run_sequence),
+        );
+    }
+    query
+        .all(file_db)
+        .await?
+        .into_iter()
+        .map(|(run, definition)| {
+            definition
+                .map(|definition| (run, definition))
+                .ok_or_else(|| {
+                    DbErr::RecordNotFound("file_analysis_definition".to_owned())
+                })
+        })
+        .collect()
+}
+
+#[derive(Debug)]
+pub(super) struct AnalysisRunFileRow {
+    pub file_id: Uuid,
+    pub metadata_revision: i64,
+    pub analysis_input_revision: i64,
+    pub state: String,
+    pub name: String,
+    pub absolute_path: String,
+    pub extension: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_metadata_created_at: Option<DateTime<FixedOffset>>,
+    pub file_metadata_modified_at: Option<DateTime<FixedOffset>>,
+    pub source_file_state: Option<String>,
+    pub tag_ids: Option<Vec<Uuid>>,
+}
+
+pub(super) async fn list_analysis_run_files<C>(
+    file_db: &C,
+    run_id: Uuid,
+    after_file_id: Option<Uuid>,
+    limit: u64,
+) -> Result<Vec<AnalysisRunFileRow>, DbErr>
+where
+    C: ConnectionTrait,
+{
+    let now = Utc::now().fixed_offset();
+    file_analysis_run_item::Entity::find()
+        .find_also_related(file_revision::Entity)
+        .filter(file_analysis_run_item::Column::Id.eq(run_id))
+        .filter(
+            file_analysis_run_item::Column::FileId
+                .gt(after_file_id.unwrap_or(Uuid::nil())),
+        )
+        .order_by_asc(file_analysis_run_item::Column::FileId)
+        .limit(limit)
+        .all(file_db)
+        .await?
+        .into_iter()
+        .map(|(item, metadata)| {
+            let metadata = metadata.ok_or_else(|| {
+                DbErr::RecordNotFound("file_revision".to_owned())
+            })?;
+            let state = if item.completed_at.is_some() {
+                "completed"
+            } else if item.lease_token.is_some()
+                && item
+                    .lease_expires_at
+                    .is_some_and(|lease_expires_at| lease_expires_at > now)
+            {
+                "processing"
+            } else {
+                "pending"
+            };
+            let source_file_state =
+                metadata.source_file_state.map(|source_file_state| {
+                    match source_file_state {
+                        DbSourceFileStateKind::Scanned => "scanned",
+                        DbSourceFileStateKind::Downloaded => "downloaded",
+                        DbSourceFileStateKind::Changed => "changed",
+                    }
+                    .to_owned()
+                });
+            Ok(AnalysisRunFileRow {
+                file_id: item.file_id,
+                metadata_revision: item.metadata_revision,
+                analysis_input_revision: metadata.analysis_input_revision,
+                state: state.to_owned(),
+                name: metadata.name,
+                absolute_path: metadata.absolute_path,
+                extension: metadata.extension,
+                mime_type: metadata.mime_type,
+                file_metadata_created_at: metadata.file_metadata_created_at,
+                file_metadata_modified_at: metadata.file_metadata_modified_at,
+                source_file_state,
+                tag_ids: item.result_tag_ids,
+            })
+        })
+        .collect()
 }

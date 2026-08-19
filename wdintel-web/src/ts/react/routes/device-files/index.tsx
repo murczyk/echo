@@ -165,6 +165,7 @@ export function DeviceFilesPanel({
         submitting={files.sync.submitting}
         batchError={files.sync.batchError}
         transportUncertain={files.sync.transportUncertain}
+        syncSummary={files.sync.syncSummary}
         canSubmit={files.sync.canSubmit}
         onClose={files.sync.closeSync}
         onAddRow={files.sync.addRow}

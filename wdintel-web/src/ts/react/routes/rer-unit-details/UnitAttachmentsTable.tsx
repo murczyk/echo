@@ -2,11 +2,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import EditIcon from '@mui/icons-material/Edit';
 import { Box, Button } from '@mui/material';
-import {
-  type MRT_ColumnDef,
-  MaterialReactTable,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
 import type { UnitAttachment } from '../../../../Bindings';
@@ -17,7 +13,11 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtItemsCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   getFilterModeHelperText,
   getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
@@ -45,13 +45,14 @@ function formatFileSize(sizeBytes: number): string {
 function useAttachmentColumns(
   downloadingId: number | null,
   onDownload: (attachment: UnitAttachment) => void,
-): MRT_ColumnDef<UnitAttachment>[] {
+): AppMrtColumnDef<UnitAttachment>[] {
   return useMemo(
     () => [
       {
         header: 'Файл',
         accessorKey: 'fileName',
         size: 240,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <Box>
             <Button
@@ -74,6 +75,7 @@ function useAttachmentColumns(
         header: 'Короткий опис',
         accessorKey: 'shortDescription',
         size: 260,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '') || '—'}
@@ -84,6 +86,7 @@ function useAttachmentColumns(
         header: 'Повний опис',
         accessorKey: 'fullDescription',
         size: 360,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '') || '—'}
@@ -95,7 +98,12 @@ function useAttachmentColumns(
         id: 'aors',
         accessorFn: (attachment) => (attachment.aors ?? []).map(({ name }) => name).join(', '),
         size: 220,
-        Cell: ({ row }) => (row.original.aors ?? []).map(({ name }) => name).join(', ') || '—',
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<UnitAttachment, string>({
+          items: ({ row }) => (row.original.aors ?? []).map(({ name }) => name),
+          renderItem: (name) => <Box component="span">{name}</Box>,
+          getItemText: (name) => name,
+        }),
       },
       {
         header: 'Дата внесення',
@@ -104,7 +112,11 @@ function useAttachmentColumns(
         sortingFn: (left, right) => left.original.createdAt - right.original.createdAt,
         sortDescFirst: true,
         size: 170,
-        Cell: ({ row }) => formatDateTime(row.original.createdAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDateTime(row.original.createdAt),
+          fullValue: ({ row }) => formatDateTime(row.original.createdAt),
+        }),
       },
     ],
     [downloadingId, onDownload],
@@ -130,8 +142,7 @@ export function UnitAttachmentsTable({
 }) {
   const tableStateContext = useTableStateContext();
   const columns = useAttachmentColumns(downloadingId, onDownload);
-  const table = useMaterialReactTable({
-    ...defaultMrtOptions,
+  const table = useAppMaterialReactTable({
     columns,
     data: attachments,
     enableSorting: true,

@@ -5,28 +5,26 @@ mod ltree;
 mod metadata;
 mod path;
 pub(in crate::devices) mod query;
-mod sync_pipeline;
+pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
 mod validation;
 
 pub(in crate::devices::files) use error::{
-    classify_transaction_error, map_database_error, map_transaction_body_error,
-    TransactionErrorClass,
+    map_database_error, map_transaction_body_error,
 };
 pub(in crate::devices) use error::{FilesystemError, FilesystemFieldError};
 pub(in crate::devices) use metadata::normalize_file_metadata;
 pub(in crate::devices) use path::parse as parse_source_path;
 pub(in crate::devices) use types::{
     Breadcrumb, BrowseFilesCommand, BrowseFilesResult, DirectoryEntry,
-    DirectoryScope, DomainFileEntryKind, EntryQueryScope, EntrySortKey,
-    FileEntry, FileJournalEntry, FileJournalSortKey, FileMutationResult,
-    FileSearchFilters, JournalFilesCommand, JournalFilesResult, KeysetPage,
-    KeysetPageRequest, PreparedFileMutation, RawFileSearchFilters, RootEntry,
-    SearchEntry, SearchFilesCommand, SearchFilesResult, SubtreeFileCount,
-    SubtreeFileCountsCommand, SyncFileItemCommand, SyncFileItemOutcome,
-    SyncFileItemResult, SyncFileOperation, SyncFileRejectionKind,
-    SyncFilesCommand, SyncFilesResult, TreeEntry,
+    DirectoryScope, DomainFileEntryKind, DomainSourceFileStateKind,
+    EntryQueryScope, EntrySortKey, FileEntry, FileJournalEntry,
+    FileJournalSortKey, FileSearchFilters, JournalFilesCommand,
+    JournalFilesResult, KeysetPage, KeysetPageRequest,
+    NormalizedSourceFileState, PreparedFileMutation, RawFileSearchFilters,
+    RootEntry, SearchEntry, SearchFilesCommand, SearchFilesResult,
+    SubtreeFileCount, SubtreeFileCountsCommand, TreeEntry,
 };
 pub mod types;
 
@@ -34,23 +32,25 @@ use std::time::Instant;
 
 use self::bl::{
     map_browse, map_journal, map_roots, map_search, map_subtree_counts,
-    map_sync,
 };
 use self::types::FileEntryKind as ApiFileEntryKind;
 use self::types::{
-    BrowseDeviceFilesReq, BrowseDeviceFilesRsp, CountDeviceFileSubtreesReq,
-    CountDeviceFileSubtreesRsp, JournalDeviceFilesReq, JournalDeviceFilesRsp,
-    ListDeviceFileRootsReq, ListDeviceFileRootsRsp, SearchDeviceFilesReq,
-    SearchDeviceFilesRsp, SyncDeviceFilesReq, SyncDeviceFilesRsp,
+    ApplyFileSyncBatchRsp, BrowseDeviceFilesReq, BrowseDeviceFilesRsp,
+    CompleteFileSyncSessionReq, CountDeviceFileSubtreesReq,
+    CountDeviceFileSubtreesRsp, FileSyncSessionItemsRsp, FileSyncSessionRsp,
+    JournalDeviceFilesReq, JournalDeviceFilesRsp, ListDeviceFileRootsReq,
+    ListDeviceFileRootsRsp, RawApplyFileSyncBatchReq, RawSyncDeviceFilesReq,
+    SearchDeviceFilesReq, SearchDeviceFilesRsp, StartFileSyncSessionReq,
+    SyncDeviceFilesRsp,
 };
 use crate::devices::access;
-use crate::devices::types::{parse_datetime, parse_uuid, RequiredPatch};
+use crate::devices::types::{parse_datetime, parse_uuid};
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
-use actix_web::post;
-use actix_web::web::{Data, Json};
+use actix_web::web::{Data, Json, Path, Query};
+use actix_web::{post, HttpResponse};
 
 #[post("/api/device/files/roots")]
 pub(crate) async fn roots(
@@ -203,73 +203,184 @@ pub(crate) async fn journal(
 }
 
 #[post("/api/device/files/sync")]
-pub(crate) async fn sync(
+pub(crate) async fn sync_files(
     env: Data<Env>,
     user: Identity,
-    Json(body): Json<SyncDeviceFilesReq>,
+    Json(body): Json<RawSyncDeviceFilesReq>,
 ) -> Result<Json<SyncDeviceFilesRsp>, AppError> {
     let started_at = Instant::now();
-    let result = sync_files(&env, &user, body).await.c(h!())?;
-    let (created, updated) = synchronized_file_counts(&result);
-    if let Some(metrics) = &env.metrics {
-        metrics.record_device_files_sync(
-            created,
-            updated,
-            started_at.elapsed(),
-        );
-    }
-    Ok(Json(map_sync(result)))
-}
-
-async fn sync_files(
-    env: &Env,
-    user: &Identity,
-    body: SyncDeviceFilesReq,
-) -> Result<SyncFilesResult, AppError> {
-    let login = access::resolve_current_login(&env.dbx, user)
+    let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
-    bl::sync(
+    let result = sync::automatic_with_metrics(
         &env.dbx,
         env.file_registry_db()?,
         &login,
-        SyncFilesCommand {
-            device_id: parse_uuid(&body.device_id),
-            files: body
-                .files
-                .into_iter()
-                .map(|file| SyncFileItemCommand {
-                    file_id: match file.file_id {
-                        RequiredPatch::Missing => None,
-                        RequiredPatch::Value(file_id) => {
-                            Some(parse_uuid(&file_id))
-                        }
-                    },
-                    absolute_path: file.absolute_path,
-                    mime_type: file.mime_type,
-                    extension: file.extension,
-                    file_metadata_created_at: file.file_metadata_created_at,
-                    file_metadata_modified_at: file.file_metadata_modified_at,
-                })
-                .collect(),
-        },
+        parse_uuid(&body.device_id),
+        body.files,
+        env.metrics.as_ref(),
     )
     .await
+    .c(h!())?;
+    if let Some(metrics) = &env.metrics {
+        metrics.record_device_files_sync(
+            result.sync.counts.created,
+            result.sync.counts.updated,
+            started_at.elapsed(),
+        );
+    }
+    Ok(Json(result))
 }
 
-fn synchronized_file_counts(result: &SyncFilesResult) -> (u64, u64) {
-    result
-        .results
-        .iter()
-        .fold((0, 0), |(created, updated), result| match &result.outcome {
-            SyncFileItemOutcome::Accepted { operation, .. } => {
-                match operation {
-                    SyncFileOperation::Created => (created + 1, updated),
-                    SyncFileOperation::Updated => (created, updated + 1),
-                }
-            }
-            SyncFileItemOutcome::Rejected { .. } => (created, updated),
-        })
+#[post("/api/device/files/sync-session")]
+pub(crate) async fn start_sync_session(
+    env: Data<Env>,
+    user: Identity,
+    Json(body): Json<StartFileSyncSessionReq>,
+) -> Result<HttpResponse, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    let result = sync::start_explicit(
+        &env.dbx,
+        env.file_registry_db()?,
+        &login,
+        parse_uuid(&body.device_id),
+    )
+    .await
+    .c(h!())?;
+    if result.created {
+        Ok(HttpResponse::Created().json(result.response))
+    } else {
+        Ok(HttpResponse::Ok().json(result.response))
+    }
+}
+
+#[post("/api/device/files/sync-session/{sync_id}")]
+pub(crate) async fn sync_session_status(
+    env: Data<Env>,
+    user: Identity,
+    sync_id: Path<uuid::Uuid>,
+) -> Result<Json<FileSyncSessionRsp>, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    Ok(Json(
+        sync::status(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            sync_id.into_inner(),
+        )
+        .await
+        .c(h!())?,
+    ))
+}
+
+#[post("/api/device/files/sync-session/{sync_id}/batches/{batch_index}")]
+pub(crate) async fn apply_sync_batch(
+    env: Data<Env>,
+    user: Identity,
+    path: Path<(uuid::Uuid, i32)>,
+    Json(body): Json<RawApplyFileSyncBatchReq>,
+) -> Result<Json<ApplyFileSyncBatchRsp>, AppError> {
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    let (sync_id, batch_index) = path.into_inner();
+    if batch_index < 0 {
+        return Err(AppError::Form(std::collections::BTreeMap::from([(
+            "batch_index".to_string(),
+            "must be non-negative".to_string(),
+        )])));
+    }
+    Ok(Json(
+        sync::apply_batch_with_metrics(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            sync_id,
+            batch_index,
+            body.files,
+            env.metrics.as_ref(),
+        )
+        .await
+        .c(h!())?,
+    ))
+}
+
+#[post("/api/device/files/sync-session/{sync_id}/complete")]
+pub(crate) async fn complete_sync_session(
+    env: Data<Env>,
+    user: Identity,
+    sync_id: Path<uuid::Uuid>,
+    Json(body): Json<CompleteFileSyncSessionReq>,
+) -> Result<Json<FileSyncSessionRsp>, AppError> {
+    let expected_batch_count = i32::try_from(body.expected_batch_count)
+        .map_err(|_| {
+            AppError::Form(std::collections::BTreeMap::from([(
+                "expected_batch_count".to_string(),
+                "must be at most 2147483647".to_string(),
+            )]))
+        })?;
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    Ok(Json(
+        sync::complete(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            sync_id.into_inner(),
+            expected_batch_count,
+        )
+        .await
+        .c(h!())?,
+    ))
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct SyncItemsQuery {
+    outcome: Option<String>,
+    limit: Option<u64>,
+    cursor: Option<String>,
+}
+
+#[post("/api/device/files/sync-session/{sync_id}/items")]
+pub(crate) async fn sync_session_items(
+    env: Data<Env>,
+    user: Identity,
+    sync_id: Path<uuid::Uuid>,
+    Query(query): Query<SyncItemsQuery>,
+) -> Result<Json<FileSyncSessionItemsRsp>, AppError> {
+    let outcome = match query.outcome.as_deref() {
+        None => None,
+        Some("created") => Some(crate::file_registry::entities::sea_orm_active_enums::FileSyncItemOutcome::Created),
+        Some("updated") => Some(crate::file_registry::entities::sea_orm_active_enums::FileSyncItemOutcome::Updated),
+        Some("rejected") => Some(crate::file_registry::entities::sea_orm_active_enums::FileSyncItemOutcome::Rejected),
+        Some(_) => {
+            return Err(AppError::Form(std::collections::BTreeMap::from([(
+                "outcome".to_string(),
+                "must be one of created, updated, rejected".to_string(),
+            )])));
+        }
+    };
+    let login = access::resolve_current_login(&env.dbx, &user)
+        .await
+        .c(h!())?;
+    Ok(Json(
+        sync::items(
+            &env.dbx,
+            env.file_registry_db()?,
+            &login,
+            sync_id.into_inner(),
+            outcome,
+            query.limit,
+            query.cursor.as_deref(),
+        )
+        .await
+        .c(h!())?,
+    ))
 }
 
 fn map_entry_kind(kind: ApiFileEntryKind) -> DomainFileEntryKind {

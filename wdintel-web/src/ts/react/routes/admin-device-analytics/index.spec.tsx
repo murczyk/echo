@@ -107,7 +107,7 @@ beforeEach(async () => {
   mocks.saveRule.mockResolvedValue({ ...createdTag, ruleExpression: localExpression });
   mocks.archiveTag.mockResolvedValue({ ...createdTag, archivedAt: NOW });
   mocks.restoreTag.mockResolvedValue(createdTag);
-  mocks.reanalyzeAll.mockResolvedValue({ scheduledFileCount: 42 });
+  mocks.reanalyzeAll.mockResolvedValue({ definitionId: 'definition-1', createdRunCount: 42 });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -136,7 +136,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(generalTab?.getAttribute('aria-selected')).toBe('true');
     expect(tagsTab?.getAttribute('aria-selected')).toBe('false');
     expect(generalPanel?.hidden).toBe(false);
-    expect(generalPanel?.textContent).toBe('');
+    expect(generalPanel?.textContent).toContain('Налаштування відсутні');
     expect(tagsPanel?.hidden).toBe(true);
     expect(mocks.listTags).not.toHaveBeenCalled();
 
@@ -261,7 +261,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.reanalyzeAll).toHaveBeenCalledTimes(1);
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'success',
-      message: 'Заплановано повторний аналіз 42 файлів.',
+      message: 'Створено запусків повторного аналізу: 42.',
     });
   });
 });

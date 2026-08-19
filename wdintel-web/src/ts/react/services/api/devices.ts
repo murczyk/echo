@@ -13,11 +13,11 @@ import type {
   DeviceAnalyticsReq,
   DeviceAnalyticsSummaryRsp,
   DeviceAnalyticsTagsRsp,
-  DeviceFileRoot,
   DeviceUnitStat,
   JournalDeviceFilesReq,
   JournalDeviceFilesRsp,
-  FileSyncError,
+  FileSyncErrorCode,
+  FileSyncFieldError,
   FileSyncOperation,
   ListDeviceFileRootsReq,
   ListDeviceFileRootsRsp,
@@ -27,8 +27,15 @@ import type {
   SearchDeviceFilesReq,
   SearchDeviceFilesRsp,
   SyncDeviceFilesReq,
-  ReanalysisRsp,
+  ReanalyzeAllRsp,
   ReanalyzeDeviceReq,
+  ReanalyzeDeviceRsp,
+  GetAnalysisRunReq,
+  GetAnalysisRunRsp,
+  ListAnalysisRunsReq,
+  ListAnalysisRunsRsp,
+  ListAnalysisRunFilesReq,
+  ListAnalysisRunFilesRsp,
   SyncDeviceFilesRsp,
   Unit,
   UpdateDeviceReq,
@@ -59,13 +66,16 @@ type CamelFileSyncResult =
       status: 'accepted';
       index: number;
       operation: FileSyncOperation;
-      root: DeviceFileRoot;
+      fileId: string;
+      revision: number;
       file: DeviceFile;
     }
   | {
       status: 'rejected';
       index: number;
-      error: FileSyncError;
+      code: FileSyncErrorCode;
+      message: string;
+      fieldErrors: FileSyncFieldError[];
     };
 
 export function toDeviceUpdatePatchReq(input: DeviceUpdatePatchInput): DeviceUpdatePatchReq {
@@ -109,36 +119,20 @@ function normalizeDeviceDetails(data: unknown): DeviceDetails {
   };
 }
 
-function serializeSyncRequest(req: SyncDeviceFilesReq): JsonBody {
-  return {
-    device_id: req.deviceId,
-    files: req.files.map(({ fileId, ...file }) => ({
-      ...(fileId === null ? {} : { file_id: fileId }),
-      ...transformCamelToSnake<Record<string, JsonBody>>(file),
-    })),
-  };
-}
-
 function normalizeSyncResponse(data: unknown): SyncDeviceFilesRsp {
-  const response = transformSnakeToCamel<{ results: CamelFileSyncResult[] }>(data);
+  const response = transformSnakeToCamel<{
+    sync: SyncDeviceFilesRsp['sync'];
+    results: CamelFileSyncResult[];
+  }>(data);
   return {
+    sync: response.sync,
     results: response.results.map((result) => {
       if (result.status === 'accepted') {
-        return {
-          Accepted: {
-            index: result.index,
-            operation: result.operation,
-            root: result.root,
-            file: result.file,
-          },
-        };
+        const { status: _, ...accepted } = result;
+        return { Accepted: accepted };
       }
-      return {
-        Rejected: {
-          index: result.index,
-          error: result.error,
-        },
-      };
+      const { status: _, ...rejected } = result;
+      return { Rejected: rejected };
     }),
   };
 }
@@ -245,7 +239,11 @@ export async function syncDeviceFiles(
   req: SyncDeviceFilesReq,
   options?: RequestOptions,
 ): Promise<SyncDeviceFilesRsp> {
-  const data = await postJson('/api/device/files/sync', serializeSyncRequest(req), options);
+  const data = await postJson(
+    '/api/device/files/sync',
+    transformCamelToSnake<JsonBody>(req),
+    options,
+  );
   return normalizeSyncResponse(data);
 }
 
@@ -276,16 +274,52 @@ export async function listDeviceAnalyticsFiles(
 export async function reanalyzeDevice(
   req: ReanalyzeDeviceReq,
   options?: RequestOptions,
-): Promise<ReanalysisRsp> {
+): Promise<ReanalyzeDeviceRsp> {
   const data = await postJson(
     '/api/admin/device-analytics/reanalyze/device',
     transformCamelToSnake(req),
     options,
   );
-  return transformSnakeToCamel<ReanalysisRsp>(data);
+  return transformSnakeToCamel<ReanalyzeDeviceRsp>(data);
 }
 
-export async function reanalyzeAll(options?: RequestOptions): Promise<ReanalysisRsp> {
+export async function reanalyzeAll(options?: RequestOptions): Promise<ReanalyzeAllRsp> {
   const data = await postJson('/api/admin/device-analytics/reanalyze/all', undefined, options);
-  return transformSnakeToCamel<ReanalysisRsp>(data);
+  return transformSnakeToCamel<ReanalyzeAllRsp>(data);
+}
+
+export async function getAnalysisRun(
+  req: GetAnalysisRunReq,
+  options?: RequestOptions,
+): Promise<GetAnalysisRunRsp> {
+  const data = await postJson(
+    '/api/device/analytics/runs/get',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<GetAnalysisRunRsp>(data);
+}
+
+export async function listAnalysisRuns(
+  req: ListAnalysisRunsReq,
+  options?: RequestOptions,
+): Promise<ListAnalysisRunsRsp> {
+  const data = await postJson(
+    '/api/device/analytics/runs/list',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<ListAnalysisRunsRsp>(data);
+}
+
+export async function listAnalysisRunFiles(
+  req: ListAnalysisRunFilesReq,
+  options?: RequestOptions,
+): Promise<ListAnalysisRunFilesRsp> {
+  const data = await postJson(
+    '/api/device/analytics/runs/files',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<ListAnalysisRunFilesRsp>(data);
 }
