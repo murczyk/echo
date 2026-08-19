@@ -1219,6 +1219,7 @@ where
     Ok(comments)
 }
 
+#[allow(dead_code)]
 pub(crate) async fn find_editable_sigint_comment_by_signal_message_id_and_logins<
     'a,
     'async_trait,
@@ -1331,6 +1332,7 @@ where
     delete_sigint_comments(db, comments).await
 }
 
+#[allow(dead_code)]
 pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
     env: &Env,
     item_id: i64,

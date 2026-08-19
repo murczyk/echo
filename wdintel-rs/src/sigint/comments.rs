@@ -862,10 +862,8 @@ const COMMENTED_MESSAGES_EXPORT_KIND_VALUES: &[&str] = &[
 ];
 
 #[derive(Debug, FromQueryResult)]
-struct EchoCommentedMessageExportRow {
-    source_login: String,
-    source_organism: Option<String>,
-    comment: String,
+struct EchoCommentedMessageParentRow {
+    id: i64,
     body: Option<String>,
     message_created_at: NaiveDateTime,
     message_timestamp: Option<NaiveDateTime>,
@@ -931,53 +929,50 @@ async fn load_echo_commented_message_rows(
     till_ts: NaiveDateTime,
 ) -> Result<Vec<CommentCsvRow>, AppError> {
     let system_login_id = crate::users::system_login_id(dbx).await.c(h!())?;
-    let rows: Vec<EchoCommentedMessageExportRow> =
-        sigint_comment::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_comment::Relation::SignalMessage.def(),
-            )
+    let linked_parent_ids = intel_prod::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            intel_prod::Relation::SignalMessage1.def(),
+        )
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_COMMENT),
+        )
+        .filter(signal_message::Column::CreatedAt.gte(since_ts))
+        .filter(signal_message::Column::CreatedAt.lt(till_ts))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .select_only()
+        .column(intel_prod::Column::ParentSignalMessageId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let legacy_parent_ids = sigint_comment::Entity::find()
+        .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+        .filter(sigint_comment::Column::CreatedAt.gte(since_ts))
+        .filter(sigint_comment::Column::CreatedAt.lt(till_ts))
+        .select_only()
+        .column(sigint_comment::Column::SignalMessageId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let parent_ids = linked_parent_ids
+        .into_iter()
+        .chain(legacy_parent_ids)
+        .collect::<HashSet<_>>();
+    let parent_rows: Vec<EchoCommentedMessageParentRow> =
+        signal_message::Entity::find()
             .join(
                 JoinType::InnerJoin,
                 signal_message::Relation::SigintInboxItem.def(),
             )
-            .join(JoinType::InnerJoin, sigint_comment::Relation::Login.def())
-            .join(JoinType::LeftJoin, login::Relation::Organism.def())
-            .filter(sigint_comment::Column::LoginId.ne(system_login_id))
-            .filter(sigint_comment::Column::Comment.ne(""))
-            .filter(sigint_comment::Column::CreatedAt.gte(since_ts))
-            .filter(sigint_comment::Column::CreatedAt.lt(till_ts))
+            .filter(signal_message::Column::Id.is_in(parent_ids))
             .select_only()
-            .column(sigint_comment::Column::Comment)
-            .column_as(
-                Expr::col((login::Entity, login::Column::Login)),
-                "source_login",
-            )
-            .column_as(
-                Expr::col((organism::Entity, organism::Column::Name)),
-                "source_organism",
-            )
-            .column_as(
-                Expr::col((
-                    signal_message::Entity,
-                    signal_message::Column::Body,
-                )),
-                "body",
-            )
-            .column_as(
-                Expr::col((
-                    signal_message::Entity,
-                    signal_message::Column::CreatedAt,
-                )),
-                "message_created_at",
-            )
-            .column_as(
-                Expr::col((
-                    signal_message::Entity,
-                    signal_message::Column::Timestamp,
-                )),
-                "message_timestamp",
-            )
+            .column(signal_message::Column::Id)
+            .column(signal_message::Column::Body)
+            .column(signal_message::Column::CreatedAt)
+            .column(signal_message::Column::Timestamp)
             .column_as(
                 Expr::col((
                     sigint_inbox_item::Entity,
@@ -985,35 +980,83 @@ async fn load_echo_commented_message_rows(
                 )),
                 "inbox_datetime",
             )
-            .order_by_asc(sigint_comment::Column::CreatedAt)
-            .order_by_asc(sigint_comment::Column::Id)
-            .into_model::<EchoCommentedMessageExportRow>()
+            .into_model()
             .all(dbx)
             .await
             .c(h!())?;
+    let parent_ids = parent_rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let comments = find_report_comments(dbx, &parent_ids, None)
+        .await
+        .c(h!())?
+        .into_iter()
+        .filter(|comment| {
+            comment.created_at >= since_ts
+                && comment.created_at < till_ts
+                && !comment.comment.trim().is_empty()
+                && comment.login_id.is_some_and(|id| id != system_login_id)
+        })
+        .collect::<Vec<_>>();
+    let parent_rows = parent_rows
+        .into_iter()
+        .map(|row| (row.id, row))
+        .collect::<HashMap<_, _>>();
+    let source_login_ids = comments
+        .iter()
+        .filter_map(|comment| comment.login_id)
+        .collect::<HashSet<_>>();
+    let source_logins = login::Entity::find()
+        .filter(login::Column::Id.is_in(source_login_ids))
+        .join(JoinType::LeftJoin, login::Relation::Organism.def())
+        .select_only()
+        .column(login::Column::Id)
+        .column(login::Column::Login)
+        .column_as(organism::Column::Name, "organism_name")
+        .into_tuple::<(uuid::Uuid, String, Option<String>)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|(id, login, organism)| (id, (login, organism)))
+        .collect::<HashMap<_, _>>();
 
     let mut csv_rows = Vec::new();
     let mut skipped = 0_usize;
-    for row in rows {
-        let Some(comment) = non_empty_text(Some(row.comment.as_str())) else {
+    for comment in comments {
+        let Some(login_id) = comment.login_id else {
             skipped += 1;
             continue;
         };
-        let Some(body) = non_empty_text(row.body.as_deref()) else {
+        let Some((source_login, source_organism)) =
+            source_logins.get(&login_id)
+        else {
+            skipped += 1;
+            continue;
+        };
+        let Some(parent) = parent_rows.get(&comment.parent_signal_message_id)
+        else {
+            skipped += 1;
+            continue;
+        };
+        let Some(comment_text) = non_empty_text(Some(comment.comment.as_str()))
+        else {
+            skipped += 1;
+            continue;
+        };
+        let Some(body) = non_empty_text(parent.body.as_deref()) else {
             skipped += 1;
             continue;
         };
         let message_ts = resolve_message_ts(
-            row.inbox_datetime,
-            row.message_timestamp,
-            row.message_created_at,
+            parent.inbox_datetime,
+            parent.message_timestamp,
+            parent.message_created_at,
         );
         csv_rows.push(CommentCsvRow {
             body,
-            comment,
+            comment: comment_text,
             message_ts: format_export_ts(message_ts),
-            source_login: row.source_login,
-            source_organism: row.source_organism.unwrap_or_default(),
+            source_login: source_login.clone(),
+            source_organism: source_organism.clone().unwrap_or_default(),
         });
     }
     info!(
