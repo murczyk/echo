@@ -4,8 +4,8 @@ use crate::battle_line::{
     resolve_location_to_settlement_with_db,
 };
 use crate::config::{
-    get_tz, INBOX_SETTLEMENT_WORKER_BATCH_SIZE,
-    INBOX_SETTLEMENT_WORKER_SLEEP_SECS,
+    get_tz, INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
+    INBOX_SETTLEMENT_WORKER_BATCH_SIZE, INBOX_SETTLEMENT_WORKER_SLEEP_SECS,
 };
 use crate::entities::{
     sigint_inbox_item, sigint_inbox_item_settlement, signal_message,
@@ -216,14 +216,30 @@ pub async fn oneoff_link_inbox_settlements(
     info!("Starting inbox settlement linking one-off");
     let env = crate::server::new_env(mode).await.c(h!())?;
     let (since_ts, till_ts) = oneoff_bounds(ps).c(h!())?;
-    let items = load_oneoff_items(&env.dbx, since_ts, till_ts)
+    let mut stats = OneoffLinkInboxSettlementsStats::default();
+    let mut cursor = None;
+    loop {
+        let items = load_oneoff_item_page(
+            &env.dbx,
+            since_ts,
+            till_ts,
+            cursor,
+            INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
+        )
         .await
         .c(h!())?;
-    let mut stats = OneoffLinkInboxSettlementsStats::default();
-    for item in items {
-        process_oneoff_item(&env, item.id, &mut stats)
-            .await
-            .c(h!())?;
+        if items.is_empty() {
+            break;
+        }
+        for (_, item_id) in &items {
+            process_oneoff_item(&env, *item_id, &mut stats)
+                .await
+                .c(h!())?;
+        }
+        cursor = items.last().copied();
+        if items.len() < INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE as usize {
+            break;
+        }
     }
     info!(
         "Inbox settlement linking done: processed={}, skipped={}, matched={}, unmatched={}",
@@ -313,11 +329,13 @@ async fn process_oneoff_item(
     Ok(())
 }
 
-async fn load_oneoff_items(
+async fn load_oneoff_item_page(
     dbx: &DatabaseConnection,
     since_ts: Option<NaiveDateTime>,
     till_ts: Option<NaiveDateTime>,
-) -> anyhow::Result<Vec<sigint_inbox_item::Model>> {
+    cursor: Option<(NaiveDateTime, i64)>,
+    limit: u64,
+) -> anyhow::Result<Vec<(NaiveDateTime, i64)>> {
     let mut query = sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -333,7 +351,28 @@ async fn load_oneoff_items(
     if let Some(till_ts) = till_ts {
         query = query.filter(sigint_inbox_item::Column::Datetime.lt(till_ts));
     }
-    query.all(dbx).await.c(h!())
+    if let Some((datetime, item_id)) = cursor {
+        query = query.filter(
+            Condition::any()
+                .add(sigint_inbox_item::Column::Datetime.gt(datetime))
+                .add(
+                    Condition::all()
+                        .add(sigint_inbox_item::Column::Datetime.eq(datetime))
+                        .add(sigint_inbox_item::Column::Id.gt(item_id)),
+                ),
+        );
+    }
+    query
+        .select_only()
+        .columns([
+            sigint_inbox_item::Column::Datetime,
+            sigint_inbox_item::Column::Id,
+        ])
+        .limit(limit)
+        .into_tuple::<(NaiveDateTime, i64)>()
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
 fn oneoff_bounds(
@@ -685,7 +724,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn oneoff_items_are_loaded_in_datetime_then_id_order() {
+    async fn oneoff_item_ids_are_paged_in_datetime_then_id_order() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -722,11 +761,26 @@ mod tests {
 
         let since = expected.first().unwrap().0;
         let till = expected.last().unwrap().0 + Duration::seconds(1);
-        let rows = load_oneoff_items(&dbx, Some(since), Some(till))
-            .await
-            .unwrap();
+        let first_page =
+            load_oneoff_item_page(&dbx, Some(since), Some(till), None, 2)
+                .await
+                .unwrap();
+        assert_eq!(first_page.len(), 2);
+        let second_page = load_oneoff_item_page(
+            &dbx,
+            Some(since),
+            Some(till),
+            first_page.last().copied(),
+            2,
+        )
+        .await
+        .unwrap();
+        let rows = first_page
+            .into_iter()
+            .chain(second_page)
+            .collect::<Vec<_>>();
         assert_eq!(
-            rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+            rows.iter().map(|(_, id)| *id).collect::<Vec<_>>(),
             expected.iter().map(|(_, id)| *id).collect::<Vec<_>>()
         );
 

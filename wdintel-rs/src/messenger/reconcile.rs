@@ -1320,6 +1320,7 @@ async fn reset_source_message_group_link(
     source_message: &signal_message::Model,
     was_duplicate_trace: bool,
 ) -> anyhow::Result<Vec<i64>> {
+    crate::battle_line::lock_updates(txn).await.c(h!())?;
     signal_message_group::Entity::delete_many()
         .filter(
             signal_message_group::Column::SignalMessageId.eq(source_message.id),
