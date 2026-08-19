@@ -12,7 +12,7 @@
 Every accepted item, atomically:
 
 1. updates `file_entry`, the current projection;
-2. appends one immutable `file_metadata_revision`;
+2. appends one immutable `file_revision`;
 3. increments the file revision and the device-wide source sequence;
 4. records the terminal item outcome.
 
@@ -27,7 +27,7 @@ flowchart LR
         API --> Sessions[("file_sync_session<br/>file_sync_batch<br/>file_sync_item")]
         Normalize --> Mutation["revision mutation"]
         Mutation --> Projection[("file_entry<br/>current projection")]
-        Mutation --> Revisions[("file_metadata_revision<br/>immutable history")]
+        Mutation --> Revisions[("file_revision<br/>immutable history")]
         Mutation --> SourceState[("file_device_source_state<br/>per-device sequence")]
         Expiry["file_sync_session_expiry_worker"] --> Sessions
         Sessions -->|"completed or expired"| Handoff["analysis-run handoff"]

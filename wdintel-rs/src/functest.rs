@@ -76,7 +76,7 @@ pub mod tests {
                         public.file_device_source_state,
                         public.file_sync_item,
                         public.file_sync_batch,
-                        public.file_metadata_revision,
+                        public.file_revision,
                         public.file_sync_session,
                         public.device_file_tag,
                         public.analytics_tag_test_file,

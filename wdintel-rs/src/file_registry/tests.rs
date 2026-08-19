@@ -1,7 +1,7 @@
 use super::entities::sea_orm_active_enums::{
     FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
 };
-use super::entities::{file_entry, file_metadata_revision, file_sync_session};
+use super::entities::{file_entry, file_revision, file_sync_session};
 use super::*;
 use crate::devices::analytics::types::RuleExpression;
 use chrono::{Duration, NaiveDateTime, Utc};
@@ -531,6 +531,11 @@ async fn assert_migration_versions(connection: &DatabaseConnection) {
             "m20260813_120128_batched_file_metadata_sync".to_string(),
             "m20260815_152642_rename_file_sync_primary_key_columns".to_string(),
             "m20260818_094542_batched_file_analysis_runs".to_string(),
+            "m20260819_100659_rename_file_metadata_revision_to_file_revision"
+                .to_string(),
+            "m20260819_103638_optional_source_file_state_settled_by"
+                .to_string(),
+            "m20260819_103954_update_file_entry_analysis_guard".to_string(),
         ]
     );
 }
@@ -712,6 +717,7 @@ from information_schema.tables
 where table_schema = 'public'
   and table_name in (
       'file_metadata_revision',
+      'file_revision',
       'file_sync_batch',
       'file_sync_item',
       'file_sync_session'
@@ -728,7 +734,7 @@ order by table_name
     assert_eq!(
         table_names,
         vec![
-            "file_metadata_revision".to_string(),
+            "file_revision".to_string(),
             "file_sync_batch".to_string(),
             "file_sync_item".to_string(),
             "file_sync_session".to_string(),
@@ -805,7 +811,7 @@ order by table_name
     .await;
     assert_column_shapes(
         connection,
-        "file_metadata_revision",
+        "file_revision",
         &[
             ("id", "NO", "uuid", "uuid"),
             ("revision", "NO", "bigint", "int8"),
@@ -975,7 +981,7 @@ order by type.typname, value.enumsortorder
         ]
     );
     assert_eq!(
-        constraint_names(connection, "file_metadata_revision", 'c').await,
+        constraint_names(connection, "file_revision", 'c').await,
         vec![
             "file_metadata_revision_absolute_path_check".to_string(),
             "file_metadata_revision_analysis_check".to_string(),
@@ -985,7 +991,7 @@ order by type.typname, value.enumsortorder
         ]
     );
     assert_eq!(
-        constraint_names(connection, "file_metadata_revision", 'u').await,
+        constraint_names(connection, "file_revision", 'u').await,
         vec!["file_metadata_revision_source_sequence_key".to_string()]
     );
     assert_eq!(
@@ -1002,7 +1008,7 @@ order by type.typname, value.enumsortorder
         vec!["file_sync_batch_session_fk".to_string()]
     );
     assert_eq!(
-        constraint_names(connection, "file_metadata_revision", 'f').await,
+        constraint_names(connection, "file_revision", 'f').await,
         vec![
             "file_metadata_revision_file_fk".to_string(),
             "file_metadata_revision_input_fk".to_string(),
@@ -1026,7 +1032,7 @@ select tablename, indexname
 from pg_catalog.pg_indexes
 where schemaname = 'public'
   and tablename in (
-      'file_metadata_revision',
+      'file_revision',
       'file_sync_batch',
       'file_sync_item',
       'file_sync_session'
@@ -1049,18 +1055,15 @@ order by tablename, indexname
         indexes,
         [
             (
-                "file_metadata_revision",
+                "file_revision",
                 "file_metadata_revision_device_file_source_idx",
             ),
-            ("file_metadata_revision", "file_metadata_revision_pkey"),
+            ("file_revision", "file_metadata_revision_pkey"),
             (
-                "file_metadata_revision",
+                "file_revision",
                 "file_metadata_revision_source_sequence_key",
             ),
-            (
-                "file_metadata_revision",
-                "file_metadata_revision_sync_file_idx",
-            ),
+            ("file_revision", "file_metadata_revision_sync_file_idx",),
             ("file_sync_batch", "file_sync_batch_pkey"),
             ("file_sync_item", "file_sync_item_accepted_path_uidx"),
             ("file_sync_item", "file_sync_item_pkey"),
@@ -1080,7 +1083,7 @@ order by tablename, indexname
             r#"
 select tgname
 from pg_catalog.pg_trigger
-where tgrelid = 'public.file_metadata_revision'::regclass
+where tgrelid = 'public.file_revision'::regclass
   and not tgisinternal
 order by tgname
 "#
@@ -1782,7 +1785,7 @@ async fn insert_file_revision(
     created_at: NaiveDateTime,
 ) {
     let created_at_tz = created_at.and_utc().fixed_offset();
-    file_metadata_revision::ActiveModel {
+    file_revision::ActiveModel {
         id: Set(file_id),
         revision: Set(1),
         device_id: Set(device_id),

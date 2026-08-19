@@ -16,7 +16,7 @@ flowchart LR
         RulesAPI["tag and rule administration"] --> Definition[("file_analysis_definition<br/>immutable rule snapshot")]
         RunFactory --> Runs[("file_analysis_run<br/>bounded execution")]
         Runs --> Items[("file_analysis_run_item<br/>revision + result")]
-        Revisions[("file_metadata_revision<br/>immutable source")]
+        Revisions[("file_revision<br/>immutable source")]
         Projection[("file_entry<br/>current pointer")]
         Tags[("device_file_tag<br/>current memberships")]
         Workers["4 analysis workers"]

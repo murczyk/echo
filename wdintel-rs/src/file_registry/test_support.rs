@@ -1,6 +1,5 @@
 use super::entities::{
-    file_device_source_state, file_entry, file_metadata_revision,
-    file_sync_session,
+    file_device_source_state, file_entry, file_revision, file_sync_session,
     sea_orm_active_enums::{
         FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
     },
@@ -83,7 +82,7 @@ pub(crate) async fn insert_entry(
     entry.analysis_input_revision = Set(Some(1));
     entry.current_analysis_run_id = Set(None);
     let file = entry.insert(&transaction).await.unwrap();
-    file_metadata_revision::ActiveModel {
+    file_revision::ActiveModel {
         id: Set(file.id),
         revision: Set(1),
         device_id: Set(file.device_id),

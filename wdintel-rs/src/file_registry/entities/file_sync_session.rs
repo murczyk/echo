@@ -33,8 +33,8 @@ pub enum Relation {
     FileAnalysisRun,
     #[sea_orm(has_many = "super::file_entry::Entity")]
     FileEntry,
-    #[sea_orm(has_many = "super::file_metadata_revision::Entity")]
-    FileMetadataRevision,
+    #[sea_orm(has_many = "super::file_revision::Entity")]
+    FileRevision,
     #[sea_orm(has_many = "super::file_sync_batch::Entity")]
     FileSyncBatch,
 }
@@ -51,9 +51,9 @@ impl Related<super::file_entry::Entity> for Entity {
     }
 }
 
-impl Related<super::file_metadata_revision::Entity> for Entity {
+impl Related<super::file_revision::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::FileMetadataRevision.def()
+        Relation::FileRevision.def()
     }
 }
 

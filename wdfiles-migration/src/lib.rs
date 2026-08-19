@@ -16,6 +16,9 @@ mod m20260810_120000_seed_default_analytics_tags;
 mod m20260813_120128_batched_file_metadata_sync;
 mod m20260815_152642_rename_file_sync_primary_key_columns;
 mod m20260818_094542_batched_file_analysis_runs;
+mod m20260819_100659_rename_file_metadata_revision_to_file_revision;
+mod m20260819_103638_optional_source_file_state_settled_by;
+mod m20260819_103954_update_file_entry_analysis_guard;
 
 pub struct Migrator;
 
@@ -48,6 +51,15 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260818_094542_batched_file_analysis_runs::Migration,
+            ),
+            Box::new(
+                m20260819_100659_rename_file_metadata_revision_to_file_revision::Migration,
+            ),
+            Box::new(
+                m20260819_103638_optional_source_file_state_settled_by::Migration,
+            ),
+            Box::new(
+                m20260819_103954_update_file_entry_analysis_guard::Migration,
             ),
         ]
     }

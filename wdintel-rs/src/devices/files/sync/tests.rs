@@ -9,8 +9,8 @@ use crate::devices::{access, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
 use crate::error::AppError;
 use crate::file_registry::entities::{
-    file_analysis_run, file_device_source_state, file_entry,
-    file_metadata_revision, file_sync_batch, file_sync_item, file_sync_session,
+    file_analysis_run, file_device_source_state, file_entry, file_revision,
+    file_sync_batch, file_sync_item, file_sync_session,
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
@@ -130,6 +130,51 @@ fn request_item_rejects_client_supplied_file_identity() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn source_file_state_accepts_missing_settlement_actor() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let (actor, device_id) = sync_fixture(&env, "optional-settled-by").await;
+    let file_registry = env.file_registry_db().unwrap();
+    let file_db = file_registry.connection();
+    let mut item = raw_item("C:\\reports\\without-actor.log");
+    item.source_file_state = Some(RawSourceFileState {
+        state: Some("scanned".to_string()),
+        settled_at: Some("2026-07-24T10:15:30Z".to_string()),
+        settled_by: None,
+    });
+
+    let response =
+        automatic(&env.dbx, file_registry, &actor, device_id, vec![item])
+            .await
+            .unwrap();
+    assert_eq!(response.sync.status, FileSyncSessionStatus::Completed);
+    let (file_id, revision) = accepted_result(&response.results[0]);
+    assert_eq!(revision, 1);
+    let file_id = Uuid::parse_str(file_id).unwrap();
+    let source_file_state = match &response.results[0] {
+        FileSyncResult::Accepted { file, .. } => {
+            file.source_file_state.as_ref().unwrap()
+        }
+        result => panic!("expected accepted result, got {result:?}"),
+    };
+    assert_eq!(source_file_state.state, SourceFileStateKind::Scanned);
+    assert_eq!(source_file_state.settled_by, None);
+
+    let current = file_entry::Entity::find_by_id(file_id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    let revision = file_revision::Entity::find_by_id((file_id, 1))
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.source_file_state_settled_by, None);
+    assert_eq!(revision.source_file_state_settled_by, None);
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let (actor, device_id) = sync_fixture(&env, "automatic-sync").await;
@@ -190,7 +235,7 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
             let source = file.source_file_state.as_ref().unwrap();
             assert_eq!(source.state, SourceFileStateKind::Downloaded);
             assert_eq!(source.settled_at, "2026-07-24T08:15:30Z");
-            assert_eq!(source.settled_by, "still-client");
+            assert_eq!(source.settled_by.as_deref(), Some("still-client"));
             file.updated_at.clone()
         }
         _ => unreachable!(),
@@ -218,7 +263,7 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
         .await
         .unwrap()
         .unwrap();
-    let revision = file_metadata_revision::Entity::find_by_id((file_id, 1))
+    let revision = file_revision::Entity::find_by_id((file_id, 1))
         .one(file_db)
         .await
         .unwrap()
@@ -285,7 +330,7 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     }
 
     let metadata_only_revision =
-        file_metadata_revision::Entity::find_by_id((file_id, 2))
+        file_revision::Entity::find_by_id((file_id, 2))
             .one(file_db)
             .await
             .unwrap()
@@ -323,20 +368,18 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
     let new_file_id = Uuid::parse_str(new_file_id).unwrap();
     assert_ne!(new_file_id, file_id);
     assert_eq!(revision, 1);
-    let updated_revision =
-        file_metadata_revision::Entity::find_by_id((file_id, 3))
-            .one(file_db)
-            .await
-            .unwrap()
-            .unwrap();
+    let updated_revision = file_revision::Entity::find_by_id((file_id, 3))
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(updated_revision.source_sequence, 3);
     assert_eq!(updated_revision.analysis_input_revision, 3);
-    let new_revision =
-        file_metadata_revision::Entity::find_by_id((new_file_id, 1))
-            .one(file_db)
-            .await
-            .unwrap()
-            .unwrap();
+    let new_revision = file_revision::Entity::find_by_id((new_file_id, 1))
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(new_revision.source_sequence, 4);
     assert_eq!(new_revision.analysis_input_revision, 1);
     let changed_analysis_run =
@@ -393,7 +436,7 @@ async fn automatic_sync_persists_revisions_and_full_replacement_projection() {
             assert_eq!(file.extension.as_deref(), Some("LOG"));
             let source = file.source_file_state.as_ref().unwrap();
             assert_eq!(source.state, SourceFileStateKind::Downloaded);
-            assert_eq!(source.settled_by, "still-client");
+            assert_eq!(source.settled_by.as_deref(), Some("still-client"));
         }
         result => panic!("expected historical accepted result, got {result:?}"),
     }
@@ -438,7 +481,7 @@ async fn explicit_sync_recovers_persisted_batches_and_completes_idempotently() {
     invalid_state.source_file_state = Some(RawSourceFileState {
         state: Some("scanned".to_string()),
         settled_at: Some("2026-07-24T10:15:30Z".to_string()),
-        settled_by: None,
+        settled_by: Some("   ".to_string()),
     });
     let batch_zero = super::apply_batch(
         &env.dbx,
@@ -475,8 +518,8 @@ async fn explicit_sync_recovers_persisted_batches_and_completes_idempotently() {
         .unwrap()
         .is_none());
     assert_eq!(
-        file_metadata_revision::Entity::find()
-            .filter(file_metadata_revision::Column::Id.eq(first_file_id))
+        file_revision::Entity::find()
+            .filter(file_revision::Column::Id.eq(first_file_id))
             .count(file_db)
             .await
             .unwrap(),
@@ -768,7 +811,7 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
             end
             $function$;
             create trigger test_fail_file_revision_insert_trg
-                before insert on public.file_metadata_revision
+                before insert on public.file_revision
                 for each row execute function public.test_fail_file_revision_insert();
             "#,
         )
@@ -793,7 +836,7 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
         .execute_unprepared(
             r#"
             drop trigger test_fail_file_revision_insert_trg
-                on public.file_metadata_revision;
+                on public.file_revision;
             drop function public.test_fail_file_revision_insert();
             "#,
         )
@@ -819,10 +862,7 @@ async fn authorization_precedes_file_mutation_and_infrastructure_failure_rolls_b
         0
     );
     assert_eq!(
-        file_metadata_revision::Entity::find()
-            .count(file_db)
-            .await
-            .unwrap(),
+        file_revision::Entity::find().count(file_db).await.unwrap(),
         0
     );
     assert_eq!(file_entry::Entity::find().count(file_db).await.unwrap(), 0);

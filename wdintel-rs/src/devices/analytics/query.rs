@@ -5,7 +5,7 @@ use super::types::{
 use crate::file_registry::entities::{
     analytics_tag, analytics_tag_test_file, device_file_tag,
     file_analysis_definition, file_analysis_run, file_analysis_run_item,
-    file_entry, file_metadata_revision,
+    file_entry, file_revision,
     sea_orm_active_enums::{
         FileEntryKind, SourceFileStateKind as DbSourceFileStateKind,
     },
@@ -548,7 +548,7 @@ where
 {
     let now = Utc::now().fixed_offset();
     file_analysis_run_item::Entity::find()
-        .find_also_related(file_metadata_revision::Entity)
+        .find_also_related(file_revision::Entity)
         .filter(file_analysis_run_item::Column::Id.eq(run_id))
         .filter(
             file_analysis_run_item::Column::FileId
@@ -561,7 +561,7 @@ where
         .into_iter()
         .map(|(item, metadata)| {
             let metadata = metadata.ok_or_else(|| {
-                DbErr::RecordNotFound("file_metadata_revision".to_owned())
+                DbErr::RecordNotFound("file_revision".to_owned())
             })?;
             let state = if item.completed_at.is_some() {
                 "completed"

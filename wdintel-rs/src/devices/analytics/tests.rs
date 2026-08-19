@@ -12,8 +12,7 @@ use crate::devices::{access, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
     device_file_tag, file_analysis_definition, file_analysis_run,
-    file_analysis_run_item, file_entry, file_metadata_revision,
-    file_sync_session,
+    file_analysis_run_item, file_entry, file_revision, file_sync_session,
     sea_orm_active_enums::{
         FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
     },
@@ -1528,14 +1527,12 @@ async fn metadata_only_sync_preserves_current_analysis_projection() {
         before.analysis_input_revision,
     );
     assert_eq!(after.current_analysis_run_id, Some(run.id));
-    let latest_revision = file_metadata_revision::Entity::find_by_id((
-        file_id,
-        after.revision.unwrap(),
-    ))
-    .one(file_db)
-    .await
-    .unwrap()
-    .unwrap();
+    let latest_revision =
+        file_revision::Entity::find_by_id((file_id, after.revision.unwrap()))
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
     assert_eq!(
         latest_revision.analysis_input_revision,
         before.analysis_input_revision.unwrap(),
@@ -1632,12 +1629,11 @@ async fn run_items_reject_invalid_results_and_late_targets() {
         &[("late.pdf", r"C:\late.pdf", "pdf")],
     )
     .await[0];
-    let late_revision =
-        file_metadata_revision::Entity::find_by_id((late_file_id, 1))
-            .one(file_db)
-            .await
-            .unwrap()
-            .unwrap();
+    let late_revision = file_revision::Entity::find_by_id((late_file_id, 1))
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
     let error = file_analysis_run_item::ActiveModel {
         id: Set(run.id),
         file_id: Set(late_file_id),

@@ -8,7 +8,7 @@ pub use super::file_analysis_run::Entity as FileAnalysisRun;
 pub use super::file_analysis_run_item::Entity as FileAnalysisRunItem;
 pub use super::file_device_source_state::Entity as FileDeviceSourceState;
 pub use super::file_entry::Entity as FileEntry;
-pub use super::file_metadata_revision::Entity as FileMetadataRevision;
+pub use super::file_revision::Entity as FileRevision;
 pub use super::file_sync_batch::Entity as FileSyncBatch;
 pub use super::file_sync_item::Entity as FileSyncItem;
 pub use super::file_sync_session::Entity as FileSyncSession;

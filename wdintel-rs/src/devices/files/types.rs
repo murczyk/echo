@@ -432,7 +432,7 @@ pub(in crate::devices) struct RawApplyFileSyncBatchReq {
 pub(in crate::devices) struct NormalizedSourceFileState {
     pub(in crate::devices) state: DomainSourceFileStateKind,
     pub(in crate::devices) settled_at: DateTime<FixedOffset>,
-    pub(in crate::devices) settled_by: String,
+    pub(in crate::devices) settled_by: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -534,7 +534,7 @@ pub enum SourceFileStateKind {
 pub struct SourceFileState {
     pub state: SourceFileStateKind,
     pub settled_at: String,
-    pub settled_by: String,
+    pub settled_by: Option<String>,
 }
 
 #[derive(

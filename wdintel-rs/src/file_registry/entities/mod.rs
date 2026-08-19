@@ -10,7 +10,7 @@ pub mod file_analysis_run;
 pub mod file_analysis_run_item;
 pub mod file_device_source_state;
 pub mod file_entry;
-pub mod file_metadata_revision;
+pub mod file_revision;
 pub mod file_sync_batch;
 pub mod file_sync_item;
 pub mod file_sync_session;

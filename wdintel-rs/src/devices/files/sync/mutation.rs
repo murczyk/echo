@@ -188,7 +188,7 @@ const APPLY_SYNC_ITEMS_SQL: &str = r#"
         returning link.id
     ),
     inserted_revisions as (
-        insert into file_metadata_revision (
+        insert into file_revision (
             id,
             revision,
             device_id,
@@ -488,7 +488,7 @@ fn mutation_from_item(
         item.source_file_state_settled_by.clone(),
     ) {
         (None, None, None) => None,
-        (Some(state), Some(settled_at), Some(settled_by)) => {
+        (Some(state), Some(settled_at), settled_by) => {
             Some(NormalizedSourceFileState {
                 state,
                 settled_at,
@@ -800,7 +800,7 @@ fn source_state_columns(
                 DomainSourceFileStateKind::Changed => "changed",
             }),
             Some(source_file_state.settled_at),
-            Some(source_file_state.settled_by.clone()),
+            source_file_state.settled_by.clone(),
         ),
         None => (None, None, None),
     }

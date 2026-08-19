@@ -33,7 +33,7 @@ flowchart LR
         end
 
         subgraph FilePostgreSQL["wd_files PostgreSQL"]
-            FileStore[("file_entry<br/>file_metadata_revision<br/>file_device_source_state")]
+            FileStore[("file_entry<br/>file_revision<br/>file_device_source_state")]
             SyncStore[("file_sync_session<br/>file_sync_batch<br/>file_sync_item")]
             AnalysisStore[("file_analysis_definition<br/>file_analysis_run<br/>file_analysis_run_item")]
             TagStore[("analytics_tag<br/>analytics_tag_test_file<br/>device_file_tag")]

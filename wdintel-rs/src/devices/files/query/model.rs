@@ -187,7 +187,7 @@ fn map_source_file_state(
         entry.source_file_state_settled_by.clone(),
     ) {
         (None, None, None) => Ok(None),
-        (Some(state), Some(settled_at), Some(settled_by)) => {
+        (Some(state), Some(settled_at), settled_by) => {
             Ok(Some(NormalizedSourceFileState {
                 state,
                 settled_at,

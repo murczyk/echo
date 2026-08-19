@@ -13,7 +13,7 @@ use crate::config::{
 };
 use crate::devices::analytics::{ensure_sync_run, hydrate_active_tags};
 use crate::file_registry::entities::{
-    file_analysis_run, file_entry, file_metadata_revision, file_sync_batch,
+    file_analysis_run, file_entry, file_revision, file_sync_batch,
     file_sync_item, file_sync_session,
     sea_orm_active_enums::{
         FileSyncBatchStatus as DbBatchStatus,
@@ -721,16 +721,16 @@ async fn hydrate_results(
     let revisions = if revision_keys.is_empty() {
         Vec::new()
     } else {
-        file_metadata_revision::Entity::find()
+        file_revision::Entity::find()
             .filter(
                 Expr::tuple([
-                    Expr::col(file_metadata_revision::Column::Id),
-                    Expr::col(file_metadata_revision::Column::Revision),
+                    Expr::col(file_revision::Column::Id),
+                    Expr::col(file_revision::Column::Revision),
                 ])
                 .in_tuples(revision_keys),
             )
-            .order_by_asc(file_metadata_revision::Column::Id)
-            .order_by_asc(file_metadata_revision::Column::Revision)
+            .order_by_asc(file_revision::Column::Id)
+            .order_by_asc(file_revision::Column::Revision)
             .all(file_db)
             .await
             .map_err(map_database)?
@@ -873,7 +873,7 @@ fn into_immediate_result(result: FileSyncSessionItemResult) -> FileSyncResult {
 
 fn file_from_revision(
     current: &file_entry::Model,
-    revision: &file_metadata_revision::Model,
+    revision: &file_revision::Model,
 ) -> Result<FileEntry, SyncServiceError> {
     let parent_entry_id = current
         .parent_id
@@ -884,7 +884,7 @@ fn file_from_revision(
         revision.source_file_state_settled_by.clone(),
     ) {
         (None, None, None) => None,
-        (Some(state), Some(settled_at), Some(settled_by)) => {
+        (Some(state), Some(settled_at), settled_by) => {
             Some(NormalizedSourceFileState {
                 state,
                 settled_at,

@@ -62,9 +62,8 @@ pub(super) fn prepare_items(
                 source_file_state_settled_at: Set(
                     source_file_state.map(|value| value.settled_at)
                 ),
-                source_file_state_settled_by: Set(
-                    source_file_state.map(|value| value.settled_by.clone())
-                ),
+                source_file_state_settled_by: Set(source_file_state
+                    .and_then(|value| value.settled_by.clone())),
                 revision: Set(None),
                 root_id: Set(None),
                 error_code: Set(
@@ -244,13 +243,7 @@ fn parse_source_file_state(
             });
             None
         }
-        None => {
-            field_errors.push(FileSyncFieldError {
-                path: format!("{path}.settled_by"),
-                message: "must be a string".to_string(),
-            });
-            None
-        }
+        None => None,
     };
 
     if field_errors.len() != initial_error_count {
@@ -259,6 +252,6 @@ fn parse_source_file_state(
     Some(NormalizedSourceFileState {
         state: state.expect("validated source state"),
         settled_at: settled_at.expect("validated settlement timestamp"),
-        settled_by: settled_by.expect("validated settlement actor"),
+        settled_by,
     })
 }

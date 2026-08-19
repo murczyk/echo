@@ -5,7 +5,7 @@ use super::{
 };
 use crate::file_registry::entities::{
     file_analysis_definition, file_analysis_run, file_analysis_run_item,
-    file_device_source_state, file_metadata_revision,
+    file_device_source_state, file_revision,
 };
 use crate::h;
 use anyhow::{Context, Result};
@@ -197,7 +197,7 @@ async fn verify_runtime_state(db: &DatabaseConnection) -> Result<(), DbErr> {
                     select
                         device_id,
                         max(source_sequence) as last_source_sequence
-                    from file_metadata_revision
+                    from file_revision
                     group by device_id
                 ),
                 source_state_mismatches as materialized (
@@ -216,8 +216,8 @@ async fn verify_runtime_state(db: &DatabaseConnection) -> Result<(), DbErr> {
                         )::bigint as source_state,
                         (
                             select count(*)
-                            from file_metadata_revision as revision
-                            left join file_metadata_revision as input
+                            from file_revision as revision
+                            left join file_revision as input
                               on input.id = revision.id
                              and input.revision =
                                 revision.analysis_input_revision
@@ -226,7 +226,7 @@ async fn verify_runtime_state(db: &DatabaseConnection) -> Result<(), DbErr> {
                         (
                             select count(*)
                             from file_entry as file
-                            left join file_metadata_revision as revision
+                            left join file_revision as revision
                               on revision.id = file.id
                              and revision.revision = file.revision
                             where file.kind = 'file'
@@ -255,7 +255,7 @@ async fn verify_runtime_state(db: &DatabaseConnection) -> Result<(), DbErr> {
                             where run.sync_id is not null
                               and not exists (
                                 select 1
-                                from file_metadata_revision as revision
+                                from file_revision as revision
                                 where revision.sync_id = run.sync_id
                                   and revision.revision =
                                     revision.analysis_input_revision
@@ -339,7 +339,7 @@ async fn verify_runtime_state(db: &DatabaseConnection) -> Result<(), DbErr> {
                             left join file_analysis_run_item as item
                               on item.id = file.current_analysis_run_id
                              and item.file_id = file.id
-                            left join file_metadata_revision as target
+                            left join file_revision as target
                               on target.id = item.file_id
                              and target.revision =
                                 item.metadata_revision
@@ -558,13 +558,13 @@ pub(in crate::devices) async fn ensure_sync_run(
     {
         return Ok(Some(run_id));
     }
-    let has_new_input = file_metadata_revision::Entity::find()
+    let has_new_input = file_revision::Entity::find()
         .select_only()
-        .column(file_metadata_revision::Column::Id)
-        .filter(file_metadata_revision::Column::SyncId.eq(sync_id))
+        .column(file_revision::Column::Id)
+        .filter(file_revision::Column::SyncId.eq(sync_id))
         .filter(
-            Expr::col(file_metadata_revision::Column::Revision)
-                .equals(file_metadata_revision::Column::AnalysisInputRevision),
+            Expr::col(file_revision::Column::Revision)
+                .equals(file_revision::Column::AnalysisInputRevision),
         )
         .limit(1)
         .into_tuple::<Uuid>()
@@ -749,21 +749,17 @@ pub(super) async fn prepare_next_page(
         .context(h!())?;
     let cursor = last_file_id.unwrap_or(Uuid::nil());
     let candidates = if let Some(sync_id) = run.sync_id {
-        file_metadata_revision::Entity::find()
+        file_revision::Entity::find()
             .select_only()
-            .column_as(file_metadata_revision::Column::Id, "file_id")
-            .column_as(
-                file_metadata_revision::Column::Revision,
-                "metadata_revision",
-            )
-            .filter(file_metadata_revision::Column::SyncId.eq(sync_id))
+            .column_as(file_revision::Column::Id, "file_id")
+            .column_as(file_revision::Column::Revision, "metadata_revision")
+            .filter(file_revision::Column::SyncId.eq(sync_id))
             .filter(
-                Expr::col(file_metadata_revision::Column::Revision).equals(
-                    file_metadata_revision::Column::AnalysisInputRevision,
-                ),
+                Expr::col(file_revision::Column::Revision)
+                    .equals(file_revision::Column::AnalysisInputRevision),
             )
-            .filter(file_metadata_revision::Column::Id.gt(cursor))
-            .order_by_asc(file_metadata_revision::Column::Id)
+            .filter(file_revision::Column::Id.gt(cursor))
+            .order_by_asc(file_revision::Column::Id)
             .limit(page_size)
             .into_model::<PreparationCandidate>()
             .all(&transaction)
@@ -779,22 +775,19 @@ pub(super) async fn prepare_next_page(
                 )
             })
             .context(h!())?;
-        file_metadata_revision::Entity::find()
+        file_revision::Entity::find()
             .select_only()
-            .column_as(file_metadata_revision::Column::Id, "file_id")
-            .column_as(
-                file_metadata_revision::Column::Revision,
-                "metadata_revision",
-            )
-            .distinct_on([file_metadata_revision::Column::Id])
-            .filter(file_metadata_revision::Column::DeviceId.eq(run.device_id))
+            .column_as(file_revision::Column::Id, "file_id")
+            .column_as(file_revision::Column::Revision, "metadata_revision")
+            .distinct_on([file_revision::Column::Id])
+            .filter(file_revision::Column::DeviceId.eq(run.device_id))
             .filter(
-                file_metadata_revision::Column::SourceSequence
+                file_revision::Column::SourceSequence
                     .lte(target_source_sequence),
             )
-            .filter(file_metadata_revision::Column::Id.gt(cursor))
-            .order_by_asc(file_metadata_revision::Column::Id)
-            .order_by_desc(file_metadata_revision::Column::SourceSequence)
+            .filter(file_revision::Column::Id.gt(cursor))
+            .order_by_asc(file_revision::Column::Id)
+            .order_by_desc(file_revision::Column::SourceSequence)
             .limit(page_size)
             .into_model::<PreparationCandidate>()
             .all(&transaction)
@@ -937,10 +930,10 @@ pub(super) async fn claim_analysis_batch(
                 updated.lease_token
             from updated
             join candidate_run as run on run.id = updated.id
-            join file_metadata_revision as target
+            join file_revision as target
               on target.id = updated.file_id
              and target.revision = updated.metadata_revision
-            join file_metadata_revision as input
+            join file_revision as input
               on input.id = target.id
              and input.revision = target.analysis_input_revision
             order by updated.file_id
@@ -1083,7 +1076,7 @@ pub(super) async fn complete_analysis_batch(
                     join locked_files on locked_files.id = item.file_id
                     join file_analysis_run as new_run
                       on new_run.id = item.run_id
-                    join file_metadata_revision as target
+                    join file_revision as target
                       on target.id = item.file_id
                      and target.revision = item.metadata_revision
                     where file.id = item.file_id

@@ -72,21 +72,21 @@ pub enum Relation {
     )]
     SelfRef,
     #[sea_orm(
-        belongs_to = "super::file_metadata_revision::Entity",
+        belongs_to = "super::file_revision::Entity",
         from = "(Column::Id, Column::AnalysisInputRevision)",
-        to = "(super::file_metadata_revision::Column::Id, super::file_metadata_revision::Column::Revision)",
+        to = "(super::file_revision::Column::Id, super::file_revision::Column::Revision)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
-    FileMetadataRevision2,
+    FileRevision2,
     #[sea_orm(
-        belongs_to = "super::file_metadata_revision::Entity",
+        belongs_to = "super::file_revision::Entity",
         from = "(Column::Id, Column::Revision)",
-        to = "(super::file_metadata_revision::Column::Id, super::file_metadata_revision::Column::Revision)",
+        to = "(super::file_revision::Column::Id, super::file_revision::Column::Revision)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
-    FileMetadataRevision1,
+    FileRevision1,
     #[sea_orm(has_many = "super::file_sync_item::Entity")]
     FileSyncItem,
     #[sea_orm(

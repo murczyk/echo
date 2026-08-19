@@ -32,13 +32,13 @@ pub enum Relation {
     #[sea_orm(has_many = "super::file_entry::Entity")]
     FileEntry,
     #[sea_orm(
-        belongs_to = "super::file_metadata_revision::Entity",
+        belongs_to = "super::file_revision::Entity",
         from = "(Column::FileId, Column::MetadataRevision)",
-        to = "(super::file_metadata_revision::Column::Id, super::file_metadata_revision::Column::Revision)",
+        to = "(super::file_revision::Column::Id, super::file_revision::Column::Revision)",
         on_update = "NoAction",
         on_delete = "Restrict"
     )]
-    FileMetadataRevision,
+    FileRevision,
 }
 
 impl Related<super::file_analysis_run::Entity> for Entity {
@@ -53,9 +53,9 @@ impl Related<super::file_entry::Entity> for Entity {
     }
 }
 
-impl Related<super::file_metadata_revision::Entity> for Entity {
+impl Related<super::file_revision::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::FileMetadataRevision.def()
+        Relation::FileRevision.def()
     }
 }
 
