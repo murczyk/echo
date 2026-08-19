@@ -10,8 +10,10 @@ scp -q "$PREVIOUS_APP_DEB" "$TARGET_HOST:$remote/"
 ssh -o BatchMode=yes "$TARGET_HOST" sudo bash -s -- \
   "$remote/$(basename "$PREVIOUS_APP_DEB")" "$app_sha" <<'REMOTE'
 set -euo pipefail
-systemctl stop echo-document-extractor-otel.service echo-document-extractor-worker.service \
-  echo-document-extractor.service
+systemctl stop echo-document-extractor-otel.service \
+  echo-document-extractor-worker.service \
+  echo-document-extractor.service || true
+systemctl stop echo-document-extractor-host-cpu-exporter.service || true
 apt-get install -y --allow-downgrades "$1"
 install -d -m 0700 /var/lib/echo-document-extractor
 printf 'application %s\n' "$2" \
@@ -23,5 +25,8 @@ fi
 /opt/echo-document-extractor/bin/verify-offline-paddle.sh
 systemctl start echo-document-extractor-firewall.service echo-document-extractor.service \
   echo-document-extractor-worker.service echo-document-extractor-otel.service
+if [[ -f /lib/systemd/system/echo-document-extractor-host-cpu-exporter.service ]]; then
+  systemctl start echo-document-extractor-host-cpu-exporter.service
+fi
 REMOTE
 "$(dirname "$0")/verify.sh" "$TARGET_HOST"
