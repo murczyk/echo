@@ -62,7 +62,7 @@ struct MouseReportData {
     datasource_map: BTreeMap<i64, datasource::Model>,
     message_map: BTreeMap<i64, signal_message::Model>,
     inbox_map: BTreeMap<i64, sigint_inbox_item::Model>,
-    comments_map: BTreeMap<i64, sigint_comment::Model>,
+    comments_map: BTreeMap<i64, crate::sigint::comments::LinkedMessageComment>,
     group_datasources_map: HashMap<i64, i64>,
 }
 
@@ -1205,7 +1205,7 @@ where
 type MouseEnrichmentMaps = (
     BTreeMap<i64, signal_message::Model>,
     BTreeMap<i64, sigint_inbox_item::Model>,
-    BTreeMap<i64, sigint_comment::Model>,
+    BTreeMap<i64, crate::sigint::comments::LinkedMessageComment>,
 );
 
 async fn load_mouse_enrichment_maps(
@@ -1237,19 +1237,15 @@ async fn load_mouse_enrichment_maps(
                 .map(|inbox| (inbox.id, inbox)),
         );
         comments_map.extend(
-            sigint_comment::Entity::find()
-                .filter(
-                    sigint_comment::Column::SignalMessageId
-                        .eq_any(ids.to_vec()),
-                )
-                .filter(
-                    sigint_comment::Column::LoginId.eq_any(login_ids.to_vec()),
-                )
-                .all(dbx)
-                .await
-                .c(h!())?
-                .into_iter()
-                .map(|comment| (comment.signal_message_id, comment)),
+            crate::sigint::comments::find_report_comments(
+                dbx,
+                ids,
+                Some(login_ids),
+            )
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|comment| (comment.parent_signal_message_id, comment)),
         );
     }
     Ok((message_map, inbox_map, comments_map))
@@ -1564,7 +1560,7 @@ fn message_full_text(
     message: &signal_message::Model,
     inbox: &sigint_inbox_item::Model,
     datasource: &datasource::Model,
-    m_comment: Option<&sigint_comment::Model>,
+    m_comment: Option<&crate::sigint::comments::LinkedMessageComment>,
 ) -> Result<String, AppError> {
     if datasource.kind == "signal"
         || datasource.kind == "whatsapp"

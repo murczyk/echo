@@ -178,10 +178,10 @@ async fn load_intelligence_report_summaries(
         return Ok(IntelligenceReportSummaries::default());
     }
     let links = intel_prod::Entity::find()
-        .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
-        )
+        .filter(intel_prod::Column::RelationKind.is_in([
+            intel_prod::RELATION_KIND_REPORT,
+            intel_prod::RELATION_KIND_COMMENT,
+        ]))
         .filter(
             Condition::any()
                 .add(
@@ -343,6 +343,51 @@ async fn load_intelligence_report_summaries(
         let parent_is_accessible = accessible_group_master_keys
             .contains_key(&link.parent_signal_message_id)
             || owner_message_ids.contains(&link.parent_signal_message_id);
+        let message_is_deleted = messages
+            .get(&link.signal_message_id)
+            .is_none_or(|message| message.deleted);
+
+        if link.relation_kind == intel_prod::RELATION_KIND_COMMENT {
+            if requested_ids.contains(&link.signal_message_id) {
+                if let Some(parent) = inbox_message_summary(
+                    link.parent_signal_message_id,
+                    parent_is_accessible,
+                    &messages,
+                    &inbox_items,
+                    &group_names,
+                    &accessible_group_master_keys,
+                    &attachment_counts,
+                ) {
+                    summaries
+                        .parents_by_message
+                        .entry(link.signal_message_id)
+                        .or_default()
+                        .push(parent);
+                }
+            }
+            if requested_ids.contains(&link.parent_signal_message_id)
+                && !message_is_deleted
+                && parent_is_accessible
+            {
+                if let Some(linked_message) = inbox_message_summary(
+                    link.signal_message_id,
+                    true,
+                    &messages,
+                    &inbox_items,
+                    &group_names,
+                    &accessible_group_master_keys,
+                    &attachment_counts,
+                ) {
+                    summaries
+                        .reports_by_message
+                        .entry(link.parent_signal_message_id)
+                        .or_default()
+                        .push(linked_message);
+                }
+            }
+            continue;
+        }
+
         if requested_ids.contains(&link.signal_message_id) {
             if let Some(parent) = inbox_message_summary(
                 link.parent_signal_message_id,
@@ -364,11 +409,8 @@ async fn load_intelligence_report_summaries(
             .contains_key(&link.signal_message_id)
             || !grouped_message_ids.contains(&link.signal_message_id)
             || parent_is_accessible;
-        let report_is_deleted = messages
-            .get(&link.signal_message_id)
-            .is_none_or(|message| message.deleted);
         if requested_ids.contains(&link.parent_signal_message_id)
-            && !report_is_deleted
+            && !message_is_deleted
         {
             if let Some(report) = inbox_message_summary(
                 link.signal_message_id,

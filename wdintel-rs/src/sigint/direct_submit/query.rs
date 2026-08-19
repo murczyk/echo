@@ -1,8 +1,8 @@
 use super::types::DirectSubmitPayload;
 use crate::entities::{
-    datasource_group, device_name, intel_prod, login, sigint_inbox_item,
-    signal_group, signal_message, signal_message_group, signal_message_media,
-    signal_profile, tag,
+    datasource_group, device_name, intel_prod, login, sigint_comment,
+    sigint_inbox_item, signal_group, signal_message, signal_message_group,
+    signal_message_media, signal_profile, tag,
 };
 use crate::error::AppError;
 use crate::types::*;
@@ -684,6 +684,29 @@ where
         .and_then(|item| item.device_name_id))
 }
 
+pub async fn find_unmigrated_legacy_comment_id<C>(
+    dbx: &C,
+    signal_message_id: i64,
+    login: &Uuid,
+    comment: &str,
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(sigint_comment::Entity::find()
+        .select_only()
+        .column(sigint_comment::Column::Id)
+        .filter(sigint_comment::Column::SignalMessageId.eq(signal_message_id))
+        .filter(sigint_comment::Column::LoginId.eq(*login))
+        .filter(sigint_comment::Column::Comment.eq(comment))
+        .filter(sigint_comment::Column::MigratedSignalMessageId.is_null())
+        .order_by_desc(sigint_comment::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?)
+}
+
 pub async fn find_unreferenced_media<C>(
     dbx: &C,
     media: &[signal_message_media::Model],
@@ -798,18 +821,36 @@ pub async fn copy_signal_message_comments(
     }
     if let Some(comment) = comment.filter(|comment| !comment.trim().is_empty())
     {
-        crate::sigint::comments::create_linked_message_comment(
-            env,
+        let legacy_comment_id = find_unmigrated_legacy_comment_id(
             dbx,
             signal_message_id,
             login,
-            logins,
             comment,
-            None,
-            None,
         )
         .await
         .c(h!())?;
+        let linked_message_id =
+            crate::sigint::comments::create_linked_message_comment(
+                env,
+                dbx,
+                signal_message_id,
+                login,
+                logins,
+                comment,
+                None,
+                None,
+            )
+            .await
+            .c(h!())?;
+        if let Some(legacy_comment_id) = legacy_comment_id {
+            crate::sigint::comments::mark_legacy_comment_as_migrated(
+                dbx,
+                legacy_comment_id,
+                linked_message_id,
+            )
+            .await
+            .c(h!())?;
+        }
     }
     Ok(())
 }

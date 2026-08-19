@@ -131,7 +131,38 @@ pub(crate) async fn submit_inbox_item_with_groups_location_mode(
     location_mode: super::InboxLocationSubmitMode,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
-        env,
+        &env.config,
+        env.settlements.clone(),
+        txn,
+        datasource_id,
+        groups,
+        login,
+        logins,
+        item,
+        None,
+        allow_empty_content,
+        keep_timestamp_missing,
+        location_mode,
+    )
+    .await
+}
+
+pub(crate) async fn submit_inbox_item_with_groups_location_mode_context(
+    config: &crate::config::Config,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    txn: &DatabaseTransaction,
+    datasource_id: Option<i64>,
+    groups: &[(String, i64)],
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    item: InboxSubmitItem,
+    allow_empty_content: bool,
+    keep_timestamp_missing: bool,
+    location_mode: super::InboxLocationSubmitMode,
+) -> Result<SubmittedInboxItem, AppError> {
+    submit_inbox_item_with_groups_inner(
+        config,
+        settlements,
         txn,
         datasource_id,
         groups,
@@ -160,7 +191,8 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
     location_mode: super::InboxLocationSubmitMode,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
-        env,
+        &env.config,
+        env.settlements.clone(),
         txn,
         datasource_id,
         groups,
@@ -176,7 +208,8 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
 }
 
 async fn submit_inbox_item_with_groups_inner(
-    env: &Env,
+    config: &crate::config::Config,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &DatabaseTransaction,
     datasource_id: Option<i64>,
     groups: &[(String, i64)],
@@ -211,7 +244,7 @@ async fn submit_inbox_item_with_groups_inner(
     let signal_message = match signal_message_id {
         Some(signal_message_id) => super::update_submit_signal_message(
             txn,
-            &env.config,
+            config,
             signal_message_id,
             &prepared.message,
             prepared.timestamp,
@@ -222,7 +255,7 @@ async fn submit_inbox_item_with_groups_inner(
         .c(h!())?,
         None => super::upsert_submit_signal_message(
             txn,
-            &env.config,
+            config,
             datasource_id,
             None,
             &prepared.message,
@@ -234,7 +267,7 @@ async fn submit_inbox_item_with_groups_inner(
         .c(h!())?,
     };
     let inbox_id = super::submit_upsert_inbox_item(
-        env.settlements.clone(),
+        settlements,
         txn,
         signal_message.id,
         &prepared.message,

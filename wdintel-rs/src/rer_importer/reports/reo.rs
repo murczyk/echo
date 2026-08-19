@@ -16,7 +16,6 @@ use docx_rs::*;
 use rust_xlsxwriter::{
     ColNum, ExcelDateTime, Format, FormatAlign, RowNum, Workbook, Worksheet,
 };
-use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde::de::DeserializeOwned;
 use std::collections::*;
@@ -106,12 +105,6 @@ pub struct CallsignSummary {
     pub callsign: String,
 }
 
-#[derive(Debug, Clone, FromQueryResult)]
-struct CommentSummary {
-    pub signal_message_id: i64,
-    pub comment: String,
-}
-
 #[derive(Debug, Clone)]
 struct ReoInboxMessage {
     pub timestamp: Option<i64>,
@@ -137,13 +130,6 @@ struct ReoInboxMessageRow {
 struct ReoGroupKeyRow {
     pub signal_message_id: i64,
     pub group_master_key: Option<String>,
-}
-
-fn non_empty_comment_filter() -> SimpleExpr {
-    Expr::cust_with_expr(
-        "length(trim($1)) > 0",
-        Expr::col(sigint_comment::Column::Comment),
-    )
 }
 
 pub async fn report_docx_kind_reo(
@@ -892,65 +878,24 @@ async fn collect_report(
     } else {
         info!("collect_report: loading comments from DB");
         let start = Instant::now();
-        // Load all comments in a single query if possible, otherwise chunk
-        if message_ids.len() <= 20000 {
-            let mut query = sigint_comment::Entity::find()
-                .filter(
-                    sigint_comment::Column::SignalMessageId.eq_any(message_ids),
+        for ids in message_ids.chunks(20000) {
+            let report_comments =
+                crate::sigint::comments::find_report_comments(
+                    dbx,
+                    ids,
+                    only_comments_from_current_organism
+                        .then_some(logins.as_slice()),
                 )
-                .filter(non_empty_comment_filter())
-                .select_only()
-                .column(sigint_comment::Column::SignalMessageId)
-                .column(sigint_comment::Column::Comment)
-                .order_by_asc(sigint_comment::Column::SignalMessageId)
-                .order_by_asc(sigint_comment::Column::CreatedAt);
-            if only_comments_from_current_organism {
-                query = query
-                    .filter(sigint_comment::Column::LoginId.eq_any(logins));
-            }
-            query
-                .into_model::<CommentSummary>()
-                .all(dbx)
                 .await
-                .context(h!())?
-                .into_iter()
-                .for_each(|c| {
-                    comments
-                        .entry(c.signal_message_id)
-                        .or_default()
-                        .push(c.comment);
-                });
-        } else {
-            // For very large datasets, chunk to avoid query size limits
-            for ids in message_ids.chunks(20000) {
-                let mut query = sigint_comment::Entity::find()
-                    .filter(
-                        sigint_comment::Column::SignalMessageId
-                            .eq_any(ids.to_vec()),
-                    )
-                    .filter(non_empty_comment_filter())
-                    .select_only()
-                    .column(sigint_comment::Column::SignalMessageId)
-                    .column(sigint_comment::Column::Comment)
-                    .order_by_asc(sigint_comment::Column::SignalMessageId)
-                    .order_by_asc(sigint_comment::Column::CreatedAt);
-                if only_comments_from_current_organism {
-                    query = query.filter(
-                        sigint_comment::Column::LoginId.is_in(logins.clone()),
-                    );
+                .context(h!())?;
+            for comment in report_comments {
+                if comment.comment.trim().is_empty() {
+                    continue;
                 }
-                query
-                    .into_model::<CommentSummary>()
-                    .all(dbx)
-                    .await
-                    .context(h!())?
-                    .into_iter()
-                    .for_each(|c| {
-                        comments
-                            .entry(c.signal_message_id)
-                            .or_default()
-                            .push(c.comment);
-                    });
+                comments
+                    .entry(comment.parent_signal_message_id)
+                    .or_default()
+                    .push(comment.comment);
             }
         }
         let comments_count: usize = comments.values().map(|v| v.len()).sum();
