@@ -1403,7 +1403,7 @@ copy-db server:
         jvln)
             just _jvln-copy-db
             ;;
-        echo-zaporizhzha|echo-kherson|echo-donetsk2|echo-soledar|echo-soledarnist|echo-lyman|echo-kharkiv|echo-siversk|echo-kherson2|echo-volyn2|echo-pivnich|echo-pivnich-dev|echo-skhid|echo-kupiansk|echo-zp2|echo-staging|echo-cbr)
+        echo-zaporizhzha|echo-kherson|echo-donetsk2|echo-soledar|echo-soledarnist|echo-lyman|echo-kharkiv|echo-siversk|echo-kherson2|echo-volyn2|echo-pivnich|echo-pivnich-dev|echo-skhid|echo-kupiansk|echo-zp2|echo-staging|echo-cbr|echo-cbr-staging)
             just server="{{ server }}" dt1="{{ dt1 }}" _copy-db
             ;;
         *)
