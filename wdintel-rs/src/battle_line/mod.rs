@@ -895,12 +895,13 @@ pub(crate) async fn resolve_location_to_settlement_with_db<C>(
 where
     C: ConnectionTrait,
 {
+    let aor_scope = (!aor_ids.is_empty()).then_some(aor_ids);
     let settlements = crate::location::find_settlements_by_name_scope(
         env.settlements.clone(),
         location.clone(),
         None,
         None,
-        None,
+        aor_scope,
     )
     .c(h!())?;
     let settlements = prefer_exact_settlement_names(&location, settlements);
@@ -927,7 +928,6 @@ where
             lon: candidate.coordinate.lon,
         })
         .collect::<Vec<_>>();
-    let aor_scope = (!aor_ids.is_empty()).then_some(aor_ids);
     let matched = match_battle_line_candidates(dbx, &points, aor_scope)
         .await
         .c(h!())?;

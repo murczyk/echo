@@ -7,16 +7,14 @@ use crate::types::ShortContext;
 /// - when we create a message we set it deleted
 /// - if we find that it's a duplicate - we link it to the original and delete the staged one
 /// - if it's not a duplicate - we unmark it as deleted and create the link
-pub async fn unstage_message<'a, 'async_trait, C>(
-    dbx: &'a C,
+pub async fn unstage_message(
+    txn: &DatabaseTransaction,
     master_key: &str,
     message: signal_message::Model,
     m_duplicate_of: Option<(signal_message::Model, datasource_group::Model)>,
-) -> anyhow::Result<UnstageResult>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+) -> anyhow::Result<UnstageResult> {
     if let Some((original, _group)) = m_duplicate_of {
+        crate::battle_line::lock_updates(txn).await.c(h!())?;
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
@@ -26,11 +24,11 @@ where
             datasource_group_id: Set(message.datasource_group_id),
             created_at: Set(message.created_at),
         }
-        .insert(dbx)
+        .insert(txn)
         .await
         .c(h!())?;
         crate::battle_line::settlement_queue::requeue_item_settlements(
-            dbx,
+            txn,
             original.id,
         )
         .await
@@ -41,11 +39,11 @@ where
             let trace_message_uid = duplicate_trace_message_uid(message.id);
             let mut message = message.into_active_model();
             message.message_uid = Set(Some(trace_message_uid));
-            message.update(dbx).await.c(h!())?;
+            message.update(txn).await.c(h!())?;
         } else {
             signal_message::Entity::delete_many()
                 .filter(signal_message::Column::Id.eq(message.id))
-                .exec(dbx)
+                .exec(txn)
                 .await
                 .c(h!())?;
         }
@@ -57,7 +55,7 @@ where
 
     let mut model = message.into_active_model();
     model.deleted = Set(false);
-    let message = model.update(dbx).await.c(h!())?;
+    let message = model.update(txn).await.c(h!())?;
     signal_message_group::ActiveModel {
         id: NotSet,
         signal_message_id: Set(message.id),
@@ -67,11 +65,11 @@ where
         datasource_group_id: Set(message.datasource_group_id),
         created_at: Set(message.created_at),
     }
-    .insert(dbx)
+    .insert(txn)
     .await
     .c(h!())?;
     crate::battle_line::settlement_queue::requeue_item_settlements(
-        dbx, message.id,
+        txn, message.id,
     )
     .await
     .c(h!())?;
