@@ -739,14 +739,15 @@ mod tests {
             row_ids.push(row.id);
         }
         setup.commit().await.unwrap();
+        let after_id = Some(row_ids[0] - 1);
 
         let first_worker = dbx.begin().await.unwrap();
-        let first = claim_pending_row(&first_worker, None)
+        let first = claim_pending_row(&first_worker, after_id)
             .await
             .unwrap()
             .expect("first pending row");
         let second_worker = dbx.begin().await.unwrap();
-        let second = claim_pending_row(&second_worker, None)
+        let second = claim_pending_row(&second_worker, after_id)
             .await
             .unwrap()
             .expect("second pending row");

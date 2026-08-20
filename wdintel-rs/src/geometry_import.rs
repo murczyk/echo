@@ -205,12 +205,13 @@ fn collect_points(
     coordinates: &str,
     features: &mut Vec<ImportedGeometryFeature>,
 ) -> anyhow::Result<()> {
-    features.extend(
-        parse_kml_coordinates_strict(coordinates)
-            .c(h!())?
-            .into_iter()
-            .map(ImportedGeometryFeature::Point),
-    );
+    let coordinates = parse_kml_coordinates_strict(coordinates).c(h!())?;
+    if coordinates.len() != 1 {
+        anyhow::bail!("KML Point must contain exactly one coordinate");
+    }
+    features.push(ImportedGeometryFeature::Point(
+        coordinates.into_iter().next().c(h!())?,
+    ));
     Ok(())
 }
 
@@ -354,6 +355,18 @@ mod tests {
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document>
   <Placemark><Point><coordinates>invalid</coordinates></Point></Placemark>
   <Placemark><LineString><coordinates>32,50,0 33,51,0</coordinates></LineString></Placemark>
+</Document></kml>"#;
+
+        assert!(parse_point_line_features("battle-line.kml", kml)
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn rejects_a_point_with_multiple_coordinates() {
+        let kml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Placemark><Point><coordinates>31,49 36,50</coordinates></Point></Placemark>
 </Document></kml>"#;
 
         assert!(parse_point_line_features("battle-line.kml", kml)

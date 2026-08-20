@@ -283,17 +283,23 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
 function UnlinkedTab({ onError }: { onError: (message: string) => void }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<BattleLineUnlinkedInboxRsp | null>(null);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     const controller = new AbortController();
     setData(null);
+    setLoading(true);
     fetchBattleLineUnlinkedInbox({ page }, { signal: controller.signal })
       .then(setData)
       .catch((loadError) => {
         if (!controller.signal.aborted) onError(toErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
   }, [onError, page]);
-  if (!data) return <CircularProgress />;
+  if (loading) return <CircularProgress />;
+  if (!data) return null;
   return (
     <Stack spacing={2}>
       {data.items.length === 0 ? (
@@ -317,17 +323,23 @@ function UnlinkedTab({ onError }: { onError: (message: string) => void }) {
 function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<BattleLineUnresolvedLocationsRsp | null>(null);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     const controller = new AbortController();
     setData(null);
+    setLoading(true);
     fetchBattleLineUnresolvedLocations({ page }, { signal: controller.signal })
       .then(setData)
       .catch((loadError) => {
         if (!controller.signal.aborted) onError(toErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
   }, [onError, page]);
-  if (!data) return <CircularProgress />;
+  if (loading) return <CircularProgress />;
+  if (!data) return null;
   return (
     <Stack spacing={2}>
       <Table size="small">

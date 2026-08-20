@@ -164,6 +164,20 @@ describe('AdminBattleLinePage', () => {
     );
   });
 
+  it('stops showing loading indicators when paginated requests fail', async () => {
+    await renderPage();
+    api.fetchBattleLineUnlinkedInbox.mockRejectedValueOnce(new Error('unlinked failed'));
+
+    await act(async () => button('ПЕРЕХОПЛЕННЯ БЕЗ НП').click());
+    await vi.waitFor(() => expect(container.textContent).toContain('unlinked failed'));
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+
+    api.fetchBattleLineUnresolvedLocations.mockRejectedValueOnce(new Error('unresolved failed'));
+    await act(async () => button('НЕВИЗНАЧЕНІ ЛОКАЦІЇ').click());
+    await vi.waitFor(() => expect(container.textContent).toContain('unresolved failed'));
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
   it('shows the empty test state and clears a superseded result after upload', async () => {
     await renderPage();
     api.testBattleLine.mockResolvedValueOnce(testResponse());
