@@ -35,6 +35,7 @@ ECHO_TEST_OPERATIONS=$operations \
 ECHO_TEST_GATEWAY_ATTEMPTS=$gateway_attempts \
 MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_ATTEMPTS=2 \
 MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_DELAY_SECONDS=0 \
+MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_TIMEOUT_SECONDS=300 \
   reconcile_analytics_schema_with_retry "$case_dir/bin"
 
 diff -u \
@@ -46,6 +47,7 @@ if ECHO_TEST_OPERATIONS=$operations \
   ECHO_TEST_GATEWAY_ATTEMPTS=$gateway_attempts \
   MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_ATTEMPTS=1 \
   MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_DELAY_SECONDS=0 \
+  MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_TIMEOUT_SECONDS=300 \
     reconcile_analytics_schema_with_retry "$case_dir/bin"; then
   printf 'schema reconciliation unexpectedly accepted exhausted retries\n' >&2
   exit 1
