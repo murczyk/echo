@@ -314,12 +314,12 @@ async fn load_reo_inbox_messages(
     .context(h!())?
     .filter(
         signal_message::Column::Id.not_in_subquery(
-            intel_prod::Entity::find()
+            intel_product::Entity::find()
                 .select_only()
-                .column(intel_prod::Column::SignalMessageId)
-                .filter(intel_prod::Column::RelationKind.is_in([
-                    intel_prod::RELATION_KIND_COMMENT,
-                    intel_prod::RELATION_KIND_REPORT,
+                .column(intel_product::Column::IntelMessageId)
+                .filter(intel_product::Column::RelationKind.is_in([
+                    intel_product::RELATION_KIND_COMMENT,
+                    intel_product::RELATION_KIND_REPORT,
                 ]))
                 .into_query(),
         ),
@@ -905,7 +905,7 @@ async fn collect_report(
                     continue;
                 }
                 comments
-                    .entry(comment.parent_signal_message_id)
+                    .entry(comment.source_message_id)
                     .or_default()
                     .push(comment.comment);
             }

@@ -18,30 +18,30 @@ impl MigrationTrait for Migration {
                 r#"
                 do $$
                 begin
-                    create type intel_prod_relation_kind as enum ('report', 'comment');
+                    create type intel_product_relation_kind as enum ('report', 'comment');
                 exception
                     when duplicate_object then null;
                 end $$;
 
-                alter table intel_prod
-                    add column if not exists relation_kind intel_prod_relation_kind;
+                alter table intel_product
+                    add column if not exists relation_kind intel_product_relation_kind;
 
-                update intel_prod
+                update intel_product
                 set relation_kind = 'comment'
                 from sigint_comment
-                where sigint_comment.migrated_signal_message_id = intel_prod.signal_message_id
-                  and sigint_comment.signal_message_id = intel_prod.parent_signal_message_id;
+                where sigint_comment.migrated_signal_message_id = intel_product.intel_message_id
+                  and sigint_comment.signal_message_id = intel_product.source_message_id;
 
-                update intel_prod
+                update intel_product
                 set relation_kind = 'report'
                 where relation_kind is null;
 
-                alter table intel_prod
+                alter table intel_product
                     alter column relation_kind set default 'report',
                     alter column relation_kind set not null;
 
-                create index if not exists idx_intel_prod_relation_kind_parent
-                    on intel_prod(relation_kind, parent_signal_message_id);
+                create index if not exists idx_intel_product_relation_kind_source
+                    on intel_product(relation_kind, source_message_id);
                 "#,
             )
             .await
@@ -54,9 +54,9 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-                drop index if exists idx_intel_prod_relation_kind_parent;
-                alter table intel_prod drop column if exists relation_kind;
-                drop type if exists intel_prod_relation_kind;
+                drop index if exists idx_intel_product_relation_kind_source;
+                alter table intel_product drop column if exists relation_kind;
+                drop type if exists intel_product_relation_kind;
                 "#,
             )
             .await

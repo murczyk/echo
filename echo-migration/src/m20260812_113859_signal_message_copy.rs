@@ -15,17 +15,17 @@ impl MigrationTrait for Migration {
         let db = manager.get_connection();
         db.execute_unprepared(
             r#"
-            create table if not exists intel_prod (
-                signal_message_id bigint not null
+            create table if not exists intel_product (
+                intel_message_id bigint not null
                     references signal_message(id) on delete cascade,
-                parent_signal_message_id bigint not null
+                source_message_id bigint not null
                     references signal_message(id) on delete cascade,
                 created_at timestamp not null default now(),
-                primary key (signal_message_id, parent_signal_message_id)
+                primary key (intel_message_id, source_message_id)
             );
 
-            create index if not exists idx_intel_prod_parent_signal_message_id
-                on intel_prod(parent_signal_message_id);
+            create index if not exists idx_intel_product_source_message_id
+                on intel_product(source_message_id);
 
             alter table signal_message_media
                 add column if not exists storage_key text;
@@ -52,8 +52,8 @@ impl MigrationTrait for Migration {
             r#"
             drop index if exists idx_signal_message_media_storage_key;
             alter table signal_message_media drop column if exists storage_key;
-            drop index if exists idx_intel_prod_parent_signal_message_id;
-            drop table if exists intel_prod;
+            drop index if exists idx_intel_product_source_message_id;
+            drop table if exists intel_product;
             "#,
         )
         .await

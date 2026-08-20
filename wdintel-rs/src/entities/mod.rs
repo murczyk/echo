@@ -87,7 +87,7 @@ pub mod goi_palitra_sync;
 pub mod gpu_config;
 pub mod group_admin_data;
 pub mod group_stats_recalculation_task;
-pub mod intel_prod;
+pub mod intel_product;
 pub mod log_users_report_generation;
 pub mod login;
 pub mod media_summary;

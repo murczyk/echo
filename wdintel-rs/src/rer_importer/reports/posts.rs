@@ -282,12 +282,12 @@ async fn load_post_report_messages(
     req: &crate::rer_importer::types::InboxMessagesReq,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let linked_message_ids = intel_prod::Entity::find()
+    let linked_message_ids = intel_product::Entity::find()
         .select_only()
-        .column(intel_prod::Column::SignalMessageId)
-        .filter(intel_prod::Column::RelationKind.is_in([
-            intel_prod::RELATION_KIND_COMMENT,
-            intel_prod::RELATION_KIND_REPORT,
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
         ]))
         .into_query();
     let rows = build_filtered_inbox_report_chunk_query(

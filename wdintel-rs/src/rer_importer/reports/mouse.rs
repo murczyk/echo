@@ -1245,7 +1245,7 @@ async fn load_mouse_enrichment_maps(
             .await
             .c(h!())?
             .into_iter()
-            .map(|comment| (comment.parent_signal_message_id, comment)),
+            .map(|comment| (comment.source_message_id, comment)),
         );
     }
     Ok((message_map, inbox_map, comments_map))
@@ -1265,12 +1265,12 @@ async fn load_mouse_report_messages_chunk(
     )
     .await
     .c(h!())?;
-    let linked_message_ids = intel_prod::Entity::find()
+    let linked_message_ids = intel_product::Entity::find()
         .select_only()
-        .column(intel_prod::Column::SignalMessageId)
-        .filter(intel_prod::Column::RelationKind.is_in([
-            intel_prod::RELATION_KIND_COMMENT,
-            intel_prod::RELATION_KIND_REPORT,
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
         ]))
         .into_query();
     let query = query

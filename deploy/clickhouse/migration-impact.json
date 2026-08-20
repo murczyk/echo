@@ -19,7 +19,7 @@
     "echo:m20260812_113859_signal_message_copy": {
       "changes": [
         { "table": "public.signal_message_media", "strategy": "mirror_resync" },
-        { "table": "public.intel_prod", "strategy": "replicated_snapshot" }
+        { "table": "public.intel_product", "strategy": "replicated_snapshot" }
       ]
     },
     "echo:m20260815_125337_add_sigint_comment_migration_marker": {
@@ -29,7 +29,7 @@
     },
     "echo:m20260817_125243_add_intel_prod_relation_kind": {
       "changes": [
-        { "table": "public.intel_prod", "strategy": "mirror_resync" }
+        { "table": "public.intel_product", "strategy": "mirror_resync" }
       ]
     },
     "echo:m20260818_104740_sigint_comment_migration_indexes": {

@@ -1,6 +1,6 @@
 use super::types::DirectSubmitPayload;
 use crate::entities::{
-    datasource_group, device_name, intel_prod, login, sigint_comment,
+    datasource_group, device_name, intel_product, login, sigint_comment,
     sigint_inbox_item, signal_group, signal_message, signal_message_group,
     signal_message_media, signal_profile, tag,
 };
@@ -100,7 +100,7 @@ where
     if !groups.is_empty() {
         return Err(AppError::NotFound);
     }
-    let parent_ids = find_intel_prod_parent_ids(dbx, signal_message_id)
+    let parent_ids = find_intel_product_parent_ids(dbx, signal_message_id)
         .await
         .c(h!())?;
     let has_parent_group_access = signal_message_group::Entity::find()
@@ -138,25 +138,25 @@ where
     }
 }
 
-pub async fn find_intel_prod_parent_ids<C>(
+pub async fn find_intel_product_parent_ids<C>(
     dbx: &C,
     signal_message_id: i64,
 ) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait,
 {
-    Ok(intel_prod::Entity::find()
-        .filter(intel_prod::Column::SignalMessageId.eq(signal_message_id))
+    Ok(intel_product::Entity::find()
+        .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
-        .order_by_asc(intel_prod::Column::CreatedAt)
+        .order_by_asc(intel_product::Column::CreatedAt)
         .all(dbx)
         .await
         .c(h!())?
         .into_iter()
-        .map(|link| link.parent_signal_message_id)
+        .map(|link| link.source_message_id)
         .collect())
 }
 
@@ -170,26 +170,26 @@ where
     if signal_message_ids.is_empty() {
         return Ok(vec![]);
     }
-    let links = intel_prod::Entity::find()
+    let links = intel_product::Entity::find()
         .filter(
-            intel_prod::Column::SignalMessageId
+            intel_product::Column::IntelMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
-        .order_by_asc(intel_prod::Column::CreatedAt)
-        .order_by_asc(intel_prod::Column::ParentSignalMessageId)
+        .order_by_asc(intel_product::Column::CreatedAt)
+        .order_by_asc(intel_product::Column::SourceMessageId)
         .all(dbx)
         .await
         .c(h!())?;
     let mut parents_by_message = HashMap::<i64, Vec<i64>>::new();
     for link in links {
         parents_by_message
-            .entry(link.signal_message_id)
+            .entry(link.intel_message_id)
             .or_default()
-            .push(link.parent_signal_message_id);
+            .push(link.source_message_id);
     }
     let mut normalized = Vec::new();
     let mut seen = HashSet::new();
@@ -488,8 +488,9 @@ where
         return Ok(true);
     }
 
-    let parent_ids =
-        find_intel_prod_parent_ids(dbx, message.id).await.c(h!())?;
+    let parent_ids = find_intel_product_parent_ids(dbx, message.id)
+        .await
+        .c(h!())?;
     for parent_id in parent_ids {
         let Some(parent) = signal_message::Entity::find_by_id(parent_id)
             .filter(signal_message::Column::Deleted.eq(false))
@@ -573,14 +574,14 @@ async fn ensure_copy_sources_are_not_reports<C>(
 where
     C: ConnectionTrait,
 {
-    let report_count = intel_prod::Entity::find()
+    let report_count = intel_product::Entity::find()
         .filter(
-            intel_prod::Column::SignalMessageId
+            intel_product::Column::IntelMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
         .count(dbx)
         .await
@@ -957,7 +958,7 @@ where
     Ok(())
 }
 
-pub async fn insert_intel_prod_links<C>(
+pub async fn insert_intel_product_links<C>(
     dbx: &C,
     signal_message_id: i64,
     parent_signal_message_ids: &[i64],
@@ -968,18 +969,18 @@ where
     let links = parent_signal_message_ids
         .iter()
         .map(|parent_signal_message_id| {
-            crate::entities::intel_prod::ActiveModel {
-                signal_message_id: Set(signal_message_id),
-                parent_signal_message_id: Set(*parent_signal_message_id),
+            crate::entities::intel_product::ActiveModel {
+                intel_message_id: Set(signal_message_id),
+                source_message_id: Set(*parent_signal_message_id),
                 relation_kind: Set(
-                    crate::entities::intel_prod::RELATION_KIND_REPORT,
+                    crate::entities::intel_product::RELATION_KIND_REPORT,
                 ),
                 created_at: NotSet,
             }
         })
         .collect::<Vec<_>>();
     if !links.is_empty() {
-        crate::entities::intel_prod::Entity::insert_many(links)
+        crate::entities::intel_product::Entity::insert_many(links)
             .exec(dbx)
             .await
             .c(h!())?;

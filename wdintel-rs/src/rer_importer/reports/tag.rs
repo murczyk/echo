@@ -437,7 +437,7 @@ async fn load_tag_report_comments(
     let mut comments_by_message = BTreeMap::new();
     for comment in comments {
         comments_by_message
-            .entry(comment.parent_signal_message_id)
+            .entry(comment.source_message_id)
             .or_insert(comment.comment);
     }
     Ok(comments_by_message)

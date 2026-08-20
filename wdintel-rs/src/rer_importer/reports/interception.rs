@@ -415,7 +415,7 @@ async fn load_interception_report_chunk(
     for comment in comments {
         if !comment.comment.trim().is_empty() {
             comments_by_message
-                .entry(comment.parent_signal_message_id)
+                .entry(comment.source_message_id)
                 .or_default()
                 .push(comment.comment);
         }
@@ -665,12 +665,12 @@ async fn build_inbox_messages_report_sql(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         );
-    let linked_message_ids = intel_prod::Entity::find()
+    let linked_message_ids = intel_product::Entity::find()
         .select_only()
-        .column(intel_prod::Column::SignalMessageId)
-        .filter(intel_prod::Column::RelationKind.is_in([
-            intel_prod::RELATION_KIND_COMMENT,
-            intel_prod::RELATION_KIND_REPORT,
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
         ]))
         .into_query();
     q = q

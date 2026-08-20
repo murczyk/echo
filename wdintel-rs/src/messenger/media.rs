@@ -1,6 +1,6 @@
 use crate::config::Config;
 use crate::entities::{
-    datasource_group, intel_prod, signal_message, signal_message_group,
+    datasource_group, intel_product, signal_message, signal_message_group,
     signal_message_media,
 };
 use crate::error::AppError;
@@ -571,19 +571,19 @@ pub(crate) async fn ensure_media_access(
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
             .c(h!())?;
-    let is_deleted_report = intel_prod::Entity::find()
+    let is_deleted_report = intel_product::Entity::find()
         .join(
             sea_orm::JoinType::InnerJoin,
-            intel_prod::Relation::SignalMessage1.def(),
+            intel_product::Relation::SignalMessage1.def(),
         )
-        .filter(intel_prod::Column::SignalMessageId.eq(signal_message_id))
+        .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
         .filter(signal_message::Column::Deleted.eq(true))
         .select_only()
-        .column(intel_prod::Column::SignalMessageId)
+        .column(intel_product::Column::IntelMessageId)
         .into_tuple::<i64>()
         .one(dbx)
         .await
@@ -611,14 +611,14 @@ pub(crate) async fn ensure_media_access(
         return Ok(());
     }
 
-    let parent_signal_message_ids = intel_prod::Entity::find()
-        .filter(intel_prod::Column::SignalMessageId.eq(signal_message_id))
+    let parent_signal_message_ids = intel_product::Entity::find()
+        .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
         .select_only()
-        .column(intel_prod::Column::ParentSignalMessageId)
+        .column(intel_product::Column::SourceMessageId)
         .into_tuple::<i64>()
         .all(dbx)
         .await
@@ -649,19 +649,19 @@ pub(crate) async fn ensure_media_access(
         .join(
             sea_orm::JoinType::InnerJoin,
             signal_message_group::Entity::belongs_to(
-                crate::entities::intel_prod::Entity,
+                crate::entities::intel_product::Entity,
             )
             .from(signal_message_group::Column::SignalMessageId)
-            .to(crate::entities::intel_prod::Column::ParentSignalMessageId)
+            .to(crate::entities::intel_product::Column::SourceMessageId)
             .into(),
         )
         .filter(
-            crate::entities::intel_prod::Column::SignalMessageId
+            crate::entities::intel_product::Column::IntelMessageId
                 .eq(signal_message_id),
         )
         .filter(
-            crate::entities::intel_prod::Column::RelationKind
-                .eq(crate::entities::intel_prod::RELATION_KIND_REPORT),
+            crate::entities::intel_product::Column::RelationKind
+                .eq(crate::entities::intel_product::RELATION_KIND_REPORT),
         )
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),

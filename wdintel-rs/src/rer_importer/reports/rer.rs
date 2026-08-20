@@ -707,22 +707,22 @@ fn item_network_link_exists() -> SimpleExpr {
 
 fn non_empty_comment_exists() -> SimpleExpr {
     let linked_message = Alias::new("linked_message");
-    let subquery = intel_prod::Entity::find()
+    let subquery = intel_product::Entity::find()
         .select_only()
         .expr(Expr::value(1))
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_COMMENT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_COMMENT),
         )
         .join_as(
             JoinType::InnerJoin,
-            intel_prod::Relation::SignalMessage1.def(),
+            intel_product::Relation::SignalMessage1.def(),
             linked_message.clone(),
         )
         .filter(
             Expr::col((
-                intel_prod::Entity,
-                intel_prod::Column::ParentSignalMessageId,
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )

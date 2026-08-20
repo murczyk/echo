@@ -1283,12 +1283,12 @@ async fn load_babak_candidate_page(
                 .is_in(access.sigint_groups.clone()),
         )
         .filter(sigint_inbox_item::Column::Datetime.is_not_null());
-    let linked_message_ids = intel_prod::Entity::find()
+    let linked_message_ids = intel_product::Entity::find()
         .select_only()
-        .column(intel_prod::Column::SignalMessageId)
-        .filter(intel_prod::Column::RelationKind.is_in([
-            intel_prod::RELATION_KIND_COMMENT,
-            intel_prod::RELATION_KIND_REPORT,
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
         ]))
         .into_query();
     query = query
@@ -1529,15 +1529,15 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
     let linked_comment_exists = Expr::exists(
         Query::select()
             .expr(Expr::value(1))
-            .from(intel_prod::Entity)
-            .and_where(intel_prod::Column::RelationKind.is_in([
-                intel_prod::RELATION_KIND_COMMENT,
-                intel_prod::RELATION_KIND_REPORT,
+            .from(intel_product::Entity)
+            .and_where(intel_product::Column::RelationKind.is_in([
+                intel_product::RELATION_KIND_COMMENT,
+                intel_product::RELATION_KIND_REPORT,
             ]))
             .and_where(
                 Expr::col((
-                    intel_prod::Entity,
-                    intel_prod::Column::ParentSignalMessageId,
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
                 ))
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
@@ -1551,8 +1551,8 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
                             signal_message::Column::Id,
                         ))
                         .equals((
-                            intel_prod::Entity,
-                            intel_prod::Column::SignalMessageId,
+                            intel_product::Entity,
+                            intel_product::Column::IntelMessageId,
                         )),
                     )
                     .and_where(signal_message::Column::Deleted.eq(false))
@@ -1686,10 +1686,10 @@ async fn load_babak_enrichment_batch(
                         linked.created_at,
                         linked.body as comment,
                         linked.sender as author
-                    from intel_prod link
+                    from intel_product link
                     join signal_message linked
-                      on linked.id = link.signal_message_id
-                    where link.parent_signal_message_id = candidate.id
+                      on linked.id = link.intel_message_id
+                    where link.source_message_id = candidate.id
                       and link.relation_kind in ('comment', 'report')
                       and linked.deleted = false
                     union all
@@ -2348,10 +2348,10 @@ mod tests {
         )
         .await
         .unwrap();
-        intel_prod::ActiveModel {
-            signal_message_id: Set(linked_comment.id),
-            parent_signal_message_id: Set(message.id),
-            relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
+        intel_product::ActiveModel {
+            intel_message_id: Set(linked_comment.id),
+            source_message_id: Set(message.id),
+            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -2369,10 +2369,10 @@ mod tests {
         )
         .await
         .unwrap();
-        intel_prod::ActiveModel {
-            signal_message_id: Set(linked_report.id),
-            parent_signal_message_id: Set(message.id),
-            relation_kind: Set(intel_prod::RELATION_KIND_REPORT),
+        intel_product::ActiveModel {
+            intel_message_id: Set(linked_report.id),
+            source_message_id: Set(message.id),
+            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
             ..Default::default()
         }
         .insert(&env.dbx)

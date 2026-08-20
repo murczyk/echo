@@ -454,7 +454,7 @@ async fn get_inbox_messages_report_network_chunk(
     for comment in comments {
         if !comment.comment.trim().is_empty() {
             comments_by_message
-                .entry(comment.parent_signal_message_id)
+                .entry(comment.source_message_id)
                 .or_default()
                 .push(comment.comment);
         }

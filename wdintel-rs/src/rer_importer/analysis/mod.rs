@@ -1949,22 +1949,22 @@ where
             .filter(sigint_comment::Column::Comment.eq("").not())
             .into_query();
         let linked_message = Alias::new("linked_message");
-        let linked_comment_exists = intel_prod::Entity::find()
+        let linked_comment_exists = intel_product::Entity::find()
             .select_only()
             .expr(Expr::value(1))
             .filter(
-                intel_prod::Column::RelationKind
-                    .eq(intel_prod::RELATION_KIND_COMMENT),
+                intel_product::Column::RelationKind
+                    .eq(intel_product::RELATION_KIND_COMMENT),
             )
             .join_as(
                 JoinType::InnerJoin,
-                intel_prod::Relation::SignalMessage1.def(),
+                intel_product::Relation::SignalMessage1.def(),
                 linked_message.clone(),
             )
             .filter(
                 Expr::col((
-                    intel_prod::Entity,
-                    intel_prod::Column::ParentSignalMessageId,
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
                 ))
                 .equals((signal_message::Entity, signal_message::Column::Id)),
             )
@@ -6236,7 +6236,7 @@ pub async fn batch_message_comments_bl(
         {
             continue;
         }
-        let message_id = comment.parent_signal_message_id;
+        let message_id = comment.source_message_id;
         res.entry(message_id).or_default().push(
             message_comment_from_linked_message(
                 comment,
@@ -6286,8 +6286,8 @@ fn message_comment_from_linked_message(
         .and_then(|login_id| login_names.get(&login_id).cloned())
         .unwrap_or_default();
     MessageComment {
-        message_id: comment.parent_signal_message_id,
-        id: comment.signal_message_id,
+        message_id: comment.source_message_id,
+        id: comment.intel_message_id,
         comment: comment.comment,
         login,
         sigint_post_name: comment
@@ -6356,8 +6356,8 @@ async fn accessible_message_ids(
                 signal_message_group::Column::SignalMessageId,
             ))
             .equals((
-                intel_prod::Entity,
-                intel_prod::Column::ParentSignalMessageId,
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
             )),
         )
         .and_where(
@@ -6379,8 +6379,8 @@ async fn accessible_message_ids(
         .and_where(
             Expr::col((signal_message::Entity, signal_message::Column::Id))
                 .equals((
-                    intel_prod::Entity,
-                    intel_prod::Column::ParentSignalMessageId,
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
                 )),
         )
         .and_where(
@@ -6390,15 +6390,15 @@ async fn accessible_message_ids(
         .to_owned();
     let parent_access = Query::select()
         .expr(Expr::value(1))
-        .from(intel_prod::Entity)
+        .from(intel_product::Entity)
         .and_where(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
         .and_where(
             Expr::col((
-                intel_prod::Entity,
-                intel_prod::Column::SignalMessageId,
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )

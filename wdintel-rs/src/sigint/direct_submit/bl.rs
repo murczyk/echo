@@ -161,7 +161,7 @@ where
     }
 
     let parent_signal_message_ids =
-        query::find_intel_prod_parent_ids(dbx, source.id)
+        query::find_intel_product_parent_ids(dbx, source.id)
             .await
             .c(h!())?;
     let parent_signal_message_ids = if parent_signal_message_ids.is_empty() {
@@ -356,7 +356,7 @@ async fn save_signal_message(
             .c(h!())?;
     let stored_parent_signal_message_ids = match signal_message_id {
         Some(signal_message_id) => {
-            query::find_intel_prod_parent_ids(&txn, signal_message_id)
+            query::find_intel_product_parent_ids(&txn, signal_message_id)
                 .await
                 .c(h!())?
         }
@@ -1027,7 +1027,7 @@ async fn finish_direct_submit(
         )
         .await
         .c(h!())?;
-        query::insert_intel_prod_links(
+        query::insert_intel_product_links(
             &txn,
             signal_message_id,
             parent_signal_message_ids,
@@ -1142,7 +1142,7 @@ fn direct_submit_payload_to_item(
 mod tests {
     use super::*;
     use crate::entities::{
-        device_name, intel_prod, palitra, palitra_highlight_worker_job,
+        device_name, intel_product, palitra, palitra_highlight_worker_job,
         sigint_comment, sigint_inbox_item, sigint_inbox_item_point_token,
         sigint_inbox_item_tag, signal_message, signal_message_group,
         signal_message_media, tag, tag_suggestion_worker_queue,
@@ -1695,9 +1695,9 @@ mod tests {
             0
         );
         assert_eq!(
-            intel_prod::Entity::find()
+            intel_product::Entity::find()
                 .filter(
-                    intel_prod::Column::SignalMessageId
+                    intel_product::Column::IntelMessageId
                         .eq(report.signal_message_id)
                 )
                 .count(&env.dbx)

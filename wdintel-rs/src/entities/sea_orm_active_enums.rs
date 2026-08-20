@@ -17,9 +17,9 @@ use serde::{Deserialize, Serialize};
 #[sea_orm(
     rs_type = "String",
     db_type = "Enum",
-    enum_name = "intel_prod_relation_kind"
+    enum_name = "intel_product_relation_kind"
 )]
-pub enum IntelProdRelationKind {
+pub enum IntelProductRelationKind {
     #[sea_orm(string_value = "report")]
     Report,
     #[sea_orm(string_value = "comment")]

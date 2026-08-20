@@ -372,12 +372,12 @@ async fn load_digest_messages(
     .context(h!())?
     .filter(
         signal_message::Column::Id.not_in_subquery(
-            intel_prod::Entity::find()
+            intel_product::Entity::find()
                 .select_only()
-                .column(intel_prod::Column::SignalMessageId)
-                .filter(intel_prod::Column::RelationKind.is_in([
-                    intel_prod::RELATION_KIND_COMMENT,
-                    intel_prod::RELATION_KIND_REPORT,
+                .column(intel_product::Column::IntelMessageId)
+                .filter(intel_product::Column::RelationKind.is_in([
+                    intel_product::RELATION_KIND_COMMENT,
+                    intel_product::RELATION_KIND_REPORT,
                 ]))
                 .into_query(),
         ),
@@ -998,7 +998,7 @@ async fn load_messages_with_comments(
         .context(h!())?;
         let comment_message_ids = comments_data
             .iter()
-            .map(|comment| comment.parent_signal_message_id)
+            .map(|comment| comment.source_message_id)
             .collect::<Vec<_>>();
         let bodies = sigint_inbox_item::Entity::find()
             .select_only()
@@ -1012,7 +1012,7 @@ async fn load_messages_with_comments(
             .into_iter()
             .collect::<HashMap<_, _>>();
         for comment in comments_data {
-            let message_id = comment.parent_signal_message_id;
+            let message_id = comment.source_message_id;
             comments.push((message_id, comment.comment));
             messages_with_comment.insert(message_id);
             if let Some(Some(body)) = bodies.get(&message_id) {

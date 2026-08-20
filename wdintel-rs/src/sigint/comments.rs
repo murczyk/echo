@@ -1,4 +1,4 @@
-use crate::entities::sea_orm_active_enums::IntelProdRelationKind;
+use crate::entities::sea_orm_active_enums::IntelProductRelationKind;
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
@@ -43,8 +43,8 @@ const SIGINT_COMMENT_MIGRATION_MAX_BATCH_SIZE: u64 = 2_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkedMessageComment {
-    pub parent_signal_message_id: i64,
-    pub signal_message_id: i64,
+    pub source_message_id: i64,
+    pub intel_message_id: i64,
     pub comment: String,
     pub created_at: NaiveDateTime,
     pub login_id: Option<uuid::Uuid>,
@@ -62,7 +62,7 @@ where
     find_linked_message_comments_by_relation_kinds(
         dbx,
         parent_signal_message_ids,
-        &[intel_prod::RELATION_KIND_COMMENT],
+        &[intel_product::RELATION_KIND_COMMENT],
     )
     .await
 }
@@ -70,7 +70,7 @@ where
 async fn find_linked_message_comments_by_relation_kinds<C>(
     dbx: &C,
     parent_signal_message_ids: &[i64],
-    relation_kinds: &[IntelProdRelationKind],
+    relation_kinds: &[IntelProductRelationKind],
 ) -> Result<Vec<LinkedMessageComment>, AppError>
 where
     C: ConnectionTrait,
@@ -79,20 +79,22 @@ where
         return Ok(vec![]);
     }
 
-    let links = intel_prod::Entity::find()
+    let links = intel_product::Entity::find()
         .filter(
-            intel_prod::Column::ParentSignalMessageId
+            intel_product::Column::SourceMessageId
                 .is_in(parent_signal_message_ids.to_vec()),
         )
-        .filter(intel_prod::Column::RelationKind.is_in(relation_kinds.to_vec()))
-        .order_by_asc(intel_prod::Column::CreatedAt)
-        .order_by_asc(intel_prod::Column::SignalMessageId)
+        .filter(
+            intel_product::Column::RelationKind.is_in(relation_kinds.to_vec()),
+        )
+        .order_by_asc(intel_product::Column::CreatedAt)
+        .order_by_asc(intel_product::Column::IntelMessageId)
         .all(dbx)
         .await
         .c(h!())?;
     let child_ids = links
         .iter()
-        .map(|link| link.signal_message_id)
+        .map(|link| link.intel_message_id)
         .collect::<Vec<_>>();
 
     let messages = if child_ids.is_empty() {
@@ -124,14 +126,14 @@ where
     let mut comments = links
         .into_iter()
         .filter_map(|link| {
-            let message = messages.get(&link.signal_message_id)?;
+            let message = messages.get(&link.intel_message_id)?;
             let login_id = message
                 .sender
                 .as_deref()
                 .and_then(|sender| uuid::Uuid::parse_str(sender).ok());
             Some(LinkedMessageComment {
-                parent_signal_message_id: link.parent_signal_message_id,
-                signal_message_id: message.id,
+                source_message_id: link.source_message_id,
+                intel_message_id: message.id,
                 comment: message.body.clone().unwrap_or_default(),
                 created_at: message.created_at,
                 login_id,
@@ -155,8 +157,8 @@ where
             .into_iter()
             .filter(|comment| comment.migrated_signal_message_id.is_none())
             .map(|comment| LinkedMessageComment {
-                parent_signal_message_id: comment.signal_message_id,
-                signal_message_id: comment.id,
+                source_message_id: comment.signal_message_id,
+                intel_message_id: comment.id,
                 comment: comment.comment,
                 created_at: comment.created_at,
                 login_id: Some(comment.login_id),
@@ -165,7 +167,7 @@ where
             }),
     );
     comments
-        .sort_by_key(|comment| (comment.created_at, comment.signal_message_id));
+        .sort_by_key(|comment| (comment.created_at, comment.intel_message_id));
     Ok(comments)
 }
 
@@ -181,8 +183,8 @@ where
         dbx,
         parent_signal_message_ids,
         &[
-            intel_prod::RELATION_KIND_COMMENT,
-            intel_prod::RELATION_KIND_REPORT,
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
         ],
     )
     .await
@@ -280,10 +282,10 @@ pub async fn create_linked_message_comment_with_context(
     signal_message.timestamp = Set(Some(comment_created_at));
     signal_message.update(txn).await.c(h!())?;
 
-    intel_prod::ActiveModel {
-        signal_message_id: Set(submitted.signal_message_id),
-        parent_signal_message_id: Set(parent_signal_message_id),
-        relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
+    intel_product::ActiveModel {
+        intel_message_id: Set(submitted.signal_message_id),
+        source_message_id: Set(parent_signal_message_id),
+        relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
         created_at: NotSet,
     }
     .insert(txn)
@@ -404,10 +406,10 @@ where
     .insert(dbx)
     .await
     .c(h!())?;
-    intel_prod::ActiveModel {
-        signal_message_id: Set(signal_message_id),
-        parent_signal_message_id: Set(parent_signal_message_id),
-        relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
+    intel_product::ActiveModel {
+        intel_message_id: Set(signal_message_id),
+        source_message_id: Set(parent_signal_message_id),
+        relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
         created_at: NotSet,
     }
     .insert(dbx)
@@ -626,15 +628,15 @@ async fn migrate_comment_batch(
     let links = migrated_comments
         .iter()
         .map(|(_, signal_message_id, parent_signal_message_id)| {
-            intel_prod::ActiveModel {
-                signal_message_id: Set(*signal_message_id),
-                parent_signal_message_id: Set(*parent_signal_message_id),
-                relation_kind: Set(intel_prod::RELATION_KIND_COMMENT),
+            intel_product::ActiveModel {
+                intel_message_id: Set(*signal_message_id),
+                source_message_id: Set(*parent_signal_message_id),
+                relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
                 created_at: NotSet,
             }
         })
         .collect::<Vec<_>>();
-    intel_prod::Entity::insert_many(links)
+    intel_product::Entity::insert_many(links)
         .exec(txn)
         .await
         .c(h!())?;
@@ -950,20 +952,20 @@ async fn load_echo_commented_message_rows(
     till_ts: NaiveDateTime,
 ) -> Result<Vec<CommentCsvRow>, AppError> {
     let system_login_id = crate::users::system_login_id(dbx).await.c(h!())?;
-    let linked_parent_ids = intel_prod::Entity::find()
+    let linked_parent_ids = intel_product::Entity::find()
         .join(
             JoinType::InnerJoin,
-            intel_prod::Relation::SignalMessage1.def(),
+            intel_product::Relation::SignalMessage1.def(),
         )
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_COMMENT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_COMMENT),
         )
         .filter(signal_message::Column::CreatedAt.gte(since_ts))
         .filter(signal_message::Column::CreatedAt.lt(till_ts))
         .filter(signal_message::Column::Deleted.eq(false))
         .select_only()
-        .column(intel_prod::Column::ParentSignalMessageId)
+        .column(intel_product::Column::SourceMessageId)
         .into_tuple::<i64>()
         .all(dbx)
         .await

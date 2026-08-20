@@ -398,8 +398,8 @@ pub(crate) async fn messages_by_id_bl(
                 signal_message_group::Column::SignalMessageId,
             ))
             .equals((
-                intel_prod::Entity,
-                intel_prod::Column::ParentSignalMessageId,
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
             )),
         )
         .and_where(
@@ -421,8 +421,8 @@ pub(crate) async fn messages_by_id_bl(
         .and_where(
             Expr::col((signal_message::Entity, signal_message::Column::Id))
                 .equals((
-                    intel_prod::Entity,
-                    intel_prod::Column::ParentSignalMessageId,
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
                 )),
         )
         .and_where(
@@ -436,8 +436,8 @@ pub(crate) async fn messages_by_id_bl(
         .and_where(
             Expr::col((signal_message::Entity, signal_message::Column::Id))
                 .equals((
-                    intel_prod::Entity,
-                    intel_prod::Column::ParentSignalMessageId,
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
                 )),
         )
         .and_where(signal_message::Column::DatasourceGroupId.is_null())
@@ -466,15 +466,15 @@ pub(crate) async fn messages_by_id_bl(
         .to_owned();
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
-        .from(intel_prod::Entity)
-        .and_where(intel_prod::Column::RelationKind.is_in([
-            intel_prod::RELATION_KIND_REPORT,
-            intel_prod::RELATION_KIND_COMMENT,
+        .from(intel_product::Entity)
+        .and_where(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_REPORT,
+            intel_product::RELATION_KIND_COMMENT,
         ]))
         .and_where(
             Expr::col((
-                intel_prod::Entity,
-                intel_prod::Column::SignalMessageId,
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
@@ -1430,14 +1430,14 @@ async fn delete_message(
 ) -> Result<Json<()>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let txn = env.dbx.begin().await.context(h!())?;
-    let intelligence_report_parent_ids = intel_prod::Entity::find()
-        .filter(intel_prod::Column::SignalMessageId.eq(req.id))
+    let intelligence_report_parent_ids = intel_product::Entity::find()
+        .filter(intel_product::Column::IntelMessageId.eq(req.id))
         .filter(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
         .select_only()
-        .column(intel_prod::Column::ParentSignalMessageId)
+        .column(intel_product::Column::SourceMessageId)
         .into_tuple::<i64>()
         .all(&txn)
         .await
@@ -2511,8 +2511,8 @@ async fn ensure_comment_save_access(
                 signal_message_group::Column::SignalMessageId,
             ))
             .equals((
-                intel_prod::Entity,
-                intel_prod::Column::ParentSignalMessageId,
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
             )),
         )
         .and_where(
@@ -2534,8 +2534,8 @@ async fn ensure_comment_save_access(
         .and_where(
             Expr::col((signal_message::Entity, signal_message::Column::Id))
                 .equals((
-                    intel_prod::Entity,
-                    intel_prod::Column::ParentSignalMessageId,
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
                 )),
         )
         .and_where(
@@ -2545,15 +2545,15 @@ async fn ensure_comment_save_access(
         .to_owned();
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
-        .from(intel_prod::Entity)
+        .from(intel_product::Entity)
         .and_where(
-            intel_prod::Column::RelationKind
-                .eq(intel_prod::RELATION_KIND_REPORT),
+            intel_product::Column::RelationKind
+                .eq(intel_product::RELATION_KIND_REPORT),
         )
         .and_where(
             Expr::col((
-                intel_prod::Entity,
-                intel_prod::Column::SignalMessageId,
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )

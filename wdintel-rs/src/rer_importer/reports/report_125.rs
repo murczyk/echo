@@ -1,5 +1,5 @@
 use crate::entities::{
-    datasource, intel_prod, sigint_inbox_item, sigint_peleng, signal_message,
+    datasource, intel_product, sigint_inbox_item, sigint_peleng, signal_message,
 };
 use crate::error::AppError;
 use crate::location::peleng::inbox_item_has_active_peleng_exists;
@@ -197,12 +197,12 @@ async fn load_report_125_messages(
     req: &crate::rer_importer::types::InboxMessagesReq,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<Report125Message>, AppError> {
-    let linked_message_ids = intel_prod::Entity::find()
+    let linked_message_ids = intel_product::Entity::find()
         .select_only()
-        .column(intel_prod::Column::SignalMessageId)
-        .filter(intel_prod::Column::RelationKind.is_in([
-            intel_prod::RELATION_KIND_COMMENT,
-            intel_prod::RELATION_KIND_REPORT,
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
         ]))
         .into_query();
     let rows = build_filtered_inbox_report_chunk_query(

@@ -177,24 +177,24 @@ async fn load_intelligence_report_summaries(
     if message_ids.is_empty() {
         return Ok(IntelligenceReportSummaries::default());
     }
-    let links = intel_prod::Entity::find()
-        .filter(intel_prod::Column::RelationKind.is_in([
-            intel_prod::RELATION_KIND_REPORT,
-            intel_prod::RELATION_KIND_COMMENT,
+    let links = intel_product::Entity::find()
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_REPORT,
+            intel_product::RELATION_KIND_COMMENT,
         ]))
         .filter(
             Condition::any()
                 .add(
-                    intel_prod::Column::SignalMessageId
+                    intel_product::Column::IntelMessageId
                         .is_in(message_ids.to_vec()),
                 )
                 .add(
-                    intel_prod::Column::ParentSignalMessageId
+                    intel_product::Column::SourceMessageId
                         .is_in(message_ids.to_vec()),
                 ),
         )
-        .order_by_asc(intel_prod::Column::CreatedAt)
-        .order_by_asc(intel_prod::Column::SignalMessageId)
+        .order_by_asc(intel_product::Column::CreatedAt)
+        .order_by_asc(intel_product::Column::IntelMessageId)
         .all(dbx)
         .await
         .c(h!())?;
@@ -204,9 +204,7 @@ async fn load_intelligence_report_summaries(
 
     let related_ids = links
         .iter()
-        .flat_map(|link| {
-            [link.signal_message_id, link.parent_signal_message_id]
-        })
+        .flat_map(|link| [link.intel_message_id, link.source_message_id])
         .collect::<HashSet<_>>();
     let messages = signal_message::Entity::find()
         .filter(signal_message::Column::Id.is_in(related_ids.iter().copied()))
@@ -341,16 +339,16 @@ async fn load_intelligence_report_summaries(
     let mut summaries = IntelligenceReportSummaries::default();
     for link in links {
         let parent_is_accessible = accessible_group_master_keys
-            .contains_key(&link.parent_signal_message_id)
-            || owner_message_ids.contains(&link.parent_signal_message_id);
+            .contains_key(&link.source_message_id)
+            || owner_message_ids.contains(&link.source_message_id);
         let message_is_deleted = messages
-            .get(&link.signal_message_id)
+            .get(&link.intel_message_id)
             .is_none_or(|message| message.deleted);
 
-        if link.relation_kind == intel_prod::RELATION_KIND_COMMENT {
-            if requested_ids.contains(&link.signal_message_id) {
+        if link.relation_kind == intel_product::RELATION_KIND_COMMENT {
+            if requested_ids.contains(&link.intel_message_id) {
                 if let Some(parent) = inbox_message_summary(
-                    link.parent_signal_message_id,
+                    link.source_message_id,
                     parent_is_accessible,
                     &messages,
                     &inbox_items,
@@ -360,17 +358,17 @@ async fn load_intelligence_report_summaries(
                 ) {
                     summaries
                         .parents_by_message
-                        .entry(link.signal_message_id)
+                        .entry(link.intel_message_id)
                         .or_default()
                         .push(parent);
                 }
             }
-            if requested_ids.contains(&link.parent_signal_message_id)
+            if requested_ids.contains(&link.source_message_id)
                 && !message_is_deleted
                 && parent_is_accessible
             {
                 if let Some(linked_message) = inbox_message_summary(
-                    link.signal_message_id,
+                    link.intel_message_id,
                     true,
                     &messages,
                     &inbox_items,
@@ -380,7 +378,7 @@ async fn load_intelligence_report_summaries(
                 ) {
                     summaries
                         .reports_by_message
-                        .entry(link.parent_signal_message_id)
+                        .entry(link.source_message_id)
                         .or_default()
                         .push(linked_message);
                 }
@@ -388,9 +386,9 @@ async fn load_intelligence_report_summaries(
             continue;
         }
 
-        if requested_ids.contains(&link.signal_message_id) {
+        if requested_ids.contains(&link.intel_message_id) {
             if let Some(parent) = inbox_message_summary(
-                link.parent_signal_message_id,
+                link.source_message_id,
                 parent_is_accessible,
                 &messages,
                 &inbox_items,
@@ -400,20 +398,20 @@ async fn load_intelligence_report_summaries(
             ) {
                 summaries
                     .parents_by_message
-                    .entry(link.signal_message_id)
+                    .entry(link.intel_message_id)
                     .or_default()
                     .push(parent);
             }
         }
         let report_is_accessible = accessible_group_master_keys
-            .contains_key(&link.signal_message_id)
-            || !grouped_message_ids.contains(&link.signal_message_id)
+            .contains_key(&link.intel_message_id)
+            || !grouped_message_ids.contains(&link.intel_message_id)
             || parent_is_accessible;
-        if requested_ids.contains(&link.parent_signal_message_id)
+        if requested_ids.contains(&link.source_message_id)
             && !message_is_deleted
         {
             if let Some(report) = inbox_message_summary(
-                link.signal_message_id,
+                link.intel_message_id,
                 report_is_accessible,
                 &messages,
                 &inbox_items,
@@ -423,7 +421,7 @@ async fn load_intelligence_report_summaries(
             ) {
                 summaries
                     .reports_by_message
-                    .entry(link.parent_signal_message_id)
+                    .entry(link.source_message_id)
                     .or_default()
                     .push(report);
             }
@@ -1014,7 +1012,7 @@ where
                 (
                     comment.login_id != Some(*login),
                     comment.created_at,
-                    comment.signal_message_id,
+                    comment.intel_message_id,
                 )
             }),
     )
@@ -1092,7 +1090,7 @@ where
         legacy_comment.update(db).await.c(h!())?;
     } else {
         let mut message =
-            signal_message::Entity::find_by_id(comment.signal_message_id)
+            signal_message::Entity::find_by_id(comment.intel_message_id)
                 .one(db)
                 .await
                 .c(h!())?
@@ -1125,7 +1123,7 @@ where
             && comment
                 .login_id
                 .is_some_and(|login_id| owner_logins.contains(&login_id))
-            && (comment.signal_message_id != retained.signal_message_id
+            && (comment.intel_message_id != retained.intel_message_id
                 || comment.legacy_comment_id != retained.legacy_comment_id)
     }) {
         delete_linked_message_comment(db, &comment).await.c(h!())?;
@@ -1147,7 +1145,7 @@ where
             .c(h!())?;
     } else {
         let mut message =
-            signal_message::Entity::find_by_id(comment.signal_message_id)
+            signal_message::Entity::find_by_id(comment.intel_message_id)
                 .one(db)
                 .await
                 .c(h!())?
