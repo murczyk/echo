@@ -250,15 +250,181 @@ a {
   background-color: color-mix(in srgb, var(--color-action) 18%, transparent);
 }
 
-.message-card-action-btn .MuiSvgIcon-root {
-  font-size: 18px;
+.message-card-action-btn__icon {
+  font-size: 18px !important;
+}
+
+.message-card-action-group--stacked[data-action-grid-columns='3'] {
+  grid-template-columns: repeat(3, 30px);
+}
+
+.message-card-action-group--stacked[data-action-grid-columns='4'] {
+  grid-template-columns: repeat(4, 30px);
+}
+
+/* body2-parity text for MessageCard hot path (avoid MUI Typography/Emotion per card).
+   Theme uses htmlFontSize: 14 with a 14px app root, so body2 resolves to 1rem (14px),
+   not the default-theme 0.875rem (which would be 12.25px here). */
+.message-card-text {
+  font-size: 1rem;
+  line-height: 1.43;
+}
+
+.message-card-text--nowrap {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-card-text--wrap {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.message-card-header-icon {
+  flex-shrink: 0;
+  font-size: 18px !important;
+  line-height: 0;
+  color: var(--color-action);
+}
+
+.message-card-header-icon--plain {
+  color: inherit;
+}
+
+.message-card-header-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.message-card-header-meta__icon {
+  flex-shrink: 0;
+  line-height: 0;
+  color: var(--color-action);
+}
+
+.message-card-header-menu-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
+
+.message-card-header-menu-row__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .message-card-relative-time {
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.43;
   white-space: nowrap;
   cursor: default;
+}
+
+/* Native tag chips for MessageCardTags hot path (avoid MUI Chip/emotion per card). */
+.message-card-tag-chip {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 6px;
+  min-height: 24px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 16px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: normal;
+  white-space: nowrap;
+  vertical-align: middle;
+  transition:
+    opacity 0.12s ease,
+    filter 0.12s ease;
+}
+
+.message-card-tag-chip__label {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.message-card-tag-chip[data-selected='false'] {
+  background-color: var(--color-background);
+  border-color: var(--text-color);
+  color: var(--text-color);
+  opacity: 0.75;
+}
+
+.message-card-tag-chip[data-selected='true'] {
+  background-color: var(--color-tag-selected);
+  border-color: var(--color-border-selected);
+  color: var(--neutral-900);
+  opacity: 1;
+}
+
+.message-card-tag-chip[data-interactive='true'] {
+  cursor: pointer;
+}
+
+.message-card-tag-chip[data-interactive='false'] {
+  cursor: text;
+  opacity: 1;
+}
+
+.message-card-tag-chip[data-interactive='true']:hover {
+  opacity: 1;
+  filter: brightness(0.95);
+}
+
+.message-card-tag-chip:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.message-card-tag-expand {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 27px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-action);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.43;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.message-card-tag-expand:hover {
+  background-color: color-mix(in srgb, var(--color-action) 8%, transparent);
+}
+
+.message-card-tag-expand:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.message-card-tag-expand__icon {
+  font-size: 0.875rem;
 }
 
 .message-card-media-reveal {
