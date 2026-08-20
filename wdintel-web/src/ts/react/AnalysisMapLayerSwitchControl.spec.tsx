@@ -78,11 +78,7 @@ describe('AnalysisMapLayerSwitchControl', () => {
     document.body.innerHTML = '';
   });
 
-  async function render(features: {
-    palitrasEnabled: boolean;
-    pelengsEnabled: boolean;
-    kmzEnabled: boolean;
-  }) {
+  async function render(features: { palitrasEnabled: boolean; pelengsEnabled: boolean }) {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -100,7 +96,7 @@ describe('AnalysisMapLayerSwitchControl', () => {
   }
 
   it('shows the layers badge when pelengs are disabled', async () => {
-    const view = await render({ palitrasEnabled: true, pelengsEnabled: false, kmzEnabled: true });
+    const view = await render({ palitrasEnabled: true, pelengsEnabled: false });
 
     expect(view.container.querySelector('[data-badge-invisible="false"]')).not.toBeNull();
     expect(badgeProps.at(-1)).toMatchObject({
@@ -114,7 +110,7 @@ describe('AnalysisMapLayerSwitchControl', () => {
   });
 
   it('hides the layers badge when pelengs are enabled', async () => {
-    const view = await render({ palitrasEnabled: false, pelengsEnabled: true, kmzEnabled: false });
+    const view = await render({ palitrasEnabled: false, pelengsEnabled: true });
 
     expect(view.container.querySelector('[data-badge-invisible="true"]')).not.toBeNull();
     expect(badgeProps.at(-1)).toMatchObject({
@@ -128,7 +124,7 @@ describe('AnalysisMapLayerSwitchControl', () => {
   });
 
   it('does not react to unrelated feature toggles', async () => {
-    const view = await render({ palitrasEnabled: false, pelengsEnabled: true, kmzEnabled: true });
+    const view = await render({ palitrasEnabled: false, pelengsEnabled: true });
 
     expect(view.container.querySelector('[data-badge-invisible="true"]')).not.toBeNull();
     expect(badgeProps.at(-1)?.invisible).toBe(true);

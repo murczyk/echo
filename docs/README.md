@@ -73,8 +73,24 @@ backoff so they cannot block newer messages.
 reconcile its PostgreSQL queue in the same transaction as `location_v2`;
 workers claim rows with `FOR UPDATE SKIP LOCKED` and rank settlement candidates
 against the active Battle Line or the item's AOR segments. Battle Line and AOR
-changes requeue affected links, while attempted misses remain available for
-administrator review.
+uploads apply only to newly queued data; AOR changes requeue affected links,
+while attempted misses remain available for administrator review.
+
+### Initial Battle Line import from Delta KML
+
+The stored Delta KML and Battle Line are independent modules. Delta KML is not
+rendered as a map layer and later Delta uploads do not update Battle Line. To
+inspect the approved initial source without changing data, run:
+
+```sh
+sudo /usr/bin/wdintel-rs --mode=live oneoff-import-battle-line-from-delta-kml --source-id 5 --dry-run
+```
+
+Remove `--dry-run` to create BattleLine v0 when no active version exists. The
+oneoff refuses to overwrite an active Battle Line; `--force` must be supplied
+explicitly when an operator intentionally wants the Delta source to replace an
+existing manually uploaded version. Neither the oneoff nor later admin uploads
+requeue historical settlement links.
 
 ## Focused documentation
 

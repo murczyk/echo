@@ -1,6 +1,7 @@
 use crate::h;
-use crate::kml::types::{Node, Placemark};
 use crate::types::ShortContext;
+use quick_xml::events::Event;
+use quick_xml::Reader as XmlReader;
 use std::fs::File;
 use std::io::{self, Read, Seek};
 use std::path::Path;
@@ -137,72 +138,145 @@ where
 async fn parse_kml_file(
     path: &Path,
 ) -> anyhow::Result<Vec<ImportedGeometryFeature>> {
-    let parent = path.parent().c(h!())?;
-    let kml = crate::kml::read_and_fix_kml(false, path, parent)
-        .await
-        .c(h!())?;
-    let mut features = vec![];
-    collect_features(&kml.nodes, &mut features).c(h!())?;
-    Ok(features)
+    let input = fs::read_to_string(path).await.c(h!())?;
+    parse_kml_geometry(&input).c(h!())
 }
 
-fn collect_features(
-    nodes: &[Node],
-    features: &mut Vec<ImportedGeometryFeature>,
-) -> anyhow::Result<()> {
-    for node in nodes {
-        match node {
-            Node::Folder(folder) => {
-                collect_features(&folder.nodes, features).c(h!())?
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SupportedGeometryKind {
+    Point,
+    LineString,
+}
+
+impl SupportedGeometryKind {
+    fn from_element_name(name: &[u8]) -> Option<Self> {
+        match name {
+            b"Point" => Some(Self::Point),
+            b"LineString" => Some(Self::LineString),
+            _ => None,
+        }
+    }
+}
+
+struct PendingGeometry {
+    kind: SupportedGeometryKind,
+    element_depth: usize,
+    coordinates: Option<String>,
+}
+
+fn parse_kml_geometry(
+    input: &str,
+) -> anyhow::Result<Vec<ImportedGeometryFeature>> {
+    let mut reader = XmlReader::from_str(input);
+    reader.config_mut().trim_text(false);
+    let mut features = vec![];
+    let mut element_stack: Vec<Vec<u8>> = vec![];
+    let mut placemark_depth = 0_usize;
+    let mut pending_geometry: Option<PendingGeometry> = None;
+    loop {
+        match reader.read_event().c(h!())? {
+            Event::Start(element) => {
+                let local_name = element.local_name();
+                let name = local_name.as_ref();
+                if name == b"coordinates" && pending_geometry.is_some() {
+                    if let Some(pending_geometry) = pending_geometry.as_mut() {
+                        if pending_geometry.coordinates.is_some() {
+                            anyhow::bail!(
+                                "KML geometry contains multiple coordinate elements"
+                            );
+                        }
+                        pending_geometry.coordinates = Some(
+                            reader
+                                .read_text(element.to_end().name())
+                                .c(h!())?
+                                .into_owned(),
+                        );
+                    }
+                    continue;
+                }
+                element_stack.push(name.to_vec());
+                if name == b"Placemark" {
+                    placemark_depth += 1;
+                } else if placemark_depth > 0 {
+                    if let Some(kind) =
+                        SupportedGeometryKind::from_element_name(name)
+                    {
+                        if pending_geometry.is_some() {
+                            anyhow::bail!(
+                                "KML contains nested supported geometries"
+                            );
+                        }
+                        pending_geometry = Some(PendingGeometry {
+                            kind,
+                            element_depth: element_stack.len(),
+                            coordinates: None,
+                        });
+                    }
+                }
             }
-            Node::Document(document) => {
-                collect_features(&document.nodes, features).c(h!())?
+            Event::Empty(element) => {
+                let local_name = element.local_name();
+                let name = local_name.as_ref();
+                if name == b"coordinates" && pending_geometry.is_some() {
+                    pending_geometry.as_mut().c(h!())?.coordinates =
+                        Some(String::new());
+                } else if placemark_depth > 0
+                    && SupportedGeometryKind::from_element_name(name).is_some()
+                {
+                    continue;
+                }
             }
-            Node::Placemark(placemark) => {
-                collect_placemark_features(placemark, features).c(h!())?
+            Event::End(element) => {
+                let local_name = element.local_name();
+                let name = local_name.as_ref();
+                if let Some(pending) = pending_geometry.as_ref() {
+                    if pending.element_depth == element_stack.len()
+                        && SupportedGeometryKind::from_element_name(name)
+                            == Some(pending.kind)
+                    {
+                        let pending = pending_geometry.take().c(h!())?;
+                        let Some(coordinates) = pending.coordinates else {
+                            element_stack.pop();
+                            continue;
+                        };
+                        if coordinates.trim().is_empty() {
+                            element_stack.pop();
+                            continue;
+                        }
+                        match pending.kind {
+                            SupportedGeometryKind::Point => {
+                                collect_points(&coordinates, &mut features)
+                                    .c(h!())?;
+                            }
+                            SupportedGeometryKind::LineString => {
+                                collect_line_string(
+                                    &coordinates,
+                                    &mut features,
+                                )
+                                .c(h!())?;
+                            }
+                        }
+                    }
+                }
+                if name == b"Placemark" {
+                    placemark_depth = placemark_depth.checked_sub(1).c(h!())?;
+                }
+                let started_name = element_stack.pop().c(h!())?;
+                if started_name.as_slice() != name {
+                    anyhow::bail!("KML element nesting is inconsistent");
+                }
             }
+            Event::Eof => break,
             _ => {}
         }
     }
-    Ok(())
-}
-
-fn collect_placemark_features(
-    placemark: &Placemark,
-    features: &mut Vec<ImportedGeometryFeature>,
-) -> anyhow::Result<()> {
-    if let Some(point) = &placemark.point {
-        if let Some(coordinates) = point.coordinates.as_deref() {
-            collect_points(coordinates, features).c(h!())?;
-        }
+    if pending_geometry.is_some()
+        || !element_stack.is_empty()
+        || placemark_depth != 0
+    {
+        anyhow::bail!("KML document ended inside a geometry or placemark");
     }
-
-    if let Some(line) = &placemark.line_string {
-        if let Some(coordinates) = line
-            .coordinates
-            .as_ref()
-            .and_then(|coordinates| coordinates.body.as_deref())
-        {
-            collect_line_string(coordinates, features).c(h!())?;
-        }
-    }
-    if let Some(multi_geometry) = &placemark.multi_geometry {
-        for point in &multi_geometry.points {
-            if let Some(coordinates) = point.coordinates.as_deref() {
-                collect_points(coordinates, features).c(h!())?;
-            }
-        }
-        for line in &multi_geometry.line_strings {
-            if let Some(coordinates) = line
-                .coordinates
-                .as_ref()
-                .and_then(|coordinates| coordinates.body.as_deref())
-            {
-                collect_line_string(coordinates, features).c(h!())?;
-            }
-        }
-    }
-    Ok(())
+    Ok(features)
 }
 
 fn collect_points(
@@ -350,6 +424,40 @@ mod tests {
                     },
                 ]),
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn ignores_empty_legacy_style_values() {
+        let kml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+  <Style id="legacy"><IconStyle><scale/></IconStyle></Style>
+  <Placemark><visibility/><ExtendedData><Point/></ExtendedData><Point><coordinates>31,49,0</coordinates></Point></Placemark>
+</Document></kml>"#;
+
+        assert_eq!(
+            parse_point_line_features("legacy.kml", kml).await.unwrap(),
+            vec![ImportedGeometryFeature::Point(ImportedCoordinate {
+                lat: 49.0,
+                lon: 31.0,
+            })]
+        );
+    }
+
+    #[tokio::test]
+    async fn ignores_empty_geometry_placeholders() {
+        let kml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark>
+  <Point/><LineString></LineString>
+  <Point><coordinates>31,49,0</coordinates></Point>
+</Placemark></Document></kml>"#;
+
+        assert_eq!(
+            parse_point_line_features("legacy.kml", kml).await.unwrap(),
+            vec![ImportedGeometryFeature::Point(ImportedCoordinate {
+                lat: 49.0,
+                lon: 31.0,
+            })]
         );
     }
 

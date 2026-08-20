@@ -107,13 +107,6 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
             onClick={() => props.onFeatureToggle('pelengsEnabled', !props.features.pelengsEnabled)}
             type="checkbox"
           />
-          <LayerRow
-            checked={props.features.kmzEnabled}
-            label="KMZ підкладка"
-            onClick={() => props.onFeatureToggle('kmzEnabled', !props.features.kmzEnabled)}
-            type="checkbox"
-          />
-
           <Typography className="layer-switch-subheader">Основа</Typography>
           <LayerRow
             checked={props.currentLayer === 'googleHybrid'}

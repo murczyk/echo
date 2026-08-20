@@ -1,10 +1,9 @@
 import * as L from 'leaflet';
 
-export type FeatureName = 'palitras' | 'kmz' | 'pelengs';
+export type FeatureName = 'palitras' | 'pelengs';
 
 export type FeatureToggleState = {
   palitrasEnabled: boolean;
-  kmzEnabled: boolean;
   pelengsEnabled: boolean;
 };
 
@@ -58,9 +57,7 @@ export function createLayerSwitchControl(
         const feature = customEvent.detail?.feature;
         const enabled = customEvent.detail?.enabled;
         if (
-          (feature !== 'palitrasEnabled' &&
-            feature !== 'kmzEnabled' &&
-            feature !== 'pelengsEnabled') ||
+          (feature !== 'palitrasEnabled' && feature !== 'pelengsEnabled') ||
           typeof enabled !== 'boolean'
         ) {
           return;
