@@ -7,6 +7,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Push and manual workflow runs do not provide GITHUB_BASE_REF. The CI
+# workflow targets main, so use it when the pull-request-only variable is absent.
+export GITHUB_BASE_REF="${GITHUB_BASE_REF:-main}"
+
 python3 -m unittest scripts/ci/test_check_analytics_migrations.py
 python3 scripts/ci/check_analytics_migrations.py
 bash deploy/clickhouse/tests/test-resnapshot-table.sh
