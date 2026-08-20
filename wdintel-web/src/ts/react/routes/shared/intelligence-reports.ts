@@ -18,7 +18,7 @@ export function summarizeIntelligenceMessage(
     message.location?.trim() ||
     (message.coordsWithLocality && message.coordsWithLocality.length > 0
       ? message.coordsWithLocality
-          .map((c) => c.locality || c.coord)
+          .map(({ coords, locality }) => locality?.settlementName || `${coords.lat}, ${coords.lon}`)
           .filter(Boolean)
           .join(', ')
       : null);
