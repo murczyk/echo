@@ -2,15 +2,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import {
-  Box,
-  Button,
-  CircularProgress,
-  IconButton,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material';
+import { Button, CircularProgress, IconButton, Skeleton, Tooltip, Typography } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type {
@@ -43,14 +35,16 @@ const COORDINATE_SYSTEM_LABELS: Record<string, string> = {
 const EMPTY_COORDINATES: MediaSummaryCoordinate[] = [];
 const SUMMARY_LOAD_ERROR = 'Не вдалося завантажити стислий опис';
 
-function useCoordinateLocalities(
-  coordinates: MediaSummaryCoordinate[],
-): Array<CoordinateLocality | null> {
+function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
+  localities: Array<CoordinateLocality | null>;
+  loading: boolean;
+} {
   const resolvedPoints = useMemo(
     () => coordinates.map(resolveMediaSummaryCoordinatePoint),
     [coordinates],
   );
   const [localities, setLocalities] = useState<Array<CoordinateLocality | null>>([]);
+  const [loading, setLoading] = useState<boolean>(false);
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
@@ -63,8 +57,12 @@ function useCoordinateLocalities(
       point == null ? [] : [{ index, lat: point.lat, lon: point.lng }],
     );
     setLocalities(nextLocalities);
-    if (lookupPoints.length === 0) return;
+    if (lookupPoints.length === 0) {
+      setLoading(false);
+      return;
+    }
 
+    setLoading(true);
     const controller = new AbortController();
     void mapCoordinates(
       lookupPoints.map(({ lat, lon }) => ({ lat, lon })),
@@ -77,9 +75,11 @@ function useCoordinateLocalities(
           if (sourceIndex != null) nextLocalities[sourceIndex] = item.locality;
         });
         setLocalities([...nextLocalities]);
+        setLoading(false);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
+        setLoading(false);
         notifyRef.current({
           severity: 'error',
           message: `Не вдалося визначити найближчі населені пункти: ${
@@ -91,63 +91,42 @@ function useCoordinateLocalities(
     return () => controller.abort();
   }, [coordinates.length, resolvedPoints]);
 
-  return localities;
+  return { localities, loading };
 }
 
 function MediaSummaryCoordinateList({
   coordinates,
   localities,
+  loadingLocalities,
 }: {
   coordinates: MediaSummaryCoordinate[];
   localities: Array<CoordinateLocality | null>;
+  loadingLocalities: boolean;
 }) {
   return (
-    <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+    <ul className="m-0 p-0 list-none">
       {coordinates.map((coordinate, index) => {
+        const point = resolveMediaSummaryCoordinatePoint(coordinate);
         const localityText = formatCoordinateLocality(localities[index] ?? null);
         const description = coordinate.description?.trim() ?? '';
         const plannedMeans = coordinate.plannedMeans?.trim() ?? '';
+        const isLocalityLoading = loadingLocalities && point != null && localityText == null;
+
         return (
-          <Box
-            component="li"
+          <li
             key={`${coordinate.coordinateSystem}:${coordinate.value}:${index}`}
             data-media-summary-coordinate-item="true"
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) auto',
-              alignItems: 'center',
-              gap: 0.5,
-              py: 0.5,
-              minHeight: 32,
-              borderBottom: 1,
-              borderColor: 'divider',
-            }}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 py-1 min-h-8 border-b border-white/12"
           >
-            <Box
-              sx={{
-                minWidth: 0,
-                display: 'flex',
-                alignItems: 'baseline',
-                columnGap: 1,
-                rowGap: 0.25,
-                flexWrap: 'wrap',
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ overflowWrap: 'anywhere' }}>
+            <div className="min-w-0 flex items-baseline gap-x-2 flex-wrap">
+              <Typography variant="subtitle2" className="wrap-break-word">
                 {coordinate.title}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+              <Typography variant="caption" color="text.secondary" className="font-bold">
                 {COORDINATE_SYSTEM_LABELS[coordinate.coordinateSystem] ??
                   coordinate.coordinateSystem}
               </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  fontWeight: 600,
-                  fontVariantNumeric: 'tabular-nums',
-                  overflowWrap: 'anywhere',
-                }}
-              >
+              <Typography variant="body2" className="font-semibold tabular-nums wrap-break-word">
                 {coordinate.value}
               </Typography>
               {localityText ? (
@@ -155,12 +134,21 @@ function MediaSummaryCoordinateList({
                   variant="caption"
                   color="text.secondary"
                   data-media-summary-coordinate-locality="true"
-                  sx={{ overflowWrap: 'anywhere' }}
+                  className="basis-full w-full wrap-break-word"
                 >
                   {localityText}
                 </Typography>
+              ) : isLocalityLoading ? (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  data-media-summary-coordinate-locality="true"
+                  className="basis-full w-full wrap-break-word"
+                >
+                  <Skeleton width={180} />
+                </Typography>
               ) : null}
-            </Box>
+            </div>
             {description !== '' || plannedMeans !== '' ? (
               <Tooltip
                 placement="left"
@@ -168,49 +156,49 @@ function MediaSummaryCoordinateList({
                 enterDelay={200}
                 slotProps={{ tooltip: { sx: { maxWidth: 420 } } }}
                 title={
-                  <Stack spacing={0.75} sx={{ maxWidth: 400 }}>
+                  <div className="flex flex-col gap-1.5 max-w-100">
                     {description !== '' ? (
                       <Typography
                         variant="body2"
                         color="inherit"
                         data-media-summary-coordinate-description="true"
-                        sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                        className="whitespace-pre-wrap wrap-break-word"
                       >
                         {coordinate.description}
                       </Typography>
                     ) : null}
                     {plannedMeans !== '' ? (
-                      <Box>
-                        <Typography variant="caption" color="inherit" sx={{ fontWeight: 700 }}>
+                      <div>
+                        <Typography variant="caption" color="inherit" className="font-bold">
                           Сплановані засоби
                         </Typography>
                         <Typography
                           variant="body2"
                           color="inherit"
                           data-media-summary-coordinate-planned-means="true"
-                          sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                          className="whitespace-pre-wrap wrap-break-word"
                         >
                           {coordinate.plannedMeans}
                         </Typography>
-                      </Box>
+                      </div>
                     ) : null}
-                  </Stack>
+                  </div>
                 }
               >
                 <IconButton
                   size="small"
                   aria-label={`Деталі координати: ${coordinate.title}`}
                   data-media-summary-coordinate-info="true"
-                  sx={{ width: 28, height: 28, color: 'text.secondary' }}
+                  className="w-7! h-7! text-(--color-text-secondary)!"
                 >
-                  <InfoOutlinedIcon sx={{ fontSize: 17 }} />
+                  <InfoOutlinedIcon className="text-[17px]!" />
                 </IconButton>
               </Tooltip>
             ) : null}
-          </Box>
+          </li>
         );
       })}
-    </Box>
+    </ul>
   );
 }
 
@@ -233,17 +221,20 @@ export function MediaSummaryAction({
 
   return (
     <Tooltip title={title} enterDelay={300}>
-      <Box component="span" sx={{ display: 'inline-flex', position: 'relative' }}>
+      <span className="inline-flex relative">
         <IconButton
           size="small"
           aria-label={title}
           aria-pressed={active}
           color={active ? 'primary' : 'default'}
           onClick={onClick}
-          sx={{
-            color: active ? 'primary.main' : processing ? 'info.main' : 'text.secondary',
-            '&:hover': { color: active ? 'primary.dark' : 'text.primary' },
-          }}
+          className={
+            active
+              ? 'text-(--color-primary)!'
+              : processing
+                ? 'text-blue-500!'
+                : 'text-(--color-text-secondary)! hover:text-(--color-text)!'
+          }
         >
           <DescriptionIcon fontSize="small" />
         </IconButton>
@@ -252,10 +243,10 @@ export function MediaSummaryAction({
             size={26}
             thickness={2.5}
             color="info"
-            sx={{ position: 'absolute', inset: 3, pointerEvents: 'none' }}
+            className="absolute! inset-0.75! pointer-events-none"
           />
         ) : null}
-      </Box>
+      </span>
     </Tooltip>
   );
 }
@@ -278,67 +269,82 @@ function SummaryContent({
   const state = result?.state ?? status.state;
   const lastError = showErrorDetails ? (result?.lastError ?? status.lastError) : null;
   const coordinates = result?.coordinates ?? EMPTY_COORDINATES;
-  const coordinateLocalities = useCoordinateLocalities(coordinates);
-  if (state === 'completed' && result?.summary) {
-    if (result.coordinates.length === 0) {
+  const { localities: coordinateLocalities, loading: loadingLocalities } =
+    useCoordinateLocalities(coordinates);
+
+  const hasSummaryText = result?.summary != null && result.summary.trim() !== '';
+  const hasCoordinates = result?.coordinates != null && result.coordinates.length > 0;
+
+  if (state === 'completed' && (hasSummaryText || hasCoordinates)) {
+    if (!hasCoordinates) {
       return (
-        <Typography variant="body1" sx={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
-          {result.summary}
-        </Typography>
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 max-w-6xl mx-auto w-full">
+          <Typography variant="body2" className="whitespace-pre-wrap">
+            {result?.summary}
+          </Typography>
+        </div>
+      );
+    }
+
+    if (!hasSummaryText) {
+      return (
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 max-w-6xl mx-auto w-full">
+          <MediaSummaryCoordinateList
+            coordinates={result.coordinates}
+            localities={coordinateLocalities}
+            loadingLocalities={loadingLocalities}
+          />
+        </div>
       );
     }
 
     return (
-      <Box
+      <div
         data-media-summary-completed-layout="split"
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-          gap: 2,
-          minWidth: 0,
-        }}
+        className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0 flex-1 min-h-0"
       >
-        <Typography variant="body1" sx={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
-          {result.summary}
-        </Typography>
-        <Box
+        <div className="min-w-0 min-h-0 overflow-y-auto pr-1">
+          <Typography variant="body2" className="whitespace-pre-wrap">
+            {result.summary}
+          </Typography>
+        </div>
+
+        <div
           data-media-summary-coordinate-column="true"
-          sx={{
-            minWidth: 0,
-            borderTop: { xs: 1, sm: 0 },
-            borderLeft: { xs: 0, sm: 1 },
-            borderColor: 'divider',
-            pt: { xs: 1.5, sm: 0 },
-            pl: { xs: 0, sm: 2 },
-          }}
+          className="min-w-0 min-h-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-white/12 sm:pt-0 sm:pl-4 pr-1"
         >
           <MediaSummaryCoordinateList
             coordinates={result.coordinates}
             localities={coordinateLocalities}
+            loadingLocalities={loadingLocalities}
           />
-        </Box>
-      </Box>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Stack spacing={1} alignItems="flex-start">
-      <Stack direction="row" spacing={1} alignItems="center">
+    <div className="flex flex-col gap-2 items-start py-0.5 min-h-10 justify-center">
+      <div className="flex flex-row gap-2 items-center">
         {isMediaSummaryProcessing(state) ? <CircularProgress size={18} /> : null}
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+
+        <Typography variant="body2" className="font-semibold">
           {STATE_LABELS[state] ?? state}
         </Typography>
-      </Stack>
+      </div>
+
       {lastError ? (
         <Typography variant="body2" color={state === 'failed' ? 'error.main' : 'warning.main'}>
           {lastError}
         </Typography>
       ) : null}
+
       {refreshError ? (
         <Typography variant="body2" color="error.main" role="alert">
           {refreshError}
         </Typography>
       ) : null}
+
       <Button
         size="small"
         variant="outlined"
@@ -348,7 +354,7 @@ function SummaryContent({
       >
         Оновити
       </Button>
-    </Stack>
+    </div>
   );
 }
 
@@ -465,13 +471,12 @@ export function MessageCardMediaSummary({
   if (mediaId == null || status == null || state == null) return null;
 
   return (
-    <Box
+    <div
       data-media-summary-inline="true"
-      sx={{ mt: navigationOverlay ? 0 : 0.5, width: 'min(460px, 100%)', minWidth: 0 }}
+      className={`min-w-0 w-[min(460px,100%)] ${navigationOverlay ? 'mt-0' : 'mt-1'}`}
     >
       {state === 'completed' && summary !== '' ? (
-        <Box
-          component="blockquote"
+        <blockquote
           onClick={expandable ? () => setExpanded((current) => !current) : undefined}
           role={expandable ? 'button' : undefined}
           tabIndex={expandable ? 0 : undefined}
@@ -481,55 +486,30 @@ export function MessageCardMediaSummary({
             event.preventDefault();
             setExpanded((current) => !current);
           }}
-          sx={{
-            m: 0,
-            pl: 1,
-            pr: navigationOverlay ? 10 : 1,
-            py: 0.75,
-            borderLeft: 3,
-            borderColor: 'primary.main',
-            borderRadius: 0.5,
-            bgcolor: 'action.hover',
-            color: 'text.primary',
-            cursor: expandable ? 'pointer' : 'default',
-          }}
+          className={`m-0 pl-2 py-1.5 border-l-[3px] border-(--color-primary) rounded bg-black/5 dark:bg-white/5 text-(--color-text) ${
+            navigationOverlay ? 'pr-20' : 'pr-2'
+          } ${expandable ? 'cursor-pointer' : 'cursor-default'}`}
         >
-          <Stack direction="row" spacing={0.75} alignItems="flex-start">
-            <DescriptionIcon sx={{ mt: 0.15, fontSize: 17, color: 'text.secondary' }} />
+          <div className="flex flex-row gap-1.5 items-start">
+            <DescriptionIcon className="mt-0.5 text-[17px]! text-(--color-text-secondary)" />
             <Typography
               variant="body2"
-              sx={{
-                minWidth: 0,
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
-                ...(!expanded
-                  ? {
-                      display: '-webkit-box',
-                      WebkitBoxOrient: 'vertical',
-                      WebkitLineClamp: 3,
-                      overflow: 'hidden',
-                    }
-                  : {}),
-              }}
+              className={`min-w-0 whitespace-pre-wrap wrap-break-word ${
+                !expanded ? 'line-clamp-3 overflow-hidden' : ''
+              }`}
             >
               {summary}
             </Typography>
-          </Stack>
-        </Box>
+          </div>
+        </blockquote>
       ) : (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
-          sx={{
-            pl: 1,
-            pr: navigationOverlay ? 10 : 1,
-            py: 0.5,
-            color: state === 'failed' ? 'error.main' : 'text.secondary',
-          }}
+        <div
+          className={`flex flex-row gap-1.5 items-center pl-2 py-1 ${
+            navigationOverlay ? 'pr-20' : 'pr-2'
+          } ${state === 'failed' ? 'text-red-500' : 'text-(--color-text-secondary)'}`}
         >
           {isMediaSummaryProcessing(state) || refreshing ? <CircularProgress size={14} /> : null}
-          <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
+          <Typography variant="caption" className="wrap-break-word">
             {refreshError || STATE_LABELS[state] || state}
           </Typography>
           {state === 'failed' || refreshError != null ? (
@@ -539,12 +519,12 @@ export function MessageCardMediaSummary({
               disabled={refreshing}
               onClick={() => void refresh(false)}
             >
-              <RefreshIcon sx={{ fontSize: 16 }} />
+              <RefreshIcon className="text-lg!" />
             </IconButton>
           ) : null}
-        </Stack>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -579,27 +559,18 @@ export function MessageCardMediaSummaryCarousel({
   };
 
   return (
-    <Box
+    <div
       data-media-summary-carousel="true"
-      sx={{
-        position: 'relative',
-        mt: 1,
-        width: hasCurrentSummary ? 'min(460px, 100%)' : 'fit-content',
-        maxWidth: '100%',
-        minWidth: 0,
-      }}
+      className={`relative mt-2 max-w-full min-w-0 ${
+        hasCurrentSummary ? 'w-[min(460px,100%)]' : 'w-fit'
+      }`}
     >
-      <Box
+      <div
         key={`${current.id ?? resolvedIndex}:${resolvedIndex}`}
         data-media-summary-carousel-content="true"
-        sx={{
-          minHeight: hasCurrentSummary ? 72 : undefined,
-          animation: 'media-summary-carousel-in 160ms ease-out',
-          '@keyframes media-summary-carousel-in': {
-            from: { opacity: 0.55, transform: 'translateX(2px)' },
-            to: { opacity: 1, transform: 'translateX(0)' },
-          },
-        }}
+        className={`animate-[media-summary-carousel-in_160ms_ease-out] ${
+          hasCurrentSummary ? 'min-h-18' : ''
+        }`}
       >
         {hasCurrentSummary ? (
           <MessageCardMediaSummary
@@ -608,56 +579,34 @@ export function MessageCardMediaSummaryCarousel({
             navigationOverlay={media.length > 1}
           />
         ) : (
-          <Box
+          <div
             data-media-summary-inline="true"
-            sx={{
-              width: 'fit-content',
-              maxWidth: '100%',
-              minWidth: 0,
-              pl: 1,
-              pr: 10,
-              py: 0.75,
-              borderLeft: 3,
-              borderColor: 'divider',
-              borderRadius: 0.5,
-              bgcolor: 'action.hover',
-            }}
+            className="w-fit max-w-full min-w-0 pl-2 pr-20 py-1.5 border-l-[3px] border-(--color-border) rounded bg-black/5 dark:bg-white/5"
           >
             <Typography variant="caption" color="text.secondary">
               Стислий опис відсутній
             </Typography>
-          </Box>
+          </div>
         )}
-      </Box>
+      </div>
       {media.length > 1 ? (
-        <Stack
+        <div
           data-media-summary-navigation="true"
-          direction="row"
-          spacing={0.25}
-          alignItems="center"
-          sx={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            zIndex: 1,
-            bgcolor: 'background.paper',
-            borderRadius: 1,
-            boxShadow: 1,
-          }}
+          className="flex flex-row gap-0.5 items-center absolute top-1 right-1 z-10 bg-(--color-card) rounded shadow"
         >
           <IconButton
             size="small"
             aria-label="Попередній стислий опис"
             disabled={resolvedIndex === 0}
             onClick={() => selectIndex(Math.max(0, resolvedIndex - 1))}
-            sx={{ width: 24, height: 24, p: 0, fontSize: 14 }}
+            className="w-6! h-6! p-0! text-sm!"
           >
             {'<'}
           </IconButton>
           <Typography
             variant="caption"
             aria-live="polite"
-            sx={{ minWidth: 30, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
+            className="min-w-7.5 text-center tabular-nums"
           >
             {`${resolvedIndex + 1}/${media.length}`}
           </Typography>
@@ -666,13 +615,13 @@ export function MessageCardMediaSummaryCarousel({
             aria-label="Наступний стислий опис"
             disabled={resolvedIndex === media.length - 1}
             onClick={() => selectIndex(Math.min(media.length - 1, resolvedIndex + 1))}
-            sx={{ width: 24, height: 24, p: 0, fontSize: 14 }}
+            className="w-6! h-6! p-0! text-sm!"
           >
             {'>'}
           </IconButton>
-        </Stack>
+        </div>
       ) : null}
-    </Box>
+    </div>
   );
 }
 
@@ -704,40 +653,19 @@ export function MediaSummaryOverlay({
   if (mediaId == null || status == null) return source;
 
   return (
-    <Box
-      sx={{
-        flex: '1 1 auto',
-        minHeight: 0,
-        minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <Box sx={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, display: 'flex' }}>{source}</Box>
+    <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+      <div className="flex-1 min-h-0 min-w-0 flex">{source}</div>
       {visible ? (
-        <Box
+        <div
           role="region"
           aria-label="Стислий опис документа"
-          sx={{
-            position: 'relative',
-            flex: '0 0 auto',
-            maxHeight: '35%',
-            minHeight: 96,
-            overflow: 'auto',
-            px: 2,
-            py: 1.5,
-            pr: 6,
-            borderTop: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            color: 'text.primary',
-          }}
+          className="relative flex-none max-h-36 sm:max-h-44 flex flex-col pl-4 pr-12 py-3 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
         >
           <IconButton
             size="small"
             aria-label="Закрити стислий опис"
             onClick={onClose}
-            sx={{ position: 'absolute', top: 6, right: 8 }}
+            className="absolute! top-1.5! right-2!"
           >
             <CloseIcon fontSize="small" />
           </IconButton>
@@ -749,8 +677,8 @@ export function MediaSummaryOverlay({
             showErrorDetails={summaryAccess === 'admin-ocr'}
             onRefresh={() => void refresh(false)}
           />
-        </Box>
+        </div>
       ) : null}
-    </Box>
+    </div>
   );
 }

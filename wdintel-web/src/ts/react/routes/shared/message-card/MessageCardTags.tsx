@@ -211,7 +211,7 @@ function MessageCardTagsComponent({
               )}
               {row.humanContribsLen > 0 && (
                 <span className="flex items-center gap-0.5" title="Користувачі">
-                  <PersonOutlineOutlinedIcon sx={{ fontSize: 11 }} aria-hidden />
+                  <PersonOutlineOutlinedIcon className="text-[11px]!" aria-hidden />
                   <span>{row.humanContribsLen}</span>
                 </span>
               )}
