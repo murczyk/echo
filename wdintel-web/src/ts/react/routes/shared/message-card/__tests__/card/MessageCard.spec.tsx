@@ -2239,6 +2239,14 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
     expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
+    const tagButton = getButton(view.container, 'переміщення');
+    expect(tagButton.getAttribute('aria-describedby')).toBe('message-card-tag-3-tip');
+    expect(view.container.querySelector('#message-card-tag-3-tip')?.textContent).toContain(
+      'Користувачі: tester',
+    );
+    expect(view.container.querySelector('#message-card-tag-3-tip')?.textContent).toContain(
+      'Боти: bot (92%)',
+    );
     expect(view.container.textContent).toContain('бот помилився');
     expect(view.container.textContent).toContain('закрити');
 
@@ -3145,6 +3153,54 @@ describe('MessageCard', () => {
       expect(view.container.textContent).toContain('палітра');
       expect(view.container.textContent).toContain('іфо');
       expect(view.container.textContent).toContain('розвідка');
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('keeps compact expand when long tag chips exceed the estimate former 240px cap', async () => {
+    const cardWidthPx = 500;
+    const chipWidthPx = 300;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function mockRect(this: HTMLElement) {
+        const isChip = this.hasAttribute('data-message-card-tag-id');
+        const width = isChip ? chipWidthPx : cardWidthPx;
+        return {
+          width,
+          height: 32,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+    try {
+      const longA = 'Дуже-довга-адмін-мітка-альфа-для-компактного-режиму';
+      const longB = 'Дуже-довга-адмін-мітка-бета-для-компактного-режиму';
+      const view = await renderCard({
+        tagsLayout: 'compact',
+        tagsMap: {
+          3: { id: 3, label: longA, isPalitra: false },
+          4: { id: 4, label: longB, isPalitra: false },
+        } as Record<number, Tag>,
+        msg: buildMessage({
+          tags: [3, 4],
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: null },
+          ],
+        }),
+      });
+      rendered.push(view);
+
+      // Two ~300px chips in a ~500px card must not be treated as a single unwrapped row.
+      expect(view.container.textContent).toContain(longA);
+      expect(view.container.textContent).toContain('розгорнути');
+      expect(view.container.textContent).not.toContain(longB);
     } finally {
       rectSpy.mockRestore();
     }

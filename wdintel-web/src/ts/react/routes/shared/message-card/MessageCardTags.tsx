@@ -14,10 +14,11 @@ const COMPACT_EXPAND_BTN_RESERVE_PX = 116;
 /** MUI spacing 1.75 → 14px; room for contribution badges above the chip. */
 const TAG_CHIP_BADGE_TOP_PADDING_PX = 14;
 
-function estimateTagChipWidthPx(label: string, showBadge?: boolean): number {
+/** Fallback when a chip has not been measured yet. No upper cap — native chips grow with the label. */
+export function estimateTagChipWidthPx(label: string, showBadge?: boolean): number {
   const base = Math.round(label.length * 8.5 + 28);
   const withBadge = showBadge ? base + 22 : base;
-  return Math.min(240, Math.max(36, withBadge));
+  return Math.max(36, withBadge);
 }
 
 export function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] {
@@ -38,13 +39,21 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
   const canToggle = interactive && onToggleTag != null;
   const chipClassName = 'message-card-tag-chip';
   const chipLabel = <span className="message-card-tag-chip__label">{row.label}</span>;
+  const tipText = row.tip?.trim() ? row.tip : null;
+  const tipId = tipText != null ? `message-card-tag-${row.tagId}-tip` : undefined;
+  const tipProps =
+    tipId != null
+      ? {
+          title: tipText ?? undefined,
+          'aria-describedby': tipId,
+        }
+      : {};
 
   return (
     <span
       data-message-card-tag-id={row.tagId}
       className="inline-flex max-w-full items-start align-top"
       style={{ paddingTop: TAG_CHIP_BADGE_TOP_PADDING_PX }}
-      title={row.tip ?? undefined}
     >
       <span className="relative inline-flex max-w-full shrink-0">
         {canToggle ? (
@@ -54,6 +63,7 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
             data-selected={row.isSet ? 'true' : 'false'}
             data-interactive="true"
             onClick={() => onToggleTag(Number(row.tagId))}
+            {...tipProps}
           >
             {chipLabel}
           </button>
@@ -62,10 +72,16 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
             className={chipClassName}
             data-selected={row.isSet ? 'true' : 'false'}
             data-interactive="false"
+            {...tipProps}
           >
             {chipLabel}
           </span>
         )}
+        {tipId != null && tipText != null ? (
+          <span id={tipId} className="sr-only">
+            {tipText}
+          </span>
+        ) : null}
         {row.showBadge && (
           <span
             className="absolute -top-[12px] -right-1 flex items-center gap-1 rounded-full border border-border bg-card px-1.5 py-0.5 text-[10px] shadow-sm"
@@ -73,13 +89,13 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
           >
             {row.botContribsLen > 0 && (
               <span className="flex items-center gap-0.5" title="Боти">
-                <SmartToyOutlinedIcon sx={{ fontSize: 11 }} aria-hidden />
+                <SmartToyOutlinedIcon className="text-xs!" aria-hidden />
                 <span>{row.botContribsLen}</span>
               </span>
             )}
             {row.humanContribsLen > 0 && (
               <span className="flex items-center gap-0.5" title="Користувачі">
-                <PersonOutlineOutlinedIcon sx={{ fontSize: 11 }} aria-hidden />
+                <PersonOutlineOutlinedIcon className="text-xs!" aria-hidden />
                 <span>{row.humanContribsLen}</span>
               </span>
             )}
@@ -109,6 +125,8 @@ function MessageCardTagsComponent({
 }) {
   const [showCompactRest, setShowCompactRest] = useState(false);
   const compactMeasureRef = useRef<HTMLDivElement | null>(null);
+  /** Natural chip widths from a full (unpacked) render; never update from the overflow-hidden row. */
+  const measuredChipWidthsRef = useRef<Map<number, number>>(new Map());
   const rows = useMemo(
     () => buildMessageCardTagRows(msg, tagsMap, tagsOrder, tagContributionsOrganismId),
     [msg, tagsMap, tagsOrder, tagContributionsOrganismId],
@@ -139,12 +157,25 @@ function MessageCardTagsComponent({
         .filter((row): row is MessageCardTagRow => row != null),
     [orderedTagIds, rowsById],
   );
+  const packingKey = useMemo(
+    () =>
+      compactOrderedRows
+        .map((row) => `${row.tagId}:${row.label}:${row.showBadge ? 1 : 0}`)
+        .join('|'),
+    [compactOrderedRows],
+  );
   const [firstRowCount, setFirstRowCount] = useState(() => compactOrderedRows.length);
 
   useLayoutEffect(() => {
+    measuredChipWidthsRef.current = new Map();
+    setFirstRowCount((count) =>
+      count === compactOrderedRows.length ? count : compactOrderedRows.length,
+    );
+  }, [packingKey, compactOrderedRows.length]);
+
+  useLayoutEffect(() => {
     if (tagsLayout !== 'compact') return;
-    // Expanded rest chips live inside the measure root; remounting them must not re-pack
-    // (DOM chip widths also change between wrap vs overflow-hidden and would oscillate).
+    // Expanded rest chips live inside the measure root; remounting them must not re-pack.
     if (showCompactRest) return;
     const el = compactMeasureRef.current;
     if (!el) return;
@@ -157,9 +188,29 @@ function MessageCardTagsComponent({
       const w = el.getBoundingClientRect().width;
       if (w <= 0) return;
 
-      // Estimates only: measured widths differ between the all-chips wrap pass and the
-      // packed overflow-hidden row, which previously caused firstRowCount to thrash.
-      const getWidth = (row: MessageCardTagRow) => estimateTagChipWidthPx(row.label, row.showBadge);
+      const chipNodes = Array.from(el.querySelectorAll<HTMLElement>('[data-message-card-tag-id]'));
+      const hasFullNaturalMount = chipNodes.length === packing.length;
+
+      if (hasFullNaturalMount) {
+        const nextMap = new Map<number, number>();
+        chipNodes.forEach((node) => {
+          const idStr = node.getAttribute('data-message-card-tag-id');
+          if (!idStr) return;
+          const rect = node.getBoundingClientRect();
+          if (rect.width > 0) nextMap.set(Number(idStr), rect.width);
+        });
+        if (nextMap.size === packing.length) {
+          measuredChipWidthsRef.current = nextMap;
+        }
+      } else if (measuredChipWidthsRef.current.size !== packing.length) {
+        // Wait for the full natural-size pass before packing decisions.
+        setFirstRowCount((count) => (count === packing.length ? count : packing.length));
+        return;
+      }
+
+      const getWidth = (row: MessageCardTagRow) =>
+        measuredChipWidthsRef.current.get(Number(row.tagId)) ??
+        estimateTagChipWidthPx(row.label, row.showBadge);
 
       let usedWithoutBtn = 0;
       let fitsWithoutBtn = true;
@@ -205,7 +256,7 @@ function MessageCardTagsComponent({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [tagsLayout, compactOrderedRows, showCompactRest]);
+  }, [tagsLayout, compactOrderedRows, showCompactRest, packingKey, firstRowCount]);
 
   const row1Chips = useMemo(
     () => compactOrderedRows.slice(0, firstRowCount),
@@ -249,9 +300,9 @@ function MessageCardTagsComponent({
     >
       {showCompactRest ? 'згорнути' : 'розгорнути'}
       {showCompactRest ? (
-        <ExpandLessIcon fontSize="inherit" aria-hidden />
+        <ExpandLessIcon className="message-card-tag-expand__icon" aria-hidden />
       ) : (
-        <ExpandMoreIcon fontSize="inherit" aria-hidden />
+        <ExpandMoreIcon className="message-card-tag-expand__icon" aria-hidden />
       )}
     </button>
   ) : null;

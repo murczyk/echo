@@ -24,7 +24,9 @@ Use this skill for changes involving `rer-duty-neo`, shared MessageCard renderin
 - Do not introduce structural `Box`, `Stack`, `Grid`, `Container`, or equivalent wrapper components into the protected hot path.
 - Do not add wrapper components whose only purpose is hiding those layout abstractions.
 - Do not migrate native structural layout into per-card `sx` objects.
-- Prefer semantic/native HTML, existing utility classes, and shared theme-backed CSS variables.
+- Prefer semantic/native HTML, Tailwind utility classes, application-owned CSS classes, and shared theme-backed CSS variables.
+- Use `sx`, `Box`, `Stack`, and other MUI layout/styling APIs only when absolutely necessary (theme-coupled leaf controls, menus, dialogs, popovers, or behavior native HTML + Tailwind cannot provide). On repeated per-tag / per-card nodes, prefer static `className` over `sx`.
+- Keep leaf MUI components where they provide theme, interaction, or accessibility behavior; when a static class is enough, style them with Tailwind or app-owned classes instead of `sx`.
 - Keep menus, dialogs, and popovers unmounted when practical.
 - Preserve `memo`, stable defaults, and conditional rendering that reduce repeated work.
 - Hidden narrow-screen feeds may remain mounted, but disabled tracking must not report visibility, bottom state, loading triggers, or read-state side effects.

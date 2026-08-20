@@ -354,7 +354,7 @@ a {
   outline-offset: 2px;
 }
 
-.message-card-tag-expand .MuiSvgIcon-root {
+.message-card-tag-expand__icon {
   font-size: 0.875rem;
 }
 
