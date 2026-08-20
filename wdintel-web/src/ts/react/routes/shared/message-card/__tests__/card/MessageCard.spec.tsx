@@ -777,6 +777,16 @@ function getTagButtonLabels(container: HTMLElement): string[] {
     .filter((label) => tagLabels.has(label));
 }
 
+function getHeaderBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
+  const element = Array.from(container.querySelectorAll('[data-message-card-text="body2"]')).find(
+    (node) => node.textContent?.trim() === text,
+  );
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Header body2 element not found for text: ${text}`);
+  }
+  return element;
+}
+
 function getMuiTypographyElementByText(container: HTMLElement, text: string): HTMLElement {
   const element = Array.from(container.querySelectorAll('[data-mui-variant]')).find(
     (node) => node.textContent?.trim() === text,
@@ -1097,8 +1107,8 @@ describe('MessageCard', () => {
         'Харків',
       ] as const;
       for (const value of expectedValues) {
-        const typographyElement = getMuiTypographyElementByText(view.container, value);
-        expect(typographyElement.getAttribute('data-mui-variant')).toBe('body2');
+        const textElement = getHeaderBody2ElementByText(view.container, value);
+        expect(textElement.getAttribute('data-message-card-text')).toBe('body2');
         expect(headerText).toContain(value);
       }
       expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
@@ -2528,6 +2538,15 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
     expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
+    const tagButton = getButton(view.container, 'переміщення');
+    const tipId = tagButton.getAttribute('aria-describedby');
+    expect(tipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
+      'Користувачі: tester',
+    );
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
+      'Боти: bot (92%)',
+    );
     expect(view.container.textContent).toContain('бот помилився');
     expect(view.container.textContent).toContain('закрити');
 
@@ -2537,6 +2556,37 @@ describe('MessageCard', () => {
     expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
     expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
     expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
+  it('keeps contribution description ids unique across mounted cards with the same tag', async () => {
+    const sharedMsg = buildMessage({
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: 'alpha', model: null, organismId: 1 },
+        { id: 2, tagId: 3, confidence: 0.5, login: null, model: 'bot-a', organismId: null },
+      ],
+    });
+    const otherMsg = buildMessage({
+      text: 'Друга картка',
+      inboxTags: [
+        { id: 3, tagId: 3, confidence: 1, login: 'beta', model: null, organismId: 1 },
+        { id: 4, tagId: 3, confidence: 0.8, login: null, model: 'bot-b', organismId: null },
+      ],
+    });
+    const first = await renderCard({ msg: sharedMsg, onToggleTag: vi.fn() });
+    const second = await renderCard({ id: 43, msg: otherMsg, onToggleTag: vi.fn() });
+    rendered.push(first, second);
+
+    const firstTipId = getButton(first.container, 'переміщення').getAttribute('aria-describedby');
+    const secondTipId = getButton(second.container, 'переміщення').getAttribute('aria-describedby');
+    expect(firstTipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(secondTipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(firstTipId).not.toBe(secondTipId);
+    expect(firstTipId != null ? document.getElementById(firstTipId)?.textContent : null).toContain(
+      'alpha',
+    );
+    expect(
+      secondTipId != null ? document.getElementById(secondTipId)?.textContent : null,
+    ).toContain('beta');
   });
 
   it('does not render analysis-only callsign controls in duty mode', async () => {
@@ -3441,6 +3491,54 @@ describe('MessageCard', () => {
       expect(view.container.textContent).toContain('палітра');
       expect(view.container.textContent).toContain('іфо');
       expect(view.container.textContent).toContain('розвідка');
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('keeps compact expand when long tag chips exceed the estimate former 240px cap', async () => {
+    const cardWidthPx = 500;
+    const chipWidthPx = 300;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function mockRect(this: HTMLElement) {
+        const isChip = this.hasAttribute('data-message-card-tag-id');
+        const width = isChip ? chipWidthPx : cardWidthPx;
+        return {
+          width,
+          height: 32,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+    try {
+      const longA = 'Дуже-довга-адмін-мітка-альфа-для-компактного-режиму';
+      const longB = 'Дуже-довга-адмін-мітка-бета-для-компактного-режиму';
+      const view = await renderCard({
+        tagsLayout: 'compact',
+        tagsMap: {
+          3: { id: 3, label: longA, isPalitra: false },
+          4: { id: 4, label: longB, isPalitra: false },
+        } as Record<number, Tag>,
+        msg: buildMessage({
+          tags: [3, 4],
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: null },
+          ],
+        }),
+      });
+      rendered.push(view);
+
+      // Two ~300px chips in a ~500px card must not be treated as a single unwrapped row.
+      expect(view.container.textContent).toContain(longA);
+      expect(view.container.textContent).toContain('розгорнути');
+      expect(view.container.textContent).not.toContain(longB);
     } finally {
       rectSpy.mockRestore();
     }
