@@ -1055,8 +1055,7 @@ async fn load_echo_commented_message_rows(
             skipped += 1;
             continue;
         };
-        let Some(parent) = parent_rows.get(&comment.parent_signal_message_id)
-        else {
+        let Some(parent) = parent_rows.get(&comment.source_message_id) else {
             skipped += 1;
             continue;
         };
