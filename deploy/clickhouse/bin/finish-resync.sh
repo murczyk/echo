@@ -70,6 +70,7 @@ done
 
 "$SCRIPT_DIR/refresh-current-views.sh"
 "$SCRIPT_DIR/refresh-gateway.sh"
+"$SCRIPT_DIR/reconcile-if-needed.sh"
 
 for ((attempt = 1; attempt <= health_attempts; attempt++)); do
   if "$SCRIPT_DIR/check-analytics-health.sh"; then
