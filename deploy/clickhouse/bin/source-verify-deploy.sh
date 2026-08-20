@@ -53,9 +53,7 @@ reconciliation_log() {
 }
 
 transient_reconciliation_failure() {
-  grep -Eiq \
-    'deadlock detected|tuple concurrently updated|another table-selection reconciliation is already running|canceling statement due to lock timeout' \
-    <<<"$1"
+  source_reconciliation_failure_is_transient "$1"
 }
 
 print_reconciliation_failure() {

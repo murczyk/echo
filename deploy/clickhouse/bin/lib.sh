@@ -73,6 +73,43 @@ reconcile_analytics_schema_with_retry() {
   done
 }
 
+source_reconciliation_failure_is_transient() {
+  grep -Eiq \
+    'deadlock detected|tuple concurrently updated|another table-selection reconciliation is already running|canceling statement due to lock timeout' \
+    <<<"$1"
+}
+
+retry_source_reconciliation_step() {
+  local description=$1
+  shift
+  local attempts=${SOURCE_RECONCILE_RETRY_ATTEMPTS:-$SOURCE_RECONCILE_DEPLOY_RETRY_ATTEMPTS_DEFAULT}
+  local delay=${SOURCE_RECONCILE_RETRY_DELAY_SECONDS:-$SOURCE_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS_DEFAULT}
+  local attempt output status
+
+  [[ "$attempts" =~ ^[1-9][0-9]*$ ]] \
+    || die "SOURCE_RECONCILE_RETRY_ATTEMPTS must be a positive integer"
+  [[ "$delay" =~ ^[0-9]+$ ]] \
+    || die "SOURCE_RECONCILE_RETRY_DELAY_SECONDS must be a non-negative integer"
+
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    if output=$("$@" 2>&1); then
+      [[ -z "$output" ]] || printf '%s\n' "$output"
+      if ((attempt > 1)); then
+        log "$description succeeded on attempt $attempt/$attempts"
+      fi
+      return 0
+    else
+      status=$?
+    fi
+    [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+    source_reconciliation_failure_is_transient "$output" \
+      || return "$status"
+    ((attempt < attempts)) || return "$status"
+    log "$description hit transient contention; retrying in ${delay}s ($attempt/$attempts)"
+    sleep "$delay"
+  done
+}
+
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
 }

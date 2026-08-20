@@ -53,6 +53,35 @@ if ECHO_TEST_OPERATIONS=$operations \
   exit 1
 fi
 
+source_attempts=$case_dir/source-attempts
+: >"$source_attempts"
+transient_source_step() {
+  local attempt
+  attempt=$(wc -l <"$source_attempts")
+  printf 'attempt\n' >>"$source_attempts"
+  ((attempt > 0)) || {
+    printf 'ERROR: tuple concurrently updated\n' >&2
+    return 1
+  }
+}
+SOURCE_RECONCILE_RETRY_ATTEMPTS=2 \
+SOURCE_RECONCILE_RETRY_DELAY_SECONDS=0 \
+  retry_source_reconciliation_step \
+    "Test source reconciliation" transient_source_step
+[[ $(wc -l <"$source_attempts") == 2 ]]
+
+nontransient_source_step() {
+  printf 'ERROR: permanent failure\n' >&2
+  return 1
+}
+if SOURCE_RECONCILE_RETRY_ATTEMPTS=2 \
+  SOURCE_RECONCILE_RETRY_DELAY_SECONDS=0 \
+    retry_source_reconciliation_step \
+      "Test source reconciliation" nontransient_source_step; then
+  printf 'source reconciliation unexpectedly retried a permanent failure\n' >&2
+  exit 1
+fi
+
 for source_script in \
   source-reconcile-derived-schema.sh \
   source-reconcile-tables.sh

@@ -70,12 +70,15 @@ trap warn_if_incomplete EXIT
 
 log "Pausing the mirror on $analytics_ssh_target"
 run_remote_reconcile --pause
-reconcile_source_table_access
-reconcile_source_publication
+retry_source_reconciliation_step \
+  "Source table-access reconciliation" reconcile_source_table_access
+retry_source_reconciliation_step \
+  "Source publication reconciliation" reconcile_source_publication
 
 log "Applying the table selection to PeerDB, ClickHouse, and the gateway"
 run_remote_reconcile --yes
-reset_excluded_replica_identities
+retry_source_reconciliation_step \
+  "Excluded replica-identity reset" reset_excluded_replica_identities
 source_local_psql -q -v ON_ERROR_STOP=1 \
   -c "SELECT pg_logical_emit_message(true, 'echo_peerdb_table_selection', 'reconciled')"
 record_source_table_selection_fingerprint
