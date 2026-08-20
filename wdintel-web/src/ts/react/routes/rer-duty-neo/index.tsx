@@ -310,6 +310,7 @@ export function RerDutyNeoPage({
         freqs,
         postsList,
         unitsList: Object.values(unitsMap),
+        persistentUnitFilterValues,
       },
       toggles: {
         adjacentFreqsRange: feed.adjacentFreqsRange,
@@ -511,6 +512,7 @@ export function RerDutyNeoPage({
     networkDisplayMap,
     networkMap,
     unitsMap,
+    persistentUnitFilterValues,
     callsignInfoMap,
     featureStrictNetworks,
     watchModeByFeedId,

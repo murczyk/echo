@@ -18,6 +18,7 @@ type FeedFilterSelectionViewModel<T> = {
   onModeChange: (mode: FeedFilterMode) => void;
   onValueChange: (value: T[]) => void;
   options: readonly T[];
+  bulkPasteOptions?: readonly T[];
   getOptionLabel: (option: T) => string;
   getOptionKey?: (option: T) => string;
   isOptionEqualToValue?: (option: T, value: T) => boolean;
@@ -72,7 +73,15 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
   const { filterState, sources, toggles, actions } = panel;
-  const { groupsList, groupInfos, senderOptions, freqs, postsList, unitsList } = sources;
+  const {
+    groupsList,
+    groupInfos,
+    senderOptions,
+    freqs,
+    postsList,
+    unitsList,
+    persistentUnitFilterValues = [],
+  } = sources;
   const {
     adjacentFreqsRange,
     highlightSignalsEnabled,
@@ -195,6 +204,10 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     () => buildUnitFilterOptions(unitsList ?? []).map(getUnitFilterValue),
     [unitsCatalogKey],
   );
+  const unitBulkPasteOptions = useMemo(
+    () => [...new Set([...unitOptions, ...persistentUnitFilterValues])],
+    [persistentUnitFilterValues, unitOptions],
+  );
   const unitSelectionState = useFeedFilterSelectionState<string>({
     includeValues: filterState.unitsSelected ?? [],
     excludeValues: filterState.unitsDenied ?? [],
@@ -306,6 +319,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       onModeChange: unitSelectionState.setMode,
       onValueChange: unitSelectionState.setLocalValue,
       options: unitOptions,
+      bulkPasteOptions: unitBulkPasteOptions,
       getOptionLabel: (name: string) => name,
       getOptionKey: (name: string) => name,
       rankedSearch: true,

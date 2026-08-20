@@ -439,6 +439,29 @@ describe('PowerAutocomplete', () => {
     });
   });
 
+  it('resolves an inactive unit through bulk options without adding it to the dropdown', () => {
+    const selectableUnit = { id: 'unit-1', label: 'Active unit' };
+    const historicUnit = { id: 'historic-unit', label: 'Historic unit' };
+    const { onBulkPasteChange, container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteOptions: [selectableUnit, historicUnit],
+      bulkPasteSeparators: ['\n'],
+      options: [selectableUnit],
+    });
+
+    expect(latestAutocompleteProps?.options).toEqual([selectableUnit]);
+    openBulkDialog(container);
+    typeDialogValue(container, 'Historic unit');
+
+    const submitButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton) throw new Error('Submit button not found');
+    act(() => submitButton.click());
+
+    expect(onBulkPasteChange).toHaveBeenCalledWith([historicUnit]);
+  });
+
   it('adds the bulk menu button inside the input adornment when enabled', () => {
     const { container } = renderAutocomplete({ bulkPaste: true });
 

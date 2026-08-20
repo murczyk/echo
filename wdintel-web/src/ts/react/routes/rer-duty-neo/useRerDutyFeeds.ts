@@ -39,19 +39,42 @@ export function getPendingDutyCallsignLookups(params: {
   });
 }
 
-/** Merge API freqs with frequencies from loaded messages. */
-function mergeFreqsFromMessages(
-  apiFreqs: string[],
-  messageFeeds: { items: [number, { freq?: string | null }][] }[],
+export function mergeAvailableFrequencies(
+  apiFreqs: readonly string[],
+  messageFeeds: {
+    items: [number, { freq?: string | null }][];
+    filter: { freqsSelected?: string[] | null; freqsDenied?: string[] | null };
+  }[],
 ): string[] {
-  const fromMsgs = new Set<string>();
-  messageFeeds.forEach((feed) =>
+  const frequencies = new Set<string>();
+  const add = (value: string) => {
+    const normalized = value.trim();
+    if (normalized !== '') frequencies.add(normalized);
+  };
+  apiFreqs.forEach(add);
+  messageFeeds.forEach((feed) => {
     feed.items.forEach(([, msg]) => {
-      if (msg.freq && msg.freq.trim() !== '') fromMsgs.add(msg.freq.trim());
-    }),
-  );
-  const merged = new Set<string>([...apiFreqs, ...fromMsgs]);
-  return sortFrequenciesNumerically([...merged]);
+      if (msg.freq) add(msg.freq);
+    });
+    (feed.filter.freqsSelected ?? []).forEach(add);
+    (feed.filter.freqsDenied ?? []).forEach(add);
+  });
+  return sortFrequenciesNumerically([...frequencies]);
+}
+
+function mergePersistentUnitFilterValues(
+  messageFeeds: { filter: { unitsSelected?: string[] | null; unitsDenied?: string[] | null } }[],
+): string[] {
+  const values = new Set<string>();
+  const add = (value: string) => {
+    const normalized = value.trim();
+    if (normalized !== '') values.add(normalized);
+  };
+  messageFeeds.forEach((feed) => {
+    (feed.filter.unitsSelected ?? []).forEach(add);
+    (feed.filter.unitsDenied ?? []).forEach(add);
+  });
+  return [...values];
 }
 
 // Keeps group keys referenced by active feeds and saved filters so every Duty
@@ -391,8 +414,12 @@ export function useRerDutyFeeds(
   });
 
   const freqs = useMemo(
-    () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
+    () => mergeAvailableFrequencies(filterOpts.freqs, feedState.messageFeeds),
     [filterOpts.freqs, feedState.messageFeeds],
+  );
+  const persistentUnitFilterValues = useMemo(
+    () => mergePersistentUnitFilterValues(feedState.messageFeeds),
+    [feedState.messageFeeds],
   );
   const recentGroupKeys = filterOpts.groupsList;
   const availableGroupKeys = useMemo(
@@ -531,6 +558,7 @@ export function useRerDutyFeeds(
     networkDisplayMap: feedState.networkDisplayMap,
     networkMap: feedState.networkMap,
     unitsMap: feedState.unitsMap,
+    persistentUnitFilterValues,
     callsignInfoMap: feedState.callsignInfoMap,
     featureStrictNetworks: filterOpts.featureStrictNetworks,
     watchModeByFeedId: feedState.watchModeByFeedId,

@@ -33,6 +33,7 @@ export type FeedFilterSelectionConfig<T> = {
   onModeChange: (mode: 'include' | 'exclude') => void;
   onValueChange: (value: T[]) => void;
   options: readonly T[];
+  bulkPasteOptions?: readonly T[];
   getOptionLabel: (option: T) => string;
   getOptionKey?: (option: T) => string;
   isOptionEqualToValue?: (option: T, value: T) => boolean;
@@ -270,6 +271,7 @@ export function FeedFilterPanelView({
             value={units.value}
             onValueChange={units.onValueChange}
             options={units.options}
+            bulkPasteOptions={units.bulkPasteOptions}
             getOptionLabel={units.getOptionLabel}
             getOptionKey={units.getOptionKey}
             isOptionEqualToValue={units.isOptionEqualToValue}

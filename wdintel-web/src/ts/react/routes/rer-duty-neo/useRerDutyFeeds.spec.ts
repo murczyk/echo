@@ -5,7 +5,11 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getPendingDutyCallsignLookups, mergeKnownGroupKeys } from './useRerDutyFeeds';
+import {
+  getPendingDutyCallsignLookups,
+  mergeAvailableFrequencies,
+  mergeKnownGroupKeys,
+} from './useRerDutyFeeds';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
@@ -297,6 +301,21 @@ describe('mergeKnownGroupKeys', () => {
       ),
     ).toEqual(['saved-selected', 'saved-denied']);
   });
+});
+
+describe('mergeAvailableFrequencies', () => {
+  it.each(['freqsSelected', 'freqsDenied'] as const)(
+    'keeps a restored active frequency available for other Duty columns from %s',
+    (activeField) => {
+      const filter = {
+        freqsSelected: [],
+        freqsDenied: [],
+        [activeField]: ['153.6250'],
+      };
+
+      expect(mergeAvailableFrequencies([], [{ items: [], filter }])).toContain('153.6250');
+    },
+  );
 });
 
 describe('getPendingDutyCallsignLookups', () => {

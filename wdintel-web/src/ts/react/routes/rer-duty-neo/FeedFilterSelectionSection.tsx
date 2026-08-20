@@ -33,6 +33,7 @@ export type FeedFilterSelectionSectionProps<T> = {
   keepOpenOnSelect?: boolean;
   preserveInputOnSelect?: boolean;
   bulkPaste?: boolean;
+  bulkPasteOptions?: readonly T[];
   bulkPasteSeparators?: string[];
   bulkPasteMenuLabel?: string;
   bulkPasteDialogTitle?: string;
@@ -71,6 +72,7 @@ export function FeedFilterSelectionSection<T>({
   keepOpenOnSelect,
   preserveInputOnSelect,
   bulkPaste = false,
+  bulkPasteOptions,
   bulkPasteSeparators,
   bulkPasteMenuLabel,
   bulkPasteDialogTitle,
@@ -184,6 +186,7 @@ export function FeedFilterSelectionSection<T>({
             onValueChange(nextValue);
           }}
           bulkPaste={bulkPaste}
+          bulkPasteOptions={bulkPasteOptions}
           bulkPasteSeparators={bulkPasteSeparators}
           bulkPasteMenuLabel={bulkPasteMenuLabel}
           bulkPasteDialogTitle={bulkPasteDialogTitle}

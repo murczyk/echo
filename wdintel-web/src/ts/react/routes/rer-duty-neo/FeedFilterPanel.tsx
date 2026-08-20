@@ -31,6 +31,7 @@ export type FeedFilterPanelModel = {
     freqs: string[];
     postsList?: string[];
     unitsList?: Unit[];
+    persistentUnitFilterValues?: string[];
   };
   toggles: {
     adjacentFreqsRange?: number;

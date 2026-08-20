@@ -44,6 +44,7 @@ type PowerAutocompleteProps<T> = Omit<
 > & {
   renderInput: AutocompleteProps<T, true, false, false>['renderInput'];
   bulkPaste?: boolean;
+  bulkPasteOptions?: readonly T[];
   bulkPasteSeparators?: string[];
   bulkPasteMenuLabel?: string;
   bulkPasteDialogTitle?: string;
@@ -307,6 +308,7 @@ function mergeBulkAutocompleteSx(sx: AutocompleteProps<unknown, true, false, fal
 export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
   const {
     bulkPaste = false,
+    bulkPasteOptions,
     bulkPasteSeparators = [','],
     bulkPasteMenuLabel,
     bulkPasteDialogTitle,
@@ -351,7 +353,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
 
     return buildBulkResolution({
       inputValue: bulkDialogInputValue,
-      options,
+      options: bulkPasteOptions ?? options,
       selectedValue,
       getOptionLabel: bulkPasteLabel,
       getBulkPasteToken: bulkPasteToken,
@@ -368,6 +370,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
     bulkPasteAliases,
     bulkPasteSeparators,
     isOptionEqualToValue,
+    bulkPasteOptions,
     options,
     selectedValue,
   ]);
