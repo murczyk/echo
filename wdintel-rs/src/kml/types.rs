@@ -298,6 +298,7 @@ pub struct StyleMap {
 )]
 pub struct Name {
     #[serde(rename = "$value")]
+    #[serde(default)]
     pub body: String,
 }
 

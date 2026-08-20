@@ -26,7 +26,8 @@ export type CallsignHintTooltipData = {
   items: string[];
 };
 
-export type MessageCallsignHintState = 'message-network' | 'known-elsewhere' | 'unresolved';
+export type MessageCallsignHintState =
+  'message-network' | 'formation-catalog' | 'catalog' | 'unresolved';
 
 export type MessageCallsignHintResult = {
   state: MessageCallsignHintState;
@@ -87,7 +88,9 @@ function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
     child.armyRegion,
     child.militaryDistrict,
     child.army,
+    child.corps,
     child.division,
+    child.brigade,
     child.regiment,
     child.battalion,
     child.company,
@@ -96,12 +99,57 @@ function isSameOrChildUnit(child: Unit, parent: Unit): boolean {
     parent.armyRegion,
     parent.militaryDistrict,
     parent.army,
+    parent.corps,
     parent.division,
+    parent.brigade,
     parent.regiment,
     parent.battalion,
     parent.company,
   ].map((value) => value?.trim() ?? '');
   return parentParts.every((part, index) => part === '' || part === childParts[index]);
+}
+
+type FormationScope = {
+  boundary: 'brigade' | 'regiment';
+  values: string[];
+};
+
+function normalizeUnitValue(value: string | null | undefined): string {
+  return normalizeCallsignLookupValue(value ?? '');
+}
+
+function getFormationScope(unit: Unit): FormationScope | null {
+  const values = [
+    unit.armyRegion,
+    unit.militaryDistrict,
+    unit.army,
+    unit.corps,
+    unit.division,
+    unit.brigade,
+    unit.regiment,
+  ].map(normalizeUnitValue);
+  if (values[6] !== '') return { boundary: 'regiment', values };
+  if (values[5] !== '') return { boundary: 'brigade', values };
+  return null;
+}
+
+function isUnitInFormationScope(unit: Unit, scope: FormationScope): boolean {
+  const unitValues = [
+    unit.armyRegion,
+    unit.militaryDistrict,
+    unit.army,
+    unit.corps,
+    unit.division,
+    unit.brigade,
+    unit.regiment,
+  ].map(normalizeUnitValue);
+  const boundaryIndex = scope.boundary === 'regiment' ? 6 : 5;
+  const boundaryValue = scope.values[boundaryIndex];
+  if (boundaryValue === '' || unitValues[boundaryIndex] !== boundaryValue) return false;
+  return scope.values.slice(0, boundaryIndex).every((value, index) => {
+    const unitValue = unitValues[index];
+    return value === '' || (unitValue !== '' && value === unitValue);
+  });
 }
 
 function findCallsignUnits(callsigns: CallsignInfo[], unitsMap: Record<number, Unit>): Unit[] {
@@ -123,6 +171,23 @@ function filterCallsignsByNetworkUnits(
   return callsigns.filter((callsign) =>
     unitsWithSameRegiment.some((unit) => unit.id === callsign.unitId),
   );
+}
+
+function filterCallsignsByFormationScopes(
+  callsigns: CallsignInfo[],
+  unitsMap: Record<number, Unit>,
+  networkUnits: Unit[],
+): CallsignInfo[] {
+  const scopes = networkUnits
+    .map(getFormationScope)
+    .filter((scope): scope is FormationScope => isPresent(scope));
+  if (scopes.length === 0) return [];
+  return callsigns.filter((callsign) => {
+    const callsignUnit = isPresent(callsign.unitId) ? unitsMap[callsign.unitId] : undefined;
+    return (
+      isPresent(callsignUnit) && scopes.some((scope) => isUnitInFormationScope(callsignUnit, scope))
+    );
+  });
 }
 
 export function isCallsignRelatedToNetworks(
@@ -308,24 +373,36 @@ export function formatCallsignHintTooltip(result: CallsignHintResult): string | 
 export function getMessageCallsignHintResult(params: {
   networkIds?: number[] | null;
   networks: Network[];
+  unitsMap?: Record<number, Unit>;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   callsign: string;
 }): MessageCallsignHintResult {
   const response = params.callsignInfoMap?.[normalizeCallsignLookupValue(params.callsign)];
-  const messageNetworkIds = new Set(params.networkIds ?? []);
-  const catalogRows = response?.res ?? [];
-  const exactNetworkHints = (response?.networkHints ?? []).filter((hint) =>
-    messageNetworkIds.has(hint.networkId),
+  const messageNetworkIds = getMessageNetworkIds(params.networkIds);
+  const exactNetworkHints = (response?.networkHints ?? []).filter(
+    (hint) => messageNetworkIds?.includes(hint.networkId) ?? false,
   );
-  const otherNetworkHints = (response?.networkHints ?? []).filter(
-    (hint) => !messageNetworkIds.has(hint.networkId),
-  );
+  const otherNetworkHints = messageNetworkIds ? [] : (response?.networkHints ?? []);
+  const allCatalogRows = response?.res ?? [];
+  const networkUnits = messageNetworkIds
+    ? getUnitsInfoByIds(
+        getAllUnitIdsForNetworks(getNetworksByIds(messageNetworkIds, params.networks)),
+        params.unitsMap ?? {},
+      )
+    : [];
+  const catalogRows = messageNetworkIds
+    ? filterCallsignsByFormationScopes(allCatalogRows, params.unitsMap ?? {}, networkUnits)
+    : allCatalogRows;
   const state: MessageCallsignHintState =
     exactNetworkHints.length > 0
       ? 'message-network'
-      : catalogRows.length > 0 || otherNetworkHints.length > 0
-        ? 'known-elsewhere'
-        : 'unresolved';
+      : catalogRows.length > 0
+        ? messageNetworkIds
+          ? 'formation-catalog'
+          : 'catalog'
+        : otherNetworkHints.length > 0
+          ? 'catalog'
+          : 'unresolved';
   return {
     state,
     catalogRows,
@@ -357,26 +434,24 @@ export function formatMessageCallsignHintTooltipData(
         formatMessageNetworkHint(hint, result.networkNames),
       ),
     });
-  } else {
-    if (result.catalogRows.length > 0) {
-      sections.push({
-        header: 'Позивні з каталогу:',
-        items: result.catalogRows.map((row) => {
-          const line = formatLegacyCallsignTooltipLine(row);
-          return isTooltipLineVisible(line)
-            ? line
-            : 'Позивний присутній у каталозі. Додатковий опис відсутній.';
-        }),
-      });
-    }
-    if (result.otherNetworkHints.length > 0) {
-      sections.push({
-        header: 'Позивний присутній в інших мережах:',
-        items: result.otherNetworkHints.map((hint) =>
-          formatMessageNetworkHint(hint, result.networkNames),
-        ),
-      });
-    }
+  } else if (result.catalogRows.length > 0) {
+    sections.push({
+      header: 'Позивні з каталогу:',
+      items: result.catalogRows.map((row) => {
+        const line = formatLegacyCallsignTooltipLine(row);
+        return isTooltipLineVisible(line)
+          ? line
+          : 'Позивний присутній у каталозі. Додатковий опис відсутній.';
+      }),
+    });
+  }
+  if (result.state === 'catalog' && result.otherNetworkHints.length > 0) {
+    sections.push({
+      header: 'Позивний присутній в інших мережах:',
+      items: result.otherNetworkHints.map((hint) =>
+        formatMessageNetworkHint(hint, result.networkNames),
+      ),
+    });
   }
   return { sections };
 }
@@ -388,6 +463,9 @@ export const __private__ = {
   getUnitsInfoByIds,
   isSameOrChildUnit,
   filterCallsignsByNetworkUnits,
+  filterCallsignsByFormationScopes,
+  getFormationScope,
+  isUnitInFormationScope,
   isCallsignRelatedToNetworks,
   hasCallsignInMessageNetworks,
   getStrictMessageNetworkHintStrategy,
