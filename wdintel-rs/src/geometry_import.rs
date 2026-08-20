@@ -172,30 +172,34 @@ fn collect_placemark_features(
     features: &mut Vec<ImportedGeometryFeature>,
 ) -> anyhow::Result<()> {
     if let Some(point) = &placemark.point {
-        let coordinates = point.coordinates.as_deref().c(h!())?;
-        collect_points(coordinates, features).c(h!())?;
+        if let Some(coordinates) = point.coordinates.as_deref() {
+            collect_points(coordinates, features).c(h!())?;
+        }
     }
 
     if let Some(line) = &placemark.line_string {
-        let coordinates = line
+        if let Some(coordinates) = line
             .coordinates
             .as_ref()
             .and_then(|coordinates| coordinates.body.as_deref())
-            .c(h!())?;
-        collect_line_string(coordinates, features).c(h!())?;
+        {
+            collect_line_string(coordinates, features).c(h!())?;
+        }
     }
     if let Some(multi_geometry) = &placemark.multi_geometry {
         for point in &multi_geometry.points {
-            let coordinates = point.coordinates.as_deref().c(h!())?;
-            collect_points(coordinates, features).c(h!())?;
+            if let Some(coordinates) = point.coordinates.as_deref() {
+                collect_points(coordinates, features).c(h!())?;
+            }
         }
         for line in &multi_geometry.line_strings {
-            let coordinates = line
+            if let Some(coordinates) = line
                 .coordinates
                 .as_ref()
                 .and_then(|coordinates| coordinates.body.as_deref())
-                .c(h!())?;
-            collect_line_string(coordinates, features).c(h!())?;
+            {
+                collect_line_string(coordinates, features).c(h!())?;
+            }
         }
     }
     Ok(())
@@ -372,5 +376,34 @@ mod tests {
         assert!(parse_point_line_features("battle-line.kml", kml)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn imports_exporter_placeholders_with_empty_names_and_points() {
+        let kml = br#"<kml><Document><name/><open/><visibility>1</visibility>
+<Folder><name>-</name><Placemark><name/><visibility/><description/>
+  <Point/>
+  <MultiGeometry>
+    <LineString><tessellate>1</tessellate><coordinates>31,49 32,50</coordinates></LineString>
+  </MultiGeometry>
+</Placemark></Folder></Document></kml>"#;
+
+        let features = parse_point_line_features("battle-line.kml", kml)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            features,
+            vec![ImportedGeometryFeature::LineString(vec![
+                ImportedCoordinate {
+                    lat: 49.0,
+                    lon: 31.0,
+                },
+                ImportedCoordinate {
+                    lat: 50.0,
+                    lon: 32.0,
+                },
+            ])]
+        );
     }
 }
