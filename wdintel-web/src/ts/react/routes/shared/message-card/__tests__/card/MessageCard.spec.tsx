@@ -756,6 +756,16 @@ function getTagButtonLabels(container: HTMLElement): string[] {
     .filter((label) => tagLabels.has(label));
 }
 
+function getHeaderBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
+  const element = Array.from(container.querySelectorAll('[data-message-card-text="body2"]')).find(
+    (node) => node.textContent?.trim() === text,
+  );
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Header body2 element not found for text: ${text}`);
+  }
+  return element;
+}
+
 function getMuiTypographyElementByText(container: HTMLElement, text: string): HTMLElement {
   const element = Array.from(container.querySelectorAll('[data-mui-variant]')).find(
     (node) => node.textContent?.trim() === text,
@@ -1069,8 +1079,8 @@ describe('MessageCard', () => {
         'Харків',
       ] as const;
       for (const value of expectedValues) {
-        const typographyElement = getMuiTypographyElementByText(view.container, value);
-        expect(typographyElement.getAttribute('data-mui-variant')).toBe('body2');
+        const textElement = getHeaderBody2ElementByText(view.container, value);
+        expect(textElement.getAttribute('data-message-card-text')).toBe('body2');
         expect(headerText).toContain(value);
       }
       expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
@@ -1634,101 +1644,26 @@ describe('MessageCard', () => {
     ]);
   });
 
-  it('keeps the compact duty toolbar inline when the action column still has room', async () => {
-    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    });
-    vi.stubGlobal('cancelAnimationFrame', () => undefined);
-    const view = await renderHeader();
+  it('stacks the compact duty toolbar when compact layout is enabled', async () => {
+    const view = await renderHeader({ compact: true });
     rendered.push(view);
 
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
-    const root = toolbar.parentElement;
-    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
-
-    setClientWidth(root, 240);
-    await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
-    });
-
-    const updatedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(updatedToolbar instanceof HTMLElement)) throw new Error('toolbar not found after resize');
-    expect(updatedToolbar.getAttribute('role')).toBeNull();
+    expect(toolbar.getAttribute('role')).toBe('group');
+    expect(toolbar.getAttribute('data-action-grid-columns')).toBe('4');
+    expect(toolbar.className).toContain('message-card-action-group--stacked');
   });
 
-  it('ignores hidden width measurements before wrapping the compact duty toolbar', async () => {
-    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    });
-    vi.stubGlobal('cancelAnimationFrame', () => undefined);
-    const view = await renderHeader();
+  it('keeps the duty toolbar inline when compact layout is disabled', async () => {
+    const view = await renderHeader({ compact: false });
     rendered.push(view);
 
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
-    const root = toolbar.parentElement;
-    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
-
-    setClientWidth(root, 240);
-    await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
-    });
-
-    const inlineToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(inlineToolbar instanceof HTMLElement))
-      throw new Error('toolbar not found after inline resize');
-    expect(inlineToolbar.getAttribute('role')).toBeNull();
-
-    setClientWidth(root, 0);
-    await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
-    });
-
-    const hiddenToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(hiddenToolbar instanceof HTMLElement))
-      throw new Error('toolbar not found after hidden resize');
-    expect(hiddenToolbar.getAttribute('role')).toBeNull();
-
-    setClientWidth(root, 180);
-    await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
-    });
-
-    const wrappedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(wrappedToolbar instanceof HTMLElement))
-      throw new Error('toolbar not found after narrow resize');
-    expect(wrappedToolbar.getAttribute('role')).toBe('group');
-  });
-
-  it('wraps the compact duty toolbar into a 4-column grid when the action column is narrow', async () => {
-    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0);
-      return 1;
-    });
-    vi.stubGlobal('cancelAnimationFrame', () => undefined);
-    const view = await renderHeader();
-    rendered.push(view);
-
-    const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
-    const root = toolbar.parentElement;
-    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
-
-    setClientWidth(root, 180);
-    await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
-    });
-
-    const updatedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
-    if (!(updatedToolbar instanceof HTMLElement)) throw new Error('toolbar not found after resize');
-    expect(updatedToolbar.getAttribute('role')).toBe('group');
-    expect(updatedToolbar.getAttribute('data-action-grid-columns')).toBe('4');
+    expect(toolbar.getAttribute('role')).toBeNull();
+    expect(toolbar.getAttribute('data-action-grid-columns')).toBeNull();
+    expect(toolbar.className).not.toContain('message-card-action-group--stacked');
   });
 
   it('hides overflow in duty mode when no edit or delete actions are available', async () => {
