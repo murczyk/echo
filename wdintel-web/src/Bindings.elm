@@ -1148,6 +1148,8 @@ type alias InboxMessageSummary =
     , time : Maybe (String)
     , groupName : Maybe (String)
     , groupMasterKey : Maybe (String)
+    , coords : Maybe (String)
+    , mediaFileNames : List (String)
     }
 
 
@@ -1164,6 +1166,8 @@ inboxMessageSummaryEncoder struct =
         , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
         , ( "group_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupName )
         , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
+        , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
+        , ( "media_file_names", (Json.Encode.list (Json.Encode.string)) struct.mediaFileNames )
         ]
 
 
@@ -5156,7 +5160,7 @@ sourceFileStateKindEncoder enum =
 type alias SourceFileState =
     { state : SourceFileStateKind
     , settledAt : String
-    , settledBy : String
+    , settledBy : Maybe (String)
     }
 
 
@@ -5165,7 +5169,7 @@ sourceFileStateEncoder struct =
     Json.Encode.object
         [ ( "state", (sourceFileStateKindEncoder) struct.state )
         , ( "settled_at", (Json.Encode.string) struct.settledAt )
-        , ( "settled_by", (Json.Encode.string) struct.settledBy )
+        , ( "settled_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.settledBy )
         ]
 
 
@@ -14422,6 +14426,8 @@ inboxMessageSummaryDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_file_names" (Json.Decode.list (Json.Decode.string))))
 
 
 inboxMessageMetadataDecoder : Json.Decode.Decoder InboxMessageMetadata
@@ -16511,7 +16517,7 @@ sourceFileStateDecoder =
     Json.Decode.succeed SourceFileState
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (sourceFileStateKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_at" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_by" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_by" (Json.Decode.nullable (Json.Decode.string))))
 
 
 syncDeviceFileItemDecoder : Json.Decode.Decoder SyncDeviceFileItem

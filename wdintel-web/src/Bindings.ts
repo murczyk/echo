@@ -434,6 +434,8 @@ export type InboxMessageSummary = {
   time: string | null;
   groupName: string | null;
   groupMasterKey: string | null;
+  coords: string | null;
+  mediaFileNames: Array<string>;
 };
 
 export type InboxMessageMetadata = {
@@ -1992,7 +1994,7 @@ export type SourceFileStateKind =
 export type SourceFileState = {
   state: SourceFileStateKind;
   settledAt: string;
-  settledBy: string;
+  settledBy: string | null;
 };
 
 export type SyncDeviceFileItem = {

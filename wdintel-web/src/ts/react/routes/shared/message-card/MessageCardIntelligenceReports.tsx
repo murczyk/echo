@@ -33,34 +33,42 @@ function messageSummaryInfo(
   };
 }
 
+export function getSummaryDisplayText(summary: IntelligenceReportSummary): string {
+  const text = summary.text.trim();
+  if (text !== '') return text;
+
+  const fileNames = summary.mediaFileNames?.filter((name) => name.trim() !== '') ?? [];
+  const coords = summary.coords?.trim();
+
+  if (fileNames.length > 0 && coords) {
+    return `${fileNames.join(', ')} · ${coords}`;
+  }
+  if (fileNames.length > 0) {
+    return fileNames.join(', ');
+  }
+  if (coords) {
+    return coords;
+  }
+  if (summary.attachmentsCount > 0) {
+    return summary.attachmentsCount === 1 ? 'Вкладення' : `Вкладення (${summary.attachmentsCount})`;
+  }
+  return 'Без тексту';
+}
+
 function MessageSummaryDetails({
   summary,
-  label,
-  groupInfos,
   editable,
 }: {
   summary: IntelligenceReportSummary;
-  label: string;
-  groupInfos: Record<string, SignalGroupEntry>;
   editable: boolean;
 }) {
-  const { groupName, time } = messageSummaryInfo(summary, groupInfos);
+  const textToShow = getSummaryDisplayText(summary);
 
   return (
-    <>
-      <span className="flex items-center gap-1 text-xs font-semibold text-(--color-action)">
-        {editable ? <EditIcon sx={{ fontSize: 15 }} aria-hidden /> : null}
-        {label}
-      </span>
-      {summary.isDeleted ? (
-        <span className="mt-1 block text-xs text-(--color-action)">Повідомлення видалено</span>
-      ) : null}
-      {!summary.isDeleted && (groupName || time) ? (
-        <span className="mt-1 block text-xs text-(--color-action)">
-          {[groupName, time].filter(Boolean).join(' · ')}
-        </span>
-      ) : null}
-    </>
+    <span className="flex min-w-0 items-center gap-1 text-xs font-semibold text-(--color-action)">
+      {editable ? <EditIcon sx={{ fontSize: 15, flexShrink: 0 }} aria-hidden /> : null}
+      <span className="truncate min-w-0">{textToShow}</span>
+    </span>
   );
 }
 
@@ -122,12 +130,14 @@ export function MessageCardIntelligenceReports({
   groupInfos: Record<string, SignalGroupEntry>;
   onEdit?: (reportId: number) => void;
 }) {
+  const visibleParents = parents.filter((parent) => parent.isAccessible && !parent.isDeleted);
   const visibleReports = reports.filter((report) => !report.isDeleted);
-  if (visibleReports.length === 0 && parents.length === 0) return null;
+
+  if (visibleParents.length === 0 && visibleReports.length === 0) return null;
 
   return (
     <div className="flex min-w-0 flex-col items-start gap-2" aria-label="Пов’язані повідомлення">
-      {parents.map((parent) => (
+      {visibleParents.map((parent) => (
         <RefreshableMessageSummaryPreview
           key={parent.id}
           summary={parent}
@@ -138,14 +148,9 @@ export function MessageCardIntelligenceReports({
             <article
               className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
               aria-label="Оригінальне повідомлення"
-              tabIndex={currentParent.isAccessible && !currentParent.isDeleted ? 0 : undefined}
+              tabIndex={0}
             >
-              <MessageSummaryDetails
-                summary={currentParent}
-                label="Оригінальне повідомлення"
-                groupInfos={groupInfos}
-                editable={false}
-              />
+              <MessageSummaryDetails summary={currentParent} editable={false} />
             </article>
           )}
         </RefreshableMessageSummaryPreview>
@@ -165,11 +170,7 @@ export function MessageCardIntelligenceReports({
               return (
                 <article
                   className="w-fit max-w-full min-w-0 border-l-4 border-solid border-(--color-divider) py-1 pl-2"
-                  tabIndex={
-                    currentReport.isAccessible && !currentReport.isDeleted && !editReport
-                      ? 0
-                      : undefined
-                  }
+                  tabIndex={!editReport ? 0 : undefined}
                 >
                   {editReport ? (
                     <button
@@ -178,20 +179,10 @@ export function MessageCardIntelligenceReports({
                       aria-label="Редагувати розвіддонесення"
                       onClick={() => editReport(currentReport.id)}
                     >
-                      <MessageSummaryDetails
-                        summary={currentReport}
-                        label="Розвіддонесення"
-                        groupInfos={groupInfos}
-                        editable
-                      />
+                      <MessageSummaryDetails summary={currentReport} editable />
                     </button>
                   ) : (
-                    <MessageSummaryDetails
-                      summary={currentReport}
-                      label="Розвіддонесення"
-                      groupInfos={groupInfos}
-                      editable={false}
-                    />
+                    <MessageSummaryDetails summary={currentReport} editable={false} />
                   )}
                 </article>
               );

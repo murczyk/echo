@@ -1195,8 +1195,8 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.textContent).not.toContain('Короткий текст розвіддонесення');
-    expect(view.container.textContent).toContain('Група донесення');
+    expect(view.container.textContent).toContain('Короткий текст розвіддонесення');
+    expect(view.container.textContent).not.toContain('Група донесення');
     const comment = getMuiTypographyElementByText(view.container, 'Коментар');
     const editReport = view.container.querySelector(
       'button[aria-label="Редагувати розвіддонесення"]',
@@ -1233,8 +1233,8 @@ describe('MessageCard', () => {
 
     await click(view.container.querySelector('button[aria-label="Створити розвіддонесення"]'));
     expect(onCreateReport).toHaveBeenCalledTimes(1);
-    expect(view.container.textContent).toContain('Оригінальне повідомлення');
-    expect(view.container.textContent).not.toContain('Короткий текст оригінального повідомлення');
+    expect(view.container.textContent).toContain('Короткий текст оригінального повідомлення');
+    expect(view.container.textContent).not.toContain('Оригінальне повідомлення');
   });
 
   it('linkifies plain message text URLs in the body', async () => {

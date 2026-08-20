@@ -26,6 +26,10 @@ pub struct InboxMessageSummary {
     #[serde(default)]
     pub group_name: Option<String>,
     pub group_master_key: Option<String>,
+    #[serde(default)]
+    pub coords: Option<String>,
+    #[serde(default)]
+    pub media_file_names: Vec<String>,
 }
 
 #[derive(

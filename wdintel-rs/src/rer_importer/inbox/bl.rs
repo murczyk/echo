@@ -96,6 +96,8 @@ fn reference_inbox_message_summary(
         time,
         group_name,
         group_master_key: None,
+        coords: None,
+        media_file_names: Vec::new(),
     }
 }
 
@@ -107,6 +109,7 @@ fn inbox_message_summary(
     group_names: &HashMap<i64, String>,
     group_master_keys: &HashMap<i64, String>,
     attachment_counts: &HashMap<i64, i64>,
+    media_file_names: &HashMap<i64, Vec<String>>,
 ) -> Option<InboxMessageSummary> {
     let message = messages.get(&message_id)?;
     let inbox_item = inbox_items.get(&message_id);
@@ -116,6 +119,11 @@ fn inbox_message_summary(
     let date = inbox_item.and_then(|item| item.date.clone());
     let time = inbox_item.and_then(|item| item.time.clone());
     let group_name = group_names.get(&message_id).cloned();
+    let coords = inbox_item.and_then(|item| item.coords.clone());
+    let file_names = media_file_names
+        .get(&message_id)
+        .cloned()
+        .unwrap_or_default();
     if message.deleted || !is_accessible {
         return Some(reference_inbox_message_summary(
             message_id,
@@ -141,31 +149,39 @@ fn inbox_message_summary(
         time,
         group_name,
         group_master_key: group_master_keys.get(&message_id).cloned(),
+        coords,
+        media_file_names: file_names,
     })
 }
 
-async fn load_attachment_counts(
+async fn load_attachment_info(
     message_ids: &HashSet<i64>,
     dbx: &DatabaseConnection,
-) -> Result<HashMap<i64, i64>, AppError> {
-    Ok(signal_message_media::Entity::find()
+) -> Result<(HashMap<i64, i64>, HashMap<i64, Vec<String>>), AppError> {
+    let rows = signal_message_media::Entity::find()
         .filter(
             signal_message_media::Column::SignalMessageId
                 .is_in(message_ids.iter().copied()),
         )
-        .select_only()
-        .column(signal_message_media::Column::SignalMessageId)
-        .expr_as(
-            Expr::col(signal_message_media::Column::Id).count(),
-            "attachments_count",
-        )
-        .group_by(signal_message_media::Column::SignalMessageId)
-        .into_tuple::<(i64, i64)>()
         .all(dbx)
         .await
-        .c(h!())?
-        .into_iter()
-        .collect())
+        .c(h!())?;
+
+    let mut counts = HashMap::new();
+    let mut names: HashMap<i64, Vec<String>> = HashMap::new();
+    for row in rows {
+        *counts.entry(row.signal_message_id).or_insert(0) += 1;
+        if let Some(file_name) = row.file_name {
+            let trimmed = file_name.trim();
+            if !trimmed.is_empty() {
+                names
+                    .entry(row.signal_message_id)
+                    .or_default()
+                    .push(trimmed.to_string());
+            }
+        }
+    }
+    Ok((counts, names))
 }
 
 async fn load_intelligence_report_summaries(
@@ -237,8 +253,8 @@ async fn load_intelligence_report_summaries(
         .into_iter()
         .map(|item| (item.id, item))
         .collect::<HashMap<_, _>>();
-    let attachment_counts =
-        load_attachment_counts(&related_ids, dbx).await.c(h!())?;
+    let (attachment_counts, media_file_names) =
+        load_attachment_info(&related_ids, dbx).await.c(h!())?;
     let group_rows = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId
@@ -356,6 +372,7 @@ async fn load_intelligence_report_summaries(
                     &group_names,
                     &accessible_group_master_keys,
                     &attachment_counts,
+                    &media_file_names,
                 ) {
                     summaries
                         .parents_by_message
@@ -376,6 +393,7 @@ async fn load_intelligence_report_summaries(
                     &group_names,
                     &accessible_group_master_keys,
                     &attachment_counts,
+                    &media_file_names,
                 ) {
                     summaries
                         .reports_by_message
@@ -396,6 +414,7 @@ async fn load_intelligence_report_summaries(
                 &group_names,
                 &accessible_group_master_keys,
                 &attachment_counts,
+                &media_file_names,
             ) {
                 summaries
                     .parents_by_message
@@ -419,6 +438,7 @@ async fn load_intelligence_report_summaries(
                 &group_names,
                 &accessible_group_master_keys,
                 &attachment_counts,
+                &media_file_names,
             ) {
                 summaries
                     .reports_by_message

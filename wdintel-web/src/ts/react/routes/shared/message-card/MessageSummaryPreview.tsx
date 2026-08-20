@@ -70,7 +70,7 @@ function MessageSummaryPreviewContent({
         <strong className="text-sm">{label}</strong>
       </header>
       <div className="max-h-60 overflow-y-auto whitespace-pre-wrap wrap-break-word px-3 py-2.5 text-sm leading-5">
-        {summary.text.trim() || `Повідомлення #${summary.id}`}
+        {summary.text.trim() || 'Без тексту'}
       </div>
       <dl className="m-0 grid gap-1 border-t border-solid border-(--color-divider) px-3 py-2 text-xs">
         <div className="grid grid-cols-[76px_minmax(0,1fr)] gap-2">

@@ -31,6 +31,8 @@ const parent: IntelligenceReportSummary = {
   time: '09:10',
   groupName: null,
   groupMasterKey: 'original',
+  coords: null,
+  mediaFileNames: [],
 };
 
 const report: IntelligenceReportSummary = {
@@ -44,6 +46,8 @@ const report: IntelligenceReportSummary = {
   time: '09:30',
   groupName: null,
   groupMasterKey: 'report',
+  coords: null,
+  mediaFileNames: [],
 };
 
 describe('MessageCardIntelligenceReports', () => {
@@ -151,7 +155,7 @@ describe('MessageCardIntelligenceReports', () => {
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
   });
 
-  it('keeps inaccessible relationship blocks without exposing details or editing', async () => {
+  it('hides inaccessible parent blocks and shows report text without group/date line', async () => {
     const inaccessibleParent = {
       ...parent,
       isAccessible: false,
@@ -183,10 +187,10 @@ describe('MessageCardIntelligenceReports', () => {
       );
     });
 
-    expect(container.textContent).toContain('Оригінальне повідомлення');
-    expect(container.textContent).toContain('Розвіддонесення');
-    expect(container.textContent).toContain('Група оригіналу · 2026-08-15 09:10');
-    expect(container.textContent).toContain('Група донесення · 2026-08-15 09:30');
+    expect(container.textContent).not.toContain('Оригінальне повідомлення');
+    expect(container.textContent).toContain('Без тексту');
+    expect(container.textContent).not.toContain('Група оригіналу');
+    expect(container.textContent).not.toContain('Група донесення');
     expect(container.querySelector('[aria-label="Редагувати розвіддонесення"]')).toBeNull();
 
     for (const relationship of container.querySelectorAll('article')) {
@@ -195,7 +199,7 @@ describe('MessageCardIntelligenceReports', () => {
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
   });
 
-  it('shows a tombstone for a deleted parent and hides deleted reports', async () => {
+  it('hides deleted parents and deleted reports', async () => {
     const deletedParent = {
       ...parent,
       isDeleted: true,
@@ -227,18 +231,8 @@ describe('MessageCardIntelligenceReports', () => {
       );
     });
 
-    expect(container.querySelectorAll('article')).toHaveLength(1);
-    expect(container.textContent).toContain('Оригінальне повідомлення');
-    expect(container.textContent).toContain('Повідомлення видалено');
-    expect(container.textContent).not.toContain('Розвіддонесення');
-    expect(container.textContent).not.toContain('Група оригіналу');
-    expect(container.textContent).not.toContain('2026-08-15 09:10');
-    expect(container.querySelector('[aria-label="Редагувати розвіддонесення"]')).toBeNull();
-
-    for (const relationship of container.querySelectorAll('article')) {
-      await hover(relationship);
-    }
-    expect(document.querySelector('[role="tooltip"]')).toBeNull();
+    expect(container.querySelectorAll('article')).toHaveLength(0);
+    expect(container.textContent).toBe('');
   });
 
   it('does not open preview tooltip on touch tap', async () => {
@@ -259,5 +253,35 @@ describe('MessageCardIntelligenceReports', () => {
     await wait(800);
 
     expect(document.querySelector('[role="tooltip"]')).toBeNull();
+  });
+
+  it('renders attachment file names or coordinates as fallback when text is empty', async () => {
+    const parentWithMedia: IntelligenceReportSummary = {
+      ...parent,
+      text: '',
+      mediaFileNames: ['photo1.jpg', 'doc2.pdf'],
+    };
+    const reportWithCoords: IntelligenceReportSummary = {
+      ...report,
+      text: '   ',
+      coords: '48.4500, 36.9833',
+    };
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <MessageCardIntelligenceReports
+          parents={[parentWithMedia]}
+          reports={[reportWithCoords]}
+          groupInfos={groupInfos}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain('photo1.jpg, doc2.pdf');
+    expect(container.textContent).toContain('48.4500, 36.9833');
   });
 });

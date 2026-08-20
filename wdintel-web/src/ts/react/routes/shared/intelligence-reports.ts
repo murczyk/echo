@@ -1,11 +1,28 @@
 import type { InboxMessage, InboxMessageSummary } from '../../../../Bindings';
 
-export type IntelligenceReportSummary = InboxMessageSummary;
+export type IntelligenceReportSummary = InboxMessageSummary & {
+  coords?: string | null;
+  mediaFileNames?: string[] | null;
+};
 
 export function summarizeIntelligenceMessage(
   id: number,
   message: InboxMessage,
 ): IntelligenceReportSummary {
+  const mediaFileNames = (message.media ?? [])
+    .map((m) => (m ? (m.fileName ?? (m as any).file_name ?? '').trim() : ''))
+    .filter((name) => name !== '');
+
+  const coords =
+    message.coords?.trim() ||
+    message.location?.trim() ||
+    (message.coordsWithLocality && message.coordsWithLocality.length > 0
+      ? message.coordsWithLocality
+          .map((c) => c.locality || c.coord)
+          .filter(Boolean)
+          .join(', ')
+      : null);
+
   return {
     id,
     isAccessible: true,
@@ -17,6 +34,8 @@ export function summarizeIntelligenceMessage(
     time: message.time,
     groupName: null,
     groupMasterKey: message.groupMasterKey,
+    coords,
+    mediaFileNames,
   };
 }
 
