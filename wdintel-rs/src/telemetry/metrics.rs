@@ -57,6 +57,16 @@ const FILE_ANALYSIS_RUN_DURATION_BUCKETS_SECS: &[f64] = &[
     0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 900.0, 3_600.0, 10_800.0,
 ];
 
+const MESSENGER_INGESTED_COUNT: &str = "echo.messenger.ingested.count";
+const MESSENGER_PROCESSING_COUNT: &str = "echo.messenger.processing.count";
+const MESSENGER_PROCESSING_LATENCY: &str = "echo.messenger.processing.latency";
+const MESSENGER_QUEUE_ITEMS: &str = "echo.messenger.queue.items";
+const MESSENGER_QUEUE_OLDEST_AGE: &str = "echo.messenger.queue.oldest.age";
+const MESSENGER_NLP_READY: &str = "echo.messenger.nlp.ready";
+const MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS: &[f64] = &[
+    0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 900.0, 1_800.0,
+];
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum FileAnalysisDbOperation {
     SourceRangeAllocation,
@@ -94,6 +104,12 @@ pub struct Metrics {
     file_analysis_run_completion_duration: Histogram<f64>,
     file_analysis_db_duration: Histogram<f64>,
     file_analysis_worker_errors: Counter<u64>,
+    messenger_ingested: Counter<u64>,
+    messenger_processing: Counter<u64>,
+    messenger_processing_latency: Histogram<f64>,
+    messenger_queue_items: Gauge<u64>,
+    messenger_queue_oldest_age: Gauge<f64>,
+    messenger_nlp_ready: Gauge<u64>,
 }
 
 impl Metrics {
@@ -225,6 +241,40 @@ impl Metrics {
             .with_description("Number of file analysis infrastructure errors")
             .with_unit("1")
             .build();
+        let messenger_ingested = meter
+            .u64_counter(MESSENGER_INGESTED_COUNT)
+            .with_description(
+                "Number of messenger snapshots added to the processing queue",
+            )
+            .with_unit("1")
+            .build();
+        let messenger_processing = meter
+            .u64_counter(MESSENGER_PROCESSING_COUNT)
+            .with_description("Number of messenger queue processing results")
+            .with_unit("1")
+            .build();
+        let messenger_processing_latency = meter
+            .f64_histogram(MESSENGER_PROCESSING_LATENCY)
+            .with_description(
+                "Time from queue insertion to a processing result",
+            )
+            .with_unit("s")
+            .build();
+        let messenger_queue_items = meter
+            .u64_gauge(MESSENGER_QUEUE_ITEMS)
+            .with_description("Number of messenger queue items")
+            .with_unit("1")
+            .build();
+        let messenger_queue_oldest_age = meter
+            .f64_gauge(MESSENGER_QUEUE_OLDEST_AGE)
+            .with_description("Age of the oldest messenger queue item")
+            .with_unit("s")
+            .build();
+        let messenger_nlp_ready = meter
+            .u64_gauge(MESSENGER_NLP_READY)
+            .with_description("Whether the local NLP dependency is ready")
+            .with_unit("1")
+            .build();
 
         Self {
             provider,
@@ -241,7 +291,60 @@ impl Metrics {
             file_analysis_run_completion_duration,
             file_analysis_db_duration,
             file_analysis_worker_errors,
+            messenger_ingested,
+            messenger_processing,
+            messenger_processing_latency,
+            messenger_queue_items,
+            messenger_queue_oldest_age,
+            messenger_nlp_ready,
         }
+    }
+
+    pub(crate) fn record_messenger_ingested(
+        &self,
+        messenger: &str,
+        count: u64,
+    ) {
+        if count == 0 {
+            return;
+        }
+        self.messenger_ingested.add(
+            count,
+            &[KeyValue::new("messenger", messenger.to_lowercase())],
+        );
+    }
+
+    pub(crate) fn record_messenger_processing(
+        &self,
+        messenger: &'static str,
+        outcome: &'static str,
+        latency_seconds: f64,
+    ) {
+        let attributes = [
+            KeyValue::new("messenger", messenger),
+            KeyValue::new("outcome", outcome),
+        ];
+        self.messenger_processing.add(1, &attributes);
+        self.messenger_processing_latency
+            .record(latency_seconds, &attributes);
+    }
+
+    pub(crate) fn record_messenger_queue_state(
+        &self,
+        depth: u64,
+        due_depth: u64,
+        oldest_age_seconds: f64,
+    ) {
+        self.messenger_queue_items
+            .record(depth, &[KeyValue::new("state", "total")]);
+        self.messenger_queue_items
+            .record(due_depth, &[KeyValue::new("state", "due")]);
+        self.messenger_queue_oldest_age
+            .record(oldest_age_seconds, &[]);
+    }
+
+    pub(crate) fn record_messenger_nlp_ready(&self, ready: bool) {
+        self.messenger_nlp_ready.record(u64::from(ready), &[]);
     }
 
     pub(crate) fn record_device_files_sync(
@@ -417,6 +520,14 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             FILE_ANALYSIS_DB_DURATION => {
                 (&["operation"], Some(FILE_ANALYSIS_DB_DURATION_BUCKETS_SECS))
             }
+            MESSENGER_INGESTED_COUNT => (&["messenger"], None),
+            MESSENGER_PROCESSING_COUNT => (&["messenger", "outcome"], None),
+            MESSENGER_PROCESSING_LATENCY => (
+                &["messenger", "outcome"],
+                Some(MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS),
+            ),
+            MESSENGER_QUEUE_ITEMS => (&["state"], None),
+            MESSENGER_QUEUE_OLDEST_AGE | MESSENGER_NLP_READY => (&[], None),
             _ => return None,
         };
     let mut stream = Stream::builder().with_allowed_attribute_keys(
@@ -807,6 +918,60 @@ mod tests {
         assert_eq!(
             synchronized.resources.get("service.namespace"),
             Some(&SIGNOZ_METRICS_SERVICE_NAMESPACE.to_string())
+        );
+    }
+
+    #[test]
+    fn messenger_metrics_match_signoz_contract() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let (metrics, recorder) = Metrics::recording(&config);
+
+        metrics.record_messenger_ingested("Signal", 7);
+        metrics.record_messenger_processing("signal", "success", 1.5);
+        metrics.record_messenger_queue_state(9, 3, 42.0);
+        metrics.record_messenger_nlp_ready(true);
+        metrics.force_flush_for_test();
+
+        assert_eq!(
+            recorder.counter_value(
+                MESSENGER_INGESTED_COUNT,
+                &[("messenger", "signal")],
+            ),
+            Some(7),
+        );
+        assert_eq!(
+            recorder.counter_value(
+                MESSENGER_PROCESSING_COUNT,
+                &[("messenger", "signal"), ("outcome", "success")],
+            ),
+            Some(1),
+        );
+        assert_eq!(
+            recorder.gauge_value(MESSENGER_QUEUE_ITEMS, &[("state", "total")],),
+            Some(9),
+        );
+        assert_eq!(
+            recorder.gauge_value(MESSENGER_QUEUE_ITEMS, &[("state", "due")],),
+            Some(3),
+        );
+        assert_eq!(
+            recorder.gauge_f64_value(MESSENGER_QUEUE_OLDEST_AGE, &[]),
+            Some(42.0),
+        );
+        assert_eq!(recorder.gauge_value(MESSENGER_NLP_READY, &[]), Some(1),);
+        let latency = recorder
+            .find_with_attributes(
+                MESSENGER_PROCESSING_LATENCY,
+                &[("messenger", "signal"), ("outcome", "success")],
+            )
+            .unwrap();
+        assert_eq!(
+            latency.value,
+            RecordedMetricValue::Histogram {
+                count: 1,
+                sum: 1.5,
+                boundaries: MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS.to_vec(),
+            }
         );
     }
 

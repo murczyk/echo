@@ -2719,6 +2719,9 @@ mod tests {
             timestamp: Set(created_at + chrono::TimeDelta::seconds(1)),
             created_at: Set(created_at),
             deleted: Set(false),
+            attempt_count: Set(0),
+            next_attempt_at: Set(created_at),
+            last_error: Set(None),
         }
         .insert(dbx)
         .await

@@ -16,12 +16,14 @@ flowchart LR
         api
         bg["wdintel-rs-bgworker"]
         reports["wdintel-rs-report-worker"]
+        nlp["wdintel-py · NLP"]
         postgres[("PostgreSQL · wd")]
         redis[("Redis")]
         vector["Vector · optional"]
 
         api --> postgres
         bg --> postgres
+        bg -->|readiness + NLP requests| nlp
         reports --> postgres
         api --> redis
         bg --> redis
@@ -41,6 +43,13 @@ container and stores only derived data. PostgreSQL remains authoritative, and
 supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
 independently from the main `wd` database.
+
+## Messenger processing
+
+Messenger receipt and processing are separate. Receipt persists snapshots in
+PostgreSQL even while NLP is unavailable. The queue processor waits for
+`wdintel-py` readiness, then catches up automatically; failed rows use durable
+backoff so they cannot block newer messages.
 
 ## Background worker ownership
 

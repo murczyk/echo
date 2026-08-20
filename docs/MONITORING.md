@@ -170,3 +170,16 @@ Common Echo services include `wdintel-rs`, `wdintel-rs-bgworker`,
 - `echo.device_files.synchronized.count`: кількість файлів, які API синхронізації пристроїв успішно створило або оновило, з атрибутом `operation`.
 - `echo.device_files.sync_batches.count`: кількість оброблених пакетів синхронізації файлів.
 - `echo.device_files.sync.duration`: гістограма тривалості обробки пакетів у секундах.
+- `echo.messenger.ingested.count`: кількість нових або оновлених знімків, доданих до черги, з атрибутом `messenger`.
+- `echo.messenger.processing.count`: результати обробки з атрибутами `messenger` і `outcome` (`success` або `retry`).
+- `echo.messenger.processing.latency`: час від додавання до черги до результату обробки.
+- `echo.messenger.queue.items`: розмір черги з атрибутом `state` (`total` або `due`).
+- `echo.messenger.queue.oldest.age`: вік найстарішого елемента черги в секундах.
+- `echo.messenger.nlp.ready`: готовність локального NLP (`1` або `0`).
+
+Рекомендовані сповіщення: NLP дорівнює `0` протягом 60 секунд; вік
+найстарішого елемента перевищує 120 секунд у двох послідовних хвилинних
+перевірках; вік понад 300 секунд має критичний рівень. Для відокремлення
+зменшення вхідного трафіку від внутрішнього відставання порівнюйте
+`ingested.count` з попередніми сімома днями разом із `queue.items` і
+`processing.count`.
