@@ -5,25 +5,6 @@ container per installation. PostgreSQL 18 is the system of record, Redis owns
 sessions and transient coordination, and separate API, background-worker, and
 report-worker processes isolate interactive traffic from long-running work.
 
-The analytics container is optional: omitting the `[analytics]` section from
-Echo configuration leaves the application on its existing PostgreSQL path.
-Failure to connect to analytics at startup does not prevent Echo from starting,
-and supported analytical requests retry through PostgreSQL when analytics is
-stale, unavailable, or too slow.
-Those requests include RER result/facet counts and lists, long-range messenger
-activity timelines, report-history list scans, and replicated-data report
-queries; operational writes and live queue/progress state remain on PostgreSQL.
-
-## Deployment topology
-
-The operator creates and sizes the LXC containers in Proxmox or Incus. Echo's
-deployment tooling installs application packages and native systemd services;
-it does not create containers and does not run Docker or Podman inside them.
-The application and analytics stacks run in separate operating-system
-containers; the analytics services are never installed inside the Echo LXC.
-The paired containers should communicate over a private Proxmox network in
-production. Tailscale is also supported and is used by the development pair.
-
 ## Core topology
 
 ```mermaid
