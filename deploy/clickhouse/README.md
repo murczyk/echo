@@ -854,8 +854,8 @@ on the filesystem. If this validation fails, the mode-`0600` temporary profile
 is retained and its path is printed for retry. Use
 `--no-preserve-local-ai-agent-profile` only when the source AI-agent
 configuration is intentionally wanted. If the destination has no local
-profile, the restore also disables and clears the copied AI-agent control
-plane.
+profile, or its profile is invalid, the restore also disables all copied AI
+engines and clears the copied AI-agent control plane.
 
 The coordinator checks for `/etc/echo-peerdb/source.env`. When it is absent,
 it performs a PostgreSQL-only restore and current Echo/echo-im migrations. When
