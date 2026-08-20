@@ -1080,9 +1080,13 @@ async fn finish_direct_submit(
     }
     let mut redis = env.redis.clone();
     if is_intelligence_report {
+        let mut changed_message_ids = parent_signal_message_ids.to_vec();
+        if !changed_message_ids.contains(&inbox_item_id) {
+            changed_message_ids.push(inbox_item_id);
+        }
         crate::inbox::fanout_intelligence_report_changes(
             &mut redis,
-            vec![inbox_item_id],
+            changed_message_ids,
         )
         .await
         .c(h!())?;
