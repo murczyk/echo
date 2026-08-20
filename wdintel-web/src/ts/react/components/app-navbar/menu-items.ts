@@ -266,6 +266,12 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/battle-line' },
+    activeName: 'battle-line',
+    label: 'Карта',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/keys-neo' },
     activeName: 'keys-neo',
     label: 'Ключі',
@@ -291,12 +297,6 @@ export const adminDatabaseSubs: Menu[] = [
 ];
 
 export const adminSubs: Menu[] = [
-  {
-    type: 'item',
-    link: { type: 'internal', path: '/admin/battle-line' },
-    activeName: 'battle-line',
-    label: 'Карта',
-  },
   {
     type: 'item',
     link: { type: 'internal', path: '/admin/users-neo' },

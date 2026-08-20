@@ -112,7 +112,6 @@ describe('menu-items', () => {
 
   it('alphabetizes standalone admin items while keeping system settings last', () => {
     expect(adminSubs.filter((item) => item.type === 'item').map((item) => item.label)).toEqual([
-      'Карта',
       'Користувачі',
       'Месенджери',
       'Напрямки',
@@ -182,6 +181,7 @@ describe('menu-items', () => {
       'Всі звіти',
       'ГОІ',
       'Інтеграції API',
+      'Карта',
       'Ключі',
       'Населені пункти смуг',
       'Підрозділи',
@@ -189,8 +189,12 @@ describe('menu-items', () => {
     ]);
     expect(menuIsActive('tags-neo', databaseGroup!)).toBe(true);
     expect(menuIsActive('device-analytics', databaseGroup!)).toBe(true);
+    expect(menuIsActive('battle-line', databaseGroup!)).toBe(true);
     expect(
       adminSubs.some((item) => item.type === 'item' && item.activeName === 'device-analytics'),
+    ).toBe(false);
+    expect(
+      adminSubs.some((item) => item.type === 'item' && item.activeName === 'battle-line'),
     ).toBe(false);
   });
 });
