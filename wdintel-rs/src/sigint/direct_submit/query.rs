@@ -801,7 +801,7 @@ pub async fn copy_signal_message_comments(
 
     let mut copied_ids = std::collections::HashSet::new();
     for comment_model in comments {
-        if !copied_ids.insert(comment_model.signal_message_id) {
+        if !copied_ids.insert(comment_model.intel_message_id) {
             continue;
         }
         let Some(comment_login) = comment_model.login_id else {
