@@ -1065,7 +1065,7 @@ mod tests {
         assert_eq!(linked_comments.len(), 1);
         assert_eq!(linked_comments[0].comment, "важливий коментар");
         let linked_message = signal_message::Entity::find_by_id(
-            linked_comments[0].signal_message_id,
+            linked_comments[0].intel_message_id,
         )
         .one(&env.dbx)
         .await
