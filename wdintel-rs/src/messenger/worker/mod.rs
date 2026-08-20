@@ -86,6 +86,7 @@ pub async fn receive_thread_inner(
             &mut redis,
             &mut workers,
             &mut running_ids,
+            &env.metrics,
         )
         .await
         .c(h!())?;
@@ -158,6 +159,7 @@ pub async fn receive_thread_inner_2(
     redis: &mut redis::aio::ConnectionManager,
     workers: &mut JoinSet<WorkerStatus>,
     running_ids: &mut HashSet<i64>,
+    metrics: &Option<crate::telemetry::Metrics>,
 ) -> Result<(), AppError> {
     let now = Utc::now().naive_utc();
     while let Some(Ok(res)) = workers.try_join_next() {
@@ -187,6 +189,7 @@ pub async fn receive_thread_inner_2(
             running_ids,
             now,
             &datasource,
+            metrics,
         )
         .await
         .c(h!())?;
@@ -204,6 +207,7 @@ pub async fn bl_spawn_worker_if_not_running(
     running_ids: &mut HashSet<i64>,
     now: NaiveDateTime,
     datasource: &EchoAccountF1,
+    metrics: &Option<crate::telemetry::Metrics>,
 ) -> Result<(), AppError> {
     if datasource.status
         != AccountStatus::Active.into_value().value.into_owned()
@@ -252,6 +256,7 @@ pub async fn bl_spawn_worker_if_not_running(
                     redis,
                     worker_name,
                     cancel_token_cloned,
+                    metrics.clone(),
                 )
             },
             &shutdown_handle_cloned,
@@ -267,6 +272,7 @@ async fn spawn_new_worker(
     redis: redis::aio::ConnectionManager,
     worker_name: String,
     cancel_token: CancellationToken,
+    metrics: Option<crate::telemetry::Metrics>,
 ) -> WorkerStatus {
     let worker_name_val = worker_name.clone();
 
@@ -277,6 +283,7 @@ async fn spawn_new_worker(
         redis,
         worker_name_val.clone(),
         cancel_token,
+        metrics,
     )
     .await
     {
@@ -304,6 +311,7 @@ async fn run_new_worker(
     mut redis: redis::aio::ConnectionManager,
     worker_name: String,
     cancel_token: CancellationToken,
+    metrics: Option<crate::telemetry::Metrics>,
 ) -> anyhow::Result<()> {
     info!("spawning new worker: {worker_name}");
     info!("{worker_name}: started processing");
@@ -333,7 +341,8 @@ async fn run_new_worker(
                 return Ok(());
             }
             let sync_result =
-                sync_client_once(&config, cli, &dbx, &mut redis).await;
+                sync_client_once(&config, cli, &dbx, &mut redis, &metrics)
+                    .await;
             if sync_result.maintenance_skipped {
                 sleep(Duration::from_secs(
                     SIGNAL_RESTART_MAINTENANCE_RETRY_SEC,
@@ -359,6 +368,7 @@ async fn sync_client_once(
     cli: EchoAccountF1,
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
+    metrics: &Option<crate::telemetry::Metrics>,
 ) -> SyncResult {
     if has_unlinked_echo_account(&cli) {
         if let Err(e) =
@@ -398,6 +408,7 @@ async fn sync_client_once(
         &mut client_groups_sync_ts_map,
         dbx,
         redis,
+        metrics,
     )
     .await;
     let (num_synced_inbox_messages, maintenance_skipped) = match receive_result
@@ -634,6 +645,7 @@ async fn receive_thread(
     client_groups_sync_ts_map: &mut BTreeMap<String, NaiveDateTime>,
     dbx: &DatabaseConnection,
     redis: &mut redis::aio::ConnectionManager,
+    metrics: &Option<crate::telemetry::Metrics>,
 ) -> Result<ReceiveThreadResult, AppError> {
     let datasource = load_client_datasource(dbx, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -673,9 +685,10 @@ async fn receive_thread(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    let items_synced = sync_inbox(config, Utc::now(), dbx, client_name)
-        .await
-        .c(h!())?;
+    let items_synced =
+        sync_inbox(config, Utc::now(), dbx, client_name, metrics)
+            .await
+            .c(h!())?;
 
     let mut model = datasource.into_active_model();
     model.last_sync_at = Set(Some(Utc::now().naive_utc()));
@@ -722,6 +735,7 @@ async fn sync_inbox(
     inbox_sync_at: DateTime<Utc>,
     db: &DatabaseConnection,
     client_name: &str,
+    metrics: &Option<crate::telemetry::Metrics>,
 ) -> anyhow::Result<usize> {
     let datasource = load_client_datasource(db, client_name).await.c(h!())?;
     let datasource_id = datasource.id;
@@ -799,22 +813,33 @@ async fn sync_inbox(
         .collect::<BTreeMap<_, _>>();
 
     let synced_item_count = inbox_messages.len() + inbox_updates.len();
+    let mut queued_item_count = 0_u64;
     let mut ids = vec![];
     for item in &inbox_messages {
         ids.push(item.internal_id);
-        upsert_signal_message_queue_snapshot(item, datasource.id, &txn)
+        if upsert_signal_message_queue_snapshot(item, datasource.id, &txn)
             .await
-            .c(h!())?;
+            .c(h!())?
+        {
+            queued_item_count += 1;
+        }
     }
     for update in &inbox_updates {
-        upsert_signal_message_queue_snapshot(update, datasource.id, &txn)
+        if upsert_signal_message_queue_snapshot(update, datasource.id, &txn)
             .await
-            .c(h!())?;
+            .c(h!())?
+        {
+            queued_item_count += 1;
+        }
     }
     echo_im::mark_inbox_as_seen(client_name, ids, &txn)
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
+
+    if let Some(metrics) = metrics {
+        metrics.record_messenger_ingested(&datasource.kind, queued_item_count);
+    }
 
     notify_private_messages(config, client_name, private_message_bodies).await;
     sync_senders(db, senders).await.c(h!())?;
@@ -872,7 +897,7 @@ async fn upsert_signal_message_queue_snapshot(
     item: &echo_im::types::MessageF1,
     datasource_id: i64,
     txn: &DatabaseTransaction,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<bool> {
     let existing_snapshot = load_signal_message_queue_snapshot(
         txn,
         datasource_id,
@@ -902,7 +927,7 @@ async fn upsert_signal_message_queue_snapshot(
                 "skipped unchanged inbox snapshot: queue_id={} datasource_id={} inbox_message_id={}",
                 existing_item.id, datasource_id, item.internal_id
             );
-            return Ok(());
+            return Ok(false);
         }
     }
 
@@ -926,6 +951,9 @@ async fn upsert_signal_message_queue_snapshot(
         timestamp: Set(item.timestamp),
         created_at: NotSet,
         deleted: Set(item.deleted),
+        attempt_count: Set(0),
+        next_attempt_at: Set(Utc::now().naive_utc()),
+        last_error: Set(None),
     };
     signal_message_queue::Entity::insert(signal_message_queue_item)
         .on_conflict(
@@ -943,6 +971,9 @@ async fn upsert_signal_message_queue_snapshot(
                 signal_message_queue::Column::Timestamp,
                 signal_message_queue::Column::CreatedAt,
                 signal_message_queue::Column::Deleted,
+                signal_message_queue::Column::AttemptCount,
+                signal_message_queue::Column::NextAttemptAt,
+                signal_message_queue::Column::LastError,
             ])
             .to_owned(),
         )
@@ -975,7 +1006,7 @@ async fn upsert_signal_message_queue_snapshot(
             "queued inbox tombstone: queue_id={} datasource_id={} inbox_message_id={}",
             signal_message_queue_item.id, datasource_id, item.internal_id
         );
-        return Ok(());
+        return Ok(true);
     }
 
     for attachment in &effective_attachments {
@@ -1002,7 +1033,7 @@ async fn upsert_signal_message_queue_snapshot(
         attachment_paths.len(),
         attachment_paths
     );
-    Ok(())
+    Ok(true)
 }
 
 async fn effective_queue_snapshot_attachments(
@@ -1464,6 +1495,9 @@ mod tests {
             timestamp: message.timestamp,
             created_at: message.timestamp,
             deleted: false,
+            attempt_count: 0,
+            next_attempt_at: message.timestamp,
+            last_error: None,
         };
         let existing_attachments = vec![
             signal_message_queue_attachment::Model {
@@ -1525,6 +1559,28 @@ mod tests {
             .unwrap();
         txn.commit().await.unwrap();
 
+        signal_message_queue::Entity::update_many()
+            .col_expr(
+                signal_message_queue::Column::AttemptCount,
+                sea_query::Expr::value(4),
+            )
+            .col_expr(
+                signal_message_queue::Column::NextAttemptAt,
+                sea_query::Expr::value(
+                    Utc::now().naive_utc() + chrono::TimeDelta::hours(1),
+                ),
+            )
+            .col_expr(
+                signal_message_queue::Column::LastError,
+                sea_query::Expr::value(Some("old failure".to_string())),
+            )
+            .filter(
+                signal_message_queue::Column::DatasourceId.eq(datasource.id),
+            )
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
         let mut update = test_message(inbox.id, "caption edited", false);
         update.attachments = vec![];
         let txn = env.dbx.begin().await.unwrap();
@@ -1546,6 +1602,9 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(queue_item.body, "caption edited");
+        assert_eq!(queue_item.attempt_count, 0);
+        assert!(queue_item.last_error.is_none());
+        assert!(queue_item.next_attempt_at <= Utc::now().naive_utc());
         let attachments = signal_message_queue_attachment::Entity::find()
             .filter(
                 signal_message_queue_attachment::Column::MessageId

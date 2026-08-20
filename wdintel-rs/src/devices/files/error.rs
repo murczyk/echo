@@ -8,26 +8,6 @@ pub(in crate::devices) struct FilesystemFieldError {
     pub(in crate::devices) message: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::devices::files) enum TransactionErrorClass {
-    Retryable,
-    OutcomeUncertain,
-    DatabaseFailure,
-}
-
-pub(in crate::devices::files) fn classify_transaction_error(
-    error: &AnyhowError,
-) -> TransactionErrorClass {
-    match classify_database_error(error) {
-        Some(DatabaseErrorClass::Conflict) => TransactionErrorClass::Retryable,
-        _ if has_outcome_uncertain_transaction_error(error) => {
-            TransactionErrorClass::OutcomeUncertain
-        }
-        Some(_) => TransactionErrorClass::DatabaseFailure,
-        None => TransactionErrorClass::OutcomeUncertain,
-    }
-}
-
 pub(in crate::devices::files) fn map_database_error(
     error: AnyhowError,
 ) -> FilesystemError {
@@ -96,21 +76,6 @@ pub(in crate::devices::files) fn map_transaction_body_error(
     error: AnyhowError,
 ) -> FilesystemError {
     map_database_error(error)
-}
-
-fn has_outcome_uncertain_transaction_error(error: &AnyhowError) -> bool {
-    error.chain().any(|source| {
-        let Some(sqlx::Error::Database(database_error)) =
-            source.downcast_ref::<sqlx::Error>()
-        else {
-            return false;
-        };
-        match database_error.code().as_deref() {
-            Some("40003") => true,
-            Some(code) => code.starts_with("08"),
-            None => true,
-        }
-    })
 }
 
 #[derive(Debug, Error)]

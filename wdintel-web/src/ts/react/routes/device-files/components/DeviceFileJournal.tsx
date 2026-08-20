@@ -1,6 +1,5 @@
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
-import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useMemo } from 'react';
 
 import type { DeviceFileJournalEntry } from '../../../../../Bindings';
@@ -12,11 +11,14 @@ import {
   getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtItemsCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { DeviceAnalyticsTagFilterControls } from './DeviceAnalyticsTagFilterControls';
-import { DeviceAnalyticsTagBadges } from './DeviceAnalyticsTagBadges';
 import { DeviceFileContentMarker } from './DeviceFileContentMarker';
 import type { DeviceAnalyticsTagFilter } from '../types';
 import type { DeviceAnalyticsTagsState } from '../use-device-analytics-tags';
@@ -34,42 +36,51 @@ function formatSynchronizedAt(value: string): string {
   return Number.isNaN(date.getTime()) ? '—' : synchronizedAtFormatter.format(date);
 }
 
-function useJournalColumns(): MRT_ColumnDef<DeviceFileJournalEntry>[] {
+function useJournalColumns(): AppMrtColumnDef<DeviceFileJournalEntry>[] {
   return useMemo(
     () => [
       {
         accessorKey: 'name',
         header: 'Назва файлу',
         size: 240,
-        Cell: ({ cell }) => (
-          <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-            {cell.getValue<string>()}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => cell.getValue() as string,
+          displaySx: { overflowWrap: 'anywhere' },
+          fullValue: ({ cell }) => cell.getValue() as string,
+        }),
       },
       {
         accessorKey: 'absolutePath',
         header: 'Шлях до файлу',
         size: 520,
-        Cell: ({ cell }) => (
-          <Typography component="span" variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-            {cell.getValue<string>()}
-          </Typography>
-        ),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => cell.getValue() as string,
+          displaySx: { overflowWrap: 'anywhere' },
+          fullValue: ({ cell }) => cell.getValue() as string,
+        }),
       },
       {
         accessorKey: 'tags',
         header: 'Теги',
         size: 220,
-        Cell: ({ row }) => <DeviceAnalyticsTagBadges tags={row.original.tags} />,
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<DeviceFileJournalEntry, DeviceFileJournalEntry['tags'][number]>({
+          items: ({ row }) => row.original.tags,
+          renderItem: (tag) => <PowerChip label={tag.name} color="primary" interactive={false} />,
+          getItemKey: (tag) => tag.id,
+          getItemText: (tag) => tag.name,
+        }),
       },
       {
         accessorKey: 'hasContent',
         header: 'Контент',
         size: 110,
+        meta: { overflowMode: 'none' },
         Cell: ({ cell }) => (
           <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-            <DeviceFileContentMarker hasContent={cell.getValue<boolean>()} />
+            <DeviceFileContentMarker hasContent={Boolean(cell.getValue())} />
           </Box>
         ),
         muiTableHeadCellProps: { align: 'center' },
@@ -79,7 +90,11 @@ function useJournalColumns(): MRT_ColumnDef<DeviceFileJournalEntry>[] {
         accessorKey: 'synchronizedAt',
         header: 'Дата й час синхронізації',
         size: 210,
-        Cell: ({ cell }) => formatSynchronizedAt(cell.getValue<string>()),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => formatSynchronizedAt(cell.getValue() as string),
+          fullValue: ({ cell }) => formatSynchronizedAt(cell.getValue() as string),
+        }),
       },
     ],
     [],
@@ -105,8 +120,7 @@ export function DeviceFileJournal({
       : `${fileCountFormatter.format(journal.entries.length)} з ${fileCountFormatter.format(
           journal.totalCount,
         )} файлів`;
-  const table = useMaterialReactTable({
-    ...defaultMrtOptions,
+  const table = useAppMaterialReactTable({
     columns,
     data: journal.entries,
     getRowId: (row) => row.fileId,

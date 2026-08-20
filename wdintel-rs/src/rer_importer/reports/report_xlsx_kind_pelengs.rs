@@ -182,6 +182,29 @@ async fn get_inbox_messages_report_chunk(
             "unit",
         )
         .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            Expr::exists(
+                intel_product::Entity::find()
+                    .filter(
+                        Expr::col((
+                            intel_product::Entity,
+                            intel_product::Column::IntelMessageId,
+                        ))
+                        .equals((
+                            signal_message::Entity,
+                            signal_message::Column::Id,
+                        )),
+                    )
+                    .filter(intel_product::Column::RelationKind.is_in([
+                        intel_product::RELATION_KIND_REPORT,
+                        intel_product::RELATION_KIND_COMMENT,
+                    ]))
+                    .select_only()
+                    .column(intel_product::Column::IntelMessageId)
+                    .into_query(),
+            )
+            .not(),
+        )
         // Allow missing network/freq/unit links for report rows.
         .filter(inbox_item_has_active_peleng_exists())
         .join(
@@ -394,6 +417,8 @@ async fn get_inbox_messages_report_chunk(
                 datetime: m.datetime,
                 timestamp: m.timestamp,
                 message: InboxMessage {
+                    parent_messages: vec![],
+                    intelligence_reports: vec![],
                     message_uid: None,
                     location,
                     coords,

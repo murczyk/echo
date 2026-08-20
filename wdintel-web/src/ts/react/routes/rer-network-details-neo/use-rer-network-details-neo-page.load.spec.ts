@@ -217,6 +217,24 @@ describe('use-rer-network-details-neo-page.load', () => {
     ).toEqual(['652.111']);
   });
 
+  it('resets automatic relation frequency selections for a new date range', () => {
+    expect(
+      deriveRelationsEnabledFreqs(
+        ['652.111'],
+        null,
+        {
+          freqs: [
+            { freq: '652.111', enabledByDefault: true },
+            { freq: '852.111', enabledByDefault: true },
+          ],
+          nodes: [],
+          edges: [],
+        },
+        false,
+      ),
+    ).toEqual(['652.111', '852.111']);
+  });
+
   it('loads Everything candidates once and splits catalog and intercepted rows', async () => {
     installDefaultApiMocks();
     renderHookHarness();

@@ -45,6 +45,11 @@ def hello_world():
     return "<p>Hello, World!</p>"
 
 
+@app.get("/health/ready")
+def health_ready():
+    return jsonify({"status": "ready"})
+
+
 @app.post("/api/tokenize/words")
 def tokenize_words():
     req = request.get_json()

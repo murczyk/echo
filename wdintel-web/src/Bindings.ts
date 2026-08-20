@@ -67,6 +67,7 @@ export type Key = {
 };
 
 export type MultiGeometry = {
+  points: Array<Point>;
   lineStrings: Array<LineString>;
 };
 
@@ -418,6 +419,23 @@ export type InboxMessage = {
   deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
   metadata: Array<InboxMessageMetadata>;
+  parentMessages: Array<InboxMessageSummary>;
+  intelligenceReports: Array<InboxMessageSummary>;
+};
+
+export type InboxMessageSummary = {
+  id: number;
+  isAccessible: boolean;
+  isDeleted: boolean;
+  text: string;
+  attachmentsCount: number;
+  timestamp: number | null;
+  date: string | null;
+  time: string | null;
+  groupName: string | null;
+  groupMasterKey: string | null;
+  coords: string | null;
+  mediaFileNames: Array<string>;
 };
 
 export type InboxMessageMetadata = {
@@ -1160,16 +1178,109 @@ export type MapPointsReq = {
   inboxItemsFilter: InboxMessagesReq;
   mapFilter: MapPointsFilter | null;
   pageId: string | null;
+  showSettlements: boolean | null;
+};
+
+export type MapSettlement = {
+  settlementId: number;
+  name: string;
+  region: string | null;
+  lat: number;
+  lon: number;
+  inboxItemCount: number;
 };
 
 export type MapPointsRsp = {
   networkUnits: Array<NetworkUnit>;
   points: Array<FreqDetailedPoint>;
+  settlements: Array<MapSettlement>;
 };
 
 export type NetworkUnit = {
   name: string;
   frequencies: Array<string>;
+};
+
+export type BattleLineCoordinate = {
+  lat: number;
+  lon: number;
+};
+
+export type BattleLineFeature = {
+  kind: string;
+  coordinates: Array<BattleLineCoordinate>;
+};
+
+export type BattleLineVersionSummary = {
+  id: number;
+  sourceFileName: string;
+  uploaderLogin: string;
+  uploadedAtTs: number;
+  retiredAtTs: number | null;
+};
+
+export type BattleLineAorGeometry = {
+  aorId: number;
+  aorName: string;
+  features: Array<BattleLineFeature>;
+  snappedStart: BattleLineCoordinate;
+  snappedEnd: BattleLineCoordinate;
+};
+
+export type BattleLineState = {
+  activeVersion: BattleLineVersionSummary | null;
+  activeFeatures: Array<BattleLineFeature>;
+  aorGeometries: Array<BattleLineAorGeometry>;
+  previousVersions: Array<BattleLineVersionSummary>;
+};
+
+export type BattleLineTestReq = {
+  inboxItemId: number;
+};
+
+export type BattleLineSettlementCandidate = {
+  settlementId: number;
+  name: string;
+  region: string;
+  coordinate: BattleLineCoordinate;
+};
+
+export type BattleLineLocationResult = {
+  location: string;
+  candidates: Array<BattleLineSettlementCandidate>;
+  chosenSettlementId: number | null;
+  distanceM: number | null;
+  invalidAorIds: Array<number>;
+};
+
+export type BattleLineTestRsp = {
+  inboxItemId: number;
+  message: InboxMessage;
+  groupMasterKeys: Array<string>;
+  aorIds: Array<number>;
+  locations: Array<BattleLineLocationResult>;
+  battleLine: BattleLineState;
+};
+
+export type BattleLineAdminPageReq = {
+  page: number;
+};
+
+export type BattleLineUnlinkedInboxRsp = {
+  items: Array<[number, InboxMessage]>;
+  total: number;
+  pageSize: number;
+};
+
+export type BattleLineUnresolvedLocation = {
+  settlementText: string;
+  itemCount: number;
+};
+
+export type BattleLineUnresolvedLocationsRsp = {
+  items: Array<BattleLineUnresolvedLocation>;
+  total: number;
+  pageSize: number;
 };
 
 export type MessageIdsReq = {
@@ -1759,6 +1870,9 @@ export type DeviceFileTreeEntry = {
   fileMetadataModifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  revision: number | null;
+  syncId: string | null;
+  sourceFileState: SourceFileState | null;
   tags: Array<AnalyticsTag>;
 };
 
@@ -1777,6 +1891,9 @@ export type DeviceFile = {
   fileMetadataModifiedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  revision: number;
+  syncId: string;
+  sourceFileState: SourceFileState | null;
   tags: Array<AnalyticsTag>;
 };
 
@@ -1847,6 +1964,9 @@ export type DeviceFileJournalEntry = {
   absolutePath: string;
   hasContent: boolean;
   synchronizedAt: string;
+  revision: number;
+  syncId: string;
+  sourceFileState: SourceFileState | null;
   tags: Array<AnalyticsTag>;
 };
 
@@ -1865,13 +1985,25 @@ export type JournalDeviceFilesRsp = {
   nextCursor: string | null;
 };
 
+export type SourceFileStateKind =
+  | 'scanned'
+  | 'downloaded'
+  | 'changed'
+;
+
+export type SourceFileState = {
+  state: SourceFileStateKind;
+  settledAt: string;
+  settledBy: string | null;
+};
+
 export type SyncDeviceFileItem = {
-  fileId: string | null;
   absolutePath: string;
   mimeType: string | null;
   extension: string | null;
   fileMetadataCreatedAt: string | null;
   fileMetadataModifiedAt: string | null;
+  sourceFileState: SourceFileState | null;
 };
 
 export type FileSyncOperation =
@@ -1879,23 +2011,73 @@ export type FileSyncOperation =
   | 'updated'
 ;
 
-export type FileSyncErrorKind =
-  | 'validation'
-  | 'not_found'
-  | 'conflict'
-  | 'dependency'
-  | 'internal'
+export type FileSyncSessionMode =
+  | 'automatic'
+  | 'explicit'
 ;
 
-export type FileSyncError = {
-  kind: FileSyncErrorKind;
+export type FileSyncSessionStatus =
+  | 'open'
+  | 'completed'
+  | 'completed_with_errors'
+  | 'expired'
+;
+
+export type FileSyncBatchStatus =
+  | 'processing'
+  | 'applied'
+  | 'applied_with_errors'
+;
+
+export type FileSyncErrorCode =
+  | 'validation'
+  | 'duplicate_path_in_session'
+;
+
+export type FileSyncFieldError = {
+  path: string;
   message: string;
-  fieldErrors: Array<[string, string]>;
+};
+
+export type SyncCounts = {
+  received: number;
+  accepted: number;
+  created: number;
+  updated: number;
+  rejected: number;
+};
+
+export type SyncSummary = {
+  syncId: string;
+  deviceId: string;
+  mode: FileSyncSessionMode;
+  status: FileSyncSessionStatus;
+  analysisRunId: string | null;
+  nextBatchIndex: number;
+  counts: SyncCounts;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  expiresAt: string | null;
+};
+
+export type BatchSummary = {
+  syncId: string;
+  batchIndex: number;
+  status: FileSyncBatchStatus;
+  counts: SyncCounts;
+  createdAt: string;
+  appliedAt: string | null;
 };
 
 export type FileSyncResult =
-  | { Accepted: { index: number; operation: FileSyncOperation; root: DeviceFileRoot; file: DeviceFile } }
-  | { Rejected: { index: number; error: FileSyncError } }
+  | { Accepted: { index: number; operation: FileSyncOperation; fileId: string; revision: number; file: DeviceFile } }
+  | { Rejected: { index: number; code: FileSyncErrorCode; message: string; fieldErrors: Array<FileSyncFieldError> } }
+;
+
+export type FileSyncSessionItemResult =
+  | { status: { batchIndex: number; itemIndex: number; operation: FileSyncOperation; fileId: string; revision: number; file: DeviceFile } }
+  | { status: { batchIndex: number; itemIndex: number; code: FileSyncErrorCode; message: string; fieldErrors: Array<FileSyncFieldError> } }
 ;
 
 export type SyncDeviceFilesReq = {
@@ -1904,7 +2086,36 @@ export type SyncDeviceFilesReq = {
 };
 
 export type SyncDeviceFilesRsp = {
+  sync: SyncSummary;
   results: Array<FileSyncResult>;
+};
+
+export type StartFileSyncSessionReq = {
+  deviceId: string;
+};
+
+export type FileSyncSessionRsp = {
+  sync: SyncSummary;
+};
+
+export type ApplyFileSyncBatchReq = {
+  files: Array<SyncDeviceFileItem>;
+};
+
+export type ApplyFileSyncBatchRsp = {
+  sync: SyncSummary;
+  batch: BatchSummary;
+  results: Array<FileSyncResult>;
+};
+
+export type CompleteFileSyncSessionReq = {
+  expectedBatchCount: number;
+};
+
+export type FileSyncSessionItemsRsp = {
+  sync: SyncSummary;
+  results: Array<FileSyncSessionItemResult>;
+  nextCursor: string | null;
 };
 
 export type RuleField =
@@ -1999,8 +2210,79 @@ export type ReanalyzeDeviceReq = {
   deviceId: string;
 };
 
-export type ReanalysisRsp = {
-  scheduledFileCount: number;
+export type AnalysisRun = {
+  runId: string;
+  deviceId: string;
+  cause: string;
+  syncId: string | null;
+  definitionId: string;
+  targetSourceSequence: number | null;
+  analyzerVersion: number;
+  dslVersion: number;
+  status: string;
+  itemCount: number;
+  completedCount: number;
+  createdAt: string;
+  preparedAt: string | null;
+  completedAt: string | null;
+};
+
+export type ReanalyzeDeviceRsp = {
+  run: AnalysisRun;
+};
+
+export type ReanalyzeAllRsp = {
+  definitionId: string;
+  createdRunCount: number;
+};
+
+export type GetAnalysisRunReq = {
+  runId: string;
+};
+
+export type GetAnalysisRunRsp = {
+  run: AnalysisRun;
+};
+
+export type ListAnalysisRunsReq = {
+  deviceId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type ListAnalysisRunsRsp = {
+  runs: Array<AnalysisRun>;
+  nextCursor: string | null;
+};
+
+export type ListAnalysisRunFilesReq = {
+  runId: string;
+  limit: number | null;
+  cursor: string | null;
+};
+
+export type AnalysisRunFileMetadata = {
+  name: string;
+  absolutePath: string;
+  extension: string | null;
+  mimeType: string | null;
+  fileMetadataCreatedAt: string | null;
+  fileMetadataModifiedAt: string | null;
+  sourceFileState: string | null;
+};
+
+export type AnalysisRunFile = {
+  fileId: string;
+  metadataRevision: number;
+  analysisInputRevision: number;
+  state: string;
+  metadata: AnalysisRunFileMetadata;
+  tagIds: Array<string> | null;
+};
+
+export type ListAnalysisRunFilesRsp = {
+  files: Array<AnalysisRunFile>;
+  nextCursor: string | null;
 };
 
 export type DeviceAnalyticsReq = {
@@ -2046,6 +2328,15 @@ export type TagMatch =
   | 'any'
   | 'all'
 ;
+
+export type DeviceSettingsReq = {
+  mattermostWebhookUrl: string | null;
+  clearMattermostWebhook: boolean;
+};
+
+export type DeviceSettingsItem = {
+  hasMattermostWebhook: boolean;
+};
 
 export type Organism = {
   id: number;
@@ -4863,6 +5154,7 @@ export type EventMsg = {
   eventType: EventType;
   createdAt: number;
   origin: string | null;
+  intelligenceReport: boolean;
 };
 
 export type DeploymentMaintenance = {

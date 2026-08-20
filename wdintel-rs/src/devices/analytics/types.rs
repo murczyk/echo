@@ -1,7 +1,6 @@
 use chrono::{DateTime, FixedOffset};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
 #[derive(
@@ -95,7 +94,7 @@ pub struct RuleValidationError {
     pub message: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(in crate::devices) struct TagRuleDefinition {
     pub tag_id: Uuid,
     pub rule_expression: RuleExpression,
@@ -346,8 +345,199 @@ pub struct ReanalyzeDeviceReq {
     Serialize,
 )]
 #[serde(deny_unknown_fields)]
-pub struct ReanalysisRsp {
-    pub scheduled_file_count: u64,
+pub struct AnalysisRun {
+    pub run_id: String,
+    pub device_id: String,
+    pub cause: String,
+    pub sync_id: Option<String>,
+    pub definition_id: String,
+    pub target_source_sequence: Option<i64>,
+    pub analyzer_version: i32,
+    pub dsl_version: i32,
+    pub status: String,
+    pub item_count: u64,
+    pub completed_count: u64,
+    pub created_at: String,
+    pub prepared_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ReanalyzeDeviceRsp {
+    pub run: AnalysisRun,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ReanalyzeAllRsp {
+    pub definition_id: String,
+    pub created_run_count: u64,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct GetAnalysisRunReq {
+    pub run_id: String,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct GetAnalysisRunRsp {
+    pub run: AnalysisRun,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ListAnalysisRunsReq {
+    pub device_id: String,
+    pub limit: Option<u64>,
+    pub cursor: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ListAnalysisRunsRsp {
+    pub runs: Vec<AnalysisRun>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ListAnalysisRunFilesReq {
+    pub run_id: String,
+    pub limit: Option<u64>,
+    pub cursor: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct AnalysisRunFileMetadata {
+    pub name: String,
+    pub absolute_path: String,
+    pub extension: Option<String>,
+    pub mime_type: Option<String>,
+    pub file_metadata_created_at: Option<String>,
+    pub file_metadata_modified_at: Option<String>,
+    pub source_file_state: Option<String>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct AnalysisRunFile {
+    pub file_id: String,
+    pub metadata_revision: i64,
+    pub analysis_input_revision: i64,
+    pub state: String,
+    pub metadata: AnalysisRunFileMetadata,
+    pub tag_ids: Option<Vec<String>>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Clone,
+    Debug,
+    Deserialize,
+    Eq,
+    PartialEq,
+    Serialize,
+)]
+#[serde(deny_unknown_fields)]
+pub struct ListAnalysisRunFilesRsp {
+    pub files: Vec<AnalysisRunFile>,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(
@@ -519,10 +709,4 @@ pub(in crate::devices) struct DeviceAnalyticsProgress {
 pub(in crate::devices) struct DeviceAnalyticsFileLink {
     pub file_entry_id: Uuid,
     pub file_entry_created_at: DateTime<FixedOffset>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(in crate::devices) struct ActiveTagRule {
-    pub tag_id: Uuid,
-    pub rule_expression: JsonValue,
 }

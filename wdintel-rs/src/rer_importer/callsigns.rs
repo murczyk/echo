@@ -19,7 +19,7 @@ use sea_orm::*;
 use sea_query::{
     Alias, CommonTableExpression, Expr, PostgresQueryBuilder, Query,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(FromQueryResult)]
 struct CallsignGraphItem {
@@ -1258,7 +1258,7 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
     // 0. Check POST line
     let line0 = &lines[0];
     if !RE_POST.is_match(line0) {
-        println!("RE_POST failed on line 0");
+        log::trace!("RE_POST failed on line 0");
         return Err(AppError::BL {
             msg: "First line does not match RE_POST".to_string(),
         });
@@ -1278,7 +1278,7 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
 
     // 2. DATE line
     if !RE_DATE.is_match(&lines[line_index]) {
-        println!("RE_DATE failed on line {line_index}");
+        log::trace!("RE_DATE failed on line {line_index}");
         return Err(AppError::BL {
             msg: "Line does not match RE_DATE".to_string(),
         });
@@ -1287,7 +1287,7 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
 
     // 3. FREQ line
     if !RE_FREQ.is_match(&lines[line_index]) {
-        println!("RE_FREQ failed on line {line_index}");
+        log::trace!("RE_FREQ failed on line {line_index}");
         return Err(AppError::BL {
             msg: "Line does not match RE_FREQ".to_string(),
         });
@@ -1310,7 +1310,7 @@ fn avia_format_lines(lines: &Vec<String>) -> Result<usize, AppError> {
 
     // Now check RE_NETWORK at check_index
     if !RE_NETWORK.is_match(&lines[check_index]) {
-        println!("RE_NETWORK failed on line {line_index}",);
+        log::trace!("RE_NETWORK failed on line {line_index}");
         return Err(AppError::BL {
             msg: "Line does not match RE_NETWORK".to_string(),
         });
@@ -1398,104 +1398,253 @@ pub async fn oneoff_reprocess_callsigns(
     mode: Mode,
     ps: &crate::OneoffReprocessCallsignsPs,
 ) -> Result<(), AppError> {
-    let mut start_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.start, "%Y-%m-%dT%H:%M:%S")
-            .c(h!())?;
-    let end_dt: NaiveDateTime =
-        NaiveDateTime::parse_from_str(&ps.end, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+    let (mut start_dt, end_dt) = parse_reprocess_period(&ps.start, &ps.end)?;
     let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
     let rq = reqwest::Client::new();
+    let ai = crate::ai_callsign::worker::load_worker_config(&dbx).await?;
+    print_reprocess_banner(ai.as_ref(), start_dt, end_dt);
 
     let m = MultiProgress::new();
     while start_dt < end_dt {
-        let start_shifted = start_dt + chrono::Duration::hours(1);
-        let end_dt_step = if start_shifted > end_dt {
-            end_dt
-        } else {
-            start_shifted
-        };
-        let txn = dbx.begin().await.c(h!())?;
+        let end_dt_step = next_reprocess_window_end(start_dt, end_dt);
+        let inbox_items =
+            load_unreviewed_inbox_items(&dbx, start_dt, end_dt_step).await?;
+        let callsigns_by_item_id = load_existing_callsigns(
+            &dbx,
+            inbox_items.iter().map(|(inbox_item, _)| inbox_item.id),
+        )
+        .await?;
         let system_login_id =
-            crate::users::system_login_id(&txn).await.c(h!())?;
-
-        let inbox_items: Vec<(
-            sigint_inbox_item::Model,
-            Option<signal_message::Model>,
-        )> = SigintInboxItem::find()
-            .find_also_related(SignalMessage)
-            .filter(sigint_inbox_item::Column::Reviewed.ne(true))
-            .filter(sigint_inbox_item::Column::Datetime.gte(start_dt))
-            .filter(sigint_inbox_item::Column::Datetime.lt(end_dt_step))
-            .all(&txn)
-            .await
-            .c(h!())?;
-        let inbox_item_ids = inbox_items
-            .iter()
-            .map(|(inbox_item, _)| inbox_item.id)
-            .collect::<Vec<_>>();
-        let callsigns_by_item_id =
-            crate::inbox::callsigns::load_by_item_ids(&txn, &inbox_item_ids)
-                .await?;
+            crate::users::system_login_id(&dbx).await.c(h!())?;
 
         let pb = m.add(ProgressBar::new(inbox_items.len() as u64));
         pb.set_style(crate::utils::get_pb_style()?);
         pb.set_prefix(format!("[{start_dt} / {end_dt}]"));
 
-        for (inbox_item, m_message) in inbox_items.iter() {
+        for (inbox_item, message) in inbox_items {
             pb.inc(1);
-            let Some(message) = m_message else {
-                continue;
-            };
-            let Some(body) = message.body.clone() else {
-                continue;
-            };
-            let callsign_tokens =
-                super::callsigns::find_known_callsigns(&rq, &body)
-                    .await
-                    .c(h!())?;
-            let callsigns = crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
-                crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
-                    &callsign_tokens,
-                    &body,
-                ),
-                &body,
-            )
-            .into_iter()
-            .map(|callsign| callsign.to_lowercase())
-            .collect::<Vec<_>>();
-            let callsigns: Vec<String> =
-                crate::utils::uniq_via_btreeset(&callsigns);
-            let callsign_tokens =
-                highlight_callsigns(&rq, &body, &callsigns).await.c(h!())?;
-            let inbox_item_id = inbox_item.id;
-            let alg2 = callsigns_by_item_id
+            let existing = callsigns_by_item_id
                 .get(&inbox_item.id)
                 .cloned()
-                .unwrap_or_default()
-                .alg2;
-            let mut inbox_item: sigint_inbox_item::ActiveModel =
-                inbox_item.clone().into();
-            inbox_item.callsign_tokens =
-                Set(Some(serde_json::to_value(callsign_tokens).c(h!())?));
-            inbox_item.update(&txn).await.c(h!())?;
-            crate::inbox::callsigns::sync(
+                .unwrap_or_default();
+            let Some(recomputed) = recompute_inbox_item_callsigns(
+                &rq,
+                &inbox_item,
+                message.as_ref(),
+                existing,
+                ai.as_ref(),
+            )
+            .await?
+            else {
+                continue;
+            };
+            let txn = dbx.begin().await.c(h!())?;
+            persist_recomputed_inbox_item_callsigns(
                 &txn,
-                inbox_item_id,
-                crate::inbox::callsigns::InboxItemCallsigns {
-                    primary: callsigns,
-                    alg2,
-                },
+                inbox_item,
+                &recomputed,
                 system_login_id,
             )
-            .await
-            .c(h!())?;
+            .await?;
+            txn.commit().await.c(h!())?;
         }
         pb.finish_with_message("done");
-
-        txn.commit().await.c(h!())?;
         start_dt += chrono::Duration::hours(1);
     }
     m.clear()?;
+    Ok(())
+}
+
+pub(crate) fn print_reprocess_banner(
+    ai: Option<&crate::ai_callsign::worker::WorkerConfig>,
+    start_dt: NaiveDateTime,
+    end_dt: NaiveDateTime,
+) {
+    println!("oneoff-reprocess-callsigns");
+    println!("period: {start_dt} .. {end_dt}");
+    match ai {
+        Some(ai) => {
+            println!("parser: AI callsign parsing");
+            println!(
+                "engine: {} ({})",
+                ai.ai_engine.name, ai.ai_engine.model_name
+            );
+        }
+        None => {
+            println!("parser: regular (AI worker not configured)");
+        }
+    }
+}
+
+pub(crate) fn reprocess_parser_banner(
+    ai: Option<&crate::ai_callsign::worker::WorkerConfig>,
+) -> String {
+    match ai {
+        Some(ai) => format!(
+            "parser: AI callsign parsing — {} ({})",
+            ai.ai_engine.name, ai.ai_engine.model_name
+        ),
+        None => "parser: regular (AI worker not configured)".to_string(),
+    }
+}
+
+pub(crate) struct RecomputedInboxCallsigns {
+    pub inbox_item_id: i64,
+    pub datetime: NaiveDateTime,
+    pub body: String,
+    pub before: Vec<String>,
+    pub after: Vec<String>,
+    pub callsign_tokens: serde_json::Value,
+    pub alg2: Vec<String>,
+}
+
+pub(crate) fn parse_reprocess_period(
+    start: &str,
+    end: &str,
+) -> Result<(NaiveDateTime, NaiveDateTime), AppError> {
+    let start_dt =
+        NaiveDateTime::parse_from_str(start, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+    let end_dt =
+        NaiveDateTime::parse_from_str(end, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+    Ok((start_dt, end_dt))
+}
+
+pub(crate) fn next_reprocess_window_end(
+    start_dt: NaiveDateTime,
+    end_dt: NaiveDateTime,
+) -> NaiveDateTime {
+    let start_shifted = start_dt + chrono::Duration::hours(1);
+    if start_shifted > end_dt {
+        end_dt
+    } else {
+        start_shifted
+    }
+}
+
+pub(crate) async fn load_unreviewed_inbox_items<C>(
+    dbx: &C,
+    start_dt: NaiveDateTime,
+    end_dt: NaiveDateTime,
+) -> Result<
+    Vec<(sigint_inbox_item::Model, Option<signal_message::Model>)>,
+    AppError,
+>
+where
+    C: ConnectionTrait,
+{
+    Ok(SigintInboxItem::find()
+        .find_also_related(SignalMessage)
+        .filter(sigint_inbox_item::Column::Reviewed.ne(true))
+        .filter(sigint_inbox_item::Column::Datetime.gte(start_dt))
+        .filter(sigint_inbox_item::Column::Datetime.lt(end_dt))
+        .all(dbx)
+        .await
+        .c(h!())?)
+}
+
+pub(crate) async fn load_existing_callsigns<C, I>(
+    dbx: &C,
+    inbox_item_ids: I,
+) -> Result<HashMap<i64, crate::inbox::callsigns::InboxItemCallsigns>, AppError>
+where
+    C: ConnectionTrait,
+    I: IntoIterator<Item = i64>,
+{
+    let inbox_item_ids = inbox_item_ids.into_iter().collect::<Vec<_>>();
+    crate::inbox::callsigns::load_by_item_ids(dbx, &inbox_item_ids).await
+}
+
+pub(crate) async fn recompute_inbox_item_callsigns(
+    rq: &reqwest::Client,
+    inbox_item: &sigint_inbox_item::Model,
+    message: Option<&signal_message::Model>,
+    existing: crate::inbox::callsigns::InboxItemCallsigns,
+    ai: Option<&crate::ai_callsign::worker::WorkerConfig>,
+) -> Result<Option<RecomputedInboxCallsigns>, AppError> {
+    let Some(message) = message else {
+        return Ok(None);
+    };
+    let Some(body) = message.body.clone() else {
+        return Ok(None);
+    };
+    let after = parse_reprocess_callsigns(rq, &body, ai).await?;
+    let callsign_tokens = serde_json::to_value(
+        highlight_callsigns(rq, &body, &after).await.c(h!())?,
+    )
+    .c(h!())?;
+    Ok(Some(RecomputedInboxCallsigns {
+        inbox_item_id: inbox_item.id,
+        datetime: inbox_item.datetime.unwrap_or_default(),
+        body,
+        before: existing.primary,
+        after,
+        callsign_tokens,
+        alg2: existing.alg2,
+    }))
+}
+
+async fn parse_reprocess_callsigns(
+    rq: &reqwest::Client,
+    body: &str,
+    ai: Option<&crate::ai_callsign::worker::WorkerConfig>,
+) -> Result<Vec<String>, AppError> {
+    let regular = parse_primary_callsigns(rq, body).await?;
+    let Some(ai) = ai else {
+        return Ok(regular);
+    };
+    let ai_callsigns = crate::ai_callsign::extract_ai_callsigns(
+        &ai.ai_engine,
+        &ai.prompt,
+        body,
+    )
+    .await?;
+    Ok(crate::ai_callsign::worker::merge_current_and_ai_callsigns(
+        regular,
+        ai_callsigns,
+    ))
+}
+
+async fn parse_primary_callsigns(
+    rq: &reqwest::Client,
+    body: &str,
+) -> Result<Vec<String>, AppError> {
+    let found = find_known_callsigns(rq, body).await.c(h!())?;
+    Ok(crate::utils::uniq_via_btreeset(
+        &crate::rer_importer::inbox::metadata::append_metadata_text_callsigns(
+            crate::rer_importer::inbox::metadata::non_metadata_line_callsign_etalons(
+                &found, body,
+            ),
+            body,
+        )
+        .into_iter()
+        .map(|callsign| callsign.to_lowercase())
+        .collect::<Vec<_>>(),
+    ))
+}
+
+pub(crate) async fn persist_recomputed_inbox_item_callsigns<C>(
+    dbx: &C,
+    inbox_item: sigint_inbox_item::Model,
+    recomputed: &RecomputedInboxCallsigns,
+    system_login_id: uuid::Uuid,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut inbox_item = inbox_item.into_active_model();
+    inbox_item.callsign_tokens = Set(Some(recomputed.callsign_tokens.clone()));
+    inbox_item.update(dbx).await.c(h!())?;
+    crate::inbox::callsigns::sync(
+        dbx,
+        recomputed.inbox_item_id,
+        crate::inbox::callsigns::InboxItemCallsigns {
+            primary: recomputed.after.clone(),
+            alg2: recomputed.alg2.clone(),
+        },
+        system_login_id,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -1918,6 +2067,8 @@ mod tests {
 
     fn message_with_callsigns(callsigns: Vec<&str>) -> InboxMessage {
         InboxMessage {
+            parent_messages: vec![],
+            intelligence_reports: vec![],
             message_uid: None,
             text: String::new(),
             media: vec![],

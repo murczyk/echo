@@ -1,6 +1,6 @@
 use crate::config::get_tz;
 use crate::entities::{
-    area_of_responsibility, sigint_comment, sigint_inbox_item, sigint_network,
+    area_of_responsibility, sigint_inbox_item, sigint_network,
     sigint_network_aor, sigint_network_freq, sigint_network_unit, sigint_unit,
     signal_message,
 };
@@ -381,14 +381,13 @@ async fn get_signal_message_comments(
     till_dt: NaiveDateTime,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<SigintComment>, AppError> {
-    let comments = sigint_comment::Entity::find()
+    let message_ids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .distinct()
         .join(
             sea_orm::JoinType::InnerJoin,
-            signal_message::Relation::SigintComment.def().rev(),
-        )
-        .join(
-            sea_orm::JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def().rev(),
+            signal_message::Relation::SigintInboxItem.def(),
         )
         .join(
             JoinType::InnerJoin,
@@ -432,19 +431,21 @@ async fn get_signal_message_comments(
             ))
             .lt(till_dt),
         })
-        .order_by_asc(Expr::col((
-            sigint_comment::Entity,
-            sigint_comment::Column::CreatedAt,
-        )))
-        .select_only()
-        .column(sigint_comment::Column::Comment)
-        .column(sigint_comment::Column::CreatedAt)
-        .into_model::<SigintComment>()
+        .into_tuple::<i64>()
         .all(db)
         .await
         .context(h!())?;
-
-    Ok(comments)
+    Ok(
+        crate::sigint::comments::find_report_comments(db, &message_ids, None)
+            .await
+            .context(h!())?
+            .into_iter()
+            .map(|comment| SigintComment {
+                comment: comment.comment,
+                created_at: comment.created_at,
+            })
+            .collect(),
+    )
 }
 
 pub fn format_datetime_ms(

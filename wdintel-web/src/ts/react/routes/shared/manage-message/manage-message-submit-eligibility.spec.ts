@@ -30,6 +30,8 @@ describe('isManageMessageSubmitEligible', () => {
     ['busy', { busy: true }, false],
     ['parsing', { parsing: true }, false],
     ['invalid schema', { schemaValid: false }, false],
+    ['report without text', { reportTextRequired: true, text: '', newAttachmentCount: 1 }, false],
+    ['report with text', { reportTextRequired: true, text: '', fullBody: 'report' }, true],
     ['create groups loading', { groupsLoading: true }, false],
     ['remembered group is inaccessible', { selectedGroupKey: 'stale' }, false],
     ['attachments at maximum', { text: '', newAttachmentCount: 20 }, true],

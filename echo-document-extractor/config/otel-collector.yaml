@@ -24,10 +24,9 @@ receivers:
   hostmetrics:
     collection_interval: 60s
     scrapers:
-      cpu:
-        metrics:
-          system.cpu.utilization:
-            enabled: true
+      # CPU scraper omitted: Incus limits.cpu: N reassigns host IDs in
+      # /proc/stat; hostmetrics ucal then fails forever on the missing
+      # TimesStat. Aggregate CPU is scraped from prometheus/hostcpu instead.
       disk: {}
       filesystem:
         metrics:
@@ -46,9 +45,21 @@ receivers:
     units:
       - echo-document-extractor.service
       - echo-document-extractor-worker.service
+      - echo-document-extractor-host-cpu-exporter.service
       - echo-document-extractor-otel.service
     start_at: end
     storage: file_storage/journald
+  prometheus/hostcpu:
+    config:
+      scrape_configs:
+        - job_name: echo-document-extractor-hostcpu
+          scrape_interval: 60s
+          static_configs:
+            - targets: ["127.0.0.1:9100"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "echo_host_cpu_.*"
+              action: keep
 
 processors:
   resource/api:
@@ -104,7 +115,7 @@ service:
       processors: [resource/worker, batch/worker]
       exporters: [otlp_grpc/signoz]
     metrics/host:
-      receivers: [hostmetrics]
+      receivers: [hostmetrics, prometheus/hostcpu]
       processors: [resource/host, batch/host]
       exporters: [otlp_grpc/signoz]
     logs/extractor:

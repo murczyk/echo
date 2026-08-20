@@ -370,6 +370,18 @@ async fn load_digest_messages(
     )
     .await
     .context(h!())?
+    .filter(
+        signal_message::Column::Id.not_in_subquery(
+            intel_product::Entity::find()
+                .select_only()
+                .column(intel_product::Column::IntelMessageId)
+                .filter(intel_product::Column::RelationKind.is_in([
+                    intel_product::RELATION_KIND_COMMENT,
+                    intel_product::RELATION_KIND_REPORT,
+                ]))
+                .into_query(),
+        ),
+    )
     .select_only()
     .column_as(signal_message::Column::Id, "id")
     .column_as(signal_message::Column::MessageUid, "message_uid")
@@ -623,7 +635,9 @@ async fn collect_report(
     for (id, message) in &messages {
         let is_pure_peleng = message.coords.is_some()
             && message.callsign_tokens.clone().unwrap_or(vec![]).is_empty();
-        if is_pure_peleng {
+        let has_comments =
+            comments.iter().any(|(comment_id, _)| id == comment_id);
+        if is_pure_peleng && !has_comments {
             continue;
         }
         let (Some(master_key), Some(freq)) =
@@ -975,35 +989,35 @@ async fn load_messages_with_comments(
     let mut new_bodies = HashMap::new();
     let mut message_public_ids = HashMap::<i64, String>::new(); // todo fetch from db
     for ids in message_ids {
-        let comments_data = sigint_comment::Entity::find()
-            .join(
-                JoinType::InnerJoin,
-                sigint_comment::Relation::SignalMessage.def(),
-            )
-            .join(
-                JoinType::LeftJoin,
-                signal_message::Relation::SigintInboxItem.def(),
-            )
-            .filter(sigint_comment::Column::SignalMessageId.eq_any(ids))
+        let comments_data = crate::sigint::comments::find_report_comments(
+            dbx,
+            &ids,
+            allowed_comment_logins,
+        )
+        .await
+        .context(h!())?;
+        let comment_message_ids = comments_data
+            .iter()
+            .map(|comment| comment.source_message_id)
+            .collect::<Vec<_>>();
+        let bodies = sigint_inbox_item::Entity::find()
             .select_only()
-            .column(sigint_comment::Column::SignalMessageId)
-            .column(sigint_comment::Column::Comment)
+            .column(sigint_inbox_item::Column::Id)
             .column(sigint_inbox_item::Column::BodyNoheader)
-            .apply_if(allowed_comment_logins, |query, logins| {
-                query.filter(
-                    sigint_comment::Column::LoginId.eq_any(logins.to_vec()),
-                )
-            })
-            .into_tuple::<(i64, String, Option<Json>)>()
+            .filter(sigint_inbox_item::Column::Id.eq_any(comment_message_ids))
+            .into_tuple::<(i64, Option<Json>)>()
             .all(dbx)
             .await
-            .context(h!())?;
-        for (message_id, comment, body) in comments_data {
-            comments.push((message_id, comment));
+            .context(h!())?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+        for comment in comments_data {
+            let message_id = comment.source_message_id;
+            comments.push((message_id, comment.comment));
             messages_with_comment.insert(message_id);
-            if let Some(body) = body {
+            if let Some(Some(body)) = bodies.get(&message_id) {
                 let body: SigintBodyNoHeader =
-                    serde_json::from_value(body).context(h!())?;
+                    serde_json::from_value(body.clone()).context(h!())?;
                 new_bodies.insert(message_id, body.body);
             } else {
                 warn!("no inbox item for message {message_id}");
@@ -1292,6 +1306,8 @@ mod tests {
     #[test]
     fn extract_form_1217_callsigns_treats_placeholder_as_recipient_only() {
         let message = InboxMessage {
+            parent_messages: vec![],
+            intelligence_reports: vec![],
             message_uid: None,
             text: String::new(),
             media: vec![],
@@ -1347,6 +1363,8 @@ mod tests {
     #[test]
     fn extract_form_1217_callsigns_keeps_unknown_placeholder_unknown() {
         let message = InboxMessage {
+            parent_messages: vec![],
+            intelligence_reports: vec![],
             message_uid: None,
             text: String::new(),
             media: vec![],
@@ -1403,6 +1421,8 @@ mod tests {
         (
             id,
             InboxMessage {
+                parent_messages: vec![],
+                intelligence_reports: vec![],
                 message_uid: Some(format!("uid-{id}")),
                 text: text.to_string(),
                 media: vec![],

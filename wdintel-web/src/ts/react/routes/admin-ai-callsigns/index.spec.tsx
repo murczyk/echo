@@ -29,6 +29,7 @@ vi.mock('../../services/api/ai-callsigns', () => ({
 }));
 vi.mock('../../components/PowerSnackbar', () => ({
   usePowerSnackbar: () => ({ notify: mocks.notify }),
+  useOptionalPowerSnackbar: () => ({ notify: mocks.notify }),
 }));
 
 import { AdminAiCallsignsPage } from './index';

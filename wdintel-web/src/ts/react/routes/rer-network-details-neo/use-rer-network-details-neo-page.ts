@@ -24,6 +24,7 @@ import {
 } from './use-rer-network-details-neo-page.shared';
 import { sortNetworkAorsForDisplay } from '../rer-networks-neo/helpers';
 import { useRerNetworkDetailsNeoPageLoad } from './use-rer-network-details-neo-page.load';
+import { buildNetworkCallsignRelationFreqState } from './network-relations';
 import { parseDateInputExclusiveEndInTimeZone, parseDateInputInTimeZone } from '../../utils/misc';
 import { buildSelectableUnitOptions, buildUnitLookupOptions } from '../../utils/unit-search';
 import { hasRole } from '../../utils/roles';
@@ -162,7 +163,21 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
 
   const setRelationsEnabledFreqs = useCallback(
     (relationsEnabledFreqs: string[]) => {
-      setState((current) => ({ ...current, relationsEnabledFreqs: [...relationsEnabledFreqs] }));
+      setState((current) => {
+        const { defaultEnabledFreqs, resolvedEnabledFreqs } = buildNetworkCallsignRelationFreqState(
+          current.relations,
+          relationsEnabledFreqs,
+        );
+        const relationsEnabledFreqsCustomized =
+          resolvedEnabledFreqs.length !== defaultEnabledFreqs.length ||
+          resolvedEnabledFreqs.some((freq) => !defaultEnabledFreqs.includes(freq));
+
+        return {
+          ...current,
+          relationsEnabledFreqs: resolvedEnabledFreqs,
+          relationsEnabledFreqsCustomized,
+        };
+      });
     },
     [setState],
   );

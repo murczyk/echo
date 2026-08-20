@@ -1,6 +1,7 @@
 import { Box, Stack, Tab, Tabs, Typography } from '@mui/material';
 import { useState } from 'react';
 
+import { DeviceGeneralSettingsPanel } from './DeviceGeneralSettingsPanel';
 import { DeviceTagsSettingsPanel } from './DeviceTagsSettingsPanel';
 
 type DeviceAnalysisSettingsTab = 'general' | 'tags';
@@ -43,7 +44,10 @@ export function AdminDeviceAnalyticsPage() {
             role="tabpanel"
             aria-labelledby="device-analysis-settings-tab-general"
             hidden={activeTab !== 'general'}
-          />
+            sx={{ pt: 3 }}
+          >
+            {activeTab === 'general' ? <DeviceGeneralSettingsPanel /> : null}
+          </Box>
           <Box
             id="device-analysis-settings-panel-tags"
             role="tabpanel"

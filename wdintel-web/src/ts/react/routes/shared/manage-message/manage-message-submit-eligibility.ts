@@ -3,6 +3,8 @@ export type ManageMessageSubmitEligibilityInput = {
   parsing: boolean;
   schemaValid: boolean;
   isEditMode: boolean;
+  groupOptional?: boolean;
+  reportTextRequired?: boolean;
   groupsLoading: boolean;
   selectedGroupKey: string;
   accessibleGroupKeys: readonly string[];
@@ -19,6 +21,8 @@ export function isManageMessageSubmitEligible({
   parsing,
   schemaValid,
   isEditMode,
+  groupOptional = false,
+  reportTextRequired = false,
   groupsLoading,
   selectedGroupKey,
   accessibleGroupKeys,
@@ -32,9 +36,13 @@ export function isManageMessageSubmitEligible({
   const deletedIds = new Set(deletedAttachmentIds);
   const retainedAttachmentCount = existingAttachmentIds.filter((id) => !deletedIds.has(id)).length;
   const attachmentCount = retainedAttachmentCount + newAttachmentCount;
-  const hasContent = Boolean(text.trim() || fullBody.trim() || attachmentCount > 0);
-  const hasAccessibleGroup =
-    isEditMode || (!groupsLoading && accessibleGroupKeys.some((key) => key === selectedGroupKey));
+  const hasContent = reportTextRequired
+    ? Boolean(fullBody.trim())
+    : Boolean(text.trim() || fullBody.trim() || attachmentCount > 0);
+  const hasAccessibleGroup = groupOptional
+    ? selectedGroupKey === '' ||
+      (!groupsLoading && accessibleGroupKeys.some((key) => key === selectedGroupKey))
+    : isEditMode || (!groupsLoading && accessibleGroupKeys.some((key) => key === selectedGroupKey));
 
   return (
     !busy &&

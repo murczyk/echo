@@ -1,7 +1,8 @@
 use super::{access, admin, dispatcher, lifecycle};
 use crate::config::{
     read_config, Config, AI_AGENT_COPIED_LOGIN_PREFIX, AI_AGENT_DISPATCHER_ID,
-    AI_AGENT_SETTINGS_ID, AI_AGENT_TEMPLATE_LOGIN_ID,
+    AI_AGENT_MATTERMOST_TIMEOUT_SEC, AI_AGENT_SETTINGS_ID,
+    AI_AGENT_TEMPLATE_LOGIN_ID,
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_container, ai_agent_conversation,
@@ -11,7 +12,9 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::mattermost;
 use crate::types::{Mode, ShortContext};
+use anyhow::Context;
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
@@ -23,6 +26,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+use std::time::Duration;
 use uuid::Uuid;
 
 const LOCAL_AI_AGENT_PROFILE_VERSION: u8 = 1;
@@ -335,9 +339,10 @@ fn validate_profile_engines(
 fn validate_profile_settings(
     profile: &LocalAiAgentProfile,
 ) -> anyhow::Result<()> {
-    access::validate_mattermost_webhook(
+    mattermost::validate_webhook(
         profile.settings.mattermost_webhook_url.as_deref(),
-    )?;
+    )
+    .context(h!())?;
     if profile.settings.security_review_enabled
         && profile.settings.mattermost_webhook_url.is_none()
     {
@@ -399,7 +404,12 @@ async fn validate_profile_webhook_target(
     profile: &LocalAiAgentProfile,
 ) -> anyhow::Result<()> {
     if let Some(webhook) = profile.settings.mattermost_webhook_url.as_deref() {
-        access::resolve_mattermost_webhook(webhook).await?;
+        mattermost::resolve_webhook(
+            webhook,
+            Duration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
+        )
+        .await
+        .context(h!())?;
     }
     Ok(())
 }

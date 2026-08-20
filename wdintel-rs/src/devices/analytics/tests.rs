@@ -6,23 +6,25 @@ use super::types::{
     FileAnalysisInput, RuleExpression, RuleField, RuleMatcher, RuleTestFile,
     TagRuleDefinition,
 };
-use super::DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS;
 use super::{bl, query, queue, worker};
+use crate::devices::files::types::RawSyncDeviceFileItem;
+use crate::devices::{access, ROLE_DEVICE_SOURCE};
 use crate::entities::{device, login, organism};
 use crate::file_registry::entities::{
-    analytics_tag, device_file_tag, file_analysis_control,
-    file_analysis_device_state, file_analysis_reanalysis_job,
-    file_analysis_state, file_entry, sea_orm_active_enums::FileEntryKind,
+    device_file_tag, file_analysis_definition, file_analysis_run,
+    file_analysis_run_item, file_entry, file_revision, file_sync_session,
+    sea_orm_active_enums::{
+        FileEntryKind, FileSyncSessionMode, FileSyncSessionStatus,
+    },
 };
 use crate::functest::tests::{cleanup_locked, mk_login, mk_organism};
 use crate::types::Env;
 use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-    IntoActiveModel, PaginatorTrait, QueryFilter,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder,
 };
 use serde_json::json;
-use std::sync::Arc;
 use uuid::Uuid;
 
 fn file<'a>(
@@ -396,6 +398,7 @@ async fn insert_analytics_test_device(env: &Env) -> Uuid {
         login::ActiveModel {
             login: Set(format!("analytics-worker-{}", Uuid::now_v7())),
             organism_id: Set(Some(organism.id)),
+            roles: Set(json!([ROLE_DEVICE_SOURCE])),
             ..Default::default()
         },
     )
@@ -462,6 +465,13 @@ async fn insert_pending_files(
             created_at: Set(now),
             updated_at: Set(now),
             content_path: Set(None),
+            revision: Set(None),
+            sync_id: Set(None),
+            analysis_input_revision: Set(None),
+            current_analysis_run_id: Set(None),
+            source_file_state: Set(None),
+            source_file_state_settled_at: Set(None),
+            source_file_state_settled_by: Set(None),
         }
         .insert(file_db)
         .await
@@ -471,31 +481,80 @@ async fn insert_pending_files(
     let mut ids = Vec::with_capacity(files.len());
     for (name, absolute_path, extension) in files {
         let file_id = Uuid::now_v7();
-        file_entry::ActiveModel {
-            id: Set(file_id),
-            device_id: Set(device_id),
-            parent_id: Set(Some(root_id)),
-            kind: Set(FileEntryKind::File),
-            name: Set((*name).to_string()),
-            absolute_path: Set(Some((*absolute_path).to_string())),
-            hierarchy_path: Set(format!(
-                "{root_path}.{}",
-                hierarchy_label(file_id)
-            )),
-            mime_type: Set(None),
-            extension: Set(Some((*extension).to_string())),
-            file_metadata_created_at: Set(None),
-            file_metadata_modified_at: Set(None),
-            created_at: Set(now),
-            updated_at: Set(now),
-            content_path: Set(None),
-        }
-        .insert(file_db)
-        .await
-        .unwrap();
+        crate::file_registry::test_support::insert_entry(
+            file_db,
+            file_entry::ActiveModel {
+                id: Set(file_id),
+                device_id: Set(device_id),
+                parent_id: Set(Some(root_id)),
+                kind: Set(FileEntryKind::File),
+                name: Set((*name).to_string()),
+                absolute_path: Set(Some((*absolute_path).to_string())),
+                hierarchy_path: Set(format!(
+                    "{root_path}.{}",
+                    hierarchy_label(file_id)
+                )),
+                mime_type: Set(None),
+                extension: Set(Some((*extension).to_string())),
+                file_metadata_created_at: Set(None),
+                file_metadata_modified_at: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                content_path: Set(None),
+                revision: Set(None),
+                sync_id: Set(None),
+                analysis_input_revision: Set(None),
+                current_analysis_run_id: Set(None),
+                source_file_state: Set(None),
+                source_file_state_settled_at: Set(None),
+                source_file_state_settled_by: Set(None),
+            },
+        )
+        .await;
         ids.push(file_id);
     }
     ids
+}
+
+async fn sync_file_extension(
+    env: &Env,
+    device_id: Uuid,
+    absolute_path: &str,
+    extension: &str,
+) -> Option<Uuid> {
+    let device = device::Entity::find_by_id(device_id)
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let owner = login::Entity::find()
+        .filter(login::Column::Login.eq(device.created_by))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let actor = access::login_with_roles(&owner, &[ROLE_DEVICE_SOURCE]);
+    let response = crate::devices::files::sync::automatic(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &actor,
+        device_id,
+        vec![RawSyncDeviceFileItem {
+            absolute_path: absolute_path.to_string(),
+            mime_type: None,
+            extension: Some(extension.to_string()),
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
+            source_file_state: None,
+        }],
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.sync.counts.accepted, 1);
+    response
+        .sync
+        .analysis_run_id
+        .map(|run_id| Uuid::parse_str(&run_id).unwrap())
 }
 
 async fn save_extension_rule(env: &Env, tag_id: Uuid, extension: &str) {
@@ -523,141 +582,367 @@ async fn file_links(env: &Env, file_id: Uuid) -> Vec<device_file_tag::Model> {
         .unwrap()
 }
 
-async fn analysis_state(
-    env: &Env,
-    file_id: Uuid,
-) -> file_analysis_state::Model {
-    file_analysis_state::Entity::find_by_id(file_id)
+async fn current_definition(env: &Env) -> file_analysis_definition::Model {
+    file_analysis_definition::Entity::find()
+        .order_by_desc(file_analysis_definition::Column::DefinitionSequence)
         .one(env.file_registry_db().unwrap().connection())
         .await
         .unwrap()
         .unwrap()
 }
 
-async fn claim_analysis_device(env: &Env) -> queue::ClaimedAnalysisDevice {
-    queue::claim_pending_analysis_device(
-        env.file_registry_db().unwrap().connection(),
-    )
-    .await
-    .unwrap()
-    .expect("pending analysis device")
+async fn prepare_run(
+    env: &Env,
+    run_id: Uuid,
+    page_size: u64,
+) -> file_analysis_run::Model {
+    let file_db = env.file_registry_db().unwrap().connection();
+    for _ in 0..100 {
+        let run = file_analysis_run::Entity::find_by_id(run_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+        if run.prepared_at.is_some() {
+            return run;
+        }
+        assert!(
+            queue::prepare_next_page(file_db, page_size)
+                .await
+                .unwrap()
+                .did_work
+        );
+    }
+    panic!("analysis run {run_id} did not finish preparation");
 }
 
-async fn schedule_device_reanalysis(env: &Env, device_id: Uuid) -> u64 {
-    let rule_revision =
-        query::rule_set_revision(env.file_registry_db().unwrap().connection())
+async fn run_to_completion(env: &Env, run_id: Uuid, batch_size: u64) {
+    let file_db = env.file_registry_db().unwrap().connection();
+    let cache = worker::RuleCache::default();
+    for _ in 0..100 {
+        let run = file_analysis_run::Entity::find_by_id(run_id)
+            .one(file_db)
             .await
+            .unwrap()
             .unwrap();
-    queue::schedule_reanalysis(
-        env.file_registry_db().unwrap().connection(),
-        Some(device_id),
-        rule_revision,
-    )
-    .await
-    .unwrap()
+        if run.completed_at.is_some() {
+            return;
+        }
+        assert!(worker::run_tick(env, &cache, batch_size, batch_size, 60)
+            .await
+            .unwrap());
+    }
+    panic!("analysis run {run_id} did not complete");
 }
 
 #[tokio::test]
 #[serial_test::serial]
-async fn missing_analysis_state_is_backfilled_as_pending() {
+async fn semantic_rule_changes_publish_immutable_future_definitions() {
     let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let initial_definition = current_definition(env.as_ref()).await;
     let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_id = insert_pending_files(
+    insert_pending_files(
         env.as_ref(),
         device_id,
         &[("report.pdf", r"C:\report.pdf", "pdf")],
     )
-    .await[0];
-    let file_db = env.file_registry_db().unwrap().connection();
-    file_analysis_state::Entity::delete_by_id(file_id)
-        .exec(file_db)
+    .await;
+
+    let tag = bl::create_tag(file_db, "Definition tag".to_string())
         .await
         .unwrap();
-    let control = file_analysis_control::Entity::find_by_id(true)
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    bl::update_tag(file_db, tag_id, "Renamed definition tag".to_string())
+        .await
+        .unwrap();
+    assert_eq!(
+        file_analysis_definition::Entity::find()
+            .count(file_db)
+            .await
+            .unwrap(),
+        1,
+        "tag creation and name-only changes are not evaluator semantics",
+    );
+
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+    let captured_definition = current_definition(env.as_ref()).await;
+    assert!(
+        captured_definition.definition_sequence
+            > initial_definition.definition_sequence
+    );
+    assert_eq!(
+        file_analysis_run::Entity::find()
+            .count(file_db)
+            .await
+            .unwrap(),
+        0,
+        "rule mutations must not implicitly create analysis runs",
+    );
+
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    assert_eq!(run.definition_id, captured_definition.id);
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+    assert_eq!(
+        current_definition(env.as_ref()).await.id,
+        captured_definition.id,
+        "an identical canonical rule set must reuse the definition",
+    );
+    save_extension_rule(env.as_ref(), tag_id, "txt").await;
+    let future_definition = current_definition(env.as_ref()).await;
+    assert_ne!(future_definition.id, captured_definition.id);
+    assert_eq!(
+        file_analysis_run::Entity::find_by_id(run.id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .definition_id,
+        captured_definition.id,
+        "an existing run keeps its captured definition",
+    );
+
+    let mut forbidden = captured_definition.into_active_model();
+    forbidden.analyzer_version = Set(2);
+    assert!(forbidden.update(file_db).await.is_err());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn zero_item_run_reports_only_its_completion_transition() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+
+    let completion = queue::prepare_next_page(file_db, 1).await.unwrap();
+    assert!(completion.did_work);
+    assert_eq!(completion.inserted_count, 0);
+    assert_eq!(completion.completed_run_id, Some(run.id));
+
+    let idle = queue::prepare_next_page(file_db, 1).await.unwrap();
+    assert!(!idle.did_work);
+    assert_eq!(idle.completed_run_id, None);
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn manual_run_is_bounded_and_publishes_write_once_history() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_ids = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[
+            ("first.pdf", r"C:\first.pdf", "pdf"),
+            ("notes.txt", r"C:\notes.txt", "txt"),
+            ("second.pdf", r"C:\second.pdf", "pdf"),
+        ],
+    )
+    .await;
+    let tag = bl::create_tag(file_db, "Bounded PDF".to_string())
+        .await
+        .unwrap();
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    assert_eq!(run.target_source_sequence, Some(3));
+    let later_file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("later.pdf", r"C:\later.pdf", "pdf")],
+    )
+    .await[0];
+
+    let prepared = prepare_run(env.as_ref(), run.id, 2).await;
+    assert_eq!(prepared.item_count, 3);
+    assert_eq!(prepared.completed_count, 0);
+    assert!(prepared.completed_at.is_none());
+    let prepared_file_ids = file_analysis_run_item::Entity::find()
+        .filter(file_analysis_run_item::Column::Id.eq(run.id))
+        .all(file_db)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|item| item.file_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        prepared_file_ids,
+        file_ids.iter().copied().collect(),
+        "a manual run must exclude revisions beyond its source watermark",
+    );
+    assert!(!prepared_file_ids.contains(&later_file_id));
+
+    run_to_completion(env.as_ref(), run.id, 2).await;
+    let completed_run = file_analysis_run::Entity::find_by_id(run.id)
         .one(file_db)
         .await
         .unwrap()
         .unwrap();
-    let mut control = control.into_active_model();
-    control.backfill_cursor = Set(None);
-    control.backfill_complete = Set(false);
-    control.update(file_db).await.unwrap();
+    assert_eq!(completed_run.completed_count, 3);
+    assert!(completed_run.completed_at.is_some());
+    for file_id in &file_ids {
+        let file = file_entry::Entity::find_by_id(*file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(file.current_analysis_run_id, Some(run.id));
+    }
+    assert_eq!(
+        file_entry::Entity::find_by_id(later_file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        None,
+    );
+    assert_eq!(
+        file_links(env.as_ref(), file_ids[0]).await[0].tag_id,
+        tag_id
+    );
+    assert!(file_links(env.as_ref(), file_ids[1]).await.is_empty());
+    assert_eq!(
+        file_links(env.as_ref(), file_ids[2]).await[0].tag_id,
+        tag_id
+    );
 
-    assert!(queue::backfill_missing_analysis_state(file_db, 1)
+    let summary = query::device_summary(file_db, device_id).await.unwrap();
+    assert_eq!(
+        (summary.total_file_count, summary.analyzed_file_count),
+        (4, 3),
+    );
+    assert_eq!(summary.items.len(), 1);
+    assert_eq!(summary.items[0].tag_name, "Bounded PDF");
+    assert_eq!(summary.items[0].file_count, 2);
+    let historical_item =
+        file_analysis_run_item::Entity::find_by_id((run.id, file_ids[0]))
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(
+        historical_item.result_tag_ids.as_deref(),
+        Some(&[tag_id][..])
+    );
+
+    let device = device::Entity::find_by_id(device_id)
+        .one(&env.dbx)
         .await
-        .unwrap());
-    let state = analysis_state(env.as_ref(), file_id).await;
-    assert_eq!(state.source_revision, 1);
-    assert_eq!(state.analyzed_source_revision, 0);
-    assert_eq!(state.analyzed_rule_revision, 0);
-    assert!(state.pending);
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn shared_rule_cache_reuses_and_refreshes_compiled_rules() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let tag = bl::create_tag(
-        env.file_registry_db().unwrap().connection(),
-        "Кеш правил".to_string(),
+        .unwrap()
+        .unwrap();
+    let owner = login::Entity::find()
+        .filter(login::Column::Login.eq(device.created_by))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+    let run_response = bl::get_analysis_run(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &owner,
+        run.id,
     )
     .await
     .unwrap();
-    let tag_id = Uuid::parse_str(&tag.id).unwrap();
-    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
-    let cache = worker::RuleCache::default();
-
-    let first_rules = cache
-        .load_rules(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
+    assert_eq!(run_response.run.run_id, run.id.to_string());
+    assert_eq!(run_response.run.status, "completed");
     assert_eq!(
-        analyze(
-            &first_rules.rules,
-            &file("report.pdf", r"C:\report.pdf", Some("pdf"))
-        )
-        .matched_tags,
-        [tag_id]
+        (
+            run_response.run.item_count,
+            run_response.run.completed_count,
+        ),
+        (3, 3),
     );
 
-    let second_rules = cache
-        .load_rules(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
-    assert!(
-        Arc::ptr_eq(&first_rules.rules, &second_rules.rules),
-        "an unchanged DB revision must reuse the compiled rules"
-    );
-
-    save_extension_rule(env.as_ref(), tag_id, "txt").await;
-    let third_rules = cache
-        .load_rules(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
-    assert!(
-        !Arc::ptr_eq(&second_rules.rules, &third_rules.rules),
-        "a committed rule mutation must invalidate every worker cache"
-    );
-    assert!(analyze(
-        &third_rules.rules,
-        &file("report.pdf", r"C:\report.pdf", Some("pdf"))
+    let first_file_page = bl::list_analysis_run_files(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &owner,
+        run.id,
+        Some(2),
+        None,
     )
-    .matched_tags
-    .is_empty());
+    .await
+    .unwrap();
+    assert_eq!(first_file_page.files.len(), 2);
+    let second_file_page = bl::list_analysis_run_files(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &owner,
+        run.id,
+        Some(2),
+        first_file_page.next_cursor,
+    )
+    .await
+    .unwrap();
+    assert_eq!(second_file_page.files.len(), 1);
+    assert!(second_file_page.next_cursor.is_none());
+    let historical_files = first_file_page
+        .files
+        .into_iter()
+        .chain(second_file_page.files)
+        .map(|file| (Uuid::parse_str(&file.file_id).unwrap(), file))
+        .collect::<std::collections::BTreeMap<_, _>>();
     assert_eq!(
-        analyze(
-            &third_rules.rules,
-            &file("notes.txt", r"C:\notes.txt", Some("txt"))
-        )
-        .matched_tags,
-        [tag_id]
+        historical_files.keys().copied().collect::<Vec<_>>(),
+        file_ids.to_vec(),
     );
+    assert_eq!(
+        historical_files[&file_ids[0]].tag_ids.as_deref(),
+        Some(&[tag_id.to_string()][..]),
+    );
+    assert_eq!(
+        historical_files[&file_ids[1]].tag_ids.as_deref(),
+        Some(&[][..]),
+    );
+
+    let newer_run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    let first_run_page = bl::list_analysis_runs(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &owner,
+        device_id,
+        Some(1),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(first_run_page.runs[0].run_id, newer_run.id.to_string());
+    assert_eq!(first_run_page.runs[0].status, "preparing");
+    let second_run_page = bl::list_analysis_runs(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &owner,
+        device_id,
+        Some(1),
+        first_run_page.next_cursor,
+    )
+    .await
+    .unwrap();
+    assert_eq!(second_run_page.runs[0].run_id, run.id.to_string());
+    assert_eq!(second_run_page.runs[0].status, "completed");
+    assert!(second_run_page.next_cursor.is_none());
+    let mut forbidden = historical_item.into_active_model();
+    forbidden.result_tag_ids = Set(Some(Vec::new()));
+    assert!(forbidden.update(file_db).await.is_err());
+    assert!(file_analysis_run_item::Entity::delete_by_id((
+        run.id,
+        file_ids[0]
+    ))
+    .exec(file_db)
+    .await
+    .is_err());
 }
 
 #[tokio::test]
 #[serial_test::serial]
-async fn reanalysis_preserves_an_unchanged_tag_link() {
+async fn an_open_sync_session_does_not_block_an_existing_run() {
     let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
     let device_id = insert_analytics_test_device(env.as_ref()).await;
     let file_id = insert_pending_files(
         env.as_ref(),
@@ -665,85 +950,40 @@ async fn reanalysis_preserves_an_unchanged_tag_link() {
         &[("report.pdf", r"C:\report.pdf", "pdf")],
     )
     .await[0];
-    let tag = bl::create_tag(
-        env.file_registry_db().unwrap().connection(),
-        "Незмінний PDF".to_string(),
-    )
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), run.id, 1).await;
+
+    let now = Utc::now().fixed_offset();
+    file_sync_session::ActiveModel {
+        id: Set(Uuid::now_v7()),
+        device_id: Set(device_id),
+        mode: Set(FileSyncSessionMode::Explicit),
+        status: Set(FileSyncSessionStatus::Open),
+        next_batch_index: Set(0),
+        received_count: Set(0),
+        accepted_count: Set(0),
+        created_count: Set(0),
+        updated_count: Set(0),
+        rejected_count: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        completed_at: Set(None),
+        expires_at: Set(Some(now + ChronoDuration::hours(1))),
+    }
+    .insert(file_db)
     .await
     .unwrap();
-    let tag_id = Uuid::parse_str(&tag.id).unwrap();
-    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
-    let cache = worker::RuleCache::default();
 
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
-    let before = file_links(env.as_ref(), file_id).await.remove(0);
-    assert_eq!(schedule_device_reanalysis(env.as_ref(), device_id).await, 1,);
-
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
-    let after = file_links(env.as_ref(), file_id).await.remove(0);
+    run_to_completion(env.as_ref(), run.id, 1).await;
     assert_eq!(
-        after, before,
-        "set-delta reconciliation must not rewrite an unchanged membership"
+        file_entry::Entity::find_by_id(file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        Some(run.id),
     );
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn worker_requires_explicit_reanalysis_after_rule_changes_and_restore() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_id = insert_pending_files(
-        env.as_ref(),
-        device_id,
-        &[("report.pdf", r"C:\report.pdf", "pdf")],
-    )
-    .await[0];
-    let tag = bl::create_tag(
-        env.file_registry_db().unwrap().connection(),
-        "Звіти".to_string(),
-    )
-    .await
-    .unwrap();
-    let tag_id = Uuid::parse_str(&tag.id).unwrap();
-    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
-
-    assert!(worker::run_tick(env.as_ref()).await.unwrap());
-    assert_eq!(file_links(env.as_ref(), file_id).await.len(), 1);
-
-    save_extension_rule(env.as_ref(), tag_id, "txt").await;
-    assert!(!worker::run_tick(env.as_ref()).await.unwrap());
-    assert_eq!(
-        file_links(env.as_ref(), file_id).await[0].tag_id,
-        tag_id,
-        "saving a rule must not silently rewrite analyzed files",
-    );
-
-    assert_eq!(schedule_device_reanalysis(env.as_ref(), device_id).await, 1,);
-    assert!(worker::run_tick(env.as_ref()).await.unwrap());
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-
-    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
-    assert_eq!(schedule_device_reanalysis(env.as_ref(), device_id).await, 1,);
-    assert!(worker::run_tick(env.as_ref()).await.unwrap());
-    assert_eq!(file_links(env.as_ref(), file_id).await.len(), 1);
-
-    bl::archive_tag(env.file_registry_db().unwrap().connection(), tag_id)
-        .await
-        .unwrap();
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-    bl::restore_tag(env.file_registry_db().unwrap().connection(), tag_id)
-        .await
-        .unwrap();
-    assert!(!worker::run_tick(env.as_ref()).await.unwrap());
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-
-    assert_eq!(schedule_device_reanalysis(env.as_ref(), device_id).await, 1,);
-    assert!(worker::run_tick(env.as_ref()).await.unwrap());
-    assert_eq!(file_links(env.as_ref(), file_id).await.len(), 1);
 }
 #[tokio::test]
 #[serial_test::serial]
@@ -837,8 +1077,9 @@ async fn rule_test_files_are_persisted_in_order_and_replaced() {
 
 #[tokio::test]
 #[serial_test::serial]
-async fn concurrent_workers_skip_locked_rows_without_duplicate_links() {
+async fn preparation_and_item_claims_are_bounded_and_skip_locked() {
     let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
     let device_id = insert_analytics_test_device(env.as_ref()).await;
     let file_ids = insert_pending_files(
         env.as_ref(),
@@ -849,257 +1090,413 @@ async fn concurrent_workers_skip_locked_rows_without_duplicate_links() {
         ],
     )
     .await;
-    let tag = bl::create_tag(
-        env.file_registry_db().unwrap().connection(),
-        "PDF".to_string(),
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+
+    let (first_preparer, second_preparer) = tokio::join!(
+        queue::prepare_next_page(file_db, 1),
+        queue::prepare_next_page(file_db, 1),
+    );
+    assert!(
+        first_preparer.unwrap().did_work || second_preparer.unwrap().did_work,
+        "one concurrent preparer must claim the run",
+    );
+    let prepared = prepare_run(env.as_ref(), run.id, 1).await;
+    assert_eq!(prepared.item_count, 2);
+    assert_eq!(
+        file_analysis_run_item::Entity::find()
+            .filter(file_analysis_run_item::Column::Id.eq(run.id))
+            .count(file_db)
+            .await
+            .unwrap(),
+        2,
+    );
+
+    let first_claim =
+        queue::claim_analysis_batch(file_db, 1, 60).await.unwrap();
+    let second_claim =
+        queue::claim_analysis_batch(file_db, 1, 60).await.unwrap();
+    assert_eq!(first_claim.len(), 1);
+    assert_eq!(second_claim.len(), 1);
+    assert_ne!(first_claim[0].file_id, second_claim[0].file_id);
+    assert_ne!(first_claim[0].lease_token, second_claim[0].lease_token);
+    assert_eq!(
+        [first_claim[0].file_id, second_claim[0].file_id]
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        file_ids.into_iter().collect(),
+    );
+
+    for (index, claim) in [&first_claim, &second_claim].into_iter().enumerate()
+    {
+        let completion = queue::complete_analysis_batch(
+            file_db,
+            claim[0].lease_token,
+            &[queue::CompletedAnalysisFile {
+                run_id: claim[0].run_id,
+                file_id: claim[0].file_id,
+                metadata_revision: claim[0].metadata_revision,
+                matched_tag_ids: Vec::new(),
+            }],
+        )
+        .await
+        .unwrap();
+        assert_eq!(completion.completed_count, 1);
+        assert_eq!(completion.completed_run_id, (index == 1).then_some(run.id),);
+    }
+    let completed = file_analysis_run::Entity::find_by_id(run.id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(completed.completed_count, 2);
+    assert!(completed.completed_at.is_some());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn newer_run_wins_publication_while_older_history_still_commits() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("report.pdf", r"C:\report.pdf", "pdf")],
+    )
+    .await[0];
+    let tag = bl::create_tag(file_db, "Publication precedence".to_string())
+        .await
+        .unwrap();
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+    let older_run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), older_run.id, 1).await;
+
+    save_extension_rule(env.as_ref(), tag_id, "txt").await;
+    let newer_run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), newer_run.id, 1).await;
+    assert!(newer_run.run_sequence > older_run.run_sequence);
+
+    let older_claim =
+        queue::claim_analysis_batch(file_db, 1, 60).await.unwrap();
+    let newer_claim =
+        queue::claim_analysis_batch(file_db, 1, 60).await.unwrap();
+    assert_eq!(older_claim[0].run_id, older_run.id);
+    assert_eq!(newer_claim[0].run_id, newer_run.id);
+
+    queue::complete_analysis_batch(
+        file_db,
+        newer_claim[0].lease_token,
+        &[queue::CompletedAnalysisFile {
+            run_id: newer_run.id,
+            file_id,
+            metadata_revision: newer_claim[0].metadata_revision,
+            matched_tag_ids: Vec::new(),
+        }],
     )
     .await
     .unwrap();
-    let tag_id = Uuid::parse_str(&tag.id).unwrap();
-    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
-
-    let cache = worker::RuleCache::default();
-    let (first, second) = tokio::join!(
-        worker::run_tick_with(env.as_ref(), &cache, 1),
-        worker::run_tick_with(env.as_ref(), &cache, 1),
-    );
-    let processed = [first.unwrap(), second.unwrap()];
     assert_eq!(
-        processed.into_iter().filter(|processed| *processed).count(),
-        1,
-        "one device must be owned by only one concurrent worker",
+        file_entry::Entity::find_by_id(file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        Some(newer_run.id),
     );
-    assert!(!worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
 
-    let states = file_analysis_state::Entity::find()
-        .filter(
-            file_analysis_state::Column::FileEntryId
-                .is_in(file_ids.iter().copied()),
-        )
-        .all(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
-    assert_eq!(states.len(), 2);
-    assert!(states.iter().all(|state| {
-        !state.pending
-            && state.source_revision == state.analyzed_source_revision
-            && state.required_generation == state.analyzed_generation
-            && state.lease_token.is_none()
-    }));
-
-    let links = device_file_tag::Entity::find()
-        .filter(device_file_tag::Column::TagId.eq(tag_id))
-        .all(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
-    assert_eq!(links.len(), 2);
+    queue::complete_analysis_batch(
+        file_db,
+        older_claim[0].lease_token,
+        &[queue::CompletedAnalysisFile {
+            run_id: older_run.id,
+            file_id,
+            metadata_revision: older_claim[0].metadata_revision,
+            matched_tag_ids: vec![tag_id],
+        }],
+    )
+    .await
+    .unwrap();
     assert_eq!(
-        links
-            .iter()
-            .map(|link| link.file_entry_id)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
-        2,
+        file_entry::Entity::find_by_id(file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        Some(newer_run.id),
+        "an older run may complete historically but cannot republish current state",
+    );
+    assert!(file_links(env.as_ref(), file_id).await.is_empty());
+    assert_eq!(
+        file_analysis_run_item::Entity::find_by_id((older_run.id, file_id))
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .result_tag_ids
+            .as_deref(),
+        Some(&[tag_id][..]),
+    );
+    let summary = query::device_summary(file_db, device_id).await.unwrap();
+    assert_eq!(
+        (summary.total_file_count, summary.analyzed_file_count),
+        (1, 1),
+    );
+    assert!(
+        summary.items.is_empty(),
+        "the overall summary must reflect current links, not an older run"
     );
 }
 
 #[tokio::test]
 #[serial_test::serial]
-async fn worker_finishes_one_device_before_claiming_the_next() {
+async fn evaluator_input_change_blocks_stale_publication_but_keeps_history() {
     let (env, _guard) = cleanup_locked().await.unwrap();
-    let first_device_id = insert_analytics_test_device(env.as_ref()).await;
-    let first_file_ids = insert_pending_files(
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_id = insert_pending_files(
         env.as_ref(),
-        first_device_id,
-        &[
-            ("first-a.txt", r"C:\first-a.txt", "txt"),
-            ("first-b.txt", r"C:\first-b.txt", "txt"),
-        ],
+        device_id,
+        &[("report.pdf", r"C:\report.pdf", "pdf")],
+    )
+    .await[0];
+    let tag = bl::create_tag(file_db, "Stale PDF".to_string())
+        .await
+        .unwrap();
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+    let stale_run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), stale_run.id, 1).await;
+    let stale_claim =
+        queue::claim_analysis_batch(file_db, 1, 60).await.unwrap();
+
+    let current_run_id =
+        sync_file_extension(env.as_ref(), device_id, r"C:\report.pdf", "txt")
+            .await
+            .expect("evaluator input change creates an automatic run");
+    queue::complete_analysis_batch(
+        file_db,
+        stale_claim[0].lease_token,
+        &[queue::CompletedAnalysisFile {
+            run_id: stale_run.id,
+            file_id,
+            metadata_revision: stale_claim[0].metadata_revision,
+            matched_tag_ids: vec![tag_id],
+        }],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        file_entry::Entity::find_by_id(file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        None,
+        "a result for an obsolete evaluator input must not become current",
+    );
+    assert!(file_links(env.as_ref(), file_id).await.is_empty());
+    assert_eq!(
+        file_analysis_run_item::Entity::find_by_id((stale_run.id, file_id))
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .result_tag_ids
+            .as_deref(),
+        Some(&[tag_id][..]),
+    );
+
+    run_to_completion(env.as_ref(), current_run_id, 1).await;
+    assert_eq!(
+        file_entry::Entity::find_by_id(file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        Some(current_run_id),
+    );
+    assert!(file_links(env.as_ref(), file_id).await.is_empty());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn archived_tag_stays_in_history_but_not_current_projection() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("report.pdf", r"C:\report.pdf", "pdf")],
+    )
+    .await[0];
+    let tag = bl::create_tag(file_db, "Archive during analysis".to_string())
+        .await
+        .unwrap();
+    let tag_id = Uuid::parse_str(&tag.id).unwrap();
+    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), run.id, 1).await;
+    let claim = queue::claim_analysis_batch(file_db, 1, 60).await.unwrap();
+
+    bl::archive_tag(file_db, tag_id).await.unwrap();
+    queue::complete_analysis_batch(
+        file_db,
+        claim[0].lease_token,
+        &[queue::CompletedAnalysisFile {
+            run_id: run.id,
+            file_id,
+            metadata_revision: claim[0].metadata_revision,
+            matched_tag_ids: vec![tag_id],
+        }],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        file_entry::Entity::find_by_id(file_id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        Some(run.id),
+    );
+    assert!(file_links(env.as_ref(), file_id).await.is_empty());
+    assert_eq!(
+        file_analysis_run_item::Entity::find_by_id((run.id, file_id))
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .result_tag_ids
+            .as_deref(),
+        Some(&[tag_id][..]),
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn an_expired_item_lease_is_reclaimed_without_double_completion() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("retry.txt", r"C:\retry.txt", "txt")],
+    )
+    .await[0];
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), run.id, 1).await;
+
+    let expired_claim =
+        queue::claim_analysis_batch(file_db, 1, 0).await.unwrap();
+    let retry_claim =
+        queue::claim_analysis_batch(file_db, 1, 60).await.unwrap();
+    assert_eq!(expired_claim[0].file_id, file_id);
+    assert_eq!(retry_claim[0].file_id, file_id);
+    assert_ne!(expired_claim[0].lease_token, retry_claim[0].lease_token);
+    let stale_completion = queue::complete_analysis_batch(
+        file_db,
+        expired_claim[0].lease_token,
+        &[queue::CompletedAnalysisFile {
+            run_id: run.id,
+            file_id,
+            metadata_revision: expired_claim[0].metadata_revision,
+            matched_tag_ids: Vec::new(),
+        }],
     )
     .await;
+    assert!(stale_completion.is_err());
+
+    assert_eq!(
+        queue::complete_analysis_batch(
+            file_db,
+            retry_claim[0].lease_token,
+            &[queue::CompletedAnalysisFile {
+                run_id: run.id,
+                file_id,
+                metadata_revision: retry_claim[0].metadata_revision,
+                matched_tag_ids: Vec::new(),
+            }],
+        )
+        .await
+        .unwrap()
+        .completed_count,
+        1,
+    );
+    let completed = file_analysis_run::Entity::find_by_id(run.id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(completed.completed_count, 1);
+    assert!(completed.completed_at.is_some());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn reanalyze_all_creates_one_bounded_run_per_nonempty_device() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let first_device_id = insert_analytics_test_device(env.as_ref()).await;
     let second_device_id = insert_analytics_test_device(env.as_ref()).await;
-    let second_file_ids = insert_pending_files(
+    let empty_device_id = insert_analytics_test_device(env.as_ref()).await;
+    insert_pending_files(
+        env.as_ref(),
+        first_device_id,
+        &[("first.txt", r"C:\first.txt", "txt")],
+    )
+    .await;
+    insert_pending_files(
         env.as_ref(),
         second_device_id,
         &[
-            ("second-a.txt", r"C:\second-a.txt", "txt"),
-            ("second-b.txt", r"C:\second-b.txt", "txt"),
-        ],
-    )
-    .await;
-    let file_db = env.file_registry_db().unwrap().connection();
-    let cache = worker::RuleCache::default();
-
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
-    let first_states = file_analysis_state::Entity::find()
-        .filter(
-            file_analysis_state::Column::FileEntryId
-                .is_in(first_file_ids.iter().copied()),
-        )
-        .all(file_db)
-        .await
-        .unwrap();
-    let second_states = file_analysis_state::Entity::find()
-        .filter(
-            file_analysis_state::Column::FileEntryId
-                .is_in(second_file_ids.iter().copied()),
-        )
-        .all(file_db)
-        .await
-        .unwrap();
-    let completed_devices = [
-        first_states.iter().all(|state| !state.pending),
-        second_states.iter().all(|state| !state.pending),
-    ];
-    assert_eq!(
-        completed_devices
-            .into_iter()
-            .filter(|completed| *completed)
-            .count(),
-        1,
-        "a batch size of one must still finish exactly one whole device",
-    );
-    assert!(
-        first_states.iter().all(|state| !state.pending)
-            || first_states.iter().all(|state| state.pending)
-    );
-    assert!(
-        second_states.iter().all(|state| !state.pending)
-            || second_states.iter().all(|state| state.pending)
-    );
-
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
-    assert_eq!(
-        file_analysis_state::Entity::find()
-            .filter(
-                file_analysis_state::Column::FileEntryId.is_in(
-                    first_file_ids.iter().chain(&second_file_ids).copied(),
-                ),
-            )
-            .filter(file_analysis_state::Column::Pending.eq(false))
-            .count(file_db)
-            .await
-            .unwrap(),
-        4,
-    );
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn device_progress_requeues_and_counts_updated_files() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_ids = insert_pending_files(
-        env.as_ref(),
-        device_id,
-        &[
-            ("first.txt", r"C:\first.txt", "txt"),
             ("second.txt", r"C:\second.txt", "txt"),
+            ("third.txt", r"C:\third.txt", "txt"),
         ],
     )
     .await;
+
+    let scheduled = queue::create_manual_runs_all(file_db).await.unwrap();
+    assert_eq!(scheduled.created_run_count, 2);
+    let runs = file_analysis_run::Entity::find()
+        .order_by_asc(file_analysis_run::Column::DeviceId)
+        .all(file_db)
+        .await
+        .unwrap();
+    assert_eq!(runs.len(), 2);
+    assert_eq!(
+        runs.iter()
+            .map(|run| run.device_id)
+            .collect::<std::collections::BTreeSet<_>>(),
+        [first_device_id, second_device_id].into_iter().collect(),
+    );
+    assert!(runs
+        .iter()
+        .all(|run| run.definition_id == scheduled.definition_id));
+    assert!(runs.iter().any(|run| {
+        run.device_id == first_device_id
+            && run.target_source_sequence == Some(1)
+    }));
+    assert!(runs.iter().any(|run| {
+        run.device_id == second_device_id
+            && run.target_source_sequence == Some(2)
+    }));
+    assert!(!runs.iter().any(|run| run.device_id == empty_device_id));
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn metadata_only_sync_preserves_current_analysis_projection() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
     let file_db = env.file_registry_db().unwrap().connection();
-    let before = query::device_summary(file_db, device_id).await.unwrap();
-    assert_eq!(
-        (before.total_file_count, before.analyzed_file_count),
-        (2, 0),
-    );
-
-    let cache = worker::RuleCache::default();
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
-    let completed = query::device_summary(file_db, device_id).await.unwrap();
-    assert_eq!(
-        (completed.total_file_count, completed.analyzed_file_count,),
-        (2, 2),
-    );
-    let device_state =
-        file_analysis_device_state::Entity::find_by_id(device_id)
-            .one(file_db)
-            .await
-            .unwrap()
-            .unwrap();
-    assert!(!device_state.pending);
-
-    let file = file_entry::Entity::find_by_id(file_ids[0])
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    let mut file = file.into_active_model();
-    file.name = Set("first-updated.pdf".to_string());
-    file.absolute_path = Set(Some(r"C:\first-updated.pdf".to_string()));
-    file.extension = Set(Some("pdf".to_string()));
-    file.updated_at = Set(Utc::now().naive_utc());
-    file.update(file_db).await.unwrap();
-
-    let updated = query::device_summary(file_db, device_id).await.unwrap();
-    assert_eq!(
-        (updated.total_file_count, updated.analyzed_file_count),
-        (2, 1),
-    );
-    let requeued = file_analysis_device_state::Entity::find_by_id(device_id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(requeued.pending);
-    assert!(requeued.lease_token.is_none());
-
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
-    let reanalyzed = query::device_summary(file_db, device_id).await.unwrap();
-    assert_eq!(
-        (reanalyzed.total_file_count, reanalyzed.analyzed_file_count,),
-        (2, 2),
-    );
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn invalid_persisted_rule_rolls_back_and_leaves_files_pending() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_id = insert_pending_files(
-        env.as_ref(),
-        device_id,
-        &[("pending.pdf", r"C:\pending.pdf", "pdf")],
-    )
-    .await[0];
-    let tag = query::create_tag(
-        env.file_registry_db().unwrap().connection(),
-        Uuid::now_v7(),
-        "Invalid direct write".to_string(),
-    )
-    .await
-    .unwrap();
-    let mut tag: analytics_tag::ActiveModel = tag.into();
-    tag.rule_expression = Set(Some(json!({"op": "unknown"})));
-    let tag = tag
-        .update(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
-
-    let error = worker::run_tick(env.as_ref()).await.unwrap_err();
-    assert!(error.to_string().contains(&tag.id.to_string()));
-    let state = analysis_state(env.as_ref(), file_id).await;
-    assert!(state.pending);
-    assert!(state.lease_token.is_none());
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn metadata_change_during_a_lease_discards_the_stale_result() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
     let device_id = insert_analytics_test_device(env.as_ref()).await;
     let file_id = insert_pending_files(
         env.as_ref(),
@@ -1107,441 +1504,181 @@ async fn metadata_change_during_a_lease_discards_the_stale_result() {
         &[("report.pdf", r"C:\report.pdf", "pdf")],
     )
     .await[0];
-    let tag = bl::create_tag(
-        env.file_registry_db().unwrap().connection(),
-        "Старий PDF".to_string(),
-    )
-    .await
-    .unwrap();
-    let tag_id = Uuid::parse_str(&tag.id).unwrap();
-    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
-    let cache = worker::RuleCache::default();
-    let rule_snapshot = cache
-        .load_rules(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
-    let file_db = env.file_registry_db().unwrap().connection();
-    let device_claim = claim_analysis_device(env.as_ref()).await;
-    let batch = queue::claim_pending_analysis_files(file_db, &device_claim, 1)
-        .await
-        .unwrap();
-    assert_eq!(batch.files.len(), 1);
-    let lease_token = batch.lease_token;
-    assert_eq!(
-        analysis_state(env.as_ref(), file_id).await.lease_token,
-        Some(lease_token)
-    );
-
-    let file = file_entry::Entity::find_by_id(file_id)
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    run_to_completion(env.as_ref(), run.id, 1).await;
+    let before = file_entry::Entity::find_by_id(file_id)
         .one(file_db)
         .await
         .unwrap()
         .unwrap();
-    let mut file = file.into_active_model();
-    file.name = Set("notes.txt".to_string());
-    file.absolute_path = Set(Some(r"C:\notes.txt".to_string()));
-    file.extension = Set(Some("txt".to_string()));
-    file.updated_at = Set(Utc::now().naive_utc());
-    file.update(file_db).await.unwrap();
 
-    let invalidated = analysis_state(env.as_ref(), file_id).await;
-    assert_eq!(invalidated.source_revision, 2);
-    assert!(invalidated.pending);
-    assert_eq!(invalidated.lease_token, Some(lease_token));
-
-    assert_eq!(
-        worker::process_claimed_batch(env.as_ref(), &rule_snapshot, batch)
-            .await
-            .unwrap(),
-        worker::BatchOutcome::Processed,
-    );
-    assert_eq!(
-        queue::release_analysis_device_claim(file_db, &device_claim)
-            .await
-            .unwrap(),
-        1,
-    );
-    let released = analysis_state(env.as_ref(), file_id).await;
-    assert!(released.pending);
-    assert_eq!(released.analyzed_source_revision, 0);
-    assert!(released.lease_token.is_none());
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
+    let source_login = login::Entity::find()
+        .filter(
+            login::Column::Login.eq(device::Entity::find_by_id(device_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .created_by),
+        )
+        .one(&env.dbx)
         .await
-        .unwrap());
-    let completed = analysis_state(env.as_ref(), file_id).await;
-    assert!(!completed.pending);
-    assert_eq!(
-        completed.analyzed_source_revision,
-        completed.source_revision
-    );
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn rule_change_during_a_lease_discards_the_stale_result() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_id = insert_pending_files(
-        env.as_ref(),
+        .unwrap()
+        .unwrap();
+    let actor = access::login_with_roles(&source_login, &[ROLE_DEVICE_SOURCE]);
+    let response = crate::devices::files::sync::automatic(
+        &env.dbx,
+        env.file_registry_db().unwrap(),
+        &actor,
         device_id,
-        &[("report.pdf", r"C:\report.pdf", "pdf")],
-    )
-    .await[0];
-    let tag = bl::create_tag(
-        env.file_registry_db().unwrap().connection(),
-        "Поточний PDF".to_string(),
+        vec![RawSyncDeviceFileItem {
+            absolute_path: r"C:\report.pdf".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            extension: Some("pdf".to_string()),
+            file_metadata_created_at: None,
+            file_metadata_modified_at: None,
+            source_file_state: None,
+        }],
     )
     .await
     .unwrap();
-    let tag_id = Uuid::parse_str(&tag.id).unwrap();
-    save_extension_rule(env.as_ref(), tag_id, "pdf").await;
-    let cache = worker::RuleCache::default();
-    let stale_snapshot = cache
-        .load_rules(env.file_registry_db().unwrap().connection())
-        .await
-        .unwrap();
-    let file_db = env.file_registry_db().unwrap().connection();
-    let device_claim = claim_analysis_device(env.as_ref()).await;
-    let batch = queue::claim_pending_analysis_files(file_db, &device_claim, 1)
-        .await
-        .unwrap();
-    assert_eq!(batch.files.len(), 1);
+    assert_eq!(response.sync.counts.updated, 1);
+    assert_eq!(response.sync.analysis_run_id, None);
 
-    save_extension_rule(env.as_ref(), tag_id, "txt").await;
-    assert!(
-        query::rule_set_revision(env.file_registry_db().unwrap().connection(),)
-            .await
-            .unwrap()
-            > stale_snapshot.revision
-    );
-    assert_eq!(
-        worker::process_claimed_batch(env.as_ref(), &stale_snapshot, batch)
-            .await
-            .unwrap(),
-        worker::BatchOutcome::RuleSnapshotStale,
-    );
-    assert_eq!(
-        queue::release_analysis_device_claim(file_db, &device_claim)
-            .await
-            .unwrap(),
-        1,
-    );
-
-    let released = analysis_state(env.as_ref(), file_id).await;
-    assert!(released.pending);
-    assert_eq!(released.analyzed_rule_revision, 0);
-    assert!(released.lease_token.is_none());
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 1)
-        .await
-        .unwrap());
-    let completed = analysis_state(env.as_ref(), file_id).await;
-    assert!(!completed.pending);
-    assert_eq!(
-        completed.analyzed_rule_revision,
-        query::rule_set_revision(env.file_registry_db().unwrap().connection(),)
-            .await
-            .unwrap()
-    );
-    assert!(file_links(env.as_ref(), file_id).await.is_empty());
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn reanalysis_job_expands_in_bounded_batches_and_excludes_new_files() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_ids = insert_pending_files(
-        env.as_ref(),
-        device_id,
-        &[
-            ("first.pdf", r"C:\first.pdf", "pdf"),
-            ("second.pdf", r"C:\second.pdf", "pdf"),
-            ("third.pdf", r"C:\third.pdf", "pdf"),
-        ],
-    )
-    .await;
-    let cache = worker::RuleCache::default();
-    assert!(worker::run_tick_with(env.as_ref(), &cache, 10)
-        .await
-        .unwrap());
-    for file_id in &file_ids {
-        assert!(!analysis_state(env.as_ref(), *file_id).await.pending);
-    }
-
-    assert_eq!(schedule_device_reanalysis(env.as_ref(), device_id).await, 3);
-    assert_eq!(
-        schedule_device_reanalysis(env.as_ref(), device_id).await,
-        0,
-        "the same active scope and rule revision must deduplicate"
-    );
-    for file_id in &file_ids {
-        let state = analysis_state(env.as_ref(), *file_id).await;
-        assert!(!state.pending);
-        assert_eq!(state.required_generation, 0);
-    }
-
-    let file_db = env.file_registry_db().unwrap().connection();
-    let job = file_analysis_reanalysis_job::Entity::find()
+    let after = file_entry::Entity::find_by_id(file_id)
         .one(file_db)
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(job.scheduled_file_count, 3);
-    assert_eq!(job.expanded_file_count, 0);
-    assert!(job.expanded_at.is_none());
-    let upper_file_entry_id = job.upper_file_entry_id;
-
-    let new_file_id = insert_pending_files(
-        env.as_ref(),
-        device_id,
-        &[("later.pdf", r"C:\later.pdf", "pdf")],
-    )
-    .await[0];
-    assert!(new_file_id > upper_file_entry_id);
-    let device_claim = claim_analysis_device(env.as_ref()).await;
-
-    assert!(queue::expand_next_device_reanalysis_job(
-        file_db,
-        &device_claim,
-        2,
-    )
-    .await
-    .unwrap());
-    let partially_expanded =
-        file_analysis_reanalysis_job::Entity::find_by_id(job.id)
+    assert!(after.revision > before.revision);
+    assert_eq!(
+        after.analysis_input_revision,
+        before.analysis_input_revision,
+    );
+    assert_eq!(after.current_analysis_run_id, Some(run.id));
+    let latest_revision =
+        file_revision::Entity::find_by_id((file_id, after.revision.unwrap()))
             .one(file_db)
             .await
             .unwrap()
             .unwrap();
-    assert_eq!(partially_expanded.expanded_file_count, 2);
-    assert!(partially_expanded.expanded_at.is_none());
     assert_eq!(
-        file_analysis_state::Entity::find()
-            .filter(
-                file_analysis_state::Column::FileEntryId
-                    .is_in(file_ids.iter().copied())
-            )
-            .filter(
-                file_analysis_state::Column::RequiredGeneration
-                    .eq(job.generation)
-            )
+        latest_revision.analysis_input_revision,
+        before.analysis_input_revision.unwrap(),
+    );
+    assert_eq!(
+        file_analysis_run::Entity::find()
             .count(file_db)
             .await
             .unwrap(),
-        2
-    );
-
-    assert!(queue::expand_next_device_reanalysis_job(
-        file_db,
-        &device_claim,
-        2,
-    )
-    .await
-    .unwrap());
-    let expanded = file_analysis_reanalysis_job::Entity::find_by_id(job.id)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(expanded.expanded_file_count, 3);
-    assert!(expanded.expanded_at.is_some());
-    for file_id in &file_ids {
-        let state = analysis_state(env.as_ref(), *file_id).await;
-        assert!(state.pending);
-        assert_eq!(state.required_generation, job.generation);
-    }
-    let new_file_state = analysis_state(env.as_ref(), new_file_id).await;
-    assert!(new_file_state.pending);
-    assert_eq!(new_file_state.required_generation, 0);
-
-    let control = file_analysis_control::Entity::find_by_id(true)
-        .one(file_db)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(control.next_generation, job.generation + 1);
-}
-
-#[tokio::test]
-#[serial_test::serial]
-async fn failed_and_expired_leases_remain_durably_retryable() {
-    let (env, _guard) = cleanup_locked().await.unwrap();
-    let device_id = insert_analytics_test_device(env.as_ref()).await;
-    let file_id = insert_pending_files(
-        env.as_ref(),
-        device_id,
-        &[("retry.pdf", r"C:\retry.pdf", "pdf")],
-    )
-    .await[0];
-    let file_db = env.file_registry_db().unwrap().connection();
-    let device_claim = claim_analysis_device(env.as_ref()).await;
-
-    let first_claim =
-        queue::claim_pending_analysis_files(file_db, &device_claim, 1)
-            .await
-            .unwrap();
-    assert_eq!(first_claim.files.len(), 1);
-    assert_eq!(
-        queue::release_claim_with_error(
-            file_db,
-            first_claim.lease_token,
-            "deliberate failure",
-        )
-        .await
-        .unwrap(),
-        1
-    );
-    let failed = analysis_state(env.as_ref(), file_id).await;
-    assert!(failed.pending);
-    assert!(failed.lease_token.is_none());
-    assert_eq!(failed.attempt_count, 1);
-    assert_eq!(failed.last_error.as_deref(), Some("deliberate failure"));
-    assert!(failed.available_at > Utc::now().fixed_offset());
-    assert!(
-        queue::claim_pending_analysis_files(file_db, &device_claim, 1,)
-            .await
-            .unwrap()
-            .files
-            .is_empty()
-    );
-
-    let mut failed = failed.into_active_model();
-    failed.available_at =
-        Set((Utc::now() - ChronoDuration::seconds(1)).fixed_offset());
-    failed.update(file_db).await.unwrap();
-    let second_claim =
-        queue::claim_pending_analysis_files(file_db, &device_claim, 1)
-            .await
-            .unwrap();
-    assert_eq!(second_claim.files.len(), 1);
-
-    let leased = analysis_state(env.as_ref(), file_id).await;
-    let mut leased = leased.into_active_model();
-    leased.lease_expires_at = Set(Some(
-        (Utc::now() - ChronoDuration::seconds(1)).fixed_offset(),
-    ));
-    leased.update(file_db).await.unwrap();
-    assert_eq!(
-        queue::recover_expired_analysis_leases(file_db, 10)
-            .await
-            .unwrap(),
-        1
-    );
-
-    let recovered = analysis_state(env.as_ref(), file_id).await;
-    assert!(recovered.pending);
-    assert!(recovered.lease_token.is_none());
-    assert_eq!(recovered.attempt_count, 2);
-    assert_eq!(
-        recovered.last_error.as_deref(),
-        Some("analysis lease expired before acknowledgement")
-    );
-
-    let device_state =
-        file_analysis_device_state::Entity::find_by_id(device_id)
-            .one(file_db)
-            .await
-            .unwrap()
-            .unwrap();
-    let mut device_state = device_state.into_active_model();
-    device_state.lease_expires_at = Set(Some(
-        (Utc::now() - ChronoDuration::seconds(1)).fixed_offset(),
-    ));
-    device_state.update(file_db).await.unwrap();
-    assert_eq!(
-        queue::recover_expired_analysis_device_leases(file_db, 10)
-            .await
-            .unwrap(),
         1,
+        "metadata-only sync must not schedule another analysis run",
     );
-    let recovered_device =
-        file_analysis_device_state::Entity::find_by_id(device_id)
-            .one(file_db)
-            .await
-            .unwrap()
-            .unwrap();
-    assert!(recovered_device.pending);
-    assert!(recovered_device.lease_token.is_none());
 }
 
 #[tokio::test]
 #[serial_test::serial]
-async fn analysis_stops_after_ten_failures_until_file_metadata_changes() {
+async fn current_analysis_pointer_rejects_an_incomplete_run_item() {
     let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
     let device_id = insert_analytics_test_device(env.as_ref()).await;
     let file_id = insert_pending_files(
         env.as_ref(),
         device_id,
-        &[("exhausted.pdf", r"C:\exhausted.pdf", "pdf")],
+        &[("report.pdf", r"C:\report.pdf", "pdf")],
     )
     .await[0];
-    let file_db = env.file_registry_db().unwrap().connection();
-    let device_claim = claim_analysis_device(env.as_ref()).await;
+    let completed_run =
+        queue::create_manual_run(file_db, device_id).await.unwrap();
+    run_to_completion(env.as_ref(), completed_run.id, 1).await;
+    let incomplete_run =
+        queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), incomplete_run.id, 1).await;
 
-    for attempt in 1..=DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS {
-        let claim =
-            queue::claim_pending_analysis_files(file_db, &device_claim, 1)
-                .await
-                .unwrap();
-        assert_eq!(claim.files.len(), 1);
-        assert_eq!(
-            queue::release_claim_with_error(
-                file_db,
-                claim.lease_token,
-                "persistent analysis failure",
-            )
-            .await
-            .unwrap(),
-            1,
-        );
-
-        let state = analysis_state(env.as_ref(), file_id).await;
-        assert_eq!(state.attempt_count, attempt);
-        assert_eq!(
-            state.retry_exhausted,
-            attempt == DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS,
-        );
-        assert_eq!(state.pending, attempt < DEVICE_FILE_ANALYSIS_MAX_ATTEMPTS,);
-        if state.pending {
-            let mut state = state.into_active_model();
-            state.available_at =
-                Set((Utc::now() - ChronoDuration::seconds(1)).fixed_offset());
-            state.update(file_db).await.unwrap();
-        }
-    }
-
+    let mut invalid_pointer = file_entry::Entity::find_by_id(file_id)
+        .one(file_db)
+        .await
+        .unwrap()
+        .unwrap()
+        .into_active_model();
+    invalid_pointer.current_analysis_run_id = Set(Some(incomplete_run.id));
+    let error = invalid_pointer.update(file_db).await.unwrap_err();
     assert!(
-        queue::claim_pending_analysis_files(file_db, &device_claim, 1)
-            .await
-            .unwrap()
-            .files
-            .is_empty()
+        error
+            .to_string()
+            .contains("current file analysis must be complete"),
+        "unexpected pointer constraint error: {error}",
     );
     assert_eq!(
-        queue::complete_analysis_device_claim(file_db, &device_claim)
+        file_entry::Entity::find_by_id(file_id)
+            .one(file_db)
             .await
-            .unwrap(),
-        Some(false),
+            .unwrap()
+            .unwrap()
+            .current_analysis_run_id,
+        Some(completed_run.id),
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn run_items_reject_invalid_results_and_late_targets() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("captured.pdf", r"C:\captured.pdf", "pdf")],
+    )
+    .await[0];
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+    prepare_run(env.as_ref(), run.id, 1).await;
+
+    let mut invalid_result =
+        file_analysis_run_item::Entity::find_by_id((run.id, file_id))
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+    invalid_result.result_tag_ids = Set(Some(vec![Uuid::now_v7()]));
+    invalid_result.completed_at = Set(Some(Utc::now().fixed_offset()));
+    let error = invalid_result.update(file_db).await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("analysis result tag ID is not in the run definition"),
+        "unexpected result constraint error: {error}",
     );
 
-    let file = file_entry::Entity::find_by_id(file_id)
+    let late_file_id = insert_pending_files(
+        env.as_ref(),
+        device_id,
+        &[("late.pdf", r"C:\late.pdf", "pdf")],
+    )
+    .await[0];
+    let late_revision = file_revision::Entity::find_by_id((late_file_id, 1))
         .one(file_db)
         .await
         .unwrap()
         .unwrap();
-    let mut file = file.into_active_model();
-    file.name = Set("renamed.pdf".to_string());
-    file.absolute_path = Set(Some(r"C:\renamed.pdf".to_string()));
-    file.update(file_db).await.unwrap();
-
-    let requeued = analysis_state(env.as_ref(), file_id).await;
-    assert!(requeued.pending);
-    assert!(!requeued.retry_exhausted);
-    assert_eq!(requeued.attempt_count, 0);
-    assert!(requeued.last_error.is_none());
+    let error = file_analysis_run_item::ActiveModel {
+        id: Set(run.id),
+        file_id: Set(late_file_id),
+        metadata_revision: Set(late_revision.analysis_input_revision),
+        lease_token: Set(None),
+        lease_expires_at: Set(None),
+        result_tag_ids: Set(None),
+        completed_at: Set(None),
+    }
+    .insert(file_db)
+    .await
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("prepared analysis runs have a fixed item set"),
+        "unexpected fixed-set constraint error: {error}",
+    );
 }

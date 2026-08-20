@@ -551,20 +551,34 @@ type Rendered = {
   container: HTMLDivElement;
   root: Root;
   props?: ComponentProps<typeof MessageCard>;
+  headerProps?: ComponentProps<typeof MessageCardHeader>;
 };
 
 type ResizeObserverCallback = () => void;
 
 const resizeObserverCallbacks: ResizeObserverCallback[] = [];
+const resizeObserverTargets = new Map<ResizeObserverCallback, Set<Element>>();
+let originalWindowResizeObserver: PropertyDescriptor | undefined;
 
 class ResizeObserverMock {
   constructor(private readonly callback: ResizeObserverCallback) {
     resizeObserverCallbacks.push(callback);
+    resizeObserverTargets.set(callback, new Set());
   }
 
-  observe() {}
+  observe(element: Element) {
+    resizeObserverTargets.get(this.callback)?.add(element);
+  }
 
-  disconnect() {}
+  disconnect() {
+    resizeObserverTargets.delete(this.callback);
+  }
+}
+
+function triggerResizeFor(element: Element) {
+  resizeObserverCallbacks
+    .filter((callback) => resizeObserverTargets.get(callback)?.has(element))
+    .forEach((callback) => callback());
 }
 
 function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
@@ -658,7 +672,7 @@ async function renderCard(
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
     onAddFrequencyToFilter: vi.fn(),
-    onComment: vi.fn(),
+    onCreateReport: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
     onToggleTag: vi.fn(),
     ...overrides,
@@ -707,7 +721,7 @@ async function renderHeader(
     topRight: <div />,
     onBookmark: vi.fn(),
     onImportant: vi.fn(),
-    onComment: vi.fn(),
+    onCreateReport: vi.fn(),
     onCopyText: vi.fn(),
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
@@ -723,11 +737,18 @@ async function renderHeader(
     root.render(<MessageCardHeader {...props} />);
   });
 
-  return { container, root };
+  return { container, root, headerProps: props };
 }
 
 function setClientWidth(element: HTMLElement, width: number) {
   Object.defineProperty(element, 'clientWidth', {
+    configurable: true,
+    value: width,
+  });
+}
+
+function setScrollWidth(element: HTMLElement, width: number) {
+  Object.defineProperty(element, 'scrollWidth', {
     configurable: true,
     value: width,
   });
@@ -754,6 +775,16 @@ function getTagButtonLabels(container: HTMLElement): string[] {
   return Array.from(container.querySelectorAll('button'))
     .map((button) => button.textContent?.trim() ?? '')
     .filter((label) => tagLabels.has(label));
+}
+
+function getHeaderBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
+  const element = Array.from(container.querySelectorAll('[data-message-card-text="body2"]')).find(
+    (node) => node.textContent?.trim() === text,
+  );
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Header body2 element not found for text: ${text}`);
+  }
+  return element;
 }
 
 function getMuiTypographyElementByText(container: HTMLElement, text: string): HTMLElement {
@@ -792,6 +823,7 @@ describe('MessageCard', () => {
   const rendered: Rendered[] = [];
 
   beforeEach(() => {
+    originalWindowResizeObserver = Object.getOwnPropertyDescriptor(window, 'ResizeObserver');
     const storage = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -812,6 +844,7 @@ describe('MessageCard', () => {
 
   afterEach(() => {
     resizeObserverCallbacks.splice(0);
+    resizeObserverTargets.clear();
     latestMenuProps.splice(0);
     latestDocumentDialogProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
@@ -822,6 +855,11 @@ describe('MessageCard', () => {
         item.root.unmount();
       });
       item.container.remove();
+    }
+    if (originalWindowResizeObserver) {
+      Object.defineProperty(window, 'ResizeObserver', originalWindowResizeObserver);
+    } else {
+      delete (window as Window & { ResizeObserver?: unknown }).ResizeObserver;
     }
     vi.unstubAllGlobals();
   });
@@ -1069,8 +1107,8 @@ describe('MessageCard', () => {
         'Харків',
       ] as const;
       for (const value of expectedValues) {
-        const typographyElement = getMuiTypographyElementByText(view.container, value);
-        expect(typographyElement.getAttribute('data-mui-variant')).toBe('body2');
+        const textElement = getHeaderBody2ElementByText(view.container, value);
+        expect(textElement.getAttribute('data-message-card-text')).toBe('body2');
         expect(headerText).toContain(value);
       }
       expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
@@ -1137,6 +1175,76 @@ describe('MessageCard', () => {
     const extendedForm = getMuiTypographyElementByText(view.container, 'Коментар');
     expect(extendedForm.getAttribute('data-mui-variant')).toBe('body2');
     expect(window.getComputedStyle(extendedForm).fontWeight).toBe('700');
+  });
+
+  it('renders report summaries below the comment and opens report editing', async () => {
+    const onEditReport = vi.fn();
+    const msg = {
+      ...buildMessage({ extendedForm: 'Коментар' }),
+      intelligenceReports: [
+        {
+          id: 91,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'Короткий текст розвіддонесення',
+          attachmentsCount: 2,
+          timestamp: 1_710_000_000_000,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'report-group',
+        },
+      ],
+    } as InboxMessage;
+    const view = await renderCard({
+      msg,
+      reportGroupInfos: {
+        'report-group': { masterKey: 'report-group', name: 'Група донесення' } as any,
+      },
+      onEditReport,
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Короткий текст розвіддонесення');
+    expect(view.container.textContent).not.toContain('Група донесення');
+    const comment = getMuiTypographyElementByText(view.container, 'Коментар');
+    const editReport = view.container.querySelector(
+      'button[aria-label="Редагувати розвіддонесення"]',
+    );
+    if (!(editReport instanceof HTMLButtonElement)) throw new Error('report edit button not found');
+    expect(comment.compareDocumentPosition(editReport) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+      0,
+    );
+    await click(editReport);
+    expect(onEditReport).toHaveBeenCalledWith(91);
+  });
+
+  it('offers report creation from a standalone report card', async () => {
+    const onCreateReport = vi.fn();
+    const msg = buildMessage({
+      groupMasterKey: 'report-group',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'Короткий текст оригінального повідомлення',
+          attachmentsCount: 1,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'original-group',
+        },
+      ],
+    });
+    const view = await renderCard({ msg, onCreateReport });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Створити розвіддонесення"]'));
+    expect(onCreateReport).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain('Короткий текст оригінального повідомлення');
+    expect(view.container.textContent).not.toContain('Оригінальне повідомлення');
   });
 
   it('linkifies plain message text URLs in the body', async () => {
@@ -1588,7 +1696,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('ALPHA');
   });
 
-  it('orders duty toolbar actions as comment, important, bookmark, copy, edit, navigate, minus', async () => {
+  it('orders duty toolbar actions as report, important, bookmark, copy, edit, navigate, minus', async () => {
     const view = await renderCard({ onEditDetails: vi.fn() });
     rendered.push(view);
 
@@ -1599,7 +1707,7 @@ describe('MessageCard', () => {
       button.getAttribute('aria-label'),
     );
     expect(labels).toEqual([
-      'Редагувати коментар',
+      'Створити розвіддонесення',
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
@@ -1609,7 +1717,7 @@ describe('MessageCard', () => {
     ]);
   });
 
-  it('orders analysis toolbar actions as comment, important, bookmark, copy, navigate, overflow', async () => {
+  it('orders analysis toolbar actions as report, important, bookmark, copy, navigate, overflow', async () => {
     const view = await renderCard({
       displayMode: 'analysis',
       onEditDetails: vi.fn(),
@@ -1624,7 +1732,7 @@ describe('MessageCard', () => {
       button.getAttribute('aria-label'),
     );
     expect(labels).toEqual([
-      'Редагувати коментар',
+      'Створити розвіддонесення',
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
@@ -1636,6 +1744,16 @@ describe('MessageCard', () => {
 
   it('keeps the compact duty toolbar inline when the action column still has room', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: ResizeObserverMock,
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    expect(window.ResizeObserver).toBe(ResizeObserverMock);
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -1646,12 +1764,14 @@ describe('MessageCard', () => {
 
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
-    const root = toolbar.parentElement;
-    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
+    const headerRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    if (!(headerRow instanceof HTMLElement)) throw new Error('header row not found');
 
-    setClientWidth(root, 240);
+    setClientWidth(headerRow, 260);
     await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
+      resizeObserverCallbacks.forEach((callback) => callback());
     });
 
     const updatedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
@@ -1659,8 +1779,173 @@ describe('MessageCard', () => {
     expect(updatedToolbar.getAttribute('role')).toBeNull();
   });
 
+  it('uses stable header capacity to restore the analysis toolbar from stacked to inline', async () => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: ResizeObserverMock,
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const view = await renderHeader({ displayMode: 'analysis' });
+    rendered.push(view);
+
+    const headerRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    const toolbar = view.container.querySelector<HTMLElement>('[aria-label="Дії повідомлення"]');
+    if (!(headerRow instanceof HTMLElement) || !(toolbar instanceof HTMLElement)) {
+      throw new Error('message toolbar header not found');
+    }
+
+    setClientWidth(headerRow, 300);
+    setClientWidth(toolbar.parentElement as HTMLElement, 80);
+    await act(async () => {
+      resizeObserverCallbacks.forEach((callback) => callback());
+    });
+    expect(toolbar.getAttribute('role')).toBeNull();
+
+    setClientWidth(headerRow, 100);
+    await act(async () => {
+      resizeObserverCallbacks.forEach((callback) => callback());
+    });
+    expect(toolbar.getAttribute('role')).toBe('group');
+    expect(toolbar.getAttribute('data-action-grid-columns')).toBe('3');
+
+    setClientWidth(headerRow, 300);
+    await act(async () => {
+      resizeObserverCallbacks.forEach((callback) => callback());
+    });
+    expect(toolbar.getAttribute('role')).toBeNull();
+  });
+
+  it('recalculates toolbar fit when the available action count changes', async () => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: ResizeObserverMock,
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const view = await renderHeader({ onEditDetails: undefined });
+    rendered.push(view);
+    const headerRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    if (!(headerRow instanceof HTMLElement) || !view.headerProps) {
+      throw new Error('header row not found');
+    }
+    const left = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-left="true"]',
+    );
+    const right = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-right="true"]',
+    );
+    if (!(left instanceof HTMLElement) || !(right instanceof HTMLElement)) {
+      throw new Error('header content not found');
+    }
+
+    setClientWidth(headerRow, 220);
+    setScrollWidth(left, 0);
+    setScrollWidth(right, 0);
+    await act(async () => {
+      resizeObserverCallbacks.forEach((callback) => callback());
+    });
+    expect(
+      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
+    ).toBeNull();
+
+    await act(async () => {
+      view.root.render(<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />);
+    });
+    expect(
+      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
+    ).toBe('group');
+  });
+
+  it.each([
+    ['left', '[data-message-card-header-left="true"]'],
+    ['right', '[data-message-card-header-right="true"]'],
+  ])('recalculates the toolbar when %s sibling width changes', async (_side, selector) => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: ResizeObserverMock,
+    });
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    const view = await renderHeader({ onEditDetails: undefined });
+    rendered.push(view);
+
+    const headerRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    const sibling = view.container.querySelector<HTMLElement>(selector);
+    const left = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-left="true"]',
+    );
+    const right = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-right="true"]',
+    );
+    if (
+      !(headerRow instanceof HTMLElement) ||
+      !(sibling instanceof HTMLElement) ||
+      !(left instanceof HTMLElement) ||
+      !(right instanceof HTMLElement)
+    ) {
+      throw new Error('message toolbar measurements not found');
+    }
+
+    setClientWidth(headerRow, 220);
+    setScrollWidth(left, 0);
+    setScrollWidth(right, 0);
+    await act(async () => {
+      triggerResizeFor(headerRow);
+    });
+    expect(
+      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
+    ).toBeNull();
+
+    setScrollWidth(sibling, 80);
+    const unobservedElement = document.createElement('div');
+    await act(async () => {
+      triggerResizeFor(unobservedElement);
+    });
+    expect(
+      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
+    ).toBeNull();
+
+    await act(async () => {
+      triggerResizeFor(sibling);
+    });
+    expect(
+      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
+    ).toBe('group');
+
+    setScrollWidth(sibling, 0);
+    await act(async () => {
+      triggerResizeFor(sibling);
+    });
+    expect(
+      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
+    ).toBeNull();
+  });
+
   it('ignores hidden width measurements before wrapping the compact duty toolbar', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: ResizeObserverMock,
+    });
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -1671,12 +1956,14 @@ describe('MessageCard', () => {
 
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
-    const root = toolbar.parentElement;
-    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
+    const headerRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    if (!(headerRow instanceof HTMLElement)) throw new Error('header row not found');
 
-    setClientWidth(root, 240);
+    setClientWidth(headerRow, 260);
     await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
+      resizeObserverCallbacks.forEach((callback) => callback());
     });
 
     const inlineToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
@@ -1684,9 +1971,9 @@ describe('MessageCard', () => {
       throw new Error('toolbar not found after inline resize');
     expect(inlineToolbar.getAttribute('role')).toBeNull();
 
-    setClientWidth(root, 0);
+    setClientWidth(headerRow, 0);
     await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
+      resizeObserverCallbacks.forEach((callback) => callback());
     });
 
     const hiddenToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
@@ -1694,9 +1981,11 @@ describe('MessageCard', () => {
       throw new Error('toolbar not found after hidden resize');
     expect(hiddenToolbar.getAttribute('role')).toBeNull();
 
-    setClientWidth(root, 180);
+    setClientWidth(headerRow, 100);
+    expect(headerRow.clientWidth).toBe(100);
+    expect(resizeObserverCallbacks).toHaveLength(1);
     await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
+      resizeObserverCallbacks.forEach((callback) => callback());
     });
 
     const wrappedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
@@ -1707,6 +1996,11 @@ describe('MessageCard', () => {
 
   it('wraps the compact duty toolbar into a 4-column grid when the action column is narrow', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      value: ResizeObserverMock,
+    });
+    expect(window.ResizeObserver).toBe(ResizeObserverMock);
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -1717,12 +2011,15 @@ describe('MessageCard', () => {
 
     const toolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
     if (!(toolbar instanceof HTMLElement)) throw new Error('toolbar not found');
-    const root = toolbar.parentElement;
-    if (!(root instanceof HTMLElement)) throw new Error('toolbar root not found');
+    const headerRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    if (!(headerRow instanceof HTMLElement)) throw new Error('header row not found');
 
-    setClientWidth(root, 180);
+    setClientWidth(headerRow, 100);
+    expect(resizeObserverCallbacks).toHaveLength(1);
     await act(async () => {
-      resizeObserverCallbacks.at(-1)?.();
+      resizeObserverCallbacks.forEach((callback) => callback());
     });
 
     const updatedToolbar = view.container.querySelector('[aria-label="Дії повідомлення"]');
@@ -1738,20 +2035,22 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
   });
 
-  it('blurs the focused toolbar button before opening the comment action', async () => {
-    const onComment = vi.fn();
-    const view = await renderCard({ onComment });
+  it('blurs the focused toolbar button before opening the report action', async () => {
+    const onCreateReport = vi.fn();
+    const view = await renderCard({ onCreateReport });
     rendered.push(view);
 
-    const commentButton = view.container.querySelector('button[aria-label="Редагувати коментар"]');
-    if (!(commentButton instanceof HTMLButtonElement)) throw new Error('comment button not found');
-    commentButton.focus();
-    expect(document.activeElement).toBe(commentButton);
+    const reportButton = view.container.querySelector(
+      'button[aria-label="Створити розвіддонесення"]',
+    );
+    if (!(reportButton instanceof HTMLButtonElement)) throw new Error('report button not found');
+    reportButton.focus();
+    expect(document.activeElement).toBe(reportButton);
 
-    await click(commentButton);
+    await click(reportButton);
 
-    expect(onComment).toHaveBeenCalledTimes(1);
-    expect(document.activeElement).not.toBe(commentButton);
+    expect(onCreateReport).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(reportButton);
   });
 
   it('shows the edit action in the toolbar and only delete in the overflow menu', async () => {
@@ -2239,6 +2538,15 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
     expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
+    const tagButton = getButton(view.container, 'переміщення');
+    const tipId = tagButton.getAttribute('aria-describedby');
+    expect(tipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
+      'Користувачі: tester',
+    );
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
+      'Боти: bot (92%)',
+    );
     expect(view.container.textContent).toContain('бот помилився');
     expect(view.container.textContent).toContain('закрити');
 
@@ -2248,6 +2556,37 @@ describe('MessageCard', () => {
     expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
     expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
     expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
+  it('keeps contribution description ids unique across mounted cards with the same tag', async () => {
+    const sharedMsg = buildMessage({
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: 'alpha', model: null, organismId: 1 },
+        { id: 2, tagId: 3, confidence: 0.5, login: null, model: 'bot-a', organismId: null },
+      ],
+    });
+    const otherMsg = buildMessage({
+      text: 'Друга картка',
+      inboxTags: [
+        { id: 3, tagId: 3, confidence: 1, login: 'beta', model: null, organismId: 1 },
+        { id: 4, tagId: 3, confidence: 0.8, login: null, model: 'bot-b', organismId: null },
+      ],
+    });
+    const first = await renderCard({ msg: sharedMsg, onToggleTag: vi.fn() });
+    const second = await renderCard({ id: 43, msg: otherMsg, onToggleTag: vi.fn() });
+    rendered.push(first, second);
+
+    const firstTipId = getButton(first.container, 'переміщення').getAttribute('aria-describedby');
+    const secondTipId = getButton(second.container, 'переміщення').getAttribute('aria-describedby');
+    expect(firstTipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(secondTipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(firstTipId).not.toBe(secondTipId);
+    expect(firstTipId != null ? document.getElementById(firstTipId)?.textContent : null).toContain(
+      'alpha',
+    );
+    expect(
+      secondTipId != null ? document.getElementById(secondTipId)?.textContent : null,
+    ).toContain('beta');
   });
 
   it('does not render analysis-only callsign controls in duty mode', async () => {
@@ -3114,17 +3453,24 @@ describe('MessageCard', () => {
   });
 
   it('shows selected tags first and can reveal the rest on demand', async () => {
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      width: TAG_ROW_MEASURE_WIDTH_PX,
-      height: 32,
-      x: 0,
-      y: 0,
-      top: 0,
-      left: 0,
-      right: TAG_ROW_MEASURE_WIDTH_PX,
-      bottom: 32,
-      toJSON: () => ({}),
-    } as DOMRect);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const isTag = this.hasAttribute('data-message-card-tag-id');
+        const width = isTag ? 60 : TAG_ROW_MEASURE_WIDTH_PX;
+        const top = isTag && this.getAttribute('data-message-card-tag-id') !== '3' ? 40 : 0;
+        return {
+          width,
+          height: 32,
+          x: 0,
+          y: top,
+          top,
+          left: 0,
+          right: width,
+          bottom: top + 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
 
     try {
       const view = await renderCard({ tagsLayout: 'compact' });
@@ -3145,6 +3491,54 @@ describe('MessageCard', () => {
       expect(view.container.textContent).toContain('палітра');
       expect(view.container.textContent).toContain('іфо');
       expect(view.container.textContent).toContain('розвідка');
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('keeps compact expand when long tag chips exceed the estimate former 240px cap', async () => {
+    const cardWidthPx = 500;
+    const chipWidthPx = 300;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function mockRect(this: HTMLElement) {
+        const isChip = this.hasAttribute('data-message-card-tag-id');
+        const width = isChip ? chipWidthPx : cardWidthPx;
+        return {
+          width,
+          height: 32,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+    try {
+      const longA = 'Дуже-довга-адмін-мітка-альфа-для-компактного-режиму';
+      const longB = 'Дуже-довга-адмін-мітка-бета-для-компактного-режиму';
+      const view = await renderCard({
+        tagsLayout: 'compact',
+        tagsMap: {
+          3: { id: 3, label: longA, isPalitra: false },
+          4: { id: 4, label: longB, isPalitra: false },
+        } as Record<number, Tag>,
+        msg: buildMessage({
+          tags: [3, 4],
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: null },
+          ],
+        }),
+      });
+      rendered.push(view);
+
+      // Two ~300px chips in a ~500px card must not be treated as a single unwrapped row.
+      expect(view.container.textContent).toContain(longA);
+      expect(view.container.textContent).toContain('розгорнути');
+      expect(view.container.textContent).not.toContain(longB);
     } finally {
       rectSpy.mockRestore();
     }
@@ -3246,7 +3640,9 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Позначити як важливе"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Додати в закладки"]')).toBeNull();
-    expect(view.container.querySelector('button[aria-label="Редагувати коментар"]')).toBeNull();
+    expect(
+      view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
+    ).toBeNull();
     expect(view.container.querySelector('button[aria-label^="Виключити"]')).toBeNull();
 
     await click(view.container.querySelector('[data-message-card-tag-id="3"]') as HTMLElement);

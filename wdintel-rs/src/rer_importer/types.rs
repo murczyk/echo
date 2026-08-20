@@ -11,6 +11,30 @@ use std::sync::Arc;
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct InboxMessageSummary {
+    pub id: i64,
+    #[serde(default)]
+    pub is_accessible: bool,
+    #[serde(default)]
+    pub is_deleted: bool,
+    pub text: String,
+    #[serde(default)]
+    pub attachments_count: i64,
+    pub timestamp: Option<i64>,
+    pub date: Option<String>,
+    pub time: Option<String>,
+    #[serde(default)]
+    pub group_name: Option<String>,
+    pub group_master_key: Option<String>,
+    #[serde(default)]
+    pub coords: Option<String>,
+    #[serde(default)]
+    pub media_file_names: Vec<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct InboxMessage {
     pub message_uid: Option<String>,
     pub text: String,
@@ -60,6 +84,10 @@ pub struct InboxMessage {
     pub device_name: Option<String>,
     pub inbox_tags: Option<Vec<InboxMessageTag>>,
     pub metadata: Vec<InboxMessageMetadata>,
+    #[serde(default)]
+    pub parent_messages: Vec<InboxMessageSummary>,
+    #[serde(default)]
+    pub intelligence_reports: Vec<InboxMessageSummary>,
 }
 
 #[derive(
@@ -177,6 +205,8 @@ impl From<InboxInsertPayload> for InboxMessage {
             device_name: None,
             inbox_tags: payload.inbox_tags,
             metadata: payload.metadata,
+            parent_messages: vec![],
+            intelligence_reports: vec![],
         }
     }
 }
@@ -251,6 +281,7 @@ pub struct MapPointsReq {
     pub inbox_items_filter: InboxMessagesReq,
     pub map_filter: Option<MapPointsFilter>,
     pub page_id: Option<String>,
+    pub show_settlements: Option<bool>,
 }
 
 #[derive(
@@ -259,6 +290,27 @@ pub struct MapPointsReq {
 pub struct MapPointsRsp {
     pub network_units: Vec<NetworkUnit>,
     pub points: Vec<FreqDetailedPoint>,
+    pub settlements: Vec<MapSettlement>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    FromQueryResult,
+)]
+pub struct MapSettlement {
+    pub settlement_id: i32,
+    pub name: String,
+    pub region: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub inbox_item_count: i64,
 }
 
 #[derive(
@@ -1699,10 +1751,12 @@ mod tests {
             "callsign_tokens".to_string(),
             "coords_with_locality".to_string(),
             "device_name".to_string(),
+            "intelligence_reports".to_string(),
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),
             "network_name".to_string(),
+            "parent_messages".to_string(),
             "signal_tokens".to_string(),
             "text_marked".to_string(),
             "unit_ids".to_string(),

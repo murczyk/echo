@@ -238,6 +238,7 @@ mod tests {
             file_name: file_name.map(str::to_string),
             size_bytes: 0,
             is_encrypted: true,
+            storage_key: None,
             created_at: DateTime::default(),
         }
     }

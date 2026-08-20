@@ -38,7 +38,6 @@ function TestHost(props: {
   bodyText: string;
   messagePointEtalons?: string[];
   showPointLinks?: boolean;
-  linkCallsigns?: boolean;
   message?: InboxMessage;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
   messageId?: number;
@@ -57,7 +56,6 @@ function TestHost(props: {
     <div>
       {renderMarkedText(props.nodes, props.bodyText, props.messagePointEtalons, {
         showPointLinks: props.showPointLinks,
-        linkCallsigns: props.linkCallsigns,
         message: props.message,
         onOpenPointsOnMap: props.onOpenPointsOnMap,
         messageId: props.messageId,
@@ -237,10 +235,10 @@ describe('MarkedText', () => {
       );
     });
 
-    const link = container.querySelector('a.content-token--ADP');
-    expect(link).not.toBeNull();
-    expect(link?.getAttribute('href')).toBe('/rer-callsigns-neo?callsign=ABCD&developing=All');
-    expect(link?.textContent).toBe('ABCD');
+    const callsign = container.querySelector('[data-testid="callsign-token"]');
+    expect(callsign).not.toBeNull();
+    expect(callsign?.textContent).toBe('ABCD');
+    expect(container.querySelector('a[href*="/rer-callsigns-neo"]')).toBeNull();
   });
 
   it('renders a filled badge for callsigns that have matching message-network info', async () => {
@@ -274,7 +272,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('WOLF');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
@@ -306,7 +304,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('GHOST');
     expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
   });
@@ -499,7 +497,6 @@ describe('MarkedText', () => {
         <TestHost
           nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
           bodyText="wolf"
-          linkCallsigns={false}
           message={{ freq: '100.000', networkIds: [10] } as InboxMessage}
           callsignInfoMap={{
             wolf: {
@@ -560,10 +557,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
-    expect(container.querySelector('a.content-token--ADP')?.getAttribute('href')).toBe(
-      '/rer-callsigns-neo?callsign=WOLF&developing=All',
-    );
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('WOLF');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
   });
@@ -622,7 +616,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('FOX');
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
@@ -633,7 +627,7 @@ describe('MarkedText', () => {
         <TestHost
           nodes={[{ CNCallsignC: { text: 'fox', begin: 0, end: 3, etalon: 'fox' } }]}
           bodyText="fox"
-          message={{ freq: null, networkIds: [10] } as InboxMessage}
+          message={{ freq: null } as InboxMessage}
           callsignInfoMap={{
             fox: {
               callsign: 'fox',
@@ -672,7 +666,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('FOX');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('FOX');
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
   });
@@ -707,7 +701,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('БЕТОН');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('БЕТОН');
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
   });
 
@@ -717,7 +711,6 @@ describe('MarkedText', () => {
         <TestHost
           nodes={[{ CNCallsignC: { text: 'fox', begin: 0, end: 3, etalon: 'fox' } }]}
           bodyText="fox"
-          linkCallsigns={false}
           message={{ freq: null, networkIds: null } as InboxMessage}
           callsignInfoMap={{
             fox: {
@@ -763,7 +756,7 @@ describe('MarkedText', () => {
 
     const muted = container.querySelector('[data-testid="callsign-hint-plain-missing"]');
     expect(muted).toBeNull();
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('GHOST');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('GHOST');
     expect(container.querySelector('span.content-token--ADP')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
@@ -803,7 +796,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('РЖАВИЙ');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('РЖАВИЙ');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).toBeNull();
   });
@@ -839,7 +832,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ЛУНА');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('ЛУНА');
     expect(container.querySelector('[data-testid="callsign-hint-badge-network"]')).toBeNull();
     expect(container.querySelector('[data-testid="callsign-hint-badge-system"]')).not.toBeNull();
   });
@@ -859,7 +852,7 @@ describe('MarkedText', () => {
       );
     });
 
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('ГЛОБУС');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('ГЛОБУС');
     expect(container.querySelector('[data-testid="callsign-hint-plain-missing"]')).toBeNull();
   });
 
@@ -893,8 +886,8 @@ describe('MarkedText', () => {
       );
     });
 
-    const link = container.querySelector('a.content-token--ADP');
-    expect(link).not.toBeNull();
+    const callsign = container.querySelector('[data-testid="callsign-token"]');
+    expect(callsign).not.toBeNull();
     expect(CALLSIGN_TOOLTIP_ITEM_SX.whiteSpace).toBe('normal');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.overflowWrap).toBe('anywhere');
     expect(CALLSIGN_TOOLTIP_ITEM_SX.wordBreak).toBe('break-word');
@@ -906,7 +899,7 @@ describe('MarkedText', () => {
         <TestHost
           nodes={[{ CNCallsignC: { text: 'wolf', begin: 0, end: 4, etalon: 'wolf' } }]}
           bodyText="wolf"
-          message={{ freq: null, networkIds: [10] } as InboxMessage}
+          message={{ freq: null } as InboxMessage}
           callsignInfoMap={{
             wolf: {
               callsign: 'wolf',
@@ -1019,15 +1012,9 @@ describe('MarkedText', () => {
       );
     });
     const button = container.querySelector('button[data-testid="callsign-hint-badge-system"]');
-    expect(button?.getAttribute('aria-label')).toBe('Інформація про позивний');
+    expect(button).toBeNull();
     expect(container.querySelector('button[data-testid="callsign-hint-badge-network"]')).toBeNull();
-    await act(async () => {
-      button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    });
-    const tooltip = document.querySelector('[role="tooltip"]');
-    expect(tooltip?.textContent).toContain('Позивний присутній в інших мережах:');
-    expect(tooltip?.textContent).not.toContain('Позивні з каталогу:');
+    expect(document.querySelector('[role="tooltip"]')).toBeNull();
   });
 
   it('keeps callsign contrast above WCAG AA in light and dark themes', () => {
@@ -1180,7 +1167,7 @@ describe('MarkedText', () => {
     expect(link?.textContent).toBe('https://example.com/test');
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(container.querySelector('a.content-token--ADP')?.textContent).toBe('WOLF');
+    expect(container.querySelector('[data-testid="callsign-token"]')?.textContent).toBe('WOLF');
     expect(container.textContent).toContain('Посилання: https://example.com/test).');
   });
 

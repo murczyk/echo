@@ -319,6 +319,7 @@ pub async fn create_redis_stream(
         event_type: EventType::ETGeneric,
         created_at: Utc::now().timestamp(),
         origin: None,
+        intelligence_report: false,
     };
     let val = serde_json::to_string(&val).c(h!())?.as_bytes().to_vec();
     redis
@@ -403,6 +404,7 @@ mod tests {
         .expect("legacy event should deserialize");
 
         assert_eq!(event.origin, None);
+        assert!(!event.intelligence_report);
         assert_eq!(event.event_type, EventType::ETInboxChanged(7));
     }
 

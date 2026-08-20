@@ -823,6 +823,7 @@ pub async fn upsert_group_area_of_responsibility(
     master_key: &str,
     aor_ids: Option<Vec<i64>>,
 ) -> Result<Vec<Model>, AppError> {
+    crate::battle_line::lock_updates(txn).await.c(h!())?;
     let existing_aor_ids = signal_group_aor::Entity::find()
         .filter(signal_group_aor::Column::MasterKey.eq(master_key))
         .select_only()
@@ -886,6 +887,9 @@ pub async fn upsert_group_area_of_responsibility(
         }
     };
     if aor_ids_changed {
+        crate::battle_line::requeue_settlement_links_for_group(txn, master_key)
+            .await
+            .c(h!())?;
         crate::stats::enqueue_group_stats_recalculation_for_group_history(
             txn,
             master_key,

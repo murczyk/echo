@@ -111,7 +111,6 @@ export type UseAnalysisDataResult = {
   ) => void;
   onPrependLocalMessage: (messageId: number, message: InboxMessage) => void;
   onDeleteMessage: (messageId: number) => Promise<void>;
-  onSaveMessageComment: (messageId: number, comment: string | null) => Promise<void>;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => Promise<void>;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => Promise<void>;
@@ -121,6 +120,7 @@ export type UseAnalysisDataResult = {
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
+  setShowSettlements: (show: boolean) => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
   summaryLoading: boolean;
   summaryLoaded: boolean;

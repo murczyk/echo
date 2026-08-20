@@ -291,7 +291,7 @@ fn get_region_names(
     Ok(region_names.clone())
 }
 
-fn find_settlements_by_name_scope(
+pub(crate) fn find_settlements_by_name_scope(
     settlements: Arc<RwLock<SettlementsDataConfig>>,
     query: String,
     m_region: Option<String>,

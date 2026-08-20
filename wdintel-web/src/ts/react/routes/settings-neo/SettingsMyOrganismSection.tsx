@@ -1,5 +1,4 @@
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
-import type { MRT_ColumnDef } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { TagAdmin } from '../../../../Bindings';
@@ -13,6 +12,7 @@ import {
 } from '../../components/mui-customized/table/table-state-provider';
 import { listCurrentOrganismTags } from '../../services/api/tags';
 import { SettingsNeoTable } from './SettingsNeoTable';
+import type { AppMrtColumnDef } from '../../components/mui-customized/table/get-default-table-options';
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -90,7 +90,7 @@ export function SettingsMyOrganismSection() {
 
   const visibleTags = useMemo(() => tags.filter((tag) => tag.enabled), [tags]);
 
-  const columns = useMemo<MRT_ColumnDef<TagAdmin>[]>(() => {
+  const columns = useMemo<AppMrtColumnDef<TagAdmin>[]>(() => {
     const noWrapHeadCellProps = {
       sx: { ...CUSTOM_STYLES.muiTableHeadCellProps.sx, whiteSpace: 'nowrap' },
     };

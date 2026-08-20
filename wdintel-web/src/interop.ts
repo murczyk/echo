@@ -35,6 +35,7 @@ import './ts/web-components/small-map.ts';
 import './ts/web-components/floating-popup.ts';
 import './ts/react/aor-neo-element';
 import './ts/react/admin-directions-neo-element';
+import './ts/react/admin-battle-line-element';
 import './ts/react/aor-neo-form-element';
 import './ts/react/control-panel-neo-element';
 import './ts/react/keys-neo-element';
@@ -46,6 +47,7 @@ import './ts/react/admin-all-reports-element';
 import './ts/react/admin-unit-duplicates-element';
 import './ts/react/admin-unit-inconsistent-element';
 import './ts/react/admin-unit-unparsed-element';
+import './ts/react/admin-units-element';
 import './ts/react/admin-ai-callsigns-element';
 import './ts/react/admin-device-analytics-element';
 import './ts/react/admin-ai-agent-element';
@@ -808,7 +810,13 @@ export const onReady = ({ app, env }) => {
 
   if (app.ports && app.ports.shared_dispatchInboxChanged) {
     app.ports.shared_dispatchInboxChanged.subscribe(
-      (events: Array<{ messageId: number; origin: string | null }>) => {
+      (
+        events: Array<{
+          messageId: number;
+          origin: string | null;
+          intelligenceReport: boolean;
+        }>,
+      ) => {
         window.dispatchEvent(
           new CustomEvent('echo-inbox-changed', {
             detail: { events },

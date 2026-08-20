@@ -18,7 +18,7 @@ import {
   type SxProps,
 } from '@mui/material';
 import { type Theme, useTheme } from '@mui/material/styles';
-import { MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
@@ -30,6 +30,7 @@ import {
 } from '../../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { InternalTableActions } from '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
@@ -246,10 +247,9 @@ function AnalysisSummaryTableCardInner({
     [],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data,
-    ...defaultMRTOptions,
     getRowId: (row) => row.freq,
     enableSorting: true,
     enableSortingRemoval: false,

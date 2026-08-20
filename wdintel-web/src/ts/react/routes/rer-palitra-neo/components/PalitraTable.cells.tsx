@@ -1,11 +1,16 @@
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { Box, Stack, Tooltip, Typography } from '@mui/material';
-import { MRT_ColumnDef } from 'material-react-table';
 
 import type { Palitra } from '../../../../../Bindings';
 import { PowerChip } from '../../../components/PowerChip';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../../components/mui-customized/table/custom-styles';
+import {
+  mrtCustomCell,
+  mrtTextCell,
+  type AppMrtColumnDef,
+} from '../../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../../components/mui-customized/table/mrt-overflow';
 import { formatDateTime24 } from '../../../utils/misc';
 import type { FolderTableRowView, TableRowView } from '../types';
 
@@ -46,9 +51,12 @@ function renderFolderNameCell(
       }}
     >
       <FolderOutlinedIcon fontSize="small" color="action" />
-      <Typography variant="body2" fontWeight={700} noWrap>
-        {formatText(row.name)}
-      </Typography>
+      <MrtOverflowText
+        displayValue={formatText(row.name)}
+        fullValue={formatText(row.name)}
+        interactive
+        sx={{ flex: '1 1 auto', fontWeight: 700 }}
+      />
       <PowerChip
         label={'Палітр: ' + String(row.totalCount)}
         size="small"
@@ -122,13 +130,14 @@ function renderNameCell(row: TableRowView, onToggleFolderExpanded: (path: string
       direction="row"
       spacing={1}
       alignItems="center"
-      flexWrap="wrap"
       useFlexGap
-      sx={{ pl: leftPadding }}
+      sx={{ minWidth: 0, width: '100%', pl: leftPadding }}
     >
-      <Typography variant="body2" fontWeight={600}>
-        {formatText(row.name)}
-      </Typography>
+      <MrtOverflowText
+        displayValue={formatText(row.name)}
+        fullValue={formatText(row.name)}
+        sx={{ minWidth: 0, flex: '1 1 auto', fontWeight: 600 }}
+      />
       {row.palitra.missingInGoi ? (
         <Tooltip title="Палітра відсутня на сервері ГОІ">
           <WarningAmberIcon color="error" fontSize="small" />
@@ -202,14 +211,15 @@ export function buildLoadingRows(): TableRowView[] {
 
 export function buildPalitraTableColumns(
   onToggleFolderExpanded: (path: string) => void,
-): MRT_ColumnDef<TableRowView>[] {
+): AppMrtColumnDef<TableRowView>[] {
   return [
     {
       header: 'Назва',
       accessorKey: 'name',
       id: 'name',
       size: 360,
-      Cell: ({ row }) => renderNameCell(row.original, onToggleFolderExpanded),
+      meta: { overflowMode: 'custom', overflowOwner: 'shared-text' },
+      Cell: mrtCustomCell(({ row }) => renderNameCell(row.original, onToggleFolderExpanded)),
     },
     {
       header: 'Колір',
@@ -217,6 +227,7 @@ export function buildPalitraTableColumns(
       id: 'colorHex',
       size: 140,
       enableSorting: false,
+      meta: { overflowMode: 'none' },
       Cell: ({ row }) =>
         row.original.kind === 'folder' ? (
           renderEmptyFolderCell()
@@ -238,19 +249,13 @@ export function buildPalitraTableColumns(
       id: 'sourceFileName',
       size: 240,
       enableSorting: false,
-      Cell: ({ row }) =>
-        row.original.kind === 'folder' ? (
-          renderEmptyFolderCell()
-        ) : (
-          <Typography
-            variant="body2"
-            sx={{ maxWidth: 280 }}
-            noWrap
-            title={formatText(row.original.sourceFileName)}
-          >
-            {formatText(row.original.sourceFileName)}
-          </Typography>
-        ),
+      meta: { overflowMode: 'text' },
+      Cell: mrtTextCell({
+        displayValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatText(row.original.sourceFileName),
+        fullValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatText(row.original.sourceFileName),
+      }),
     },
     {
       header: 'Додано',
@@ -259,10 +264,13 @@ export function buildPalitraTableColumns(
       size: 170,
       enableColumnFilter: false,
       enableSorting: false,
-      Cell: ({ row }) =>
-        row.original.kind === 'folder'
-          ? renderEmptyFolderCell()
-          : formatDateTime24(row.original.lastUploadedAtTs),
+      meta: { overflowMode: 'text' },
+      Cell: mrtTextCell({
+        displayValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatDateTime24(row.original.lastUploadedAtTs),
+        fullValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatDateTime24(row.original.lastUploadedAtTs),
+      }),
     },
     {
       header: 'Автор',
@@ -270,8 +278,13 @@ export function buildPalitraTableColumns(
       id: 'author',
       size: 180,
       enableSorting: false,
-      Cell: ({ row }) =>
-        row.original.kind === 'folder' ? renderEmptyFolderCell() : formatText(row.original.author),
+      meta: { overflowMode: 'text' },
+      Cell: mrtTextCell({
+        displayValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatText(row.original.author),
+        fullValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatText(row.original.author),
+      }),
     },
     {
       header: 'Доступ',
@@ -279,14 +292,13 @@ export function buildPalitraTableColumns(
       id: 'accessSummary',
       enableSorting: false,
       size: 320,
-      Cell: ({ row }) =>
-        row.original.kind === 'folder' ? (
-          renderEmptyFolderCell()
-        ) : (
-          <Typography variant="body2" sx={{ maxWidth: 360 }} title={row.original.accessSummary}>
-            {row.original.accessSummary}
-          </Typography>
-        ),
+      meta: { overflowMode: 'text' },
+      Cell: mrtTextCell({
+        displayValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatText(row.original.accessSummary),
+        fullValue: ({ row }) =>
+          row.original.kind === 'folder' ? '' : formatText(row.original.accessSummary),
+      }),
     },
   ];
 }

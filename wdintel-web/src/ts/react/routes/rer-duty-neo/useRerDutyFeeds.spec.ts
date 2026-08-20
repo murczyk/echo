@@ -5,7 +5,11 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { getPendingDutyCallsignLookups, mergeKnownGroupKeys } from './useRerDutyFeeds';
+import {
+  getPendingDutyCallsignLookups,
+  mergeAvailableFrequencies,
+  mergeKnownGroupKeys,
+} from './useRerDutyFeeds';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 
 const hoisted = vi.hoisted(() => ({
@@ -95,19 +99,12 @@ vi.mock('./useRerDutyMessageActions', () => ({
     handleDeleteConfirm: vi.fn(),
     setDeleteConfirmId: vi.fn(),
     setDeleteConfirmFeedId: vi.fn(),
-    openCommentDialog: vi.fn(),
-    handleCommentSave: vi.fn(),
     handleToggleTag: vi.fn(),
     botTagAction: null,
     onCancelBotTagAction: vi.fn(),
     onMarkBotTagWrong: vi.fn(),
     handleArrowClick: vi.fn(),
     handleVisibleMessageIds: vi.fn(),
-    commentMessageId: null,
-    commentText: '',
-    setCommentText: vi.fn(),
-    setCommentMessageId: vi.fn(),
-    setCommentFeedId: vi.fn(),
     deleteConfirmId: null,
     deleteConfirmFeedId: null,
     senderOptions: [],
@@ -239,6 +236,26 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('mergeKnownGroupKeys', () => {
+  it('keeps a group selected in one column available to other Duty columns', () => {
+    const availableGroupKeys = mergeKnownGroupKeys(
+      [],
+      [],
+      [],
+      [
+        {
+          items: [],
+          filter: { groupsSelected: ['historic-group'], groupsDenied: [] },
+        },
+        {
+          items: [],
+          filter: { groupsSelected: [], groupsDenied: [] },
+        },
+      ],
+    );
+
+    expect(availableGroupKeys).toEqual(['historic-group']);
+  });
+
   it('keeps groups from a replaced message window and persisted filters', () => {
     const initialFeeds = [
       {
@@ -277,6 +294,21 @@ describe('mergeKnownGroupKeys', () => {
       ),
     ).toEqual(['saved-selected', 'saved-denied']);
   });
+});
+
+describe('mergeAvailableFrequencies', () => {
+  it.each(['freqsSelected', 'freqsDenied'] as const)(
+    'keeps a restored active frequency available for other Duty columns from %s',
+    (activeField) => {
+      const filter = {
+        freqsSelected: [],
+        freqsDenied: [],
+        [activeField]: ['153.6250'],
+      };
+
+      expect(mergeAvailableFrequencies([], [{ items: [], filter }])).toContain('153.6250');
+    },
+  );
 });
 
 describe('getPendingDutyCallsignLookups', () => {

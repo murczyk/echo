@@ -215,7 +215,7 @@ gen-seaorm-files mode="debug":
     fi
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     rm -rf wdintel-rs/src/file_registry/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_rule_set_state,analytics_tag_test_file,device_file_tag,file_analysis_control,file_analysis_device_state,file_analysis_state,file_analysis_reanalysis_job,file_entry --database-url "$database_url" --output-dir src/file_registry/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_device_source_state,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir src/file_registry/entities)
     python3 deploy/patch_seaorm_files.py
     rustfmt --config-path wdintel-rs wdintel-rs/src/file_registry/entities/*.rs
 
@@ -241,7 +241,7 @@ check-seaorm-files mode="debug":
     database_url="postgresql://$pg_user:$pg_password@$pg_host:$pg_port/$pg_dbname"
     entity_dir="$(mktemp -d)"
     trap 'rm -rf "$entity_dir"' EXIT
-    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_rule_set_state,analytics_tag_test_file,device_file_tag,file_analysis_control,file_analysis_device_state,file_analysis_state,file_analysis_reanalysis_job,file_entry --database-url "$database_url" --output-dir "$entity_dir")
+    (cd wdintel-rs && sea-orm-cli generate entity --with-serde both --tables analytics_tag,analytics_tag_test_file,device_file_tag,file_analysis_definition,file_analysis_run,file_analysis_run_item,file_device_source_state,file_entry,file_revision,file_sync_batch,file_sync_item,file_sync_session --database-url "$database_url" --output-dir "$entity_dir")
     python3 deploy/patch_seaorm_files.py --entity-dir "$entity_dir"
     rustfmt --config-path wdintel-rs "$entity_dir"/*.rs
     diff -ru "$entity_dir" wdintel-rs/src/file_registry/entities
@@ -969,9 +969,24 @@ deploy _server_pos="" server silent="false":
       done
 
       sudo systemctl enable --now wdintel-rs.socket
+      sudo systemctl enable wdintel-py.service
+      sudo systemctl restart wdintel-py.service
+      nlp_ready=0
+      nlp_ready_deadline=$((SECONDS + 60))
+      while [ "$SECONDS" -lt "$nlp_ready_deadline" ]; do
+        if curl --fail --silent --max-time 1 http://127.0.0.1:5000/health/ready >/dev/null; then
+          nlp_ready=1
+          break
+        fi
+        sleep 1
+      done
+      if [ "$nlp_ready" -ne 1 ]; then
+        echo "ERROR: wdintel-py did not become ready within 60 seconds." >&2
+        systemctl status --no-pager wdintel-py.service || true
+        exit 1
+      fi
       sudo systemctl enable --now wdintel-rs-bgworker.service
       sudo systemctl enable --now wdintel-rs-report-worker.service
-      sudo systemctl enable --now wdintel-py.service
 
       for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-rs-report-worker.service wdintel-py.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
@@ -1000,6 +1015,37 @@ deploy _server_pos="" server silent="false":
         echo "ERROR: wdintel-rs.socket is not active on 8081." >&2
         systemctl status --no-pager wdintel-rs.socket || true
         exit 1
+      fi
+
+      queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
+        select coalesce(
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+          0
+        )::bigint
+        from signal_message_queue
+        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+      ")
+      if [ "$queue_age_before" -gt 30 ]; then
+        queue_draining=0
+        for i in $(seq 1 12); do
+          sleep 5
+          queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
+            select coalesce(
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+              0
+            )::bigint
+            from signal_message_queue
+            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+          ")
+          if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
+            queue_draining=1
+            break
+          fi
+        done
+        if [ "$queue_draining" -ne 1 ]; then
+          echo "ERROR: messenger queue did not begin draining after deploy (oldest due age ${queue_age_before}s)." >&2
+          exit 1
+        fi
       fi
 
       listen_8081=$(sudo ss -ltnp | grep "LISTEN .*:8081" || true)
@@ -1169,10 +1215,26 @@ deploy-from-local _server_pos="" server silent="false":
       done
 
       sudo systemctl enable --now wdintel-rs.socket
+      sudo systemctl enable wdintel-py.service
+      sudo systemctl restart wdintel-py.service
+      nlp_ready=0
+      nlp_ready_deadline=$((SECONDS + 60))
+      while [ "$SECONDS" -lt "$nlp_ready_deadline" ]; do
+        if curl --fail --silent --max-time 1 http://127.0.0.1:5000/health/ready >/dev/null; then
+          nlp_ready=1
+          break
+        fi
+        sleep 1
+      done
+      if [ "$nlp_ready" -ne 1 ]; then
+        echo "ERROR: wdintel-py did not become ready within 60 seconds." >&2
+        systemctl status --no-pager wdintel-py.service || true
+        exit 1
+      fi
       sudo systemctl enable --now wdintel-rs-bgworker.service
       sudo systemctl enable --now wdintel-rs-report-worker.service
 
-      for unit in wdintel-rs.socket wdintel-rs-bgworker.service wdintel-rs-report-worker.service; do
+      for unit in wdintel-rs.socket wdintel-py.service wdintel-rs-bgworker.service wdintel-rs-report-worker.service; do
         if ! systemctl is-enabled --quiet "$unit"; then
           echo "ERROR: $unit is not enabled after deploy." >&2
           systemctl is-enabled "$unit" || true
@@ -1190,10 +1252,46 @@ deploy-from-local _server_pos="" server silent="false":
         systemctl status --no-pager wdintel-rs-report-worker.service || true
         exit 1
       fi
+      if ! systemctl is-active --quiet wdintel-py.service; then
+        echo "ERROR: wdintel-py.service is not active after deploy." >&2
+        systemctl status --no-pager wdintel-py.service || true
+        exit 1
+      fi
       if ! systemctl is-active --quiet wdintel-rs.socket; then
         echo "ERROR: wdintel-rs.socket is not active on 8081." >&2
         systemctl status --no-pager wdintel-rs.socket || true
         exit 1
+      fi
+
+      queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
+        select coalesce(
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+          0
+        )::bigint
+        from signal_message_queue
+        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+      ")
+      if [ "$queue_age_before" -gt 30 ]; then
+        queue_draining=0
+        for i in $(seq 1 12); do
+          sleep 5
+          queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
+            select coalesce(
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+              0
+            )::bigint
+            from signal_message_queue
+            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+          ")
+          if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
+            queue_draining=1
+            break
+          fi
+        done
+        if [ "$queue_draining" -ne 1 ]; then
+          echo "ERROR: messenger queue did not begin draining after deploy (oldest due age ${queue_age_before}s)." >&2
+          exit 1
+        fi
       fi
 
       listen_8081=$(sudo ss -ltnp | grep "LISTEN .*:8081" || true)
@@ -1208,7 +1306,7 @@ deploy-from-local _server_pos="" server silent="false":
         exit 1
       fi
 
-      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, 8081 via systemd ✅✅✅"
+      echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
     '
     ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then

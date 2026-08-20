@@ -243,11 +243,12 @@ export function AnalysisCenterPanel({
             onCancelBotTagAction={page.onCancelBotTagAction}
             onMarkBotTagWrong={page.onMarkBotTagWrong}
             onOpenEditor={page.openEditor}
+            onCreateReport={page.openReportCreator}
+            onEditReport={page.openReportEditor}
             onLoadMoreMessages={page.loadMoreMessages}
             onOpenPointsOnMap={page.openPointsOnMap}
             onAddPointHighlightBlacklist={page.onAddPointHighlightBlacklist}
             onSaveMessageUpdate={page.saveMessageUpdate}
-            onSaveMessageComment={page.onSaveMessageComment}
             onToggleMessageBookmark={page.onToggleMessageBookmark}
             onToggleMessageImportant={page.onToggleMessageImportant}
             onToggleMessageTag={page.onToggleMessageTag}
@@ -328,6 +329,7 @@ export function AnalysisCenterPanel({
               onDateRangeChange={page.refreshMapDateRange}
               onLoadMessages={page.loadMessagesForMap}
               onUnitClick={page.toggleUnitFromMap}
+              onShowSettlementsChange={page.setShowSettlements}
             />
           ) : null}
         </Box>

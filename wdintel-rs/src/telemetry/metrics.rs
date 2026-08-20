@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use log::{info, warn};
-use opentelemetry::metrics::{Counter, Histogram, MeterProvider};
+use opentelemetry::metrics::{Counter, Gauge, Histogram, MeterProvider};
 use opentelemetry::{Key, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::metrics::{
@@ -31,12 +31,85 @@ const DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS: &[f64] = &[
     0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
 ];
 
+const FILE_ANALYSIS_RUNS_COUNT: &str = "echo.device_files.analysis.runs.count";
+const FILE_ANALYSIS_RUNS_STATUS_COUNT: &str =
+    "echo.device_files.analysis.runs.status.count";
+const FILE_ANALYSIS_PREPARED_ITEMS_COUNT: &str =
+    "echo.device_files.analysis.prepared_items.count";
+const FILE_ANALYSIS_COMPLETED_ITEMS_COUNT: &str =
+    "echo.device_files.analysis.completed_items.count";
+const FILE_ANALYSIS_CURRENT_PUBLISH_COUNT: &str =
+    "echo.device_files.analysis.current_publish.count";
+const FILE_ANALYSIS_LEASES_COUNT: &str =
+    "echo.device_files.analysis.leases.count";
+const FILE_ANALYSIS_OLDEST_RUN_AGE: &str =
+    "echo.device_files.analysis.oldest_run.age";
+const FILE_ANALYSIS_RUN_COMPLETION_DURATION: &str =
+    "echo.device_files.analysis.run_completion.duration";
+const FILE_ANALYSIS_DB_DURATION: &str =
+    "echo.device_files.analysis.db.duration";
+const FILE_ANALYSIS_WORKER_ERRORS_COUNT: &str =
+    "echo.device_files.analysis.worker_errors.count";
+const FILE_ANALYSIS_DB_DURATION_BUCKETS_SECS: &[f64] = &[
+    0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0,
+];
+const FILE_ANALYSIS_RUN_DURATION_BUCKETS_SECS: &[f64] = &[
+    0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 300.0, 900.0, 3_600.0, 10_800.0,
+];
+
+const MESSENGER_INGESTED_COUNT: &str = "echo.messenger.ingested.count";
+const MESSENGER_PROCESSING_COUNT: &str = "echo.messenger.processing.count";
+const MESSENGER_PROCESSING_LATENCY: &str = "echo.messenger.processing.latency";
+const MESSENGER_QUEUE_ITEMS: &str = "echo.messenger.queue.items";
+const MESSENGER_QUEUE_OLDEST_AGE: &str = "echo.messenger.queue.oldest.age";
+const MESSENGER_NLP_READY: &str = "echo.messenger.nlp.ready";
+const MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS: &[f64] = &[
+    0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 900.0, 1_800.0,
+];
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum FileAnalysisDbOperation {
+    SourceRangeAllocation,
+    Preparation,
+    Claim,
+    ResultWrite,
+    CurrentPublish,
+}
+
+impl FileAnalysisDbOperation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceRangeAllocation => "source_range_allocation",
+            Self::Preparation => "preparation",
+            Self::Claim => "claim",
+            Self::ResultWrite => "result_write",
+            Self::CurrentPublish => "current_publish",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Metrics {
     provider: SdkMeterProvider,
     synchronized_files: Counter<u64>,
     sync_batches: Counter<u64>,
     sync_duration: Histogram<f64>,
+    file_analysis_runs: Gauge<u64>,
+    file_analysis_run_statuses: Gauge<u64>,
+    file_analysis_prepared_items: Counter<u64>,
+    file_analysis_completed_items: Counter<u64>,
+    file_analysis_current_publish: Counter<u64>,
+    file_analysis_leases: Gauge<u64>,
+    file_analysis_oldest_run_age: Gauge<f64>,
+    file_analysis_run_completion_duration: Histogram<f64>,
+    file_analysis_db_duration: Histogram<f64>,
+    file_analysis_worker_errors: Counter<u64>,
+    messenger_ingested: Counter<u64>,
+    messenger_processing: Counter<u64>,
+    messenger_processing_latency: Histogram<f64>,
+    messenger_queue_items: Gauge<u64>,
+    messenger_queue_oldest_age: Gauge<f64>,
+    messenger_nlp_ready: Gauge<u64>,
 }
 
 impl Metrics {
@@ -110,13 +183,168 @@ impl Metrics {
             .with_description(DEVICE_FILES_SYNC_DURATION_DESCRIPTION)
             .with_unit("s")
             .build();
+        let file_analysis_runs = meter
+            .u64_gauge(FILE_ANALYSIS_RUNS_COUNT)
+            .with_description("Number of file analysis runs by immutable cause")
+            .with_unit("1")
+            .build();
+        let file_analysis_run_statuses = meter
+            .u64_gauge(FILE_ANALYSIS_RUNS_STATUS_COUNT)
+            .with_description("Number of file analysis runs by derived status")
+            .with_unit("1")
+            .build();
+        let file_analysis_prepared_items = meter
+            .u64_counter(FILE_ANALYSIS_PREPARED_ITEMS_COUNT)
+            .with_description("Number of materialized file analysis run items")
+            .with_unit("1")
+            .build();
+        let file_analysis_completed_items = meter
+            .u64_counter(FILE_ANALYSIS_COMPLETED_ITEMS_COUNT)
+            .with_description("Number of completed file analysis run items")
+            .with_unit("1")
+            .build();
+        let file_analysis_current_publish = meter
+            .u64_counter(FILE_ANALYSIS_CURRENT_PUBLISH_COUNT)
+            .with_description(
+                "Number of completed file analysis items by current-publish outcome",
+            )
+            .with_unit("1")
+            .build();
+        let file_analysis_leases = meter
+            .u64_gauge(FILE_ANALYSIS_LEASES_COUNT)
+            .with_description(
+                "Number of active or expired file analysis leases",
+            )
+            .with_unit("1")
+            .build();
+        let file_analysis_oldest_run_age = meter
+            .f64_gauge(FILE_ANALYSIS_OLDEST_RUN_AGE)
+            .with_description(
+                "Age of the oldest non-terminal file analysis run",
+            )
+            .with_unit("s")
+            .build();
+        let file_analysis_run_completion_duration = meter
+            .f64_histogram(FILE_ANALYSIS_RUN_COMPLETION_DURATION)
+            .with_description(
+                "End-to-end file analysis run completion duration",
+            )
+            .with_unit("s")
+            .build();
+        let file_analysis_db_duration = meter
+            .f64_histogram(FILE_ANALYSIS_DB_DURATION)
+            .with_description("File analysis database operation duration")
+            .with_unit("s")
+            .build();
+        let file_analysis_worker_errors = meter
+            .u64_counter(FILE_ANALYSIS_WORKER_ERRORS_COUNT)
+            .with_description("Number of file analysis infrastructure errors")
+            .with_unit("1")
+            .build();
+        let messenger_ingested = meter
+            .u64_counter(MESSENGER_INGESTED_COUNT)
+            .with_description(
+                "Number of messenger snapshots added to the processing queue",
+            )
+            .with_unit("1")
+            .build();
+        let messenger_processing = meter
+            .u64_counter(MESSENGER_PROCESSING_COUNT)
+            .with_description("Number of messenger queue processing results")
+            .with_unit("1")
+            .build();
+        let messenger_processing_latency = meter
+            .f64_histogram(MESSENGER_PROCESSING_LATENCY)
+            .with_description(
+                "Time from queue insertion to a processing result",
+            )
+            .with_unit("s")
+            .build();
+        let messenger_queue_items = meter
+            .u64_gauge(MESSENGER_QUEUE_ITEMS)
+            .with_description("Number of messenger queue items")
+            .with_unit("1")
+            .build();
+        let messenger_queue_oldest_age = meter
+            .f64_gauge(MESSENGER_QUEUE_OLDEST_AGE)
+            .with_description("Age of the oldest messenger queue item")
+            .with_unit("s")
+            .build();
+        let messenger_nlp_ready = meter
+            .u64_gauge(MESSENGER_NLP_READY)
+            .with_description("Whether the local NLP dependency is ready")
+            .with_unit("1")
+            .build();
 
         Self {
             provider,
             synchronized_files,
             sync_batches,
             sync_duration,
+            file_analysis_runs,
+            file_analysis_run_statuses,
+            file_analysis_prepared_items,
+            file_analysis_completed_items,
+            file_analysis_current_publish,
+            file_analysis_leases,
+            file_analysis_oldest_run_age,
+            file_analysis_run_completion_duration,
+            file_analysis_db_duration,
+            file_analysis_worker_errors,
+            messenger_ingested,
+            messenger_processing,
+            messenger_processing_latency,
+            messenger_queue_items,
+            messenger_queue_oldest_age,
+            messenger_nlp_ready,
         }
+    }
+
+    pub(crate) fn record_messenger_ingested(
+        &self,
+        messenger: &str,
+        count: u64,
+    ) {
+        if count == 0 {
+            return;
+        }
+        self.messenger_ingested.add(
+            count,
+            &[KeyValue::new("messenger", messenger.to_lowercase())],
+        );
+    }
+
+    pub(crate) fn record_messenger_processing(
+        &self,
+        messenger: &'static str,
+        outcome: &'static str,
+        latency_seconds: f64,
+    ) {
+        let attributes = [
+            KeyValue::new("messenger", messenger),
+            KeyValue::new("outcome", outcome),
+        ];
+        self.messenger_processing.add(1, &attributes);
+        self.messenger_processing_latency
+            .record(latency_seconds, &attributes);
+    }
+
+    pub(crate) fn record_messenger_queue_state(
+        &self,
+        depth: u64,
+        due_depth: u64,
+        oldest_age_seconds: f64,
+    ) {
+        self.messenger_queue_items
+            .record(depth, &[KeyValue::new("state", "total")]);
+        self.messenger_queue_items
+            .record(due_depth, &[KeyValue::new("state", "due")]);
+        self.messenger_queue_oldest_age
+            .record(oldest_age_seconds, &[]);
+    }
+
+    pub(crate) fn record_messenger_nlp_ready(&self, ready: bool) {
+        self.messenger_nlp_ready.record(u64::from(ready), &[]);
     }
 
     pub(crate) fn record_device_files_sync(
@@ -139,6 +367,130 @@ impl Metrics {
             .add(count, &[KeyValue::new("operation", operation)]);
     }
 
+    pub(crate) fn record_file_analysis_db_duration(
+        &self,
+        operation: FileAnalysisDbOperation,
+        duration: Duration,
+    ) {
+        self.file_analysis_db_duration.record(
+            duration.as_secs_f64(),
+            &[KeyValue::new("operation", operation.as_str())],
+        );
+    }
+
+    pub(crate) fn record_file_analysis_preparation(
+        &self,
+        item_count: u64,
+        duration: Duration,
+    ) {
+        if item_count > 0 {
+            self.file_analysis_prepared_items.add(item_count, &[]);
+        }
+        self.record_file_analysis_db_duration(
+            FileAnalysisDbOperation::Preparation,
+            duration,
+        );
+    }
+
+    pub(crate) fn record_file_analysis_claim(&self, duration: Duration) {
+        self.record_file_analysis_db_duration(
+            FileAnalysisDbOperation::Claim,
+            duration,
+        );
+    }
+
+    pub(crate) fn record_file_analysis_completion(
+        &self,
+        completed_count: u64,
+        published_count: u64,
+        result_write_duration_secs: f64,
+        current_publish_duration_secs: f64,
+        run_completion_duration_secs: Option<f64>,
+    ) {
+        if completed_count > 0 {
+            self.file_analysis_completed_items.add(completed_count, &[]);
+        }
+        if published_count > 0 {
+            self.file_analysis_current_publish
+                .add(published_count, &[KeyValue::new("outcome", "published")]);
+        }
+        let skipped_count = completed_count.saturating_sub(published_count);
+        if skipped_count > 0 {
+            self.file_analysis_current_publish
+                .add(skipped_count, &[KeyValue::new("outcome", "skipped")]);
+        }
+        self.file_analysis_db_duration.record(
+            result_write_duration_secs,
+            &[KeyValue::new(
+                "operation",
+                FileAnalysisDbOperation::ResultWrite.as_str(),
+            )],
+        );
+        self.file_analysis_db_duration.record(
+            current_publish_duration_secs,
+            &[KeyValue::new(
+                "operation",
+                FileAnalysisDbOperation::CurrentPublish.as_str(),
+            )],
+        );
+        if let Some(duration_secs) = run_completion_duration_secs {
+            self.file_analysis_run_completion_duration
+                .record(duration_secs, &[]);
+        }
+    }
+
+    pub(crate) fn record_file_analysis_run_completion_duration(
+        &self,
+        duration_secs: f64,
+    ) {
+        self.file_analysis_run_completion_duration
+            .record(duration_secs, &[]);
+    }
+
+    pub(crate) fn record_file_analysis_worker_error(&self) {
+        self.file_analysis_worker_errors.add(1, &[]);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn record_file_analysis_operational_state(
+        &self,
+        sync_runs: u64,
+        manual_runs: u64,
+        preparing_runs: u64,
+        running_runs: u64,
+        completed_runs: u64,
+        active_leases: u64,
+        expired_leases: u64,
+        oldest_preparing_age_secs: f64,
+        oldest_running_age_secs: f64,
+    ) {
+        for (cause, count) in [("sync", sync_runs), ("manual", manual_runs)] {
+            self.file_analysis_runs
+                .record(count, &[KeyValue::new("cause", cause)]);
+        }
+        for (status, count) in [
+            ("preparing", preparing_runs),
+            ("running", running_runs),
+            ("completed", completed_runs),
+        ] {
+            self.file_analysis_run_statuses
+                .record(count, &[KeyValue::new("status", status)]);
+        }
+        for (state, count) in
+            [("active", active_leases), ("expired", expired_leases)]
+        {
+            self.file_analysis_leases
+                .record(count, &[KeyValue::new("state", state)]);
+        }
+        for (status, age_secs) in [
+            ("preparing", oldest_preparing_age_secs),
+            ("running", oldest_running_age_secs),
+        ] {
+            self.file_analysis_oldest_run_age
+                .record(age_secs, &[KeyValue::new("status", status)]);
+        }
+    }
+
     pub fn shutdown(&self) {
         if let Err(error) = self.provider.shutdown() {
             warn!("Failed to shut down Signoz metrics provider: {error}");
@@ -154,6 +506,28 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             DEVICE_FILES_SYNC_DURATION => {
                 (&[], Some(DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS))
             }
+            FILE_ANALYSIS_RUNS_COUNT => (&["cause"], None),
+            FILE_ANALYSIS_RUNS_STATUS_COUNT => (&["status"], None),
+            FILE_ANALYSIS_PREPARED_ITEMS_COUNT
+            | FILE_ANALYSIS_COMPLETED_ITEMS_COUNT
+            | FILE_ANALYSIS_WORKER_ERRORS_COUNT => (&[], None),
+            FILE_ANALYSIS_CURRENT_PUBLISH_COUNT => (&["outcome"], None),
+            FILE_ANALYSIS_LEASES_COUNT => (&["state"], None),
+            FILE_ANALYSIS_OLDEST_RUN_AGE => (&["status"], None),
+            FILE_ANALYSIS_RUN_COMPLETION_DURATION => {
+                (&[], Some(FILE_ANALYSIS_RUN_DURATION_BUCKETS_SECS))
+            }
+            FILE_ANALYSIS_DB_DURATION => {
+                (&["operation"], Some(FILE_ANALYSIS_DB_DURATION_BUCKETS_SECS))
+            }
+            MESSENGER_INGESTED_COUNT => (&["messenger"], None),
+            MESSENGER_PROCESSING_COUNT => (&["messenger", "outcome"], None),
+            MESSENGER_PROCESSING_LATENCY => (
+                &["messenger", "outcome"],
+                Some(MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS),
+            ),
+            MESSENGER_QUEUE_ITEMS => (&["state"], None),
+            MESSENGER_QUEUE_OLDEST_AGE | MESSENGER_NLP_READY => (&[], None),
             _ => return None,
         };
     let mut stream = Stream::builder().with_allowed_attribute_keys(
@@ -210,6 +584,8 @@ impl Metrics {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum RecordedMetricValue {
     Counter(u64),
+    Gauge(u64),
+    GaugeF64(f64),
     Histogram {
         count: u64,
         sum: f64,
@@ -245,6 +621,25 @@ impl MetricsRecorder {
             .cloned()
     }
 
+    pub(crate) fn find_with_attributes(
+        &self,
+        name: &str,
+        attributes: &[(&str, &str)],
+    ) -> Option<RecordedMetric> {
+        self.records
+            .lock()
+            .expect("metrics recorder lock is available")
+            .iter()
+            .find(|record| {
+                record.name == name
+                    && attributes.iter().all(|(key, value)| {
+                        record.attributes.get(*key).map(String::as_str)
+                            == Some(*value)
+                    })
+            })
+            .cloned()
+    }
+
     pub(crate) fn counter_value(
         &self,
         name: &str,
@@ -263,7 +658,37 @@ impl MetricsRecorder {
             })
             .and_then(|record| match record.value {
                 RecordedMetricValue::Counter(value) => Some(value),
-                RecordedMetricValue::Histogram { .. } => None,
+                RecordedMetricValue::Gauge(_)
+                | RecordedMetricValue::GaugeF64(_)
+                | RecordedMetricValue::Histogram { .. } => None,
+            })
+    }
+
+    pub(crate) fn gauge_value(
+        &self,
+        name: &str,
+        attributes: &[(&str, &str)],
+    ) -> Option<u64> {
+        self.find_with_attributes(name, attributes)
+            .and_then(|record| match record.value {
+                RecordedMetricValue::Gauge(value) => Some(value),
+                RecordedMetricValue::Counter(_)
+                | RecordedMetricValue::GaugeF64(_)
+                | RecordedMetricValue::Histogram { .. } => None,
+            })
+    }
+
+    pub(crate) fn gauge_f64_value(
+        &self,
+        name: &str,
+        attributes: &[(&str, &str)],
+    ) -> Option<f64> {
+        self.find_with_attributes(name, attributes)
+            .and_then(|record| match record.value {
+                RecordedMetricValue::GaugeF64(value) => Some(value),
+                RecordedMetricValue::Counter(_)
+                | RecordedMetricValue::Gauge(_)
+                | RecordedMetricValue::Histogram { .. } => None,
             })
     }
 }
@@ -298,6 +723,50 @@ impl PushMetricExporter for RecordingExporter {
                                 description: metric.description().to_string(),
                                 unit: metric.unit().to_string(),
                                 value: RecordedMetricValue::Counter(
+                                    point.value(),
+                                ),
+                                attributes: point
+                                    .attributes()
+                                    .map(|attribute| {
+                                        (
+                                            attribute.key.to_string(),
+                                            attribute.value.to_string(),
+                                        )
+                                    })
+                                    .collect(),
+                                resources: resources.clone(),
+                            });
+                        }
+                    }
+                    AggregatedMetrics::U64(MetricData::Gauge(gauge)) => {
+                        for point in gauge.data_points() {
+                            records.push(RecordedMetric {
+                                name: metric.name().to_string(),
+                                description: metric.description().to_string(),
+                                unit: metric.unit().to_string(),
+                                value: RecordedMetricValue::Gauge(
+                                    point.value(),
+                                ),
+                                attributes: point
+                                    .attributes()
+                                    .map(|attribute| {
+                                        (
+                                            attribute.key.to_string(),
+                                            attribute.value.to_string(),
+                                        )
+                                    })
+                                    .collect(),
+                                resources: resources.clone(),
+                            });
+                        }
+                    }
+                    AggregatedMetrics::F64(MetricData::Gauge(gauge)) => {
+                        for point in gauge.data_points() {
+                            records.push(RecordedMetric {
+                                name: metric.name().to_string(),
+                                description: metric.description().to_string(),
+                                unit: metric.unit().to_string(),
+                                value: RecordedMetricValue::GaugeF64(
                                     point.value(),
                                 ),
                                 attributes: point
@@ -450,5 +919,209 @@ mod tests {
             synchronized.resources.get("service.namespace"),
             Some(&SIGNOZ_METRICS_SERVICE_NAMESPACE.to_string())
         );
+    }
+
+    #[test]
+    fn messenger_metrics_match_signoz_contract() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let (metrics, recorder) = Metrics::recording(&config);
+
+        metrics.record_messenger_ingested("Signal", 7);
+        metrics.record_messenger_processing("signal", "success", 1.5);
+        metrics.record_messenger_queue_state(9, 3, 42.0);
+        metrics.record_messenger_nlp_ready(true);
+        metrics.force_flush_for_test();
+
+        assert_eq!(
+            recorder.counter_value(
+                MESSENGER_INGESTED_COUNT,
+                &[("messenger", "signal")],
+            ),
+            Some(7),
+        );
+        assert_eq!(
+            recorder.counter_value(
+                MESSENGER_PROCESSING_COUNT,
+                &[("messenger", "signal"), ("outcome", "success")],
+            ),
+            Some(1),
+        );
+        assert_eq!(
+            recorder.gauge_value(MESSENGER_QUEUE_ITEMS, &[("state", "total")],),
+            Some(9),
+        );
+        assert_eq!(
+            recorder.gauge_value(MESSENGER_QUEUE_ITEMS, &[("state", "due")],),
+            Some(3),
+        );
+        assert_eq!(
+            recorder.gauge_f64_value(MESSENGER_QUEUE_OLDEST_AGE, &[]),
+            Some(42.0),
+        );
+        assert_eq!(recorder.gauge_value(MESSENGER_NLP_READY, &[]), Some(1),);
+        let latency = recorder
+            .find_with_attributes(
+                MESSENGER_PROCESSING_LATENCY,
+                &[("messenger", "signal"), ("outcome", "success")],
+            )
+            .unwrap();
+        assert_eq!(
+            latency.value,
+            RecordedMetricValue::Histogram {
+                count: 1,
+                sum: 1.5,
+                boundaries: MESSENGER_PROCESSING_LATENCY_BUCKETS_SECS.to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn file_analysis_metrics_match_operational_contract() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let (metrics, recorder) = Metrics::recording(&config);
+
+        metrics.record_file_analysis_operational_state(
+            2, 7, 5, 6, 7, 8, 9, 10.0, 11.0,
+        );
+        metrics
+            .record_file_analysis_preparation(1_000, Duration::from_millis(12));
+        metrics.record_file_analysis_run_completion_duration(14.0);
+        metrics.record_file_analysis_claim(Duration::from_millis(200));
+        metrics.record_file_analysis_completion(900, 800, 0.3, 0.4, Some(15.0));
+        metrics.record_file_analysis_db_duration(
+            FileAnalysisDbOperation::SourceRangeAllocation,
+            Duration::from_millis(100),
+        );
+        metrics.record_file_analysis_worker_error();
+        metrics.force_flush_for_test();
+
+        for (cause, expected) in [("sync", 2), ("manual", 7)] {
+            assert_eq!(
+                recorder.gauge_value(
+                    FILE_ANALYSIS_RUNS_COUNT,
+                    &[("cause", cause)],
+                ),
+                Some(expected),
+            );
+        }
+        for (status, expected) in
+            [("preparing", 5), ("running", 6), ("completed", 7)]
+        {
+            assert_eq!(
+                recorder.gauge_value(
+                    FILE_ANALYSIS_RUNS_STATUS_COUNT,
+                    &[("status", status)],
+                ),
+                Some(expected),
+            );
+        }
+        assert_eq!(
+            recorder.counter_value(FILE_ANALYSIS_PREPARED_ITEMS_COUNT, &[],),
+            Some(1_000),
+        );
+        assert_eq!(
+            recorder.counter_value(FILE_ANALYSIS_COMPLETED_ITEMS_COUNT, &[],),
+            Some(900),
+        );
+        assert_eq!(
+            recorder.counter_value(
+                FILE_ANALYSIS_CURRENT_PUBLISH_COUNT,
+                &[("outcome", "published")],
+            ),
+            Some(800),
+        );
+        assert_eq!(
+            recorder.counter_value(
+                FILE_ANALYSIS_CURRENT_PUBLISH_COUNT,
+                &[("outcome", "skipped")],
+            ),
+            Some(100),
+        );
+        assert_eq!(
+            recorder.counter_value(FILE_ANALYSIS_WORKER_ERRORS_COUNT, &[]),
+            Some(1),
+        );
+        assert_eq!(
+            recorder.gauge_value(
+                FILE_ANALYSIS_LEASES_COUNT,
+                &[("state", "active")],
+            ),
+            Some(8),
+        );
+        assert_eq!(
+            recorder.gauge_value(
+                FILE_ANALYSIS_LEASES_COUNT,
+                &[("state", "expired")],
+            ),
+            Some(9),
+        );
+        assert_eq!(
+            recorder.gauge_f64_value(
+                FILE_ANALYSIS_OLDEST_RUN_AGE,
+                &[("status", "preparing")],
+            ),
+            Some(10.0),
+        );
+        assert_eq!(
+            recorder.gauge_f64_value(
+                FILE_ANALYSIS_OLDEST_RUN_AGE,
+                &[("status", "running")],
+            ),
+            Some(11.0),
+        );
+
+        for (operation, expected_sum) in [
+            ("source_range_allocation", 0.1),
+            ("preparation", 0.012),
+            ("claim", 0.2),
+            ("result_write", 0.3),
+            ("current_publish", 0.4),
+        ] {
+            let duration = recorder
+                .find_with_attributes(
+                    FILE_ANALYSIS_DB_DURATION,
+                    &[("operation", operation)],
+                )
+                .unwrap();
+            assert_eq!(
+                duration.value,
+                RecordedMetricValue::Histogram {
+                    count: 1,
+                    sum: expected_sum,
+                    boundaries: FILE_ANALYSIS_DB_DURATION_BUCKETS_SECS.to_vec(),
+                },
+            );
+            assert_eq!(duration.attributes.len(), 1);
+        }
+
+        let run_duration = recorder
+            .find(FILE_ANALYSIS_RUN_COMPLETION_DURATION)
+            .unwrap();
+        assert_eq!(
+            run_duration.value,
+            RecordedMetricValue::Histogram {
+                count: 2,
+                sum: 29.0,
+                boundaries: FILE_ANALYSIS_RUN_DURATION_BUCKETS_SECS.to_vec(),
+            },
+        );
+        assert!(run_duration.attributes.is_empty());
+
+        for (name, unit) in [
+            (FILE_ANALYSIS_RUNS_COUNT, "1"),
+            (FILE_ANALYSIS_RUNS_STATUS_COUNT, "1"),
+            (FILE_ANALYSIS_PREPARED_ITEMS_COUNT, "1"),
+            (FILE_ANALYSIS_COMPLETED_ITEMS_COUNT, "1"),
+            (FILE_ANALYSIS_LEASES_COUNT, "1"),
+            (FILE_ANALYSIS_OLDEST_RUN_AGE, "s"),
+            (FILE_ANALYSIS_DB_DURATION, "s"),
+            (FILE_ANALYSIS_RUN_COMPLETION_DURATION, "s"),
+            (FILE_ANALYSIS_CURRENT_PUBLISH_COUNT, "1"),
+            (FILE_ANALYSIS_WORKER_ERRORS_COUNT, "1"),
+        ] {
+            let metric = recorder.find(name).unwrap();
+            assert_eq!(metric.unit, unit);
+            assert!(!metric.description.is_empty());
+        }
     }
 }

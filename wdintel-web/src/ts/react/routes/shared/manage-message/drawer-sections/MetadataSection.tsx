@@ -18,6 +18,7 @@ type Props = {
   recentValues: any;
   callsignOptions: string[];
   callsignLoading: boolean;
+  callsignInput: string;
   setCallsignInput: (val: string) => void;
   tagOptions: string[];
   postOptions: string[];
@@ -35,6 +36,7 @@ export function MetadataSection({
   recentValues,
   callsignOptions,
   callsignLoading,
+  callsignInput,
   setCallsignInput,
   tagOptions,
   postOptions,
@@ -186,17 +188,16 @@ export function MetadataSection({
                 autoSelect
                 noOptionsText="Немає варіантів"
                 options={Array.from(
-                  new Set([...(recentValues?.callsigns || []), ...callsignOptions]),
+                  new Set(
+                    [...(recentValues?.callsigns || []), ...callsignOptions].map(normalizeCallsign),
+                  ),
                 )}
                 value={field.value || []}
+                inputValue={callsignInput}
                 loading={callsignLoading}
-                onInputChange={(_, newValue, reason) => {
-                  if (reason === 'input') {
-                    setCallsignInput(newValue);
-                  }
-                }}
+                onInputChange={(_, newValue) => setCallsignInput(normalizeCallsign(newValue))}
                 onChange={(_, newValue) =>
-                  field.onChange(normalizeMultiValue(newValue as string[]).map(normalizeCallsign))
+                  field.onChange(normalizeMultiValue((newValue as string[]).map(normalizeCallsign)))
                 }
                 renderInput={(params) => (
                   <TextField

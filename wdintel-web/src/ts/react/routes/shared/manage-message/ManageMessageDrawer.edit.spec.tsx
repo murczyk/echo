@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import type { ReactNode } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { act, forwardRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,6 +15,7 @@ const referenceDataMocks = vi.hoisted(() => ({
 const directSubmitMocks = vi.hoisted(() => ({
   submitDirect: vi.fn().mockResolvedValue({ signal_message_id: 1 }),
   editDirectSubmit: vi.fn(),
+  copyDirectSubmit: vi.fn(),
   createDeviceName: vi.fn().mockResolvedValue({ id: 1 }),
   parseDirectSubmit: vi.fn(),
   searchNetworkNames: vi.fn().mockResolvedValue([]),
@@ -24,6 +25,9 @@ const networkMocks = vi.hoisted(() => ({
 }));
 const unitMocks = vi.hoisted(() => ({
   getUnitsByIds: vi.fn().mockResolvedValue([]),
+}));
+const inboxMessageActionMocks = vi.hoisted(() => ({
+  deleteMessage: vi.fn().mockResolvedValue(undefined),
 }));
 const uppyMocks = vi.hoisted(() => ({
   latest: null as {
@@ -50,6 +54,7 @@ vi.mock('../../../services/api/direct-submit', () => ({
   parseDirectSubmit: directSubmitMocks.parseDirectSubmit,
   submitDirect: directSubmitMocks.submitDirect,
   editDirectSubmit: directSubmitMocks.editDirectSubmit,
+  copyDirectSubmit: directSubmitMocks.copyDirectSubmit,
   formatDirectSubmitError: (error: unknown) =>
     error instanceof Error ? error.message : 'save failed',
 }));
@@ -58,6 +63,38 @@ vi.mock('../../../services/api/networks', () => ({
 }));
 vi.mock('../../../services/api/units', () => ({
   getUnitsByIds: unitMocks.getUnitsByIds,
+}));
+vi.mock('../../../services/api/inbox-message-actions', () => ({
+  deleteMessage: inboxMessageActionMocks.deleteMessage,
+}));
+vi.mock('../../../components/ConfirmDangerDialog', () => ({
+  ConfirmDangerDialog: ({
+    open,
+    onClose,
+    onConfirm,
+    title,
+    description,
+    submitting,
+  }: {
+    open: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    title?: ReactNode;
+    description?: ReactNode;
+    submitting?: boolean;
+  }) =>
+    open ? (
+      <div role="alertdialog">
+        <div>{title}</div>
+        <div>{description}</div>
+        <button type="button" onClick={onClose} disabled={submitting}>
+          Скасувати видалення
+        </button>
+        <button type="button" onClick={onConfirm} disabled={submitting}>
+          Підтвердити видалення
+        </button>
+      </div>
+    ) : null,
 }));
 vi.mock('@uppy/core', () => {
   class FakeUppy {
@@ -169,23 +206,32 @@ vi.mock('@mui/x-date-pickers/LocalizationProvider', () => ({
 type TextFieldMockProps = {
   label?: ReactNode;
   multiline?: boolean;
+  rows?: number;
   onChange?: (event: { target: { value: string } }) => void;
   onBlur?: () => void;
   onKeyDown?: (event: KeyboardEvent) => void;
   placeholder?: string;
   value?: string;
   disabled?: boolean;
+  autoFocus?: boolean;
+  inputRef?: Ref<HTMLInputElement | HTMLTextAreaElement>;
   error?: boolean;
   helperText?: ReactNode;
 };
 
 const textFieldPropsByLabel = new Map<string | undefined, TextFieldMockProps>();
 const autocompleteOnChangeByLabel = new Map<string, (event: unknown, value: unknown) => void>();
+const autocompleteOnInputChangeByLabel = new Map<
+  string,
+  (event: unknown, value: string, reason: string) => void
+>();
 const autocompleteValuesByLabel = new Map<string, unknown>();
 const autocompleteInputValuesByLabel = new Map<string, string>();
 const autocompleteOptionLabelsByLabel = new Map<string, string[]>();
 const pickerValuesByLabel = new Map<string, unknown>();
 let drawerModalProps: { closeAfterTransition?: boolean } | undefined;
+let drawerSlotProps:
+  { paper?: { sx?: { width?: string | Record<string, string | number> } } } | undefined;
 
 function setRecentValues(values: Record<string, unknown>) {
   Object.defineProperty(globalThis, 'localStorage', {
@@ -226,6 +272,14 @@ vi.mock('@mui/material', () => ({
   ),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Divider: () => <hr />,
+  Menu: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  MenuItem: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
+  ListItemIcon: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+  ListItemText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   Typography: ({ children, component = 'div' }: { children?: ReactNode; component?: string }) => {
     const Component = component as keyof HTMLElementTagNameMap;
     return <Component>{children}</Component>;
@@ -234,12 +288,15 @@ vi.mock('@mui/material', () => ({
     children,
     open,
     ModalProps,
+    slotProps,
   }: {
     children?: ReactNode;
     open?: boolean;
     ModalProps?: { closeAfterTransition?: boolean };
+    slotProps?: { paper?: { sx?: { width?: string | Record<string, string | number> } } };
   }) => {
     drawerModalProps = ModalProps;
+    drawerSlotProps = slotProps;
     return open ? <div role="dialog">{children}</div> : null;
   },
   Button: ({
@@ -303,12 +360,15 @@ vi.mock('@mui/material', () => ({
   TextField: ({
     label,
     multiline,
+    rows,
     onChange,
     onBlur,
     onKeyDown,
     placeholder,
     value,
     disabled,
+    autoFocus,
+    inputRef,
     error,
     helperText,
   }: TextFieldMockProps) => {
@@ -316,12 +376,14 @@ vi.mock('@mui/material', () => ({
     textFieldPropsByLabel.set(labelKey, {
       label: labelKey,
       multiline,
+      rows,
       onChange,
       onBlur,
       onKeyDown,
       placeholder,
       value,
       disabled,
+      autoFocus,
       error,
       helperText,
     });
@@ -333,7 +395,10 @@ vi.mock('@mui/material', () => ({
             aria-label={labelKey}
             placeholder={placeholder}
             value={value ?? ''}
+            rows={rows}
             disabled={disabled}
+            autoFocus={autoFocus}
+            ref={inputRef as Ref<HTMLTextAreaElement>}
             onChange={(event) => onChange?.(event as never)}
             onBlur={onBlur}
             onKeyDown={onKeyDown as never}
@@ -344,6 +409,8 @@ vi.mock('@mui/material', () => ({
             placeholder={placeholder}
             value={value ?? ''}
             disabled={disabled}
+            autoFocus={autoFocus}
+            ref={inputRef as Ref<HTMLInputElement>}
             onChange={(event) => onChange?.(event as never)}
             onBlur={onBlur}
             onKeyDown={onKeyDown as never}
@@ -358,6 +425,7 @@ vi.mock('@mui/material', () => ({
     value,
     inputValue,
     onChange,
+    onInputChange,
     options,
     getOptionLabel,
     loading: _loading,
@@ -366,6 +434,7 @@ vi.mock('@mui/material', () => ({
     value?: unknown;
     inputValue?: string;
     onChange?: (event: unknown, value: unknown) => void;
+    onInputChange?: (event: unknown, value: string, reason: string) => void;
     options?: unknown[];
     getOptionLabel?: (option: unknown) => string;
     loading?: boolean;
@@ -374,6 +443,9 @@ vi.mock('@mui/material', () => ({
     const label = (input as { props?: { label?: unknown } } | undefined)?.props?.label;
     if (typeof label === 'string' && onChange) {
       autocompleteOnChangeByLabel.set(label, onChange);
+    }
+    if (typeof label === 'string' && onInputChange) {
+      autocompleteOnInputChangeByLabel.set(label, onInputChange);
     }
     if (typeof label === 'string') autocompleteValuesByLabel.set(label, value);
     if (typeof label === 'string' && inputValue != null) {
@@ -437,6 +509,7 @@ describe('ManageMessageDrawer edit mode', () => {
   afterEach(() => {
     textFieldPropsByLabel.clear();
     autocompleteOnChangeByLabel.clear();
+    autocompleteOnInputChangeByLabel.clear();
     autocompleteValuesByLabel.clear();
     autocompleteInputValuesByLabel.clear();
     autocompleteOptionLabelsByLabel.clear();
@@ -445,6 +518,7 @@ describe('ManageMessageDrawer edit mode', () => {
     directSubmitMocks.submitDirect.mockReset();
     directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 1 });
     directSubmitMocks.editDirectSubmit.mockReset();
+    directSubmitMocks.copyDirectSubmit.mockReset();
     directSubmitMocks.createDeviceName.mockReset();
     directSubmitMocks.createDeviceName.mockResolvedValue({ id: 1 });
     directSubmitMocks.parseDirectSubmit.mockReset();
@@ -454,6 +528,8 @@ describe('ManageMessageDrawer edit mode', () => {
     networkMocks.getNetworksByIds.mockResolvedValue([]);
     unitMocks.getUnitsByIds.mockReset();
     unitMocks.getUnitsByIds.mockResolvedValue([]);
+    inboxMessageActionMocks.deleteMessage.mockReset();
+    inboxMessageActionMocks.deleteMessage.mockResolvedValue(undefined);
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
     referenceDataMocks.getUserSigintGroups.mockReset();
@@ -462,6 +538,414 @@ describe('ManageMessageDrawer edit mode', () => {
     referenceDataMocks.getGroupInfosBatch.mockResolvedValue([]);
     setRecentValues({});
     uppyMocks.latest = null;
+  });
+
+  it('keeps report text empty while copied fields are loading', async () => {
+    directSubmitMocks.copyDirectSubmit.mockReturnValue(new Promise(() => {}));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage({ text: 'original card body' }) }}
+        />,
+      );
+    });
+
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'original card body',
+    );
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+
+    root.unmount();
+  });
+
+  it('creates a nested report from copied fields with optional group and retained media', async () => {
+    referenceDataMocks.getUserSigintGroups.mockResolvedValue(['g-1']);
+    referenceDataMocks.getGroupInfosBatch.mockResolvedValue([
+      { masterKey: 'g-1', name: 'Group 1' },
+    ]);
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [
+        {
+          full_body: 'original copied body',
+          text: 'original copied body',
+          comment: 'existing comment',
+          to: ['alfa', 'сокіл'],
+          signal_group_master_key: 'g-1',
+          retained_media_ids: ['media-1'],
+          parent_signal_message_ids: [42],
+        },
+      ],
+    });
+    directSubmitMocks.submitDirect.mockResolvedValue({ signal_message_id: 91 });
+    const source = buildMessage({
+      text: 'original card body',
+      parentMessages: [
+        {
+          id: 7,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'earlier original body',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
+      media: [
+        {
+          id: 'media-1',
+          contentType: 'image/jpeg',
+          fileName: 'photo.jpg',
+          sizeBytes: 10,
+          href: '/media/photo.jpg',
+          transcription: null,
+        },
+      ],
+      deviceName: 'source-device',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: source }}
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith([42]);
+    expect(container.textContent).toContain('Створити розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'original copied body',
+    );
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.rows).toBe(6);
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.rows).toBe(6);
+    expect(autocompleteValuesByLabel.get('Назва пристрою')).toBe('');
+    expect(autocompleteValuesByLabel.get('Позивні')).toEqual(['ALFA', 'СОКІЛ']);
+    await act(async () => {
+      autocompleteOnInputChangeByLabel.get('Позивні')?.(null, 'charlie', 'input');
+    });
+    expect(autocompleteInputValuesByLabel.get('Позивні')).toBe('CHARLIE');
+    expect(autocompleteValuesByLabel.get('Група')).toBeNull();
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.autoFocus).toBe(true);
+    await act(async () => {
+      await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+    });
+    expect(document.activeElement).toBe(
+      container.querySelector('textarea[aria-label="Текст розвіддонесення"]'),
+    );
+    const reportTextRow = container.querySelector('[data-testid="report-text-row"]');
+    expect(reportTextRow?.textContent).toContain('Оригінальний текст');
+    expect(reportTextRow?.textContent).toContain('Розвіддонесення');
+    expect(reportTextRow?.parentElement?.firstElementChild).toBe(reportTextRow);
+    expect(drawerSlotProps?.paper?.sx?.width).toBe('100vw');
+    expect(container.querySelector('textarea[aria-label="Коментар"]')).toBeNull();
+    expect(container.textContent).not.toContain('Розширені поля');
+    expect(container.textContent).not.toContain('DMR метадані');
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(directSubmitMocks.submitDirect).not.toHaveBeenCalled();
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст розвіддонесення')
+        ?.onChange?.({ target: { value: 'new report body' } });
+    });
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        full_body: 'new report body',
+        signal_group_master_key: null,
+        retained_media_ids: ['media-1'],
+        parent_signal_message_ids: [42],
+        comment: undefined,
+      }),
+    );
+
+    root.unmount();
+  });
+
+  it('edits a standalone report using its backend parent summaries', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [
+        {
+          full_body: 'original copied body',
+          signal_group_master_key: 'g-1',
+          parent_signal_message_ids: [42],
+        },
+      ],
+    });
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({ signal_message_id: 91 });
+    const report = buildMessage({
+      text: 'existing report body',
+      groupMasterKey: null,
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'original summary body',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 91, message: report }}
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).toHaveBeenCalledWith([42]);
+    expect(container.textContent).toContain('Редагувати розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст оригінального повідомлення')?.value).toBe(
+      'original copied body',
+    );
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('existing report body');
+
+    const form = container.querySelector('form') as HTMLFormElement;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      91,
+      expect.objectContaining({
+        full_body: 'existing report body',
+        signal_group_master_key: null,
+      }),
+    );
+    expect(
+      directSubmitMocks.editDirectSubmit.mock.calls[0][1].parent_signal_message_ids,
+    ).toBeUndefined();
+
+    root.unmount();
+  });
+
+  it('edits a forwarded report with an inaccessible parent as an independent message', async () => {
+    const onSubmitEdit = vi.fn();
+    const report = buildMessage({
+      text: 'forwarded report body',
+      groupMasterKey: 'g-2',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: false,
+          isDeleted: false,
+          text: '',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: '2026-08-17',
+          time: '09:30',
+          groupName: 'Original group',
+          groupMasterKey: null,
+        },
+      ],
+    });
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 91,
+      message: report,
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 91, message: report }}
+          onSubmitEdit={onSubmitEdit}
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Редагувати повідомлення');
+    expect(container.textContent).not.toContain('Редагувати розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe('forwarded report body');
+    expect(textFieldPropsByLabel.has('Текст оригінального повідомлення')).toBe(false);
+    expect(container.textContent).not.toContain('Видалити');
+
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      91,
+      expect.objectContaining({
+        full_body: 'forwarded report body',
+        signal_group_master_key: 'g-2',
+      }),
+    );
+    expect(onSubmitEdit).toHaveBeenCalledWith(91, report);
+
+    root.unmount();
+  });
+
+  it('deletes a standalone report after confirmation', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'original copied body' }],
+    });
+    const onClose = vi.fn();
+    const onDeleteSuccess = vi.fn();
+    const report = buildMessage({
+      text: 'existing report body',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'original summary body',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          onDeleteSuccess={onDeleteSuccess}
+          editTarget={{ id: 91, message: report }}
+        />,
+      );
+    });
+
+    const deleteButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Видалити',
+    );
+    expect(deleteButton).toBeDefined();
+    await act(async () => deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'Видалити розвіддонесення?',
+    );
+
+    const confirmButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Підтвердити видалення',
+    );
+    await act(async () => {
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(inboxMessageActionMocks.deleteMessage).toHaveBeenCalledWith({ id: 91 });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onDeleteSuccess).toHaveBeenCalledWith(91);
+
+    root.unmount();
+  });
+
+  it('keeps the report editor open when deletion fails', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'original copied body' }],
+    });
+    inboxMessageActionMocks.deleteMessage.mockRejectedValue(new Error('delete failed'));
+    const onClose = vi.fn();
+    const report = buildMessage({
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'original summary body',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'g-1',
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={onClose}
+          editTarget={{ id: 91, message: report }}
+        />,
+      );
+    });
+
+    const clickButton = async (label: string) => {
+      const button = Array.from(container.querySelectorAll('button')).find(
+        (candidate) => candidate.textContent?.trim() === label,
+      );
+      await act(async () => button?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    };
+    await clickButton('Видалити');
+    await act(async () => {
+      const confirmButton = Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === 'Підтвердити видалення',
+      );
+      confirmButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('delete failed');
+    expect(onClose).not.toHaveBeenCalled();
+
+    root.unmount();
   });
 
   it('restores focus before hiding the drawer from assistive technology', async () => {
@@ -1279,7 +1763,7 @@ describe('ManageMessageDrawer edit mode', () => {
     const onSubmitEdit = vi.fn();
     directSubmitMocks.editDirectSubmit.mockResolvedValue({
       signal_message_id: 55,
-      message: buildMessage({ extendedForm: 'edited comment', tags: [7] }),
+      message: buildMessage({ extendedForm: 'existing comment', tags: [7] }),
     });
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -1291,7 +1775,10 @@ describe('ManageMessageDrawer edit mode', () => {
           cyberEchoEnabled={false}
           currentUser={null}
           onClose={vi.fn()}
-          editTarget={{ id: 55, message: buildMessage({ tags: [7] }) }}
+          editTarget={{
+            id: 55,
+            message: buildMessage({ extendedForm: 'existing comment', tags: [7] }),
+          }}
           editSaveInFlight={false}
           onSubmitEdit={onSubmitEdit}
         />,
@@ -1302,12 +1789,11 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(container.textContent).not.toContain('арта');
 
     // User edits a non-tag field WHILE tags are still loading.
-    const commentField = container.querySelector(
-      'textarea[aria-label="Коментар"]',
-    ) as HTMLTextAreaElement;
-    expect(commentField).toBeTruthy();
+    expect(container.querySelector('textarea[aria-label="Коментар"]')).toBeNull();
     act(() => {
-      textFieldPropsByLabel.get('Коментар')?.onChange?.({ target: { value: 'edited comment' } });
+      textFieldPropsByLabel
+        .get('Текст повідомлення')
+        ?.onChange?.({ target: { value: 'edited body' } });
     });
 
     // Now the tags fetch resolves.
@@ -1324,9 +1810,13 @@ describe('ManageMessageDrawer edit mode', () => {
     });
 
     expect(onSubmitEdit).toHaveBeenCalledTimes(1);
-    // ...and the in-window comment edit was NOT clobbered by a second reset().
+    // ...and the in-window text edit was NOT clobbered by a second reset().
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      55,
+      expect.objectContaining({ full_body: 'edited body', comment: 'existing comment' }),
+    );
     expect(onSubmitEdit.mock.calls[0][1]).toMatchObject({
-      extendedForm: 'edited comment',
+      extendedForm: 'existing comment',
       tags: [7],
     });
 

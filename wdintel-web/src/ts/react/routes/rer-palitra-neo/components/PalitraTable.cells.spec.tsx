@@ -7,7 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Palitra } from '../../../../../Bindings';
-import type { PalitraRowView } from '../types';
+import type { FolderTableRowView, PalitraRowView } from '../types';
 import { buildPalitraTableColumns } from './PalitraTable.cells';
 
 vi.mock('@mui/material', () => ({
@@ -94,6 +94,33 @@ function makeRow(palitra: Palitra): PalitraRowView {
   };
 }
 
+function makeFolderRow(): FolderTableRowView {
+  return {
+    id: 'folder',
+    kind: 'folder',
+    folderPath: '/long-folder',
+    hiddenByCollapsedFolder: false,
+    name: 'Дуже довга назва папки для перевірки переповнення',
+    depth: 0,
+    totalCount: 2,
+    modifiableCount: 2,
+    childCount: 2,
+    isExpanded: false,
+    canSelect: false,
+    canModify: true,
+    archiveInFlight: false,
+    deleteInFlight: false,
+    downloadInFlight: false,
+    uploadInFlight: false,
+    retryInFlight: false,
+    colorHex: null,
+    sourceFileName: null,
+    lastUploadedAtTs: null,
+    author: null,
+    accessSummary: '—',
+  };
+}
+
 function renderNameCell(row: PalitraRowView) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -160,5 +187,62 @@ describe('PalitraTable cells', () => {
     expect(
       container.querySelector('[data-tooltip-title="invalid XML before declaration"]'),
     ).not.toBeNull();
+  });
+
+  it('keeps an overflowing folder name inside its single button tab stop', () => {
+    const originalClientWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'clientWidth',
+    );
+    const originalScrollWidth = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      'scrollWidth',
+    );
+    const onToggleFolderExpanded = vi.fn();
+    const container = document.createElement('div');
+    const folder = makeFolderRow();
+    try {
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get: () => 80,
+      });
+      Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+        configurable: true,
+        get: () => 240,
+      });
+      document.body.appendChild(container);
+      root = createRoot(container);
+      const nameColumn = buildPalitraTableColumns(onToggleFolderExpanded).find(
+        (column) => column.id === 'name',
+      );
+      const cell = nameColumn?.Cell?.({ row: { original: folder } } as never);
+
+      act(() => {
+        root?.render(createElement(() => <>{cell}</>));
+      });
+
+      const button = container.querySelector<HTMLButtonElement>('button');
+      const overflowText = [...(button?.querySelectorAll<HTMLElement>('span') ?? [])].find(
+        (element) =>
+          element.textContent === folder.name && !element.hasAttribute('data-tooltip-title'),
+      );
+      expect(overflowText?.scrollWidth).toBeGreaterThan(overflowText?.clientWidth ?? 0);
+      expect(button).not.toBeNull();
+      expect(button?.tabIndex).toBe(0);
+      expect(button?.querySelector('[tabindex="0"]')).toBeNull();
+      expect(button?.textContent).toContain(folder.name);
+      act(() => button?.click());
+      expect(onToggleFolderExpanded).toHaveBeenCalledWith(folder.folderPath);
+    } finally {
+      root?.unmount();
+      root = null;
+      container.remove();
+      if (originalClientWidth)
+        Object.defineProperty(HTMLElement.prototype, 'clientWidth', originalClientWidth);
+      else delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      if (originalScrollWidth)
+        Object.defineProperty(HTMLElement.prototype, 'scrollWidth', originalScrollWidth);
+      else delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
   });
 });

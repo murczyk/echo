@@ -22,10 +22,9 @@ pg_dbname = "wd_files"
 ```
 
 Without this section, the backend skips the file-registry connection and
-migrations, and device file
-operations return HTTP 503. If Devices is enabled through
-To enable the file registry on a deployment host, add the section and create
-the configured database once before restarting the server or background worker.
+migrations, and device file operations return HTTP 503. To enable the file
+registry on a deployment host, add the section and create the configured
+database once before restarting the server or background worker.
 Run the one-off command from the installed backend package:
 
 ```bash
@@ -50,6 +49,15 @@ Generate the isolated SeaORM entity tree from the same configuration:
 ```bash
 just gen-seaorm-files --mode=debug
 ```
+
+The batched metadata protocol uses the normal package migration flow. Echo
+startup applies the destructive `wdfiles-migration`; the Still file-registry
+migration preserves every file and staged-change row while replacing legacy
+Echo sync columns with empty batched-sync projections and clearing the source
+scan checkpoint. The Django migration leaves the Echo integration disabled.
+No extra deployment script or one-off reset command is required. Install
+compatible Echo and Still packages, then explicitly re-enable the integration
+in Still's Django admin only when synchronization may resume.
 
 
 ### runtime deps

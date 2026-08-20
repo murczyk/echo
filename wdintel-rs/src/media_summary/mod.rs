@@ -398,7 +398,9 @@ mod tests {
         media_summary_settings, signal_message_media,
     };
     use sea_orm::{
-        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+        ActiveModelTrait,
+        ActiveValue::{NotSet, Set},
+        EntityTrait, IntoActiveModel,
     };
     use serde_json::json;
     use uuid::Uuid;
@@ -511,6 +513,7 @@ mod tests {
             size_bytes: Set(1),
             created_at: Set(now),
             is_encrypted: Set(true),
+            storage_key: NotSet,
         }
         .insert(&env.dbx)
         .await

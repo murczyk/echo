@@ -1,6 +1,32 @@
 ## Перелік месенджерів
 
 - [gdocs: ЕХО](https://docs.google.com/spreadsheets/d/17mDPD0OM6HjXteMElScK0sT6jiOyS6C2Ic3i62NBRds/edit?gid=0#gid=0)
+
+## Черга обробки
+
+Отримання повідомлень і їх обробка працюють окремо. Вхідні знімки надійно
+зберігаються в `signal_message_queue`. Перед обробкою воркер перевіряє
+`http://127.0.0.1:5000/health/ready`: протягом першої хвилини — кожні 2 секунди,
+далі — кожні 30 секунд. Недоступність NLP не зупиняє отримання повідомлень або
+інші фонові воркери.
+
+Невдала обробка записує `attempt_count`, `next_attempt_at` і скорочений
+`last_error`. Інтервали повторів: 5 с, 15 с, 1 хв, 5 хв, 15 хв, далі 30 хв.
+Оновлений знімок повідомлення скидає цей стан. Рядки не видаляються через
+вичерпання спроб.
+
+Для швидкої перевірки відставання:
+
+```sql
+select
+    count(*) as depth,
+    count(*) filter (
+        where next_attempt_at <= now() at time zone 'utc'
+    ) as due_depth,
+    max(attempt_count) as max_attempt_count,
+    min(created_at) as oldest_created_at
+from signal_message_queue;
+```
   
 ## Діагностування 
 

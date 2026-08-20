@@ -15,25 +15,25 @@ vi.mock('../../../components/PowerDateTimePicker', () => ({
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
 const ROOT_ID = '018f0000-0000-7000-8000-000000000001';
 const FILE_ID = '018f0000-0000-7000-8000-000000000002';
+const SYNC_ID = '018f0000-0000-7000-8000-000000000003';
 const NOW = '2026-07-24T08:00:00Z';
 
 function buildRow(localId: string): DeviceFileSyncRow {
   return {
     localId,
-    fileId: null,
+    existing: false,
     absolutePath: 'C:\\rejected.log',
     mimeType: '',
     extension: '',
     fileMetadataCreatedAt: null,
     fileMetadataModifiedAt: null,
+    sourceFileState: null,
     fieldErrors: { absolutePath: 'invalid path' },
     result: {
       kind: 'rejected',
-      error: {
-        kind: 'validation',
-        message: 'bad path',
-        fieldErrors: [['files[0].absolute_path', 'invalid path']],
-      },
+      code: 'validation',
+      message: 'bad path',
+      fieldErrors: [{ path: 'files[0].absolute_path', message: 'invalid path' }],
     },
   };
 }
@@ -44,21 +44,15 @@ function buildAcceptedRow(): DeviceFileSyncRow {
     result: {
       kind: 'accepted',
       operation: 'updated',
-      root: {
-        entryId: ROOT_ID,
-        deviceId: DEVICE_ID,
-        parentEntryId: null,
-        kind: 'directory',
-        name: 'C:\\',
-        createdAt: NOW,
-        updatedAt: NOW,
-      },
+      fileId: FILE_ID,
+      revision: 2,
       file: {
         fileId: FILE_ID,
         deviceId: DEVICE_ID,
         parentEntryId: ROOT_ID,
         rootEntryId: ROOT_ID,
         absolutePath: 'C:\\canonical.log',
+        hasContent: false,
         name: 'canonical.log',
         pathComponents: ['canonical.log'],
         mimeType: null,
@@ -67,6 +61,10 @@ function buildAcceptedRow(): DeviceFileSyncRow {
         fileMetadataModifiedAt: null,
         createdAt: NOW,
         updatedAt: NOW,
+        revision: 2,
+        syncId: SYNC_ID,
+        sourceFileState: null,
+        tags: [],
       },
     },
   };
@@ -100,6 +98,18 @@ describe('DeviceFileSyncDialog', () => {
           submitting={false}
           batchError={null}
           transportUncertain={false}
+          syncSummary={{
+            syncId: SYNC_ID,
+            deviceId: DEVICE_ID,
+            mode: 'automatic',
+            status: 'completed_with_errors',
+            nextBatchIndex: 1,
+            counts: { received: 2, accepted: 1, created: 0, updated: 1, rejected: 1 },
+            createdAt: NOW,
+            updatedAt: NOW,
+            completedAt: NOW,
+            expiresAt: null,
+          }}
           canSubmit
           onClose={vi.fn()}
           onAddRow={vi.fn()}
@@ -111,7 +121,9 @@ describe('DeviceFileSyncDialog', () => {
     });
 
     expect(document.body.textContent).toContain('Оновлено: C:\\canonical.log');
-    expect(document.body.textContent).toContain(`Root ID: ${ROOT_ID}; File ID: ${FILE_ID}`);
+    expect(document.body.textContent).toContain(
+      `Root ID: ${ROOT_ID}; File ID: ${FILE_ID}; Revision: 2`,
+    );
     expect(document.body.textContent).toContain('validation: bad path');
     const pathInput = document.body.querySelector('input[value="C:\\\\rejected.log"]');
     expect(pathInput).not.toBeNull();
@@ -135,6 +147,7 @@ describe('DeviceFileSyncDialog', () => {
           submitting={false}
           batchError="Результат запиту невідомий"
           transportUncertain
+          syncSummary={null}
           canSubmit
           onClose={vi.fn()}
           onAddRow={vi.fn()}

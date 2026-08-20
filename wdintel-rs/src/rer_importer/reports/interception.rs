@@ -390,6 +390,43 @@ async fn load_interception_report_chunk(
         .collect::<Result<Vec<_>, DbErr>>()
         .context(h!())?;
 
+    let message_ids = messages
+        .iter()
+        .map(|message| message.message_id)
+        .collect::<Vec<_>>();
+    let allowed_comment_logins = if req.report_tags_only_this_unit == Some(true)
+    {
+        Some(
+            crate::users::get_organism_login_ids_by_id(read_db, user_login)
+                .await
+                .context(h!())?,
+        )
+    } else {
+        None
+    };
+    let comments = crate::sigint::comments::find_report_comments(
+        read_db,
+        &message_ids,
+        allowed_comment_logins.as_deref(),
+    )
+    .await
+    .context(h!())?;
+    let mut comments_by_message = HashMap::<i64, Vec<String>>::new();
+    for comment in comments {
+        if !comment.comment.trim().is_empty() {
+            comments_by_message
+                .entry(comment.source_message_id)
+                .or_default()
+                .push(comment.comment);
+        }
+    }
+    let mut messages = messages;
+    for message in &mut messages {
+        message.comment = comments_by_message
+            .get(&message.message_id)
+            .map(|comments| comments.join("\n"));
+    }
+
     Ok(messages)
 }
 
@@ -490,18 +527,6 @@ async fn build_inbox_messages_report_sql(
         ));
     let report_tags_only_this_unit =
         req.report_tags_only_this_unit == Some(true);
-    let logins2 = login_ids.clone();
-    let comment_join = if report_tags_only_this_unit {
-        signal_message::Relation::SigintComment.def().on_condition(
-            move |_left, right| {
-                Expr::col((right, sigint_comment::Column::LoginId))
-                    .is_in(logins2.clone())
-                    .into_condition()
-            },
-        )
-    } else {
-        signal_message::Relation::SigintComment.def()
-    };
     let tags_join = sigint_inbox_item_tag::Relation::SigintInboxItem
         .def()
         .rev()
@@ -571,12 +596,7 @@ async fn build_inbox_messages_report_sql(
             "#.into()),
             "unit",
         )
-        .column_as(
-            SimpleExpr::Custom(r#"
-                STRING_AGG(DISTINCT sigint_comment.comment, E'\n')
-            "#.into()),
-            "comment",
-        )
+        .column_as(Expr::cust("NULL"), "comment")
         .column(sigint_inbox_item::Column::Coords)
         .column_as(sigint_important::Column::SignalMessageId,"important")
         .join(
@@ -625,10 +645,6 @@ async fn build_inbox_messages_report_sql(
         )
         .join(
             JoinType::LeftJoin,
-            comment_join,
-        )
-        .join(
-            JoinType::LeftJoin,
             tags_join,
         )
         .join(
@@ -649,6 +665,16 @@ async fn build_inbox_messages_report_sql(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         );
+    let linked_message_ids = intel_product::Entity::find()
+        .select_only()
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
+        ]))
+        .into_query();
+    q = q
+        .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
 
     if req.without_model_tags == Some(true) {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());

@@ -70,26 +70,27 @@ pub mod tests {
                 .execute_unprepared(
                     r#"
                     truncate table
-                        public.file_analysis_reanalysis_job,
-                        public.file_analysis_device_state,
-                        public.file_analysis_state,
+                        public.file_analysis_run_item,
+                        public.file_analysis_run,
+                        public.file_analysis_definition,
+                        public.file_device_source_state,
+                        public.file_sync_item,
+                        public.file_sync_batch,
+                        public.file_revision,
+                        public.file_sync_session,
                         public.device_file_tag,
                         public.analytics_tag_test_file,
                         public.analytics_tag,
                         public.file_entry;
-                    update public.file_analysis_control
-                    set backfill_cursor = null,
-                        backfill_complete = true,
-                        next_generation = 1,
-                        updated_at = clock_timestamp()
-                    where id;
-                    update public.analytics_tag_rule_set_state
-                    set revision = 0
-                    where id;
                     "#,
                 )
                 .await
                 .context(h!())?;
+            crate::devices::analytics::initialize_definition(
+                file_registry_db.connection(),
+            )
+            .await
+            .context(h!())?;
         }
         let transaction = env.dbx.begin().await.context(h!())?;
         transaction

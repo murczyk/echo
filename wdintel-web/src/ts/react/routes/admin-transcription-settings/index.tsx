@@ -13,7 +13,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
@@ -30,7 +30,9 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -52,7 +54,7 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 
 const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
-const ROW_ACTIONS_COLUMN_SIZE = 96;
+const ROW_ACTIONS_COLUMN_SIZE = 76;
 
 const DEFAULT_COLUMNS_VISIBILITY = {
   ordering: true,
@@ -161,7 +163,7 @@ function TranscriberInstancesTable({
     }),
     [tableStateContext.columnSizing],
   );
-  const columns = useMemo<MRT_ColumnDef<TranscriberInstance>[]>(
+  const columns = useMemo<AppMrtColumnDef<TranscriberInstance>[]>(
     () => [
       { header: 'Порядок', accessorKey: 'ordering', size: 90 },
       { header: 'Назва', accessorKey: 'name', size: 180 },
@@ -172,16 +174,16 @@ function TranscriberInstancesTable({
         header: 'Активний',
         accessorKey: 'is_active',
         size: 110,
-        Cell: ({ cell }) => (cell.getValue<boolean>() ? 'Так' : 'Ні'),
+        meta: { overflowMode: 'none' },
+        Cell: ({ cell }) => (cell.getValue() ? 'Так' : 'Ні'),
       },
     ],
     [],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: instances,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -234,6 +236,7 @@ function TranscriberInstancesTable({
         size: ROW_ACTIONS_COLUMN_SIZE,
         minSize: ROW_ACTIONS_COLUMN_SIZE,
         maxSize: ROW_ACTIONS_COLUMN_SIZE,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],

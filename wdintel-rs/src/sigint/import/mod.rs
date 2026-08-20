@@ -765,6 +765,16 @@ async fn import_area_of_responsibility_data<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    crate::battle_line::lock_updates(txn).await.context(h!())?;
+    let has_active_battle_line = battle_line_version::Entity::find()
+        .filter(battle_line_version::Column::RetiredAt.is_null())
+        .select_only()
+        .column(battle_line_version::Column::Id)
+        .into_tuple::<i64>()
+        .one(txn)
+        .await
+        .context(h!())?
+        .is_some();
     let mut max_id = area_of_responsibility::Entity::find()
         .select_only()
         .column(area_of_responsibility::Column::Id)
@@ -832,7 +842,17 @@ where
         .await
         .context(h!())?;
         let new_id = new_rec.id;
+        if has_active_battle_line {
+            crate::battle_line::refresh_aor_geometry(txn, new_id)
+                .await
+                .context(h!())?;
+        }
         result.insert(rec.id, new_id);
+    }
+    if has_active_battle_line && (num_created > 0 || num_updated > 0) {
+        crate::battle_line::requeue_settlement_links(txn)
+            .await
+            .context(h!())?;
     }
     Ok(ImportResult {
         ids_map: result,

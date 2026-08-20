@@ -17,7 +17,7 @@ import {
   TextField,
   Tooltip,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import {
@@ -42,9 +42,15 @@ import {
   getPageScrollTableContainerSx,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtItemsCell,
+  mrtCustomCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -54,6 +60,7 @@ import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
 import { PowerAlert } from '../../components/PowerAlert';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
+import { UserUuidValue } from './UserUuidValue';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -413,43 +420,48 @@ function getStatusInfo(login: Login): StatusInfo {
   return { label: 'Активний', colorClass: 'text-green-600' };
 }
 
-function useUsersColumns(): MRT_ColumnDef<Login>[] {
+function useUsersColumns(): AppMrtColumnDef<Login>[] {
   return useMemo(
     () => [
       {
         header: 'Логін',
         accessorKey: 'login',
-        Cell: ({ row }) => (
-          <Box
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true },
+        Cell: mrtCustomCell(({ row }) => (
+          <MrtOverflowText
+            displayValue={row.original.login}
+            fullValue={row.original.login}
+            interactive
             component="a"
-            href={`/admin/users-neo/${encodeURIComponent(row.original.id)}`}
-            onClick={(event) => {
-              if (
-                event.button === 0 &&
-                !event.ctrlKey &&
-                !event.metaKey &&
-                !event.shiftKey &&
-                !event.altKey
-              ) {
-                event.preventDefault();
-                window.history.pushState(
-                  {},
-                  '',
-                  `/admin/users-neo/${encodeURIComponent(row.original.id)}`,
-                );
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }
+            componentProps={{
+              href: `/admin/users-neo/${encodeURIComponent(row.original.id)}`,
+              onClick: (event: MouseEvent) => {
+                if (
+                  event.button === 0 &&
+                  !event.ctrlKey &&
+                  !event.metaKey &&
+                  !event.shiftKey &&
+                  !event.altKey
+                ) {
+                  event.preventDefault();
+                  window.history.pushState(
+                    {},
+                    '',
+                    `/admin/users-neo/${encodeURIComponent(row.original.id)}`,
+                  );
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }
+              },
             }}
-          >
-            {row.original.login}
-          </Box>
-        ),
+          />
+        )),
         size: 200,
       },
       {
         header: 'UUID',
         accessorKey: 'id',
-        Cell: ({ row }) => (
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell<Login>(({ row }) => (
           <Box
             sx={{
               display: 'flex',
@@ -467,45 +479,22 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
               },
             }}
           >
-            <Tooltip title={row.original.id}>
-              <Box component="span" sx={{ fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                {formatUuidShort(row.original.id)}
-              </Box>
-            </Tooltip>
+            <UserUuidValue uuid={row.original.id} shortValue={formatUuidShort(row.original.id)} />
             <CopyUuidButton uuid={row.original.id} className="uuid-copy-button" />
           </Box>
-        ),
+        )),
         size: 190,
       },
       {
         header: 'Ролі',
         id: 'roles',
         accessorFn: (row) => row.roles,
-        Cell: ({ row }) => {
-          if (row.original.roles.length === 0) return <span>—</span>;
-          return (
-            <div className="flex flex-wrap gap-1">
-              {row.original.roles.map((role) => (
-                <PowerChip
-                  key={role}
-                  size="small"
-                  label={role}
-                  title={role}
-                  interactive={false}
-                  unselectedOpacity={1}
-                  fontSize="0.75rem"
-                  fontWeight={500}
-                  labelPaddingX={0.5}
-                  labelPaddingY={0.25}
-                  unselectedBackgroundColor="#f1f5f9"
-                  unselectedTextColor="#475569"
-                  unselectedBorderColor="#cbd5e1"
-                  sx={{ lineHeight: 1 }}
-                />
-              ))}
-            </div>
-          );
-        },
+        meta: { overflowMode: 'items' },
+        Cell: mrtItemsCell<Login, string>({
+          items: ({ row }) => row.original.roles,
+          renderItem: (role) => <PowerChip label={role} size="small" interactive={false} />,
+          getItemText: (role) => role,
+        }),
         filterVariant: 'multi-select',
         filterSelectOptions: ROLE_OPTIONS,
         filterFn: 'arrIncludesSome',
@@ -516,28 +505,22 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
         header: 'Організм',
         id: 'organism',
         accessorFn: (row) => formatOptionalLabel(row.organismName),
-        Cell: ({ row }) => {
-          const label = formatOptionalLabel(row.original.organismName);
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatOptionalLabel(row.original.organismName),
+          fullValue: ({ row }) => formatOptionalLabel(row.original.organismName),
+        }),
         size: 220,
       },
       {
         header: 'Напрямок',
         id: 'zone',
         accessorFn: (row) => formatOptionalLabel(row.sigintZoneName),
-        Cell: ({ row }) => {
-          const label = formatOptionalLabel(row.original.sigintZoneName);
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatOptionalLabel(row.original.sigintZoneName),
+          fullValue: ({ row }) => formatOptionalLabel(row.original.sigintZoneName),
+        }),
         size: 200,
       },
       {
@@ -550,13 +533,18 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
         header: 'Створено',
         id: 'createdAt',
         accessorFn: (row) => row.createdAt,
-        Cell: ({ row }) => <span>{formatDate(row.original.createdAt)}</span>,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDate(row.original.createdAt),
+          fullValue: ({ row }) => formatDate(row.original.createdAt),
+        }),
         size: 150,
       },
       {
         header: 'Статус',
         id: 'status',
         accessorFn: (row) => [getStatusInfo(row).label],
+        meta: { overflowMode: 'wrap' },
         Cell: ({ row }) => {
           const status = getStatusInfo(row.original);
           return (
@@ -584,14 +572,11 @@ function useUsersColumns(): MRT_ColumnDef<Login>[] {
         header: 'Нотатка',
         id: 'description',
         accessorFn: (row) => formatOptionalLabel(row.description),
-        Cell: ({ row }) => {
-          const label = formatOptionalLabel(row.original.description);
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatOptionalLabel(row.original.description),
+          fullValue: ({ row }) => formatOptionalLabel(row.original.description),
+        }),
         size: 260,
       },
     ],
@@ -1208,10 +1193,9 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: props.loading ? buildUserLoadingRows() : props.data,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

@@ -95,14 +95,17 @@ view shared user model =
     , body =
         [ div
             [ class <|
-                if shouldShowAiChat shared user model then
+                if not shared.userLoaded || shouldShowAiChat shared user model then
                     "app-shell-fill-height box-border min-h-0 w-full flex flex-col overflow-hidden"
 
                 else
                     "box-border container mx-auto px-4 py-6"
             ]
-            [ if shouldShowAiChat shared user model then
-                viewAiHome model
+            [ if not shared.userLoaded then
+                viewAiHome True model
+
+              else if shouldShowAiChat shared user model then
+                viewAiHome False model
 
               else
                 viewClassicHome user model
@@ -246,8 +249,8 @@ hasEmptyInboxGroupsActivityData model =
             False
 
 
-viewAiHome : Model -> Html Msg
-viewAiHome model =
+viewAiHome : Bool -> Model -> Html Msg
+viewAiHome isUserLoading model =
     div [ class "w-full flex flex-col flex-1 min-h-0" ]
         [ Html.node "ai-agent-chat"
             [ class <|
@@ -256,6 +259,13 @@ viewAiHome model =
 
                 else
                     "react-fill-host flex-1"
+            , Attr.attribute "data-loading"
+                (if isUserLoading then
+                    "true"
+
+                 else
+                    "false"
+                )
             , on "ai-agent-availability" <|
                 Decode.map AiChatAvailabilityChanged <|
                     Decode.at [ "detail", "state" ] aiChatStateDecoder

@@ -1,14 +1,19 @@
 import EditIcon from '@mui/icons-material/Edit';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import MapIcon from '@mui/icons-material/Map';
-import { Box, Typography } from '@mui/material';
-import { MRT_ColumnDef, type MRT_SortingState } from 'material-react-table';
+import { Box } from '@mui/material';
+import { type MRT_ColumnDef, type MRT_SortingState } from 'material-react-table';
 
 import { CUSTOM_STYLES } from '../../../components/mui-customized/table/custom-styles';
-import { buildDefaultColumnOrder } from '../../../components/mui-customized/table/get-default-table-options';
+import {
+  buildDefaultColumnOrder,
+  type AppMrtColumnDef,
+  mrtItemsCell,
+  mrtTextCell,
+} from '../../../components/mui-customized/table/get-default-table-options';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import type { AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
-import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
+import { callsignOverflowRenderer, CompactListCell } from './analysis-summary-table-cells';
 
 export const DEFAULT_ANALYSIS_SUMMARY_TABLE_COLUMN_VISIBILITY = {
   rowActions: true,
@@ -40,6 +45,7 @@ export const DEFAULT_ANALYSIS_SUMMARY_TABLE_SORTING = [
 const rowActionsDisplayColumnDef = CUSTOM_STYLES.displayColumnDefOptions[
   'mrt-row-actions'
 ] as Partial<MRT_ColumnDef<AnalysisSummaryTableRowView>>;
+const { columns: _rowActionColumns, ...rowActionsDisplayColumnProps } = rowActionsDisplayColumnDef;
 
 export function buildAnalysisSummaryTableColumns({
   onRenameUnit,
@@ -49,10 +55,10 @@ export function buildAnalysisSummaryTableColumns({
   onRenameUnit: (row: AnalysisSummaryTableRowView) => void;
   onSelectFreq: (freq: string) => void;
   onShowFreqOnMap: (freq: string) => void;
-}): MRT_ColumnDef<AnalysisSummaryTableRowView>[] {
+}): AppMrtColumnDef<AnalysisSummaryTableRowView>[] {
   return [
     {
-      ...rowActionsDisplayColumnDef,
+      ...rowActionsDisplayColumnProps,
       header: 'Дії',
       id: 'rowActions',
       size: 48,
@@ -63,6 +69,7 @@ export function buildAnalysisSummaryTableColumns({
       enableColumnActions: false,
       enableHiding: false,
       enableSorting: false,
+      meta: { overflowMode: 'none' },
       Cell: ({ row }) => (
         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
           <MrtRowActions>
@@ -94,15 +101,12 @@ export function buildAnalysisSummaryTableColumns({
       size: 128,
       grow: false,
       enableSorting: true,
-      Cell: ({ row }) => (
-        <Typography
-          variant="body2"
-          noWrap
-          sx={{ fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
-        >
-          {row.original.freq}
-        </Typography>
-      ),
+      meta: { overflowMode: 'text' },
+      Cell: mrtTextCell<AnalysisSummaryTableRowView>({
+        displayValue: ({ row }) => row.original.freq,
+        fullValue: ({ row }) => row.original.freq,
+        displaySx: { fontWeight: 600 },
+      }),
     },
     {
       header: 'К-сть',
@@ -119,28 +123,50 @@ export function buildAnalysisSummaryTableColumns({
       accessorFn: (row) => row.coordinateLabels.join(' '),
       id: 'coordinateLabels',
       size: 144,
-      Cell: ({ row }) => <CompactListCell items={row.original.coordinateLabels} maxVisible={2} />,
+      meta: { overflowMode: 'items' },
+      Cell: mrtItemsCell<AnalysisSummaryTableRowView, string>({
+        items: ({ row }) => row.original.coordinateLabels,
+        getItemText: (item) => item,
+        renderItem: (item) => <Box component="span">{item}</Box>,
+      }),
     },
     {
       header: 'Позивні',
       accessorFn: (row) => row.callsignChips.map((entry) => entry.callsign).join(' '),
       id: 'callsignSearchText',
       size: 248,
-      Cell: ({ row }) => <CallsignChipsCell callsigns={row.original.callsignChips} />,
+      meta: { overflowMode: 'items' },
+      Cell: mrtItemsCell<
+        AnalysisSummaryTableRowView,
+        AnalysisSummaryTableRowView['callsignChips'][number]
+      >({
+        items: ({ row }) => row.original.callsignChips,
+        ...callsignOverflowRenderer,
+      }),
     },
     {
       header: 'Підрозділи',
       accessorFn: (row) => row.unitLabels.join(' '),
       id: 'unitSearchText',
       size: 224,
-      Cell: ({ row }) => <CompactListCell items={row.original.unitLabels} maxVisible={2} />,
+      meta: { overflowMode: 'items' },
+      Cell: mrtItemsCell<AnalysisSummaryTableRowView, string>({
+        items: ({ row }) => row.original.unitLabels,
+        getItemText: (item) => item,
+        renderItem: (item) => <Box component="span">{item}</Box>,
+      }),
     },
     {
       header: 'Локації',
       accessorFn: (row) => row.locationLabels.join(' '),
       id: 'locationSearchText',
       size: 208,
-      Cell: ({ row }) => <CompactListCell items={row.original.locationLabels} maxVisible={2} />,
+      meta: { overflowMode: 'items' },
+      Cell: mrtItemsCell<AnalysisSummaryTableRowView, string>({
+        items: ({ row }) => row.original.locationLabels,
+        getItemText: (item) => item,
+        renderItem: (item) => <Box component="span">{item}</Box>,
+      }),
     },
   ];
 }

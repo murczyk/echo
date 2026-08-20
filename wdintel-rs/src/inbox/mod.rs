@@ -291,6 +291,13 @@ where
         .exec_with_returning(txn)
         .await
         .c(h!())?;
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        txn,
+        result.id,
+        result.location_v2.as_deref(),
+    )
+    .await
+    .c(h!())?;
     unit_resolution::resolve_and_sync_inbox_item(
         txn,
         result.id,
@@ -321,7 +328,7 @@ where
     .c(h!())?;
 
     if comment_parsing_enabled {
-        insert_missing_auto_comments(txn, message.id, post_id, &body)
+        insert_missing_auto_comments(txn, config, message.id, post_id, &body)
             .await
             .c(h!())?;
     }
@@ -657,8 +664,27 @@ pub async fn fanout_inbox_changes(
     Ok(())
 }
 
+pub async fn fanout_intelligence_report_changes(
+    redis: &mut redis::aio::ConnectionManager,
+    inbox_item_ids: Vec<i64>,
+) -> Result<(), AppError> {
+    if inbox_item_ids.is_empty() {
+        return Ok(());
+    }
+    let events = inbox_item_ids
+        .into_iter()
+        .map(|inbox_item_id| {
+            EventMsg::new(EventType::ETInboxChanged(inbox_item_id))
+                .with_intelligence_report()
+        })
+        .collect();
+    fanout_mult(redis, events).await.c(h!())?;
+    Ok(())
+}
+
 async fn insert_missing_auto_comments<'a, 'async_trait, C>(
     txn: &'a C,
+    config: &Config,
     signal_message_id: i64,
     sigint_post_id: Option<i64>,
     body: &str,
@@ -678,7 +704,7 @@ where
     }
 
     for text in texts {
-        let exists = sigint_comment::Entity::find()
+        let existing = sigint_comment::Entity::find()
             .filter(
                 sigint_comment::Column::SignalMessageId.eq(signal_message_id),
             )
@@ -686,20 +712,42 @@ where
             .filter(sigint_comment::Column::Comment.eq(text.clone()))
             .one(txn)
             .await
-            .c(h!())?
-            .is_some();
-        if exists {
+            .c(h!())?;
+        let legacy_comment = match existing {
+            Some(comment) => comment,
+            None => sigint_comment::ActiveModel {
+                id: NotSet,
+                signal_message_id: Set(signal_message_id),
+                login_id: Set(system_login_id),
+                comment: Set(text.clone()),
+                created_at: NotSet,
+                sigint_post_id: Set(sigint_post_id),
+                migrated_signal_message_id: NotSet,
+            }
+            .insert(txn)
+            .await
+            .c(h!())?,
+        };
+        if legacy_comment.migrated_signal_message_id.is_some() {
             continue;
         }
-        sigint_comment::ActiveModel {
-            id: NotSet,
-            signal_message_id: Set(signal_message_id),
-            login_id: Set(system_login_id),
-            comment: Set(text),
-            created_at: NotSet,
-            sigint_post_id: Set(sigint_post_id),
-        }
-        .insert(txn)
+        let linked_message_id =
+            crate::sigint::comments::create_linked_message_comment_from_ingestion(
+                txn,
+                config,
+                signal_message_id,
+                &system_login_id,
+                &legacy_comment.comment,
+                legacy_comment.created_at,
+                legacy_comment.sigint_post_id,
+            )
+            .await
+            .c(h!())?;
+        crate::sigint::comments::mark_legacy_comment_as_migrated(
+            txn,
+            legacy_comment.id,
+            linked_message_id,
+        )
         .await
         .c(h!())?;
     }
@@ -989,9 +1037,15 @@ mod tests {
         .await
         .unwrap();
 
-        insert_missing_auto_comments(&env.dbx, message.id, None, body)
-            .await
-            .unwrap();
+        insert_missing_auto_comments(
+            &env.dbx,
+            &env.config,
+            message.id,
+            None,
+            body,
+        )
+        .await
+        .unwrap();
 
         let comments = sigint_comment::Entity::find()
             .filter(sigint_comment::Column::SignalMessageId.eq(message.id))
@@ -1000,6 +1054,24 @@ mod tests {
             .unwrap();
         assert_eq!(comments.len(), 1);
         assert_eq!(comments[0].comment, "важливий коментар");
+        assert!(comments[0].migrated_signal_message_id.is_some());
+        let linked_comments =
+            crate::sigint::comments::find_linked_message_comments(
+                &env.dbx,
+                &[message.id],
+            )
+            .await
+            .unwrap();
+        assert_eq!(linked_comments.len(), 1);
+        assert_eq!(linked_comments[0].comment, "важливий коментар");
+        let linked_message = signal_message::Entity::find_by_id(
+            linked_comments[0].intel_message_id,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(linked_message.timestamp, Some(linked_message.created_at));
 
         let system_login_id =
             crate::users::system_login_id(&env.dbx).await.unwrap();

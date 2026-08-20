@@ -16,12 +16,15 @@ import {
 } from 'material-react-table';
 import { MRT_Localization_UK } from 'material-react-table/locales/uk';
 import type { MouseEvent, ReactNode } from 'react';
+import type { SxProps } from '@mui/material/styles';
 import { isNullOrUndefined } from '../../../utils/misc';
 
 import { TableEmptyState } from '../../TableEmptyState';
 import { CUSTOM_STYLES } from './custom-styles';
 import { windowWidth } from '../../../utils/browser';
 import { EMPTY_STATE_NO_RESULTS_TEXT } from '../../../routes/shared/empty-state-text';
+import { useMaterialReactTable as useMaterialReactTableImpl } from 'material-react-table';
+import { MrtOverflowItems, MrtOverflowText, type MrtOverflowMode } from './mrt-overflow';
 
 function onSharedSelectFilterMouseDown(event: MouseEvent<HTMLDivElement>) {
   const target = event.target as HTMLElement | null;
@@ -304,6 +307,318 @@ export const getDefaultMRTOptions = <TData extends MRT_RowData>(): Partial<
   renderEmptyRowsFallback: ({ table }) => renderDefaultMrtEmptyRowsFallback({ table }),
   ...CUSTOM_STYLES,
 });
+
+export type MrtColumnMeta = {
+  overflowMode?: MrtOverflowMode;
+  overflowOwner?: 'shared-text' | 'domain-hover' | 'structured-layout';
+  interactive?: boolean;
+  [key: string]: unknown;
+};
+
+/**
+ * The application column shape deliberately owns the recursive `columns`
+ * property.  Keeping it separate from MRT's type makes policy checks apply to
+ * grouped columns too, rather than only to the table's top level.
+ */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
+  ? Omit<T, Extract<keyof T, K>>
+  : never;
+
+type AppMrtColumnBase<TData extends MRT_RowData> = DistributiveOmit<
+  MRT_ColumnDef<TData>,
+  'Cell' | 'columns' | 'meta'
+> & {
+  columns?: AppMrtColumnDef<TData>[];
+};
+
+export type AppMrtTableOptions<TData extends MRT_RowData> = Omit<
+  MRT_TableOptions<TData>,
+  'columns'
+> & {
+  columns: AppMrtColumnDef<TData>[];
+};
+
+const MRT_TEXT_CELL = Symbol('mrtTextCell');
+const MRT_ITEMS_CELL = Symbol('mrtItemsCell');
+const MRT_CUSTOM_CELL = Symbol('mrtCustomCell');
+const MRT_CUSTOM_OWNERS = new Set(['shared-text', 'domain-hover', 'structured-layout']);
+export type MrtTextCellRenderer<TData extends MRT_RowData> = NonNullable<
+  MRT_ColumnDef<TData>['Cell']
+> & {
+  [MRT_TEXT_CELL]: true;
+};
+export type MrtItemsCellRenderer<TData extends MRT_RowData> = NonNullable<
+  MRT_ColumnDef<TData>['Cell']
+> & { [MRT_ITEMS_CELL]: true };
+export type MrtCustomCellRenderer<TData extends MRT_RowData> = NonNullable<
+  MRT_ColumnDef<TData>['Cell']
+> & { [MRT_CUSTOM_CELL]: true };
+
+export type AppMrtColumnDef<TData extends MRT_RowData> =
+  | (AppMrtColumnBase<TData> & { Cell?: never; meta?: MrtColumnMeta })
+  | (AppMrtColumnBase<TData> & {
+      Cell: MrtTextCellRenderer<TData>;
+      meta: MrtColumnMeta & { overflowMode: 'text' };
+    })
+  | (AppMrtColumnBase<TData> & {
+      Cell: MrtItemsCellRenderer<TData>;
+      meta: MrtColumnMeta & { overflowMode: 'items' };
+    })
+  | (AppMrtColumnBase<TData> & {
+      Cell: MrtCustomCellRenderer<TData>;
+      meta: MrtColumnMeta & {
+        overflowMode: 'custom';
+        overflowOwner: 'shared-text' | 'domain-hover' | 'structured-layout';
+      };
+    })
+  | (AppMrtColumnBase<TData> & {
+      Cell: NonNullable<MRT_ColumnDef<TData>['Cell']>;
+      meta: MrtColumnMeta & { overflowMode: 'wrap' | 'none' };
+    });
+
+export function mrtTextCell<TData extends MRT_RowData>({
+  displayValue,
+  fullValue = (props) => toMrtScalarText(props.cell.getValue()),
+  displaySx,
+  interactive = false,
+}: {
+  displayValue: (props: any) => string | number;
+  fullValue?: (props: any) => string | null | undefined;
+  displaySx?: SxProps<Theme>;
+  interactive?: boolean;
+}): MrtTextCellRenderer<TData> {
+  const renderer = ((props) => (
+    <MrtOverflowText
+      displayValue={displayValue(props)}
+      fullValue={fullValue(props)}
+      interactive={interactive}
+      sx={displaySx}
+    />
+  )) as MrtTextCellRenderer<TData>;
+  renderer[MRT_TEXT_CELL] = true;
+  return renderer;
+}
+
+export function mrtCustomCell<TData extends MRT_RowData>(
+  renderer: NonNullable<MRT_ColumnDef<TData>['Cell']>,
+): MrtCustomCellRenderer<TData> {
+  const branded = renderer as MrtCustomCellRenderer<TData>;
+  branded[MRT_CUSTOM_CELL] = true;
+  return branded;
+}
+
+export function mrtItemsCell<TData extends MRT_RowData, TItem>({
+  items,
+  renderItem,
+  renderCompactItem,
+  renderMeasurementItem,
+  getItemKey,
+  getItemText,
+  getItemMeasurementKey,
+  emptyValue,
+  containerProps,
+}: {
+  items: (props: any) => readonly TItem[];
+  renderItem: (item: TItem, index: number) => ReactNode;
+  renderCompactItem?: (item: TItem, index: number) => ReactNode;
+  renderMeasurementItem?: (item: TItem, index: number) => ReactNode;
+  getItemKey?: (item: TItem, index: number) => string | number;
+  getItemText?: (item: TItem, index: number) => string;
+  getItemMeasurementKey?: (item: TItem, index: number) => string | number;
+  emptyValue?: ReactNode;
+  containerProps?: (props: any) => Record<string, unknown>;
+}): MrtItemsCellRenderer<TData> {
+  const renderer = ((props) => (
+    <MrtOverflowItems
+      items={items(props)}
+      renderItem={renderItem}
+      renderCompactItem={renderCompactItem}
+      renderMeasurementItem={renderMeasurementItem}
+      getItemKey={getItemKey}
+      getItemText={getItemText}
+      getItemMeasurementKey={getItemMeasurementKey}
+      emptyValue={emptyValue}
+      containerProps={containerProps?.(props)}
+    />
+  )) as MrtItemsCellRenderer<TData>;
+  renderer[MRT_ITEMS_CELL] = true;
+  return renderer;
+}
+
+function mergeMrtProps(base: unknown, local: unknown): unknown {
+  if (typeof base !== 'object' || base === null || typeof local !== 'object' || local === null) {
+    return local ?? base;
+  }
+
+  const baseProps = base as Record<string, unknown>;
+  const localProps = local as Record<string, unknown>;
+  return {
+    ...baseProps,
+    ...localProps,
+    ...(baseProps.sx || localProps.sx
+      ? { sx: { ...(baseProps.sx as object), ...(localProps.sx as object) } }
+      : {}),
+  };
+}
+
+function mergeDefaultColumn(base: unknown, local: unknown) {
+  return mergeMrtProps(base, local);
+}
+
+function mergeDisplayColumnDefOptions(
+  base: Record<string, unknown> | undefined,
+  local: Record<string, unknown> | undefined,
+) {
+  const merged: Record<string, unknown> = { ...(base ?? {}) };
+  for (const [columnId, localColumn] of Object.entries(local ?? {})) {
+    const baseColumn = merged[columnId] as Record<string, unknown> | undefined;
+    merged[columnId] = {
+      ...(baseColumn ?? {}),
+      ...(localColumn as Record<string, unknown>),
+      ...(baseColumn?.muiTableHeadCellProps || (localColumn as any).muiTableHeadCellProps
+        ? {
+            muiTableHeadCellProps: mergeMrtProps(
+              baseColumn?.muiTableHeadCellProps,
+              (localColumn as any).muiTableHeadCellProps,
+            ),
+          }
+        : {}),
+      ...(baseColumn?.muiTableBodyCellProps || (localColumn as any).muiTableBodyCellProps
+        ? {
+            muiTableBodyCellProps: mergeMrtProps(
+              baseColumn?.muiTableBodyCellProps,
+              (localColumn as any).muiTableBodyCellProps,
+            ),
+          }
+        : {}),
+    };
+  }
+  return merged;
+}
+
+function mergeMrtOptions<TData extends MRT_RowData>(
+  shared: Partial<MRT_TableOptions<TData>>,
+  local: MRT_TableOptions<TData>,
+): MRT_TableOptions<TData> {
+  return {
+    ...shared,
+    ...local,
+    defaultColumn: mergeDefaultColumn(
+      shared.defaultColumn,
+      local.defaultColumn,
+    ) as MRT_TableOptions<TData>['defaultColumn'],
+    muiTableBodyCellProps: mergeMrtProps(
+      shared.muiTableBodyCellProps,
+      local.muiTableBodyCellProps,
+    ) as MRT_TableOptions<TData>['muiTableBodyCellProps'],
+    muiTableHeadCellProps: mergeMrtProps(
+      shared.muiTableHeadCellProps,
+      local.muiTableHeadCellProps,
+    ) as MRT_TableOptions<TData>['muiTableHeadCellProps'],
+    displayColumnDefOptions: mergeDisplayColumnDefOptions(
+      shared.displayColumnDefOptions as Record<string, unknown> | undefined,
+      local.displayColumnDefOptions as Record<string, unknown> | undefined,
+    ),
+  };
+}
+
+export function toMrtScalarText(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  return null;
+}
+
+function columnOverflowMode<TData extends MRT_RowData>(
+  column: MRT_ColumnDef<TData>,
+): MrtOverflowMode {
+  return (column.meta as MrtColumnMeta | undefined)?.overflowMode ?? 'text';
+}
+
+export function validateMrtColumnPolicies<TData extends MRT_RowData>(
+  columns: AppMrtColumnDef<TData>[],
+  parentPath = '',
+): string[] {
+  return columns.flatMap((column, index) => {
+    const ownId = column.id ?? String(column.accessorKey ?? `children[${index}]`);
+    const columnId = parentPath ? `${parentPath}.${ownId}` : ownId;
+    const mode = (column.meta as MrtColumnMeta | undefined)?.overflowMode;
+    const ownViolation = column.Cell && !mode ? [columnId] : [];
+    const unwrappedTextViolation =
+      column.Cell && mode === 'text' && !(column.Cell as MrtTextCellRenderer<TData>)[MRT_TEXT_CELL]
+        ? [`${columnId} (text Cell must use mrtTextCell)`]
+        : [];
+    const unwrappedItemsViolation =
+      column.Cell &&
+      mode === 'items' &&
+      !(column.Cell as MrtItemsCellRenderer<TData>)[MRT_ITEMS_CELL]
+        ? [`${columnId} (items Cell must use mrtItemsCell)`]
+        : [];
+    const unwrappedCustomViolation =
+      column.Cell &&
+      mode === 'custom' &&
+      !(column.Cell as MrtCustomCellRenderer<TData>)[MRT_CUSTOM_CELL]
+        ? [`${columnId} (custom Cell must use mrtCustomCell)`]
+        : [];
+    const customOwner = (column.meta as MrtColumnMeta | undefined)?.overflowOwner;
+    const invalidCustomOwnerViolation =
+      column.Cell && mode === 'custom' && !MRT_CUSTOM_OWNERS.has(customOwner ?? '')
+        ? [`${columnId} (custom Cell must declare a valid overflowOwner)`]
+        : [];
+    const nestedViolations = column.columns
+      ? validateMrtColumnPolicies(column.columns, columnId)
+      : [];
+    return [
+      ...ownViolation,
+      ...unwrappedTextViolation,
+      ...unwrappedItemsViolation,
+      ...unwrappedCustomViolation,
+      ...invalidCustomOwnerViolation,
+      ...nestedViolations,
+    ];
+  });
+}
+
+export function assertMrtColumnPolicies<TData extends MRT_RowData>(
+  columns: AppMrtColumnDef<TData>[],
+) {
+  const violations = validateMrtColumnPolicies(columns);
+  if (violations.length > 0) {
+    throw new Error(`MRT custom cells require an overflow policy: ${violations.join(', ')}`);
+  }
+}
+
+function addScalarOverflow<TData extends MRT_RowData>(
+  columns: MRT_ColumnDef<TData>[],
+): MRT_ColumnDef<TData>[] {
+  return columns.map((column) => {
+    const nextColumn = column.columns
+      ? { ...column, columns: addScalarOverflow(column.columns as MRT_ColumnDef<TData>[]) }
+      : { ...column };
+    if (column.Cell || columnOverflowMode(column) !== 'text') return nextColumn;
+
+    if (column.accessorKey === undefined && !column.accessorFn) return nextColumn;
+    nextColumn.Cell = ({ cell }) => {
+      const fullValue = toMrtScalarText(cell.getValue<unknown>());
+      return (
+        <MrtOverflowText displayValue={fullValue?.trim() ? fullValue : '—'} fullValue={fullValue} />
+      );
+    };
+    return nextColumn;
+  });
+}
+
+export function useAppMaterialReactTable<TData extends MRT_RowData>(
+  options: AppMrtTableOptions<TData>,
+) {
+  assertMrtColumnPolicies(options.columns);
+  const mergedOptions = mergeMrtOptions(getDefaultMRTOptions<TData>(), options);
+  return useMaterialReactTableImpl({
+    ...mergedOptions,
+    columns: addScalarOverflow(mergedOptions.columns as MRT_ColumnDef<TData>[]),
+  });
+}
 
 export function buildDefaultColumnOrder({
   dataColumnIds,

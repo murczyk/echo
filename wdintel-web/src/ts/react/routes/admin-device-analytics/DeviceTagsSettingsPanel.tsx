@@ -19,7 +19,6 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { AdminAnalyticsTag } from '../../../../Bindings';
-import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerChip } from '../../components/PowerChip';
@@ -189,7 +188,7 @@ export function DeviceTagsSettingsPanel() {
       const rsp = await reanalyzeAll();
       notify({
         severity: 'success',
-        message: `Заплановано повторний аналіз ${rsp.scheduledFileCount.toLocaleString('uk-UA')} файлів.`,
+        message: `Створено запусків повторного аналізу: ${rsp.createdRunCount.toLocaleString('uk-UA')}.`,
       });
     } catch (error) {
       notify({ severity: 'error', message: errorMessage(error) });
@@ -197,16 +196,6 @@ export function DeviceTagsSettingsPanel() {
       setReanalyzing(false);
     }
   };
-
-  if (loadError !== null && tags.length === 0) {
-    return (
-      <PageErrorState
-        message={`Не вдалося завантажити теги пристроїв: ${loadError}`}
-        actionLabel="Спробувати ще раз"
-        onAction={() => void load()}
-      />
-    );
-  }
 
   return (
     <Box sx={{ width: '100%', minWidth: 0 }}>

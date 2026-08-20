@@ -8,6 +8,27 @@ use crate::utils::*;
 
 pub mod types;
 
+pub async fn check_ready(rq: &reqwest::Client) -> anyhow::Result<()> {
+    check_ready_at(rq, crate::config::NLP_ADDR).await
+}
+
+async fn check_ready_at(
+    rq: &reqwest::Client,
+    address: &str,
+) -> anyhow::Result<()> {
+    let url = format!("{address}/health/ready");
+    let rsp = rq
+        .get(url)
+        .timeout(core::time::Duration::from_millis(
+            crate::config::MESSENGER_NLP_READY_REQUEST_TIMEOUT_MS,
+        ))
+        .send()
+        .await
+        .c(h!())?;
+    check_status(rsp).c(h!())?;
+    Ok(())
+}
+
 pub async fn tokenize_words(
     rq: &reqwest::Client,
     sentence: &str,
@@ -150,4 +171,43 @@ pub async fn complete_callsigns(
             .filter(|x| !x.is_empty())
             .collect::<Vec<String>>(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    async fn serve_health_response(status: &str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let status = status.to_string();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+        format!("http://{address}")
+    }
+
+    #[tokio::test]
+    async fn ready_check_accepts_successful_response() {
+        let address = serve_health_response("200 OK").await;
+        check_ready_at(&reqwest::Client::new(), &address)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn ready_check_rejects_error_response() {
+        let address = serve_health_response("503 Service Unavailable").await;
+        assert!(check_ready_at(&reqwest::Client::new(), &address)
+            .await
+            .is_err());
+    }
 }

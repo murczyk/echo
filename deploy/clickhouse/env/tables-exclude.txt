@@ -26,6 +26,8 @@ public.palitra_highlight_blacklist
 public.sigint_comment_blacklist
 public.failed_inbox_unit
 public.sigint_unit_label
+public.battle_line_version
+public.battle_line_aor_geometry
 
 
 # ORBIT unit catalog remains PostgreSQL-only.
@@ -64,3 +66,6 @@ public.ai_agent_request
 public.ai_agent_request_event
 public.ai_agent_security_review
 public.ai_agent_chat_mattermost_notification
+
+# Device integration secrets.
+public.device_settings

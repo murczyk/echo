@@ -4,11 +4,17 @@
 import { act, createElement } from 'react';
 import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AreaOfResponsibility, Network, Unit } from '../../../../Bindings';
 import { NETWORK_STATUS_ACTIVE } from '../rer-network-details-neo/network-status';
-import { getLocationParts } from './components/NetworkCells';
+import {
+  FrequencyCell,
+  getLocationParts,
+  LastActivityCell,
+  LocationCell,
+} from './components/NetworkCells';
 import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
   FREQUENCY_HOVER_POPPER_PLACEMENT,
@@ -68,6 +74,16 @@ let capturedTableStateProviderProps: Record<string, unknown> | null = null;
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 let defaultPageReturn: Record<string, unknown> | null = null;
+
+function renderNetworkCell(cell: ((props: any) => unknown) | undefined, original: unknown) {
+  if (!root || !container) throw new Error('test root is not initialized');
+  const element = cell?.({ row: { original } } as never);
+  if (!element) throw new Error('network Cell did not return an element');
+  act(() => {
+    root?.render(element as ReactNode);
+  });
+  return container;
+}
 
 vi.mock('../../components/mui-customized/table/table-state-provider', async (importOriginal) => {
   const actual =
@@ -300,7 +316,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  root?.unmount();
+  act(() => {
+    root?.unmount();
+  });
   root = null;
   container?.remove();
   container = null;
@@ -418,68 +436,43 @@ it('keeps MRT filter modes disabled on the networks table', () => {
   const networkCell = (
     capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
   ).find((column) => column.id === 'network');
-  const renderedNetworkCell = (
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            unitLabels: ['1 АК'],
-            developing: true,
-          },
-        } as never,
-      }) as any
-    )?.type as (props: any) => any
-  )?.(
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            networkLabel: 'р/м Network 1 1 АК',
-            unitLabels: ['1 АК'],
-            developing: true,
-            statusLabel: 'Активна',
-            statusColor: '#54c06c',
-            statusKey: 'active',
-            aorLabels: [],
-            activeFrequencies: [],
-            inactiveFrequencies: [],
-            activityBars: [],
-            lastActivityLabel: '—',
-            lastActivityDetail: 'невідомий',
-            lastActivityTooltip: '—',
-            createdAtLabel: '—',
-          },
-        },
-      } as never) as any
-    ).props,
+  const renderedNetworkCell = renderNetworkCell(networkCell?.Cell, {
+    id: 42,
+    network: { name: 'Network 1' },
+    networkLabel: 'р/м Network 1 1 АК',
+    unitLabels: ['1 АК'],
+    developing: true,
+    statusLabel: 'Активна',
+    statusColor: '#54c06c',
+    statusKey: 'active',
+    aorLabels: [],
+    activeFrequencies: [],
+    inactiveFrequencies: [],
+    activityBars: [],
+    lastActivityLabel: '—',
+    lastActivityDetail: 'невідомий',
+    lastActivityTooltip: '—',
+    createdAtLabel: '—',
+  });
+  const networkAnchor = renderedNetworkCell.querySelector<HTMLAnchorElement>(
+    'a[href="/rer-networks-neo/42"]',
   );
-  const networkAnchor = renderedNetworkCell.props.children[1];
-  const developingChip = renderedNetworkCell.props.children[2];
-  expect(networkAnchor.props.href).toBe('/rer-networks-neo/42');
-  expect(networkAnchor.props.title).toBe('р/м Network 1 1 АК');
-  expect(networkAnchor.props.title).not.toContain('в дорозвідці');
-  expect(networkAnchor.props.target).toBeUndefined();
-  expect(networkAnchor.props.rel).toBeUndefined();
-  expect(networkAnchor.props.onClick).toEqual(expect.any(Function));
+  expect(networkAnchor).not.toBeNull();
+  expect(networkAnchor?.title).toBe('р/м Network 1 1 АК');
+  expect(networkAnchor?.getAttribute('aria-label')).toBe('р/м Network 1 1 АК');
+  expect(networkAnchor?.title).not.toContain('в дорозвідці');
+  expect(networkAnchor?.getAttribute('target')).toBeNull();
+  expect(networkAnchor?.getAttribute('rel')).toBeNull();
+  expect(renderedNetworkCell.textContent).toContain('В дорозвідці');
   const preventDefault = vi.fn();
-  networkAnchor.props.onClick({
-    defaultPrevented: false,
-    button: 0,
-    metaKey: false,
-    ctrlKey: false,
-    shiftKey: false,
-    altKey: false,
-    preventDefault,
+  const click = new MouseEvent('click', { bubbles: true, button: 0 });
+  Object.defineProperty(click, 'preventDefault', { value: preventDefault });
+  act(() => {
+    networkAnchor?.dispatchEvent(click);
   });
   expect(preventDefault).toHaveBeenCalledTimes(1);
   expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/42');
-  expect(networkAnchor.props.sx['&:hover'].textDecoration).toBe('none');
-  expect(networkAnchor.props.children.props.text).toBe('р/м Network 1 1 АК');
-  expect(developingChip.props.label).toBe('В дорозвідці');
+  expect(networkAnchor?.textContent).toBe('р/м Network 1 1 АК');
   expect(capturedTableStateProviderProps?.defaultSorting).toEqual([{ id: 'network', desc: false }]);
 });
 
@@ -494,64 +487,41 @@ it('wraps long network labels without truncating the status chip row', () => {
   const networkCell = (
     capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
   ).find((column) => column.id === 'network');
-  const renderedNetworkCell = (
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            unitLabels: ['1 АК'],
-            developing: true,
-          },
-        } as never,
-      }) as any
-    )?.type as (props: any) => any
-  )(
-    (
-      networkCell?.Cell?.({
-        row: {
-          original: {
-            id: 42,
-            network: { name: 'Network 1' },
-            networkLabel: 'р/м Network 1 з дуже довгою назвою для переносу',
-            unitLabels: ['1 АК'],
-            developing: true,
-            statusLabel: 'Активна',
-            statusColor: '#54c06c',
-            statusKey: 'active',
-            aorLabels: [],
-            activeFrequencies: [],
-            inactiveFrequencies: [],
-            activityBars: [],
-            lastActivityLabel: '—',
-            lastActivityDetail: 'невідомий',
-            lastActivityTooltip: '—',
-            createdAtLabel: '—',
-          },
-        },
-      } as never) as any
-    ).props,
-  );
+  const renderedNetworkCell = renderNetworkCell(networkCell?.Cell, {
+    id: 42,
+    network: { name: 'Network 1' },
+    networkLabel: 'р/м Network 1 з дуже довгою назвою для переносу',
+    unitLabels: ['1 АК'],
+    developing: true,
+    statusLabel: 'Активна',
+    statusColor: '#54c06c',
+    statusKey: 'active',
+    aorLabels: [],
+    activeFrequencies: [],
+    inactiveFrequencies: [],
+    activityBars: [],
+    lastActivityLabel: '—',
+    lastActivityDetail: 'невідомий',
+    lastActivityTooltip: '—',
+    createdAtLabel: '—',
+  });
 
-  const networkAnchor = renderedNetworkCell.props.children[1];
-  const rowLabel = networkAnchor.props.children;
-  const rowLabelBox = (rowLabel?.type as (props: any) => any)(rowLabel?.props);
-  const statusDot = renderedNetworkCell.props.children[0];
-  const statusDotBox = statusDot.props.children;
-  expect(renderedNetworkCell.props.alignItems).toBe('flex-start');
-  expect(statusDotBox.props.sx).toEqual(expect.objectContaining({ alignSelf: 'center' }));
-  expect(networkAnchor.props.sx).toEqual(
-    expect.objectContaining({ display: 'flex', alignItems: 'flex-start' }),
+  const networkAnchor = renderedNetworkCell.querySelector<HTMLAnchorElement>(
+    'a[href="/rer-networks-neo/42"]',
   );
-  expect(rowLabelBox.props.sx).toEqual(
-    expect.objectContaining({
-      whiteSpace: 'normal',
-      overflowWrap: 'anywhere',
-      lineHeight: 1.25,
-    }),
+  expect(networkAnchor?.textContent).toBe('р/м Network 1 з дуже довгою назвою для переносу');
+  expect(networkAnchor?.title).toBe('р/м Network 1 з дуже довгою назвою для переносу');
+  const networkCellsSource = readFileSync(
+    'src/ts/react/routes/rer-networks-neo/components/NetworkCells.tsx',
+    'utf8',
   );
-  expect(rowLabelBox.props.title).toBe('р/м Network 1 з дуже довгою назвою для переносу');
+  expect(networkCellsSource).toContain('alignItems="flex-start"');
+  expect(networkCellsSource).toContain("alignSelf: 'center'");
+  expect(networkCellsSource).toContain("whiteSpace: 'normal'");
+  expect(networkCellsSource).toContain("overflowWrap: 'anywhere'");
+  const source = readFileSync('src/ts/react/routes/rer-networks-neo/index.spec.tsx', 'utf8');
+  expect(source).not.toContain(['displayValue', '.type('].join(''));
+  expect(source).not.toMatch(new RegExp(['row', 'Label.*\\.type'].join('')));
 });
 
 it('refreshes AOR filter options after lookup data loads', () => {
@@ -800,6 +770,236 @@ it('splits location text into visible lines', () => {
     'Місто',
     'Район',
   ]);
+});
+
+it('keeps frequency disclosure owned by the domain hover surface', () => {
+  const onEnter = vi.fn();
+  const onLeave = vi.fn();
+  const row = {
+    activeFrequencies: [{ id: 1, freq: '123.45' }],
+    inactiveFrequencies: [],
+  } as any;
+  const frequencyContainer = document.createElement('div');
+  document.body.appendChild(frequencyContainer);
+  const frequencyRoot = createRoot(frequencyContainer);
+  act(() => {
+    frequencyRoot.render(
+      createElement(FrequencyCell, {
+        row,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  const anchor = frequencyContainer.querySelector<HTMLElement>(
+    '[data-network-hover-anchor="true"]',
+  );
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })));
+  expect(onEnter).toHaveBeenCalledWith(anchor, row);
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })));
+  expect(onLeave).toHaveBeenCalledTimes(1);
+  expect(frequencyContainer.querySelector('[role="tooltip"]')).toBeNull();
+  act(() => frequencyRoot.unmount());
+  frequencyContainer.remove();
+
+  const empty = document.createElement('div');
+  document.body.appendChild(empty);
+  const emptyRoot = createRoot(empty);
+  act(() => {
+    emptyRoot.render(
+      createElement(FrequencyCell, {
+        row: { ...row, activeFrequencies: [] },
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  act(() =>
+    empty.firstElementChild?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })),
+  );
+  expect(onEnter).toHaveBeenCalledTimes(1);
+  act(() => emptyRoot.unmount());
+  empty.remove();
+});
+
+it('keeps frequency previews bounded while disclosing each active and inactive remainder', () => {
+  const onEnter = vi.fn();
+  const row = {
+    activeFrequencies: [
+      { id: 1, freq: '111.11' },
+      { id: 2, freq: '222.22' },
+      { id: 3, freq: '333.33' },
+    ],
+    inactiveFrequencies: [
+      { id: 4, freq: '444.44' },
+      { id: 5, freq: '555.55' },
+      { id: 6, freq: '666.66' },
+    ],
+  } as any;
+  const frequencyContainer = document.createElement('div');
+  document.body.appendChild(frequencyContainer);
+  const frequencyRoot = createRoot(frequencyContainer);
+  act(() => {
+    frequencyRoot.render(
+      createElement(FrequencyCell, {
+        row,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: vi.fn(),
+      }),
+    );
+  });
+
+  expect(frequencyContainer.textContent).toContain('111.11');
+  expect(frequencyContainer.textContent).toContain('222.22');
+  expect(frequencyContainer.textContent).toContain('444.44');
+  expect(frequencyContainer.textContent).toContain('555.55');
+  expect(frequencyContainer.textContent).not.toContain('333.33');
+  expect(frequencyContainer.textContent).not.toContain('666.66');
+  expect(frequencyContainer.textContent).toBe('111.11222.22+1444.44555.55+1');
+  const anchor = frequencyContainer.querySelector<HTMLElement>(
+    '[data-network-hover-anchor="true"]',
+  );
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })));
+  expect(onEnter).toHaveBeenCalledWith(anchor, row);
+  act(() => frequencyRoot.unmount());
+  frequencyContainer.remove();
+});
+
+it('keeps location previews bounded and enables domain hover only when values are hidden', () => {
+  const onEnter = vi.fn();
+  const onLeave = vi.fn();
+  const row = {
+    network: { location: 'Пункт зв’язку, Місто\nРайон, Область' },
+  } as any;
+  const locationContainer = document.createElement('div');
+  document.body.appendChild(locationContainer);
+  const locationRoot = createRoot(locationContainer);
+  act(() => {
+    locationRoot.render(
+      createElement(LocationCell, {
+        row,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  const anchor = locationContainer.querySelector<HTMLElement>('[data-network-hover-anchor="true"]');
+  expect(locationContainer.textContent).toContain('Пункт зв’язку');
+  expect(locationContainer.textContent).toContain('Місто');
+  expect(locationContainer.textContent).toContain('+2');
+  expect(locationContainer.textContent).not.toContain('Район');
+  expect(locationContainer.textContent).not.toContain('Область');
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true })));
+  expect(onEnter).toHaveBeenCalledWith(anchor, row);
+  act(() => anchor?.dispatchEvent(new PointerEvent('pointerout', { bubbles: true })));
+  expect(onLeave).toHaveBeenCalledTimes(1);
+  act(() => locationRoot.unmount());
+  locationContainer.remove();
+
+  const shortLocation = document.createElement('div');
+  document.body.appendChild(shortLocation);
+  const shortLocationRoot = createRoot(shortLocation);
+  act(() => {
+    shortLocationRoot.render(
+      createElement(LocationCell, {
+        row: { network: { location: 'Пункт зв’язку, Місто' } } as any,
+        onPointerEnterAnchor: onEnter,
+        onPointerLeaveAnchor: onLeave,
+      }),
+    );
+  });
+  expect(shortLocation.querySelector('[data-network-hover-anchor="true"]')).toBeNull();
+  act(() =>
+    shortLocation.firstElementChild?.dispatchEvent(
+      new PointerEvent('pointerover', { bubbles: true }),
+    ),
+  );
+  expect(onEnter).toHaveBeenCalledTimes(1);
+  act(() => shortLocationRoot.unmount());
+  shortLocation.remove();
+});
+
+it('keeps structured last activity visible and available through hover and focus', async () => {
+  vi.useFakeTimers();
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  const activityContainer = document.createElement('div');
+  document.body.appendChild(activityContainer);
+  const activityRoot = createRoot(activityContainer);
+  let activityUnmounted = false;
+  const tooltip = 'Створено: 01.01.2026\nОновлено: 02.01.2026\nАвтор: Оператор';
+  try {
+    act(() => {
+      activityRoot.render(
+        createElement(LastActivityCell, {
+          label: '02.01.2026 14:30',
+          detail: 'Оператор',
+          tooltip,
+        }),
+      );
+    });
+    const activity = activityContainer.querySelector<HTMLElement>('[tabindex="0"]');
+    expect(activity).not.toBeNull();
+    expect(activityContainer.querySelectorAll('[tabindex="0"]')).toHaveLength(1);
+    expect(activity?.textContent).toContain('02.01.2026 14:30');
+    expect(activity?.textContent).toContain('Оператор');
+    const lines = activity?.querySelectorAll<HTMLElement>(':scope > div');
+    expect(lines).toHaveLength(2);
+    for (const line of lines ?? []) {
+      expect(getComputedStyle(line).overflow).toBe('hidden');
+      expect(getComputedStyle(line).textOverflow).toBe('ellipsis');
+      expect(getComputedStyle(line).whiteSpace).toBe('nowrap');
+    }
+
+    act(() => activity?.focus());
+    await act(async () => vi.runAllTimers());
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(tooltip);
+    act(() => activity?.blur());
+    await act(async () => vi.runAllTimers());
+    expect(
+      document.body.querySelector('[role="tooltip"]')?.classList.contains('MuiTooltip-popperOpen'),
+    ).toBe(false);
+
+    act(() => activity?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    await act(async () => vi.runAllTimers());
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(tooltip);
+    act(() => activity?.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true })));
+    await act(async () => vi.runAllTimers());
+    expect(
+      document.body.querySelector('[role="tooltip"]')?.classList.contains('MuiTooltip-popperOpen'),
+    ).toBe(false);
+
+    act(() => activityRoot.unmount());
+    activityContainer.remove();
+    activityUnmounted = true;
+
+    root = createRoot(container!);
+    act(() => {
+      root?.render(createElement(RerNetworksNeoPage));
+    });
+    const lastActivityCell = (
+      capturedOptions?.columns as Array<{ id?: string; Cell?: (props: any) => unknown }>
+    ).find((column) => column.id === 'lastActivity');
+    const renderedCell = renderNetworkCell(lastActivityCell?.Cell, {
+      lastActivityLabel: '02.01.2026 14:30',
+      lastActivityDetail: 'Оператор',
+      lastActivityTooltip: tooltip,
+    });
+    const renderedActivity = renderedCell.querySelector<HTMLElement>('[tabindex="0"]');
+    expect(renderedActivity?.textContent).toContain('02.01.2026 14:30');
+    expect(renderedActivity?.textContent).toContain('Оператор');
+    act(() => renderedActivity?.focus());
+    await act(async () => vi.runAllTimers());
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(tooltip);
+  } finally {
+    if (!activityUnmounted) {
+      act(() => activityRoot.unmount());
+      activityContainer.remove();
+    }
+    const errors = consoleError.mock.calls.map((args) => args.map(String).join(' ')).join('\n');
+    consoleError.mockRestore();
+    vi.useRealTimers();
+    expect(errors).not.toMatch(/warning|error|invalid prop|aria/i);
+  }
 });
 
 it('uses top-first placement for the frequency hover popper', () => {

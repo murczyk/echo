@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { InboxMessage, Tag } from '../../../../../../../Bindings';
 import { buildMessageCardTagRows } from '../../MessageCardTags.helpers';
-import { buildSelectedFirstTagOrder } from '../../MessageCardTags';
+import { buildSelectedFirstTagOrder, estimateTagChipWidthPx } from '../../MessageCardTags';
 
 function buildMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   return {
@@ -65,5 +65,15 @@ describe('compact tag layout ordering', () => {
     const order = buildSelectedFirstTagOrder(rows);
 
     expect(order).toEqual([11, 13, 10]);
+  });
+});
+
+describe('estimateTagChipWidthPx', () => {
+  it('does not cap long administrator labels at 240px', () => {
+    const longLabel = 'Дуже-довга-адміністраторська-мітка-для-компактного-ряду';
+    expect(estimateTagChipWidthPx(longLabel)).toBeGreaterThan(240);
+    expect(estimateTagChipWidthPx(longLabel, true)).toBeGreaterThan(
+      estimateTagChipWidthPx(longLabel),
+    );
   });
 });

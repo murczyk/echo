@@ -430,22 +430,14 @@ async fn load_tag_report_comments(
     if message_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let comments = sigint_comment::Entity::find()
-        .filter(
-            sigint_comment::Column::SignalMessageId
-                .eq_any(message_ids.to_vec()),
-        )
-        .apply_if(logins, |q, logins| {
-            q.filter(sigint_comment::Column::LoginId.eq_any(logins.to_vec()))
-        })
-        .order_by_asc(sigint_comment::Column::Id)
-        .all(txn)
-        .await
-        .context(h!())?;
+    let comments =
+        crate::sigint::comments::find_report_comments(txn, message_ids, logins)
+            .await
+            .context(h!())?;
     let mut comments_by_message = BTreeMap::new();
     for comment in comments {
         comments_by_message
-            .entry(comment.signal_message_id)
+            .entry(comment.source_message_id)
             .or_insert(comment.comment);
     }
     Ok(comments_by_message)

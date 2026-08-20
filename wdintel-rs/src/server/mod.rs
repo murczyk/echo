@@ -338,6 +338,13 @@ async fn init_runtime_env(
     crate::migration::run_migration_1(mode).await.c(h!())?;
     crate::use_pg_runtime_pool(role);
     let env = new_env(mode).await.c(h!())?;
+    if let Some(file_registry_db) = &env.file_registry_db {
+        crate::devices::analytics::initialize_definition(
+            file_registry_db.connection(),
+        )
+        .await
+        .c(h!())?;
+    }
     let config = env.config.clone();
     if let Err(err) =
         crate::rer_importer::import_csv::ensure_import_group_exists(
@@ -395,9 +402,24 @@ fn spawn_device_file_analytics_worker_pool(
     env: Arc<Env>,
     cancellation_token: CancellationToken,
 ) {
+    {
+        let env = env.clone();
+        let cancellation_token = cancellation_token.clone();
+        spawn_named_worker(
+            "device_file_analytics_monitor",
+            bg_set,
+            async move {
+                crate::devices::analytics::worker::monitor_nofail(
+                    env,
+                    cancellation_token,
+                )
+                .await;
+            },
+        );
+    }
     let rule_cache =
         Arc::new(crate::devices::analytics::worker::RuleCache::default());
-    for worker_index in 0..crate::devices::analytics::WORKER_COUNT {
+    for worker_index in 0..crate::devices::analytics::worker::WORKER_COUNT {
         let env = env.clone();
         let cancellation_token = cancellation_token.clone();
         let rule_cache = rule_cache.clone();
@@ -409,12 +431,29 @@ fn spawn_device_file_analytics_worker_pool(
                     env,
                     cancellation_token,
                     rule_cache,
-                    crate::devices::analytics::BATCH_SIZE,
                 )
                 .await;
             },
         );
     }
+}
+
+fn spawn_device_file_sync_expiry_worker(
+    bg_set: &mut JoinSet<()>,
+    env: Arc<Env>,
+    cancellation_token: CancellationToken,
+) {
+    spawn_named_worker(
+        "device_file_sync_session_expiry_worker",
+        bg_set,
+        async move {
+            crate::devices::files::sync::worker::run_nofail(
+                env,
+                cancellation_token,
+            )
+            .await;
+        },
+    );
 }
 
 fn spawn_palitra_conversion_worker(bg_set: &mut JoinSet<()>, env: Arc<Env>) {
@@ -496,6 +535,13 @@ fn spawn_background_workers(
             .await;
         });
     }
+    let inbox_settlement_env = env.clone();
+    spawn_named_worker("inbox_settlement_worker", bg_set, async move {
+        crate::battle_line::settlement_queue::inbox_settlement_worker_nofail(
+            inbox_settlement_env,
+        )
+        .await;
+    });
 
     let env2 = env.clone();
     spawn_named_worker("iggy_integration_worker", bg_set, async move {
@@ -691,6 +737,11 @@ fn spawn_background_workers(
     }
     if env.file_registry_db.is_some() {
         spawn_device_file_analytics_worker_pool(
+            bg_set,
+            env.clone(),
+            cancel_token.clone(),
+        );
+        spawn_device_file_sync_expiry_worker(
             bg_set,
             env.clone(),
             cancel_token.clone(),
@@ -940,6 +991,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::users::user_sigint_groups_detailed)
             .service(crate::sigint::direct_submit::submit_direct)
             .service(crate::sigint::direct_submit::edit_message)
+            .service(crate::sigint::direct_submit::copy_message)
             .service(crate::sigint::direct_submit::parse_direct_submit)
             .service(crate::sigint::file_upload::tus_base)
             .service(crate::sigint::file_upload::tus_file)
@@ -977,12 +1029,18 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::devices::detail)
             .service(crate::devices::devices::create)
             .service(crate::devices::devices::update)
+            .service(crate::devices::settings::update)
             .service(crate::devices::files::roots)
             .service(crate::devices::files::subtree_counts)
             .service(crate::devices::files::browse)
             .service(crate::devices::files::search)
             .service(crate::devices::files::journal)
-            .service(crate::devices::files::sync)
+            .service(crate::devices::files::sync_files)
+            .service(crate::devices::files::start_sync_session)
+            .service(crate::devices::files::sync_session_status)
+            .service(crate::devices::files::apply_sync_batch)
+            .service(crate::devices::files::complete_sync_session)
+            .service(crate::devices::files::sync_session_items)
             .service(crate::devices::analytics::list_tags)
             .service(crate::devices::analytics::create_tag)
             .service(crate::devices::analytics::update_tag)
@@ -993,6 +1051,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::analytics::test_tag_rule)
             .service(crate::devices::analytics::reanalyze_all)
             .service(crate::devices::analytics::reanalyze_device)
+            .service(crate::devices::analytics::get_analysis_run)
+            .service(crate::devices::analytics::list_analysis_runs)
+            .service(crate::devices::analytics::list_analysis_run_files)
             .service(crate::devices::analytics::device_tags)
             .service(crate::devices::analytics::device_summary)
             .service(crate::devices::analytics::device_files)
@@ -1158,6 +1219,11 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::aor::update_aor)
             .service(crate::sigint::aor::update_aor_report_order)
             .service(crate::sigint::aor::delete_aor)
+            .service(crate::battle_line::read_battle_line)
+            .service(crate::battle_line::upload_battle_line)
+            .service(crate::battle_line::test_battle_line)
+            .service(crate::battle_line::list_unlinked_inbox_items)
+            .service(crate::battle_line::list_unresolved_locations)
             .service(crate::sigint::etalonka::task::report_networks_task_launch)
             .service(crate::sigint::etalonka::task::report_networks_batch_id_task_launch)
             .service(crate::sigint::source::list_sources)

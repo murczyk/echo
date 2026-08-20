@@ -26,6 +26,10 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 
 ## Procedure (checklist)
 
+- For new React structure, use semantic HTML and Tailwind; reserve MUI/`Power*` for interactive components and component behavior.
+- Do not add layout-only `Box`, `Stack`, `Grid`, `Container`, wrappers concealing them, or structural `sx`.
+- Use named `echo-*` utilities and generated `theme.echo` values for new shared visual values. Keep MUI spacing and breakpoints as legacy compatibility APIs.
+- Read the detailed rationale and verification rules in `docs/frontend/layout-component-contract.md`.
 - Keep hybrid mount pattern:
 - `createRoot(this)` in custom element class.
 - Wrap route root with `ThemeProvider` + `useNeoMuiTheme`.
@@ -36,9 +40,9 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `window.location.assign('/login')`
 - Prefer the shared auth redirect helper in `src/ts/react/auth-redirect.ts` over route-local login redirects when the page already uses the shared auth flow.
 - Keep UI errors visible via `PowerAlert` (or the established UI messaging pattern on the page).
-- Prefer existing styling mix:
-- MUI `sx` for component-level styles.
-- Existing utility classes (`className`) where already used.
+- Use semantic native HTML plus Tailwind for new structure and layout.
+- Keep MUI `sx` for MUI-specific component internals, slots, states, and genuine runtime values; do not use it for new structural layout.
+- Use shared `echo-*` Tailwind tokens and `theme.echo`/semantic palette tokens instead of copying visual values.
 - Use modern React imports consistently:
 - Do not keep a default `React` import just for JSX.
 - Import hooks and runtime helpers directly from `react` (for example `useState`, `useEffect`, `memo`, `forwardRef`, `createElement`, `Fragment`).
@@ -74,7 +78,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
   | `Chip` (selectable/filter tags)                                                                                                                | `PowerChip` or `CompactPowerChip`                                                                   |
   | `Menu`                                                                                                                                         | `PowerMenu` — Escape does not bubble to parent drawers                                              |
   | Raw MUI is OK when no wrapper exists, props differ materially, or the file already uses raw MUI consistently and you are not touching that UI. |
-- When editing Duty feed or shared MessageCard hot-path code, also use `duty-feed-rendering-safety`. Its native-structure performance boundary overrides the general preference for MUI layout components and structural component-level `sx`. Leaf and interactive MUI components remain valid.
+- When editing Duty feed or shared MessageCard hot-path code, follow `.github/skills/duty-feed-rendering-safety/SKILL.md`. Its repeated-rendering constraints supplement the general layout/component contract. Prefer Tailwind or application-owned static `className` styling over `sx` on repeated per-card or per-tag nodes; keep leaf MUI components when theme, accessibility, or interaction behavior requires them.
 - MUI `Dialog`, `Modal`, `Menu`, and `Popover` can surface `Blocked aria-hidden... retained focus` warnings when focus is restored into an `aria-hidden` subtree.
 - When chaining modal surfaces, close the current surface first, move or blur focus before hiding the focused subtree, and defer opening the next surface to the next tick/frame if needed.
 - For dialogs opened from menus, close the menu first, then open the dialog after state settles; use `disableRestoreFocus` when MUI would otherwise restore focus into an `aria-hidden` ancestor.
@@ -116,6 +120,7 @@ if (isUnauthorizedError(error)) {
 - Verify request and response shape transforms stayed compatible.
 - Verify loading/empty/error states and disabled-in-flight behavior.
 - New or touched neo UI uses `Power*` wrappers where a matching one exists (especially `PowerAlert` for page/drawer errors).
+- New structure uses semantic HTML and Tailwind; no layout-only MUI wrappers or structural `sx` were introduced.
 - Use `PowerSnackbar` for new transient, non-blocking action feedback; keep `PowerAlert` for contextual/static page, form, load, permission, and persistent states.
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
 - Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON edits.

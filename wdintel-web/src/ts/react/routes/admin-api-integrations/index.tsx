@@ -13,7 +13,7 @@ import {
   Switch,
   TextField,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import type { ApiIntegration, Login, UpsertApiIntegrationReq } from '../../../../Bindings';
@@ -30,7 +30,9 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -63,7 +65,7 @@ type FormStatus = {
   message: string;
 } | null;
 
-const ROW_ACTIONS_COLUMN_SIZE = 96;
+const ROW_ACTIONS_COLUMN_SIZE = 76;
 const DEFAULT_COLUMNS_VISIBILITY = {
   description: true,
   api_user: true,
@@ -180,7 +182,7 @@ function ApiIntegrationsTable({
     }),
     [tableStateContext.columnSizing],
   );
-  const columns = useMemo<MRT_ColumnDef<ApiIntegration>[]>(
+  const columns = useMemo<AppMrtColumnDef<ApiIntegration>[]>(
     () => [
       {
         id: 'description',
@@ -223,10 +225,9 @@ function ApiIntegrationsTable({
     [userNames],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: integrations,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -276,6 +277,7 @@ function ApiIntegrationsTable({
         size: ROW_ACTIONS_COLUMN_SIZE,
         minSize: ROW_ACTIONS_COLUMN_SIZE,
         maxSize: ROW_ACTIONS_COLUMN_SIZE,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],

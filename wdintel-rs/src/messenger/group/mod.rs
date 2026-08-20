@@ -244,7 +244,7 @@ pub async fn fix_group_areas_of_responsibility(
         .await
         .c(h!())?;
     for g in groups {
-        if let Err(e) = insert_group_aor(db, &g).await {
+        if let Err(e) = insert_group_aor_transaction(db, &g).await {
             error!("failed to insert group's area of responsibility: {:?}", e);
         } else {
             info!("added {}", g.master_key);
@@ -258,6 +258,17 @@ pub async fn fix_group_areas_of_responsibility(
         }
     }
     Ok(())
+}
+
+async fn insert_group_aor_transaction(
+    db: &DatabaseConnection,
+    group: &signal_group::Model,
+) -> anyhow::Result<Option<area_of_responsibility::Model>> {
+    let txn = db.begin().await.context(h!())?;
+    crate::battle_line::lock_updates(&txn).await.context(h!())?;
+    let aor = insert_group_aor(&txn, group).await.context(h!())?;
+    txn.commit().await.context(h!())?;
+    Ok(aor)
 }
 
 async fn insert_group_aor<'a, 'async_trait, C>(
@@ -322,6 +333,9 @@ where
         id: NotSet,
     };
     model.insert(dbx).await.context(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(dbx, &master_key)
+        .await
+        .context(h!())?;
     let reason = format!("inserted aor {} for group {master_key}", aor.id);
     if let Err(e) =
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_group_with_key(

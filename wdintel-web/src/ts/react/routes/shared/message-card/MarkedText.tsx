@@ -456,7 +456,6 @@ function CallsignWithHint({
   unitsMap,
   freq,
   networkIds,
-  linkCallsigns = true,
   searchHighlighted = false,
 }: {
   text: string;
@@ -465,35 +464,26 @@ function CallsignWithHint({
   unitsMap?: Record<number, Unit>;
   freq?: string | null;
   networkIds?: number[] | null;
-  linkCallsigns?: boolean;
   searchHighlighted?: boolean;
 }) {
   const displayText = text.toUpperCase();
-  const href = `/rer-callsigns-neo?callsign=${encodeURIComponent(displayText)}&developing=All`;
   const wrapSearchHighlighted = (node: ReactNode) =>
     searchHighlighted ? <SearchHighlightedCallsign>{node}</SearchHighlightedCallsign> : node;
 
   const hintResult = getMessageCallsignHintResult({
     networkIds,
     networks: networks ?? [],
+    unitsMap: unitsMap ?? {},
     callsignInfoMap,
     callsign: displayText,
   });
 
   const tooltipText = formatMessageCallsignHintTooltipData(hintResult);
   const isNetworkHint = hintResult.state === 'message-network';
-  const shouldLinkCallsign = linkCallsigns;
-  const callsignDisplay = shouldLinkCallsign ? (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="content-token--ADP hover:cursor-pointer"
-    >
-      {displayText}
-    </a>
-  ) : (
-    <Box component="span" sx={callsignPlainStyle()}>
+  const hasOnlyOtherNetworkHints =
+    hintResult.catalogRows.length === 0 && hintResult.otherNetworkHints.length > 0;
+  const callsignDisplay = (
+    <Box component="span" data-testid="callsign-token" sx={callsignPlainStyle()}>
       {displayText}
     </Box>
   );
@@ -560,7 +550,7 @@ function CallsignWithHint({
           aria-label={
             isNetworkHint
               ? 'Підказка по мережі'
-              : hintResult.otherNetworkHints.length > 0 && hintResult.catalogRows.length === 0
+              : hasOnlyOtherNetworkHints
                 ? 'Інформація про позивний'
                 : 'Підказка з каталогу'
           }
@@ -599,7 +589,6 @@ export function renderMarkedText(
   messagePointEtalons?: string[],
   options?: {
     showPointLinks?: boolean;
-    linkCallsigns?: boolean;
     message?: InboxMessage;
     messageId?: number;
     onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
@@ -614,7 +603,6 @@ export function renderMarkedText(
   },
 ): ReactNode[] {
   const showPointLinks = options?.showPointLinks !== false;
-  const linkCallsigns = options?.linkCallsigns !== false;
   const messageForMap = options?.message;
   const onOpenPointsOnMap = options?.onOpenPointsOnMap;
   const fromNodes = collectPointEtalons(nodes);
@@ -658,7 +646,6 @@ export function renderMarkedText(
           unitsMap={options?.unitsMap}
           freq={options?.freq}
           networkIds={options?.networkIds}
-          linkCallsigns={linkCallsigns}
           searchHighlighted={searchHighlighted}
         />,
       );

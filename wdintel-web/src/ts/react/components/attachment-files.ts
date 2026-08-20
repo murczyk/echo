@@ -26,10 +26,47 @@ export function attachmentIcon(name: string, mimeType: string | undefined): SvgI
 
 export type MediaKind = 'image' | 'video';
 
-export function mediaKind(mimeType: string | undefined): MediaKind | null {
+const IMAGE_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'svg',
+  'ico',
+  'tiff',
+  'avif',
+]);
+
+const VIDEO_EXTENSIONS = new Set([
+  'mp4',
+  'm4v',
+  'mov',
+  'webm',
+  'mkv',
+  'avi',
+  'mpeg',
+  'mpg',
+  'wmv',
+  'flv',
+  '3gp',
+  '3g2',
+  'm2ts',
+  'ogv',
+  'vob',
+  'asf',
+]);
+
+export function mediaKind(mimeType: string | undefined, fileName?: string): MediaKind | null {
   const type = (mimeType ?? '').toLowerCase();
   if (type.startsWith('image/')) return 'image';
   if (type.startsWith('video/')) return 'video';
+  if (fileName) {
+    const ext = fileExtension(fileName).toLowerCase();
+    if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+    if (VIDEO_EXTENSIONS.has(ext)) return 'video';
+  }
   return null;
 }
 

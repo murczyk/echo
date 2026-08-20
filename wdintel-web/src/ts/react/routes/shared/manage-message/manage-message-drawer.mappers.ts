@@ -5,6 +5,12 @@ import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import type { InboxMessage, Tag } from '../../../../../Bindings';
 import { APP_TIME_ZONE } from '../../../utils/misc';
+import type { DirectSubmitRequest } from '../../../services/api/direct-submit';
+import {
+  normalizeCallsign,
+  normalizeMultiValue,
+  type MessageFormData,
+} from './manage-message-drawer.schema';
 
 dayjs.extend(customParseFormat);
 dayjs.extend(utc);
@@ -64,13 +70,44 @@ export function mapInboxMessageToForm(
     time,
     freq: message.freq ?? '',
     coords: messageCoordinates(message),
-    callsigns: message.callsigns ?? [],
+    callsigns: normalizeMultiValue((message.callsigns ?? []).map(normalizeCallsign)),
     post: message.post ?? '',
     unit: message.unit ?? '',
     locations: splitLocations(message.location),
     tags: (message.tags ?? [])
       .map((id) => tagsMap[id]?.label)
       .filter((label): label is string => Boolean(label)),
+  };
+}
+
+export function mapDirectSubmitCopyToForm(payload: DirectSubmitRequest): MessageFormData {
+  const timestamp = payload.timestamp ? dayjs(payload.timestamp).tz(APP_TIME_ZONE) : null;
+  return {
+    text: payload.text ?? '',
+    signalGroupMasterKey: payload.signal_group_master_key ?? '',
+    deviceName: '',
+    freq: payload.freq ?? '',
+    coords: (payload.coords ?? []).map(({ lat, lon }) => `${lat}, ${lon}`).join('\n'),
+    callsigns: normalizeMultiValue((payload.to ?? []).map(normalizeCallsign)),
+    tags: payload.tags ?? [],
+    date: timestamp?.isValid() ? timestamp : null,
+    time: timestamp?.isValid() ? timestamp : null,
+    full_body: payload.full_body ?? payload.text ?? '',
+    comment: payload.comment ?? '',
+    post: payload.post ?? '',
+    unit: payload.unit ?? '',
+    locations: payload.locations ?? [],
+    network_signal_name: payload.network?.signal_name ?? '',
+    network_name: payload.network?.name ?? '',
+    dmr: (payload.dmr ?? []).map((metadata) => ({
+      cc: metadata.cc?.toString() ?? '',
+      sender_id: metadata.sender_id?.toString() ?? '',
+      sender_name: metadata.sender_name ?? '',
+      call_group_id: metadata.call_group_id?.toString() ?? '',
+      call_group_name: metadata.call_group_name ?? '',
+      hash_id: metadata.hash_id ?? '',
+    })),
+    deleted_media_ids: [],
   };
 }
 

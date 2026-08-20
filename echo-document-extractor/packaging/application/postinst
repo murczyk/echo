@@ -59,4 +59,5 @@ install -m 0640 -o root -g echo-document-extractor-otel \
 systemctl daemon-reload
 systemctl enable echo-document-extractor-firewall.service echo-document-extractor.service \
   echo-document-extractor-worker.service \
+  echo-document-extractor-host-cpu-exporter.service \
   echo-document-extractor-otel.service >/dev/null

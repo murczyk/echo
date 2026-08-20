@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { DeviceFileTreeEntry } from '../../../../Bindings';
+import type { DeviceFileTreeEntry, SyncSummary } from '../../../../Bindings';
 import { syncDeviceFiles } from '../../services/api/devices';
 import {
   applySyncDeviceFilesRsp,
@@ -13,19 +13,10 @@ import {
 import type { DeviceFileSyncField, DeviceFileSyncRow, DeviceFileSyncSeed } from './types';
 
 function validateSyncRows(rows: DeviceFileSyncRow[]): DeviceFileSyncRow[] {
-  const submittedRows = rows.filter((row) => row.result?.kind !== 'accepted');
-  const fileIdCounts = new Map<string, number>();
-  for (const row of submittedRows) {
-    if (row.fileId !== null) fileIdCounts.set(row.fileId, (fileIdCounts.get(row.fileId) ?? 0) + 1);
-  }
-
   return rows.map((row) => {
     if (row.result?.kind === 'accepted') return row;
     const fieldErrors = { ...row.fieldErrors };
     if (row.absolutePath === '') fieldErrors.absolutePath = 'Вкажіть абсолютний шлях.';
-    if (row.fileId !== null && (fileIdCounts.get(row.fileId) ?? 0) > 1) {
-      fieldErrors.absolutePath = 'Один file ID не можна надсилати двічі в одному батчі.';
-    }
     return { ...row, fieldErrors };
   });
 }
@@ -50,6 +41,7 @@ export function useDeviceFilesSync({
   const [submitting, setSubmitting] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [transportUncertain, setTransportUncertain] = useState(false);
+  const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null);
   const submittingRef = useRef(false);
   const canSyncRef = useRef(canSync);
   canSyncRef.current = canSync;
@@ -62,6 +54,7 @@ export function useDeviceFilesSync({
       ]);
       setBatchError(null);
       setTransportUncertain(false);
+      setSyncSummary(null);
       setOpen(true);
     },
     [canSync],
@@ -131,6 +124,7 @@ export function useDeviceFilesSync({
     setSubmitting(true);
     setBatchError(null);
     setTransportUncertain(false);
+    setSyncSummary(null);
     setRows((current) =>
       current.map((row) =>
         submittedRowIds.includes(row.localId) ? { ...row, fieldErrors: {}, result: null } : row,
@@ -139,8 +133,9 @@ export function useDeviceFilesSync({
 
     try {
       const rsp = await syncDeviceFiles(req);
+      setSyncSummary(rsp.sync);
       setRows((current) => applySyncDeviceFilesRsp(current, submittedRowIds, rsp));
-      if (rsp.results.some((result) => 'Accepted' in result)) await onCommitted();
+      if (rsp.sync.counts.accepted > 0) await onCommitted();
     } catch (error) {
       const parsed = parseSyncRequestError(error, submittedRowIds);
       setBatchError(parsed.batchError);
@@ -169,6 +164,7 @@ export function useDeviceFilesSync({
     submitting,
     batchError,
     transportUncertain,
+    syncSummary,
     canSubmit: rows.some((row) => row.result?.kind !== 'accepted'),
     openSync,
     openSyncForEntry,

@@ -1,8 +1,8 @@
 [Unit]
 Description=Echo Document Extractor OpenTelemetry collector
 Documentation=https://github.com/SigNoz/signoz-otel-collector
-After=network-online.target echo-document-extractor.service echo-document-extractor-worker.service
-Wants=network-online.target
+After=network-online.target echo-document-extractor.service echo-document-extractor-worker.service echo-document-extractor-host-cpu-exporter.service
+Wants=network-online.target echo-document-extractor-host-cpu-exporter.service
 
 [Service]
 Type=simple

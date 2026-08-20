@@ -72,12 +72,17 @@ function buildProps(overrides: Partial<FeedFilterPanelProps['panel']> = {}): Fee
       actions: {
         onGroupsChange: vi.fn(),
         onDeniedGroupsChange: vi.fn(),
+        onGroupsModeTransfer: vi.fn(),
         onSendersChange: vi.fn(),
         onDeniedSendersChange: vi.fn(),
+        onSendersModeTransfer: vi.fn(),
         onFreqsChange: vi.fn(),
         onFreqsDeniedChange: vi.fn(),
+        onFreqsModeTransfer: vi.fn(),
         onPostsChange: vi.fn(),
         onPostsDeniedChange: vi.fn(),
+        onPostsModeTransfer: vi.fn(),
+        onUnitsModeTransfer: vi.fn(),
         onAdjacentFreqsRangeChange: vi.fn(),
         onHighlightSignalsChange: vi.fn(),
         onOnlyMyUnitTagsChange: vi.fn(),
@@ -130,6 +135,23 @@ describe('FeedFilterPanel', () => {
     expect(scrollArea?.style.maxHeight).toBe('100%');
     expect(scrollArea?.style.overflowY).toBe('auto');
     expect(scrollArea?.style.overflowX).toBe('hidden');
+  });
+
+  it('uses newline-only bulk paste for posts and units', async () => {
+    await act(async () => {
+      root.render(<FeedFilterPanel {...buildProps()} />);
+    });
+
+    const selectionProps = selectionSpy.mock.calls.map(
+      ([value]) => value as { title: string; bulkPasteSeparators?: string[] },
+    );
+
+    expect(selectionProps.find((value) => value.title === 'Пост')?.bulkPasteSeparators).toEqual([
+      '\n',
+    ]);
+    expect(
+      selectionProps.find((value) => value.title === 'Підрозділи')?.bulkPasteSeparators,
+    ).toEqual(['\n']);
   });
 
   it('keeps catalog errors persistent and maps their structured severity', async () => {
