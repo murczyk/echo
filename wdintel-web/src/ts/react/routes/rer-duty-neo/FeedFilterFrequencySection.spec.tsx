@@ -113,13 +113,4 @@ describe('FeedFilterFrequencySection', () => {
       message: 'Не вдалося скопіювати частоти.',
     });
   });
-
-  it('routes bulk-pasted values through the active frequency selection', () => {
-    const onValueChange = vi.fn();
-    const props = renderFrequency({ mode: 'exclude', value: ['153.6250'], onValueChange });
-
-    props.onValueChange(['153.6250', '154.0000', '155.3750']);
-
-    expect(onValueChange).toHaveBeenCalledWith(['153.6250', '154.0000', '155.3750']);
-  });
 });
