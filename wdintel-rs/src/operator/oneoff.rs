@@ -11,6 +11,7 @@ pub async fn oneoff_merge_datasource_group(
     let config = crate::config::read_config(mode)?;
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
     let txn = dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
 
     let target_signal_group =
         signal_group::Entity::find_by_id(ps.target_group_key.clone())
@@ -181,6 +182,19 @@ async fn merge_group_into(
         .exec(txn)
         .await
         .c(h!())?;
+
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &source_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        &target_signal_group.master_key,
+    )
+    .await
+    .c(h!())?;
 
     let mut source_signal_group = source_signal_group.into_active_model();
     source_signal_group.deleted = Set(true);

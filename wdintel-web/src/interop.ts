@@ -35,6 +35,7 @@ import './ts/web-components/small-map.ts';
 import './ts/web-components/floating-popup.ts';
 import './ts/react/aor-neo-element';
 import './ts/react/admin-directions-neo-element';
+import './ts/react/admin-battle-line-element';
 import './ts/react/aor-neo-form-element';
 import './ts/react/control-panel-neo-element';
 import './ts/react/keys-neo-element';

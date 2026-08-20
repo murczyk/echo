@@ -10,6 +10,7 @@ type Props = {
   onDateRangeChange: (range: { startDate: number; endDate: number }) => void;
   onLoadMessages: (messageIds: number[]) => Promise<boolean>;
   onUnitClick: (unitName: string | null) => void;
+  onShowSettlementsChange?: (show: boolean) => Promise<void>;
 };
 
 export const ANALYSIS_NARROW_MAP_HEIGHT = 'clamp(360px, 55svh, 520px)';
@@ -21,6 +22,7 @@ export function AnalysisMapPane({
   onDateRangeChange,
   onLoadMessages,
   onUnitClick,
+  onShowSettlementsChange = async () => undefined,
 }: Props) {
   const hostRef = useRef<HTMLElement | null>(null);
   const [renderedVisible, setRenderedVisible] = useState(false);
@@ -96,17 +98,26 @@ export function AnalysisMapPane({
         (event as CustomEvent<{ networkUnitName: string | null }>).detail.networkUnitName ?? null,
       );
     };
+    const handleShowSettlementsChange = (event: Event) => {
+      const show = (event as CustomEvent<{ show: boolean }>).detail?.show === true;
+      void onShowSettlementsChange(show);
+    };
 
     host.addEventListener('date-range-changed', handleDateRangeChange as EventListener);
     host.addEventListener('load-messages-description', handleLoadMessages as EventListener);
     host.addEventListener('message-unit-clicked', handleUnitClick as EventListener);
+    host.addEventListener('show-settlements-change', handleShowSettlementsChange as EventListener);
 
     return () => {
       host.removeEventListener('date-range-changed', handleDateRangeChange as EventListener);
       host.removeEventListener('load-messages-description', handleLoadMessages as EventListener);
       host.removeEventListener('message-unit-clicked', handleUnitClick as EventListener);
+      host.removeEventListener(
+        'show-settlements-change',
+        handleShowSettlementsChange as EventListener,
+      );
     };
-  }, [onDateRangeChange, onLoadMessages, onUnitClick]);
+  }, [onDateRangeChange, onLoadMessages, onShowSettlementsChange, onUnitClick]);
 
   return (
     <Box
@@ -130,6 +141,9 @@ export function AnalysisMapPane({
         daterange: mapAttrs.daterange,
         'daterange-loading': mapAttrs.daterangeLoading,
         points: mapAttrs.points,
+        settlements: mapAttrs.settlements,
+        'can-show-settlements': mapAttrs.canShowSettlements,
+        'show-settlements': mapAttrs.showSettlements,
         messages: mapAttrs.messages,
         'selected-units': mapAttrs.selectedUnits,
         palitras: mapAttrs.palitras,

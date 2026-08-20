@@ -251,6 +251,7 @@ pub struct MapPointsReq {
     pub inbox_items_filter: InboxMessagesReq,
     pub map_filter: Option<MapPointsFilter>,
     pub page_id: Option<String>,
+    pub show_settlements: Option<bool>,
 }
 
 #[derive(
@@ -259,6 +260,27 @@ pub struct MapPointsReq {
 pub struct MapPointsRsp {
     pub network_units: Vec<NetworkUnit>,
     pub points: Vec<FreqDetailedPoint>,
+    pub settlements: Vec<MapSettlement>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    FromQueryResult,
+)]
+pub struct MapSettlement {
+    pub settlement_id: i32,
+    pub name: String,
+    pub region: Option<String>,
+    pub lat: f64,
+    pub lon: f64,
+    pub inbox_item_count: i64,
 }
 
 #[derive(

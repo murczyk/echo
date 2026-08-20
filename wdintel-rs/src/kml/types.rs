@@ -91,6 +91,8 @@ pub struct ExtendedData {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct MultiGeometry {
+    #[serde(rename = "Point", default)]
+    pub points: Vec<Point>,
     #[serde(rename = "LineString", default)]
     pub line_strings: Vec<LineString>,
 }

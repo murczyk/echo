@@ -8,7 +8,7 @@ use milgeo_rs::MilGeo;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
     EntityTrait, IntoActiveModel, NotSet, QueryFilter, QueryOrder, QuerySelect,
-    Set,
+    Set, TransactionTrait,
 };
 
 pub async fn process_location_v2_coords_worker(
@@ -88,6 +88,7 @@ pub async fn run_process_coords_locations_worker(
                 };
                 let mut existing_locations =
                     new_locations.iter().cloned().collect::<BTreeSet<_>>();
+                let txn = dbx.begin().await.c(h!())?;
                 if let (Some(freq), Some(datetime)) =
                     (inbox_item.freq.clone(), inbox_item.datetime)
                 {
@@ -95,7 +96,7 @@ pub async fn run_process_coords_locations_worker(
                         &locations,
                         freq,
                         datetime,
-                        dbx,
+                        &txn,
                         &peleng_locations,
                     )
                     .await
@@ -109,13 +110,21 @@ pub async fn run_process_coords_locations_worker(
                 }
                 let location_v2 = Some(format_locations_list(new_locations));
                 let mut model = inbox_item.clone().into_active_model();
-                model.location_v2 = Set(location_v2);
-                model.update(dbx).await.c(h!())?;
+                model.location_v2 = Set(location_v2.clone());
+                model.update(&txn).await.c(h!())?;
+                crate::battle_line::settlement_queue::reconcile_item_locations(
+                    &txn,
+                    inbox_item.id,
+                    location_v2.as_deref(),
+                )
+                .await
+                .c(h!())?;
                 for (peleng, localities) in peleng_locations.clone() {
                     let mut model = peleng.into_active_model();
                     set_peleng_locality(&mut model, localities.first());
-                    model.update(dbx).await.c(h!())?;
+                    model.update(&txn).await.c(h!())?;
                 }
+                txn.commit().await.c(h!())?;
             }
         }
     }
