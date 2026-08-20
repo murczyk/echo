@@ -40,6 +40,9 @@ export type FeedFilterSelectionSectionProps<T> = {
   bulkCopy?: boolean;
   bulkCopyMenuLabel?: string;
   onBulkCopy?: (selected: readonly T[]) => Promise<void> | void;
+  getBulkPasteToken?: (option: T) => string;
+  getBulkPasteAliases?: (option: T) => readonly string[];
+  getBulkCopyText?: (selected: readonly T[]) => string;
 };
 
 export function FeedFilterSelectionSection<T>({
@@ -75,6 +78,9 @@ export function FeedFilterSelectionSection<T>({
   bulkCopy = false,
   bulkCopyMenuLabel,
   onBulkCopy,
+  getBulkPasteToken,
+  getBulkPasteAliases,
+  getBulkCopyText,
 }: FeedFilterSelectionSectionProps<T>) {
   const shouldKeepOpen = keepOpenOnSelect ?? keepOpenAndPreserveInputOnSelect;
   const shouldPreserveInput = preserveInputOnSelect ?? keepOpenAndPreserveInputOnSelect;
@@ -185,6 +191,9 @@ export function FeedFilterSelectionSection<T>({
           bulkCopy={bulkCopy}
           bulkCopyMenuLabel={bulkCopyMenuLabel}
           onBulkCopy={onBulkCopy}
+          getBulkPasteToken={getBulkPasteToken}
+          getBulkPasteAliases={getBulkPasteAliases}
+          getBulkCopyText={getBulkCopyText}
           onInputChange={
             rankedSearch || shouldKeepOpen
               ? (_, nextValue, reason) => {

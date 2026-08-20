@@ -343,13 +343,6 @@ describe('PowerAutocomplete', () => {
     expect(getBulkMenuButton(container)).toBeNull();
   });
 
-  it('does not render a copy action unless enabled', () => {
-    const { container } = renderAutocomplete({ bulkPaste: true });
-    openBulkMenu(container);
-
-    expect(container.textContent).not.toContain('Копіювати обрані значення');
-  });
-
   it('disables the copy action when there are no selected values', () => {
     const { container } = renderAutocomplete({ bulkPaste: true, bulkCopy: true });
     openBulkMenu(container);
@@ -376,7 +369,7 @@ describe('PowerAutocomplete', () => {
     if (!copyItem) throw new Error('Copy menu item not found');
     act(() => copyItem.click());
 
-    expect(onBulkCopy).toHaveBeenCalledWith([options[0], options[1]]);
+    expect(onBulkCopy).toHaveBeenCalledWith([options[0], options[1]], '111.1111\n222.2222');
   });
 
   it('passes a copied newline list from one frequency column into another bulk flow', () => {
@@ -656,6 +649,67 @@ describe('PowerAutocomplete', () => {
     expect(container.textContent).toContain('111.1111');
     expect(container.textContent).toContain('Не знайдено');
     expect(container.textContent).toContain('BAD');
+  });
+
+  it('rejects ambiguous aliases instead of choosing an arbitrary option', () => {
+    const ambiguousOptions = [
+      { id: 'sender-a', label: 'Same label' },
+      { id: 'sender-b', label: 'Same label' },
+    ];
+    const onBulkPasteResolved = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteInputLabel: 'Відправники',
+      options: ambiguousOptions,
+      getBulkPasteToken: (option: Option) => option.id,
+      getBulkPasteAliases: (option: Option) => [option.label],
+      onBulkPasteResolved,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'Same label');
+
+    expect(onBulkPasteResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        found: [],
+        missing: ['Same label'],
+        added: [],
+      }),
+    );
+    expect(container.textContent).toContain('Same label');
+  });
+
+  it('round-trips canonical object tokens when display labels collide', () => {
+    const senderOptions = [
+      { id: 'sender-a', label: 'Same label' },
+      { id: 'sender-b', label: 'Same label' },
+    ];
+    const onBulkCopy = vi.fn();
+    const onBulkPasteResolved = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkCopy: true,
+      value: [senderOptions[0]],
+      options: senderOptions,
+      getBulkPasteToken: (option: Option) => option.id,
+      getBulkPasteAliases: (option: Option) => [option.label],
+      onBulkCopy,
+      onBulkPasteResolved,
+    });
+
+    openBulkMenu(container);
+    const copyItem = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    if (!copyItem) throw new Error('Copy menu item not found');
+    act(() => copyItem.click());
+    expect(onBulkCopy).toHaveBeenCalledWith([senderOptions[0]], 'sender-a');
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'sender-a');
+    expect(onBulkPasteResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ found: [senderOptions[0]], missing: [] }),
+    );
   });
 
   it('hides empty preview sections before input', () => {

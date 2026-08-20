@@ -11,8 +11,7 @@ import {
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
-import { copyTextToClipboard } from '../../../copy-to-clipboard';
-import { useOptionalPowerSnackbar } from '../../components/PowerSnackbar';
+import { useDutyBulkCopy } from './useDutyBulkCopy';
 
 type FeedFilterFrequencySectionProps = {
   mode: 'include' | 'exclude';
@@ -39,17 +38,10 @@ export function FeedFilterFrequencySection({
   adjacentFreqsRange,
   onAdjacentFreqsRangeChange,
 }: FeedFilterFrequencySectionProps) {
-  const { notify } = useOptionalPowerSnackbar();
-
-  const copySelectedFrequencies = async (selected: readonly string[]) => {
-    try {
-      await copyTextToClipboard(selected.join('\n'));
-      notify({ message: `Скопійовано частот: ${selected.length}.`, severity: 'success' });
-    } catch {
-      notify({ message: 'Не вдалося скопіювати частоти.', severity: 'error' });
-    }
-  };
-
+  const onBulkCopy = useDutyBulkCopy({
+    entityLabel: 'частоти',
+    serialize: (selected: readonly string[]) => selected.join('\n'),
+  });
   return (
     <Box>
       <FeedFilterSelectionSection
@@ -69,7 +61,7 @@ export function FeedFilterFrequencySection({
         bulkPasteInputLabel="Частоти"
         bulkCopy
         bulkCopyMenuLabel="Копіювати обрані частоти"
-        onBulkCopy={copySelectedFrequencies}
+        onBulkCopy={onBulkCopy}
         headerRight={
           <Tooltip title="Оновити список частот">
             <span>

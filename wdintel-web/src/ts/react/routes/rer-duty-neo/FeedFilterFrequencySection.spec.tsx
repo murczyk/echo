@@ -98,7 +98,7 @@ describe('FeedFilterFrequencySection', () => {
     expect(mocks.copyTextToClipboard).toHaveBeenCalledWith('153.6250\n154.0000');
     expect(mocks.notify).toHaveBeenCalledWith({
       severity: 'success',
-      message: 'Скопійовано частот: 2.',
+      message: 'Скопійовано значень: 2.',
     });
   });
 
