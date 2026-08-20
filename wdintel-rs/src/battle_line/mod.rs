@@ -17,6 +17,7 @@ use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use anyhow::Context;
 use chrono::NaiveDateTime;
+use log::warn;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
@@ -1106,9 +1107,12 @@ fn line_string_to_wkt(
         validate_coordinate(coordinate).c(h!())?;
     }
     if !line_has_length(coordinates) {
-        anyhow::bail!(
-            "LineString must contain at least two distinct coordinates"
+        let coordinate = coordinates.first().c(h!())?;
+        warn!(
+            "Poorly supported zero-length LineString geometry was replaced with a Point at {}, {}",
+            coordinate.lon, coordinate.lat
         );
+        return Ok(format!("POINT({} {})", coordinate.lon, coordinate.lat));
     }
     Ok(format!(
         "LINESTRING({})",
@@ -1267,22 +1271,25 @@ mod tests {
     }
 
     #[test]
-    fn rejects_empty_or_degenerate_geometry() {
+    fn rejects_empty_geometry_and_replaces_degenerate_line_with_point() {
         assert!(features_to_wkt(&[]).is_err());
-        assert!(features_to_wkt(&[
-            ImportedGeometryFeature::Point(ImportedCoordinate {
-                lat: 50.0,
-                lon: 32.0,
-            }),
-            ImportedGeometryFeature::LineString(vec![
-                ImportedCoordinate {
-                    lat: 49.0,
-                    lon: 31.0,
-                };
-                2
-            ]),
-        ])
-        .is_err());
+        assert_eq!(
+            features_to_wkt(&[
+                ImportedGeometryFeature::Point(ImportedCoordinate {
+                    lat: 50.0,
+                    lon: 32.0,
+                }),
+                ImportedGeometryFeature::LineString(vec![
+                    ImportedCoordinate {
+                        lat: 49.0,
+                        lon: 31.0,
+                    };
+                    2
+                ]),
+            ])
+            .unwrap(),
+            "GEOMETRYCOLLECTION(POINT(32 50),POINT(31 49))"
+        );
     }
 
     #[test]
