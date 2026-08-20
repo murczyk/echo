@@ -40,6 +40,8 @@ pub enum Relation {
     AiAgentSettings,
     #[sea_orm(has_many = "super::ai_chat::Entity")]
     AiChat,
+    #[sea_orm(has_many = "super::ai_intel_report_attempt::Entity")]
+    AiIntelReportAttempt,
     #[sea_orm(has_many = "super::api_integration::Entity")]
     ApiIntegration,
     #[sea_orm(has_many = "super::area_of_responsibility::Entity")]
@@ -167,6 +169,12 @@ impl Related<super::ai_agent_settings::Entity> for Entity {
 impl Related<super::ai_chat::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiChat.def()
+    }
+}
+
+impl Related<super::ai_intel_report_attempt::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiIntelReportAttempt.def()
     }
 }
 

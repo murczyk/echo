@@ -13,6 +13,9 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 import type { User, InboxMessage } from '../../../../../Bindings';
 import { ConfirmDangerDialog } from '../../../components/ConfirmDangerDialog';
@@ -32,6 +35,7 @@ import { DmrSection } from './drawer-sections/DmrSection';
 import { LocationsSection } from './drawer-sections/LocationsSection';
 import { AdvancedFieldsSection } from './drawer-sections/AdvancedFieldsSection';
 import type { MessageFormData } from './manage-message-drawer.schema';
+import type { QuickIntelReportSuggestionState } from './useManageMessageDrawer';
 
 export type Props = {
   open: boolean;
@@ -51,7 +55,21 @@ export type Props = {
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
 
-function ReportTextRow({ originalText, busy }: { originalText: string; busy: boolean }) {
+function ReportTextRow({
+  originalText,
+  busy,
+  quickSuggestion,
+  onApplyQuickSuggestion,
+  onSelectAdjacentQuickSuggestion,
+  onRetryQuickSuggestion,
+}: {
+  originalText: string;
+  busy: boolean;
+  quickSuggestion: QuickIntelReportSuggestionState;
+  onApplyQuickSuggestion: () => void;
+  onSelectAdjacentQuickSuggestion: (offset: number) => void;
+  onRetryQuickSuggestion: () => void;
+}) {
   const { control } = useFormContext<MessageFormData>();
   const reportTextRef = React.useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
 
@@ -100,6 +118,115 @@ function ReportTextRow({ originalText, busy }: { originalText: string; busy: boo
             />
           )}
         />
+        {quickSuggestion.status !== 'idle' ? (
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, mt: 1.5 }}>
+            <Stack alignItems="center" spacing={0.5} sx={{ color: 'text.secondary', minWidth: 28 }}>
+              <SmartToyOutlinedIcon
+                aria-label="ШІ пропозиція"
+                aria-busy={quickSuggestion.status === 'loading' || undefined}
+                data-testid={
+                  quickSuggestion.status === 'loading' ? 'quick-suggestion-loading' : undefined
+                }
+                fontSize="small"
+                sx={
+                  quickSuggestion.status === 'loading'
+                    ? {
+                        animation: 'quick-suggestion-pulse 1.2s ease-in-out infinite',
+                        '@keyframes quick-suggestion-pulse': {
+                          '0%, 100%': { opacity: 0.35, transform: 'scale(0.9)' },
+                          '50%': { opacity: 1, transform: 'scale(1.1)' },
+                        },
+                      }
+                    : undefined
+                }
+              />
+            </Stack>
+            {quickSuggestion.status === 'loading' ? (
+              <Typography role="status" aria-live="polite" variant="body2" color="text.secondary">
+                Формуємо ШІ пропозицію…
+              </Typography>
+            ) : null}
+            {quickSuggestion.status === 'available' ? (
+              <Box sx={{ minWidth: 0, flex: 1, position: 'relative' }}>
+                <Typography
+                  component="button"
+                  type="button"
+                  variant="body2"
+                  title="Застосувати ШІ пропозицію"
+                  onClick={onApplyQuickSuggestion}
+                  sx={{
+                    minWidth: 0,
+                    p: 0,
+                    pr: quickSuggestion.suggestions.length > 1 ? 10 : 0,
+                    border: 0,
+                    background: 'none',
+                    color: 'text.primary',
+                    font: 'inherit',
+                    textAlign: 'left',
+                    whiteSpace: 'pre-wrap',
+                    cursor: 'pointer',
+                    '&:hover': { color: 'primary.main' },
+                  }}
+                >
+                  {quickSuggestion.suggestions[quickSuggestion.selectedIndex]}
+                </Typography>
+                {quickSuggestion.suggestions.length > 1 ? (
+                  <Stack
+                    direction="row"
+                    alignItems="center"
+                    spacing={0.25}
+                    sx={{ position: 'absolute', top: -4, right: 0 }}
+                  >
+                    <IconButton
+                      size="small"
+                      aria-label="Попередня ШІ пропозиція"
+                      onClick={() => onSelectAdjacentQuickSuggestion(-1)}
+                      sx={{ width: 24, height: 24 }}
+                    >
+                      <ChevronLeftIcon fontSize="small" />
+                    </IconButton>
+                    <Typography variant="caption" color="text.disabled">
+                      {quickSuggestion.selectedIndex + 1}/{quickSuggestion.suggestions.length}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      aria-label="Наступна ШІ пропозиція"
+                      onClick={() => onSelectAdjacentQuickSuggestion(1)}
+                      sx={{ width: 24, height: 24 }}
+                    >
+                      <ChevronRightIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
+                ) : null}
+              </Box>
+            ) : null}
+            {quickSuggestion.status === 'error' ? (
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={0.5}
+                sx={{ minWidth: 0, flex: 1 }}
+              >
+                <Typography variant="caption" color="text.disabled">
+                  {quickSuggestion.message}
+                </Typography>
+                <IconButton
+                  size="small"
+                  aria-label="Повторити формування ШІ пропозиції"
+                  onClick={onRetryQuickSuggestion}
+                  sx={{ width: 18, height: 18, p: 0, opacity: 0.35, fontSize: '0.75rem' }}
+                >
+                  ↻
+                </IconButton>
+              </Stack>
+            ) : null}
+            {quickSuggestion.status === 'applied' ? (
+              <Typography variant="caption" color="text.secondary">
+                ШІ пропозицію застосовано
+              </Typography>
+            ) : null}
+          </Box>
+        ) : null}
       </FormSectionWrapper>
     </Box>
   );
@@ -115,6 +242,10 @@ export function ManageMessageDrawer(props: Props) {
     isReportMode,
     isReportCreateMode,
     originalReportText,
+    quickSuggestion,
+    applyQuickSuggestion,
+    selectAdjacentQuickSuggestion,
+    retryQuickSuggestion,
     existingMedia,
     showAdvanced,
     setShowAdvanced,
@@ -239,7 +370,14 @@ export function ManageMessageDrawer(props: Props) {
                 }}
               >
                 {isReportMode ? (
-                  <ReportTextRow originalText={originalReportText} busy={busy} />
+                  <ReportTextRow
+                    originalText={originalReportText}
+                    busy={busy}
+                    quickSuggestion={quickSuggestion}
+                    onApplyQuickSuggestion={applyQuickSuggestion}
+                    onSelectAdjacentQuickSuggestion={selectAdjacentQuickSuggestion}
+                    onRetryQuickSuggestion={retryQuickSuggestion}
+                  />
                 ) : null}
 
                 {/* LEFT COLUMN */}

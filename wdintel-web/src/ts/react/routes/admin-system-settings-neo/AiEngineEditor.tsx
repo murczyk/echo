@@ -199,7 +199,7 @@ export function AiEngineEditor({
               onChange={(_, checked) => patchForm({ callsignEnabled: checked })}
             />
           }
-          label="Використовувати для обробки позивних"
+          label="Використовувати для обробки позивних і розвіддонесень"
         />
         <FormControlLabel
           control={

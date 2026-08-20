@@ -127,7 +127,7 @@ export function AiEngineDetails({
                 <DetailValue label="Base URL" value={aiEngine.url} />
                 <DetailValue label="Стан" value={aiEngine.enabled ? 'Увімкнено' : 'Вимкнено'} />
                 <DetailValue
-                  label="Обробка позивних"
+                  label="Позивні й розвіддонесення"
                   value={aiEngine.callsignEnabled ? 'Увімкнено' : 'Вимкнено'}
                 />
                 <DetailValue label="OCR" value={aiEngine.ocrEnabled ? 'Увімкнено' : 'Вимкнено'} />

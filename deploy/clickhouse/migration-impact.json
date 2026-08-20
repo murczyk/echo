@@ -272,9 +272,19 @@
     "echo:m20260818_081034_inbox_unit_backfill_lookup_indexes": {
       "changes": []
     },
+    "echo:m20260819_064249_ai_intel_report_settings": {
+      "changes": [
+        { "table": "public.ai_intel_report_settings", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260819_175820_device_settings": {
       "changes": [
         { "table": "public.device_settings", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260820_121919_ai_intel_report_attempt": {
+      "changes": [
+        { "table": "public.ai_intel_report_attempt", "strategy": "excluded" }
       ]
     }
   },

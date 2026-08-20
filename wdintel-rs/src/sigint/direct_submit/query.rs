@@ -465,7 +465,7 @@ where
         .c(h!())?)
 }
 
-async fn message_has_copy_access<C>(
+pub(crate) async fn message_has_copy_access<C>(
     dbx: &C,
     message: &signal_message::Model,
     allowed_groups: &[String],

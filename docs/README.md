@@ -5,6 +5,16 @@ container per installation. PostgreSQL 18 is the system of record, Redis owns
 sessions and transient coordination, and separate API, background-worker, and
 report-worker processes isolate interactive traffic from long-running work.
 
+Quick intelligence-report suggestions are a synchronous, optional API path
+that makes exactly one structured vLLM request. It reads only the selected
+message and already-completed transcription/summary records. Historical style
+examples come only from preceding accessible human `intel_product` links and
+`sigint_comment` rows. The feature is disabled by default and does not persist
+or log source text or prompts. Validated suggestions and bounded model replies
+are retained in the administrator review journal. See
+[Quick intelligence-report suggestions](AI_INTELLIGENCE_REPORT_SUGGESTIONS.md)
+for access boundaries, limits, telemetry, evaluation, and rollout.
+
 ## Core topology
 
 ```mermaid

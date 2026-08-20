@@ -50,6 +50,12 @@ fi
 if [[ -n "$exported_secret_key" ]]; then
   export AWS_SECRET_ACCESS_KEY="$exported_secret_key"
 fi
+if [[ -z "${AWS_ACCESS_KEY_ID:-}" && -n "${ECHOUASTORAGE_LFS_AWS_ACCESS_KEY_ID:-}" ]]; then
+  export AWS_ACCESS_KEY_ID="$ECHOUASTORAGE_LFS_AWS_ACCESS_KEY_ID"
+fi
+if [[ -z "${AWS_SECRET_ACCESS_KEY:-}" && -n "${ECHOUASTORAGE_LFS_AWS_SECRET_ACCESS_KEY:-}" ]]; then
+  export AWS_SECRET_ACCESS_KEY="$ECHOUASTORAGE_LFS_AWS_SECRET_ACCESS_KEY"
+fi
 if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
   echo "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required" >&2
   exit 1
