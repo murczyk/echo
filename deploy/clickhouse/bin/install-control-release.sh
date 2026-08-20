@@ -74,13 +74,7 @@ else
   [[ "$installed_release" == "$expected_release" ]] \
     || die "installed control release $expected_release has checksum $installed_release"
 fi
-find "$release_dir/bin" "$release_dir/shims" -type f -exec chmod 0755 {} +
-find "$release_dir/env" "$release_dir/source-systemd" "$release_dir/systemd" \
-  -type f -exec chmod 0644 {} +
-chmod 0644 \
-  "$release_dir/control-protocol-version" \
-  "$release_dir/migration-impact.json" \
-  "$release_dir/versions.env"
+normalize_control_release_permissions "$release_dir"
 
 for unit in "$unit_dir"/*; do
   install -o root -g root -m 0644 "$unit" "/etc/systemd/system/$(basename "$unit")"

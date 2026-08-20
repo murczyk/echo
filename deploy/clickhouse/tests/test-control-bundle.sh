@@ -57,5 +57,10 @@ archive_control_bundle "$case_dir" | tar -C "$archive_dir" -xf -
 [[ ! -e "$archive_dir/README.md" ]]
 [[ ! -e "$archive_dir/release-id" ]]
 [[ -f "$archive_dir/bin/command.sh" ]]
+chmod 0700 "$archive_dir" "$archive_dir/bin"
+normalize_control_release_permissions "$archive_dir"
+[[ $(stat -c %a "$archive_dir") == 755 ]]
+[[ $(stat -c %a "$archive_dir/bin") == 755 ]]
+[[ $(stat -c %a "$archive_dir/bin/command.sh") == 755 ]]
 
 printf 'Analytics control bundle tests passed\n'

@@ -366,6 +366,18 @@ archive_control_bundle() {
     --file=-
 }
 
+normalize_control_release_permissions() {
+  local release_dir=$1
+  find "$release_dir" -type d -exec chmod 0755 {} +
+  find "$release_dir/bin" "$release_dir/shims" -type f -exec chmod 0755 {} +
+  find "$release_dir/env" "$release_dir/source-systemd" "$release_dir/systemd" \
+    -type f -exec chmod 0644 {} +
+  chmod 0644 \
+    "$release_dir/control-protocol-version" \
+    "$release_dir/migration-impact.json" \
+    "$release_dir/versions.env"
+}
+
 active_control_release_id() {
   require_file "$BUNDLE_DIR/release-id"
   local release_id
