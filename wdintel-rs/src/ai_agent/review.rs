@@ -443,7 +443,10 @@ async fn send_mattermost_alert(
             msg: "Mattermost alert delivery is not configured".to_string(),
         });
     };
-    let webhook = mattermost::resolve_webhook(webhook).await.c(h!())?;
+    let timeout = StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC);
+    let webhook = mattermost::resolve_webhook(webhook, timeout)
+        .await
+        .c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(review.request_id)
         .one(&env.dbx)
         .await
@@ -465,7 +468,7 @@ async fn send_mattermost_alert(
     );
     mattermost::post(
         &webhook,
-        StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
+        timeout,
         &payload,
         "Mattermost alert transport failed",
         "Mattermost alert endpoint rejected the request",

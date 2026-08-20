@@ -23,7 +23,8 @@ use actix_web::{
 };
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait,
+    IntoActiveModel, TransactionTrait,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -312,14 +313,29 @@ async fn target_api_smoke_covers_all_routes() {
             && unit["name"].as_str() == Some(lookup_unit.name.as_str())
     }));
 
-    let response = post_json!(
-        "/api/device/create",
-        json!({
-            "name": "API device",
-            "external_url": "https://example.com/device",
-            "custom_fields": {"inventory_id": "api-1"}
+    let notification_lock = env.dbx.begin().await.unwrap();
+    notification_lock
+        .execute_unprepared(
+            "LOCK TABLE device_settings IN ACCESS EXCLUSIVE MODE",
+        )
+        .await
+        .unwrap();
+
+    let create_response =
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            post_json!(
+                "/api/device/create",
+                json!({
+                    "name": "API device",
+                    "external_url": "https://example.com/device",
+                    "custom_fields": {"inventory_id": "api-1"}
+                })
+            )
         })
-    );
+        .await;
+    notification_lock.rollback().await.unwrap();
+    let response = create_response
+        .expect("device creation waited for its Mattermost notification");
     assert_eq!(response.status(), StatusCode::OK);
     let created: Value = test::read_body_json(response).await;
     let device_id = created["id"].as_str().unwrap().to_string();

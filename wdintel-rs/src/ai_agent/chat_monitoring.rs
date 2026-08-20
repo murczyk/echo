@@ -152,7 +152,10 @@ async fn send_mattermost_chat(
     notification: &ai_agent_chat_mattermost_notification::Model,
     webhook: &str,
 ) -> Result<(), AppError> {
-    let webhook = mattermost::resolve_webhook(webhook).await.c(h!())?;
+    let timeout = StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC);
+    let webhook = mattermost::resolve_webhook(webhook, timeout)
+        .await
+        .c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(notification.request_id)
         .one(&env.dbx)
         .await
@@ -178,7 +181,7 @@ async fn send_mattermost_chat(
     );
     mattermost::post(
         &webhook,
-        StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
+        timeout,
         &payload,
         "Mattermost chat transport failed",
         "Mattermost chat endpoint rejected the request",

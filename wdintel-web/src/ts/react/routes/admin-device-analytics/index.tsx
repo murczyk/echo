@@ -46,12 +46,6 @@ export function AdminDeviceAnalyticsPage() {
             hidden={activeTab !== 'general'}
             sx={{ pt: 3 }}
           >
-            <Typography variant="h6" component="h2">
-              Налаштування відсутні
-            </Typography>
-            <Typography color="text.secondary">
-              Цей розділ наразі не має параметрів, доступних для налаштування.
-            </Typography>
             {activeTab === 'general' ? <DeviceGeneralSettingsPanel /> : null}
           </Box>
           <Box

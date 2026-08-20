@@ -1,7 +1,8 @@
 use super::{access, admin, dispatcher, lifecycle};
 use crate::config::{
     read_config, Config, AI_AGENT_COPIED_LOGIN_PREFIX, AI_AGENT_DISPATCHER_ID,
-    AI_AGENT_SETTINGS_ID, AI_AGENT_TEMPLATE_LOGIN_ID,
+    AI_AGENT_MATTERMOST_TIMEOUT_SEC, AI_AGENT_SETTINGS_ID,
+    AI_AGENT_TEMPLATE_LOGIN_ID,
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_container, ai_agent_conversation,
@@ -25,6 +26,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
+use std::time::Duration;
 use uuid::Uuid;
 
 const LOCAL_AI_AGENT_PROFILE_VERSION: u8 = 1;
@@ -388,7 +390,12 @@ async fn validate_profile_webhook_target(
     profile: &LocalAiAgentProfile,
 ) -> anyhow::Result<()> {
     if let Some(webhook) = profile.settings.mattermost_webhook_url.as_deref() {
-        mattermost::resolve_webhook(webhook).await.context(h!())?;
+        mattermost::resolve_webhook(
+            webhook,
+            Duration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
+        )
+        .await
+        .context(h!())?;
     }
     Ok(())
 }

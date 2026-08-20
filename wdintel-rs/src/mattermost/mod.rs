@@ -3,6 +3,7 @@ use crate::h;
 use crate::types::ShortContext;
 use crate::utils::http::is_valid_hostname;
 use serde::Serialize;
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 use url::Url;
@@ -55,7 +56,10 @@ pub fn validate_webhook(webhook: Option<&str>) -> Result<(), AppError> {
     Ok(())
 }
 
-pub async fn resolve_webhook(webhook: &str) -> Result<WebhookTarget, AppError> {
+pub async fn resolve_webhook(
+    webhook: &str,
+    timeout: Duration,
+) -> Result<WebhookTarget, AppError> {
     validate_webhook(Some(webhook)).c(h!())?;
     let url = Url::parse(webhook)
         .map_err(|_| AppError::BL {
@@ -75,19 +79,36 @@ pub async fn resolve_webhook(webhook: &str) -> Result<WebhookTarget, AppError> {
             msg: "Mattermost webhook URL is invalid".to_string(),
         })
         .c(h!())?;
-    let addresses = tokio::net::lookup_host((host.as_str(), port))
-        .await
-        .map_err(|_| AppError::BL {
-            msg: "Mattermost webhook host did not resolve".to_string(),
-        })
-        .c(h!())?
-        .collect::<Vec<_>>();
+    let addresses = await_webhook_lookup(
+        tokio::net::lookup_host((host.as_str(), port)),
+        timeout,
+    )
+    .await
+    .c(h!())?
+    .collect::<Vec<_>>();
     validate_webhook_addresses(&addresses).c(h!())?;
     Ok(WebhookTarget {
         url,
         hostname: host.parse::<IpAddr>().is_err().then_some(host),
         addresses,
     })
+}
+
+async fn await_webhook_lookup<T>(
+    lookup: impl Future<Output = std::io::Result<T>>,
+    timeout: Duration,
+) -> Result<T, AppError> {
+    let lookup = tokio::time::timeout(timeout, lookup)
+        .await
+        .map_err(|_| AppError::BL {
+            msg: "Mattermost webhook host resolution timed out".to_string(),
+        })
+        .c(h!())?;
+    Ok(lookup
+        .map_err(|_| AppError::BL {
+            msg: "Mattermost webhook host did not resolve".to_string(),
+        })
+        .c(h!())?)
 }
 
 pub async fn post<T: Serialize + ?Sized>(
@@ -203,6 +224,19 @@ mod tests {
         let addresses = [SocketAddr::from(([127, 0, 0, 1], 443))];
 
         assert!(validate_webhook_addresses(&addresses).is_err());
+    }
+
+    #[tokio::test]
+    async fn webhook_dns_lookup_is_bounded() {
+        let error = await_webhook_lookup(
+            std::future::pending::<std::io::Result<()>>(),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(format!("{error:#}")
+            .contains("Mattermost webhook host resolution timed out"));
     }
 
     #[tokio::test]

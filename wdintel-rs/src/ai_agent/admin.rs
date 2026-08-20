@@ -3,6 +3,7 @@ use super::{access, chat_monitoring, dispatcher, lifecycle, review};
 use crate::config::{
     AI_AGENT_ADMIN_REQUEST_LIMIT_DEFAULT, AI_AGENT_ADMIN_REQUEST_LIMIT_MAX,
     AI_AGENT_ECHO_PROXY_PING_PATH, AI_AGENT_ECHO_PROXY_TEST_TIMEOUT_SEC,
+    AI_AGENT_MATTERMOST_TIMEOUT_SEC,
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_container, ai_agent_conversation,
@@ -140,7 +141,12 @@ pub async fn update_settings(
             .or(settings.mattermost_webhook_url.clone())
     };
     if let Some(webhook) = mattermost_webhook_url.as_deref() {
-        mattermost::resolve_webhook(webhook).await.c(h!())?;
+        mattermost::resolve_webhook(
+            webhook,
+            Duration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
+        )
+        .await
+        .c(h!())?;
     }
     if req.security_review_enabled && mattermost_webhook_url.is_none() {
         return Err(AppError::BL {

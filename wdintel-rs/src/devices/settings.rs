@@ -1,4 +1,4 @@
-use crate::config::DEVICE_SETTINGS_ID;
+use crate::config::{DEVICE_MATTERMOST_TIMEOUT_SEC, DEVICE_SETTINGS_ID};
 use crate::entities::device_settings;
 use crate::error::AppError;
 use crate::h;
@@ -14,6 +14,7 @@ use sea_orm::{
     IntoActiveModel, QuerySelect, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 #[derive(
     Elm,
@@ -71,7 +72,12 @@ pub async fn update(
         });
     }
     if let Some(webhook) = replacement {
-        mattermost::resolve_webhook(webhook).await.context(h!())?;
+        mattermost::resolve_webhook(
+            webhook,
+            Duration::from_secs(DEVICE_MATTERMOST_TIMEOUT_SEC),
+        )
+        .await
+        .context(h!())?;
     }
     if !req.clear_mattermost_webhook && replacement.is_none() {
         return Ok(Json(settings_item(&env.dbx).await.context(h!())?));

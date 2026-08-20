@@ -139,7 +139,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(generalTab?.getAttribute('aria-selected')).toBe('true');
     expect(tagsTab?.getAttribute('aria-selected')).toBe('false');
     expect(generalPanel?.hidden).toBe(false);
-    expect(generalPanel?.textContent).toContain('Налаштування відсутні');
+    expect(generalPanel?.textContent).not.toContain('Налаштування відсутні');
     expect(generalPanel?.textContent).toContain('Webhook ще не налаштовано.');
     expect(generalPanel?.textContent).toContain(
       'Echo надсилатиме сповіщення про створення пристроїв і завершення їх аналізу.',

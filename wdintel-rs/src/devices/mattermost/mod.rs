@@ -9,7 +9,7 @@ use crate::types::{Env, ShortContext};
 use anyhow::{Context, Result};
 use sea_orm::EntityTrait;
 use serde::Serialize;
-use std::{fmt::Write as _, time::Duration};
+use std::{fmt::Write as _, sync::Arc, time::Duration};
 use url::{Host, Url};
 use uuid::Uuid;
 
@@ -22,25 +22,27 @@ struct MattermostPayload<'a> {
     text: &'a str,
 }
 
-pub(crate) async fn device_created_nofail(
-    env: &Env,
+pub(crate) fn spawn_device_created_notification(
+    env: Arc<Env>,
     device: &DeviceCurrentState,
 ) {
-    let result: Result<()> = async {
-        let Some(target) = webhook_target(env).await.context(h!())? else {
-            return Ok(());
-        };
-        let text = render_device_created(&env.config.public_host, device)
-            .context(h!())?;
-        post_text(&target, &text).await
-    }
-    .await;
-    if let Err(error) = result {
-        log::error!(
-            "device Mattermost notification failed: event=device_created, device_id={}, error={error:?}",
-            device.id,
-        );
-    }
+    let device_id = device.id;
+    let text = render_device_created(&env.config.public_host, device);
+    drop(tokio::spawn(async move {
+        let result: Result<()> = async {
+            let text = text.context(h!())?;
+            let Some(target) = webhook_target(&env).await.context(h!())? else {
+                return Ok(());
+            };
+            post_text(&target, &text).await
+        }
+        .await;
+        if let Err(error) = result {
+            log::error!(
+                "device Mattermost notification failed: event=device_created, device_id={device_id}, error={error:?}",
+            );
+        }
+    }));
 }
 
 pub(crate) async fn analysis_run_completed_nofail(env: &Env, run_id: Uuid) {
@@ -87,7 +89,12 @@ async fn webhook_target(env: &Env) -> Result<Option<WebhookTarget>> {
         return Ok(None);
     };
     Ok(Some(
-        mattermost::resolve_webhook(&webhook).await.context(h!())?,
+        mattermost::resolve_webhook(
+            &webhook,
+            Duration::from_secs(DEVICE_MATTERMOST_TIMEOUT_SEC),
+        )
+        .await
+        .context(h!())?,
     ))
 }
 

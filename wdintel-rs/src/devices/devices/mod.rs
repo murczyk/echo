@@ -143,7 +143,10 @@ pub(crate) async fn create(
         .await
         .c(h!())?;
     let device = bl::create(&env.dbx, &login, command).await.c(h!())?;
-    crate::devices::mattermost::device_created_nofail(&env, &device).await;
+    crate::devices::mattermost::spawn_device_created_notification(
+        env.into_inner(),
+        &device,
+    );
     Ok(Json(map_device_details(device)))
 }
 
