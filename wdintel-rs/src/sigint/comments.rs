@@ -527,7 +527,7 @@ async fn migrate_comment_batch(
             id: NotSet,
             body: Set(Some(comment.comment.clone())),
             created_at: Set(comment.created_at),
-            timestamp: Set(None),
+            timestamp: Set(Some(comment.created_at)),
             sender: Set(Some(sender)),
             format: Set(None),
             deleted: Set(false),

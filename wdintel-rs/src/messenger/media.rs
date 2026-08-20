@@ -571,6 +571,27 @@ pub(crate) async fn ensure_media_access(
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
             .c(h!())?;
+    let is_deleted_report = intel_prod::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            intel_prod::Relation::SignalMessage1.def(),
+        )
+        .filter(intel_prod::Column::SignalMessageId.eq(signal_message_id))
+        .filter(
+            intel_prod::Column::RelationKind
+                .eq(intel_prod::RELATION_KIND_REPORT),
+        )
+        .filter(signal_message::Column::Deleted.eq(true))
+        .select_only()
+        .column(intel_prod::Column::SignalMessageId)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_deleted_report {
+        return Err(AppError::Forbidden("media access denied".into()));
+    }
     let is_allowed = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId.eq(signal_message_id),
