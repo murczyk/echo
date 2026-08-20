@@ -7,7 +7,7 @@ import MergeIcon from '@mui/icons-material/Merge';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import ClearIcon from '@mui/icons-material/Clear';
 import SearchIcon from '@mui/icons-material/Search';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import SettingsIcon from '@mui/icons-material/Settings';
 import {
   Box,
   Button,
@@ -26,15 +26,14 @@ import {
 } from '@mui/material';
 import {
   type MRT_Column,
-  type MRT_ColumnDef,
   type MRT_PaginationState,
   type MRT_TableInstance,
   MaterialReactTable,
-  useMaterialReactTable,
 } from 'material-react-table';
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
 import type { Unit } from '../../../../../Bindings';
+import { PowerIconButton } from '../../../components/PowerIconButton';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
@@ -42,8 +41,11 @@ import {
   getDefaultMrtPaperProps,
 } from '../../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   buildExplicitSingleSelectColumnFilter,
-  getDefaultMRTOptions,
+  mrtCustomCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   getFilterModeHelperText,
   getSharedFilterTextFieldProps,
   renderColumnActionsMenuItems,
@@ -59,7 +61,6 @@ import {
 } from '../helpers';
 import type { UnitSearchMode } from '../search-mode';
 
-const defaultMrtOptions = getDefaultMRTOptions<Unit>();
 const ROW_ACTIONS_COLUMN_SIZE = 76;
 const DUPLICATE_CANDIDATE_FILTER_OPTIONS = withExplicitSelectAllOption([
   { text: 'Можливий дублікат', value: 'yes' },
@@ -99,7 +100,7 @@ function SearchModeSettingsButton({
 
   return (
     <>
-      <IconButton
+      <PowerIconButton
         size="small"
         aria-label="Налаштування пошуку"
         aria-controls={menuOpen ? menuId : undefined}
@@ -113,13 +114,11 @@ function SearchModeSettingsButton({
           width: compact ? 40 : 32,
           height: compact ? 40 : 32,
           borderRadius: 1,
-          border: '1px solid',
-          borderColor: 'divider',
           color: 'text.secondary',
         }}
       >
-        <SettingsOutlinedIcon sx={{ fontSize: compact ? 20 : 18 }} />
-      </IconButton>
+        <SettingsIcon sx={{ fontSize: compact ? 20 : 18 }} />
+      </PowerIconButton>
       <Menu
         id={menuId}
         anchorEl={anchorElement}
@@ -450,7 +449,7 @@ function useUnitColumns(
   searchMode: UnitSearchMode,
   onSearchModeChange: (searchMode: UnitSearchMode) => void,
   compactSearchMode: boolean,
-): MRT_ColumnDef<Unit>[] {
+): AppMrtColumnDef<Unit>[] {
   return useMemo(
     () => [
       {
@@ -469,7 +468,8 @@ function useUnitColumns(
             verticalAlign: 'middle',
           },
         },
-        Cell: ({ row }) => {
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => {
           const detailsHref = `/rer-units/${row.original.id}`;
           const filesHref = `${detailsHref}?tab=files`;
           return (
@@ -501,6 +501,8 @@ function useUnitColumns(
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
+                    textDecoration: 'none',
+                    '&:hover': { textDecoration: 'none' },
                   }}
                 >
                   {row.original.name}
@@ -539,7 +541,7 @@ function useUnitColumns(
               </Stack>
             </Stack>
           );
-        },
+        }),
       },
       {
         header: 'Інше',
@@ -703,7 +705,11 @@ function useUnitColumns(
         sortDescFirst: true,
         enableColumnFilter: false,
         size: 160,
-        Cell: ({ row }) => formatDateTime(row.original.createdAt),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDateTime(row.original.createdAt),
+          fullValue: ({ row }) => formatDateTime(row.original.createdAt),
+        }),
       },
       {
         header: 'Коментар',
@@ -715,6 +721,7 @@ function useUnitColumns(
           menuIdPrefix: 'comment',
         }),
         size: 300,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '')}
@@ -736,6 +743,7 @@ function useUnitColumns(
           compactSearchMode,
         }),
         size: 220,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => <OrbitCell unit={row.original} />,
       },
       {
@@ -745,6 +753,7 @@ function useUnitColumns(
         enableSorting: false,
         enableColumnFilter: false,
         size: 360,
+        meta: { overflowMode: 'wrap' },
         Cell: ({ cell }) => (
           <Box sx={{ whiteSpace: 'pre-line', overflowWrap: 'anywhere' }}>
             {String(cell.getValue() ?? '')}
@@ -790,8 +799,7 @@ export function UnitsTable({
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const columns = useUnitColumns(attachmentUnitIds, searchMode, onSearchModeChange, isSmallScreen);
   const hasNextPage = (pagination.pageIndex + 1) * pagination.pageSize < totalCount;
-  const table = useMaterialReactTable({
-    ...defaultMrtOptions,
+  const table = useAppMaterialReactTable({
     columns,
     data: units,
     rowCount: totalCount,

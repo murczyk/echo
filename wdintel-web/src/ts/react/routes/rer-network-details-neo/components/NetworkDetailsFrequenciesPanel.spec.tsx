@@ -55,6 +55,8 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
 }));
 
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
+  mrtCustomCell: (renderer: any) => renderer,
+  mrtTextCell: ({ displayValue }: any) => displayValue,
   buildDefaultColumnOrder: ({
     dataColumnIds,
     withRowNumbers,
@@ -69,6 +71,10 @@ vi.mock('../../../components/mui-customized/table/get-default-table-options', ()
     ...dataColumnIds,
   ],
   getDefaultMRTOptions: () => ({ localization: {} }),
+  useAppMaterialReactTable: (options: Record<string, unknown>) => {
+    capturedOptions.push(options);
+    return { ...options, options, getState: () => ({ isFullScreen: false }) };
+  },
   renderColumnActionsMenuItems: () => [],
   renderDefaultMrtEmptyRowsFallback: () => null,
 }));

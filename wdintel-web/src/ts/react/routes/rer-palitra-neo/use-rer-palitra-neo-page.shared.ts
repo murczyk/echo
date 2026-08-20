@@ -24,7 +24,17 @@ export function filterPalitrasByArchiveView(
 }
 
 export function readInitialArchiveViewFromUrl(): ArchiveView {
-  const params = new URLSearchParams(window.location.search);
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  if (params.has('tab')) {
+    params.delete('tab');
+    const nextSearch = params.toString();
+    window.history.replaceState(
+      {},
+      '',
+      url.pathname + (nextSearch ? `?${nextSearch}` : '') + url.hash,
+    );
+  }
   const value = params.get(VIEW_MODE_QUERY_PARAM);
   if (value === 'all' || value === 'archived' || value === 'active') {
     return value;
@@ -35,6 +45,7 @@ export function readInitialArchiveViewFromUrl(): ArchiveView {
 export function updateArchiveViewInUrl(archiveView: ArchiveView) {
   const url = new URL(window.location.href);
   const params = new URLSearchParams(url.search);
+  params.delete('tab');
 
   if (archiveView === 'active') {
     params.delete(VIEW_MODE_QUERY_PARAM);

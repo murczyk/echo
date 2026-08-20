@@ -177,7 +177,17 @@ export function NetworkCallsignRelationsGraphStage({
   const graphHasNoData = graphNodeCount === 0 && graphEdgeCount === 0;
   const graphHasNodesButNoEdges = graphNodeCount > 0 && graphEdgeCount === 0;
   const graphFilteredEmpty =
-    graphIsFilteredEmpty && !graphWarning && !graphHasNoData && !graphHasNodesButNoEdges;
+    graphIsFilteredEmpty &&
+    hasResettableGraphFilters &&
+    !graphWarning &&
+    !graphHasNoData &&
+    !graphHasNodesButNoEdges;
+  const graphHasNoVisibleRelations =
+    graphIsFilteredEmpty &&
+    !hasResettableGraphFilters &&
+    !graphWarning &&
+    !graphHasNoData &&
+    !graphHasNodesButNoEdges;
 
   useEffect(() => {
     document.body.classList.toggle('small-map-fullscreen-open', isFullscreen);
@@ -545,6 +555,27 @@ export function NetworkCallsignRelationsGraphStage({
             >
               Оновити
             </Button>
+          </Stack>
+        </Box>
+      ) : graphHasNoVisibleRelations ? (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 1,
+            display: 'grid',
+            placeItems: 'center',
+            px: 3,
+            textAlign: 'center',
+          }}
+        >
+          <Stack spacing={1.25} alignItems="center" sx={{ maxWidth: 520 }}>
+            <Typography variant="h6" sx={{ color: graphTheme.overlayText, fontWeight: 700 }}>
+              Немає зв&apos;язків між позивними за вибраний період
+            </Typography>
+            <Typography variant="body2" sx={{ color: graphTheme.overlayTextSecondary }}>
+              Спробуйте розширити період пошуку
+            </Typography>
           </Stack>
         </Box>
       ) : graphFilteredEmpty ? (

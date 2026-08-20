@@ -67,6 +67,7 @@ type Props = Pick<
     | 'loadMessagesForMap'
     | 'setRightSidebarTab'
     | 'refreshMapDateRange'
+    | 'setShowSettlements'
     | 'toggleUnitFromMap'
     | 'toggleRightPanel'
     | 'updateQueryState'
@@ -119,6 +120,7 @@ export function AnalysisSidebar({
   topLocations,
   topUnits,
   refreshMapDateRange,
+  setShowSettlements,
   toggleUnitFromMap,
   toggleRightPanel,
   updateQueryState,
@@ -424,6 +426,7 @@ export function AnalysisSidebar({
               onDateRangeChange={refreshMapDateRange}
               onLoadMessages={loadMessagesForMap}
               onUnitClick={toggleUnitFromMap}
+              onShowSettlementsChange={setShowSettlements}
             />
           </Box>
         ) : null}

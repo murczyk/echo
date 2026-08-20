@@ -983,7 +983,22 @@ describe('reloadAnalysisData', () => {
     });
     mocks.fetchAnalysisCount.mockResolvedValue({});
     mocks.fetchAnalysisSummaryTable.mockResolvedValue({ rows: [] });
-    mocks.fetchAnalysisMapPoints.mockResolvedValue({ points: [], networkUnits: [] });
+    const settlements = [
+      {
+        settlementId: 7,
+        name: 'Харків',
+        region: 'Харківська',
+        lat: 49.99,
+        lon: 36.23,
+        inboxItemCount: 3,
+      },
+    ];
+    mocks.fetchAnalysisMapPoints.mockResolvedValue({
+      points: [],
+      networkUnits: [],
+      settlements,
+    });
+    const applyMapSettlements = vi.fn();
 
     await reloadAnalysisData({
       clearAnalysisResults: vi.fn(),
@@ -1009,8 +1024,10 @@ describe('reloadAnalysisData', () => {
       setMapLoading: vi.fn(),
       setMapDateRange: vi.fn(),
       setMapNetworkUnits: vi.fn(),
+      applyMapSettlements,
       setMapOpenMessages: vi.fn(),
       setMapPoints: vi.fn(),
+      showSettlements: true,
       setMessages: vi.fn(),
       setMessagesLoading: vi.fn(),
       setNetworks: vi.fn(),
@@ -1038,6 +1055,8 @@ describe('reloadAnalysisData', () => {
     });
 
     expect(mocks.fetchAnalysisMapPoints).toHaveBeenCalledTimes(1);
+    expect(mocks.fetchAnalysisMapPoints.mock.calls[0][0].showSettlements).toBe(true);
+    await vi.waitFor(() => expect(applyMapSettlements).toHaveBeenCalledWith(settlements, true));
   });
 
   it('reuses networks stats between the networks section and reference data loading in one reload', async () => {

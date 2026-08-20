@@ -122,9 +122,18 @@ vi.mock('@mui/material', () => ({
     return <div>{children}</div>;
   },
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
+  ListItemIcon: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   InputAdornment: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  MenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" onClick={onClick}>
+  MenuItem: ({
+    children,
+    onClick,
+    disabled,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+  }) => (
+    <button type="button" disabled={disabled} onClick={onClick}>
       {children}
     </button>
   ),
@@ -152,6 +161,14 @@ vi.mock('@mui/material', () => ({
 
 vi.mock('@mui/icons-material/MoreVert', () => ({
   default: () => <span data-testid="more-vert-icon" />,
+}));
+
+vi.mock('@mui/icons-material/ContentPaste', () => ({
+  default: () => <span data-testid="playlist-add-icon" />,
+}));
+
+vi.mock('@mui/icons-material/ContentCopy', () => ({
+  default: () => <span data-testid="content-copy-icon" />,
 }));
 
 vi.mock('./PowerIconButton', () => ({
@@ -292,7 +309,7 @@ function getBulkDialogInput(container: HTMLElement): HTMLInputElement | HTMLText
   return input as HTMLInputElement | HTMLTextAreaElement;
 }
 
-function openBulkDialog(container: HTMLElement, label?: string) {
+function openBulkMenu(container: HTMLElement, label?: string) {
   const menuButton = getBulkMenuButton(container, label);
   if (!menuButton) throw new Error('Bulk menu button not found');
 
@@ -300,7 +317,10 @@ function openBulkDialog(container: HTMLElement, label?: string) {
     menuButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
     menuButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
+}
 
+function openBulkDialog(container: HTMLElement, label?: string) {
+  openBulkMenu(container, label);
   const menuItem = container.querySelector('[data-testid="bulk-menu"] button');
   if (!menuItem) throw new Error('Bulk menu item not found');
 
@@ -330,6 +350,116 @@ describe('PowerAutocomplete', () => {
     const { container } = renderAutocomplete({ bulkPaste: false });
 
     expect(getBulkMenuButton(container)).toBeNull();
+  });
+
+  it('disables the copy action when there are no selected values', () => {
+    const { container } = renderAutocomplete({ bulkPaste: true, bulkCopy: true });
+    openBulkMenu(container);
+
+    const copyItem = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    expect(copyItem?.disabled).toBe(true);
+  });
+
+  it('copies the current values through the opt-in callback', () => {
+    const onBulkCopy = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkCopy: true,
+      value: [options[0], options[1]],
+      onBulkCopy,
+    });
+    openBulkMenu(container);
+
+    const copyItem = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    if (!copyItem) throw new Error('Copy menu item not found');
+    act(() => copyItem.click());
+
+    expect(onBulkCopy).toHaveBeenCalledWith([options[0], options[1]], '111.1111\n222.2222');
+  });
+
+  it('passes a copied newline list from one frequency column into another bulk flow', () => {
+    const copiedValues: string[] = [];
+    const onBulkPasteChange = vi.fn();
+    const first = renderAutocomplete({
+      bulkPaste: true,
+      bulkCopy: true,
+      value: [options[0], options[1]],
+      onBulkCopy: (selected: readonly Option[]) =>
+        copiedValues.push(...selected.map((option) => option.label)),
+    });
+
+    openBulkMenu(first.container);
+    const copyItem = [...first.container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    if (!copyItem) throw new Error('Copy menu item not found');
+    act(() => copyItem.click());
+
+    const second = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteSeparators: [',', '\n'],
+      onBulkPasteChange,
+    });
+    openBulkDialog(second.container);
+    typeDialogValue(second.container, copiedValues.join('\n'));
+    const submitButton = [...second.container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton) throw new Error('Submit button not found');
+    act(() => submitButton.click());
+
+    expect(copiedValues).toEqual(['111.1111', '222.2222']);
+    expect(onBulkPasteChange).toHaveBeenCalledWith([options[0], options[1]]);
+  });
+
+  it('keeps commas inside one newline-delimited free-form value', () => {
+    const postOption = { id: 'post-1', label: 'HQ, East' };
+    const onBulkPasteResolved = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteSeparators: ['\n'],
+      options: [postOption],
+      onBulkPasteResolved,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'HQ, East');
+
+    expect(onBulkPasteResolved).toHaveBeenCalledWith({
+      tokens: ['HQ, East'],
+      found: [postOption],
+      missing: [],
+      added: [postOption],
+      alreadySelected: [],
+      finalValue: [postOption],
+    });
+  });
+
+  it('resolves an inactive unit through bulk options without adding it to the dropdown', () => {
+    const selectableUnit = { id: 'unit-1', label: 'Active unit' };
+    const historicUnit = { id: 'historic-unit', label: 'Historic unit' };
+    const { onBulkPasteChange, container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteOptions: [selectableUnit, historicUnit],
+      bulkPasteSeparators: ['\n'],
+      options: [selectableUnit],
+    });
+
+    expect(latestAutocompleteProps?.options).toEqual([selectableUnit]);
+    openBulkDialog(container);
+    typeDialogValue(container, 'Historic unit');
+
+    const submitButton = [...container.querySelectorAll('button')].find(
+      (button) => button.textContent === 'Додати',
+    );
+    if (!submitButton) throw new Error('Submit button not found');
+    act(() => submitButton.click());
+
+    expect(onBulkPasteChange).toHaveBeenCalledWith([historicUnit]);
   });
 
   it('adds the bulk menu button inside the input adornment when enabled', () => {
@@ -574,6 +704,67 @@ describe('PowerAutocomplete', () => {
     expect(container.textContent).toContain('111.1111');
     expect(container.textContent).toContain('Не знайдено');
     expect(container.textContent).toContain('BAD');
+  });
+
+  it('rejects ambiguous aliases instead of choosing an arbitrary option', () => {
+    const ambiguousOptions = [
+      { id: 'sender-a', label: 'Same label' },
+      { id: 'sender-b', label: 'Same label' },
+    ];
+    const onBulkPasteResolved = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteInputLabel: 'Відправники',
+      options: ambiguousOptions,
+      getBulkPasteToken: (option: Option) => option.id,
+      getBulkPasteAliases: (option: Option) => [option.label],
+      onBulkPasteResolved,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'Same label');
+
+    expect(onBulkPasteResolved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        found: [],
+        missing: ['Same label'],
+        added: [],
+      }),
+    );
+    expect(container.textContent).toContain('Same label');
+  });
+
+  it('round-trips canonical object tokens when display labels collide', () => {
+    const senderOptions = [
+      { id: 'sender-a', label: 'Same label' },
+      { id: 'sender-b', label: 'Same label' },
+    ];
+    const onBulkCopy = vi.fn();
+    const onBulkPasteResolved = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkCopy: true,
+      value: [senderOptions[0]],
+      options: senderOptions,
+      getBulkPasteToken: (option: Option) => option.id,
+      getBulkPasteAliases: (option: Option) => [option.label],
+      onBulkCopy,
+      onBulkPasteResolved,
+    });
+
+    openBulkMenu(container);
+    const copyItem = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Копіювати обрані значення'),
+    );
+    if (!copyItem) throw new Error('Copy menu item not found');
+    act(() => copyItem.click());
+    expect(onBulkCopy).toHaveBeenCalledWith([senderOptions[0]], 'sender-a');
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'sender-a');
+    expect(onBulkPasteResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ found: [senderOptions[0]], missing: [] }),
+    );
   });
 
   it('hides empty preview sections before input', () => {

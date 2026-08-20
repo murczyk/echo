@@ -77,6 +77,7 @@ printf '%s  %s\n' "$SIGNOZ_OTEL_COLLECTOR_BINARY_SHA256" \
   | sha256sum --check --status -
 
 install -m 0755 "$PROJECT_DIR/bin/run-api" "$PROJECT_DIR/bin/run-worker" \
+  "$PROJECT_DIR/bin/host-cpu-exporter.py" \
   "$PROJECT_DIR/bin/sync-runtime.sh" "$PROJECT_DIR/bin/sync-models.sh" \
   "$PROJECT_DIR/bin/verify-models.sh" "$PROJECT_DIR/bin/verify-offline-paddle.sh" \
   "$PROJECT_DIR/bin/configure-firewall.sh" "$stage/opt/echo-document-extractor/bin/"

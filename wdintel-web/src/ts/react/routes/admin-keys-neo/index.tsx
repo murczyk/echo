@@ -12,7 +12,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import { ListOrganismsReq, Organism } from '../../../../Bindings';
@@ -30,7 +30,10 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -111,35 +114,29 @@ function buildKeyPolicyLoadingRows(): SigintKeySharePolicy[] {
 
 function usePolicyColumns(
   organismNames: Map<number, string>,
-): MRT_ColumnDef<SigintKeySharePolicy>[] {
+): AppMrtColumnDef<SigintKeySharePolicy>[] {
   return useMemo(
     () => [
       {
         header: 'Власник ключів шифрування',
         id: 'grantFrom',
         accessorFn: (row) => getOrganismLabel(row.grantFrom, organismNames),
-        Cell: ({ row }) => {
-          const label = getOrganismLabel(row.original.grantFrom, organismNames);
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => getOrganismLabel(row.original.grantFrom, organismNames),
+          fullValue: ({ row }) => getOrganismLabel(row.original.grantFrom, organismNames),
+        }),
         size: 240,
       },
       {
         header: 'Отримувач прав на перегляд ключів шифрування',
         id: 'grantTo',
         accessorFn: (row) => getOrganismLabel(row.grantTo, organismNames),
-        Cell: ({ row }) => {
-          const label = getOrganismLabel(row.original.grantTo, organismNames);
-          return (
-            <Tooltip title={label}>
-              <span>{label}</span>
-            </Tooltip>
-          );
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => getOrganismLabel(row.original.grantTo, organismNames),
+          fullValue: ({ row }) => getOrganismLabel(row.original.grantTo, organismNames),
+        }),
         size: 260,
       },
       {
@@ -151,7 +148,11 @@ function usePolicyColumns(
         header: 'Створено',
         id: 'createdAt',
         accessorFn: (row) => row.createdAt,
-        Cell: ({ row }) => <span>{formatDate(row.original.createdAt)}</span>,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatDate(row.original.createdAt),
+          fullValue: ({ row }) => formatDate(row.original.createdAt),
+        }),
         size: 140,
       },
     ],
@@ -181,10 +182,9 @@ function KeyPoliciesTable(props: {
     columnSizing: tableStateContext.columnSizing,
   };
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: props.loading ? buildKeyPolicyLoadingRows() : props.data,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,

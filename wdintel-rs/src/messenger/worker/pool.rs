@@ -7,6 +7,7 @@ use crate::types::*;
 use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
 use redis::aio::ConnectionManager;
 use reqwest::Client;
+use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, TransactionTrait,
 };
@@ -25,6 +26,13 @@ pub struct WorkerContext {
     pub redis: ConnectionManager,
     pub dbx: DatabaseConnection,
     pub s3: Option<opendal::Operator>,
+    pub metrics: Option<crate::telemetry::Metrics>,
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+pub struct ProcessQueueOutcome {
+    pub success_count: usize,
+    pub failed_count: usize,
 }
 
 pub async fn process_queue(
@@ -32,7 +40,7 @@ pub async fn process_queue(
     queue: Vec<signal_message_queue::Model>,
     attachments: Vec<signal_message_queue_attachment::Model>,
     datasources: Vec<EchoAccountF1>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<ProcessQueueOutcome> {
     let ctx = pool.ctx.clone();
     let datasources = datasources
         .into_iter()
@@ -43,53 +51,26 @@ pub async fn process_queue(
         if let Some(item) =
             make_item_from_entry(entry, &attachments, &datasources).c(h!())?
         {
-            item_queue.push_back((item, 1));
+            item_queue.push_back(item);
         }
     }
-    loop {
-        // if queue is empty -  wait for remaining tasks, probably some should be retried
-        if item_queue.is_empty() {
-            let queue_is_empty_and_no_retries_left: bool =
-                wait_for_remaining_tasks(pool, &mut item_queue)
-                    .await
-                    .c(h!())?;
-            if queue_is_empty_and_no_retries_left {
-                break;
-            }
-        }
-        let (item, attempt_num) = item_queue.pop_front().c(h!())?;
+    let mut outcome = ProcessQueueOutcome::default();
+    while let Some(item) = item_queue.pop_front() {
         if pool.join_set.len() >= pool.capacity {
             trace!(
                 "Concurrency limit reached. Waiting for a task to complete..."
             );
-            if let Some(res) = pool.join_set.join_next().await {
-                let result = match res {
-                    Ok(res) => res,
-                    Err(e) => {
-                        // The join pool is poisoned, finish already-processed items and halt
-                        error!(
-                            "unexpected error occurred while processing inbox messages: {:#?}",
-                            e
-                        );
-                        // this will get us closer to "break" the loop by emptying the queue
-                        item_queue.clear();
-                        continue;
-                    }
-                };
-                handle_processing_result(pool, &mut item_queue, result).await;
-            } else {
-                // impossible: the pool is empty
-                continue;
-            }
+            let result = pool.join_set.join_next().await.c(h!())?.c(h!())?;
+            record_processing_result(
+                &mut outcome,
+                handle_processing_result(pool, result).await.c(h!())?,
+            );
         }
-        pool.join_set.spawn(process_item_nofail(
-            item,
-            attempt_num,
-            ctx.clone(),
-        ));
+        pool.join_set.spawn(process_item_nofail(item, ctx.clone()));
     }
+    wait_for_remaining_tasks(pool, &mut outcome).await.c(h!())?;
     trace!("All tasks completed.");
-    Ok(())
+    Ok(outcome)
 }
 
 fn make_item_from_entry(
@@ -146,74 +127,143 @@ fn make_item_from_entry(
 
 async fn wait_for_remaining_tasks(
     pool: &mut ProcessorPool,
-    item_queue: &mut VecDeque<(Item, usize)>,
-) -> anyhow::Result<bool> {
+    outcome: &mut ProcessQueueOutcome,
+) -> anyhow::Result<()> {
     while let Some(res) = pool.join_set.join_next().await {
-        let result = match res {
-            Ok(res) => res,
-            Err(e) => {
-                error!(
-                    "unexpected error occurred while processing inbox messages: {:#?}",
-                    e
-                );
-                continue;
-            }
-        };
-        handle_processing_result(pool, item_queue, result).await;
-        if !item_queue.is_empty() {
-            break;
-        }
+        let result = res.c(h!())?;
+        record_processing_result(
+            outcome,
+            handle_processing_result(pool, result).await.c(h!())?,
+        );
     }
-    if item_queue.is_empty() {
-        // queue is empty and no retries left; that means the queue was processed
-        return Ok(true);
+    Ok(())
+}
+
+fn record_processing_result(outcome: &mut ProcessQueueOutcome, failed: bool) {
+    if failed {
+        outcome.failed_count += 1;
+    } else {
+        outcome.success_count += 1;
     }
-    Ok(false)
 }
 
 async fn handle_processing_result(
     pool: &ProcessorPool,
-    item_queue: &mut VecDeque<(Item, usize)>,
     result: ItemProcessingResult,
-) {
-    match processing_result_action(result.failed, result.attempt_num) {
-        ProcessingResultAction::RetainQueued => {
+) -> anyhow::Result<bool> {
+    let messenger = message_source_label(&result.item.message.message_source);
+    let latency_seconds = processing_latency_seconds(&result.item.model);
+    if let Some(error) = result.error {
+        let error_summary = queue_error_summary(&error);
+        let retry = schedule_retry_if_unchanged(
+            &pool.ctx.dbx,
+            &result.item.model,
+            &error_summary,
+        )
+        .await
+        .c(h!())?;
+        if let Some((attempt_count, delay_seconds)) = retry {
             error!(
-                "failed to process item after 3 attempts, retaining queue item for future retry: {:?}",
-                result.item
+                "failed to process message queue item: queue_id={} datasource_id={} inbox_message_id={} attempt={} retry_in_seconds={} error={}",
+                result.item.model.id,
+                result.item.model.datasource_id,
+                result.item.model.internal_id,
+                attempt_count,
+                delay_seconds,
+                error_summary,
             );
         }
-        ProcessingResultAction::Retry => {
-            item_queue.push_front((result.item, result.attempt_num + 1));
+        if let Some(metrics) = &pool.ctx.metrics {
+            metrics.record_messenger_processing(
+                messenger,
+                "retry",
+                latency_seconds,
+            );
         }
-        ProcessingResultAction::DeleteQueued => {
-            delete_message_and_attachments_nofail(
-                &pool.ctx.dbx,
-                &result.item.model,
-            )
-            .await;
-        }
+        return Ok(true);
+    }
+
+    delete_message_and_attachments_nofail(&pool.ctx.dbx, &result.item.model)
+        .await;
+    if let Some(metrics) = &pool.ctx.metrics {
+        metrics.record_messenger_processing(
+            messenger,
+            "success",
+            latency_seconds,
+        );
+    }
+    Ok(false)
+}
+
+fn message_source_label(message_source: &MessageSource) -> &'static str {
+    match message_source {
+        MessageSource::Signal => "signal",
+        MessageSource::Whatsapp => "whatsapp",
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-enum ProcessingResultAction {
-    Retry,
-    RetainQueued,
-    DeleteQueued,
+fn processing_latency_seconds(queue_item: &signal_message_queue::Model) -> f64 {
+    Utc::now()
+        .naive_utc()
+        .signed_duration_since(queue_item.created_at)
+        .num_milliseconds()
+        .max(0) as f64
+        / 1000.0
 }
 
-fn processing_result_action(
-    failed: bool,
-    attempt_num: usize,
-) -> ProcessingResultAction {
-    if !failed {
-        return ProcessingResultAction::DeleteQueued;
+fn retry_delay_seconds(attempt_count: i32) -> u64 {
+    let index = usize::try_from(attempt_count.max(0))
+        .unwrap_or(usize::MAX)
+        .min(MESSENGER_QUEUE_RETRY_DELAYS_SEC.len() - 1);
+    MESSENGER_QUEUE_RETRY_DELAYS_SEC[index]
+}
+
+fn queue_error_summary(error: &anyhow::Error) -> String {
+    format!("{error:#}")
+        .split_whitespace()
+        .join(" ")
+        .chars()
+        .take(MESSENGER_QUEUE_ERROR_MAX_CHARS)
+        .collect()
+}
+
+async fn schedule_retry_if_unchanged(
+    dbx: &DatabaseConnection,
+    queue_item: &signal_message_queue::Model,
+    error_summary: &str,
+) -> anyhow::Result<Option<(i32, u64)>> {
+    let delay_seconds = retry_delay_seconds(queue_item.attempt_count);
+    let attempt_count = queue_item.attempt_count.saturating_add(1);
+    let next_attempt_at = Utc::now().naive_utc()
+        + chrono::TimeDelta::seconds(delay_seconds as i64);
+    let update_result = signal_message_queue::Entity::update_many()
+        .col_expr(
+            signal_message_queue::Column::AttemptCount,
+            Expr::value(attempt_count),
+        )
+        .col_expr(
+            signal_message_queue::Column::NextAttemptAt,
+            Expr::value(next_attempt_at),
+        )
+        .col_expr(
+            signal_message_queue::Column::LastError,
+            Expr::value(Some(error_summary.to_string())),
+        )
+        .filter(signal_message_queue::Column::Id.eq(queue_item.id))
+        .filter(
+            signal_message_queue::Column::CreatedAt.eq(queue_item.created_at),
+        )
+        .exec(dbx)
+        .await
+        .c(h!())?;
+    if update_result.rows_affected == 0 {
+        info!(
+            "retained updated signal queue item instead of scheduling stale snapshot: queue_id={} datasource_id={} inbox_message_id={}",
+            queue_item.id, queue_item.datasource_id, queue_item.internal_id
+        );
+        return Ok(None);
     }
-    if attempt_num >= 3 {
-        return ProcessingResultAction::RetainQueued;
-    }
-    ProcessingResultAction::Retry
+    Ok(Some((attempt_count, delay_seconds)))
 }
 
 async fn delete_message_and_attachments_if_unchanged(
@@ -264,6 +314,7 @@ pub async fn mk_message_processor_pool(
         redis,
         dbx: env.dbx.clone(),
         s3: env.s3.clone(),
+        metrics: env.metrics.clone(),
     });
     let capacity = ctx
         .config
@@ -289,27 +340,15 @@ pub struct Item {
 
 pub struct ItemProcessingResult {
     pub item: Item,
-    pub attempt_num: usize,
-    pub failed: bool,
+    pub error: Option<anyhow::Error>,
 }
 
 async fn process_item_nofail(
     item: Item,
-    attempt_num: usize,
     ctx: Arc<WorkerContext>,
 ) -> ItemProcessingResult {
-    let failed = match process_item_once(ctx, item.clone()).await {
-        Ok(()) => false,
-        Err(e) => {
-            error!("Process item failed: {:?}", e);
-            true
-        }
-    };
-    ItemProcessingResult {
-        item,
-        failed,
-        attempt_num,
-    }
+    let error = process_item_once(ctx, item.clone()).await.err();
+    ItemProcessingResult { item, error }
 }
 
 async fn process_item_once(
@@ -454,26 +493,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn successful_items_delete_queue_row() {
-        assert_eq!(
-            processing_result_action(false, 1),
-            ProcessingResultAction::DeleteQueued
-        );
+    fn retry_delay_uses_capped_schedule() {
+        assert_eq!(retry_delay_seconds(0), 5);
+        assert_eq!(retry_delay_seconds(1), 15);
+        assert_eq!(retry_delay_seconds(2), 60);
+        assert_eq!(retry_delay_seconds(3), 300);
+        assert_eq!(retry_delay_seconds(4), 900);
+        assert_eq!(retry_delay_seconds(5), 1800);
+        assert_eq!(retry_delay_seconds(100), 1800);
     }
 
     #[test]
-    fn failed_items_retry_before_local_retry_budget() {
-        assert_eq!(
-            processing_result_action(true, 2),
-            ProcessingResultAction::Retry
-        );
+    fn queue_error_summary_is_single_line_and_bounded() {
+        let detail = "x".repeat(MESSENGER_QUEUE_ERROR_MAX_CHARS + 100);
+        let error = anyhow!("first line\nsecond line {detail}");
+        let summary = queue_error_summary(&error);
+
+        assert!(!summary.contains('\n'));
+        assert_eq!(summary.chars().count(), MESSENGER_QUEUE_ERROR_MAX_CHARS);
     }
 
     #[test]
-    fn failed_items_are_retained_after_local_retry_budget() {
-        assert_eq!(
-            processing_result_action(true, 3),
-            ProcessingResultAction::RetainQueued
-        );
+    fn negative_attempt_count_uses_initial_delay_defensively() {
+        assert_eq!(retry_delay_seconds(-1), 5);
     }
 }

@@ -34,6 +34,9 @@ type InitializeAnalysisMapControlsOptions = {
   onToggleFullscreen: () => void;
   onFeatureToggle: (feature: FeatureName, enabled: boolean) => void;
   onPelengLabelsPermanentChange: (show: boolean) => void;
+  canShowSettlements: boolean;
+  showSettlements: boolean;
+  onShowSettlementsChange: (show: boolean) => void;
   onVisiblePalitraIdsChange: (visibleIds: number[]) => void;
   onFocusPalitras: (palitraIds: number[]) => void;
 };
@@ -49,6 +52,9 @@ export function initializeAnalysisMapControls({
   onToggleFullscreen,
   onFeatureToggle,
   onPelengLabelsPermanentChange,
+  canShowSettlements,
+  showSettlements,
+  onShowSettlementsChange,
   onVisiblePalitraIdsChange,
   onFocusPalitras,
 }: InitializeAnalysisMapControlsOptions): {
@@ -70,6 +76,9 @@ export function initializeAnalysisMapControls({
   const mapSettingsControl = createMapSettingsControl(
     pelengLabelsPermanent,
     onPelengLabelsPermanentChange,
+    canShowSettlements,
+    showSettlements,
+    onShowSettlementsChange,
   );
   const palitrasControl = createPalitrasControl([], [], onVisiblePalitraIdsChange, onFocusPalitras);
 

@@ -121,6 +121,7 @@ export type UseAnalysisDataResult = {
   options: AnalysisFilterOptions;
   profiles: Record<string, SignalProfileEntry | null>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
+  setShowSettlements: (show: boolean) => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => Promise<void>;
   summaryLoading: boolean;
   summaryLoaded: boolean;

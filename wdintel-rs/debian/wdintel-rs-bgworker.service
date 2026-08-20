@@ -1,5 +1,7 @@
 [Unit]
 Description=echo wdintel-rs background workers
+Wants=wdintel-py.service
+After=wdintel-py.service
 
 [Service]
 ExecStart=/usr/bin/wdintel-rs --mode=live bgworker

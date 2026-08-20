@@ -30,8 +30,8 @@ import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import SettingsInputAntennaIcon from '@mui/icons-material/SettingsInputAntenna';
 import SettingsInputAntennaOutlinedIcon from '@mui/icons-material/SettingsInputAntennaOutlined';
 import { Menu, MenuItem } from '@mui/material';
-import { memo, useId, useState } from 'react';
-import type { ButtonHTMLAttributes, MouseEvent, ReactNode } from 'react';
+import { memo, useId, useLayoutEffect, useRef, useState } from 'react';
+import type { ButtonHTMLAttributes, CSSProperties, MouseEvent, ReactNode, RefObject } from 'react';
 import { ELLIPSIS, isPresent } from '../../../utils/misc';
 import { blurActiveElement } from '../../../utils/focus';
 
@@ -52,6 +52,8 @@ const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
 const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 30;
+const MESSAGE_CARD_ACTION_BUTTON_SIZE_PX = 30;
+const MESSAGE_CARD_ACTION_GROUP_BORDER_PX = 2;
 
 export type MessageCardDisplayMode = 'duty' | 'analysis';
 
@@ -77,6 +79,10 @@ type ActionIconsRowProps = {
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
+  headerRowRef: RefObject<HTMLDivElement | null>;
+  leftHeaderContentRef: RefObject<HTMLDivElement | null>;
+  rightHeaderContentRef: RefObject<HTMLDivElement | null>;
+  headerColumnGap: number;
 };
 
 type MenuAnchorPosition = {
@@ -172,7 +178,12 @@ function ActionIconsRow({
   onDelete,
   onEditDetails,
   onExcludeMessageEntity,
+  headerRowRef,
+  leftHeaderContentRef,
+  rightHeaderContentRef,
+  headerColumnGap,
 }: ActionIconsRowProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const excludeMenuId = useId();
   const copyMenuId = useId();
   const overflowMenuId = useId();
@@ -186,12 +197,7 @@ function ActionIconsRow({
     useState<MenuAnchorPosition | null>(null);
   const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] =
     useState<MenuAnchorPosition | null>(null);
-
-  if (!onBookmark || !onImportant || !onComment || !onCopyText || !onCopyFreq) {
-    return null;
-  }
-
-  const stackedLayout = compact;
+  const [stackedLayout, setStackedLayout] = useState(false);
   const canShowExcludeMenu =
     displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
   const canShowNavigationMenu = navigationMenuItems.length > 0;
@@ -291,6 +297,10 @@ function ActionIconsRow({
     closeOverflowMenu();
   }
 
+  if (!onBookmark || !onImportant || !onComment || !onCopyText || !onCopyFreq) {
+    return null;
+  }
+
   const buttons = [
     <ActionIconButton
       key="comment"
@@ -385,6 +395,70 @@ function ActionIconsRow({
   ].filter((button): button is JSX.Element => button != null);
 
   const actionGridColumns = displayMode === 'duty' ? 4 : 3;
+
+  useLayoutEffect(() => {
+    const headerRow =
+      headerRowRef.current ??
+      rootRef.current?.closest<HTMLDivElement>('[data-message-card-header-row]');
+    const leftHeaderContent =
+      leftHeaderContentRef.current ??
+      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-left]');
+    const rightHeaderContent =
+      rightHeaderContentRef.current ??
+      headerRow?.querySelector<HTMLDivElement>('[data-message-card-header-right]');
+    if (!headerRow || !leftHeaderContent || !rightHeaderContent) {
+      return;
+    }
+
+    const minInlineWidth =
+      buttons.length * MESSAGE_CARD_ACTION_BUTTON_SIZE_PX + MESSAGE_CARD_ACTION_GROUP_BORDER_PX;
+    let rafId: number | null = null;
+    const updateLayout = () => {
+      if (headerRow.clientWidth <= 0) {
+        return;
+      }
+      const availableActionWidth =
+        headerRow.clientWidth -
+        leftHeaderContent.scrollWidth -
+        rightHeaderContent.scrollWidth -
+        headerColumnGap * 2;
+      setStackedLayout(availableActionWidth < minInlineWidth);
+    };
+
+    const scheduleUpdateLayout = () => {
+      if (typeof requestAnimationFrame === 'undefined') {
+        updateLayout();
+        return;
+      }
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateLayout();
+      });
+    };
+
+    updateLayout();
+    const ResizeObserverConstructor =
+      typeof window === 'undefined' ? undefined : window.ResizeObserver;
+    if (!ResizeObserverConstructor) {
+      return;
+    }
+
+    const observer = new ResizeObserverConstructor(() => {
+      scheduleUpdateLayout();
+    });
+    observer.observe(headerRow);
+    observer.observe(leftHeaderContent);
+    observer.observe(rightHeaderContent);
+    return () => {
+      observer.disconnect();
+      if (rafId != null && typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [buttons.length, headerColumnGap, headerRowRef, leftHeaderContentRef, rightHeaderContentRef]);
 
   const overflowMenu =
     isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ? (
@@ -565,7 +639,7 @@ function ActionIconsRow({
 
   return (
     <>
-      <div className="flex w-full justify-center">
+      <div ref={rootRef} className="flex w-full justify-center">
         <div
           role={stackedLayout ? 'group' : undefined}
           aria-label="Дії повідомлення"
@@ -575,6 +649,13 @@ function ActionIconsRow({
               : 'message-card-action-group'
           }
           data-action-grid-columns={stackedLayout ? actionGridColumns : undefined}
+          style={
+            stackedLayout
+              ? ({
+                  ['--message-card-action-cols' as string]: actionGridColumns,
+                } as CSSProperties)
+              : undefined
+          }
         >
           {buttons}
         </div>
@@ -733,6 +814,10 @@ function MessageCardHeaderComponent({
   onEditDetails,
   onExcludeMessageEntity,
 }: MessageCardHeaderProps) {
+  const headerRowRef = useRef<HTMLDivElement | null>(null);
+  const leftHeaderContentRef = useRef<HTMLDivElement | null>(null);
+  const rightHeaderContentRef = useRef<HTMLDivElement | null>(null);
+  const headerColumnGap = compact ? 16 : 32;
   const navigationMenuItems = buildMessageCardNavigationMenuItems(
     etalonDisplayModel.renderedNetworks,
     mapHref,
@@ -845,13 +930,19 @@ function MessageCardHeaderComponent({
 
   const row1 = (
     <div
+      ref={headerRowRef}
+      data-message-card-header-row="true"
       className="flex w-full items-center"
       style={{
-        columnGap: compact ? 16 : 32,
+        columnGap: headerColumnGap,
         minHeight: MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX,
       }}
     >
-      <div className="flex min-w-0 flex-1 items-center">{dateTimeBlock}</div>
+      <div className="flex min-w-0 flex-1 items-center">
+        <div ref={leftHeaderContentRef} data-message-card-header-left="true">
+          {dateTimeBlock}
+        </div>
+      </div>
       {!readOnly ? (
         <div className="flex items-center justify-center">
           <ActionIconsRow
@@ -875,6 +966,10 @@ function MessageCardHeaderComponent({
             onDelete={onDelete}
             onEditDetails={onEditDetails}
             onExcludeMessageEntity={onExcludeMessageEntity}
+            headerRowRef={headerRowRef}
+            leftHeaderContentRef={leftHeaderContentRef}
+            rightHeaderContentRef={rightHeaderContentRef}
+            headerColumnGap={headerColumnGap}
           />
         </div>
       ) : null}
@@ -882,7 +977,9 @@ function MessageCardHeaderComponent({
         className="flex min-w-0 flex-1 items-center justify-end"
         style={{ paddingRight: `${rightInsetPx}px` }}
       >
-        {topRight ?? <div className="min-h-7" />}
+        <div ref={rightHeaderContentRef} data-message-card-header-right="true">
+          {topRight ?? <div className="min-h-7" />}
+        </div>
       </div>
     </div>
   );

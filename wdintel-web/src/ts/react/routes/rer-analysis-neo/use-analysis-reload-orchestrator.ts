@@ -74,8 +74,13 @@ type Params = {
   setMapLoading: Setter<boolean>;
   setMapDateRange: Setter<{ startDate: number; endDate: number }>;
   setMapNetworkUnits: Setter<import('../../../../Bindings').NetworkUnit[]>;
+  applyMapSettlements: (
+    settlements: import('../../../../Bindings').MapSettlement[],
+    requestedShowSettlements: boolean,
+  ) => void;
   setMapOpenMessages: Setter<Array<[number, InboxMessage]>>;
   setMapPoints: Setter<import('../../../../Bindings').FreqDetailedPoint[]>;
+  showSettlements: boolean;
   setMessages: Setter<Array<[number, InboxMessage]>>;
   setMessagesLoading: Setter<boolean>;
   setNetworks: Setter<Network[]>;
@@ -148,8 +153,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     setMapDateRange,
     setMapLoading,
     setMapNetworkUnits,
+    applyMapSettlements,
     setMapOpenMessages,
     setMapPoints,
+    showSettlements,
     setMessages,
     setMessagesLoading,
     setNetworks,
@@ -217,8 +224,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
           setMapLoading,
           setMapDateRange,
           setMapNetworkUnits,
+          applyMapSettlements,
           setMapOpenMessages,
           setMapPoints,
+          showSettlements,
           setMessages,
           loadMessageComments,
           setMessagesLoading,
@@ -294,8 +303,10 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       setMapDateRange,
       setMapLoading,
       setMapNetworkUnits,
+      applyMapSettlements,
       setMapOpenMessages,
       setMapPoints,
+      showSettlements,
       setMessages,
       setMessagesLoading,
       setNetworks,

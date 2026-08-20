@@ -1,6 +1,6 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { Box, Button, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
@@ -11,7 +11,10 @@ import {
 } from '../../components/mui-customized/table/custom-styles';
 import {
   buildDefaultColumnOrder,
-  getDefaultMRTOptions,
+  type AppMrtColumnDef,
+  mrtCustomCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../components/mui-customized/table/get-default-table-options';
@@ -21,8 +24,6 @@ import { ELLIPSIS } from '../../utils/misc';
 import { GoiAssociationRowView } from './use-goi-associations-page';
 
 const LOADING_MORE_TEXT = `Завантаження${ELLIPSIS}`;
-
-const defaultMRTOptions = getDefaultMRTOptions<GoiAssociationRowView>();
 
 export const DEFAULT_GOI_ASSOCIATIONS_COLUMN_VISIBILITY = {
   sourceAssociationId: true,
@@ -69,25 +70,6 @@ type Props = {
   onLoadMore: () => void;
   onClearFilters: () => void;
 };
-
-function LongTextCell({ value, maxWidth }: { value: string | null | undefined; maxWidth: number }) {
-  const text = formatMrtCellTextValue(value);
-  if (text === '—' || text.length <= 90) {
-    return (
-      <Typography variant="body2" sx={{ maxWidth }} noWrap={text.length > 40}>
-        {text}
-      </Typography>
-    );
-  }
-
-  return (
-    <Tooltip title={text} placement="top-start">
-      <Typography variant="body2" sx={{ maxWidth }} noWrap>
-        {text}
-      </Typography>
-    </Tooltip>
-  );
-}
 
 function OriginalMessageCell({ value }: { value: string | null | undefined }) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'error'>('idle');
@@ -139,14 +121,13 @@ function OriginalMessageCell({ value }: { value: string | null | undefined }) {
     </Box>
   );
 }
-
 export function GoiAssociationsTable(props: Props) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps =
     typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
-  const columns = useMemo<MRT_ColumnDef<GoiAssociationRowView>[]>(
+  const columns = useMemo<AppMrtColumnDef<GoiAssociationRowView>[]>(
     () => [
       {
         header: 'ID ГОІ',
@@ -161,7 +142,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'sourceCreatedAt',
         enableColumnFilter: false,
         size: 170,
-        Cell: ({ row }) => row.original.sourceCreatedAtLabel,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.sourceCreatedAtLabel,
+          fullValue: ({ row }) => row.original.sourceCreatedAtLabel,
+        }),
       },
       {
         header: 'Сервер',
@@ -170,7 +155,11 @@ export function GoiAssociationsTable(props: Props) {
         enableColumnFilter: true,
         enableSorting: false,
         size: 220,
-        Cell: ({ row }) => <LongTextCell value={row.original.serverLabel} maxWidth={220} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.serverLabel),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.serverLabel),
+        }),
       },
       {
         header: 'Частота',
@@ -178,7 +167,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'frequency',
         enableColumnFilter: true,
         size: 120,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.frequency),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.frequency),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.frequency),
+        }),
       },
       {
         header: 'Координати',
@@ -186,7 +179,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'coordinates',
         enableColumnFilter: true,
         size: 180,
-        Cell: ({ row }) => <LongTextCell value={row.original.coordinates} maxWidth={180} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.coordinates),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.coordinates),
+        }),
       },
       {
         header: 'Категорія',
@@ -194,7 +191,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'category',
         enableColumnFilter: true,
         size: 170,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.category),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.category),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.category),
+        }),
       },
       {
         header: 'Автор',
@@ -202,7 +203,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'author',
         enableColumnFilter: true,
         size: 150,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.author),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.author),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.author),
+        }),
       },
       {
         header: 'Позивні',
@@ -210,7 +215,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'callSigns',
         enableColumnFilter: false,
         size: 220,
-        Cell: ({ row }) => <LongTextCell value={row.original.callSignsLabel} maxWidth={220} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.callSignsLabel),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.callSignsLabel),
+        }),
       },
       {
         header: 'Підрозділ',
@@ -218,7 +227,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'formation',
         enableColumnFilter: false,
         size: 220,
-        Cell: ({ row }) => <LongTextCell value={row.original.formation} maxWidth={220} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.formation),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.formation),
+        }),
       },
       {
         header: 'Кількість',
@@ -226,10 +239,13 @@ export function GoiAssociationsTable(props: Props) {
         id: 'associationCount',
         enableColumnFilter: false,
         size: 100,
-        Cell: ({ row }) =>
-          row.original.associationCount === null || row.original.associationCount === undefined
-            ? '—'
-            : String(row.original.associationCount),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) =>
+            row.original.associationCount == null ? '—' : String(row.original.associationCount),
+          fullValue: ({ row }) =>
+            row.original.associationCount == null ? '—' : String(row.original.associationCount),
+        }),
       },
       {
         header: 'Висновок',
@@ -237,7 +253,11 @@ export function GoiAssociationsTable(props: Props) {
         id: 'note',
         enableColumnFilter: true,
         size: 420,
-        Cell: ({ row }) => <LongTextCell value={row.original.note} maxWidth={420} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.note),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.note),
+        }),
       },
       {
         header: 'Оригінал повідомлення',
@@ -246,7 +266,10 @@ export function GoiAssociationsTable(props: Props) {
         enableColumnFilter: false,
         enableSorting: false,
         size: 520,
-        Cell: ({ row }) => <OriginalMessageCell value={row.original.originalMessage} />,
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout', interactive: true },
+        Cell: mrtCustomCell(({ row }) => (
+          <OriginalMessageCell value={row.original.originalMessage} />
+        )),
       },
       {
         header: 'Імпортовано',
@@ -254,16 +277,19 @@ export function GoiAssociationsTable(props: Props) {
         id: 'createdAt',
         enableColumnFilter: false,
         size: 170,
-        Cell: ({ row }) => row.original.createdAtLabel,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.createdAtLabel,
+          fullValue: ({ row }) => row.original.createdAtLabel,
+        }),
       },
     ],
     [],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: props.rows,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableSortingRemoval: false,
     manualSorting: true,

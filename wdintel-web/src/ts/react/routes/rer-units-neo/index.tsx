@@ -1,6 +1,6 @@
 import AddIcon from '@mui/icons-material/Add';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import SettingsIcon from '@mui/icons-material/Settings';
 import {
   Box,
   Button,
@@ -22,6 +22,7 @@ import { PowerChip } from '../../components/PowerChip';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
+import { PowerIconButton } from '../../components/PowerIconButton';
 import { useTableStateContext } from '../../components/mui-customized/table/table-state-provider';
 import { OrbitUnitLinkDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
@@ -107,22 +108,24 @@ function SearchModeSettingsButton({
   return (
     <>
       <Tooltip title="Налаштування пошуку" arrow>
-        <IconButton
+        <PowerIconButton
           aria-label="Налаштування пошуку"
           aria-controls={menuOpen ? menuId : undefined}
           aria-haspopup="menu"
           aria-expanded={menuOpen ? 'true' : undefined}
           onClick={(event) => setAnchorElement(event.currentTarget)}
           sx={{
-            width: compact ? 40 : 32,
-            height: compact ? 40 : 32,
-            borderRadius: 1,
+            width: 40,
+            height: 40,
             border: '1px solid',
             borderColor: 'divider',
+            borderLeft: 0,
+            borderRadius: 0,
+            backgroundColor: 'background.paper',
           }}
         >
-          <SettingsOutlinedIcon sx={{ fontSize: compact ? 20 : 18 }} />
-        </IconButton>
+          <SettingsIcon sx={{ fontSize: compact ? 20 : 18 }} />
+        </PowerIconButton>
       </Tooltip>
       <Menu
         id={menuId}
@@ -187,7 +190,7 @@ function PageActions({
         disabled={kmzDisabled || uploadingKmz}
         onClick={onOpenKmz}
       >
-        {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ…'}
+        {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ'}
       </Button>
     </Stack>
   );
@@ -324,10 +327,10 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           title="Підрозділи противника"
           withGlobalTextFilter={false}
           filter={
-            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap' }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
               <Stack
                 direction="row"
-                spacing={1}
+                spacing={0}
                 alignItems="center"
                 sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%', minWidth: 0 }}
               >

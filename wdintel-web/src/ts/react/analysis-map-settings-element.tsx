@@ -6,6 +6,8 @@ class AnalysisMapSettingsElement extends HTMLElement {
   private root: Root | null = null;
   private visible = true;
   private forceCollapsed = false;
+  private canShowSettlements = false;
+  private showSettlements = false;
   private pendingUnmountHandle: number | null = null;
 
   connectedCallback() {
@@ -35,6 +37,12 @@ class AnalysisMapSettingsElement extends HTMLElement {
     this.renderComponent();
   }
 
+  setSettlementVisibility(canShow: boolean, show: boolean) {
+    this.canShowSettlements = canShow;
+    this.showSettlements = canShow && show;
+    this.renderComponent();
+  }
+
   private renderComponent() {
     if (!this.root) {
       return;
@@ -44,12 +52,25 @@ class AnalysisMapSettingsElement extends HTMLElement {
       <AnalysisMapSettingsControl
         visible={this.visible}
         forceCollapsed={this.forceCollapsed}
+        canShowSettlements={this.canShowSettlements}
+        showSettlements={this.showSettlements}
         onVisibleChange={(visible) => {
           this.visible = visible;
           this.renderComponent();
           this.dispatchEvent(
             new CustomEvent('peleng-labels-visible-change', {
               detail: { visible },
+              bubbles: true,
+              composed: true,
+            }),
+          );
+        }}
+        onShowSettlementsChange={(show) => {
+          this.showSettlements = this.canShowSettlements && show;
+          this.renderComponent();
+          this.dispatchEvent(
+            new CustomEvent('show-settlements-change', {
+              detail: { show: this.showSettlements },
               bubbles: true,
               composed: true,
             }),

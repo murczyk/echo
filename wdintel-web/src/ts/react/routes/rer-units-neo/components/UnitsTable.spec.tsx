@@ -133,4 +133,24 @@ describe('UnitsTable pagination', () => {
 
     act(() => toolbarRoot.unmount());
   });
+
+  it('renders the unit name link without an underline', () => {
+    renderTable(1);
+    const columns = mrtMock.options?.columns as Array<{
+      accessorKey?: string;
+      Cell?: (props: unknown) => ReactNode;
+    }>;
+    const nameColumn = columns.find((column) => column.accessorKey === 'name');
+    const cellContainer = document.createElement('div');
+    document.body.appendChild(cellContainer);
+    const cellRoot = createRoot(cellContainer);
+    const unit = { id: 1, name: 'Підрозділ', active: true } as Unit;
+
+    act(() => cellRoot.render(nameColumn?.Cell?.({ row: { original: unit } })));
+
+    const link = cellContainer.querySelector('a');
+    expect(link).not.toBeNull();
+    expect(getComputedStyle(link as HTMLAnchorElement).textDecoration).not.toContain('underline');
+    act(() => cellRoot.unmount());
+  });
 });

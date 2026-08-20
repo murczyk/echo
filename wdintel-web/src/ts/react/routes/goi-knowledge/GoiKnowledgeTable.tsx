@@ -1,5 +1,5 @@
-import { Box, Button, CircularProgress, Tooltip, Typography } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { Box, Button, CircularProgress, Typography } from '@mui/material';
+import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
 import {
@@ -10,6 +10,9 @@ import {
 import {
   buildDefaultColumnOrder,
   getDefaultMRTOptions,
+  mrtTextCell,
+  type AppMrtColumnDef,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
   renderDefaultMrtEmptyRowsFallback,
 } from '../../components/mui-customized/table/get-default-table-options';
@@ -64,32 +67,13 @@ type Props = {
   onClearFilters: () => void;
 };
 
-function LongTextCell({ value, maxWidth }: { value: string | null | undefined; maxWidth: number }) {
-  const text = formatMrtCellTextValue(value);
-  if (text === '—' || text.length <= 90) {
-    return (
-      <Typography variant="body2" sx={{ maxWidth }} noWrap={text.length > 40}>
-        {text}
-      </Typography>
-    );
-  }
-
-  return (
-    <Tooltip title={text} placement="top-start">
-      <Typography variant="body2" sx={{ maxWidth }} noWrap>
-        {text}
-      </Typography>
-    </Tooltip>
-  );
-}
-
 export function GoiKnowledgeTable(props: Props) {
   const tableStateContext = useTableStateContext();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
   const resolvedPaperProps =
     typeof basePaperProps === 'function' ? basePaperProps : () => basePaperProps || {};
 
-  const columns = useMemo<MRT_ColumnDef<GoiKnowledgeRowView>[]>(
+  const columns = useMemo<AppMrtColumnDef<GoiKnowledgeRowView>[]>(
     () => [
       {
         header: 'ID ГОІ',
@@ -104,7 +88,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'sourceCreatedAt',
         enableColumnFilter: false,
         size: 170,
-        Cell: ({ row }) => row.original.sourceCreatedAtLabel,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.sourceCreatedAtLabel,
+          fullValue: ({ row }) => row.original.sourceCreatedAtLabel,
+        }),
       },
       {
         header: 'Сервер',
@@ -113,7 +101,11 @@ export function GoiKnowledgeTable(props: Props) {
         enableColumnFilter: true,
         enableSorting: false,
         size: 220,
-        Cell: ({ row }) => <LongTextCell value={row.original.serverLabel} maxWidth={220} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.serverLabel),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.serverLabel),
+        }),
       },
       {
         header: 'Назва',
@@ -121,7 +113,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'name',
         enableColumnFilter: true,
         size: 180,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.name),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.name),
+          fullValue: ({ row }) => row.original.name,
+        }),
       },
       {
         header: 'Ключ',
@@ -129,7 +125,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'key',
         enableColumnFilter: true,
         size: 140,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.key),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.key),
+          fullValue: ({ row }) => row.original.key,
+        }),
       },
       {
         header: 'Тип',
@@ -137,7 +137,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'knowledgeType',
         enableColumnFilter: true,
         size: 160,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.knowledgeType),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.knowledgeType),
+          fullValue: ({ row }) => row.original.knowledgeType,
+        }),
       },
       {
         header: 'Автор',
@@ -145,7 +149,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'author',
         enableColumnFilter: true,
         size: 150,
-        Cell: ({ row }) => formatMrtCellTextValue(row.original.author),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.author),
+          fullValue: ({ row }) => row.original.author,
+        }),
       },
       {
         header: 'Підрозділ',
@@ -153,7 +161,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'formation',
         enableColumnFilter: true,
         size: 220,
-        Cell: ({ row }) => <LongTextCell value={row.original.formation} maxWidth={220} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.formation),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.formation),
+        }),
       },
       {
         header: 'Дата джерела',
@@ -161,7 +173,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'sourceDate',
         enableColumnFilter: false,
         size: 170,
-        Cell: ({ row }) => row.original.sourceDateLabel,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.sourceDateLabel,
+          fullValue: ({ row }) => row.original.sourceDateLabel,
+        }),
       },
       {
         header: 'Нотатка',
@@ -169,7 +185,11 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'note',
         enableColumnFilter: true,
         size: 420,
-        Cell: ({ row }) => <LongTextCell value={row.original.note} maxWidth={420} />,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatMrtCellTextValue(row.original.note),
+          fullValue: ({ row }) => formatMrtCellTextValue(row.original.note),
+        }),
       },
       {
         header: 'Імпортовано',
@@ -177,16 +197,19 @@ export function GoiKnowledgeTable(props: Props) {
         id: 'createdAt',
         enableColumnFilter: false,
         size: 170,
-        Cell: ({ row }) => row.original.createdAtLabel,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.createdAtLabel,
+          fullValue: ({ row }) => row.original.createdAtLabel,
+        }),
       },
     ],
     [],
   );
 
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: props.rows,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableSortingRemoval: false,
     manualSorting: true,

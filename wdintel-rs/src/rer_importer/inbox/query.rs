@@ -1473,7 +1473,63 @@ pub(crate) async fn build_inbox_map_query(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<String, AppError> {
-    let query = build_filtered_inbox_query_with_scope(
+    let query = build_inbox_map_base_query(login, env, req)
+        .await
+        .c(h!())?
+        .filter(crate::location::peleng::inbox_item_has_active_peleng_exists())
+        .select_only()
+        .column_as(
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            "id",
+        )
+        .column_as(
+            Expr::col((
+                signal_message::Entity,
+                signal_message::Column::MessageUid,
+            )),
+            "message_uid",
+        )
+        .column_as(
+            Expr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Freq,
+            )),
+            "freq",
+        )
+        .column_as(
+            Expr::col((
+                sigint_inbox_item::Entity,
+                sigint_inbox_item::Column::Coords,
+            )),
+            "coords",
+        )
+        .distinct();
+    Ok(render_inbox_digest_query(query))
+}
+
+pub(crate) async fn build_inbox_settlement_ids_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<String, AppError> {
+    let query = build_inbox_map_base_query(login, env, req)
+        .await
+        .c(h!())?
+        .select_only()
+        .column_as(
+            Expr::col((signal_message::Entity, signal_message::Column::Id)),
+            "id",
+        )
+        .distinct();
+    Ok(render_inbox_digest_query(query))
+}
+
+async fn build_inbox_map_base_query(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Select<signal_message::Entity>, AppError> {
+    Ok(build_filtered_inbox_query_with_scope(
         &env.dbx,
         login,
         env,
@@ -1484,30 +1540,7 @@ pub(crate) async fn build_inbox_map_query(
         InboxUnitLookupStrategy::Default,
     )
     .await
-    .context(h!())?
-    .filter(crate::location::peleng::inbox_item_has_active_peleng_exists())
-    .select_only()
-    .column_as(
-        Expr::col((signal_message::Entity, signal_message::Column::Id)),
-        "id",
-    )
-    .column_as(
-        Expr::col((signal_message::Entity, signal_message::Column::MessageUid)),
-        "message_uid",
-    )
-    .column_as(
-        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Freq)),
-        "freq",
-    )
-    .column_as(
-        Expr::col((
-            sigint_inbox_item::Entity,
-            sigint_inbox_item::Column::Coords,
-        )),
-        "coords",
-    )
-    .distinct();
-    Ok(render_inbox_digest_query(query))
+    .context(h!())?)
 }
 
 pub(crate) async fn build_inbox_query_with_internal_lower_bound<

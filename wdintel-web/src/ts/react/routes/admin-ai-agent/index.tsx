@@ -1,6 +1,6 @@
 import AddIcon from '@mui/icons-material/Add';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
@@ -29,11 +29,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  MaterialReactTable,
-  type MRT_ColumnDef,
-  useMaterialReactTable,
-} from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 
 import type { AiEngineItem } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
@@ -51,8 +47,13 @@ import {
 } from '../../components/mui-customized/table/custom-styles';
 import {
   getDefaultMRTOptions,
+  mrtCustomCell,
+  mrtTextCell,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
+  type AppMrtColumnDef,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import {
   TableStateProvider,
   useTableStateContext,
@@ -180,35 +181,51 @@ function ContainersTable({
   onAction: (container: AiAgentContainer, action: 'start' | 'stop') => void;
 }) {
   const tableStateContext = useTableStateContext();
-  const columns = useMemo<MRT_ColumnDef<AiAgentContainer>[]>(
+  const columns = useMemo<AppMrtColumnDef<AiAgentContainer>[]>(
     () => [
       {
         accessorKey: 'humanLogin',
         header: 'Користувач',
         size: 180,
-        Cell: ({ row }) => (
-          <a href={`/admin/users-neo/${encodeURIComponent(row.original.humanLoginId)}`}>
-            {row.original.humanLogin}
-          </a>
-        ),
+        meta: { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true },
+        Cell: mrtCustomCell(({ row }) => (
+          <MrtOverflowText
+            displayValue={row.original.humanLogin}
+            fullValue={row.original.humanLogin}
+            interactive
+            component="a"
+            componentProps={{
+              href: `/admin/users-neo/${encodeURIComponent(row.original.humanLoginId)}`,
+            }}
+          />
+        )),
       },
       {
         accessorKey: 'linkedLogin',
         header: 'Пов’язаний логін',
         size: 190,
-        Cell: ({ row }) => row.original.linkedLogin ?? '—',
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.linkedLogin ?? '—',
+          fullValue: ({ row }) => row.original.linkedLogin ?? '—',
+        }),
       },
       {
         accessorKey: 'instanceName',
         header: 'Інстанс',
         size: 260,
-        Cell: ({ row }) => row.original.instanceName ?? '—',
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.instanceName ?? '—',
+          fullValue: ({ row }) => row.original.instanceName ?? '—',
+        }),
       },
       {
         accessorKey: 'status',
         header: 'Стан',
         size: 170,
-        Cell: ({ row }) => (
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
           <Stack spacing={0.5} alignItems="flex-start">
             <Chip
               size="small"
@@ -221,7 +238,7 @@ function ContainersTable({
               </Typography>
             ) : null}
           </Stack>
-        ),
+        )),
       },
       {
         id: 'resources',
@@ -242,10 +259,9 @@ function ContainersTable({
     ],
     [],
   );
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: containers,
-    ...containersDefaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -640,7 +656,7 @@ function RequestsTable({
     const interval = window.setInterval(() => setDurationNow(Date.now()), 1000);
     return () => window.clearInterval(interval);
   }, [hasActiveRequest]);
-  const columns = useMemo<MRT_ColumnDef<AiAgentAuditRequest>[]>(
+  const columns = useMemo<AppMrtColumnDef<AiAgentAuditRequest>[]>(
     () => [
       {
         id: 'createdAt',
@@ -653,10 +669,17 @@ function RequestsTable({
         accessorFn: (request) => requestDurationSeconds(request, durationNow),
         header: 'Тривалість, с',
         size: 140,
-        Cell: ({ cell }) => {
-          const seconds = cell.getValue<number | null>();
-          return seconds === null ? '—' : seconds.toLocaleString('uk-UA');
-        },
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ cell }) => {
+            const seconds = cell.getValue() as number | null;
+            return seconds === null ? '—' : seconds.toLocaleString('uk-UA');
+          },
+          fullValue: ({ cell }) => {
+            const seconds = cell.getValue() as number | null;
+            return seconds === null ? '—' : seconds.toLocaleString('uk-UA');
+          },
+        }),
       },
       { accessorKey: 'humanLogin', header: 'Користувач', size: 180 },
       { accessorKey: 'providerName', header: 'Провайдер', size: 180 },
@@ -664,6 +687,7 @@ function RequestsTable({
         accessorKey: 'state',
         header: 'Стан',
         size: 140,
+        meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <Chip size="small" label={row.original.state} color={statusColor(row.original.state)} />
         ),
@@ -672,7 +696,8 @@ function RequestsTable({
         accessorKey: 'reviewState',
         header: 'Перевірка',
         size: 180,
-        Cell: ({ row }) => (
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
           <Stack direction="row" spacing={1} alignItems="center">
             <Chip
               size="small"
@@ -683,21 +708,25 @@ function RequestsTable({
               <Typography variant="body2">{row.original.severity}</Typography>
             ) : null}
           </Stack>
-        ),
+        )),
       },
       {
         accessorKey: 'prompt',
         header: 'Запит',
         size: 420,
-        Cell: ({ row }) => <Typography noWrap>{row.original.prompt}</Typography>,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.prompt,
+          fullValue: ({ row }) => row.original.prompt,
+        }),
       },
     ],
     [durationNow],
   );
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
+    ...getDefaultMRTOptions<AiAgentAuditRequest>(),
     columns,
     data: requests,
-    ...getDefaultMRTOptions<AiAgentAuditRequest>(),
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -979,7 +1008,7 @@ function EchoProxiesTable({
   onDelete: (proxy: AiAgentEchoProxy) => void;
 }) {
   const tableStateContext = useTableStateContext();
-  const columns = useMemo<MRT_ColumnDef<AiAgentEchoProxy>[]>(
+  const columns = useMemo<AppMrtColumnDef<AiAgentEchoProxy>[]>(
     () => [
       { accessorKey: 'hostname', header: 'Hostname', size: 260 },
       { accessorKey: 'upstream', header: 'Upstream', size: 260 },
@@ -994,7 +1023,8 @@ function EchoProxiesTable({
         accessorFn: (proxy) => formatDateTime(proxy.lastTestedAt),
         header: 'Останній тест',
         size: 260,
-        Cell: ({ row }) => (
+        meta: { overflowMode: 'custom', overflowOwner: 'structured-layout' },
+        Cell: mrtCustomCell(({ row }) => (
           <Stack spacing={0.5} alignItems="flex-start">
             <Typography variant="body2">{formatDateTime(row.original.lastTestedAt)}</Typography>
             {row.original.lastTestError ? (
@@ -1003,15 +1033,15 @@ function EchoProxiesTable({
               </Typography>
             ) : null}
           </Stack>
-        ),
+        )),
       },
     ],
     [],
   );
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
+    ...getDefaultMRTOptions<AiAgentEchoProxy>(),
     columns,
     data: proxies,
-    ...getDefaultMRTOptions<AiAgentEchoProxy>(),
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -1024,7 +1054,7 @@ function EchoProxiesTable({
       <Stack direction="row" spacing={0.5}>
         <MrtRowActionButton
           label="Редагувати"
-          icon={<EditOutlinedIcon fontSize="small" />}
+          icon={<EditIcon fontSize="small" />}
           onClick={() => onEdit(row.original)}
           opensModal
         />
@@ -1043,7 +1073,7 @@ function EchoProxiesTable({
           />
           <MrtRowActionButton
             label="Видалити"
-            icon={<DeleteOutlineIcon fontSize="small" />}
+            icon={<DeleteIcon fontSize="small" />}
             onClick={() => onDelete(row.original)}
             disabled={actionId === row.original.id}
             tone="danger"
@@ -1067,9 +1097,10 @@ function EchoProxiesTable({
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: 96,
-        minSize: 96,
-        maxSize: 96,
+        size: 76,
+        minSize: 76,
+        maxSize: 76,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -1096,7 +1127,7 @@ function EchoProxiesTable({
       density: tableStateContext.density,
       sorting: tableStateContext.sorting,
       columnOrder: tableStateContext.columnOrder,
-      columnSizing: tableStateContext.columnSizing,
+      columnSizing: { ...tableStateContext.columnSizing, 'mrt-row-actions': 76 },
     },
   });
 

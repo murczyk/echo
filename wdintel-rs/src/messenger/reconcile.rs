@@ -1320,6 +1320,7 @@ async fn reset_source_message_group_link(
     source_message: &signal_message::Model,
     was_duplicate_trace: bool,
 ) -> anyhow::Result<Vec<i64>> {
+    crate::battle_line::lock_updates(txn).await.c(h!())?;
     signal_message_group::Entity::delete_many()
         .filter(
             signal_message_group::Column::SignalMessageId.eq(source_message.id),
@@ -1382,6 +1383,12 @@ async fn delete_previous_duplicate_group_links(
             .exec(txn)
             .await
             .c(h!())?;
+        crate::battle_line::settlement_queue::requeue_item_settlements(
+            txn,
+            group_link.signal_message_id,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(deleted_signal_message_ids)
 }
@@ -5340,6 +5347,25 @@ mod tests {
         )
         .await
         .unwrap();
+        mk_sigint_inbox_item(
+            &txn,
+            sigint_inbox_item::ActiveModel {
+                id: Set(original.id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(original.id),
+            settlement_text: Set("TEST".to_string()),
+            settlement_id: Set(None),
+            is_undefined: Set(Some(true)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
         let source_message = mk_signal_message(
             &txn,
             signal_message::ActiveModel {
@@ -5408,6 +5434,16 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(changed_group_link_message_ids, vec![original.id]);
+        let settlement_link = sigint_inbox_item_settlement::Entity::find()
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId.eq(original.id),
+            )
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(settlement_link.settlement_id, None);
+        assert_eq!(settlement_link.is_undefined, None);
         let unstage_result = crate::sigint::worker::unstage_message(
             &txn,
             &group_id,

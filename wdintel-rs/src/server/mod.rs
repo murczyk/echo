@@ -535,6 +535,13 @@ fn spawn_background_workers(
             .await;
         });
     }
+    let inbox_settlement_env = env.clone();
+    spawn_named_worker("inbox_settlement_worker", bg_set, async move {
+        crate::battle_line::settlement_queue::inbox_settlement_worker_nofail(
+            inbox_settlement_env,
+        )
+        .await;
+    });
 
     let env2 = env.clone();
     spawn_named_worker("iggy_integration_worker", bg_set, async move {
@@ -1210,6 +1217,11 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::aor::update_aor)
             .service(crate::sigint::aor::update_aor_report_order)
             .service(crate::sigint::aor::delete_aor)
+            .service(crate::battle_line::read_battle_line)
+            .service(crate::battle_line::upload_battle_line)
+            .service(crate::battle_line::test_battle_line)
+            .service(crate::battle_line::list_unlinked_inbox_items)
+            .service(crate::battle_line::list_unresolved_locations)
             .service(crate::sigint::etalonka::task::report_networks_task_launch)
             .service(crate::sigint::etalonka::task::report_networks_batch_id_task_launch)
             .service(crate::sigint::source::list_sources)

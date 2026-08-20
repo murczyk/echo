@@ -30,6 +30,7 @@ pub mod analysis;
 pub mod bgworker;
 pub mod body_noheader;
 pub mod bookmark;
+pub mod callsign_reprocess_tui;
 pub mod callsigns;
 pub mod coordinates;
 pub mod datetime;
@@ -1487,11 +1488,19 @@ pub async fn oneoff_reprocess_unit_names(
                 item.unit = Set(unit_new);
                 item.unit_v2 = Set(None);
                 item.location = Set(result.locality);
-                item.location_v2 = Set(location_v2);
+                item.location_v2 = Set(location_v2.clone());
                 item.parsed_unit_v2 = Set(false);
-                let item = item.update(&dbx).await.c(h!())?;
+                let txn = dbx.begin().await.c(h!())?;
+                let item = item.update(&txn).await.c(h!())?;
+                crate::battle_line::settlement_queue::reconcile_item_locations(
+                    &txn,
+                    item.id,
+                    location_v2.as_deref(),
+                )
+                .await
+                .c(h!())?;
                 crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
-                    &dbx,
+                    &txn,
                     item.id,
                     item.unit_v2.as_deref(),
                     item.unit.as_deref(),
@@ -1499,13 +1508,14 @@ pub async fn oneoff_reprocess_unit_names(
                 .await
                 .c(h!())?;
                 crate::stats::enqueue_group_stats_recalculation_for_message(
-                    &dbx,
+                    &txn,
                     id,
                     format!("reprocessed unit for inbox message {id}"),
                 )
                 .await
                 .c(h!())?;
-                reset_inbox_pelengs(id, &dbx).await.c(h!())?;
+                reset_inbox_pelengs(id, &txn).await.c(h!())?;
+                txn.commit().await.c(h!())?;
             }
         }
         crate::inbox::unit_resolution::sync_network_unit_links(

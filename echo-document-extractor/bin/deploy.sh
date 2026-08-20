@@ -69,7 +69,8 @@ fi
 if (( app_changed )); then
   [[ "$app" != - && -f "$remote/$app" ]] \
     || { printf 'changed application package was not uploaded\n' >&2; exit 1; }
-  systemctl stop echo-document-extractor-otel.service || true
+  systemctl stop echo-document-extractor-otel.service \
+    echo-document-extractor-host-cpu-exporter.service || true
   apt-get install -y --allow-downgrades "$remote/$app"
   printf 'application %s\n' "$app_sha" >"$manifest"
   chmod 0600 "$manifest"
@@ -99,7 +100,9 @@ if ! /opt/echo-document-extractor/bin/configure-firewall.sh check >/dev/null 2>&
   /opt/echo-document-extractor/bin/configure-firewall.sh apply
 fi
 systemctl start echo-document-extractor-firewall.service echo-document-extractor.service \
-  echo-document-extractor-worker.service echo-document-extractor-otel.service
+  echo-document-extractor-worker.service \
+  echo-document-extractor-host-cpu-exporter.service \
+  echo-document-extractor-otel.service
 if (( ! app_changed && ! config_changed )) \
   && [[ "$runtime_before" != "$runtime_after" || "$models_before" != "$models_after" ]]; then
   systemctl restart echo-document-extractor-worker.service echo-document-extractor.service

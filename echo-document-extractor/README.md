@@ -149,8 +149,10 @@ The API and worker expose Prometheus metrics on loopback `29000` and `29001`.
 The pinned SigNoz collector exports API, queue, duration/status, page, Paddle,
 model/token, retry, spool, cleanup, process, host, and journald telemetry with
 `service.name=echo-document-extractor` and
-`host.name=ct-echo-document-extractor`. Filenames, contents, and job IDs never
-become metric labels.
+`host.name=ct-echo-document-extractor`. Host CPU time comes from a loopback
+exporter on `127.0.0.1:9100` (`echo_host_cpu_seconds_total`) rather than the
+hostmetrics CPU scraper, which latches after Incus reassigns `limits.cpu`.
+Filenames, contents, and job IDs never become metric labels.
 
 Rollback installs a retained application package; lock-keyed runtimes and
 manifest-keyed models remain locally cached:

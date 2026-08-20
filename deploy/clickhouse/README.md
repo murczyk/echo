@@ -146,11 +146,17 @@ password stays in `echo-peerdb-<source-hostname>`.
 Exclusions may name optional tables that are absent on an instance; if such a
 table is created later, it remains excluded automatically.
 
+`battle_line_version` and `battle_line_aor_geometry` are PostgreSQL-only and
+intentionally excluded from analytics. Before applying
+`m20260818_130237_battle_line_and_inbox_settlement`, deploy and reconcile the
+updated exclusion file so these tables never enter the PeerDB mirror.
+
 Durable normalized domain tables, including
-`sigint_inbox_item_callsign`, are intentionally not excluded. The automatic
-table reconciler adds them to PeerDB after the source migration; verify the raw
-ClickHouse table and current-state gateway view before considering the
-deployment complete.
+`sigint_inbox_item_callsign` and `sigint_inbox_item_settlement`, are
+intentionally not excluded. The automatic table reconciler adds them to PeerDB
+with an initial snapshot after the source migration; verify the raw ClickHouse
+table and current-state gateway view before considering the deployment
+complete.
 
 The AI-engine capability catalog and OCR settings/job provenance tables
 (`ai_engine`, `ocr_settings`, `ocr_settings_ai_engine`, and `ocr_job`) are

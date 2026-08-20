@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { MRT_ColumnDef, MaterialReactTable, useMaterialReactTable } from 'material-react-table';
+import { MaterialReactTable } from 'material-react-table';
 import React from 'react';
 
 import { Login, Organism } from '../../../../Bindings';
@@ -34,7 +34,9 @@ import {
   getDefaultMrtPaperProps,
 } from '../../components/mui-customized/table/custom-styles';
 import {
+  type AppMrtColumnDef,
   getDefaultMRTOptions,
+  useAppMaterialReactTable,
   renderColumnActionsMenuItems,
 } from '../../components/mui-customized/table/get-default-table-options';
 import {
@@ -65,7 +67,7 @@ import { buildLoginOptions, selectedLoginIds, selectLoginOptions } from '../../u
 const GOI_SSH_PORT_DEFAULT = 22;
 const GOI_API_PORT_DEFAULT = 8088;
 const GOI_PATH_DEFAULT = '/etc/goi/data/palettes';
-const ROW_ACTIONS_COLUMN_SIZE = 96;
+const ROW_ACTIONS_COLUMN_SIZE = 76;
 const DEFAULT_COLUMNS_VISIBILITY = {
   owner: true,
   server: true,
@@ -148,7 +150,7 @@ function GoiIntegrationsTable({
     }),
     [tableStateContext.columnSizing],
   );
-  const columns = React.useMemo<MRT_ColumnDef<GoiAdminIntegration>[]>(
+  const columns = React.useMemo<AppMrtColumnDef<GoiAdminIntegration>[]>(
     () => [
       { id: 'owner', header: 'Організм-власник', accessorKey: 'ownerOrganismName', size: 200 },
       { id: 'server', header: 'Сервер', accessorKey: 'serverLabel', size: 190 },
@@ -181,10 +183,9 @@ function GoiIntegrationsTable({
     ],
     [],
   );
-  const table = useMaterialReactTable({
+  const table = useAppMaterialReactTable({
     columns,
     data: integrations,
-    ...defaultMRTOptions,
     enableSorting: true,
     enableColumnActions: true,
     enableRowNumbers: true,
@@ -234,6 +235,7 @@ function GoiIntegrationsTable({
         size: ROW_ACTIONS_COLUMN_SIZE,
         minSize: ROW_ACTIONS_COLUMN_SIZE,
         maxSize: ROW_ACTIONS_COLUMN_SIZE,
+        enableResizing: false,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],

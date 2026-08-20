@@ -278,7 +278,7 @@ export const adminDatabaseSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/admin/unit-unparsed' },
+    link: { type: 'internal', path: '/admin/units?tab=duplicates' },
     activeName: 'unit-admin',
     label: 'Підрозділи',
   },
@@ -291,6 +291,12 @@ export const adminDatabaseSubs: Menu[] = [
 ];
 
 export const adminSubs: Menu[] = [
+  {
+    type: 'item',
+    link: { type: 'internal', path: '/admin/battle-line' },
+    activeName: 'battle-line',
+    label: 'Карта',
+  },
   {
     type: 'item',
     link: { type: 'internal', path: '/admin/users-neo' },

@@ -93,9 +93,12 @@ async fn get_inbox_map_inner(
     req: Json<MapPointsReq>,
 ) -> Result<Json<MapPointsRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
-    let user_id = login_id_from_identity(&user)?;
+    let user_id = login_id_from_identity(&user).c(h!())?;
     let page_id = req.page_id.clone();
     let req = req.into_inner();
+    if req.show_settlements == Some(true) {
+        has_role(&env.dbx, &user_id, ROLE_ADMIN).await.c(h!())?;
+    }
 
     let payload = serde_json::to_value(&req).context(h!())?;
     record_page_visit(&user_id, &page_id, &env, Some(payload))
@@ -119,6 +122,13 @@ async fn get_inbox_map_inner(
     let inbox_items = get_inbox_map_items(&login, &env, &filter)
         .await
         .context(h!())?;
+    let settlements = if req.show_settlements == Some(true) {
+        get_inbox_map_settlements(&login, &env, &filter)
+            .await
+            .context(h!())?
+    } else {
+        vec![]
+    };
     info!("messages found: {}", inbox_items.len());
     let points = crate::location::peleng::collect_inbox_item_pelengs(
         &inbox_items,
@@ -142,6 +152,7 @@ async fn get_inbox_map_inner(
     Ok(Json(MapPointsRsp {
         network_units,
         points,
+        settlements,
     }))
 }
 
@@ -409,7 +420,26 @@ pub(crate) async fn messages_by_id_bl(
 
     messages = messages
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(sigint_groups))
+        .filter(Expr::exists(
+            signal_message_group::Entity::find()
+                .filter(
+                    Expr::col((
+                        signal_message_group::Entity,
+                        signal_message_group::Column::SignalMessageId,
+                    ))
+                    .equals((
+                        signal_message::Entity,
+                        signal_message::Column::Id,
+                    )),
+                )
+                .filter(
+                    signal_message_group::Column::GroupMasterKey
+                        .eq_any(sigint_groups),
+                )
+                .select_only()
+                .column(signal_message_group::Column::Id)
+                .into_query(),
+        ))
         .filter(signal_message::Column::Id.eq_any(message_ids.to_vec()));
     let owner_organism_id =
         crate::tags::query::current_user_organism_id(&env.dbx, login)
@@ -1741,6 +1771,7 @@ async fn ensure_submit_group_aor(
     let Some(aor_id) = aor_id else {
         return Ok(());
     };
+    crate::battle_line::lock_updates(txn).await.c(h!())?;
     let existing_aors = signal_group_aor::Entity::find()
         .filter(signal_group_aor::Column::MasterKey.eq(group_master_key))
         .count(txn)
@@ -1756,6 +1787,12 @@ async fn ensure_submit_group_aor(
         created_at: NotSet,
     }
     .insert(txn)
+    .await
+    .c(h!())?;
+    crate::battle_line::requeue_settlement_links_for_group(
+        txn,
+        group_master_key,
+    )
     .await
     .c(h!())?;
     Ok(())
@@ -1925,6 +1962,7 @@ async fn ensure_submit_signal_message_groups(
     signal_message: &signal_message::Model,
     groups: &[(String, i64)],
 ) -> Result<(), AppError> {
+    let mut inserted_group = false;
     for (group_master_key, datasource_group_id) in groups {
         let existing = signal_message_group::Entity::find()
             .filter(
@@ -1957,6 +1995,15 @@ async fn ensure_submit_signal_message_groups(
             created_at: Set(signal_message.created_at),
         }
         .insert(txn)
+        .await
+        .c(h!())?;
+        inserted_group = true;
+    }
+    if inserted_group {
+        crate::battle_line::settlement_queue::requeue_item_settlements(
+            txn,
+            signal_message.id,
+        )
         .await
         .c(h!())?;
     }
@@ -3334,9 +3381,9 @@ mod tests {
         datasource, datasource_group, echo_gpu_transcription_queue, login,
         organism, organism_group, sigint_comment, sigint_inbox_item,
         sigint_inbox_item_metadata, sigint_inbox_item_network,
-        sigint_inbox_item_point_token, sigint_inbox_item_tag,
-        sigint_inbox_item_unit, sigint_network_unit, sigint_peleng,
-        sigint_zone_datasource, signal_group, signal_message,
+        sigint_inbox_item_point_token, sigint_inbox_item_settlement,
+        sigint_inbox_item_tag, sigint_inbox_item_unit, sigint_network_unit,
+        sigint_peleng, sigint_zone_datasource, signal_group, signal_message,
         signal_message_group, signal_message_media, system_settings, tag,
     };
     use crate::functest::tests::*;
@@ -4853,6 +4900,69 @@ mod tests {
 
     #[serial]
     #[tokio::test]
+    async fn adding_submit_group_requeues_existing_settlement_links() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource = find_test_datasource(&env.dbx).await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let initial_groups = ensure_submit_groups(
+            &txn,
+            &datasource,
+            &login.id,
+            &["initial group".to_string()],
+        )
+        .await
+        .unwrap();
+        let message =
+            mk_signal_message(&txn, Default::default()).await.unwrap();
+        mk_sigint_inbox_item(
+            &txn,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        ensure_submit_signal_message_groups(&txn, &message, &initial_groups)
+            .await
+            .unwrap();
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(message.id),
+            settlement_text: Set("retained location".to_string()),
+            is_undefined: Set(Some(true)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let expanded_groups = ensure_submit_groups(
+            &txn,
+            &datasource,
+            &login.id,
+            &["initial group".to_string(), "added group".to_string()],
+        )
+        .await
+        .unwrap();
+
+        ensure_submit_signal_message_groups(&txn, &message, &expanded_groups)
+            .await
+            .unwrap();
+
+        let link = sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(message.id))
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(link.settlement_id, None);
+        assert_eq!(link.is_undefined, None);
+        txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
     async fn test_save_submit_dmr_metadata_replaces_previous_submit_rows() {
         let env = cleanup().await.unwrap();
         let inbox_item = mk_sigint_inbox_item(&env.dbx, Default::default())
@@ -5566,6 +5676,31 @@ mod tests {
         .await
         .unwrap();
         assert!(hidden_messages.is_empty());
+
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(hidden_message.id),
+            group_master_key: Set(Some(
+                datasource_group.group_master_key.clone(),
+            )),
+            datasource_group_id: Set(Some(datasource_group.id)),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let secondary_group_messages = messages_by_id_bl(
+            &login.id,
+            &logins,
+            &env,
+            &[hidden_message.id],
+            &messages_by_id_default_req(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(secondary_group_messages.len(), 1);
+        assert_eq!(secondary_group_messages[0].0, hidden_message.id);
     }
 
     #[serial]
