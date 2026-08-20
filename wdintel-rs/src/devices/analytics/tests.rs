@@ -709,6 +709,24 @@ async fn semantic_rule_changes_publish_immutable_future_definitions() {
 
 #[tokio::test]
 #[serial_test::serial]
+async fn zero_item_run_reports_only_its_completion_transition() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let file_db = env.file_registry_db().unwrap().connection();
+    let device_id = insert_analytics_test_device(env.as_ref()).await;
+    let run = queue::create_manual_run(file_db, device_id).await.unwrap();
+
+    let completion = queue::prepare_next_page(file_db, 1).await.unwrap();
+    assert!(completion.did_work);
+    assert_eq!(completion.inserted_count, 0);
+    assert_eq!(completion.completed_run_id, Some(run.id));
+
+    let idle = queue::prepare_next_page(file_db, 1).await.unwrap();
+    assert!(!idle.did_work);
+    assert_eq!(idle.completed_run_id, None);
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn manual_run_is_bounded_and_publishes_write_once_history() {
     let (env, _guard) = cleanup_locked().await.unwrap();
     let file_db = env.file_registry_db().unwrap().connection();
@@ -797,6 +815,9 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
         (summary.total_file_count, summary.analyzed_file_count),
         (4, 3),
     );
+    assert_eq!(summary.items.len(), 1);
+    assert_eq!(summary.items[0].tag_name, "Bounded PDF");
+    assert_eq!(summary.items[0].file_count, 2);
     let historical_item =
         file_analysis_run_item::Entity::find_by_id((run.id, file_ids[0]))
             .one(file_db)
@@ -1105,23 +1126,22 @@ async fn preparation_and_item_claims_are_bounded_and_skip_locked() {
         file_ids.into_iter().collect(),
     );
 
-    for claim in [&first_claim, &second_claim] {
-        assert_eq!(
-            queue::complete_analysis_batch(
-                file_db,
-                claim[0].lease_token,
-                &[queue::CompletedAnalysisFile {
-                    run_id: claim[0].run_id,
-                    file_id: claim[0].file_id,
-                    metadata_revision: claim[0].metadata_revision,
-                    matched_tag_ids: Vec::new(),
-                }],
-            )
-            .await
-            .unwrap()
-            .completed_count,
-            1,
-        );
+    for (index, claim) in [&first_claim, &second_claim].into_iter().enumerate()
+    {
+        let completion = queue::complete_analysis_batch(
+            file_db,
+            claim[0].lease_token,
+            &[queue::CompletedAnalysisFile {
+                run_id: claim[0].run_id,
+                file_id: claim[0].file_id,
+                metadata_revision: claim[0].metadata_revision,
+                matched_tag_ids: Vec::new(),
+            }],
+        )
+        .await
+        .unwrap();
+        assert_eq!(completion.completed_count, 1);
+        assert_eq!(completion.completed_run_id, (index == 1).then_some(run.id),);
     }
     let completed = file_analysis_run::Entity::find_by_id(run.id)
         .one(file_db)
@@ -1218,6 +1238,15 @@ async fn newer_run_wins_publication_while_older_history_still_commits() {
             .result_tag_ids
             .as_deref(),
         Some(&[tag_id][..]),
+    );
+    let summary = query::device_summary(file_db, device_id).await.unwrap();
+    assert_eq!(
+        (summary.total_file_count, summary.analyzed_file_count),
+        (1, 1),
+    );
+    assert!(
+        summary.items.is_empty(),
+        "the overall summary must reflect current links, not an older run"
     );
 }
 

@@ -1028,6 +1028,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::devices::devices::detail)
             .service(crate::devices::devices::create)
             .service(crate::devices::devices::update)
+            .service(crate::devices::settings::update)
             .service(crate::devices::files::roots)
             .service(crate::devices::files::subtree_counts)
             .service(crate::devices::files::browse)

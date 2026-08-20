@@ -13,6 +13,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::mattermost;
 use crate::types::{Env, ShortContext};
 use actix_identity::Identity;
 use actix_web::{get, post, web::Json};
@@ -139,7 +140,7 @@ pub async fn update_settings(
             .or(settings.mattermost_webhook_url.clone())
     };
     if let Some(webhook) = mattermost_webhook_url.as_deref() {
-        access::resolve_mattermost_webhook(webhook).await?;
+        mattermost::resolve_webhook(webhook).await.c(h!())?;
     }
     if req.security_review_enabled && mattermost_webhook_url.is_none() {
         return Err(AppError::BL {

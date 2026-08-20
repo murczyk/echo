@@ -588,12 +588,10 @@ async fn explicit_sync_recovers_persisted_batches_and_completes_idempotently() {
     assert_eq!(completed.sync.counts.received, 3);
     assert_eq!(completed.sync.counts.accepted, 1);
     assert_eq!(completed.sync.counts.rejected, 2);
-    assert_eq!(
-        complete(&env.dbx, file_registry, &actor, sync_id, 2)
-            .await
-            .unwrap(),
-        completed
-    );
+    let repeated = complete(&env.dbx, file_registry, &actor, sync_id, 2)
+        .await
+        .unwrap();
+    assert_eq!(repeated, completed);
     assert_conflict_code(
         complete(&env.dbx, file_registry, &actor, sync_id, 3)
             .await

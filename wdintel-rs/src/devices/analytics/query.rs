@@ -295,7 +295,7 @@ struct SummaryRow {
     latest_file_entry_created_at: DateTime<FixedOffset>,
 }
 
-pub(super) async fn device_summary(
+pub(in crate::devices) async fn device_summary(
     file_db: &DatabaseConnection,
     device_id: Uuid,
 ) -> Result<DeviceAnalyticsProgress, DbErr> {
@@ -349,6 +349,7 @@ where
         .filter(device_file_tag::Column::DeviceId.eq(device_id))
         .group_by(analytics_tag::Column::Id)
         .group_by(analytics_tag::Column::Name)
+        .order_by_asc(analytics_tag::Column::Id)
         .into_model::<SummaryRow>()
         .all(file_db)
         .await

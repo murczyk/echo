@@ -5122,7 +5122,7 @@ sourceFileStateKindEncoder enum =
 type alias SourceFileState =
     { state : SourceFileStateKind
     , settledAt : String
-    , settledBy : String
+    , settledBy : Maybe (String)
     }
 
 
@@ -5131,7 +5131,7 @@ sourceFileStateEncoder struct =
     Json.Encode.object
         [ ( "state", (sourceFileStateKindEncoder) struct.state )
         , ( "settled_at", (Json.Encode.string) struct.settledAt )
-        , ( "settled_by", (Json.Encode.string) struct.settledBy )
+        , ( "settled_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.settledBy )
         ]
 
 
@@ -6020,6 +6020,32 @@ tagMatchEncoder enum =
             Json.Encode.string "any"
         TagAll ->
             Json.Encode.string "all"
+
+type alias DeviceSettingsReq =
+    { mattermostWebhookUrl : Maybe (String)
+    , clearMattermostWebhook : Bool
+    }
+
+
+deviceSettingsReqEncoder : DeviceSettingsReq -> Json.Encode.Value
+deviceSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "mattermost_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
+        , ( "clear_mattermost_webhook", (Json.Encode.bool) struct.clearMattermostWebhook )
+        ]
+
+
+type alias DeviceSettingsItem =
+    { hasMattermostWebhook : Bool
+    }
+
+
+deviceSettingsItemEncoder : DeviceSettingsItem -> Json.Encode.Value
+deviceSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "has_mattermost_webhook", (Json.Encode.bool) struct.hasMattermostWebhook )
+        ]
+
 
 type alias Organism =
     { id : Int
@@ -16458,7 +16484,7 @@ sourceFileStateDecoder =
     Json.Decode.succeed SourceFileState
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (sourceFileStateKindDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_at" (Json.Decode.string)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_by" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settled_by" (Json.Decode.nullable (Json.Decode.string))))
 
 
 syncDeviceFileItemDecoder : Json.Decode.Decoder SyncDeviceFileItem
@@ -17117,6 +17143,19 @@ tagMatchDecoder =
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
         ]
+
+deviceSettingsReqDecoder : Json.Decode.Decoder DeviceSettingsReq
+deviceSettingsReqDecoder =
+    Json.Decode.succeed DeviceSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermost_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clear_mattermost_webhook" (Json.Decode.bool)))
+
+
+deviceSettingsItemDecoder : Json.Decode.Decoder DeviceSettingsItem
+deviceSettingsItemDecoder =
+    Json.Decode.succeed DeviceSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_mattermost_webhook" (Json.Decode.bool)))
+
 
 organismDecoder : Json.Decode.Decoder Organism
 organismDecoder =

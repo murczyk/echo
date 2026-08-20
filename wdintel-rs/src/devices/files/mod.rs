@@ -326,17 +326,16 @@ pub(crate) async fn complete_sync_session(
     let login = access::resolve_current_login(&env.dbx, &user)
         .await
         .c(h!())?;
-    Ok(Json(
-        sync::complete(
-            &env.dbx,
-            env.file_registry_db()?,
-            &login,
-            sync_id.into_inner(),
-            expected_batch_count,
-        )
-        .await
-        .c(h!())?,
-    ))
+    let response = sync::complete(
+        &env.dbx,
+        env.file_registry_db()?,
+        &login,
+        sync_id.into_inner(),
+        expected_batch_count,
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(response))
 }
 
 #[derive(serde::Deserialize)]

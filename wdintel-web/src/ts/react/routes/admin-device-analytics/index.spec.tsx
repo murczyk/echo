@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   restoreTag: vi.fn(),
   saveRule: vi.fn(),
   updateTag: vi.fn(),
+  updateDeviceSettings: vi.fn(),
 }));
 
 vi.mock('../../services/api/device-analytics', () => ({
@@ -25,6 +26,7 @@ vi.mock('../../services/api/device-analytics', () => ({
 
 vi.mock('../../services/api/devices', () => ({
   reanalyzeAll: mocks.reanalyzeAll,
+  updateDeviceSettings: mocks.updateDeviceSettings,
 }));
 
 vi.mock('../../components/PowerSnackbar', () => ({
@@ -108,6 +110,7 @@ beforeEach(async () => {
   mocks.archiveTag.mockResolvedValue({ ...createdTag, archivedAt: NOW });
   mocks.restoreTag.mockResolvedValue(createdTag);
   mocks.reanalyzeAll.mockResolvedValue({ definitionId: 'definition-1', createdRunCount: 42 });
+  mocks.updateDeviceSettings.mockResolvedValue({ hasMattermostWebhook: false });
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -123,7 +126,7 @@ afterEach(() => {
 });
 
 describe('AdminDeviceAnalyticsPage', () => {
-  it('shows empty general settings first and opens device tags in the second tab', async () => {
+  it('loads general settings first and opens device tags in the second tab', async () => {
     expect(container.textContent).toContain('Аналіз пристроїв');
 
     const generalTab = buttonWithText('Основні налаштування');
@@ -137,7 +140,15 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(tagsTab?.getAttribute('aria-selected')).toBe('false');
     expect(generalPanel?.hidden).toBe(false);
     expect(generalPanel?.textContent).toContain('Налаштування відсутні');
+    expect(generalPanel?.textContent).toContain('Webhook ще не налаштовано.');
+    expect(generalPanel?.textContent).toContain(
+      'Echo надсилатиме сповіщення про створення пристроїв і завершення їх аналізу.',
+    );
     expect(tagsPanel?.hidden).toBe(true);
+    expect(mocks.updateDeviceSettings).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ signal: expect.anything() }),
+    );
     expect(mocks.listTags).not.toHaveBeenCalled();
 
     await openDeviceTagsTab();
@@ -148,6 +159,35 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(tagsPanel?.hidden).toBe(false);
     expect(container.textContent).toContain('Каталог порожній');
     expect(mocks.listTags).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces the masked device webhook and clears it only through the explicit action', async () => {
+    const input = container.querySelector<HTMLInputElement>('input[type="password"]');
+    expect(input).not.toBeNull();
+
+    act(() => setInputValue(input!, '  https://mattermost.example/hooks/device-secret  '));
+    mocks.updateDeviceSettings.mockResolvedValueOnce({ hasMattermostWebhook: true });
+    await act(async () => buttonWithText('Зберегти webhook')?.click());
+    await flush();
+
+    expect(mocks.updateDeviceSettings).toHaveBeenNthCalledWith(2, {
+      mattermostWebhookUrl: 'https://mattermost.example/hooks/device-secret',
+    });
+    expect(container.textContent).toContain('Webhook налаштовано. Поточний URL приховано.');
+    expect(input?.value).toBe('');
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Mattermost webhook для пристроїв збережено.',
+    });
+
+    mocks.updateDeviceSettings.mockResolvedValueOnce({ hasMattermostWebhook: false });
+    await act(async () => buttonWithText('Видалити webhook')?.click());
+    await flush();
+
+    expect(mocks.updateDeviceSettings).toHaveBeenNthCalledWith(3, {
+      clearMattermostWebhook: true,
+    });
+    expect(container.textContent).toContain('Webhook ще не налаштовано.');
   });
 
   it('creates the first tag and saves only the current local rule expression', async () => {

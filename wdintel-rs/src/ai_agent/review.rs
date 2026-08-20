@@ -12,6 +12,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::mattermost;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use chrono::{Duration, Utc};
 use sea_orm::{
@@ -442,7 +443,7 @@ async fn send_mattermost_alert(
             msg: "Mattermost alert delivery is not configured".to_string(),
         });
     };
-    let webhook = access::resolve_mattermost_webhook(webhook).await?;
+    let webhook = mattermost::resolve_webhook(webhook).await.c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(review.request_id)
         .one(&env.dbx)
         .await
@@ -462,22 +463,15 @@ async fn send_mattermost_alert(
         review.severity.as_deref().unwrap_or("high"),
         &categorical_alert_summary(&categories),
     );
-    let client = access::mattermost_webhook_client(
+    mattermost::post(
         &webhook,
         StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
-    )?;
-    client
-        .post(webhook.url().clone())
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|_| AppError::BL {
-            msg: "Mattermost alert transport failed".to_string(),
-        })?
-        .error_for_status()
-        .map_err(|_| AppError::BL {
-            msg: "Mattermost alert endpoint rejected the request".to_string(),
-        })?;
+        &payload,
+        "Mattermost alert transport failed",
+        "Mattermost alert endpoint rejected the request",
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -556,42 +550,20 @@ fn mattermost_payload(
     severity: &str,
     summary: &str,
 ) -> MattermostPayload {
-    let server = sanitize_mattermost_field(server, 253);
+    let server = mattermost::sanitize_field(server, 253);
     let server = if access::is_dispatcher_hostname(&server) {
         server
     } else {
         "invalid-server".to_string()
     };
-    let user = sanitize_mattermost_field(user, 200);
-    let severity = sanitize_mattermost_field(severity, 20);
-    let summary = sanitize_mattermost_field(summary, 500);
+    let user = mattermost::sanitize_field(user, 200);
+    let severity = mattermost::sanitize_field(severity, 20);
+    let summary = mattermost::sanitize_field(summary, 500);
     MattermostPayload {
         text: format!(
             "AI agent security alert\nServer: {server}\nUser: {user}\nRequest: {request_id}\nSeverity: {severity}\nSummary: {summary}\nAdmin: https://{server}/admin/ai/requests?requestId={request_id}"
         ),
     }
-}
-
-fn sanitize_mattermost_field(value: &str, max_chars: usize) -> String {
-    let value = value
-        .chars()
-        .take(max_chars)
-        .map(|character| match character {
-            '@' => '＠',
-            '\n' | '\r' | '\t' => ' ',
-            '`' => 'ˋ',
-            '*' => '∗',
-            '_' => '＿',
-            '[' => '［',
-            ']' => '］',
-            '(' => '（',
-            ')' => '）',
-            '~' => '〜',
-            character if character.is_control() => ' ',
-            character => character,
-        })
-        .collect::<String>();
-    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub async fn retry(env: &Env, request_id: Uuid) -> Result<(), AppError> {

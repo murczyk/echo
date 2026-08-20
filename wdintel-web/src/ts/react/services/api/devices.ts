@@ -8,6 +8,8 @@ import type {
   DeviceDetailReq,
   DeviceDetails,
   DeviceFile,
+  DeviceSettingsItem,
+  DeviceSettingsReq,
   DeviceAnalyticsFilesReq,
   DeviceAnalyticsFilesRsp,
   DeviceAnalyticsReq,
@@ -58,6 +60,8 @@ export type DeviceUpdatePatchInput = {
   aorIds?: NonNullable<UpdateDeviceReq['aorIds']>;
   unitId?: UpdateDeviceReq['unitId'];
 };
+
+export type DeviceSettingsInput = Partial<DeviceSettingsReq>;
 
 type DeviceUpdatePatchReq = DeviceUpdatePatchInput;
 
@@ -190,6 +194,21 @@ export async function updateDevice(
     options,
   );
   return normalizeDeviceDetails(data);
+}
+
+export async function updateDeviceSettings(
+  req: DeviceSettingsInput,
+  options?: RequestOptions,
+): Promise<DeviceSettingsItem> {
+  const body: JsonBody = {};
+  if (req.mattermostWebhookUrl !== undefined) {
+    body.mattermostWebhookUrl = req.mattermostWebhookUrl;
+  }
+  if (req.clearMattermostWebhook !== undefined) {
+    body.clearMattermostWebhook = req.clearMattermostWebhook;
+  }
+  const data = await postJson<DeviceSettingsItem>('/api/admin/device/settings', body, options);
+  return transformSnakeToCamel<DeviceSettingsItem>(data);
 }
 
 export async function listDeviceFileRoots(

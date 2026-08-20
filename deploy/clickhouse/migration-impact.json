@@ -252,6 +252,11 @@
     },
     "echo:m20260818_081034_inbox_unit_backfill_lookup_indexes": {
       "changes": []
+    },
+    "echo:m20260819_175820_device_settings": {
+      "changes": [
+        { "table": "public.device_settings", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {
