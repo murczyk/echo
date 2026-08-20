@@ -638,6 +638,13 @@ where
     .insert(dbx)
     .await
     .c(h!())?;
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        dbx,
+        inserted.id,
+        source.inbox_item.location_v2.as_deref(),
+    )
+    .await
+    .c(h!())?;
     crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
         dbx,
         inserted.id,

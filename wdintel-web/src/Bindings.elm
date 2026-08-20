@@ -210,14 +210,16 @@ keyEncoder struct =
 
 
 type alias MultiGeometry =
-    { lineStrings : List (LineString)
+    { points : List (Point)
+    , lineStrings : List (LineString)
     }
 
 
 multiGeometryEncoder : MultiGeometry -> Json.Encode.Value
 multiGeometryEncoder struct =
     Json.Encode.object
-        [ ( "LineString", (Json.Encode.list (lineStringEncoder)) struct.lineStrings )
+        [ ( "Point", (Json.Encode.list (pointEncoder)) struct.points )
+        , ( "LineString", (Json.Encode.list (lineStringEncoder)) struct.lineStrings )
         ]
 
 
@@ -3038,6 +3040,7 @@ type alias MapPointsReq =
     { inboxItemsFilter : InboxMessagesReq
     , mapFilter : Maybe (MapPointsFilter)
     , pageId : Maybe (String)
+    , showSettlements : Maybe (Bool)
     }
 
 
@@ -3047,12 +3050,36 @@ mapPointsReqEncoder struct =
         [ ( "inbox_items_filter", (inboxMessagesReqEncoder) struct.inboxItemsFilter )
         , ( "map_filter", (Maybe.withDefault Json.Encode.null << Maybe.map (mapPointsFilterEncoder)) struct.mapFilter )
         , ( "page_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.pageId )
+        , ( "show_settlements", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.showSettlements )
+        ]
+
+
+type alias MapSettlement =
+    { settlementId : Int
+    , name : String
+    , region : Maybe (String)
+    , lat : Float
+    , lon : Float
+    , inboxItemCount : Int
+    }
+
+
+mapSettlementEncoder : MapSettlement -> Json.Encode.Value
+mapSettlementEncoder struct =
+    Json.Encode.object
+        [ ( "settlement_id", (Json.Encode.int) struct.settlementId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "region", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.region )
+        , ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lon", (Json.Encode.float) struct.lon )
+        , ( "inbox_item_count", (Json.Encode.int) struct.inboxItemCount )
         ]
 
 
 type alias MapPointsRsp =
     { networkUnits : List (NetworkUnit)
     , points : List (FreqDetailedPoint)
+    , settlements : List (MapSettlement)
     }
 
 
@@ -3061,6 +3088,7 @@ mapPointsRspEncoder struct =
     Json.Encode.object
         [ ( "network_units", (Json.Encode.list (networkUnitEncoder)) struct.networkUnits )
         , ( "points", (Json.Encode.list (freqDetailedPointEncoder)) struct.points )
+        , ( "settlements", (Json.Encode.list (mapSettlementEncoder)) struct.settlements )
         ]
 
 
@@ -3075,6 +3103,222 @@ networkUnitEncoder struct =
     Json.Encode.object
         [ ( "name", (Json.Encode.string) struct.name )
         , ( "frequencies", (Json.Encode.list (Json.Encode.string)) struct.frequencies )
+        ]
+
+
+type alias BattleLineCoordinate =
+    { lat : Float
+    , lon : Float
+    }
+
+
+battleLineCoordinateEncoder : BattleLineCoordinate -> Json.Encode.Value
+battleLineCoordinateEncoder struct =
+    Json.Encode.object
+        [ ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lon", (Json.Encode.float) struct.lon )
+        ]
+
+
+type alias BattleLineFeature =
+    { kind : String
+    , coordinates : List (BattleLineCoordinate)
+    }
+
+
+battleLineFeatureEncoder : BattleLineFeature -> Json.Encode.Value
+battleLineFeatureEncoder struct =
+    Json.Encode.object
+        [ ( "kind", (Json.Encode.string) struct.kind )
+        , ( "coordinates", (Json.Encode.list (battleLineCoordinateEncoder)) struct.coordinates )
+        ]
+
+
+type alias BattleLineVersionSummary =
+    { id : Int
+    , sourceFileName : String
+    , uploaderLogin : String
+    , uploadedAtTs : Int
+    , retiredAtTs : Maybe (Int)
+    }
+
+
+battleLineVersionSummaryEncoder : BattleLineVersionSummary -> Json.Encode.Value
+battleLineVersionSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "source_file_name", (Json.Encode.string) struct.sourceFileName )
+        , ( "uploader_login", (Json.Encode.string) struct.uploaderLogin )
+        , ( "uploaded_at_ts", (Json.Encode.int) struct.uploadedAtTs )
+        , ( "retired_at_ts", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.retiredAtTs )
+        ]
+
+
+type alias BattleLineAorGeometry =
+    { aorId : Int
+    , aorName : String
+    , features : List (BattleLineFeature)
+    , snappedStart : BattleLineCoordinate
+    , snappedEnd : BattleLineCoordinate
+    }
+
+
+battleLineAorGeometryEncoder : BattleLineAorGeometry -> Json.Encode.Value
+battleLineAorGeometryEncoder struct =
+    Json.Encode.object
+        [ ( "aor_id", (Json.Encode.int) struct.aorId )
+        , ( "aor_name", (Json.Encode.string) struct.aorName )
+        , ( "features", (Json.Encode.list (battleLineFeatureEncoder)) struct.features )
+        , ( "snapped_start", (battleLineCoordinateEncoder) struct.snappedStart )
+        , ( "snapped_end", (battleLineCoordinateEncoder) struct.snappedEnd )
+        ]
+
+
+type alias BattleLineState =
+    { activeVersion : Maybe (BattleLineVersionSummary)
+    , activeFeatures : List (BattleLineFeature)
+    , aorGeometries : List (BattleLineAorGeometry)
+    , previousVersions : List (BattleLineVersionSummary)
+    }
+
+
+battleLineStateEncoder : BattleLineState -> Json.Encode.Value
+battleLineStateEncoder struct =
+    Json.Encode.object
+        [ ( "active_version", (Maybe.withDefault Json.Encode.null << Maybe.map (battleLineVersionSummaryEncoder)) struct.activeVersion )
+        , ( "active_features", (Json.Encode.list (battleLineFeatureEncoder)) struct.activeFeatures )
+        , ( "aor_geometries", (Json.Encode.list (battleLineAorGeometryEncoder)) struct.aorGeometries )
+        , ( "previous_versions", (Json.Encode.list (battleLineVersionSummaryEncoder)) struct.previousVersions )
+        ]
+
+
+type alias BattleLineTestReq =
+    { inboxItemId : Int
+    }
+
+
+battleLineTestReqEncoder : BattleLineTestReq -> Json.Encode.Value
+battleLineTestReqEncoder struct =
+    Json.Encode.object
+        [ ( "inbox_item_id", (Json.Encode.int) struct.inboxItemId )
+        ]
+
+
+type alias BattleLineSettlementCandidate =
+    { settlementId : Int
+    , name : String
+    , region : String
+    , coordinate : BattleLineCoordinate
+    }
+
+
+battleLineSettlementCandidateEncoder : BattleLineSettlementCandidate -> Json.Encode.Value
+battleLineSettlementCandidateEncoder struct =
+    Json.Encode.object
+        [ ( "settlement_id", (Json.Encode.int) struct.settlementId )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "region", (Json.Encode.string) struct.region )
+        , ( "coordinate", (battleLineCoordinateEncoder) struct.coordinate )
+        ]
+
+
+type alias BattleLineLocationResult =
+    { location : String
+    , candidates : List (BattleLineSettlementCandidate)
+    , chosenSettlementId : Maybe (Int)
+    , distanceM : Maybe (Float)
+    , invalidAorIds : List (Int)
+    }
+
+
+battleLineLocationResultEncoder : BattleLineLocationResult -> Json.Encode.Value
+battleLineLocationResultEncoder struct =
+    Json.Encode.object
+        [ ( "location", (Json.Encode.string) struct.location )
+        , ( "candidates", (Json.Encode.list (battleLineSettlementCandidateEncoder)) struct.candidates )
+        , ( "chosen_settlement_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.chosenSettlementId )
+        , ( "distance_m", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.float)) struct.distanceM )
+        , ( "invalid_aor_ids", (Json.Encode.list (Json.Encode.int)) struct.invalidAorIds )
+        ]
+
+
+type alias BattleLineTestRsp =
+    { inboxItemId : Int
+    , message : InboxMessage
+    , groupMasterKeys : List (String)
+    , aorIds : List (Int)
+    , locations : List (BattleLineLocationResult)
+    , battleLine : BattleLineState
+    }
+
+
+battleLineTestRspEncoder : BattleLineTestRsp -> Json.Encode.Value
+battleLineTestRspEncoder struct =
+    Json.Encode.object
+        [ ( "inbox_item_id", (Json.Encode.int) struct.inboxItemId )
+        , ( "message", (inboxMessageEncoder) struct.message )
+        , ( "group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
+        , ( "aor_ids", (Json.Encode.list (Json.Encode.int)) struct.aorIds )
+        , ( "locations", (Json.Encode.list (battleLineLocationResultEncoder)) struct.locations )
+        , ( "battle_line", (battleLineStateEncoder) struct.battleLine )
+        ]
+
+
+type alias BattleLineAdminPageReq =
+    { page : Int
+    }
+
+
+battleLineAdminPageReqEncoder : BattleLineAdminPageReq -> Json.Encode.Value
+battleLineAdminPageReqEncoder struct =
+    Json.Encode.object
+        [ ( "page", (Json.Encode.int) struct.page )
+        ]
+
+
+type alias BattleLineUnlinkedInboxRsp =
+    { items : List (( Int, InboxMessage ))
+    , total : Int
+    , pageSize : Int
+    }
+
+
+battleLineUnlinkedInboxRspEncoder : BattleLineUnlinkedInboxRsp -> Json.Encode.Value
+battleLineUnlinkedInboxRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.items )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
+type alias BattleLineUnresolvedLocation =
+    { settlementText : String
+    , itemCount : Int
+    }
+
+
+battleLineUnresolvedLocationEncoder : BattleLineUnresolvedLocation -> Json.Encode.Value
+battleLineUnresolvedLocationEncoder struct =
+    Json.Encode.object
+        [ ( "settlement_text", (Json.Encode.string) struct.settlementText )
+        , ( "item_count", (Json.Encode.int) struct.itemCount )
+        ]
+
+
+type alias BattleLineUnresolvedLocationsRsp =
+    { items : List (BattleLineUnresolvedLocation)
+    , total : Int
+    , pageSize : Int
+    }
+
+
+battleLineUnresolvedLocationsRspEncoder : BattleLineUnresolvedLocationsRsp -> Json.Encode.Value
+battleLineUnresolvedLocationsRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (battleLineUnresolvedLocationEncoder)) struct.items )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
         ]
 
 
@@ -13730,6 +13974,7 @@ keyDecoder =
 multiGeometryDecoder : Json.Decode.Decoder MultiGeometry
 multiGeometryDecoder =
     Json.Decode.succeed MultiGeometry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "Point" (Json.Decode.list (pointDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "LineString" (Json.Decode.list (lineStringDecoder))))
 
 
@@ -15145,6 +15390,18 @@ mapPointsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_items_filter" (inboxMessagesReqDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "map_filter" (Json.Decode.nullable (mapPointsFilterDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_settlements" (Json.Decode.nullable (Json.Decode.bool))))
+
+
+mapSettlementDecoder : Json.Decode.Decoder MapSettlement
+mapSettlementDecoder =
+    Json.Decode.succeed MapSettlement
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "region" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_count" (Json.Decode.int)))
 
 
 mapPointsRspDecoder : Json.Decode.Decoder MapPointsRsp
@@ -15152,6 +15409,7 @@ mapPointsRspDecoder =
     Json.Decode.succeed MapPointsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_units" (Json.Decode.list (networkUnitDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "points" (Json.Decode.list (freqDetailedPointDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlements" (Json.Decode.list (mapSettlementDecoder))))
 
 
 networkUnitDecoder : Json.Decode.Decoder NetworkUnit
@@ -15159,6 +15417,114 @@ networkUnitDecoder =
     Json.Decode.succeed NetworkUnit
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "frequencies" (Json.Decode.list (Json.Decode.string))))
+
+
+battleLineCoordinateDecoder : Json.Decode.Decoder BattleLineCoordinate
+battleLineCoordinateDecoder =
+    Json.Decode.succeed BattleLineCoordinate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
+
+
+battleLineFeatureDecoder : Json.Decode.Decoder BattleLineFeature
+battleLineFeatureDecoder =
+    Json.Decode.succeed BattleLineFeature
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "kind" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinates" (Json.Decode.list (battleLineCoordinateDecoder))))
+
+
+battleLineVersionSummaryDecoder : Json.Decode.Decoder BattleLineVersionSummary
+battleLineVersionSummaryDecoder =
+    Json.Decode.succeed BattleLineVersionSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "source_file_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uploader_login" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "uploaded_at_ts" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "retired_at_ts" (Json.Decode.nullable (Json.Decode.int))))
+
+
+battleLineAorGeometryDecoder : Json.Decode.Decoder BattleLineAorGeometry
+battleLineAorGeometryDecoder =
+    Json.Decode.succeed BattleLineAorGeometry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "features" (Json.Decode.list (battleLineFeatureDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "snapped_start" (battleLineCoordinateDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "snapped_end" (battleLineCoordinateDecoder)))
+
+
+battleLineStateDecoder : Json.Decode.Decoder BattleLineState
+battleLineStateDecoder =
+    Json.Decode.succeed BattleLineState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_version" (Json.Decode.nullable (battleLineVersionSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "active_features" (Json.Decode.list (battleLineFeatureDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_geometries" (Json.Decode.list (battleLineAorGeometryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "previous_versions" (Json.Decode.list (battleLineVersionSummaryDecoder))))
+
+
+battleLineTestReqDecoder : Json.Decode.Decoder BattleLineTestReq
+battleLineTestReqDecoder =
+    Json.Decode.succeed BattleLineTestReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.int)))
+
+
+battleLineSettlementCandidateDecoder : Json.Decode.Decoder BattleLineSettlementCandidate
+battleLineSettlementCandidateDecoder =
+    Json.Decode.succeed BattleLineSettlementCandidate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "region" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinate" (battleLineCoordinateDecoder)))
+
+
+battleLineLocationResultDecoder : Json.Decode.Decoder BattleLineLocationResult
+battleLineLocationResultDecoder =
+    Json.Decode.succeed BattleLineLocationResult
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "location" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "candidates" (Json.Decode.list (battleLineSettlementCandidateDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chosen_settlement_id" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "distance_m" (Json.Decode.nullable (Json.Decode.float))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "invalid_aor_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+battleLineTestRspDecoder : Json.Decode.Decoder BattleLineTestRsp
+battleLineTestRspDecoder =
+    Json.Decode.succeed BattleLineTestRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (inboxMessageDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_keys" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aor_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (battleLineLocationResultDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "battle_line" (battleLineStateDecoder)))
+
+
+battleLineAdminPageReqDecoder : Json.Decode.Decoder BattleLineAdminPageReq
+battleLineAdminPageReqDecoder =
+    Json.Decode.succeed BattleLineAdminPageReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page" (Json.Decode.int)))
+
+
+battleLineUnlinkedInboxRspDecoder : Json.Decode.Decoder BattleLineUnlinkedInboxRsp
+battleLineUnlinkedInboxRspDecoder =
+    Json.Decode.succeed BattleLineUnlinkedInboxRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (Json.Decode.map2 (\a b -> ( a, b )) (Json.Decode.index 0 (Json.Decode.int)) (Json.Decode.index 1 (inboxMessageDecoder))))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+battleLineUnresolvedLocationDecoder : Json.Decode.Decoder BattleLineUnresolvedLocation
+battleLineUnresolvedLocationDecoder =
+    Json.Decode.succeed BattleLineUnresolvedLocation
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "item_count" (Json.Decode.int)))
+
+
+battleLineUnresolvedLocationsRspDecoder : Json.Decode.Decoder BattleLineUnresolvedLocationsRsp
+battleLineUnresolvedLocationsRspDecoder =
+    Json.Decode.succeed BattleLineUnresolvedLocationsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (battleLineUnresolvedLocationDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
 
 
 messageIdsReqDecoder : Json.Decode.Decoder MessageIdsReq

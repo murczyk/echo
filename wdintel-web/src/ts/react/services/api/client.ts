@@ -179,6 +179,31 @@ export async function getJson<T>(url: string, options?: RequestOptions) {
   return requestJson<T>('GET', url, undefined, options);
 }
 
+export async function postFormData<T>(
+  url: string,
+  body: FormData,
+  options?: RequestOptions,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      body,
+      credentials: 'include',
+      headers: options?.headers,
+      signal: options?.signal,
+    });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw new HttpRequestError(0, NETWORK_REQUEST_ERROR_MESSAGE);
+  }
+  if (!response.ok) {
+    if (response.status === 401) emitUnauthorizedEvent();
+    throw new HttpRequestError(response.status, await parseErrorMessage(response));
+  }
+  return (await response.json()) as T;
+}
+
 export async function postVoid(url: string, body?: JsonBody, options?: RequestOptions) {
   await requestJson('POST', url, body, options);
 }

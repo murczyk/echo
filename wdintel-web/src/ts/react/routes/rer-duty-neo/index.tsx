@@ -342,6 +342,7 @@ export function RerDutyNeoPage({
         freqs,
         postsList,
         unitsList: Object.values(unitsMap),
+        persistentUnitFilterValues,
       },
       toggles: {
         adjacentFreqsRange: feed.adjacentFreqsRange,
@@ -362,22 +363,52 @@ export function RerDutyNeoPage({
           applyFilter(feed.id, { ...feed.filter, groupsSelected: v.length ? v : null }),
         onDeniedGroupsChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, groupsDenied: v.length ? v : null }),
+        onGroupsModeTransfer: ({ includeValues, excludeValues }) =>
+          applyFilter(feed.id, {
+            ...feed.filter,
+            groupsSelected: includeValues.length ? includeValues : null,
+            groupsDenied: excludeValues.length ? excludeValues : null,
+          }),
         onSendersChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, sendersSelected: v.length ? v : null }),
         onDeniedSendersChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, deniedSenders: v.length ? v : null }),
+        onSendersModeTransfer: ({ includeValues, excludeValues }) =>
+          applyFilter(feed.id, {
+            ...feed.filter,
+            sendersSelected: includeValues.length ? includeValues : null,
+            deniedSenders: excludeValues.length ? excludeValues : null,
+          }),
         onFreqsChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, freqsSelected: v.length ? v : null }),
         onFreqsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, freqsDenied: v.length ? v : null }),
+        onFreqsModeTransfer: ({ includeValues, excludeValues }) =>
+          applyFilter(feed.id, {
+            ...feed.filter,
+            freqsSelected: includeValues.length ? includeValues : null,
+            freqsDenied: excludeValues.length ? excludeValues : null,
+          }),
         onPostsChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, postsSelected: v.length ? v : null }),
         onPostsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, postsDenied: v.length ? v : null }),
+        onPostsModeTransfer: ({ includeValues, excludeValues }) =>
+          applyFilter(feed.id, {
+            ...feed.filter,
+            postsSelected: includeValues.length ? includeValues : null,
+            postsDenied: excludeValues.length ? excludeValues : null,
+          }),
         onUnitsChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, unitsSelected: v.length ? v : null }),
         onUnitsDeniedChange: (v: string[]) =>
           applyFilter(feed.id, { ...feed.filter, unitsDenied: v.length ? v : null }),
+        onUnitsModeTransfer: ({ includeValues, excludeValues }) =>
+          applyFilter(feed.id, {
+            ...feed.filter,
+            unitsSelected: includeValues.length ? includeValues : null,
+            unitsDenied: excludeValues.length ? excludeValues : null,
+          }),
         onUnitsExactMatchOnlyChange: (v: boolean) =>
           applyFilter(feed.id, { ...feed.filter, unitsExactMatchOnly: v }),
         onAdjacentFreqsRangeChange: (v: number) =>
@@ -505,6 +536,7 @@ export function RerDutyNeoPage({
     networkDisplayMap,
     networkMap,
     unitsMap,
+    persistentUnitFilterValues,
     callsignInfoMap,
     featureStrictNetworks,
     watchModeByFeedId,

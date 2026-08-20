@@ -379,7 +379,9 @@ mod m20260817_125243_add_intel_prod_relation_kind;
 mod m20260818_052317_shared_ai_engine_capabilities;
 mod m20260818_081034_inbox_unit_backfill_lookup_indexes;
 mod m20260818_104740_sigint_comment_migration_indexes;
+mod m20260818_130237_battle_line_and_inbox_settlement;
 mod m20260818_142214_unique_sigint_inbox_item_network;
+mod m20260820_081114_messenger_queue_retry;
 
 pub struct Migrator;
 
@@ -875,8 +877,12 @@ impl MigratorTrait for Migrator {
                 m20260818_081034_inbox_unit_backfill_lookup_indexes::Migration,
             ),
             Box::new(
+                m20260818_130237_battle_line_and_inbox_settlement::Migration,
+            ),
+            Box::new(
                 m20260818_142214_unique_sigint_inbox_item_network::Migration,
             ),
+            Box::new(m20260820_081114_messenger_queue_retry::Migration),
         ]
     }
 }

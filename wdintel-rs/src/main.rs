@@ -23,6 +23,7 @@ pub mod api_integrations;
 pub mod atak;
 pub mod aws;
 pub mod backup;
+pub mod battle_line;
 pub mod config;
 pub mod datasource;
 pub mod delta;
@@ -33,6 +34,7 @@ pub mod error;
 pub mod event_stream;
 pub mod file_registry;
 pub mod functest;
+pub mod geometry_import;
 pub mod icons;
 pub mod iggy;
 pub mod importer;
@@ -321,6 +323,16 @@ pub struct OneoffBackfillInboxUnitLinksPs {
     /// Resume after this inbox item ID (exclusive).
     #[arg(long, default_value_t = 0)]
     pub after_inbox_item_id: i64,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffLinkInboxSettlementsPs {
+    /// Start datetime in configured local time (inclusive). Example: `2026-08-18T00:00:00`
+    #[arg(long)]
+    pub since_ts: Option<String>,
+    /// End datetime in configured local time (non-inclusive). Example: `2026-08-19T00:00:00`
+    #[arg(long)]
+    pub till_ts: Option<String>,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -988,6 +1000,7 @@ enum Cmd {
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
+    OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1749,6 +1762,12 @@ async fn async_main(
         }
         Cmd::OneoffBackfillInboxUnitLinks(ps) => {
             sigint::oneoff::oneoff_backfill_inbox_unit_links(mode, &ps).await
+        }
+        Cmd::OneoffLinkInboxSettlements(ps) => {
+            battle_line::settlement_queue::oneoff_link_inbox_settlements(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(

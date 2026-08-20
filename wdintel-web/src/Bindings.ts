@@ -67,6 +67,7 @@ export type Key = {
 };
 
 export type MultiGeometry = {
+  points: Array<Point>;
   lineStrings: Array<LineString>;
 };
 
@@ -1175,16 +1176,109 @@ export type MapPointsReq = {
   inboxItemsFilter: InboxMessagesReq;
   mapFilter: MapPointsFilter | null;
   pageId: string | null;
+  showSettlements: boolean | null;
+};
+
+export type MapSettlement = {
+  settlementId: number;
+  name: string;
+  region: string | null;
+  lat: number;
+  lon: number;
+  inboxItemCount: number;
 };
 
 export type MapPointsRsp = {
   networkUnits: Array<NetworkUnit>;
   points: Array<FreqDetailedPoint>;
+  settlements: Array<MapSettlement>;
 };
 
 export type NetworkUnit = {
   name: string;
   frequencies: Array<string>;
+};
+
+export type BattleLineCoordinate = {
+  lat: number;
+  lon: number;
+};
+
+export type BattleLineFeature = {
+  kind: string;
+  coordinates: Array<BattleLineCoordinate>;
+};
+
+export type BattleLineVersionSummary = {
+  id: number;
+  sourceFileName: string;
+  uploaderLogin: string;
+  uploadedAtTs: number;
+  retiredAtTs: number | null;
+};
+
+export type BattleLineAorGeometry = {
+  aorId: number;
+  aorName: string;
+  features: Array<BattleLineFeature>;
+  snappedStart: BattleLineCoordinate;
+  snappedEnd: BattleLineCoordinate;
+};
+
+export type BattleLineState = {
+  activeVersion: BattleLineVersionSummary | null;
+  activeFeatures: Array<BattleLineFeature>;
+  aorGeometries: Array<BattleLineAorGeometry>;
+  previousVersions: Array<BattleLineVersionSummary>;
+};
+
+export type BattleLineTestReq = {
+  inboxItemId: number;
+};
+
+export type BattleLineSettlementCandidate = {
+  settlementId: number;
+  name: string;
+  region: string;
+  coordinate: BattleLineCoordinate;
+};
+
+export type BattleLineLocationResult = {
+  location: string;
+  candidates: Array<BattleLineSettlementCandidate>;
+  chosenSettlementId: number | null;
+  distanceM: number | null;
+  invalidAorIds: Array<number>;
+};
+
+export type BattleLineTestRsp = {
+  inboxItemId: number;
+  message: InboxMessage;
+  groupMasterKeys: Array<string>;
+  aorIds: Array<number>;
+  locations: Array<BattleLineLocationResult>;
+  battleLine: BattleLineState;
+};
+
+export type BattleLineAdminPageReq = {
+  page: number;
+};
+
+export type BattleLineUnlinkedInboxRsp = {
+  items: Array<[number, InboxMessage]>;
+  total: number;
+  pageSize: number;
+};
+
+export type BattleLineUnresolvedLocation = {
+  settlementText: string;
+  itemCount: number;
+};
+
+export type BattleLineUnresolvedLocationsRsp = {
+  items: Array<BattleLineUnresolvedLocation>;
+  total: number;
+  pageSize: number;
 };
 
 export type MessageIdsReq = {

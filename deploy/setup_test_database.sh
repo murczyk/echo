@@ -117,7 +117,7 @@ PG_PASSWORD="${PG_PASSWORD:-fee_-_-_-FnoeKFBeebu87bf}"
 MAINTENANCE_DB="${PG_DATABASE:-postgres}"
 
 # Path to the base dump file
-DUMP_FILE="$(dirname "$0")/wd_test-2025-08-17-07-43.pgrestore"
+DUMP_FILE="$(dirname "${BASH_SOURCE[0]}")/wd_test-2025-08-17-07-43.pgrestore"
 
 if [ ! -f "$DUMP_FILE" ]; then
     echo "Error: Dump file not found at $DUMP_FILE"

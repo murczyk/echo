@@ -250,10 +250,11 @@ async fn insert_missing_message_groups<'a, 'async_trait, C>(
     target_datasource_id: i64,
     datasource_groups: &HashMap<i64, (String, i64)>,
     existing_group_keys: &mut HashSet<MessageGroupKey>,
-) -> anyhow::Result<()>
+) -> anyhow::Result<bool>
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let mut inserted = false;
     for group_entry in message_groups.iter() {
         let master_key = group_entry.group_master_key.clone().or_else(|| {
             group_entry.datasource_group_id.and_then(|gid| {
@@ -338,9 +339,10 @@ where
         .context(h!())?;
 
         existing_group_keys.insert(new_key);
+        inserted = true;
     }
 
-    Ok(())
+    Ok(inserted)
 }
 
 pub async fn upsert_messages(
@@ -411,7 +413,8 @@ pub async fn upsert_messages(
                 debug!("message {source_message_id} already exists");
                 let existing_message_id = existing_message.id;
                 let txn = db.begin().await.context(h!())?;
-                {
+                crate::battle_line::lock_updates(&txn).await.context(h!())?;
+                let inserted = {
                     let group_keys = existing_message_groups
                         .entry(existing_message_id)
                         .or_default();
@@ -425,7 +428,16 @@ pub async fn upsert_messages(
                         &datasource_groups,
                         group_keys,
                     )
-                    .await?;
+                    .await
+                    .context(h!())?
+                };
+                if inserted {
+                    crate::battle_line::settlement_queue::requeue_item_settlements(
+                        &txn,
+                        existing_message_id,
+                    )
+                    .await
+                    .context(h!())?;
                 }
                 txn.commit().await.context(h!())?;
                 continue;
@@ -482,7 +494,8 @@ pub async fn upsert_messages(
                 &datasource_groups,
                 &mut inserted_group_keys,
             )
-            .await?;
+            .await
+            .context(h!())?;
 
             let changed_inbox_item_ids =
                 crate::rer_importer::bgworker::process_message_to_inbox_nofail(

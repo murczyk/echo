@@ -64,7 +64,13 @@ pub async fn create_aor(
 ) -> Result<Json<AreaOfResponsibility>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let model = map_insert(&env, &req, NotSet).await.c(h!())?;
-    let aor = model.insert(&env.dbx).await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
+    let aor = model.insert(&txn).await.c(h!())?;
+    crate::battle_line::refresh_aor_geometry(&txn, aor.id)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(render_aor(aor)))
 }
 
@@ -77,7 +83,16 @@ pub async fn update_aor(
     ensure_admin(&env.dbx, &user).await.c(h!())?;
 
     let model = map_insert(&env, &req.insert, Set(req.id)).await.c(h!())?;
-    let aor = model.update(&env.dbx).await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
+    let aor = model.update(&txn).await.c(h!())?;
+    crate::battle_line::refresh_aor_geometry(&txn, aor.id)
+        .await
+        .c(h!())?;
+    crate::battle_line::requeue_settlement_links(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
         &env.dbx,
         &aor,
@@ -96,16 +111,25 @@ pub async fn delete_aor(
 ) -> Result<Json<()>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
     let aor_obj = area_of_responsibility::Entity::find()
         .filter(area_of_responsibility::Column::Id.eq(req.id))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
 
     let mut aor_model = aor_obj.into_active_model();
     aor_model.deleted = Set(true);
-    let aor = aor_model.update(&env.dbx).await.c(h!())?;
+    let aor = aor_model.update(&txn).await.c(h!())?;
+    crate::battle_line::refresh_aor_geometry(&txn, aor.id)
+        .await
+        .c(h!())?;
+    crate::battle_line::requeue_settlement_links(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
         &env.dbx,
         &aor,

@@ -291,6 +291,13 @@ where
         .exec_with_returning(txn)
         .await
         .c(h!())?;
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        txn,
+        result.id,
+        result.location_v2.as_deref(),
+    )
+    .await
+    .c(h!())?;
     unit_resolution::resolve_and_sync_inbox_item(
         txn,
         result.id,

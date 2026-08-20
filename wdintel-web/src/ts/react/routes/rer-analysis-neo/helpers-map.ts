@@ -1,4 +1,4 @@
-import type { InboxMessage, PalitraReadV2, NetworkUnit } from '../../../../Bindings';
+import type { InboxMessage, MapSettlement, PalitraReadV2, NetworkUnit } from '../../../../Bindings';
 import { transformCamelToSnake } from '../../../snake-to-camel';
 import { isNullOrUndefined } from '../../utils/misc';
 import type { AnalysisPalitrasLoadState } from './types';
@@ -82,6 +82,9 @@ export function buildMapAttrs(params: {
     sk42Coords: string;
     freq: string | null;
   }>;
+  settlements: MapSettlement[];
+  canShowSettlements: boolean;
+  showSettlements: boolean;
   messages: Array<[number, InboxMessage]>;
   networkUnits: NetworkUnit[];
   selectedUnits: string[];
@@ -103,6 +106,9 @@ export function buildMapAttrs(params: {
     daterange: JSON.stringify(params.dateRange),
     daterangeLoading: JSON.stringify(params.isLoading),
     points: JSON.stringify(transformCamelToSnake(params.points)),
+    settlements: JSON.stringify(transformCamelToSnake(params.settlements)),
+    canShowSettlements: String(params.canShowSettlements),
+    showSettlements: String(params.showSettlements),
     messages: JSON.stringify({
       networkUnits: filteredNetworkUnits,
       messages: snakeMessages,

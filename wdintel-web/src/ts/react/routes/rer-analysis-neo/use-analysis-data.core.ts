@@ -370,6 +370,7 @@ export function useAnalysisData({
   });
 
   const mapData = useAnalysisMapData({
+    canShowSettlements: currentUser?.roles.includes('Admin') ?? false,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
@@ -579,8 +580,10 @@ export function useAnalysisData({
       setMapLoading: mapData.setMapLoading,
       setMapDateRange: mapData.setMapDateRange,
       setMapNetworkUnits: mapData.setMapNetworkUnits,
+      applyMapSettlements: mapData.applyMapSettlements,
       setMapOpenMessages: mapData.setMapOpenMessages,
       setMapPoints: mapData.setMapPoints,
+      showSettlements: mapData.showSettlements,
       setMessages: messageList.setMessages,
       setMessagesLoading: messageList.setMessagesLoading,
       setNetworks: referenceState.setNetworks,
@@ -696,6 +699,7 @@ export function useAnalysisData({
     options: referenceState.options,
     profiles: referenceState.profiles,
     refreshMapDateRange: mapData.refreshMapDateRange,
+    setShowSettlements: mapData.setShowSettlements,
     reload,
     summaryLoading: sidebarData.summaryLoading,
     summaryLoaded: sidebarData.summaryLoaded,

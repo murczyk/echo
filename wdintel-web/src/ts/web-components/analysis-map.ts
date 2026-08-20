@@ -38,9 +38,21 @@ import { getTileLayers } from './analysis-map/tile-layers';
 import { CoordinateMenuTarget, DataCircleMarker, Message, NetworkUnit } from './analysis-map/types';
 import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
 
+type MapSettlementPoint = {
+  settlement_id: number;
+  name: string;
+  region: string | null;
+  lat: number;
+  lon: number;
+  inbox_item_count: number;
+};
+
 class AnalysisMap extends HTMLElement {
   static observedAttributes = [
     'points',
+    'settlements',
+    'can-show-settlements',
+    'show-settlements',
     'daterange',
     'daterange-loading',
     'messages',
@@ -63,6 +75,11 @@ class AnalysisMap extends HTMLElement {
   };
   private _switchTimeControl: TimeswitchControl | null = null;
   private _points: MapPointDetailed[] = [];
+  private _settlements: MapSettlementPoint[] = [];
+  private _settlementMarkers = new Map<number, L.CircleMarker>();
+  private _settlementsLayerGroup: L.LayerGroup | null = null;
+  private _canShowSettlements = false;
+  private _showSettlements = false;
   private _messages: Message[] = [];
   private _networkUnits: NetworkUnit[] = [];
 
@@ -255,6 +272,15 @@ class AnalysisMap extends HTMLElement {
       case 'points':
         this._handlePointsAttributeChanged(newValue);
         break;
+      case 'settlements':
+        this._handleSettlementsAttributeChanged(newValue);
+        break;
+      case 'can-show-settlements':
+        this._handleSettlementVisibilityAttributeChanged();
+        break;
+      case 'show-settlements':
+        this._handleSettlementVisibilityAttributeChanged();
+        break;
       case 'daterange':
         this._handleDateRangeAttributeChanged(newValue);
         break;
@@ -324,6 +350,22 @@ class AnalysisMap extends HTMLElement {
     if (this._map) {
       this._replacePointsOnMap(this._points);
     }
+  }
+
+  private _handleSettlementsAttributeChanged(newValue: string): void {
+    this._settlements = JSON.parse(newValue || '[]');
+    this._replaceSettlementsOnMap();
+  }
+
+  private _handleSettlementVisibilityAttributeChanged(): void {
+    this._canShowSettlements = this.getAttribute('can-show-settlements') === 'true';
+    this._showSettlements =
+      this._canShowSettlements && this.getAttribute('show-settlements') === 'true';
+    this._mapSettingsControl?.setSettlementVisibility(
+      this._canShowSettlements,
+      this._showSettlements,
+    );
+    this._replaceSettlementsOnMap();
   }
 
   private _handleDateRangeAttributeChanged(newValue: string): void {
@@ -553,8 +595,10 @@ class AnalysisMap extends HTMLElement {
       this._applyPalitraVisibility();
 
       this._pelengsLayerGroup = L.layerGroup();
+      this._settlementsLayerGroup = L.layerGroup();
       this._applyPelengVisibility();
       this._replacePointsOnMap(this._points);
+      this._replaceSettlementsOnMap();
       // Get-inbox-map points are always visible; no need to re-apply on zoom.
 
       // Set search input from URL; run search once when palitras are ready (palitras-load-state handler)
@@ -601,6 +645,9 @@ class AnalysisMap extends HTMLElement {
       onToggleFullscreen: () => this._toggleFullscreen(),
       onFeatureToggle: (feature, enabled) => this._setFeatureEnabled(feature, enabled),
       onPelengLabelsPermanentChange: (show) => this._setPelengLabelsPermanent(show),
+      canShowSettlements: this._canShowSettlements,
+      showSettlements: this._showSettlements,
+      onShowSettlementsChange: (show) => this._setShowSettlements(show),
       onVisiblePalitraIdsChange: (visibleIds) => this._handleVisiblePalitraIdsChange(visibleIds),
       onFocusPalitras: (palitraIds) => this._handleFocusPalitrasRequest(palitraIds),
     });
@@ -694,6 +741,50 @@ class AnalysisMap extends HTMLElement {
     this._boundedAlready = result.boundedAlready;
     this._applyPelengVisibility();
     this._renderPelengLabelGroups();
+  }
+
+  private _replaceSettlementsOnMap(): void {
+    if (!this._map || !this._settlementsLayerGroup) return;
+    this._settlementsLayerGroup.clearLayers();
+    this._settlementMarkers.clear();
+    if (!this._canShowSettlements || !this._showSettlements) {
+      this._map.removeLayer(this._settlementsLayerGroup);
+      return;
+    }
+    for (const settlement of this._settlements) {
+      if (!Number.isFinite(settlement.lat) || !Number.isFinite(settlement.lon)) continue;
+      const marker = L.circleMarker([settlement.lat, settlement.lon], {
+        color: '#1565c0',
+        fillColor: '#2196f3',
+        fillOpacity: 0.9,
+        radius: 7,
+        weight: 2,
+      });
+      const name = this._escapeHtml(settlement.name);
+      const region = settlement.region ? `, ${this._escapeHtml(settlement.region)}` : '';
+      const count = settlement.inbox_item_count;
+      marker.bindTooltip(`${name} (${count})`, {
+        direction: 'top',
+      });
+      marker.bindPopup(`<strong>${name}</strong>${region}<br>Пов'язаних перехоплень: ${count}`);
+      marker.addTo(this._settlementsLayerGroup);
+      this._settlementMarkers.set(settlement.settlement_id, marker);
+    }
+    this._settlementsLayerGroup.addTo(this._map);
+  }
+
+  private _setShowSettlements(show: boolean): void {
+    this._showSettlements = this._canShowSettlements && show;
+    this._replaceSettlementsOnMap();
+  }
+
+  private _escapeHtml(value: string): string {
+    return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 
   private _addPointsMarkersGroup(points: MapPointDetailed[]) {

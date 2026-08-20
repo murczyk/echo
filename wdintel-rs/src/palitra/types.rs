@@ -287,46 +287,27 @@ pub struct PalitraHighlightBlacklistAddReq {
 
 impl Coords {
     pub fn from_csv(csv: &str) -> anyhow::Result<Coords> {
-        // KML stores coordinates as "lon,lat[,alt]" so parse in that order.
-        let mut parts = csv.split(',').map(str::trim);
-        let lng = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("bad coordinates: {csv}"))?
-            .parse::<f64>()
-            .c(h!())?;
-        let lat = parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("bad coordinates: {csv}"))?
-            .parse::<f64>()
-            .c(h!())?;
-        Ok(Coords { lat, lng })
+        let coordinate =
+            crate::geometry_import::parse_kml_coordinate(csv).c(h!())?;
+        Ok(Coords {
+            lat: coordinate.lat,
+            lng: coordinate.lon,
+        })
     }
 
     pub fn list_from_kml_coordinates(
         coordinates: &str,
     ) -> anyhow::Result<Vec<Coords>> {
-        let mut result = Vec::new();
-        let mut first_error: Option<anyhow::Error> = None;
-        for token in coordinates.split_whitespace() {
-            let token = token.trim();
-            if token.is_empty() {
-                continue;
-            }
-            match Coords::from_csv(token) {
-                Ok(coords) => result.push(coords),
-                Err(e) => {
-                    if first_error.is_none() {
-                        first_error = Some(e);
-                    }
-                }
-            }
-        }
-        if result.is_empty() {
-            return Err(first_error.unwrap_or_else(|| {
-                anyhow::anyhow!("bad coordinates: {coordinates}")
-            }));
-        }
-        Ok(result)
+        Ok(
+            crate::geometry_import::parse_kml_coordinates_lenient(coordinates)
+                .c(h!())?
+                .into_iter()
+                .map(|coordinate| Coords {
+                    lat: coordinate.lat,
+                    lng: coordinate.lon,
+                })
+                .collect(),
+        )
     }
 }
 

@@ -60,6 +60,26 @@ vi.mock('./RerDutyNeoWorkspace', () => ({
           buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onOnlyMyUnitTagsChange(true)
         }
       />
+      <button
+        type="button"
+        aria-label="Перенести частоти до лише"
+        onClick={() =>
+          buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onFreqsModeTransfer({
+            includeValues: ['153.6250', '154.0000'],
+            excludeValues: [],
+          })
+        }
+      />
+      <button
+        type="button"
+        aria-label="Перенести частоти до окрім"
+        onClick={() =>
+          buildFeedColumnModel(messageFeeds[0]).filterPanel.actions.onFreqsModeTransfer({
+            includeValues: [],
+            excludeValues: ['153.6250', '154.0000'],
+          })
+        }
+      />
       {messageFeeds[0]?.items[0] ? (
         <>
           <button
@@ -263,6 +283,7 @@ function buildFeedsState() {
     loadFeedInitialMessages: vi.fn(),
     reloadEmptyFeeds: vi.fn(),
     reloadFeeds: vi.fn(),
+    flushPendingNewerMessages: vi.fn(),
     reloadEditedFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
@@ -512,6 +533,30 @@ describe('RerDutyNeoPage creation workflow', () => {
     expect(container.querySelector('[data-testid="composer"]')).not.toBeNull();
     expect(notifyMock).not.toHaveBeenCalled();
     expect(state.reloadEmptyFeeds).not.toHaveBeenCalled();
+    root.unmount();
+  });
+
+  it('applies each frequency mode transfer as one complete filter update', async () => {
+    const { container, root, state } = await renderPage();
+    state.messageFeeds[0].filter.freqsDenied = ['153.6250', '154.0000'];
+
+    await click(container.querySelector('button[aria-label="Перенести частоти до лише"]'));
+    expect(state.applyFilter).toHaveBeenCalledTimes(1);
+    expect(state.applyFilter).toHaveBeenLastCalledWith('feed-1', {
+      ...state.messageFeeds[0].filter,
+      freqsSelected: ['153.6250', '154.0000'],
+      freqsDenied: null,
+    });
+
+    state.applyFilter.mockClear();
+    await click(container.querySelector('button[aria-label="Перенести частоти до окрім"]'));
+    expect(state.applyFilter).toHaveBeenCalledTimes(1);
+    expect(state.applyFilter).toHaveBeenLastCalledWith('feed-1', {
+      ...state.messageFeeds[0].filter,
+      freqsSelected: null,
+      freqsDenied: ['153.6250', '154.0000'],
+    });
+
     root.unmount();
   });
 });

@@ -33,6 +33,7 @@ export type FeedFilterSelectionConfig<T> = {
   onModeChange: (mode: 'include' | 'exclude') => void;
   onValueChange: (value: T[]) => void;
   options: readonly T[];
+  bulkPasteOptions?: readonly T[];
   getOptionLabel: (option: T) => string;
   getOptionKey?: (option: T) => string;
   isOptionEqualToValue?: (option: T, value: T) => boolean;
@@ -51,6 +52,12 @@ export type FeedFilterSelectionConfig<T> = {
   groupCatalogError?: GroupCatalogError | null;
   onRetryGroupCatalog?: () => void;
   catalogLoading?: boolean;
+  bulkCopy: boolean;
+  bulkCopyMenuLabel: string;
+  onBulkCopy?: (selected: readonly T[]) => Promise<void>;
+  getBulkPasteToken?: (option: T) => string;
+  getBulkPasteAliases?: (option: T) => readonly string[];
+  getBulkCopyText?: (selected: readonly T[]) => string;
 };
 
 type FeedFilterSavedFiltersConfig = {
@@ -163,6 +170,17 @@ export function FeedFilterPanelView({
           closeText={groups.closeText}
           keepOpenOnSelect={groups.keepOpenOnSelect}
           preserveInputOnSelect={groups.preserveInputOnSelect}
+          bulkPaste
+          bulkPasteSeparators={[',', '\n']}
+          bulkPasteMenuLabel="Додати кілька груп"
+          bulkPasteDialogTitle="Додати кілька груп"
+          bulkPasteInputLabel="Групи"
+          bulkCopy={groups.bulkCopy}
+          bulkCopyMenuLabel={groups.bulkCopyMenuLabel}
+          onBulkCopy={groups.onBulkCopy}
+          getBulkPasteToken={groups.getBulkPasteToken}
+          getBulkPasteAliases={groups.getBulkPasteAliases}
+          getBulkCopyText={groups.getBulkCopyText}
         />
         {groups.groupCatalogError ? (
           <PowerAlert
@@ -196,6 +214,17 @@ export function FeedFilterPanelView({
           isOptionEqualToValue={senders.isOptionEqualToValue}
           placeholder={senders.placeholder}
           autocompleteClassName={senders.autocompleteClassName}
+          bulkPaste
+          bulkPasteSeparators={[',', '\n']}
+          bulkPasteMenuLabel="Додати кілька відправників"
+          bulkPasteDialogTitle="Додати кілька відправників"
+          bulkPasteInputLabel="Відправники"
+          bulkCopy={senders.bulkCopy}
+          bulkCopyMenuLabel={senders.bulkCopyMenuLabel}
+          onBulkCopy={senders.onBulkCopy}
+          getBulkPasteToken={senders.getBulkPasteToken}
+          getBulkPasteAliases={senders.getBulkPasteAliases}
+          getBulkCopyText={senders.getBulkCopyText}
         />
 
         <FeedFilterFrequencySection
@@ -221,6 +250,17 @@ export function FeedFilterPanelView({
           getOptionLabel={posts.getOptionLabel}
           placeholder={posts.placeholder}
           autocompleteClassName={posts.autocompleteClassName}
+          bulkPaste
+          bulkPasteSeparators={['\n']}
+          bulkPasteMenuLabel="Додати кілька постів"
+          bulkPasteDialogTitle="Додати кілька постів"
+          bulkPasteInputLabel="Пости"
+          bulkCopy={posts.bulkCopy}
+          bulkCopyMenuLabel={posts.bulkCopyMenuLabel}
+          onBulkCopy={posts.onBulkCopy}
+          getBulkPasteToken={posts.getBulkPasteToken}
+          getBulkPasteAliases={posts.getBulkPasteAliases}
+          getBulkCopyText={posts.getBulkCopyText}
         />
 
         <Box>
@@ -231,6 +271,7 @@ export function FeedFilterPanelView({
             value={units.value}
             onValueChange={units.onValueChange}
             options={units.options}
+            bulkPasteOptions={units.bulkPasteOptions}
             getOptionLabel={units.getOptionLabel}
             getOptionKey={units.getOptionKey}
             isOptionEqualToValue={units.isOptionEqualToValue}
@@ -238,6 +279,17 @@ export function FeedFilterPanelView({
             keepOpenAndPreserveInputOnSelect={units.keepOpenAndPreserveInputOnSelect}
             placeholder={units.placeholder}
             autocompleteClassName={units.autocompleteClassName}
+            bulkPaste
+            bulkPasteSeparators={['\n']}
+            bulkPasteMenuLabel="Додати кілька підрозділів"
+            bulkPasteDialogTitle="Додати кілька підрозділів"
+            bulkPasteInputLabel="Підрозділи"
+            bulkCopy={units.bulkCopy}
+            bulkCopyMenuLabel={units.bulkCopyMenuLabel}
+            onBulkCopy={units.onBulkCopy}
+            getBulkPasteToken={units.getBulkPasteToken}
+            getBulkPasteAliases={units.getBulkPasteAliases}
+            getBulkCopyText={units.getBulkCopyText}
           />
           <Box className="mt-3 flex w-full items-center gap-1">
             <Tooltip

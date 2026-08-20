@@ -29,6 +29,10 @@ pub struct Model {
     pub timestamp: DateTime,
     pub created_at: DateTime,
     pub deleted: bool,
+    pub attempt_count: i32,
+    pub next_attempt_at: DateTime,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub last_error: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
