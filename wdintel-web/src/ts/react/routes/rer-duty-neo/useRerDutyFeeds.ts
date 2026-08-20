@@ -54,6 +54,9 @@ function mergeFreqsFromMessages(
   return sortFrequenciesNumerically([...merged]);
 }
 
+// Keeps group keys referenced by active feeds and saved filters so every Duty
+// column can resolve persistent selections even when absent from the recent
+// two-day catalog. This supports cross-column filter copy/paste.
 export function mergeKnownGroupKeys(
   previousKeys: readonly string[],
   apiGroups: readonly string[],
@@ -391,11 +394,12 @@ export function useRerDutyFeeds(
     () => mergeFreqsFromMessages(filterOpts.freqs, feedState.messageFeeds),
     [filterOpts.freqs, feedState.messageFeeds],
   );
-  const groupsList = useMemo(
+  const recentGroupKeys = filterOpts.groupsList;
+  const availableGroupKeys = useMemo(
     () =>
       mergeKnownGroupKeys(
         knownGroupKeys,
-        filterOpts.groupsList,
+        recentGroupKeys,
         Object.keys(filterOpts.groupInfos),
         feedState.messageFeeds,
         filterOpts.savedFilters.map(({ req }) => req),
@@ -403,7 +407,7 @@ export function useRerDutyFeeds(
     [
       feedState.messageFeeds,
       filterOpts.groupInfos,
-      filterOpts.groupsList,
+      recentGroupKeys,
       filterOpts.savedFilters,
       knownGroupKeys,
     ],
@@ -412,7 +416,7 @@ export function useRerDutyFeeds(
     setKnownGroupKeys((previous) => {
       const next = mergeKnownGroupKeys(
         previous,
-        filterOpts.groupsList,
+        recentGroupKeys,
         Object.keys(filterOpts.groupInfos),
         feedState.messageFeeds,
         filterOpts.savedFilters.map(({ req }) => req),
@@ -421,12 +425,7 @@ export function useRerDutyFeeds(
         ? previous
         : next;
     });
-  }, [
-    feedState.messageFeeds,
-    filterOpts.groupInfos,
-    filterOpts.groupsList,
-    filterOpts.savedFilters,
-  ]);
+  }, [feedState.messageFeeds, filterOpts.groupInfos, recentGroupKeys, filterOpts.savedFilters]);
   const postsList = useMemo(
     () => mergePostsFromMessages(filterOpts.postsList, feedState.messageFeeds),
     [filterOpts.postsList, feedState.messageFeeds],
@@ -513,7 +512,8 @@ export function useRerDutyFeeds(
     senderOptions: actions.senderOptions,
     freqs,
     postsList,
-    groupsList,
+    // Shared persistent group catalog for every Duty column.
+    groupsList: availableGroupKeys,
     groupInfos: filterOpts.groupInfos,
     tagsMap: filterOpts.tagsMap,
     tagsOrder: filterOpts.tagsOrder,

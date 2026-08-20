@@ -239,6 +239,26 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('mergeKnownGroupKeys', () => {
+  it('keeps a group selected in one column available to other Duty columns', () => {
+    const availableGroupKeys = mergeKnownGroupKeys(
+      [],
+      [],
+      [],
+      [
+        {
+          items: [],
+          filter: { groupsSelected: ['historic-group'], groupsDenied: [] },
+        },
+        {
+          items: [],
+          filter: { groupsSelected: [], groupsDenied: [] },
+        },
+      ],
+    );
+
+    expect(availableGroupKeys).toEqual(['historic-group']);
+  });
+
   it('keeps groups from a replaced message window and persisted filters', () => {
     const initialFeeds = [
       {
