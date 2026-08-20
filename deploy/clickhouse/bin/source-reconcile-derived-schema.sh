@@ -23,6 +23,6 @@ timeout --foreground 120s \
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     "$analytics_ssh_target" \
-    "ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/reconcile-derived-schema.sh"
+    "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/reconcile-derived-schema.sh"
 
 log "Derived analytics schema reconciled on $analytics_ssh_target"

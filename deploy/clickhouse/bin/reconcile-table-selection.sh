@@ -206,10 +206,7 @@ SQL
       "DROP TABLE IF EXISTS \`$CLICKHOUSE_RAW_DB\`.\`$target\` SYNC"
   done
 
-  "$SCRIPT_DIR/refresh-current-views.sh"
-  "$SCRIPT_DIR/refresh-gateway.sh"
-  "$SCRIPT_DIR/reconcile-schema.sh"
-  "$SCRIPT_DIR/check-analytics-health.sh"
+  reconcile_analytics_schema_with_retry "$SCRIPT_DIR"
   log "Mirror table selection is reconciled"
 }
 

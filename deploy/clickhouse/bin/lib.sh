@@ -24,6 +24,10 @@ SOURCE_RECONCILE_DEPLOY_RETRY_ATTEMPTS_DEFAULT=5
 # shellcheck disable=SC2034
 SOURCE_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS_DEFAULT=30
 # shellcheck disable=SC2034
+ANALYTICS_SCHEMA_PROPAGATION_RETRY_ATTEMPTS_DEFAULT=5
+# shellcheck disable=SC2034
+ANALYTICS_SCHEMA_PROPAGATION_RETRY_DELAY_SECONDS_DEFAULT=10
+# shellcheck disable=SC2034
 ANALYTICS_SCHEMA_RECONCILE_LOCK_NAME=echo_analytics_schema_reconciliation
 ANALYTICS_HEARTBEAT_SOURCE_SCHEMA=echo_analytics
 ANALYTICS_HEARTBEAT_SOURCE_TABLE=heartbeat
@@ -36,6 +40,31 @@ log() {
 die() {
   printf '[echo-analytics] ERROR: %s\n' "$*" >&2
   exit 1
+}
+
+reconcile_analytics_schema_with_retry() {
+  local analytics_bin_dir=$1
+  local attempts=${MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_ATTEMPTS:-$ANALYTICS_SCHEMA_PROPAGATION_RETRY_ATTEMPTS_DEFAULT}
+  local delay=${MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_DELAY_SECONDS:-$ANALYTICS_SCHEMA_PROPAGATION_RETRY_DELAY_SECONDS_DEFAULT}
+  local attempt status
+
+  [[ "$attempts" =~ ^[1-9][0-9]*$ ]] \
+    || die "MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_ATTEMPTS must be a positive integer"
+  [[ "$delay" =~ ^[0-9]+$ ]] \
+    || die "MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_DELAY_SECONDS must be a non-negative integer"
+
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    status=0
+    "$analytics_bin_dir/refresh-current-views.sh" \
+      && "$analytics_bin_dir/refresh-gateway.sh" \
+      && "$analytics_bin_dir/reconcile-schema.sh" \
+      && "$analytics_bin_dir/check-analytics-health.sh" \
+      || status=$?
+    ((status != 0)) || return 0
+    ((attempt < attempts)) || return "$status"
+    log "Analytics schema propagation is not stable; retrying in ${delay}s ($attempt/$attempts)"
+    sleep "$delay"
+  done
 }
 
 require_cmd() {

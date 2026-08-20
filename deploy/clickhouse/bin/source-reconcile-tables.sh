@@ -47,7 +47,7 @@ run_remote_reconcile() {
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     "$analytics_ssh_target" \
-    "ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/reconcile-table-selection.sh $1"
+    "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/reconcile-table-selection.sh $1"
 }
 
 timeout --foreground 30s \
