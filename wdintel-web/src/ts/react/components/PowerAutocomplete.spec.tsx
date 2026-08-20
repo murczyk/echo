@@ -163,7 +163,7 @@ vi.mock('@mui/icons-material/MoreVert', () => ({
   default: () => <span data-testid="more-vert-icon" />,
 }));
 
-vi.mock('@mui/icons-material/PlaylistAdd', () => ({
+vi.mock('@mui/icons-material/ContentPaste', () => ({
   default: () => <span data-testid="playlist-add-icon" />,
 }));
 
@@ -414,6 +414,29 @@ describe('PowerAutocomplete', () => {
 
     expect(copiedValues).toEqual(['111.1111', '222.2222']);
     expect(onBulkPasteChange).toHaveBeenCalledWith([options[0], options[1]]);
+  });
+
+  it('keeps commas inside one newline-delimited free-form value', () => {
+    const postOption = { id: 'post-1', label: 'HQ, East' };
+    const onBulkPasteResolved = vi.fn();
+    const { container } = renderAutocomplete({
+      bulkPaste: true,
+      bulkPasteSeparators: ['\n'],
+      options: [postOption],
+      onBulkPasteResolved,
+    });
+
+    openBulkDialog(container);
+    typeDialogValue(container, 'HQ, East');
+
+    expect(onBulkPasteResolved).toHaveBeenCalledWith({
+      tokens: ['HQ, East'],
+      found: [postOption],
+      missing: [],
+      added: [postOption],
+      alreadySelected: [],
+      finalValue: [postOption],
+    });
   });
 
   it('adds the bulk menu button inside the input adornment when enabled', () => {

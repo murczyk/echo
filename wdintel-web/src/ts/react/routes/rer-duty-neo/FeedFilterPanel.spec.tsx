@@ -137,6 +137,23 @@ describe('FeedFilterPanel', () => {
     expect(scrollArea?.style.overflowX).toBe('hidden');
   });
 
+  it('uses newline-only bulk paste for posts and units', async () => {
+    await act(async () => {
+      root.render(<FeedFilterPanel {...buildProps()} />);
+    });
+
+    const selectionProps = selectionSpy.mock.calls.map(
+      ([value]) => value as { title: string; bulkPasteSeparators?: string[] },
+    );
+
+    expect(selectionProps.find((value) => value.title === 'Пост')?.bulkPasteSeparators).toEqual([
+      '\n',
+    ]);
+    expect(
+      selectionProps.find((value) => value.title === 'Підрозділи')?.bulkPasteSeparators,
+    ).toEqual(['\n']);
+  });
+
   it('keeps catalog errors persistent and maps their structured severity', async () => {
     vi.useFakeTimers();
     const onReloadGroupCatalog = vi.fn();

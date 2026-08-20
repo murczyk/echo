@@ -1,6 +1,6 @@
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import PlaylistAdd from '@mui/icons-material/PlaylistAdd';
+import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import {
   Autocomplete,
   Box,
@@ -486,7 +486,7 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
             {bulkPaste ? (
               <MenuItem onClick={openBulkDialog}>
                 <ListItemIcon>
-                  <PlaylistAdd fontSize="small" />
+                  <ContentPasteIcon fontSize="small" />
                 </ListItemIcon>
                 {menuLabel}
               </MenuItem>

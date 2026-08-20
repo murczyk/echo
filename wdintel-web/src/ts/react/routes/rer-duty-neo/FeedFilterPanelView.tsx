@@ -250,7 +250,7 @@ export function FeedFilterPanelView({
           placeholder={posts.placeholder}
           autocompleteClassName={posts.autocompleteClassName}
           bulkPaste
-          bulkPasteSeparators={[',', '\n']}
+          bulkPasteSeparators={['\n']}
           bulkPasteMenuLabel="Додати кілька постів"
           bulkPasteDialogTitle="Додати кілька постів"
           bulkPasteInputLabel="Пости"
@@ -278,7 +278,7 @@ export function FeedFilterPanelView({
             placeholder={units.placeholder}
             autocompleteClassName={units.autocompleteClassName}
             bulkPaste
-            bulkPasteSeparators={[',', '\n']}
+            bulkPasteSeparators={['\n']}
             bulkPasteMenuLabel="Додати кілька підрозділів"
             bulkPasteDialogTitle="Додати кілька підрозділів"
             bulkPasteInputLabel="Підрозділи"

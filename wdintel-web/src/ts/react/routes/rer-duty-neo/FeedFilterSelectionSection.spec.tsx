@@ -36,6 +36,7 @@ vi.mock('@mui/material', () => ({
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ListItemIcon: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   MenuItem: ({ children, onClick }: { children: ReactNode; onClick: () => void }) => (
     <button onClick={onClick}>{children}</button>
   ),
