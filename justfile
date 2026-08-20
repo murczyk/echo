@@ -1023,11 +1023,20 @@ deploy _server_pos="" server silent="false":
 
       queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
         select coalesce(
-          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
           0
         )::bigint
-        from signal_message_queue
-        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+        from signal_message_queue as queue
+        join datasource on datasource.id = queue.datasource_id
+        join echo_client_lock as client_lock
+          on client_lock.id = datasource.echo_client_lock_id
+        join echo_account as account on account.id = client_lock.account_id
+        join echo_client as client on client.id = client_lock.client_id
+        where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+          and not datasource.deleted
+          and datasource.status = '"'"'active'"'"'
+          and account.is_linked
+          and not coalesce(client.deleted, false)
       ")
       if [ "$queue_age_before" -gt 30 ]; then
         queue_draining=0
@@ -1035,11 +1044,20 @@ deploy _server_pos="" server silent="false":
           sleep 5
           queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
             select coalesce(
-              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
               0
             )::bigint
-            from signal_message_queue
-            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+            from signal_message_queue as queue
+            join datasource on datasource.id = queue.datasource_id
+            join echo_client_lock as client_lock
+              on client_lock.id = datasource.echo_client_lock_id
+            join echo_account as account on account.id = client_lock.account_id
+            join echo_client as client on client.id = client_lock.client_id
+            where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+              and not datasource.deleted
+              and datasource.status = '"'"'active'"'"'
+              and account.is_linked
+              and not coalesce(client.deleted, false)
           ")
           if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
             queue_draining=1
@@ -1273,11 +1291,20 @@ deploy-from-local _server_pos="" server silent="false":
 
       queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
         select coalesce(
-          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
           0
         )::bigint
-        from signal_message_queue
-        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+        from signal_message_queue as queue
+        join datasource on datasource.id = queue.datasource_id
+        join echo_client_lock as client_lock
+          on client_lock.id = datasource.echo_client_lock_id
+        join echo_account as account on account.id = client_lock.account_id
+        join echo_client as client on client.id = client_lock.client_id
+        where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+          and not datasource.deleted
+          and datasource.status = '"'"'active'"'"'
+          and account.is_linked
+          and not coalesce(client.deleted, false)
       ")
       if [ "$queue_age_before" -gt 30 ]; then
         queue_draining=0
@@ -1285,11 +1312,20 @@ deploy-from-local _server_pos="" server silent="false":
           sleep 5
           queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
             select coalesce(
-              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
               0
             )::bigint
-            from signal_message_queue
-            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+            from signal_message_queue as queue
+            join datasource on datasource.id = queue.datasource_id
+            join echo_client_lock as client_lock
+              on client_lock.id = datasource.echo_client_lock_id
+            join echo_account as account on account.id = client_lock.account_id
+            join echo_client as client on client.id = client_lock.client_id
+            where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+              and not datasource.deleted
+              and datasource.status = '"'"'active'"'"'
+              and account.is_linked
+              and not coalesce(client.deleted, false)
           ")
           if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
             queue_draining=1
