@@ -64,6 +64,8 @@ pub struct BattleLineImportBounds {
 pub struct BattleLineImportSummary {
     pub point_count: usize,
     pub line_string_count: usize,
+    pub empty_point_count: usize,
+    pub empty_line_string_count: usize,
     pub zero_length_line_string_count: usize,
     pub coordinate_count: usize,
     pub bounds: BattleLineImportBounds,
@@ -496,11 +498,14 @@ pub async fn prepare_battle_line_import(
     }
     let source_file_name = sanitize_upload_filename(file_name);
     validate_battle_line_extension(&source_file_name).c(h!())?;
-    let features = parse_point_line_features(&source_file_name, data)
+    let parsed = parse_point_line_features(&source_file_name, data)
         .await
         .c(h!())?;
-    let summary = summarize_features(&features).c(h!())?;
-    let features = features
+    let mut summary = summarize_features(&parsed.features).c(h!())?;
+    summary.empty_point_count = parsed.empty_point_count;
+    summary.empty_line_string_count = parsed.empty_line_string_count;
+    let features = parsed
+        .features
         .into_iter()
         .filter(|feature| match feature {
             ImportedGeometryFeature::Point(_) => true,
@@ -1403,9 +1408,13 @@ fn summarize_features(
     Ok(BattleLineImportSummary {
         point_count,
         line_string_count,
+        empty_point_count: 0,
+        empty_line_string_count: 0,
         zero_length_line_string_count,
         coordinate_count,
-        bounds: bounds.context("Battle Line contains no coordinates")?,
+        bounds: bounds
+            .context("Battle Line contains no coordinates")
+            .context(h!())?,
     })
 }
 
@@ -1625,6 +1634,8 @@ mod tests {
             BattleLineImportSummary {
                 point_count: 1,
                 line_string_count: 1,
+                empty_point_count: 0,
+                empty_line_string_count: 0,
                 zero_length_line_string_count: 0,
                 coordinate_count: 3,
                 bounds: BattleLineImportBounds {
@@ -2067,6 +2078,8 @@ where aor_id = $1
             summary: BattleLineImportSummary {
                 point_count: 1,
                 line_string_count: 1,
+                empty_point_count: 0,
+                empty_line_string_count: 0,
                 zero_length_line_string_count: 0,
                 coordinate_count: 3,
                 bounds: BattleLineImportBounds {

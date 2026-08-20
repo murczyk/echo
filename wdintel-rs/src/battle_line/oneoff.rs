@@ -3,7 +3,8 @@ use crate::battle_line::{
     BattleLineImportOutcome, BattleLineImportSource,
 };
 use crate::config::{
-    mk_s3, mk_s3_config, read_config, BATTLE_LINE_DELTA_KML_SOURCE_PREFIX,
+    get_enemy_units_kml_path, mk_s3, mk_s3_config, read_config, Config,
+    BATTLE_LINE_DELTA_KML_SOURCE_PREFIX,
 };
 use crate::entities::{enemy_units_geojson, sea_orm_active_enums};
 use crate::h;
@@ -12,6 +13,7 @@ use crate::OneoffImportBattleLineFromDeltaKmlPs;
 use crate::{new_pg_pool_from_config, storage};
 use anyhow::Context;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use tokio::fs;
 
 pub async fn oneoff_import_battle_line_from_delta_kml(
     mode: Mode,
@@ -34,29 +36,7 @@ pub async fn oneoff_import_battle_line_from_delta_kml(
             )
         })
         .c(h!())?;
-    let kml_key = delta_kml.kml_s3_id.as_deref().with_context(|| {
-        format!(
-            "enemy_units_geojson row {} has no KML object key",
-            delta_kml.id
-        )
-    })?;
-    let s3 = mk_s3(&config).c(h!())?;
-    let s3_config = mk_s3_config(&config).c(h!())?;
-    let strongbox_key = config
-        .s3_config
-        .as_ref()
-        .context("S3 is not configured")
-        .c(h!())?
-        .strongbox_key
-        .clone();
-    let data = storage::download_and_decrypt_from_s3_with_operator(
-        &s3,
-        &s3_config,
-        &strongbox_key,
-        kml_key,
-    )
-    .await
-    .c(h!())?;
+    let data = load_delta_kml(&config, &delta_kml).await.c(h!())?;
     let source_file_name = format!("enemy-units-{}.kml", delta_kml.id);
     let prepared = prepare_battle_line_import(&source_file_name, &data)
         .await
@@ -91,6 +71,36 @@ pub async fn oneoff_import_battle_line_from_delta_kml(
     Ok(())
 }
 
+async fn load_delta_kml(
+    config: &Config,
+    delta_kml: &enemy_units_geojson::Model,
+) -> anyhow::Result<Vec<u8>> {
+    let Some(kml_key) = delta_kml.kml_s3_id.as_deref() else {
+        let path = get_enemy_units_kml_path(config, delta_kml.id);
+        return fs::read(&path)
+            .await
+            .with_context(|| format!("Failed to read {}", path.display()))
+            .c(h!());
+    };
+    let s3 = mk_s3(config).c(h!())?;
+    let s3_config = mk_s3_config(config).c(h!())?;
+    let strongbox_key = config
+        .s3_config
+        .as_ref()
+        .context("S3 is not configured")
+        .c(h!())?
+        .strongbox_key
+        .clone();
+    storage::download_and_decrypt_from_s3_with_operator(
+        &s3,
+        &s3_config,
+        &strongbox_key,
+        kml_key,
+    )
+    .await
+    .c(h!())
+}
+
 fn print_import_summary(
     source_id: i32,
     prepared: &crate::battle_line::PreparedBattleLineImport,
@@ -107,6 +117,10 @@ fn print_import_summary(
     println!(
         "Zero-length line strings excluded from stored geometry: {}",
         summary.zero_length_line_string_count
+    );
+    println!(
+        "Empty geometry placeholders excluded: {} points, {} line strings",
+        summary.empty_point_count, summary.empty_line_string_count
     );
     println!(
         "Bounds: lat {}..{}, lon {}..{}",

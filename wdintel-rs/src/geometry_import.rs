@@ -1,7 +1,8 @@
 use crate::h;
 use crate::types::ShortContext;
-use quick_xml::events::Event;
-use quick_xml::Reader as XmlReader;
+use quick_xml::events::{BytesEnd, BytesStart, Event};
+use quick_xml::name::ResolveResult;
+use quick_xml::NsReader as XmlReader;
 use std::fs::File;
 use std::io::{self, Read, Seek};
 use std::path::Path;
@@ -23,10 +24,17 @@ pub enum ImportedGeometryFeature {
     LineString(Vec<ImportedCoordinate>),
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ParsedPointLineFeatures {
+    pub features: Vec<ImportedGeometryFeature>,
+    pub empty_point_count: usize,
+    pub empty_line_string_count: usize,
+}
+
 pub async fn parse_point_line_features(
     file_name: &str,
     data: &[u8],
-) -> anyhow::Result<Vec<ImportedGeometryFeature>> {
+) -> anyhow::Result<ParsedPointLineFeatures> {
     let safe_file_name = sanitize_upload_filename(file_name);
     let temp_dir = tempdir().c(h!())?;
     let path = temp_dir.path().join(&safe_file_name);
@@ -54,7 +62,7 @@ pub fn sanitize_upload_filename(file_name: &str) -> String {
 
 async fn parse_kmz_file(
     path: &Path,
-) -> anyhow::Result<Vec<ImportedGeometryFeature>> {
+) -> anyhow::Result<ParsedPointLineFeatures> {
     let temp_dir = tempdir().c(h!())?;
     let extract_to = temp_dir.path().to_path_buf();
     let archive_path = path.to_path_buf();
@@ -76,11 +84,14 @@ async fn parse_kmz_file(
         .collect::<Vec<_>>();
     kml_paths.sort();
 
-    let mut features = vec![];
+    let mut parsed = ParsedPointLineFeatures::default();
     for kml_path in kml_paths {
-        features.extend(parse_kml_file(&kml_path).await.c(h!())?);
+        let kml = parse_kml_file(&kml_path).await.c(h!())?;
+        parsed.features.extend(kml.features);
+        parsed.empty_point_count += kml.empty_point_count;
+        parsed.empty_line_string_count += kml.empty_line_string_count;
     }
-    Ok(features)
+    Ok(parsed)
 }
 
 fn extract_archive(path: &Path, extract_to: &Path) -> anyhow::Result<()> {
@@ -137,7 +148,7 @@ where
 
 async fn parse_kml_file(
     path: &Path,
-) -> anyhow::Result<Vec<ImportedGeometryFeature>> {
+) -> anyhow::Result<ParsedPointLineFeatures> {
     let input = fs::read_to_string(path).await.c(h!())?;
     parse_kml_geometry(&input).c(h!())
 }
@@ -156,127 +167,316 @@ impl SupportedGeometryKind {
             _ => None,
         }
     }
+
+    fn element_name(self) -> &'static [u8] {
+        match self {
+            Self::Point => b"Point",
+            Self::LineString => b"LineString",
+        }
+    }
 }
 
 struct PendingGeometry {
     kind: SupportedGeometryKind,
     element_depth: usize,
     coordinates: Option<String>,
+    coordinates_depth: Option<usize>,
 }
 
-fn parse_kml_geometry(
-    input: &str,
-) -> anyhow::Result<Vec<ImportedGeometryFeature>> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ElementNamespace {
+    Unbound,
+    Bound(Vec<u8>),
+}
+
+#[derive(Debug)]
+struct KmlElementFrame {
+    qualified_name: Vec<u8>,
+    local_name: Vec<u8>,
+    namespace: ElementNamespace,
+}
+
+#[derive(Default)]
+struct KmlGeometryParser {
+    parsed: ParsedPointLineFeatures,
+    element_stack: Vec<KmlElementFrame>,
+    kml_namespace: Option<ElementNamespace>,
+    pending_geometry: Option<PendingGeometry>,
+}
+
+impl KmlGeometryParser {
+    fn handle_start(
+        &mut self,
+        namespace: ResolveResult<'_>,
+        element: BytesStart<'_>,
+    ) -> anyhow::Result<()> {
+        let namespace = own_namespace(namespace).c(h!())?;
+        let local_name = element.local_name().as_ref().to_vec();
+        let is_kml = self.is_kml_element(&namespace, &local_name).c(h!())?;
+        if is_kml
+            && local_name == b"coordinates"
+            && self.coordinates_are_direct_geometry_child()
+        {
+            let pending = self.pending_geometry.as_mut().c(h!())?;
+            if pending.coordinates.is_some() {
+                anyhow::bail!(
+                    "KML geometry contains multiple coordinate elements"
+                );
+            }
+            pending.coordinates = Some(String::new());
+            pending.coordinates_depth = Some(self.element_stack.len() + 1);
+        }
+        let kind = is_kml
+            .then(|| SupportedGeometryKind::from_element_name(&local_name))
+            .flatten()
+            .filter(|_| {
+                geometry_has_supported_parent(
+                    &self.element_stack,
+                    self.kml_namespace.as_ref().expect("set"),
+                )
+            });
+        self.element_stack.push(KmlElementFrame {
+            qualified_name: element.name().as_ref().to_vec(),
+            local_name,
+            namespace,
+        });
+        if let Some(kind) = kind {
+            if self.pending_geometry.is_some() {
+                anyhow::bail!("KML contains nested supported geometries");
+            }
+            self.pending_geometry = Some(PendingGeometry {
+                kind,
+                element_depth: self.element_stack.len(),
+                coordinates: None,
+                coordinates_depth: None,
+            });
+        }
+        Ok(())
+    }
+
+    fn handle_empty(
+        &mut self,
+        namespace: ResolveResult<'_>,
+        element: BytesStart<'_>,
+    ) -> anyhow::Result<()> {
+        let namespace = own_namespace(namespace).c(h!())?;
+        let local_name = element.local_name();
+        let local_name = local_name.as_ref();
+        let is_kml = self.is_kml_element(&namespace, local_name).c(h!())?;
+        if !is_kml {
+            return Ok(());
+        }
+        if local_name == b"coordinates"
+            && self.coordinates_are_direct_geometry_child()
+        {
+            let pending = self.pending_geometry.as_mut().c(h!())?;
+            if pending.coordinates.replace(String::new()).is_some() {
+                anyhow::bail!(
+                    "KML geometry contains multiple coordinate elements"
+                );
+            }
+        } else if let Some(kind) =
+            SupportedGeometryKind::from_element_name(local_name).filter(|_| {
+                geometry_has_supported_parent(
+                    &self.element_stack,
+                    self.kml_namespace.as_ref().expect("set"),
+                )
+            })
+        {
+            record_empty_geometry(kind, &mut self.parsed);
+        }
+        Ok(())
+    }
+
+    fn handle_end(
+        &mut self,
+        namespace: ResolveResult<'_>,
+        element: BytesEnd<'_>,
+    ) -> anyhow::Result<()> {
+        let namespace = own_namespace(namespace).c(h!())?;
+        let frame = self.element_stack.last().c(h!())?;
+        if frame.qualified_name.as_slice() != element.name().as_ref()
+            || frame.namespace != namespace
+        {
+            anyhow::bail!("KML element nesting is inconsistent");
+        }
+        if self.pending_geometry.as_ref().is_some_and(|pending| {
+            pending.coordinates_depth == Some(self.element_stack.len())
+                && frame.local_name == b"coordinates"
+        }) {
+            self.pending_geometry.as_mut().c(h!())?.coordinates_depth = None;
+        }
+        if self.pending_geometry.as_ref().is_some_and(|pending| {
+            pending.element_depth == self.element_stack.len()
+                && frame.local_name == pending.kind.element_name()
+        }) {
+            self.finish_geometry().c(h!())?;
+        }
+        self.element_stack.pop().c(h!())?;
+        Ok(())
+    }
+
+    fn append_text(&mut self, text: &str) {
+        let Some(pending) = self.pending_geometry.as_mut() else {
+            return;
+        };
+        if pending.coordinates_depth == Some(self.element_stack.len()) {
+            pending
+                .coordinates
+                .as_mut()
+                .expect("set with depth")
+                .push_str(text);
+        }
+    }
+
+    fn finish_geometry(&mut self) -> anyhow::Result<()> {
+        let pending = self.pending_geometry.take().c(h!())?;
+        let Some(coordinates) = pending.coordinates else {
+            record_empty_geometry(pending.kind, &mut self.parsed);
+            return Ok(());
+        };
+        if coordinates.trim().is_empty() {
+            record_empty_geometry(pending.kind, &mut self.parsed);
+            return Ok(());
+        }
+        match pending.kind {
+            SupportedGeometryKind::Point => {
+                collect_points(&coordinates, &mut self.parsed.features)
+                    .c(h!())?;
+            }
+            SupportedGeometryKind::LineString => {
+                collect_line_string(&coordinates, &mut self.parsed.features)
+                    .c(h!())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn coordinates_are_direct_geometry_child(&self) -> bool {
+        let Some(pending) = self.pending_geometry.as_ref() else {
+            return false;
+        };
+        pending.element_depth == self.element_stack.len()
+            && self.element_stack.last().is_some_and(|frame| {
+                frame.namespace == *self.kml_namespace.as_ref().expect("set")
+                    && frame.local_name == pending.kind.element_name()
+            })
+    }
+
+    fn is_kml_element(
+        &mut self,
+        namespace: &ElementNamespace,
+        local_name: &[u8],
+    ) -> anyhow::Result<bool> {
+        if self.kml_namespace.is_none() {
+            if local_name != b"kml" {
+                anyhow::bail!("KML document must have a kml root element");
+            }
+            if !is_supported_kml_namespace(namespace) {
+                anyhow::bail!("Unsupported KML namespace");
+            }
+            self.kml_namespace = Some(namespace.clone());
+        }
+        Ok(self.kml_namespace.as_ref() == Some(namespace))
+    }
+
+    fn finish(self) -> anyhow::Result<ParsedPointLineFeatures> {
+        if self.kml_namespace.is_none() {
+            anyhow::bail!("KML document has no root element");
+        }
+        if self.pending_geometry.is_some() || !self.element_stack.is_empty() {
+            anyhow::bail!("KML document ended inside a geometry or placemark");
+        }
+        Ok(self.parsed)
+    }
+}
+
+fn parse_kml_geometry(input: &str) -> anyhow::Result<ParsedPointLineFeatures> {
     let mut reader = XmlReader::from_str(input);
     reader.config_mut().trim_text(false);
-    let mut features = vec![];
-    let mut element_stack: Vec<Vec<u8>> = vec![];
-    let mut placemark_depth = 0_usize;
-    let mut pending_geometry: Option<PendingGeometry> = None;
+    let mut parser = KmlGeometryParser::default();
     loop {
-        match reader.read_event().c(h!())? {
-            Event::Start(element) => {
-                let local_name = element.local_name();
-                let name = local_name.as_ref();
-                if name == b"coordinates" && pending_geometry.is_some() {
-                    if let Some(pending_geometry) = pending_geometry.as_mut() {
-                        if pending_geometry.coordinates.is_some() {
-                            anyhow::bail!(
-                                "KML geometry contains multiple coordinate elements"
-                            );
-                        }
-                        pending_geometry.coordinates = Some(
-                            reader
-                                .read_text(element.to_end().name())
-                                .c(h!())?
-                                .into_owned(),
-                        );
-                    }
-                    continue;
-                }
-                element_stack.push(name.to_vec());
-                if name == b"Placemark" {
-                    placemark_depth += 1;
-                } else if placemark_depth > 0 {
-                    if let Some(kind) =
-                        SupportedGeometryKind::from_element_name(name)
-                    {
-                        if pending_geometry.is_some() {
-                            anyhow::bail!(
-                                "KML contains nested supported geometries"
-                            );
-                        }
-                        pending_geometry = Some(PendingGeometry {
-                            kind,
-                            element_depth: element_stack.len(),
-                            coordinates: None,
-                        });
-                    }
-                }
+        match reader.read_resolved_event().c(h!())? {
+            (namespace, Event::Start(element)) => {
+                parser.handle_start(namespace, element).c(h!())?;
             }
-            Event::Empty(element) => {
-                let local_name = element.local_name();
-                let name = local_name.as_ref();
-                if name == b"coordinates" && pending_geometry.is_some() {
-                    pending_geometry.as_mut().c(h!())?.coordinates =
-                        Some(String::new());
-                } else if placemark_depth > 0
-                    && SupportedGeometryKind::from_element_name(name).is_some()
-                {
-                    continue;
-                }
+            (namespace, Event::Empty(element)) => {
+                parser.handle_empty(namespace, element).c(h!())?;
             }
-            Event::End(element) => {
-                let local_name = element.local_name();
-                let name = local_name.as_ref();
-                if let Some(pending) = pending_geometry.as_ref() {
-                    if pending.element_depth == element_stack.len()
-                        && SupportedGeometryKind::from_element_name(name)
-                            == Some(pending.kind)
-                    {
-                        let pending = pending_geometry.take().c(h!())?;
-                        let Some(coordinates) = pending.coordinates else {
-                            element_stack.pop();
-                            continue;
-                        };
-                        if coordinates.trim().is_empty() {
-                            element_stack.pop();
-                            continue;
-                        }
-                        match pending.kind {
-                            SupportedGeometryKind::Point => {
-                                collect_points(&coordinates, &mut features)
-                                    .c(h!())?;
-                            }
-                            SupportedGeometryKind::LineString => {
-                                collect_line_string(
-                                    &coordinates,
-                                    &mut features,
-                                )
-                                .c(h!())?;
-                            }
-                        }
-                    }
-                }
-                if name == b"Placemark" {
-                    placemark_depth = placemark_depth.checked_sub(1).c(h!())?;
-                }
-                let started_name = element_stack.pop().c(h!())?;
-                if started_name.as_slice() != name {
-                    anyhow::bail!("KML element nesting is inconsistent");
-                }
+            (namespace, Event::End(element)) => {
+                parser.handle_end(namespace, element).c(h!())?;
             }
-            Event::Eof => break,
+            (_, Event::Text(text)) => {
+                let text = text.xml_content().c(h!())?;
+                let text = quick_xml::escape::unescape(&text).c(h!())?;
+                parser.append_text(&text);
+            }
+            (_, Event::CData(text)) => {
+                parser.append_text(&text.xml_content().c(h!())?);
+            }
+            (_, Event::Eof) => break,
             _ => {}
         }
     }
-    if pending_geometry.is_some()
-        || !element_stack.is_empty()
-        || placemark_depth != 0
-    {
-        anyhow::bail!("KML document ended inside a geometry or placemark");
+    parser.finish().c(h!())
+}
+
+fn own_namespace(
+    namespace: ResolveResult<'_>,
+) -> anyhow::Result<ElementNamespace> {
+    match namespace {
+        ResolveResult::Unbound => Ok(ElementNamespace::Unbound),
+        ResolveResult::Bound(namespace) => {
+            Ok(ElementNamespace::Bound(namespace.as_ref().to_vec()))
+        }
+        ResolveResult::Unknown(prefix) => anyhow::bail!(
+            "Unknown XML namespace prefix: {}",
+            String::from_utf8_lossy(&prefix)
+        ),
     }
-    Ok(features)
+}
+
+fn is_supported_kml_namespace(namespace: &ElementNamespace) -> bool {
+    const KML_NAMESPACES: [&[u8]; 4] = [
+        b"http://www.opengis.net/kml/2.2",
+        b"http://earth.google.com/kml/2.0",
+        b"http://earth.google.com/kml/2.1",
+        b"http://earth.google.com/kml/2.2",
+    ];
+    match namespace {
+        ElementNamespace::Unbound => true,
+        ElementNamespace::Bound(namespace) => {
+            KML_NAMESPACES.contains(&namespace.as_slice())
+        }
+    }
+}
+
+fn geometry_has_supported_parent(
+    element_stack: &[KmlElementFrame],
+    kml_namespace: &ElementNamespace,
+) -> bool {
+    for frame in element_stack.iter().rev() {
+        if &frame.namespace != kml_namespace {
+            return false;
+        }
+        if frame.local_name == b"MultiGeometry" {
+            continue;
+        }
+        return frame.local_name == b"Placemark";
+    }
+    false
+}
+
+fn record_empty_geometry(
+    kind: SupportedGeometryKind,
+    parsed: &mut ParsedPointLineFeatures,
+) {
+    match kind {
+        SupportedGeometryKind::Point => parsed.empty_point_count += 1,
+        SupportedGeometryKind::LineString => {
+            parsed.empty_line_string_count += 1
+        }
+    }
 }
 
 fn collect_points(
@@ -389,11 +589,11 @@ mod tests {
     <LineString><coordinates>35,53,0 36,54,0</coordinates></LineString>
   </MultiGeometry></Placemark>
 </Document></kml>"#;
-        let features = parse_point_line_features("battle-line.kml", kml)
+        let parsed = parse_point_line_features("battle-line.kml", kml)
             .await
             .unwrap();
         assert_eq!(
-            features,
+            parsed.features,
             vec![
                 ImportedGeometryFeature::Point(ImportedCoordinate {
                     lat: 49.0,
@@ -425,23 +625,32 @@ mod tests {
                 ]),
             ]
         );
+        assert_eq!(parsed.empty_point_count, 0);
+        assert_eq!(parsed.empty_line_string_count, 0);
     }
 
     #[tokio::test]
-    async fn ignores_empty_legacy_style_values() {
+    async fn ignores_geometry_names_outside_kml_paths_and_namespace() {
         let kml = br#"<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2"><Document>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:ext="https://example.com/extension"><Document>
   <Style id="legacy"><IconStyle><scale/></IconStyle></Style>
-  <Placemark><visibility/><ExtendedData><Point/></ExtendedData><Point><coordinates>31,49,0</coordinates></Point></Placemark>
+  <Placemark>
+    <ExtendedData><Point><coordinates>20,40,0</coordinates></Point></ExtendedData>
+    <ext:Point><ext:coordinates>21,41,0</ext:coordinates></ext:Point>
+    <Point><coordinates>31,49,0</coordinates></Point>
+  </Placemark>
 </Document></kml>"#;
 
+        let parsed =
+            parse_point_line_features("legacy.kml", kml).await.unwrap();
         assert_eq!(
-            parse_point_line_features("legacy.kml", kml).await.unwrap(),
+            parsed.features,
             vec![ImportedGeometryFeature::Point(ImportedCoordinate {
                 lat: 49.0,
                 lon: 31.0,
             })]
         );
+        assert_eq!(parsed.empty_point_count, 0);
     }
 
     #[tokio::test]
@@ -452,13 +661,17 @@ mod tests {
   <Point><coordinates>31,49,0</coordinates></Point>
 </Placemark></Document></kml>"#;
 
+        let parsed =
+            parse_point_line_features("legacy.kml", kml).await.unwrap();
         assert_eq!(
-            parse_point_line_features("legacy.kml", kml).await.unwrap(),
+            parsed.features,
             vec![ImportedGeometryFeature::Point(ImportedCoordinate {
                 lat: 49.0,
                 lon: 31.0,
             })]
         );
+        assert_eq!(parsed.empty_point_count, 1);
+        assert_eq!(parsed.empty_line_string_count, 1);
     }
 
     #[tokio::test]

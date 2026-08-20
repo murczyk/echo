@@ -1439,6 +1439,11 @@ pub fn get_assets_folder(config: &Config) -> String {
     path.into_os_string().into_string().unwrap()
 }
 
+pub fn get_enemy_units_kml_path(config: &Config, source_id: i32) -> PathBuf {
+    PathBuf::from(get_assets_folder(config))
+        .join(format!("enemy-units-{source_id}.kml"))
+}
+
 pub fn get_assets_url() -> &'static str {
     "/api/assets"
 }

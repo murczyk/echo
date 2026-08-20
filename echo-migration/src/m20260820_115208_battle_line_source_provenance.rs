@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -28,7 +34,8 @@ create unique index battle_line_version_source_uq
     where source_identifier is not null and source_sha256 is not null;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -46,7 +53,8 @@ alter table battle_line_version
     drop column if exists source_kind;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }
