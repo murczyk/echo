@@ -177,9 +177,8 @@ describe('rer-analysis-neo callsign hints', () => {
     });
     const tooltip = formatMessageCallsignHintTooltipData(result);
     expect(result.state).toBe('message-network');
-    expect(result.catalogRows).toHaveLength(1);
+    expect(result.catalogRows).toHaveLength(0);
     expect(result.exactNetworkHints).toHaveLength(1);
-    expect(result.otherNetworkHints).toEqual([]);
     expect(tooltip?.sections).toEqual([
       { header: 'Позивні підрозділів мережі:', items: ['🐷 cmd u1'] },
     ]);
@@ -201,6 +200,44 @@ describe('rer-analysis-neo callsign hints', () => {
     });
     expect(result.state).toBe('message-network');
     expect(formatMessageCallsignHintTooltipData(result)?.sections[0].items[0]).toContain('Alpha');
+  });
+
+  it('uses the union of all assigned networks for exact hints', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10, 20],
+      networks,
+      unitsMap,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'catalog',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 2,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [
+            { id: 1, networkId: 10, position: 'alpha', formation: '' },
+            { id: 2, networkId: 20, position: 'bravo', formation: '' },
+            { id: 3, networkId: 30, position: 'other', formation: '' },
+          ],
+        },
+      },
+    });
+
+    expect(result.state).toBe('message-network');
+    expect(result.exactNetworkHints.map((hint) => hint.networkId)).toEqual([10, 20]);
+    expect(formatMessageCallsignHintTooltipData(result)?.sections[0].items).toEqual([
+      '🐷 alpha',
+      '🐷 bravo',
+    ]);
   });
 
   it('separates catalog and other-network message information', () => {
@@ -227,10 +264,8 @@ describe('rer-analysis-neo callsign hints', () => {
         },
       },
     });
-    expect(result.state).toBe('known-elsewhere');
-    expect(
-      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
-    ).toEqual(['Позивні з каталогу:', 'Позивний присутній в інших мережах:']);
+    expect(result.state).toBe('unresolved');
+    expect(formatMessageCallsignHintTooltipData(result)).toBeNull();
   });
 
   it('classifies missing and empty responses as unresolved', () => {
@@ -270,10 +305,8 @@ describe('rer-analysis-neo callsign hints', () => {
         },
       },
     });
-    expect(result.state).toBe('known-elsewhere');
-    expect(
-      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
-    ).toEqual(['Позивні з каталогу:']);
+    expect(result.state).toBe('unresolved');
+    expect(formatMessageCallsignHintTooltipData(result)).toBeNull();
   });
 
   it('uses the catalog fallback for blank catalog rows', () => {
@@ -299,10 +332,200 @@ describe('rer-analysis-neo callsign hints', () => {
         },
       },
     });
-    expect(result.state).toBe('known-elsewhere');
+    expect(result.state).toBe('catalog');
     expect(formatMessageCallsignHintTooltipData(result)?.sections[0].items).toEqual([
       'Позивний присутній у каталозі. Додатковий опис відсутній.',
     ]);
+  });
+
+  it('uses only callsign rows from the assigned networks regiment formation', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10],
+      networks,
+      unitsMap,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'same',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 2,
+              networkIdsReportedIn: [],
+            },
+            {
+              id: 2,
+              callsign: 'wolf',
+              position: 'other',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 3,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [],
+        },
+      },
+    });
+
+    expect(result.state).toBe('formation-catalog');
+    expect(result.catalogRows.map((row) => row.id)).toEqual([1]);
+  });
+
+  it('requires populated ancestors to match the assigned formation', () => {
+    const strictUnitsMap = {
+      ...unitsMap,
+      1: { ...unitsMap[1], corps: 'C1' },
+      2: { ...unitsMap[2], corps: 'C1' },
+      6: { ...unitsMap[2], id: 6, army: '' },
+      7: { ...unitsMap[2], id: 7, corps: 'different-corps' },
+    };
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [10],
+      networks,
+      unitsMap: strictUnitsMap,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'subordinate',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 2,
+              networkIdsReportedIn: [],
+            },
+            {
+              id: 2,
+              callsign: 'wolf',
+              position: 'missing ancestor',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 6,
+              networkIdsReportedIn: [],
+            },
+            {
+              id: 3,
+              callsign: 'wolf',
+              position: 'conflicting ancestor',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 7,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [],
+        },
+      },
+    });
+
+    expect(result.catalogRows.map((row) => row.id)).toEqual([1]);
+  });
+
+  it('uses brigade scope when the assigned unit has no regiment', () => {
+    const brigadeUnitsMap = {
+      ...unitsMap,
+      4: { ...unitsMap[1], id: 4, regiment: '', brigade: 'B-1' },
+      5: { ...unitsMap[1], id: 5, regiment: 'R-2', brigade: 'B-1' },
+    };
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [40],
+      networks: [{ ...networks[0], id: 40, unitIds: [4] }],
+      unitsMap: brigadeUnitsMap,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'brigade',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 5,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [],
+        },
+      },
+    });
+
+    expect(result.state).toBe('formation-catalog');
+    expect(result.catalogRows.map((row) => row.id)).toEqual([1]);
+  });
+
+  it('does not create a fallback scope without a regiment or brigade', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [41],
+      networks: [{ ...networks[0], id: 41, unitIds: [4] }],
+      unitsMap: { ...unitsMap, 4: { ...unitsMap[1], id: 4, regiment: '', brigade: '' } },
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'catalog',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 2,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [],
+        },
+      },
+    });
+
+    expect(result.state).toBe('unresolved');
+  });
+
+  it('does not use unrestricted catalog rows when an assigned network has no unit', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networkIds: [30],
+      networks: [{ ...networks[0], id: 30, unitIds: [] }],
+      unitsMap,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'catalog',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: 2,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [],
+        },
+      },
+    });
+
+    expect(result.state).toBe('unresolved');
+    expect(formatMessageCallsignHintTooltipData(result)).toBeNull();
   });
 
   it('classifies other-network-only callsigns separately', () => {
@@ -318,12 +541,9 @@ describe('rer-analysis-neo callsign hints', () => {
         },
       },
     });
-    expect(result.state).toBe('known-elsewhere');
+    expect(result.state).toBe('unresolved');
     expect(result.exactNetworkHints).toEqual([]);
-    expect(result.otherNetworkHints).toHaveLength(1);
-    expect(
-      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
-    ).toEqual(['Позивний присутній в інших мережах:']);
+    expect(formatMessageCallsignHintTooltipData(result)).toBeNull();
   });
 
   it('treats network hints as other-network when message networks are missing', () => {
@@ -339,9 +559,41 @@ describe('rer-analysis-neo callsign hints', () => {
         },
       },
     });
-    expect(result.state).toBe('known-elsewhere');
+    expect(result.state).toBe('catalog');
     expect(result.exactNetworkHints).toEqual([]);
     expect(result.otherNetworkHints).toHaveLength(1);
+    expect(
+      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
+    ).toEqual(['Позивний присутній в інших мережах:']);
+  });
+
+  it('keeps catalog and other-network sections for unassigned messages', () => {
+    const result = getMessageCallsignHintResult({
+      callsign: 'wolf',
+      networks,
+      callsignInfoMap: {
+        wolf: {
+          callsign: 'wolf',
+          res: [
+            {
+              id: 1,
+              callsign: 'wolf',
+              position: 'catalog',
+              comment: '',
+              unit1: '',
+              unit2: '',
+              unitId: null,
+              networkIdsReportedIn: [],
+            },
+          ],
+          networkHints: [{ id: 2, networkId: 20, position: 'network', formation: 'Bravo' }],
+        },
+      },
+    });
+
+    expect(
+      formatMessageCallsignHintTooltipData(result)?.sections.map((section) => section.header),
+    ).toEqual(['Позивні з каталогу:', 'Позивний присутній в інших мережах:']);
   });
 
   it('keeps only hints in the requested network scope', () => {

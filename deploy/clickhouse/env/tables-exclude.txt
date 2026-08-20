@@ -66,3 +66,6 @@ public.ai_agent_request
 public.ai_agent_request_event
 public.ai_agent_security_review
 public.ai_agent_chat_mattermost_notification
+
+# Device integration secrets.
+public.device_settings

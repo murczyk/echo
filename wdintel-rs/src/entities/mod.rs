@@ -40,6 +40,7 @@ pub mod delta_login;
 pub mod device;
 pub mod device_aor;
 pub mod device_name;
+pub mod device_settings;
 pub mod echo_account;
 pub mod echo_api_command;
 pub mod echo_attachment;

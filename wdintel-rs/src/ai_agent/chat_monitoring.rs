@@ -11,6 +11,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::mattermost;
 use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use chrono::{Duration, Utc};
 use sea_orm::{
@@ -151,7 +152,10 @@ async fn send_mattermost_chat(
     notification: &ai_agent_chat_mattermost_notification::Model,
     webhook: &str,
 ) -> Result<(), AppError> {
-    let webhook = access::resolve_mattermost_webhook(webhook).await?;
+    let timeout = StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC);
+    let webhook = mattermost::resolve_webhook(webhook, timeout)
+        .await
+        .c(h!())?;
     let request = ai_agent_request::Entity::find_by_id(notification.request_id)
         .one(&env.dbx)
         .await
@@ -175,22 +179,15 @@ async fn send_mattermost_chat(
         &ai_engine.model_name,
         &request.prompt,
     );
-    let client = access::mattermost_webhook_client(
+    mattermost::post(
         &webhook,
-        StdDuration::from_secs(AI_AGENT_MATTERMOST_TIMEOUT_SEC),
-    )?;
-    client
-        .post(webhook.url().clone())
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|_| AppError::BL {
-            msg: "Mattermost chat transport failed".to_string(),
-        })?
-        .error_for_status()
-        .map_err(|_| AppError::BL {
-            msg: "Mattermost chat endpoint rejected the request".to_string(),
-        })?;
+        timeout,
+        &payload,
+        "Mattermost chat transport failed",
+        "Mattermost chat endpoint rejected the request",
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 

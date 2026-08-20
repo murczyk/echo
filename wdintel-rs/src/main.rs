@@ -45,6 +45,7 @@ pub mod kv;
 mod location;
 pub mod log_api;
 pub mod logging;
+pub mod mattermost;
 pub mod media_summary;
 pub mod message_queue;
 pub mod messenger;

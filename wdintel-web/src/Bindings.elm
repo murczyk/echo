@@ -6059,6 +6059,32 @@ tagMatchEncoder enum =
         TagAll ->
             Json.Encode.string "all"
 
+type alias DeviceSettingsReq =
+    { mattermostWebhookUrl : Maybe (String)
+    , clearMattermostWebhook : Bool
+    }
+
+
+deviceSettingsReqEncoder : DeviceSettingsReq -> Json.Encode.Value
+deviceSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "mattermost_webhook_url", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
+        , ( "clear_mattermost_webhook", (Json.Encode.bool) struct.clearMattermostWebhook )
+        ]
+
+
+type alias DeviceSettingsItem =
+    { hasMattermostWebhook : Bool
+    }
+
+
+deviceSettingsItemEncoder : DeviceSettingsItem -> Json.Encode.Value
+deviceSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "has_mattermost_webhook", (Json.Encode.bool) struct.hasMattermostWebhook )
+        ]
+
+
 type alias Organism =
     { id : Int
     , parentId : Maybe (Int)
@@ -17176,6 +17202,19 @@ tagMatchDecoder =
                             Json.Decode.fail <| "Unexpected variant " ++ unexpected
                 )
         ]
+
+deviceSettingsReqDecoder : Json.Decode.Decoder DeviceSettingsReq
+deviceSettingsReqDecoder =
+    Json.Decode.succeed DeviceSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermost_webhook_url" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clear_mattermost_webhook" (Json.Decode.bool)))
+
+
+deviceSettingsItemDecoder : Json.Decode.Decoder DeviceSettingsItem
+deviceSettingsItemDecoder =
+    Json.Decode.succeed DeviceSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_mattermost_webhook" (Json.Decode.bool)))
+
 
 organismDecoder : Json.Decode.Decoder Organism
 organismDecoder =

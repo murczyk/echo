@@ -2329,6 +2329,15 @@ export type TagMatch =
   | 'all'
 ;
 
+export type DeviceSettingsReq = {
+  mattermostWebhookUrl: string | null;
+  clearMattermostWebhook: boolean;
+};
+
+export type DeviceSettingsItem = {
+  hasMattermostWebhook: boolean;
+};
+
 export type Organism = {
   id: number;
   parentId: number | null;

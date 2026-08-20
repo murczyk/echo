@@ -26,6 +26,7 @@ import {
   reanalyzeDevice,
   toDeviceUpdatePatchReq,
   updateDevice,
+  updateDeviceSettings,
 } from './devices';
 
 const DEVICE_ID = '018f0000-0000-7000-8000-000000000000';
@@ -263,6 +264,30 @@ describe('devices API service routes', () => {
       unit_id: null,
       custom_fields: { inventory_id: null, transportType: 'ssh' },
     });
+  });
+
+  it('posts the masked device settings contract without converting its camel-case fields', async () => {
+    fetchMock().mockImplementation(() =>
+      Promise.resolve(jsonResponse({ hasMattermostWebhook: true })),
+    );
+
+    const settings = await updateDeviceSettings({});
+    await updateDeviceSettings({
+      mattermostWebhookUrl: 'https://mattermost.example/hooks/device-secret',
+    });
+    await updateDeviceSettings({ clearMattermostWebhook: true });
+
+    expect(fetchMock()).toHaveBeenNthCalledWith(
+      1,
+      '/api/admin/device/settings',
+      expect.any(Object),
+    );
+    expect(requestBody(0)).toEqual({});
+    expect(requestBody(1)).toEqual({
+      mattermostWebhookUrl: 'https://mattermost.example/hooks/device-secret',
+    });
+    expect(requestBody(2)).toEqual({ clearMattermostWebhook: true });
+    expect(settings).toEqual({ hasMattermostWebhook: true });
   });
 });
 
