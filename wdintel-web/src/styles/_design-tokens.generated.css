@@ -11,39 +11,30 @@
 }
 
 @theme inline {
-  --color-echo-primary-light: var(--echo-color-primary-light);
-  --color-echo-primary: var(--echo-color-primary);
-  --color-echo-primary-hover: var(--echo-color-primary-hover);
-  --color-echo-primary-active: var(--echo-color-primary-active);
-  --color-echo-primary-dark: var(--echo-color-primary-dark);
-  --color-echo-on-primary: var(--echo-color-on-primary);
-  --color-echo-secondary-light: var(--echo-color-secondary-light);
-  --color-echo-secondary: var(--echo-color-secondary);
-  --color-echo-secondary-hover: var(--echo-color-secondary-hover);
-  --color-echo-secondary-active: var(--echo-color-secondary-active);
-  --color-echo-secondary-dark: var(--echo-color-secondary-dark);
-  --color-echo-on-secondary: var(--echo-color-on-secondary);
-  --color-echo-success-light: var(--echo-color-success-light);
-  --color-echo-success: var(--echo-color-success);
-  --color-echo-success-dark: var(--echo-color-success-dark);
-  --color-echo-warning-light: var(--echo-color-warning-light);
-  --color-echo-warning: var(--echo-color-warning);
-  --color-echo-warning-dark: var(--echo-color-warning-dark);
-  --color-echo-error-light: var(--echo-color-error-light);
-  --color-echo-error: var(--echo-color-error);
-  --color-echo-error-dark: var(--echo-color-error-dark);
   --color-echo-background: var(--echo-color-background);
   --color-echo-surface: var(--echo-color-surface);
   --color-echo-surface-raised: var(--echo-color-surface-raised);
   --color-echo-surface-inactive: var(--echo-color-surface-inactive);
-  --color-echo-border: var(--echo-color-border);
-  --color-echo-border-selected: var(--echo-color-border-selected);
-  --color-echo-divider: var(--echo-color-divider);
   --color-echo-text: var(--echo-color-text);
   --color-echo-text-muted: var(--echo-color-text-muted);
   --color-echo-text-disabled: var(--echo-color-text-disabled);
-  --color-echo-icon: var(--echo-color-icon);
+  --color-echo-border: var(--echo-color-border);
+  --color-echo-divider: var(--echo-color-divider);
+  --color-echo-primary: var(--echo-color-primary);
+  --color-echo-primary-hover: var(--echo-color-primary-hover);
+  --color-echo-primary-active: var(--echo-color-primary-active);
+  --color-echo-on-primary: var(--echo-color-on-primary);
+  --color-echo-secondary: var(--echo-color-secondary);
+  --color-echo-success: var(--echo-color-success);
+  --color-echo-warning: var(--echo-color-warning);
+  --color-echo-error: var(--echo-color-error);
+  --color-echo-info: var(--echo-color-info);
   --color-echo-focus: var(--echo-color-focus);
+  --color-echo-hover: var(--echo-color-hover);
+  --color-echo-active: var(--echo-color-active);
+  --color-echo-selected: var(--echo-color-selected);
+  --color-echo-disabled: var(--echo-color-disabled);
+  --color-echo-disabled-background: var(--echo-color-disabled-background);
   --spacing-echo-xs: var(--echo-spacing-xs);
   --spacing-echo-sm: var(--echo-spacing-sm);
   --spacing-echo-md: var(--echo-spacing-md);
@@ -61,16 +52,40 @@
   --radius-echo-lg: var(--echo-radius-lg);
   --radius-echo-xl: var(--echo-radius-xl);
   --radius-echo-pill: var(--echo-radius-pill);
-  --text-echo-xs: var(--echo-font-size-xs);
-  --text-echo-sm: var(--echo-font-size-sm);
-  --text-echo-base: var(--echo-font-size-base);
-  --text-echo-lg: var(--echo-font-size-lg);
+  --text-echo-xs: var(--echo-typography-font-size-xs);
+  --text-echo-sm: var(--echo-typography-font-size-sm);
+  --text-echo-base: var(--echo-typography-font-size-base);
+  --text-echo-lg: var(--echo-typography-font-size-lg);
   --shadow-echo-sm: var(--echo-shadow-sm);
   --shadow-echo-md: var(--echo-shadow-md);
   --shadow-echo-lg: var(--echo-shadow-lg);
 }
 
 :root {
+  --echo-color-background: #eff0f1;
+  --echo-color-surface: #f8f9fb;
+  --echo-color-surface-raised: #ffffff;
+  --echo-color-surface-inactive: #eff0f1;
+  --echo-color-text: #000000;
+  --echo-color-text-muted: #6b7280;
+  --echo-color-text-disabled: #d2dae5;
+  --echo-color-border: #e2ebf7;
+  --echo-color-divider: #e2ebf7;
+  --echo-color-primary: #2c6c91;
+  --echo-color-primary-hover: #286183;
+  --echo-color-primary-active: #235674;
+  --echo-color-on-primary: #ffffff;
+  --echo-color-secondary: #d3871d;
+  --echo-color-success: #16a34a;
+  --echo-color-warning: #ea580c;
+  --echo-color-error: #dc2626;
+  --echo-color-info: #1565c0;
+  --echo-color-focus: #2c6c91;
+  --echo-color-hover: #dfe9ef;
+  --echo-color-active: #bed1dd;
+  --echo-color-selected: #f1dab9;
+  --echo-color-disabled: #d2dae5;
+  --echo-color-disabled-background: #eff0f1;
   --echo-spacing-xs: 4px;
   --echo-spacing-sm: 8px;
   --echo-spacing-md: 12px;
@@ -88,10 +103,26 @@
   --echo-radius-lg: 8px;
   --echo-radius-xl: 12px;
   --echo-radius-pill: 9999px;
-  --echo-font-size-xs: 12px;
-  --echo-font-size-sm: 13px;
-  --echo-font-size-base: 14px;
-  --echo-font-size-lg: 16px;
+  --echo-typography-font-family: var(
+    --bs-body-font-family,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    'Noto Sans',
+    'Liberation Sans',
+    Arial,
+    sans-serif,
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    'Segoe UI Symbol',
+    'Noto Color Emoji'
+  );
+  --echo-typography-font-size-xs: 12px;
+  --echo-typography-font-size-sm: 13px;
+  --echo-typography-font-size-base: 14px;
+  --echo-typography-font-size-lg: 16px;
   --echo-breakpoint-xs: 480px;
   --echo-breakpoint-sm: 640px;
   --echo-breakpoint-md: 768px;
@@ -102,37 +133,31 @@
   --echo-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.08);
   --echo-shadow-md: 0 4px 12px rgb(0 0 0 / 0.12);
   --echo-shadow-lg: 0 12px 28px rgb(0 0 0 / 0.16);
-  --echo-color-primary-light: var(--color-primary-light);
-  --echo-color-primary: var(--color-primary);
-  --echo-color-primary-hover: var(--color-primary-hover);
-  --echo-color-primary-active: var(--color-primary-active);
-  --echo-color-primary-dark: var(--color-primary-dark);
-  --echo-color-on-primary: var(--button-text-color);
-  --echo-color-secondary-light: var(--color-secondary-light);
-  --echo-color-secondary: var(--color-secondary);
-  --echo-color-secondary-hover: var(--color-secondary-hover);
-  --echo-color-secondary-active: var(--color-secondary-active);
-  --echo-color-secondary-dark: var(--color-secondary-dark);
-  --echo-color-on-secondary: var(--button-text-color);
-  --echo-color-success-light: var(--color-success-light);
-  --echo-color-success: var(--color-success);
-  --echo-color-success-dark: var(--color-success-dark);
-  --echo-color-warning-light: var(--color-warning-light);
-  --echo-color-warning: var(--color-warning);
-  --echo-color-warning-dark: var(--color-warning-dark);
-  --echo-color-error-light: var(--color-error-light);
-  --echo-color-error: var(--color-error);
-  --echo-color-error-dark: var(--color-error-dark);
-  --echo-color-background: var(--background-color);
-  --echo-color-surface: var(--card-color);
-  --echo-color-surface-raised: var(--column-color);
-  --echo-color-surface-inactive: var(--color-bg-inactive);
-  --echo-color-border: var(--border-color);
-  --echo-color-border-selected: var(--border-selected-color);
-  --echo-color-divider: var(--separator-color);
-  --echo-color-text: var(--text-color);
-  --echo-color-text-muted: var(--color-text-muted);
-  --echo-color-text-disabled: var(--text-disabled-color);
-  --echo-color-icon: var(--icons-color);
-  --echo-color-focus: var(--action-color);
+}
+
+html[data-bs-theme='dark'] {
+  --echo-color-background: #1f1f1f;
+  --echo-color-surface: #2c2c2e;
+  --echo-color-surface-raised: #000000;
+  --echo-color-surface-inactive: #2c2c2e;
+  --echo-color-text: #ffffff;
+  --echo-color-text-muted: #6b7280;
+  --echo-color-text-disabled: #d2dae5;
+  --echo-color-border: #5e5e64;
+  --echo-color-divider: #5e5e64;
+  --echo-color-primary: #93cdf6;
+  --echo-color-primary-hover: #84b9dd;
+  --echo-color-primary-active: #76a4c5;
+  --echo-color-on-primary: #000000;
+  --echo-color-secondary: #d3871d;
+  --echo-color-success: #16a34a;
+  --echo-color-warning: #ea580c;
+  --echo-color-error: #dc2626;
+  --echo-color-info: #90caf9;
+  --echo-color-focus: #93cdf6;
+  --echo-color-hover: #eff8fe;
+  --echo-color-active: #def0fc;
+  --echo-color-selected: #faba72;
+  --echo-color-disabled: #d2dae5;
+  --echo-color-disabled-background: #2c2c2e;
 }

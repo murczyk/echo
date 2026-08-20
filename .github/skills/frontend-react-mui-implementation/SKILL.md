@@ -26,7 +26,10 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 
 ## Procedure (checklist)
 
-- For structure, layout, responsive behavior, or styling, also use `frontend-layout-component-separation` and follow `wdintel-web/FRONTEND_DESIGN_CONTRACT.md`.
+- For new React structure, use semantic HTML and Tailwind; reserve MUI/`Power*` for interactive components and component behavior.
+- Do not add layout-only `Box`, `Stack`, `Grid`, `Container`, wrappers concealing them, or structural `sx`.
+- Use named `echo-*` utilities and generated `theme.echo` values for new shared visual values. Keep MUI spacing and breakpoints as legacy compatibility APIs.
+- Read the detailed rationale and verification rules in [`docs/frontend/layout-component-contract.md`](../../../docs/frontend/layout-component-contract.md).
 - Keep hybrid mount pattern:
 - `createRoot(this)` in custom element class.
 - Wrap route root with `ThemeProvider` + `useNeoMuiTheme`.

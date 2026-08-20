@@ -178,19 +178,33 @@ describe('mui-theme', () => {
     document.body.innerHTML = '';
   });
 
-  it('bridges shared design tokens into MUI without changing legacy framework scales', () => {
+  it('exposes generated semantic tokens without changing legacy framework scales', () => {
     document.documentElement.style.setProperty('--color-primary', 'var(--test-primary)');
     document.documentElement.style.setProperty('--test-primary', '#123456');
     document.documentElement.style.setProperty('--background-color', '#f1f2f3');
 
     const theme = createNeoMuiTheme('light');
 
-    expect(theme.palette.primary.main).toBe('#123456');
-    expect(theme.palette.background.default).toBe('#f1f2f3');
+    expect(theme.echo.color.light.primary).toBe('#2c6c91');
+    expect(theme.echo.color.dark.primary).toBe('#93cdf6');
+    expect(theme.palette.primary.main).toBe('#1976d2');
     expect(theme.echo.spacing.sm).toBe('var(--echo-spacing-sm)');
     expect(theme.echo.breakpoint.lg).toBe('1024px');
     expect(theme.spacing(1)).toBe('8px');
     expect(theme.breakpoints.values.lg).toBe(1200);
+  });
+
+  it('creates a theme independently of document styles', () => {
+    const before = createNeoMuiTheme('dark');
+    document.documentElement.style.setProperty('--color-primary', '#123456');
+    document.documentElement.setAttribute('data-bs-theme', 'light');
+    const after = createNeoMuiTheme('dark');
+
+    expect(after.palette.primary).toEqual(before.palette.primary);
+    expect(after.palette.background).toEqual(before.palette.background);
+    expect(after.breakpoints.values).toEqual(before.breakpoints.values);
+    expect(after.spacing(3)).toBe(before.spacing(3));
+    expect(after.echo).toEqual(before.echo);
   });
 
   it('calibrates shared typography to the 14px application root', async () => {

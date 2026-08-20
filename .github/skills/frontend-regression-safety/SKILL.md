@@ -31,7 +31,7 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - mocks/tests
 - docs/changelog note
 - UX/UI regression checks:
-- For React layout changes, confirm the `frontend-layout-component-separation` contract is preserved: native structure, Tailwind layout, MUI/Power interaction components, and shared Echo tokens.
+- For React layout changes, confirm native structure, Tailwind layout, MUI/Power interaction components, and shared Echo tokens are preserved. See [`docs/frontend/layout-component-contract.md`](../../../docs/frontend/layout-component-contract.md).
 - Verify layout at mobile/tablet/desktop.
 - Verify keyboard navigation and focus state visibility.
 - Verify loading, empty, error, success states.

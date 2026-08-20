@@ -1,6 +1,6 @@
 @import 'tailwindcss';
-@import '_variables.css';
 @import '_design-tokens.generated.css';
+@import '_variables.css';
 @import '_base.css';
 @import 'input/_input.css';
 @import 'badge/_badge.css';

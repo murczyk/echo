@@ -21,7 +21,9 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 - Ask only if expected responsive behavior is not inferable.
 
 ## Procedure (checklist)
-- For React structure or layout changes, also use `frontend-layout-component-separation` and follow `wdintel-web/FRONTEND_DESIGN_CONTRACT.md`.
+- For new React structure, use semantic HTML and Tailwind; use MUI/`Power*` for interactive components and component behavior.
+- Do not introduce layout-only MUI wrappers, structural `sx`, copied light/dark colors, or clickable `div` controls.
+- Use named `echo-*` utilities for new shared visual values. Read [`docs/frontend/layout-component-contract.md`](../../../docs/frontend/layout-component-contract.md) for the complete boundary and token rules.
 - Keep semantic structure:
 - Correct element types for buttons/links/headings.
 - Labels/aria for form controls and icon-only actions.
