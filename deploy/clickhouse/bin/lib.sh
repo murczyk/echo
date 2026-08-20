@@ -462,7 +462,7 @@ delegate_paired_analytics_operation_if_source() {
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     "$analytics_ssh_target" \
-    "ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/$operation$remote_argument"
+    "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/$operation$remote_argument"
   exit 0
 }
 

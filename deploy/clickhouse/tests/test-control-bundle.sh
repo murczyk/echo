@@ -51,6 +51,21 @@ fi
 ECHO_TEST_REMOTE_RELEASE=$second_release
 [[ $(require_paired_control_release echo@example.invalid) == "$second_release" ]]
 
+protected_file_exists() { return 0; }
+load_source_config() { ANALYTICS_SSH_TARGET=echo@example.invalid; }
+require_paired_control_release() { printf '%064d\n' 1; }
+ssh() {
+  local last_argument=${!#}
+  printf '%s\n' "$last_argument" >"$ECHO_TEST_SSH_COMMAND"
+}
+ECHO_TEST_SSH_COMMAND=$case_dir/ssh-command
+(delegate_paired_analytics_operation_if_source finish-resync.sh)
+[[ $(<"$ECHO_TEST_SSH_COMMAND") == \
+  "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$(printf '%064d' 1) /opt/echo-analytics/current/bin/finish-resync.sh" ]]
+(delegate_paired_analytics_operation_if_source resync.sh --yes)
+[[ $(<"$ECHO_TEST_SSH_COMMAND") == \
+  "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$(printf '%064d' 1) /opt/echo-analytics/current/bin/resync.sh --yes" ]]
+
 archive_dir=$case_dir/archive
 mkdir "$archive_dir"
 archive_control_bundle "$case_dir" | tar -C "$archive_dir" -xf -
