@@ -31,7 +31,9 @@ alter table battle_line_version
 
 create unique index battle_line_version_source_uq
     on battle_line_version (source_kind, source_identifier, source_sha256)
-    where source_identifier is not null and source_sha256 is not null;
+    where source_identifier is not null
+        and source_sha256 is not null
+        and retired_at is null;
                 "#,
             )
             .await

@@ -12,6 +12,7 @@ use crate::types::{AppError, Mode, ShortContext};
 use crate::OneoffImportBattleLineFromDeltaKmlPs;
 use crate::{new_pg_pool_from_config, storage};
 use anyhow::Context;
+use log::warn;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use tokio::fs;
 
@@ -65,6 +66,11 @@ pub async fn oneoff_import_battle_line_from_delta_kml(
         BattleLineImportOutcome::AlreadyImported(version_id) => {
             println!(
                 "Delta KML was already imported as Battle Line version {version_id}; no changes made"
+            );
+        }
+        BattleLineImportOutcome::RequiresForce(version_id) => {
+            warn!(
+                "Battle Line import was skipped because active version {version_id} already exists; try again with the '--force' flag to import Delta KML as a new version"
             );
         }
     }

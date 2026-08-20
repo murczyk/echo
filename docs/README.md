@@ -87,11 +87,12 @@ inspect the approved initial source without changing data, run:
 sudo /usr/bin/wdintel-rs --mode=live oneoff-import-battle-line-from-delta-kml --source-id 5 --dry-run
 ```
 
-Remove `--dry-run` to create BattleLine v0 when no active version exists. The
-oneoff refuses to overwrite an active Battle Line; `--force` must be supplied
-explicitly when an operator intentionally wants the Delta source to replace an
-existing manually uploaded version. Neither the oneoff nor later admin uploads
-requeue historical settlement links.
+Remove `--dry-run` to create BattleLine v0 when no active version exists. If an
+active Battle Line prevents the import, the oneoff logs why it was skipped and
+suggests `--force`. Supplying `--force` always imports the Delta source as a new
+version and retires the active version, including when the same Delta source was
+imported previously. Neither the oneoff nor later admin uploads requeue
+historical settlement links.
 
 ## Focused documentation
 

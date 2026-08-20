@@ -83,6 +83,7 @@ pub struct PreparedBattleLineImport {
 pub enum BattleLineImportOutcome {
     Imported(i64),
     AlreadyImported(i64),
+    RequiresForce(i64),
 }
 
 #[derive(Clone, Debug)]
@@ -571,13 +572,6 @@ where
     C: ConnectionTrait,
 {
     lock_updates(dbx).await.c(h!())?;
-    if let Some(version_id) =
-        find_existing_source_version(dbx, source, &prepared.source_sha256)
-            .await
-            .c(h!())?
-    {
-        return Ok(BattleLineImportOutcome::AlreadyImported(version_id));
-    }
     let previous_id = battle_line_version::Entity::find()
         .filter(battle_line_version::Column::RetiredAt.is_null())
         .select_only()
@@ -586,10 +580,20 @@ where
         .one(dbx)
         .await
         .c(h!())?;
-    if previous_id.is_some() && !replace_existing {
-        anyhow::bail!(
-            "An active Battle Line already exists; rerun with --force to replace it"
-        );
+    if !replace_existing {
+        if let Some(version_id) = find_existing_active_source_version(
+            dbx,
+            source,
+            &prepared.source_sha256,
+        )
+        .await
+        .c(h!())?
+        {
+            return Ok(BattleLineImportOutcome::AlreadyImported(version_id));
+        }
+        if let Some(previous_id) = previous_id {
+            return Ok(BattleLineImportOutcome::RequiresForce(previous_id));
+        }
     }
     if let Some(previous_id) = previous_id {
         battle_line_aor_geometry::Entity::delete_many()
@@ -654,7 +658,7 @@ returning id
     Ok(BattleLineImportOutcome::Imported(version_id))
 }
 
-async fn find_existing_source_version<C>(
+async fn find_existing_active_source_version<C>(
     dbx: &C,
     source: &BattleLineImportSource,
     source_sha256: &str,
@@ -671,6 +675,7 @@ where
             battle_line_version::Column::SourceIdentifier.eq(source_identifier),
         )
         .filter(battle_line_version::Column::SourceSha256.eq(source_sha256))
+        .filter(battle_line_version::Column::RetiredAt.is_null())
         .select_only()
         .column(battle_line_version::Column::Id)
         .into_tuple::<i64>()
@@ -1927,7 +1932,7 @@ where aor_id = $1
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn delta_import_requires_force_is_idempotent_and_keeps_settlement_results(
+    async fn delta_force_always_imports_new_version_and_keeps_settlement_results(
     ) {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
@@ -2000,15 +2005,18 @@ where aor_id = $1
             "enemy_units_geojson:test".to_string(),
         );
         let delta_prepared = test_prepared_import("b");
-        assert!(activate_battle_line_import_in_transaction(
-            &txn,
-            &delta_prepared,
-            login_id,
-            &delta_source,
-            false,
-        )
-        .await
-        .is_err());
+        assert_eq!(
+            activate_battle_line_import_in_transaction(
+                &txn,
+                &delta_prepared,
+                login_id,
+                &delta_source,
+                false,
+            )
+            .await
+            .unwrap(),
+            BattleLineImportOutcome::RequiresForce(initial_version_id)
+        );
         let imported = activate_battle_line_import_in_transaction(
             &txn,
             &delta_prepared,
@@ -2053,6 +2061,81 @@ where aor_id = $1
             .await
             .unwrap(),
             BattleLineImportOutcome::AlreadyImported(version_id)
+        );
+
+        let forced_again = activate_battle_line_import_in_transaction(
+            &txn,
+            &delta_prepared,
+            login_id,
+            &delta_source,
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(forced_version_id) = forced_again
+        else {
+            panic!("expected --force to create a new Battle Line version");
+        };
+        assert_ne!(forced_version_id, version_id);
+
+        let admin = activate_battle_line_import_in_transaction(
+            &txn,
+            &test_prepared_import("c"),
+            login_id,
+            &BattleLineImportSource::admin_upload(),
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(admin_version_id) = admin else {
+            panic!("expected a new admin Battle Line version");
+        };
+        assert_eq!(
+            activate_battle_line_import_in_transaction(
+                &txn,
+                &delta_prepared,
+                login_id,
+                &delta_source,
+                false,
+            )
+            .await
+            .unwrap(),
+            BattleLineImportOutcome::RequiresForce(admin_version_id)
+        );
+
+        let restored = activate_battle_line_import_in_transaction(
+            &txn,
+            &delta_prepared,
+            login_id,
+            &delta_source,
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(restored_version_id) = restored
+        else {
+            panic!("expected --force to reimport the retired Delta source");
+        };
+        assert_ne!(restored_version_id, version_id);
+        assert_ne!(restored_version_id, forced_version_id);
+        assert_eq!(
+            active_battle_line_id(&txn).await.unwrap(),
+            Some(restored_version_id)
+        );
+        assert_eq!(
+            battle_line_version::Entity::find()
+                .filter(
+                    battle_line_version::Column::SourceIdentifier
+                        .eq(delta_source.identifier.as_deref().unwrap())
+                )
+                .filter(
+                    battle_line_version::Column::SourceSha256
+                        .eq(&delta_prepared.source_sha256)
+                )
+                .count(&txn)
+                .await
+                .unwrap(),
+            3
         );
 
         let settlement_link = sigint_inbox_item_settlement::Entity::find_by_id(
