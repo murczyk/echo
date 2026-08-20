@@ -30,6 +30,8 @@ export GITHUB_TOKEN=ghp_...   # personal token with read:packages; see wdintel-w
 just dev-front
 ```
 
+Frontend development follows the [layout and component contract](./docs/frontend/layout-component-contract.md).
+
 Back-end:
 
 ```

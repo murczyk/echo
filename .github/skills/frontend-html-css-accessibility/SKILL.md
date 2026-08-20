@@ -1,6 +1,6 @@
 ---
 name: frontend-html-css-accessibility
-description: Apply HTML/CSS updates with accessibility-first behavior, responsive checks, and repo-consistent styling primitives (MUI sx, utility classes, CSS vars).
+description: Apply semantic HTML and Tailwind layout updates with accessible MUI interaction components and responsive checks.
 ---
 
 # Frontend HTML/CSS Accessibility
@@ -21,6 +21,9 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 - Ask only if expected responsive behavior is not inferable.
 
 ## Procedure (checklist)
+- For new React structure, use semantic HTML and Tailwind; use MUI/`Power*` for interactive components and component behavior.
+- Do not introduce layout-only MUI wrappers, structural `sx`, copied light/dark colors, or clickable `div` controls.
+- Use named `echo-*` utilities for new shared visual values. Read `docs/frontend/layout-component-contract.md` for the complete boundary and token rules.
 - Keep semantic structure:
 - Correct element types for buttons/links/headings.
 - Labels/aria for form controls and icon-only actions.
@@ -30,9 +33,9 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 - Prefer MUI palette tokens, theme CSS vars, or existing design-system tokens for all light/dark UI work.
 - Avoid raw `rgba(...)`, hard-coded dark/light hex values, and mode-only color branches unless no token-based option exists.
 - If translucency is needed, prefer `color-mix(...)` with CSS vars or an existing theme token before falling back to raw alpha values.
-- Reuse existing styling system in that file:
-- Elm/Tailwind utility classes when already present.
-- MUI `sx`/components in React files.
+- In React, use semantic native HTML and Tailwind for new structure/layout, and MUI or `Power*` wrappers for interactive components.
+- Use shared `echo-*` tokens for new theme-sensitive and scale-sensitive values.
+- Do not require unrelated legacy layout migration merely because a file is touched.
 - In the protected Duty/MessageCard hot path, preserve MUI theme parity through semantic HTML, existing utilities, shared theme-backed CSS variables, and leaf MUI components. Do not introduce structural MUI wrappers solely to obtain theme styling.
 - Prefer minimal, local style changes over global overrides.
 - Validate responsive layout at common widths:
@@ -67,6 +70,7 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 - Review diff for unintended global class/style impact.
 - Re-check core flows touching changed UI surfaces.
 - Re-check that theme-aware styling uses tokens/CSS vars instead of hard-coded mode colors.
+- Confirm React layout changes did not add structural MUI wrappers or layout-only `sx`.
 - Confirm no keyboard traps in menus/dialogs.
 - Confirm REST-facing controls still trigger correct actions (no swapped buttons).
 - Confirm repo frontend build step passes.
