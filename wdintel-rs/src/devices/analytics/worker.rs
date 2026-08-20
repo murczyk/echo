@@ -179,6 +179,10 @@ pub(crate) async fn run_tick(
             metrics.record_file_analysis_run_completion_duration(duration_secs);
         }
     }
+    if let Some(run_id) = preparation.completed_run_id {
+        crate::devices::mattermost::analysis_run_completed_nofail(env, run_id)
+            .await;
+    }
     let claim_started_at = Instant::now();
     let claimed = queue::claim_analysis_batch(
         file_db,
@@ -249,5 +253,9 @@ pub(crate) async fn run_tick(
         first.run_sequence,
         completion.completed_count,
     );
+    if let Some(run_id) = completion.completed_run_id {
+        crate::devices::mattermost::analysis_run_completed_nofail(env, run_id)
+            .await;
+    }
     Ok(true)
 }

@@ -1,3 +1,13 @@
+use regex::Regex;
+use std::sync::LazyLock;
+
+static HOSTNAME_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+    )
+    .expect("hostname regex is valid")
+});
+
 use actix_web::{http::header::HeaderName, HttpRequest};
 
 pub fn extract_authority_header(req: &HttpRequest) -> Option<String> {
@@ -24,4 +34,10 @@ pub fn extract_authority_header(req: &HttpRequest) -> Option<String> {
             None
         }
     }
+}
+
+pub fn is_valid_hostname(hostname: &str) -> bool {
+    !hostname.is_empty()
+        && hostname.len() <= 253
+        && HOSTNAME_RE.is_match(hostname)
 }

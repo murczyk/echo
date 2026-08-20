@@ -80,6 +80,7 @@ pub(super) struct PreparationResult {
     pub did_work: bool,
     pub inserted_count: u64,
     pub completed_run_duration_secs: Option<f64>,
+    pub completed_run_id: Option<Uuid>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -89,6 +90,7 @@ pub(super) struct CompletionResult {
     pub result_write_duration_secs: f64,
     pub current_publish_duration_secs: f64,
     pub run_completion_duration_secs: Option<f64>,
+    pub completed_run_id: Option<Uuid>,
 }
 #[derive(Debug)]
 pub(super) struct ReanalyzeAllResult {
@@ -736,6 +738,7 @@ pub(super) async fn prepare_next_page(
             did_work: false,
             inserted_count: 0,
             completed_run_duration_secs: None,
+            completed_run_id: None,
         });
     };
     let last_file_id = file_analysis_run_item::Entity::find()
@@ -852,6 +855,7 @@ pub(super) async fn prepare_next_page(
         did_work: true,
         inserted_count,
         completed_run_duration_secs,
+        completed_run_id: completed_run_duration_secs.map(|_| run.id),
     })
 }
 
@@ -971,6 +975,7 @@ pub(super) async fn complete_analysis_batch(
             result_write_duration_secs: 0.0,
             current_publish_duration_secs: 0.0,
             run_completion_duration_secs: None,
+            completed_run_id: None,
         });
     }
     let payload = completed
@@ -1216,6 +1221,12 @@ pub(super) async fn complete_analysis_batch(
                         limit 1
                     ) as run_completion_duration_secs,
                     (
+                        select id
+                        from updated_runs
+                        where completed_at is not null
+                        limit 1
+                    ) as completed_run_id,
+                    (
                         select deleted_link_count
                         from current_publish_finished
                     ) as deleted_link_count,
@@ -1248,6 +1259,8 @@ pub(super) async fn complete_analysis_batch(
     let run_completion_duration_secs: Option<f64> = row
         .try_get("", "run_completion_duration_secs")
         .context(h!())?;
+    let completed_run_id: Option<Uuid> =
+        row.try_get("", "completed_run_id").context(h!())?;
     if expected_count != completed_count {
         return Err(anyhow::anyhow!(
             "file analysis lease lost for {} of {} items",
@@ -1261,6 +1274,7 @@ pub(super) async fn complete_analysis_batch(
         result_write_duration_secs,
         current_publish_duration_secs,
         run_completion_duration_secs,
+        completed_run_id,
     })
 }
 

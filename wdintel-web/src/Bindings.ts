@@ -1977,7 +1977,7 @@ export type SourceFileStateKind =
 export type SourceFileState = {
   state: SourceFileStateKind;
   settledAt: string;
-  settledBy: string;
+  settledBy: string | null;
 };
 
 export type SyncDeviceFileItem = {
@@ -2311,6 +2311,15 @@ export type TagMatch =
   | 'any'
   | 'all'
 ;
+
+export type DeviceSettingsReq = {
+  mattermostWebhookUrl: string | null;
+  clearMattermostWebhook: boolean;
+};
+
+export type DeviceSettingsItem = {
+  hasMattermostWebhook: boolean;
+};
 
 export type Organism = {
   id: number;

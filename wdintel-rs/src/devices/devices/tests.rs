@@ -836,8 +836,8 @@ async fn custom_field_patches_and_effective_no_ops_preserve_state() {
     no_op.aor_ids = DevicePatchField::Value(vec![second_aor.id, first_aor.id]);
     no_op.custom_fields =
         DevicePatchField::Value(BTreeMap::from([("absent".to_string(), None)]));
-    let no_op_state = update(&main_db, &source, no_op).await.unwrap();
-    assert_eq!(no_op_state.updated_at, before.updated_at);
+    let no_op_result = update(&main_db, &source, no_op).await.unwrap();
+    assert_eq!(no_op_result.updated_at, before.updated_at);
     let after = device::Entity::find_by_id(created.id)
         .one(&env.dbx)
         .await

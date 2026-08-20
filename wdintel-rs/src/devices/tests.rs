@@ -2,7 +2,8 @@ use self::schema::device_active_model;
 use crate::config::{IDENTITY_DURATION_HOURS, ROLE_ADMIN};
 use crate::devices::{ROLE_CYBER, ROLE_DEVICE_SOURCE};
 use crate::entities::{
-    area_of_responsibility, login, organism, sigint_unit, system_settings,
+    area_of_responsibility, device_settings, login, organism, sigint_unit,
+    system_settings,
 };
 use crate::file_registry::entities::{
     analytics_tag, device_file_tag, file_entry,
@@ -22,7 +23,8 @@ use actix_web::{
 };
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    ActiveModelTrait, ActiveValue::Set, ConnectionTrait, EntityTrait,
+    IntoActiveModel, TransactionTrait,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -35,6 +37,7 @@ fn configure_routes(cfg: &mut ServiceConfig) {
         .service(super::devices::detail)
         .service(super::devices::create)
         .service(super::devices::update)
+        .service(super::settings::update)
         .service(super::files::roots)
         .service(super::files::subtree_counts)
         .service(super::files::browse)
@@ -216,6 +219,16 @@ async fn target_api_smoke_covers_all_routes() {
     .insert(&env.dbx)
     .await
     .unwrap();
+    let mut settings =
+        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+    settings.mattermost_webhook_url =
+        Set(Some("https://127.0.0.1/hooks/unreachable".to_string()));
+    settings.update(&env.dbx).await.unwrap();
 
     let config = env.config.clone();
     let (metrics, metrics_recorder) =
@@ -300,14 +313,29 @@ async fn target_api_smoke_covers_all_routes() {
             && unit["name"].as_str() == Some(lookup_unit.name.as_str())
     }));
 
-    let response = post_json!(
-        "/api/device/create",
-        json!({
-            "name": "API device",
-            "external_url": "https://example.com/device",
-            "custom_fields": {"inventory_id": "api-1"}
+    let notification_lock = env.dbx.begin().await.unwrap();
+    notification_lock
+        .execute_unprepared(
+            "LOCK TABLE device_settings IN ACCESS EXCLUSIVE MODE",
+        )
+        .await
+        .unwrap();
+
+    let create_response =
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            post_json!(
+                "/api/device/create",
+                json!({
+                    "name": "API device",
+                    "external_url": "https://example.com/device",
+                    "custom_fields": {"inventory_id": "api-1"}
+                })
+            )
         })
-    );
+        .await;
+    notification_lock.rollback().await.unwrap();
+    let response = create_response
+        .expect("device creation waited for its Mattermost notification");
     assert_eq!(response.status(), StatusCode::OK);
     let created: Value = test::read_body_json(response).await;
     let device_id = created["id"].as_str().unwrap().to_string();
@@ -656,6 +684,171 @@ async fn target_api_smoke_covers_all_routes() {
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
+}
+
+#[actix_web::test]
+#[serial_test::serial]
+async fn device_settings_api_masks_preserves_replaces_clears_and_authorizes() {
+    let (env, _guard) = cleanup_locked().await.unwrap();
+    let mut settings =
+        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap()
+            .into_active_model();
+    settings.mattermost_webhook_url = Set(None);
+    settings.update(&env.dbx).await.unwrap();
+
+    let organism = mk_organism(
+        &env.dbx,
+        organism::ActiveModel {
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let admin = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("device-settings-admin-{}", Uuid::now_v7())),
+            roles: Set(json!([ROLE_ADMIN])),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let reader = mk_login(
+        &env.dbx,
+        login::ActiveModel {
+            login: Set(format!("device-settings-reader-{}", Uuid::now_v7())),
+            roles: Set(json!([ROLE_CYBER])),
+            organism_id: Set(Some(organism.id)),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let config = env.config.clone();
+    let redis_session_store =
+        RedisSessionStore::new(crate::redis_conn_string(&config).unwrap())
+            .await
+            .unwrap();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::from(env.clone()))
+            .wrap(
+                IdentityMiddleware::builder()
+                    .visit_deadline(Some(std::time::Duration::from_secs(
+                        IDENTITY_DURATION_HOURS * 60 * 60,
+                    )))
+                    .build(),
+            )
+            .wrap(SessionMiddleware::new(redis_session_store, Key::generate()))
+            .route("/test/login/{login}", web::post().to(self::login))
+            .configure(configure_routes),
+    )
+    .await;
+
+    macro_rules! login_cookie {
+        ($login_id:expr) => {{
+            let response = test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri(&format!("/test/login/{}", $login_id))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::NO_CONTENT);
+            let cookie: Cookie<'static> =
+                response.response().cookies().next().unwrap().into_owned();
+            cookie
+        }};
+    }
+    macro_rules! post {
+        ($cookie:expr, $body:expr) => {{
+            test::call_service(
+                &app,
+                test::TestRequest::post()
+                    .uri("/api/admin/device/settings")
+                    .cookie($cookie)
+                    .set_json(&$body)
+                    .to_request(),
+            )
+            .await
+        }};
+    }
+
+    let admin_cookie = login_cookie!(admin.id);
+    let reader_cookie = login_cookie!(reader.id);
+
+    let response = post!(reader_cookie, json!({}));
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = post!(admin_cookie.clone(), json!({}));
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        test::read_body_json::<Value, _>(response).await,
+        json!({"hasMattermostWebhook": false})
+    );
+
+    const WEBHOOK: &str = "https://1.1.1.1/hooks/device-settings-secret";
+    let response = post!(
+        admin_cookie.clone(),
+        json!({"mattermostWebhookUrl": WEBHOOK})
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        test::read_body_json::<Value, _>(response).await,
+        json!({"hasMattermostWebhook": true})
+    );
+    let stored =
+        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(stored.mattermost_webhook_url.as_deref(), Some(WEBHOOK));
+
+    let response =
+        post!(admin_cookie.clone(), json!({"mattermostWebhookUrl": "   "}));
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        test::read_body_json::<Value, _>(response).await,
+        json!({"hasMattermostWebhook": true})
+    );
+
+    let response = post!(
+        admin_cookie.clone(),
+        json!({
+            "mattermostWebhookUrl": "https://1.0.0.1/hooks/replacement",
+            "clearMattermostWebhook": true
+        })
+    );
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let stored =
+        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(stored.mattermost_webhook_url.as_deref(), Some(WEBHOOK));
+
+    let response = post!(admin_cookie, json!({"clearMattermostWebhook": true}));
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        test::read_body_json::<Value, _>(response).await,
+        json!({"hasMattermostWebhook": false})
+    );
+    let stored =
+        device_settings::Entity::find_by_id(crate::config::DEVICE_SETTINGS_ID)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(stored.mattermost_webhook_url, None);
 }
 
 #[actix_web::test]
@@ -1327,7 +1520,7 @@ async fn analytics_api_authorizes_hydrates_and_filters_dynamic_tags() {
     assert_eq!(scheduled_all["created_run_count"], 1);
 }
 
-const TARGET_ROUTES: [&str; 28] = [
+const TARGET_ROUTES: [&str; 29] = [
     "/api/device/list",
     "/api/device/unit-stats",
     "/api/device/aors",
@@ -1335,6 +1528,7 @@ const TARGET_ROUTES: [&str; 28] = [
     "/api/device/detail",
     "/api/device/create",
     "/api/device/update",
+    "/api/admin/device/settings",
     "/api/device/files/roots",
     "/api/device/files/subtree-counts",
     "/api/device/files/browse",

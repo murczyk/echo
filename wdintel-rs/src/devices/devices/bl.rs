@@ -243,7 +243,7 @@ mod write {
         let command = normalize_update_command(command).c(h!())?;
 
         let transaction = main_db.begin().await.c(h!())?;
-        let state = {
+        let device = {
             let transaction_db = &transaction;
             let device = query::lock_active_visible_device(
                 transaction_db,
@@ -284,19 +284,20 @@ mod write {
                 .await
                 .c(h!())?
             };
-            let mut states =
+            let mut devices =
                 query::hydrate_devices(transaction_db, vec![next_device])
                     .await
                     .c(h!())?;
-            states
+            let device = devices
                 .pop()
                 .ok_or_else(|| {
                     anyhow::anyhow!("device hydrator lost updated device")
                 })
-                .c(h!())?
+                .c(h!())?;
+            device
         };
         transaction.commit().await.c(h!())?;
-        Ok(state)
+        Ok(device)
     }
 
     struct NormalizedUpdateDevice {
