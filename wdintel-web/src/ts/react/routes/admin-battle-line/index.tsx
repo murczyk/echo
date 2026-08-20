@@ -375,17 +375,21 @@ function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
 export function AdminBattleLinePage() {
   const [tab, setTab] = useState(0);
   const [state, setState] = useState<BattleLineState | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadSerialRef = useRef(0);
   const reload = useCallback(async () => {
     const serial = loadSerialRef.current + 1;
     loadSerialRef.current = serial;
+    setLoading(true);
     setError(null);
     try {
       const nextState = await fetchBattleLineState();
       if (loadSerialRef.current === serial) setState(nextState);
     } catch (loadError) {
       if (loadSerialRef.current === serial) setError(toErrorMessage(loadError));
+    } finally {
+      if (loadSerialRef.current === serial) setLoading(false);
     }
   }, []);
   useEffect(() => {
@@ -404,7 +408,20 @@ export function AdminBattleLinePage() {
       </Tabs>
       <Divider />
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {tab === 0 ? state ? <LbzTab state={state} reload={reload} /> : <CircularProgress /> : null}
+        {tab === 0 ? (
+          state ? (
+            <LbzTab state={state} reload={reload} />
+          ) : loading ? (
+            <CircularProgress />
+          ) : (
+            <Alert
+              severity="error"
+              action={<Button onClick={() => void reload()}>Повторити</Button>}
+            >
+              Не вдалося завантажити дані ЛБЗ
+            </Alert>
+          )
+        ) : null}
         {tab === 1 ? <UnlinkedTab onError={setError} /> : null}
         {tab === 2 ? <UnresolvedTab onError={setError} /> : null}
       </Box>
