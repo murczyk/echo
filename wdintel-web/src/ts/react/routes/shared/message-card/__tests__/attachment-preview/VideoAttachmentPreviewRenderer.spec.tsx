@@ -360,12 +360,12 @@ describe('VideoAttachmentPreviewRenderer', () => {
 
     expect(dialogProps.at(-1)?.disableRestoreFocus).toBe(false);
     expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
-    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+    expect(dialogProps.at(-1)?.fullScreen).toBe(true);
     expect(dialogProps.at(-1)?.paperSx).toMatchObject({
-      width: { xs: '100vw', sm: '92vw' },
-      height: { xs: '100svh', sm: '92svh' },
-      maxWidth: { xs: '100vw', sm: '92vw' },
-      maxHeight: { xs: '100svh', sm: '92svh' },
+      width: '100vw',
+      height: '100svh',
+      maxWidth: '100vw',
+      maxHeight: '100svh',
     });
 
     root.unmount();
@@ -812,7 +812,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(video.currentTime).toBe(0);
   });
 
-  it('exits fullscreen on Escape without closing, and closes outside fullscreen while pausing', async () => {
+  it('closes dialog on Escape while pausing', async () => {
     const onClose = vi.fn();
     const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     renderDialog({
@@ -820,27 +820,12 @@ describe('VideoAttachmentPreviewRenderer', () => {
       videos: [{ id: 'video-1', name: 'video.mp4', source: '/video.mp4' }],
     });
 
-    await act(async () => {
-      latestControlsProps?.onToggleFullscreen();
-    });
-
-    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
+    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
     expect(latestControlsProps?.playerState.isFullscreen).toBe(true);
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-
-    expect(onClose).not.toHaveBeenCalled();
-    expect(latestControlsProps?.playerState.isFullscreen).toBe(false);
-    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
-
-    const closeButton = document.body.querySelector(
-      'button[aria-label="Закрити"]',
-    ) as HTMLButtonElement | null;
-    await act(async () => {
-      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);

@@ -14,13 +14,13 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
     layout: 'media',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: true,
+    disableEscapeKeyDownInFullscreen: false,
   },
   video: {
     layout: 'media',
     disableRestoreFocus: false,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: true,
+    disableEscapeKeyDownInFullscreen: false,
   },
   'coordinate-map': {
     layout: 'media',
@@ -55,19 +55,19 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
   txt: {
     layout: 'document',
     disableRestoreFocus: true,
-    supportsFullscreen: false,
+    supportsFullscreen: true,
     disableEscapeKeyDownInFullscreen: false,
   },
   md: {
     layout: 'document',
     disableRestoreFocus: true,
-    supportsFullscreen: false,
+    supportsFullscreen: true,
     disableEscapeKeyDownInFullscreen: false,
   },
   unsupported: {
     layout: 'document',
     disableRestoreFocus: true,
-    supportsFullscreen: false,
+    supportsFullscreen: true,
     disableEscapeKeyDownInFullscreen: false,
   },
 } satisfies Record<MessageCardPreviewKind, MessageCardAttachmentPreviewConfig>;

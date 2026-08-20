@@ -345,17 +345,17 @@ describe('ImageAttachmentPreviewRenderer', () => {
     const dialog = dialogProps.at(-1);
     expect(dialog?.disableRestoreFocus).toBe(true);
     expect(dialog?.disableEscapeKeyDown).toBe(false);
-    expect(dialog?.fullScreen).toBe(false);
+    expect(dialog?.fullScreen).toBe(true);
     expect(dialog?.paperSx).toMatchObject({
-      width: { xs: '100vw', sm: '92vw' },
-      height: { xs: '100svh', sm: '92svh' },
-      maxWidth: { xs: '100vw', sm: '92vw' },
-      maxHeight: { xs: '100svh', sm: '92svh' },
+      width: '100vw',
+      height: '100svh',
+      maxWidth: '100vw',
+      maxHeight: '100svh',
     });
     root.unmount();
   });
 
-  it('uses fullscreen geometry and keeps escape handling inside the dialog', async () => {
+  it('uses fullscreen geometry and closes dialog on escape key press', async () => {
     const onClose = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -372,12 +372,8 @@ describe('ImageAttachmentPreviewRenderer', () => {
       );
     });
 
-    await act(async () => {
-      latestActionProps?.onToggleFullscreen();
-    });
-
     const fullscreenDialog = dialogProps.at(-1);
-    expect(fullscreenDialog?.disableEscapeKeyDown).toBe(true);
+    expect(fullscreenDialog?.disableEscapeKeyDown).toBe(false);
     expect(fullscreenDialog?.fullScreen).toBe(true);
     expect(fullscreenDialog?.paperSx).toMatchObject({
       width: '100vw',
@@ -386,18 +382,11 @@ describe('ImageAttachmentPreviewRenderer', () => {
       maxHeight: '100svh',
     });
 
-    const fullscreenToggle = document.body.querySelector(
-      '[aria-label="Вийти з повноекранного режиму"]',
-    ) as HTMLButtonElement;
-    fullscreenToggle.focus();
-
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
-    expect(onClose).not.toHaveBeenCalled();
-    expect(document.activeElement).toBe(fullscreenToggle);
-    expect(latestActionProps?.isFullscreen).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
     root.unmount();
   });
 
