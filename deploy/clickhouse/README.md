@@ -783,27 +783,6 @@ investigation rather than repeated deployment attempts. Override the bounded
 retry only through `ANALYTICS_RECONCILE_DEPLOY_RETRY_ATTEMPTS` and
 `ANALYTICS_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS` in `source.env`.
 
-### Shared signal media and copy lineage
-
-`signal_message_media.storage_key` is the physical-object identity for
-signal-message attachments. A copied message has a new media-row UUID but can
-point to the source row's `storage_key`; unchanged attachments therefore do
-not require another S3 upload. Media cleanup must count references by
-`storage_key` and delete the physical object only after the final reference is
-removed.
-
-Message-copy lineage is stored in the PostgreSQL `intel_prod` table. Its
-composite rows link one saved copy to each source message, and
-`relation_kind` distinguishes report lineage from linked comments. The table
-is declared as `replicated_snapshot` for creation and `mirror_resync` for the
-relation-kind schema migration in `migration-impact.json`. The
-`signal_message_media` and `sigint_comment` schema changes are also declared
-`mirror_resync`; after applying these migrations on a ClickHouse instance, run
-the full PeerDB mirror resync and completion waiter, then verify the
-`intel_prod` and `sigint_comment` snapshots, current views, gateway views, and
-end-to-end analytics health before continuing the deployment. The copy
-operation itself never uploads unchanged S3 objects.
-
 Migration pull requests are checked against
 `migration-impact.json`. New tables declare `excluded` or
 `replicated_snapshot`; additive replicated columns declare `cdc_backfill` with
