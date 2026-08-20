@@ -709,12 +709,12 @@ mod tests {
   </MultiGeometry>
 </Placemark></Folder></Document></kml>"#;
 
-        let features = parse_point_line_features("battle-line.kml", kml)
+        let parsed = parse_point_line_features("battle-line.kml", kml)
             .await
             .unwrap();
 
         assert_eq!(
-            features,
+            parsed.features,
             vec![ImportedGeometryFeature::LineString(vec![
                 ImportedCoordinate {
                     lat: 49.0,
@@ -726,5 +726,6 @@ mod tests {
                 },
             ])]
         );
+        assert_eq!(parsed.empty_point_count, 1);
     }
 }
