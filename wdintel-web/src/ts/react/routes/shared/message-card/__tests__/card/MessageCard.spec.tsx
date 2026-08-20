@@ -2467,11 +2467,12 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
     expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
     const tagButton = getButton(view.container, 'переміщення');
-    expect(tagButton.getAttribute('aria-describedby')).toBe('message-card-tag-3-tip');
-    expect(view.container.querySelector('#message-card-tag-3-tip')?.textContent).toContain(
+    const tipId = tagButton.getAttribute('aria-describedby');
+    expect(tipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
       'Користувачі: tester',
     );
-    expect(view.container.querySelector('#message-card-tag-3-tip')?.textContent).toContain(
+    expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
       'Боти: bot (92%)',
     );
     expect(view.container.textContent).toContain('бот помилився');
@@ -2483,6 +2484,37 @@ describe('MessageCard', () => {
     expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
     expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
     expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
+  it('keeps contribution description ids unique across mounted cards with the same tag', async () => {
+    const sharedMsg = buildMessage({
+      inboxTags: [
+        { id: 1, tagId: 3, confidence: 1, login: 'alpha', model: null, organismId: 1 },
+        { id: 2, tagId: 3, confidence: 0.5, login: null, model: 'bot-a', organismId: null },
+      ],
+    });
+    const otherMsg = buildMessage({
+      text: 'Друга картка',
+      inboxTags: [
+        { id: 3, tagId: 3, confidence: 1, login: 'beta', model: null, organismId: 1 },
+        { id: 4, tagId: 3, confidence: 0.8, login: null, model: 'bot-b', organismId: null },
+      ],
+    });
+    const first = await renderCard({ msg: sharedMsg, onToggleTag: vi.fn() });
+    const second = await renderCard({ id: 43, msg: otherMsg, onToggleTag: vi.fn() });
+    rendered.push(first, second);
+
+    const firstTipId = getButton(first.container, 'переміщення').getAttribute('aria-describedby');
+    const secondTipId = getButton(second.container, 'переміщення').getAttribute('aria-describedby');
+    expect(firstTipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(secondTipId).toMatch(/^message-card-tag-3-tip-/);
+    expect(firstTipId).not.toBe(secondTipId);
+    expect(firstTipId != null ? document.getElementById(firstTipId)?.textContent : null).toContain(
+      'alpha',
+    );
+    expect(
+      secondTipId != null ? document.getElementById(secondTipId)?.textContent : null,
+    ).toContain('beta');
   });
 
   it('does not render analysis-only callsign controls in duty mode', async () => {

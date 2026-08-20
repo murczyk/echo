@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -36,11 +36,12 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
   interactive: boolean;
   onToggleTag?: (tagId: number) => void;
 }) {
+  const tipInstanceId = useId();
   const canToggle = interactive && onToggleTag != null;
   const chipClassName = 'message-card-tag-chip';
   const chipLabel = <span className="message-card-tag-chip__label">{row.label}</span>;
   const tipText = row.tip?.trim() ? row.tip : null;
-  const tipId = tipText != null ? `message-card-tag-${row.tagId}-tip` : undefined;
+  const tipId = tipText != null ? `message-card-tag-${row.tagId}-tip-${tipInstanceId}` : undefined;
   const tipProps =
     tipId != null
       ? {

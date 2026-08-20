@@ -262,9 +262,11 @@ a {
   grid-template-columns: repeat(4, 30px);
 }
 
-/* body2-parity text for MessageCard hot path (avoid MUI Typography/Emotion per card). */
+/* body2-parity text for MessageCard hot path (avoid MUI Typography/Emotion per card).
+   Theme uses htmlFontSize: 14 with a 14px app root, so body2 resolves to 1rem (14px),
+   not the default-theme 0.875rem (which would be 12.25px here). */
 .message-card-text {
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.43;
 }
 
@@ -322,7 +324,7 @@ a {
 }
 
 .message-card-relative-time {
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.43;
   white-space: nowrap;
   cursor: default;
