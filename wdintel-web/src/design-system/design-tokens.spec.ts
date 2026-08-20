@@ -12,21 +12,28 @@ const generatedCss = readFileSync(
   resolve(process.cwd(), 'src/styles/_design-tokens.generated.css'),
   'utf8',
 );
+const legacyVariablesCss = readFileSync(
+  resolve(process.cwd(), 'src/styles/_variables.css'),
+  'utf8',
+);
 
 describe('generated design tokens', () => {
   afterEach(() => {
     document.documentElement.removeAttribute('data-bs-theme');
     document.head.querySelector('[data-testid="echo-design-tokens"]')?.remove();
+    document.head.querySelector('[data-testid="echo-legacy-variables"]')?.remove();
   });
 
   it('contains the required light and dark semantic palettes', () => {
     expect(designTokens.color.light).toMatchObject({
       background: '#eff0f1',
+      borderSelected: '#d3871d',
       primary: '#2c6c91',
       text: '#000000',
     });
     expect(designTokens.color.dark).toMatchObject({
       background: '#1f1f1f',
+      borderSelected: '#bc8c56',
       primary: '#93cdf6',
       text: '#ffffff',
     });
@@ -37,11 +44,18 @@ describe('generated design tokens', () => {
     style.dataset.testid = 'echo-design-tokens';
     style.textContent = generatedCss;
     document.head.append(style);
+    const legacyStyle = document.createElement('style');
+    legacyStyle.dataset.testid = 'echo-legacy-variables';
+    legacyStyle.textContent = legacyVariablesCss;
+    document.head.append(legacyStyle);
 
     expect(generatedCss).toContain('--spacing-echo-sm: var(--echo-spacing-sm);');
     expect(generatedCss).toContain('--spacing-echo-control-md: var(--echo-size-control-md);');
     expect(generatedCss).toContain('--color-echo-surface: var(--echo-color-surface);');
     expect(generatedCss).toContain('--breakpoint-echo-md: 768px;');
+    expect(legacyVariablesCss).toContain(
+      '--border-selected-color: var(--echo-color-border-selected);',
+    );
     const compiler = await compile(`@import "tailwindcss";\n${generatedCss}`, {
       base: process.cwd(),
       loadStylesheet: async (id, from) => {
@@ -70,10 +84,31 @@ describe('generated design tokens', () => {
     expect(
       getComputedStyle(document.documentElement).getPropertyValue('--echo-color-background').trim(),
     ).toBe('#eff0f1');
+    expect(
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--echo-color-border-selected')
+        .trim(),
+    ).toBe('#d3871d');
+    expect(readLegacySelectedBorderColor()).toBe('#d3871d');
 
     document.documentElement.setAttribute('data-bs-theme', 'dark');
     expect(
       getComputedStyle(document.documentElement).getPropertyValue('--echo-color-background').trim(),
     ).toBe('#1f1f1f');
+    expect(
+      getComputedStyle(document.documentElement)
+        .getPropertyValue('--echo-color-border-selected')
+        .trim(),
+    ).toBe('#bc8c56');
+    expect(readLegacySelectedBorderColor()).toBe('#bc8c56');
   });
 });
+
+function readLegacySelectedBorderColor() {
+  const probe = document.createElement('div');
+  probe.style.borderColor = 'var(--border-selected-color)';
+  document.body.append(probe);
+  const borderColor = getComputedStyle(probe).borderColor;
+  probe.remove();
+  return borderColor;
+}

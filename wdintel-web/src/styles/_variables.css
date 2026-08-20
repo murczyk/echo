@@ -94,7 +94,7 @@
   --color-column: var(--echo-color-surface-raised);
   --color-card: var(--echo-color-surface);
   --color-border: var(--echo-color-border);
-  --color-border-selected: var(--border-selected-color);
+  --color-border-selected: var(--echo-color-border-selected);
   --color-separator: var(--separator-color);
   --color-divider: var(--echo-color-divider);
   --color-icons: var(--icons-color);
@@ -260,7 +260,7 @@
   --column-color: var(--echo-color-surface-raised);
   --card-color: var(--echo-color-surface);
   --border-color: var(--echo-color-border);
-  --border-selected-color: var(--echo-color-selected);
+  --border-selected-color: var(--echo-color-border-selected);
   --separator-color: var(--echo-color-divider);
   --icons-color: var(--lynch-color);
   --tag-color: white;
@@ -290,7 +290,7 @@ html[data-bs-theme='dark'] {
   --column-color: var(--echo-color-surface-raised);
   --card-color: var(--echo-color-surface);
   --border-color: var(--echo-color-border);
-  --border-selected-color: var(--echo-color-selected);
+  --border-selected-color: var(--echo-color-border-selected);
   --separator-color: var(--echo-color-divider);
   --icons-color: var(--pigeon-post-color);
   --tag-color: black;

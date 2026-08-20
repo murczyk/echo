@@ -18,7 +18,7 @@
     "e2e:perf": "playwright test --grep @perf",
     "e2e:install": "playwright install --with-deps chromium",
     "test": "npm run test:prepare && npm run test:elm && npm run test:ts",
-    "test:ci": "npm run tokens:check && npm run test:prepare && npm run test:elm && npm run test:ts:ci",
+    "test:ci": "npm run test:prepare && npm run test:elm && npm run test:ts:ci",
     "test:prepare": "elm-land generate",
     "test:elm": "elm-test",
     "test:ts": "vitest run",

@@ -16,7 +16,7 @@ This contract establishes the frontend foundation. It does not require migration
 - `src/styles/_design-tokens.generated.css` for CSS variables and Tailwind utilities;
 - `src/design-system/design-tokens.ts` for MUI and TypeScript consumers.
 
-Generated files must never be edited manually. `npm run tokens:check` validates the manifest and verifies both outputs without modifying files. It runs before application builds, TypeScript tests, CI tests, and Storybook builds.
+Generated files must never be edited manually. `npm run tokens:check` validates the manifest and verifies both outputs without modifying files. Token freshness is enforced exactly once by `prebuild`, `pretest:ts`, `pretest:ts:ci`, and `prebuild-storybook`; `test:ci` inherits the check through `test:ts:ci`.
 
 The manifest contains light and dark semantic colors, spacing, fixed sizes, radii, typography, behavioral breakpoints, and shadows. Public names describe intent, including `background`, `surface`, `text`, `border`, `primary`, status colors, focus, and interaction state. Do not add public APIs named after raw colors.
 
@@ -24,7 +24,7 @@ Legacy variables in `_variables.css` are compatibility aliases where a matching 
 
 ## Tailwind
 
-Tailwind v4 uses CSS-first configuration in `src/styles/style.css`. Use standard structural utilities such as `flex`, `grid`, `w-full`, and `min-w-0`, plus named Echo utilities for shared values:
+Tailwind v4 uses CSS-first configuration in `src/styles/style.css`. No application or showcase JavaScript Tailwind configuration is loaded. Any future standalone showcase must use its own CSS entrypoint and explicit `@config`, or preferably CSS-first configuration. Use standard structural utilities such as `flex`, `grid`, `w-full`, and `min-w-0`, plus named Echo utilities for shared values:
 
 ```text
 gap-echo-sm p-echo-lg h-echo-control-md size-echo-icon-sm
@@ -54,7 +54,7 @@ New code must not introduce layout-only `Box`, `Stack`, `Grid`, or `Container`; 
 
 ## Skills and verification
 
-The discoverable frontend implementation, accessibility, regression-safety, and Duty rendering skills contain the concise enforceable rules and link here for details. No work depends on a separately installed layout skill.
+The discoverable frontend implementation, accessibility, and regression-safety skills contain the concise enforceable rules and name this repository path for details. Duty rendering guidance remains in `.github/skills/duty-feed-rendering-safety` and is not treated as an installed/discoverable skill. No work depends on a separately installed layout skill.
 
 For token or theme work run, at minimum:
 

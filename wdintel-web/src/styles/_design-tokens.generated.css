@@ -19,6 +19,7 @@
   --color-echo-text-muted: var(--echo-color-text-muted);
   --color-echo-text-disabled: var(--echo-color-text-disabled);
   --color-echo-border: var(--echo-color-border);
+  --color-echo-border-selected: var(--echo-color-border-selected);
   --color-echo-divider: var(--echo-color-divider);
   --color-echo-primary: var(--echo-color-primary);
   --color-echo-primary-hover: var(--echo-color-primary-hover);
@@ -70,6 +71,7 @@
   --echo-color-text-muted: #6b7280;
   --echo-color-text-disabled: #d2dae5;
   --echo-color-border: #e2ebf7;
+  --echo-color-border-selected: #d3871d;
   --echo-color-divider: #e2ebf7;
   --echo-color-primary: #2c6c91;
   --echo-color-primary-hover: #286183;
@@ -144,6 +146,7 @@ html[data-bs-theme='dark'] {
   --echo-color-text-muted: #6b7280;
   --echo-color-text-disabled: #d2dae5;
   --echo-color-border: #5e5e64;
+  --echo-color-border-selected: #bc8c56;
   --echo-color-divider: #5e5e64;
   --echo-color-primary: #93cdf6;
   --echo-color-primary-hover: #84b9dd;

@@ -25,7 +25,7 @@ Use this skill for changes involving `rer-duty-neo`, shared MessageCard renderin
 - Do not add wrapper components whose only purpose is hiding those layout abstractions.
 - Do not migrate native structural layout into per-card `sx` objects.
 - Prefer semantic/native HTML, existing utility classes, and shared theme-backed CSS variables.
-- For new token-sensitive values, use shared `echo-*` design tokens. The detailed contract is [`docs/frontend/layout-component-contract.md`](../../../docs/frontend/layout-component-contract.md).
+- For new token-sensitive values, use shared `echo-*` design tokens. The detailed contract is `docs/frontend/layout-component-contract.md`.
 - Keep menus, dialogs, and popovers unmounted when practical.
 - Preserve `memo`, stable defaults, and conditional rendering that reduce repeated work.
 - Hidden narrow-screen feeds may remain mounted, but disabled tracking must not report visibility, bottom state, loading triggers, or read-state side effects.

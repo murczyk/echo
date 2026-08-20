@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import prettier from 'prettier';
 
 const tokensPath = fileURLToPath(new URL('../src/design-system/tokens.json', import.meta.url));
 const cssOutputPath = fileURLToPath(
@@ -18,6 +19,7 @@ const requiredColors = [
   'textMuted',
   'textDisabled',
   'border',
+  'borderSelected',
   'divider',
   'primary',
   'primaryHover',
@@ -144,10 +146,10 @@ function renderTypeScript(tokens) {
 async function main() {
   const tokens = JSON.parse(await readFile(tokensPath, 'utf8'));
   validateTokens(tokens);
-  const outputs = [
-    [cssOutputPath, renderCss(tokens)],
-    [typeScriptOutputPath, renderTypeScript(tokens)],
-  ];
+  const outputs = await Promise.all([
+    formatOutput(cssOutputPath, renderCss(tokens), 'css'),
+    formatOutput(typeScriptOutputPath, renderTypeScript(tokens), 'typescript'),
+  ]);
   if (process.argv.includes('--check')) {
     const stale = await Promise.all(
       outputs.map(
@@ -162,6 +164,11 @@ async function main() {
     return;
   }
   await Promise.all(outputs.map(([outputPath, content]) => writeFile(outputPath, content)));
+}
+
+async function formatOutput(outputPath, content, parser) {
+  const config = await prettier.resolveConfig(outputPath);
+  return [outputPath, await prettier.format(content, { ...config, parser })];
 }
 
 main().catch((error) => {

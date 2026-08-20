@@ -1,6 +1,6 @@
 ---
 name: frontend-html-css-accessibility
-description: Apply HTML/CSS updates with accessibility-first behavior, responsive checks, and repo-consistent styling primitives (MUI sx, utility classes, CSS vars).
+description: Apply semantic HTML and Tailwind layout updates with accessible MUI interaction components and responsive checks.
 ---
 
 # Frontend HTML/CSS Accessibility
@@ -23,7 +23,7 @@ Use when changing markup, classes, layout, spacing, colors, or interaction state
 ## Procedure (checklist)
 - For new React structure, use semantic HTML and Tailwind; use MUI/`Power*` for interactive components and component behavior.
 - Do not introduce layout-only MUI wrappers, structural `sx`, copied light/dark colors, or clickable `div` controls.
-- Use named `echo-*` utilities for new shared visual values. Read [`docs/frontend/layout-component-contract.md`](../../../docs/frontend/layout-component-contract.md) for the complete boundary and token rules.
+- Use named `echo-*` utilities for new shared visual values. Read `docs/frontend/layout-component-contract.md` for the complete boundary and token rules.
 - Keep semantic structure:
 - Correct element types for buttons/links/headings.
 - Labels/aria for form controls and icon-only actions.
