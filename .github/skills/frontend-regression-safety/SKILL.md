@@ -31,6 +31,7 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - mocks/tests
 - docs/changelog note
 - UX/UI regression checks:
+- For React layout changes, confirm native structure, Tailwind layout, MUI/Power interaction components, and shared Echo tokens are preserved. See `docs/frontend/layout-component-contract.md`.
 - Verify layout at mobile/tablet/desktop.
 - Verify keyboard navigation and focus state visibility.
 - Verify loading, empty, error, success states.
@@ -69,6 +70,7 @@ Changed /api/palitra/update/:id body?
 - Re-open diff and list each changed interactive UI state.
 - Confirm every list item is either validated or intentionally changed and documented.
 - Confirm no unrelated files were modified.
+- Confirm no new layout-only `Box`, `Stack`, `Grid`, `Container`, or structural `sx` was introduced.
 
 ## Assumptions
 - Manual visual verification is acceptable when automated UI tests are absent.
