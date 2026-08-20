@@ -124,6 +124,12 @@ vi.mock('@mui/material', () => ({
   ),
   Chip: ({ label }: { label?: ReactNode }) => <span>{label}</span>,
   CircularProgress: () => <span data-testid="spinner" />,
+  Dialog: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
+    open ? <div role="dialog">{children}</div> : null,
+  DialogActions: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  DialogContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  DialogContentText: ({ children }: { children?: ReactNode }) => <p>{children}</p>,
+  DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
   Drawer: ({ children, open }: { children?: ReactNode; open?: boolean }) =>
     open ? <div role="dialog">{children}</div> : null,
   FormControlLabel: ({ control, label }: { control: ReactNode; label: ReactNode }) => (
@@ -196,6 +202,12 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
+  createTheme: () => ({
+    palette: {
+      background: { default: '#121212' },
+      mode: 'dark',
+    },
+  }),
   useTheme: () => ({ breakpoints: { down: () => '(max-width: 600px)' } }),
 }));
 vi.mock('../../../components/PowerAlert', () => ({

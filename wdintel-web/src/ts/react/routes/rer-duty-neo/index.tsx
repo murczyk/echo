@@ -2,7 +2,7 @@ import { Box, useMediaQuery, useTheme } from '@mui/material';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isPresent } from '../../utils/misc';
 
-import { CommentDialog, DeleteConfirmDialog } from './dialogs';
+import { DeleteConfirmDialog } from './dialogs';
 import {
   setDutyNeoDocumentTitleUnreadCount,
   startDutyNeoDocumentTitleTracking,
@@ -26,6 +26,8 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 import type { InboxMessage, User } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
+import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerDutyNeoPageProps = {
@@ -55,7 +57,28 @@ export function RerDutyNeoPage({
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
+  const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
+    null,
+  );
   const { notify } = usePowerSnackbar();
+  const openReportEditor = useCallback(
+    async (reportId: number) => {
+      try {
+        const [report] = await fetchMessagesByIds([reportId]);
+        if (!report) throw new Error('Розвіддонесення не знайдено.');
+        setCreateMessageOpen(false);
+        setReportSource(null);
+        setEditTarget({ id: report[0], message: report[1] });
+      } catch (loadError) {
+        notify({
+          message:
+            loadError instanceof Error ? loadError.message : 'Не вдалося відкрити розвіддонесення.',
+          severity: 'error',
+        });
+      }
+    },
+    [notify],
+  );
   const previousFeedCountRef = useRef(0);
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
@@ -163,12 +186,20 @@ export function RerDutyNeoPage({
         handleMessageImportant(feedId, msgId, currentlyImportant),
       onMessageAddFrequencyToFilter: (_feedId, freq) => addFrequencyToFilter(feedId, freq),
       onMessageCopy: handleMessageCopy,
-      onMessageComment: (msgId, currentComment) => openCommentDialog(msgId, feedId, currentComment),
+      onMessageCreateReport: (messageId, message) => {
+        setCreateMessageOpen(false);
+        setEditTarget(null);
+        setReportSource({ id: messageId, message });
+      },
+      onMessageEditReport: (reportId) => {
+        void openReportEditor(reportId);
+      },
       onMessageExcludeEntity: (entity, value) =>
         applyFilter(feedId, excludeMessageEntityFromFilters(feed.filter, entity, value)),
       onMessageToggleTag: (msgId, tagId) => handleToggleTag(feedId, msgId, tagId),
       onMessageEdit: (messageId, message) => {
         setCreateMessageOpen(false);
+        setReportSource(null);
         setEditTarget({ id: messageId, message });
       },
       onScrollToTop: () => {
@@ -251,7 +282,8 @@ export function RerDutyNeoPage({
       onMessageAddFrequencyToFilter: (fId, freq) =>
         latest().onMessageAddFrequencyToFilter(fId, freq),
       onMessageCopy: (text, feedbackId) => latest().onMessageCopy(text, feedbackId),
-      onMessageComment: (msgId, currentComment) => latest().onMessageComment(msgId, currentComment),
+      onMessageCreateReport: (msgId, message) => latest().onMessageCreateReport(msgId, message),
+      onMessageEditReport: (reportId) => latest().onMessageEditReport(reportId),
       onMessageExcludeEntity: (entity, value) => latest().onMessageExcludeEntity(entity, value),
       onMessageToggleTag: (msgId, tagId) => latest().onMessageToggleTag(msgId, tagId),
       onMessageEdit: (messageId, message) => latest().onMessageEdit(messageId, message),
@@ -475,20 +507,12 @@ export function RerDutyNeoPage({
     handleDeleteConfirm,
     setDeleteConfirmId,
     setDeleteConfirmFeedId,
-    openCommentDialog,
-    commentMessagePreview,
-    handleCommentSave,
     handleToggleTag,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
     handleArrowClick,
     handleVisibleMessageIds,
-    commentMessageId,
-    commentText,
-    setCommentText,
-    setCommentMessageId,
-    setCommentFeedId,
     deleteConfirmId,
     deleteConfirmFeedId,
     profiles,
@@ -547,17 +571,24 @@ export function RerDutyNeoPage({
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
     setEditTarget(null);
+    setReportSource(null);
     setCreateMessageOpen(true);
   }, []);
   const closeMessageEditor = useCallback(() => {
     setCreateMessageOpen(false);
     setEditTarget(null);
+    setReportSource(null);
   }, []);
   const handleCreatedMessage = useCallback(() => {
     setCreateMessageOpen(false);
+    if (reportSource) {
+      reloadFeeds();
+      notify({ message: 'Розвіддонесення успішно створено.', severity: 'success' });
+      return;
+    }
     reloadEmptyFeeds();
     notify({ message: 'Повідомлення успішно створено.', severity: 'success' });
-  }, [notify, reloadEmptyFeeds]);
+  }, [notify, reloadEmptyFeeds, reloadFeeds, reportSource]);
 
   useEffect(() => {
     if (
@@ -662,28 +693,31 @@ export function RerDutyNeoPage({
       </PointBlacklistPaletteNamesCacheProvider>
 
       <ManageMessageDrawer
-        open={createMessageOpen || isPresent(editTarget)}
+        open={createMessageOpen || isPresent(editTarget) || isPresent(reportSource)}
         cyberEchoEnabled={cyberEchoEnabled}
         currentUser={currentUser}
         editTarget={editTarget}
+        reportSource={reportSource}
         onClose={closeMessageEditor}
-        onSubmitEdit={async (messageId, message) => {
-          handleEditedMessage(messageId, message);
+        onSubmitEdit={
+          editTarget && !isIntelligenceReport(editTarget.message)
+            ? async (messageId, message) => {
+                handleEditedMessage(messageId, message);
+              }
+            : undefined
+        }
+        onEditSuccess={() => {
+          if (editTarget && isIntelligenceReport(editTarget.message)) {
+            reloadFeeds();
+          } else {
+            reloadEditedFeeds();
+          }
         }}
-        onEditSuccess={() => reloadEditedFeeds()}
+        onDeleteSuccess={() => {
+          reloadFeeds();
+          notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
+        }}
         onCreated={handleCreatedMessage}
-      />
-
-      <CommentDialog
-        open={isPresent(commentMessageId)}
-        messagePreview={commentMessagePreview}
-        commentText={commentText}
-        onCommentTextChange={setCommentText}
-        onClose={() => {
-          setCommentMessageId(null);
-          setCommentFeedId(null);
-        }}
-        onSave={handleCommentSave}
       />
 
       <DeleteConfirmDialog

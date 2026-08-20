@@ -50,7 +50,8 @@ vi.mock('@mui/material', () => ({
 vi.mock('../../shared/message-card/MessageCard', () => ({
   AnalysisMessageCard: (props: {
     id: number;
-    onComment: () => void;
+    onCreateReport: () => void;
+    onEditReport?: (id: number) => void;
     onDelete: () => void;
     onEditDetails: () => void;
     onCopyEtalon?: () => void;
@@ -68,8 +69,11 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
           .map((comment) => `${comment.login}:${comment.comment}`)
           .join('|')}
       </span>
-      <button type="button" onClick={props.onComment}>
-        comment-{props.id}
+      <button type="button" onClick={props.onCreateReport}>
+        report-{props.id}
+      </button>
+      <button type="button" onClick={() => props.onEditReport?.(91)}>
+        edit-report-{props.id}
       </button>
       <button type="button" onClick={props.onDelete}>
         delete-{props.id}
@@ -101,35 +105,6 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
 }));
 
 vi.mock('../../rer-duty-neo/dialogs', () => ({
-  CommentDialog: (props: {
-    open: boolean;
-    messagePreview?: {
-      text?: string | null;
-      freq?: string | null;
-      groupMasterKey?: string | null;
-      groupName?: string | null;
-      sender?: string | null;
-      senderName?: string | null;
-    } | null;
-    onSave: () => void;
-    onClose: () => void;
-  }) =>
-    props.open ? (
-      <div data-testid="comment-dialog">
-        <div data-testid="comment-preview">
-          {props.messagePreview?.freq ?? ''}{' '}
-          {props.messagePreview?.groupName ?? props.messagePreview?.groupMasterKey ?? ''}{' '}
-          {props.messagePreview?.senderName ?? props.messagePreview?.sender ?? ''}{' '}
-          {props.messagePreview?.text ?? ''}
-        </div>
-        <button type="button" onClick={props.onSave}>
-          save-comment
-        </button>
-        <button type="button" onClick={props.onClose}>
-          close-comment
-        </button>
-      </div>
-    ) : null,
   DeleteConfirmDialog: (props: { open: boolean; onConfirm: () => void; onClose: () => void }) =>
     props.open ? (
       <div data-testid="delete-dialog">
@@ -200,9 +175,10 @@ function buildProps(
     noMoreToLoad: false,
     onDeleteMessage: vi.fn(),
     onOpenEditor: vi.fn(),
+    onCreateReport: vi.fn(),
+    onEditReport: vi.fn(),
     onLoadMoreMessages: vi.fn().mockResolvedValue(true),
     onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
-    onSaveMessageComment: vi.fn(),
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
@@ -357,44 +333,23 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).toContain('loading');
   });
 
-  it('wires comment save into the page callback', async () => {
-    const onSaveMessageComment = vi.fn();
+  it('wires report creation and editing into the page callbacks', async () => {
+    const onCreateReport = vi.fn();
+    const onEditReport = vi.fn();
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage()]],
-        groupInfos: {
-          'group-1': { masterKey: 'group-1', name: 'Група 1' } as SignalGroupEntry,
-        },
-        profiles: {
-          'sender-1': { givenName: 'BBC', familyName: 'SPORT' },
-        },
-        onSaveMessageComment,
+        onCreateReport,
+        onEditReport,
       }),
     );
     rendered.push(view);
 
-    await click(getButton(view.container, 'comment-7'));
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
-      '100.000',
-    );
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
-      'Група 1',
-    );
-    expect(
-      view.container.querySelector('[data-testid="comment-preview"]')?.textContent,
-    ).not.toContain('group-1');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
-      'BBC SPORT',
-    );
-    expect(
-      view.container.querySelector('[data-testid="comment-preview"]')?.textContent,
-    ).not.toContain('sender-1');
-    expect(view.container.querySelector('[data-testid="comment-preview"]')?.textContent).toContain(
-      'hello',
-    );
-    await click(getButton(view.container, 'save-comment'));
+    await click(getButton(view.container, 'report-7'));
+    await click(getButton(view.container, 'edit-report-7'));
 
-    expect(onSaveMessageComment).toHaveBeenCalledWith(7, 'saved comment');
+    expect(onCreateReport).toHaveBeenCalledWith(7);
+    expect(onEditReport).toHaveBeenCalledWith(91);
   });
 
   it('forwards loaded message comments into the rendered message card', async () => {
@@ -503,7 +458,7 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    expect(view.container.querySelector('button').textContent).toContain('comment-7');
+    expect(view.container.querySelector('button').textContent).toContain('report-7');
     expect(view.container.textContent).toContain('copy-etalon-7');
   });
 

@@ -8,6 +8,7 @@ import { mapCoordinates, type MappedCoordinate } from '../../../../services/api/
 import { CoordinateAttachmentThumbnail } from '../../message-card/CoordinateAttachmentThumbnail';
 import { MessageCardAttachmentPreviewProvider } from '../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { CoordinatePreviewPoint } from '../../message-card/message-coordinate-preview';
+import { COORDINATE_PANEL_MAX_HEIGHT_PX } from './coordinate-input.constants';
 
 const LOOKUP_DEBOUNCE_MS = 300;
 
@@ -77,6 +78,8 @@ export function CoordinateInputPreview({ value, busy, onError }: Props) {
         minWidth: 0,
         width: '100%',
         aspectRatio: '1 / 1',
+        maxHeight: COORDINATE_PANEL_MAX_HEIGHT_PX,
+        overflow: 'hidden',
         alignSelf: 'flex-start',
       }}
     >

@@ -12,8 +12,19 @@ function Harness({
   ignoreEvent,
   onMessageIds,
 }: {
-  ignoreEvent?: (event: { messageId: number; origin: string | null }) => boolean;
-  onMessageIds: (messageIds: number[]) => void | Promise<void>;
+  ignoreEvent?: (event: {
+    messageId: number;
+    origin: string | null;
+    intelligenceReport: boolean;
+  }) => boolean;
+  onMessageIds: (
+    messageIds: number[],
+    events: Array<{
+      messageId: number;
+      origin: string | null;
+      intelligenceReport: boolean;
+    }>,
+  ) => void | Promise<void>;
 }) {
   useInboxChangedMessageIds({ ignoreEvent, onMessageIds });
   return null;
@@ -59,7 +70,14 @@ describe('useInboxChangedMessageIds', () => {
       );
     });
 
-    expect(onMessageIds).toHaveBeenCalledWith([7, 8, 9]);
+    expect(onMessageIds).toHaveBeenCalledWith(
+      [7, 8, 9],
+      [
+        { messageId: 7, origin: null, intelligenceReport: false },
+        { messageId: 8, origin: null, intelligenceReport: false },
+        { messageId: 9, origin: null, intelligenceReport: false },
+      ],
+    );
   });
 
   it('ignores malformed events and non-integer ids', async () => {
@@ -78,7 +96,10 @@ describe('useInboxChangedMessageIds', () => {
       );
     });
 
-    expect(onMessageIds).toHaveBeenCalledWith([8]);
+    expect(onMessageIds).toHaveBeenCalledWith(
+      [8],
+      [{ messageId: 8, origin: null, intelligenceReport: false }],
+    );
   });
 
   it('ignores only correlated events and keeps unrelated updates for the same message', async () => {
@@ -105,7 +126,13 @@ describe('useInboxChangedMessageIds', () => {
       );
     });
 
-    expect(onMessageIds).toHaveBeenCalledWith([7, 8]);
+    expect(onMessageIds).toHaveBeenCalledWith(
+      [7, 8],
+      [
+        { messageId: 7, origin: 'remote-origin', intelligenceReport: false },
+        { messageId: 8, origin: null, intelligenceReport: false },
+      ],
+    );
     expect(ignoreEvent).toHaveBeenCalledTimes(3);
   });
 
@@ -156,7 +183,13 @@ describe('useInboxChangedMessageIds', () => {
     });
 
     expect(onMessageIds).toHaveBeenCalledTimes(1);
-    expect(onMessageIds).toHaveBeenCalledWith([7, 8]);
+    expect(onMessageIds).toHaveBeenCalledWith(
+      [7, 8],
+      [
+        { messageId: 7, origin: null, intelligenceReport: false },
+        { messageId: 8, origin: null, intelligenceReport: false },
+      ],
+    );
 
     await act(async () => {
       firstRefresh.resolve();
@@ -164,6 +197,39 @@ describe('useInboxChangedMessageIds', () => {
     });
 
     expect(onMessageIds).toHaveBeenCalledTimes(2);
-    expect(onMessageIds).toHaveBeenNthCalledWith(2, [8, 9]);
+    expect(onMessageIds).toHaveBeenNthCalledWith(
+      2,
+      [8, 9],
+      [
+        { messageId: 8, origin: null, intelligenceReport: false },
+        { messageId: 9, origin: null, intelligenceReport: false },
+      ],
+    );
+  });
+
+  it('preserves intelligence report metadata while coalescing message ids', async () => {
+    const onMessageIds = vi.fn();
+
+    await act(async () => {
+      root.render(React.createElement(Harness, { onMessageIds }));
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('echo-inbox-changed', {
+          detail: {
+            events: [
+              { messageId: 91, origin: null },
+              { messageId: 91, origin: null, intelligenceReport: true },
+            ],
+          },
+        }),
+      );
+    });
+
+    expect(onMessageIds).toHaveBeenCalledWith(
+      [91],
+      [{ messageId: 91, origin: null, intelligenceReport: true }],
+    );
   });
 });

@@ -16,6 +16,7 @@ pub struct Model {
     pub comment: String,
     pub created_at: DateTime,
     pub sigint_post_id: Option<i64>,
+    pub migrated_signal_message_id: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

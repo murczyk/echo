@@ -326,7 +326,7 @@ async fn ensure_media_cached_with_behavior(
         return Err(failure.into_app_error());
     }
 
-    let source = cache_source(env, media.id)?;
+    let source = cache_source(env, media)?;
     let population_path = cache_path.clone();
     populate_singleflight(
         cache_path.clone(),
@@ -355,7 +355,10 @@ async fn ensure_media_cached_with_behavior(
     Ok(cache_path)
 }
 
-fn cache_source(env: &Env, media_id: Uuid) -> Result<CacheSource, AppError> {
+fn cache_source(
+    env: &Env,
+    media: &signal_message_media::Model,
+) -> Result<CacheSource, AppError> {
     let config = env.config.s3_config.as_ref().ok_or(AppError::BL {
         msg: "S3 is not configured".to_string(),
     })?;
@@ -363,7 +366,7 @@ fn cache_source(env: &Env, media_id: Uuid) -> Result<CacheSource, AppError> {
         s3: env.s3.clone(),
         s3_config: env.s3_config.clone(),
         strongbox_key: config.strongbox_key.clone(),
-        object_key: storage::nested_object_key(&media_id),
+        object_key: crate::messenger::media::media_object_key(media),
     })
 }
 

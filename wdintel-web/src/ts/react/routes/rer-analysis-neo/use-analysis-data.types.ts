@@ -111,7 +111,6 @@ export type UseAnalysisDataResult = {
   ) => void;
   onPrependLocalMessage: (messageId: number, message: InboxMessage) => void;
   onDeleteMessage: (messageId: number) => Promise<void>;
-  onSaveMessageComment: (messageId: number, comment: string | null) => Promise<void>;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => Promise<void>;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => Promise<void>;

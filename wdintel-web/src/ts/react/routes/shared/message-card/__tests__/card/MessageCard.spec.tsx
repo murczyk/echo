@@ -672,7 +672,7 @@ async function renderCard(
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
     onAddFrequencyToFilter: vi.fn(),
-    onComment: vi.fn(),
+    onCreateReport: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
     onToggleTag: vi.fn(),
     ...overrides,
@@ -721,7 +721,7 @@ async function renderHeader(
     topRight: <div />,
     onBookmark: vi.fn(),
     onImportant: vi.fn(),
-    onComment: vi.fn(),
+    onCreateReport: vi.fn(),
     onCopyText: vi.fn(),
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
@@ -1177,6 +1177,76 @@ describe('MessageCard', () => {
     expect(window.getComputedStyle(extendedForm).fontWeight).toBe('700');
   });
 
+  it('renders report summaries below the comment and opens report editing', async () => {
+    const onEditReport = vi.fn();
+    const msg = {
+      ...buildMessage({ extendedForm: 'Коментар' }),
+      intelligenceReports: [
+        {
+          id: 91,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'Короткий текст розвіддонесення',
+          attachmentsCount: 2,
+          timestamp: 1_710_000_000_000,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'report-group',
+        },
+      ],
+    } as InboxMessage;
+    const view = await renderCard({
+      msg,
+      reportGroupInfos: {
+        'report-group': { masterKey: 'report-group', name: 'Група донесення' } as any,
+      },
+      onEditReport,
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Короткий текст розвіддонесення');
+    expect(view.container.textContent).not.toContain('Група донесення');
+    const comment = getMuiTypographyElementByText(view.container, 'Коментар');
+    const editReport = view.container.querySelector(
+      'button[aria-label="Редагувати розвіддонесення"]',
+    );
+    if (!(editReport instanceof HTMLButtonElement)) throw new Error('report edit button not found');
+    expect(comment.compareDocumentPosition(editReport) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+      0,
+    );
+    await click(editReport);
+    expect(onEditReport).toHaveBeenCalledWith(91);
+  });
+
+  it('offers report creation from a standalone report card', async () => {
+    const onCreateReport = vi.fn();
+    const msg = buildMessage({
+      groupMasterKey: 'report-group',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'Короткий текст оригінального повідомлення',
+          attachmentsCount: 1,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: 'original-group',
+        },
+      ],
+    });
+    const view = await renderCard({ msg, onCreateReport });
+    rendered.push(view);
+
+    await click(view.container.querySelector('button[aria-label="Створити розвіддонесення"]'));
+    expect(onCreateReport).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).toContain('Короткий текст оригінального повідомлення');
+    expect(view.container.textContent).not.toContain('Оригінальне повідомлення');
+  });
+
   it('linkifies plain message text URLs in the body', async () => {
     const url = 'https://docs.google.com/document/d/hash/edit?usp=sharing';
     const view = await renderCard({
@@ -1626,7 +1696,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('ALPHA');
   });
 
-  it('orders duty toolbar actions as comment, important, bookmark, copy, edit, navigate, minus', async () => {
+  it('orders duty toolbar actions as report, important, bookmark, copy, edit, navigate, minus', async () => {
     const view = await renderCard({ onEditDetails: vi.fn() });
     rendered.push(view);
 
@@ -1637,7 +1707,7 @@ describe('MessageCard', () => {
       button.getAttribute('aria-label'),
     );
     expect(labels).toEqual([
-      'Редагувати коментар',
+      'Створити розвіддонесення',
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
@@ -1647,7 +1717,7 @@ describe('MessageCard', () => {
     ]);
   });
 
-  it('orders analysis toolbar actions as comment, important, bookmark, copy, navigate, overflow', async () => {
+  it('orders analysis toolbar actions as report, important, bookmark, copy, navigate, overflow', async () => {
     const view = await renderCard({
       displayMode: 'analysis',
       onEditDetails: vi.fn(),
@@ -1662,7 +1732,7 @@ describe('MessageCard', () => {
       button.getAttribute('aria-label'),
     );
     expect(labels).toEqual([
-      'Редагувати коментар',
+      'Створити розвіддонесення',
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
@@ -1965,20 +2035,22 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
   });
 
-  it('blurs the focused toolbar button before opening the comment action', async () => {
-    const onComment = vi.fn();
-    const view = await renderCard({ onComment });
+  it('blurs the focused toolbar button before opening the report action', async () => {
+    const onCreateReport = vi.fn();
+    const view = await renderCard({ onCreateReport });
     rendered.push(view);
 
-    const commentButton = view.container.querySelector('button[aria-label="Редагувати коментар"]');
-    if (!(commentButton instanceof HTMLButtonElement)) throw new Error('comment button not found');
-    commentButton.focus();
-    expect(document.activeElement).toBe(commentButton);
+    const reportButton = view.container.querySelector(
+      'button[aria-label="Створити розвіддонесення"]',
+    );
+    if (!(reportButton instanceof HTMLButtonElement)) throw new Error('report button not found');
+    reportButton.focus();
+    expect(document.activeElement).toBe(reportButton);
 
-    await click(commentButton);
+    await click(reportButton);
 
-    expect(onComment).toHaveBeenCalledTimes(1);
-    expect(document.activeElement).not.toBe(commentButton);
+    expect(onCreateReport).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(reportButton);
   });
 
   it('shows the edit action in the toolbar and only delete in the overflow menu', async () => {
@@ -3381,17 +3453,24 @@ describe('MessageCard', () => {
   });
 
   it('shows selected tags first and can reveal the rest on demand', async () => {
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
-      width: TAG_ROW_MEASURE_WIDTH_PX,
-      height: 32,
-      x: 0,
-      y: 0,
-      top: 0,
-      left: 0,
-      right: TAG_ROW_MEASURE_WIDTH_PX,
-      bottom: 32,
-      toJSON: () => ({}),
-    } as DOMRect);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const isTag = this.hasAttribute('data-message-card-tag-id');
+        const width = isTag ? 60 : TAG_ROW_MEASURE_WIDTH_PX;
+        const top = isTag && this.getAttribute('data-message-card-tag-id') !== '3' ? 40 : 0;
+        return {
+          width,
+          height: 32,
+          x: 0,
+          y: top,
+          top,
+          left: 0,
+          right: width,
+          bottom: top + 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
 
     try {
       const view = await renderCard({ tagsLayout: 'compact' });
@@ -3561,7 +3640,9 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Позначити як важливе"]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Додати в закладки"]')).toBeNull();
-    expect(view.container.querySelector('button[aria-label="Редагувати коментар"]')).toBeNull();
+    expect(
+      view.container.querySelector('button[aria-label="Створити розвіддонесення"]'),
+    ).toBeNull();
     expect(view.container.querySelector('button[aria-label^="Виключити"]')).toBeNull();
 
     await click(view.container.querySelector('[data-message-card-tag-id="3"]') as HTMLElement);

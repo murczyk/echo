@@ -991,6 +991,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::users::user_sigint_groups_detailed)
             .service(crate::sigint::direct_submit::submit_direct)
             .service(crate::sigint::direct_submit::edit_message)
+            .service(crate::sigint::direct_submit::copy_message)
             .service(crate::sigint::direct_submit::parse_direct_submit)
             .service(crate::sigint::file_upload::tus_base)
             .service(crate::sigint::file_upload::tus_file)

@@ -1086,6 +1086,8 @@ type alias InboxMessage =
     , deviceName : Maybe (String)
     , inboxTags : Maybe (List (InboxMessageTag))
     , metadata : List (InboxMessageMetadata)
+    , parentMessages : List (InboxMessageSummary)
+    , intelligenceReports : List (InboxMessageSummary)
     }
 
 
@@ -1130,6 +1132,42 @@ inboxMessageEncoder struct =
         , ( "device_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deviceName )
         , ( "inbox_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (inboxMessageTagEncoder))) struct.inboxTags )
         , ( "metadata", (Json.Encode.list (inboxMessageMetadataEncoder)) struct.metadata )
+        , ( "parent_messages", (Json.Encode.list (inboxMessageSummaryEncoder)) struct.parentMessages )
+        , ( "intelligence_reports", (Json.Encode.list (inboxMessageSummaryEncoder)) struct.intelligenceReports )
+        ]
+
+
+type alias InboxMessageSummary =
+    { id : Int
+    , isAccessible : Bool
+    , isDeleted : Bool
+    , text : String
+    , attachmentsCount : Int
+    , timestamp : Maybe (Int)
+    , date : Maybe (String)
+    , time : Maybe (String)
+    , groupName : Maybe (String)
+    , groupMasterKey : Maybe (String)
+    , coords : Maybe (String)
+    , mediaFileNames : List (String)
+    }
+
+
+inboxMessageSummaryEncoder : InboxMessageSummary -> Json.Encode.Value
+inboxMessageSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "is_accessible", (Json.Encode.bool) struct.isAccessible )
+        , ( "is_deleted", (Json.Encode.bool) struct.isDeleted )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "attachments_count", (Json.Encode.int) struct.attachmentsCount )
+        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
+        , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.date )
+        , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
+        , ( "group_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupName )
+        , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
+        , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
+        , ( "media_file_names", (Json.Encode.list (Json.Encode.string)) struct.mediaFileNames )
         ]
 
 
@@ -13276,6 +13314,7 @@ type alias EventMsg =
     , eventType : EventType
     , createdAt : Int
     , origin : Maybe (String)
+    , intelligenceReport : Bool
     }
 
 
@@ -13286,6 +13325,7 @@ eventMsgEncoder struct =
         , ( "event_type", (eventTypeEncoder) struct.eventType )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "origin", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.origin )
+        , ( "intelligence_report", (Json.Encode.bool) struct.intelligenceReport )
         ]
 
 
@@ -14395,6 +14435,25 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_tags" (Json.Decode.nullable (Json.Decode.list (inboxMessageTagDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata" (Json.Decode.list (inboxMessageMetadataDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_messages" (Json.Decode.list (inboxMessageSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "intelligence_reports" (Json.Decode.list (inboxMessageSummaryDecoder))))
+
+
+inboxMessageSummaryDecoder : Json.Decode.Decoder InboxMessageSummary
+inboxMessageSummaryDecoder =
+    Json.Decode.succeed InboxMessageSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_accessible" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_file_names" (Json.Decode.list (Json.Decode.string))))
 
 
 inboxMessageMetadataDecoder : Json.Decode.Decoder InboxMessageMetadata
@@ -21995,6 +22054,7 @@ eventMsgDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "intelligence_report" (Json.Decode.bool), Json.Decode.succeed False ]))
 
 
 deploymentMaintenanceDecoder : Json.Decode.Decoder DeploymentMaintenance

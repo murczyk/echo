@@ -20,6 +20,7 @@ import {
   type CoordinateInputFormat,
   type ParsedCoordinate,
 } from '../../../../../maps/coordinate-parser';
+import { COORDINATE_PANEL_MAX_HEIGHT_PX } from './coordinate-input.constants';
 
 const FORMAT_LABELS: Record<CoordinateInputFormat, string> = {
   wgs84: 'WGS-84',
@@ -243,6 +244,7 @@ export function CoordinateListInput({
             minWidth: 0,
             width: '100%',
             aspectRatio: '1 / 1',
+            maxHeight: COORDINATE_PANEL_MAX_HEIGHT_PX,
             borderRadius: 2,
             border: 1,
             borderColor: 'divider',

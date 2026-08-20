@@ -419,6 +419,23 @@ export type InboxMessage = {
   deviceName: string | null;
   inboxTags: Array<InboxMessageTag> | null;
   metadata: Array<InboxMessageMetadata>;
+  parentMessages: Array<InboxMessageSummary>;
+  intelligenceReports: Array<InboxMessageSummary>;
+};
+
+export type InboxMessageSummary = {
+  id: number;
+  isAccessible: boolean;
+  isDeleted: boolean;
+  text: string;
+  attachmentsCount: number;
+  timestamp: number | null;
+  date: string | null;
+  time: string | null;
+  groupName: string | null;
+  groupMasterKey: string | null;
+  coords: string | null;
+  mediaFileNames: Array<string>;
 };
 
 export type InboxMessageMetadata = {
@@ -5137,6 +5154,7 @@ export type EventMsg = {
   eventType: EventType;
   createdAt: number;
   origin: string | null;
+  intelligenceReport: boolean;
 };
 
 export type DeploymentMaintenance = {

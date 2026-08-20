@@ -57,11 +57,17 @@ const dmrMetadataSchema = z.object({
   hash_id: optionalDmrText,
 });
 
-export function makeMessageSchema(isEditMode: boolean) {
+export function makeMessageSchema(
+  isEditMode: boolean,
+  groupOptional = false,
+  reportTextRequired = false,
+) {
   return z
     .object({
       text: z.string().optional(),
-      signalGroupMasterKey: z.string().trim().min(1, 'Оберіть групу'),
+      signalGroupMasterKey: groupOptional
+        ? z.string().optional().default('')
+        : z.string().trim().min(1, 'Оберіть групу'),
       deviceName: z.string().optional(),
       freq: z
         .string()
@@ -74,7 +80,9 @@ export function makeMessageSchema(isEditMode: boolean) {
       tags: z.array(z.string()).optional(),
       date: z.any().optional(),
       time: z.any().optional(),
-      full_body: z.string().optional(),
+      full_body: reportTextRequired
+        ? z.string().trim().min(1, 'Введіть текст розвіддонесення')
+        : z.string().optional(),
       comment: z.string().optional(),
       post: z.string().optional(),
       unit: z.string().optional(),

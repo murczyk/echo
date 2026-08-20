@@ -367,14 +367,18 @@ mod m20260811_064758_sigint_inbox_item_units;
 mod m20260811_073954_failed_inbox_unit_bad_text_index;
 mod m20260811_142447_failed_inbox_unit_note;
 mod m20260811_161634_failed_inbox_unit_multi_text;
+mod m20260812_113859_signal_message_copy;
 mod m20260812_115511_sigint_inbox_item_datetime_neo_indexes;
 mod m20260813_181612_add_duty_collapse_media_previews;
 mod m20260813_183642_sigint_unit_orbit_echelons;
+mod m20260815_125337_add_sigint_comment_migration_marker;
 mod m20260816_102640_ocr;
 mod m20260816_173322_media_summary;
 mod m20260817_124312_sigint_unit_inconsistent;
+mod m20260817_125243_add_intel_prod_relation_kind;
 mod m20260818_052317_shared_ai_engine_capabilities;
 mod m20260818_081034_inbox_unit_backfill_lookup_indexes;
+mod m20260818_104740_sigint_comment_migration_indexes;
 mod m20260818_130237_battle_line_and_inbox_settlement;
 mod m20260818_142214_unique_sigint_inbox_item_network;
 mod m20260819_175820_device_settings;
@@ -851,6 +855,7 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260811_142447_failed_inbox_unit_note::Migration),
             Box::new(m20260811_161634_failed_inbox_unit_multi_text::Migration),
+            Box::new(m20260812_113859_signal_message_copy::Migration),
             Box::new(
                 m20260812_115511_sigint_inbox_item_datetime_neo_indexes::Migration,
             ),
@@ -858,8 +863,13 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260813_183642_sigint_unit_orbit_echelons::Migration,
             ),
+            Box::new(
+                m20260815_125337_add_sigint_comment_migration_marker::Migration,
+            ),
             Box::new(m20260816_102640_ocr::Migration),
             Box::new(m20260816_173322_media_summary::Migration),
+            Box::new(m20260817_125243_add_intel_prod_relation_kind::Migration),
+            Box::new(m20260818_104740_sigint_comment_migration_indexes::Migration),
             Box::new(m20260817_124312_sigint_unit_inconsistent::Migration),
             Box::new(
                 m20260818_052317_shared_ai_engine_capabilities::Migration,

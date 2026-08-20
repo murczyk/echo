@@ -1,7 +1,18 @@
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
+import DownloadIcon from '@mui/icons-material/Download';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { Box, IconButton, LinearProgress, Typography } from '@mui/material';
+import {
+  Box,
+  IconButton,
+  LinearProgress,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
+  Typography,
+} from '@mui/material';
 import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import { attachmentIcon, fileExtension, formatFileSize, mediaKind } from './attachment-files';
@@ -121,7 +132,7 @@ export function useLocalMediaPreviewUrls(files: AttachmentPreviewFile[]) {
     for (const file of files) {
       const data = file.data;
       if (
-        !mediaKind(file.type) ||
+        !mediaKind(file.type, file.name) ||
         !isLocalBlob(data) ||
         failedRef.current.has(file.id) ||
         urlsRef.current.has(file.id)
@@ -158,61 +169,102 @@ function LocalMediaPreview({
   file,
   previewUrl,
   onError,
+  onClick,
 }: {
   file: AttachmentPreviewFile;
   previewUrl: string;
-  onError: () => void;
+  onError?: () => void;
+  onClick?: () => void;
 }) {
-  const kind = mediaKind(file.type);
+  const kind = mediaKind(file.type, file.name);
   const previewSx = {
-    width: 56,
-    height: 56,
+    width: '100%',
+    height: '100%',
     flexShrink: 0,
     objectFit: 'cover',
     borderRadius: 0.75,
     bgcolor: 'action.selected',
+    display: 'block',
   } as const;
 
-  if (kind === 'image') {
-    return <Box component="img" src={previewUrl} alt="" onError={onError} sx={previewSx} />;
-  }
-  if (kind !== 'video') return null;
+  const content =
+    kind === 'image' ? (
+      <Box component="img" src={previewUrl} alt="" onError={onError} sx={previewSx} />
+    ) : kind === 'video' ? (
+      <Box sx={{ position: 'relative', width: '100%', height: '100%', flexShrink: 0 }}>
+        <Box
+          component="video"
+          src={previewUrl}
+          preload="auto"
+          muted
+          playsInline
+          aria-hidden="true"
+          onError={onError}
+          sx={previewSx}
+        />
+        <PlayArrowIcon
+          aria-hidden="true"
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            margin: 'auto',
+            p: 0.25,
+            borderRadius: '50%',
+            color: 'common.white',
+            bgcolor: 'rgba(0, 0, 0, 0.55)',
+            pointerEvents: 'none',
+          }}
+        />
+      </Box>
+    ) : null;
 
-  return (
-    <Box sx={{ position: 'relative', width: 56, height: 56, flexShrink: 0 }}>
+  if (!content) return null;
+
+  if (onClick) {
+    return (
       <Box
-        component="video"
-        src={previewUrl}
-        preload="auto"
-        muted
-        playsInline
-        aria-hidden="true"
-        onError={onError}
-        sx={previewSx}
-      />
-      <PlayArrowIcon
-        aria-hidden="true"
+        component="button"
+        type="button"
+        aria-label={`Переглянути ${file.name}`}
+        onClick={onClick}
         sx={{
-          position: 'absolute',
-          inset: 0,
-          margin: 'auto',
-          p: 0.25,
-          borderRadius: '50%',
-          color: 'common.white',
-          bgcolor: 'rgba(0, 0, 0, 0.55)',
-          pointerEvents: 'none',
+          p: 0,
+          m: 0,
+          border: 0,
+          background: 'none',
+          cursor: 'pointer',
+          borderRadius: 0.75,
+          display: 'flex',
+          width: '100%',
+          height: '100%',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          transition: 'opacity 150ms ease',
+          '&:hover': { opacity: 0.85 },
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: 2,
+          },
         }}
-      />
-    </Box>
-  );
+      >
+        {content}
+      </Box>
+    );
+  }
+
+  return content;
 }
 
 type FileRowProps = {
   file: AttachmentPreviewFile;
   busy: boolean;
   onRemove: () => void;
+  onDownload?: () => void;
   previewUrl?: string;
   onPreviewError?: () => void;
+  onPreviewClick?: () => void;
   upload?: AttachmentUploadPresentation | null;
 };
 
@@ -220,14 +272,33 @@ export function AttachmentFileRow({
   file,
   busy,
   onRemove,
+  onDownload,
   previewUrl,
   onPreviewError,
+  onPreviewClick,
   upload,
 }: FileRowProps) {
   const FileIcon = attachmentIcon(file.name, file.type);
   const ext = fileExtension(file.name);
   const size = formatFileSize(file.size);
   const meta = [ext, size].filter(Boolean).join(' · ');
+  const isMedia = Boolean(mediaKind(file.type, file.name));
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(menuAnchorEl);
+
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    setMenuAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setMenuAnchorEl(null);
+  };
+
+  const handleDownloadClick = () => {
+    handleMenuClose();
+    onDownload?.();
+  };
 
   return (
     <Box
@@ -243,14 +314,64 @@ export function AttachmentFileRow({
         bgcolor: 'action.hover',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-        <FileIcon fontSize="small" sx={{ color: 'text.secondary', flexShrink: 0 }} />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, width: '100%' }}>
+        <Box
+          sx={{
+            width: 48,
+            height: 48,
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 0.75,
+            bgcolor: 'action.selected',
+            overflow: 'hidden',
+          }}
+        >
+          {previewUrl && isMedia ? (
+            <LocalMediaPreview
+              file={file}
+              previewUrl={previewUrl}
+              onError={onPreviewError}
+              onClick={onPreviewClick}
+            />
+          ) : onPreviewClick ? (
+            <Box
+              component="button"
+              type="button"
+              aria-label={`Переглянути ${file.name}`}
+              onClick={onPreviewClick}
+              sx={{
+                p: 0,
+                m: 0,
+                border: 0,
+                background: 'none',
+                cursor: 'pointer',
+                borderRadius: 0.75,
+                display: 'flex',
+                width: '100%',
+                height: '100%',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'background-color 150ms ease',
+                '&:hover': { bgcolor: 'action.focus' },
+                '&:focus-visible': {
+                  outline: '2px solid',
+                  outlineColor: 'primary.main',
+                  outlineOffset: 2,
+                },
+              }}
+            >
+              <FileIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+            </Box>
+          ) : (
+            <FileIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+          )}
+        </Box>
         <Typography variant="body2" noWrap title={file.name} sx={{ flex: 1, minWidth: 0 }}>
           {file.name}
         </Typography>
-        {previewUrl && onPreviewError ? (
-          <LocalMediaPreview file={file} previewUrl={previewUrl} onError={onPreviewError} />
-        ) : null}
         {meta ? (
           <Typography
             variant="caption"
@@ -259,6 +380,35 @@ export function AttachmentFileRow({
           >
             {meta}
           </Typography>
+        ) : null}
+        {onDownload ? (
+          <>
+            <IconButton
+              size="small"
+              aria-label={`Більше дій для ${file.name}`}
+              aria-haspopup="true"
+              aria-expanded={menuOpen ? 'true' : undefined}
+              onClick={handleMenuOpen}
+              disabled={busy}
+              sx={{ flexShrink: 0 }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+            <Menu
+              anchorEl={menuAnchorEl}
+              open={menuOpen}
+              onClose={handleMenuClose}
+              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+            >
+              <MenuItem onClick={handleDownloadClick}>
+                <ListItemIcon>
+                  <DownloadIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Завантажити</ListItemText>
+              </MenuItem>
+            </Menu>
+          </>
         ) : null}
         <IconButton
           size="small"
@@ -270,7 +420,7 @@ export function AttachmentFileRow({
         </IconButton>
       </Box>
       {upload ? (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pl: 3.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pl: '60px' }}>
           <LinearProgress
             variant={upload.percentage === null ? 'indeterminate' : 'determinate'}
             value={upload.percentage ?? undefined}

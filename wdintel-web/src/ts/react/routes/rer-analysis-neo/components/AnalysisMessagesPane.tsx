@@ -14,7 +14,7 @@ import type {
   Unit,
   User,
 } from '../../../../../Bindings';
-import { DeleteConfirmDialog, CommentDialog } from '../../rer-duty-neo/dialogs';
+import { DeleteConfirmDialog } from '../../rer-duty-neo/dialogs';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
 import {
@@ -142,6 +142,8 @@ type Props = {
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void;
   onOpenEditor: (messageId: number) => void;
+  onCreateReport: (messageId: number) => void;
+  onEditReport: (messageId: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
@@ -149,7 +151,6 @@ type Props = {
     messageId: number,
     updater: (message: InboxMessage) => InboxMessage,
   ) => Promise<boolean>;
-  onSaveMessageComment: (messageId: number, comment: string | null) => void;
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
@@ -176,7 +177,8 @@ type AnalysisMessageCardItemProps = {
   messageComments: MessageComment[];
   networkDisplayMap: Record<number, string>;
   botTagAction?: BotTagAction | null;
-  onCommentOpen: (id: number, message: InboxMessage) => void;
+  onCreateReport: (id: number) => void;
+  onEditReport: (id: number) => void | Promise<void>;
   onCopyFeedback: (value: string) => void;
   onDeleteOpen: (messageId: number) => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
@@ -215,7 +217,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   message,
   messageComments,
   networkDisplayMap,
-  onCommentOpen,
+  onCreateReport,
+  onEditReport,
   onCopyFeedback,
   onDeleteOpen,
   onOpenPointsOnMap,
@@ -258,6 +261,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       referenceTimeMs={referenceTimeMs}
       authUserName={authUserName}
       groupName={labels.groupName}
+      reportGroupInfos={groupInfos}
       senderName={labels.senderName}
       copiedFeedbackId={copiedFeedbackId}
       messageComments={visibleMessageComments}
@@ -337,7 +341,8 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
             }
       }
       onAddFrequencyToFilter={onAddFrequencyToFilter}
-      onComment={() => onCommentOpen(id, message)}
+      onCreateReport={() => onCreateReport(id)}
+      onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
       onEditDetails={() => onOpenEditor(id)}
       onToggleTag={(tagId) => onToggleMessageTag(id, tagId)}
@@ -385,11 +390,12 @@ function AnalysisMessagesPaneComponent({
   onCancelBotTagAction,
   onMarkBotTagWrong,
   onOpenEditor,
+  onCreateReport,
+  onEditReport,
   onLoadMoreMessages,
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   onSaveMessageUpdate,
-  onSaveMessageComment,
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
@@ -406,11 +412,6 @@ function AnalysisMessagesPaneComponent({
   unitsMap,
 }: Props) {
   const theme = useTheme();
-  const [commentDraft, setCommentDraft] = useState('');
-  const [commentMessage, setCommentMessage] = useState<{
-    id: number;
-    message: InboxMessage;
-  } | null>(null);
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -466,15 +467,6 @@ function AnalysisMessagesPaneComponent({
       copyFeedbackTimerRef.current = null;
     }, 1000);
   }, []);
-
-  const handleCommentOpen = useCallback(
-    (messageId: number, nextMessage: InboxMessage) => {
-      blurActiveElement();
-      setCommentMessage({ id: messageId, message: nextMessage });
-      setCommentDraft(nextMessage.extendedForm ?? '');
-    },
-    [blurActiveElement],
-  );
 
   const handleDeleteOpen = useCallback(
     (messageId: number) => {
@@ -554,7 +546,8 @@ function AnalysisMessagesPaneComponent({
               message={message}
               messageComments={messageComments[id] ?? []}
               networkDisplayMap={networkDisplayMap}
-              onCommentOpen={handleCommentOpen}
+              onCreateReport={onCreateReport}
+              onEditReport={onEditReport}
               onCopyFeedback={showCopiedFeedback}
               onDeleteOpen={handleDeleteOpen}
               onOpenPointsOnMap={onOpenPointsOnMap}
@@ -608,24 +601,6 @@ function AnalysisMessagesPaneComponent({
           sx={{ zIndex: 2, display: { xs: 'none', lg: 'flex' } }}
         />
       ) : null}
-
-      <CommentDialog
-        open={isPresent(commentMessage)}
-        messagePreview={
-          commentMessage
-            ? buildMessageCardDisplayLabels(commentMessage.message, { groupInfos, profiles })
-                .commentPreview
-            : null
-        }
-        commentText={commentDraft}
-        onCommentTextChange={setCommentDraft}
-        onClose={() => setCommentMessage(null)}
-        onSave={() => {
-          if (!commentMessage) return;
-          onSaveMessageComment(commentMessage.id, commentDraft.trim() || null);
-          setCommentMessage(null);
-        }}
-      />
 
       <DeleteConfirmDialog
         open={isPresent(deleteMessageId)}

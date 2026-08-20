@@ -1283,6 +1283,16 @@ async fn load_babak_candidate_page(
                 .is_in(access.sigint_groups.clone()),
         )
         .filter(sigint_inbox_item::Column::Datetime.is_not_null());
+    let linked_message_ids = intel_product::Entity::find()
+        .select_only()
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::Column::RelationKind.is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
+        ]))
+        .into_query();
+    query = query
+        .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
     if req.only_show_unprocessed == Some(true) {
         query =
             query.filter(sigint_inbox_item::Column::Reviewed.ne(Some(true)));
@@ -1497,7 +1507,7 @@ fn apply_babak_analytics_access_filter(
 }
 
 fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
-    Expr::exists(
+    let legacy_comment_exists = Expr::exists(
         Query::select()
             .expr(Expr::value(1))
             .from(sigint_comment::Entity)
@@ -1511,8 +1521,54 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
             .and_where(
                 sigint_comment::Column::LoginId.is_in(login_ids.to_vec()),
             )
+            .and_where(
+                sigint_comment::Column::MigratedSignalMessageId.is_null(),
+            )
             .to_owned(),
-    )
+    );
+    let linked_comment_exists = Expr::exists(
+        Query::select()
+            .expr(Expr::value(1))
+            .from(intel_product::Entity)
+            .and_where(intel_product::Column::RelationKind.is_in([
+                intel_product::RELATION_KIND_COMMENT,
+                intel_product::RELATION_KIND_REPORT,
+            ]))
+            .and_where(
+                Expr::col((
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
+                ))
+                .equals((signal_message::Entity, signal_message::Column::Id)),
+            )
+            .and_where(Expr::exists(
+                Query::select()
+                    .expr(Expr::value(1))
+                    .from(signal_message::Entity)
+                    .and_where(
+                        Expr::col((
+                            signal_message::Entity,
+                            signal_message::Column::Id,
+                        ))
+                        .equals((
+                            intel_product::Entity,
+                            intel_product::Column::IntelMessageId,
+                        )),
+                    )
+                    .and_where(signal_message::Column::Deleted.eq(false))
+                    .and_where(
+                        signal_message::Column::Sender.is_in(
+                            login_ids
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>(),
+                        ),
+                    )
+                    .to_owned(),
+            ))
+            .to_owned(),
+    );
+    legacy_comment_exists.or(linked_comment_exists)
 }
 
 fn babak_unit_tag_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
@@ -1624,10 +1680,33 @@ async fn load_babak_enrichment_batch(
                 select array_agg(
                     comment.comment order by comment.created_at, comment.id
                 ) as comments
-                from sigint_comment comment
-                where comment.signal_message_id = candidate.id
+                from (
+                    select
+                        linked.id,
+                        linked.created_at,
+                        linked.body as comment,
+                        linked.sender as author
+                    from intel_product link
+                    join signal_message linked
+                      on linked.id = link.intel_message_id
+                    where link.source_message_id = candidate.id
+                      and link.relation_kind in ('comment', 'report')
+                      and linked.deleted = false
+                    union all
+                    select
+                        legacy.id,
+                        legacy.created_at,
+                        legacy.comment,
+                        legacy.login_id::text as author
+                    from sigint_comment legacy
+                    where legacy.signal_message_id = candidate.id
+                      and legacy.migrated_signal_message_id is null
+                ) comment
+                where comment.comment <> ''
                   and $6 = true
-                  and ($3 = false or comment.login_id = any($4::uuid[]))
+                  and ($3 = false or comment.author = any(
+                      select unnest($4::uuid[])::text
+                  ))
             ) comments
             where comments.comments is not null
         )
@@ -2257,6 +2336,48 @@ mod tests {
         )
         .await
         .unwrap();
+        let linked_comment = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("linked comment".to_string())),
+                created_at: Set(now + chrono::Duration::minutes(1)),
+                timestamp: Set(Some(now + chrono::Duration::minutes(1))),
+                sender: Set(Some(login.id.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(linked_comment.id),
+            source_message_id: Set(message.id),
+            relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let linked_report = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("linked intelligence report".to_string())),
+                created_at: Set(now + chrono::Duration::minutes(2)),
+                timestamp: Set(Some(now + chrono::Duration::minutes(2))),
+                sender: Set(Some(login.id.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        intel_product::ActiveModel {
+            intel_message_id: Set(linked_report.id),
+            source_message_id: Set(message.id),
+            relation_kind: Set(intel_product::RELATION_KIND_REPORT),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
 
         let datetime = inbox_item
             .datetime
@@ -2299,6 +2420,16 @@ mod tests {
         let unit = &res.units[0];
         assert_eq!(unit.unit.as_deref(), Some("TestUnit"));
         assert_eq!(unit.count, 2);
+        let comments: Vec<BabakComment> = serde_json::from_value(
+            unit.comments.clone().expect("expected Babak comments"),
+        )
+        .unwrap();
+        assert!(comments.iter().any(|comment| {
+            comment.comment.as_deref() == Some("linked comment")
+        }));
+        assert!(comments.iter().any(|comment| {
+            comment.comment.as_deref() == Some("linked intelligence report")
+        }));
         let single_unit = &single.units[0];
         assert_eq!(unit.unit, single_unit.unit);
         assert_eq!(unit.count, single_unit.count);

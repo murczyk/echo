@@ -5,6 +5,7 @@ import type {
   MessageComment,
   Network,
   PalitraName,
+  SignalGroupEntry,
   Tag,
   Unit,
 } from '../../../../../Bindings';
@@ -76,6 +77,8 @@ import {
   MessageCardAttachmentPreviewProvider,
   type MessageCardPreviewAttachment,
 } from './attachment-preview/MessageCardAttachmentPreviewProvider';
+import { getIntelligenceReports, getParentMessages } from '../intelligence-reports';
+import { MessageCardIntelligenceReports } from './MessageCardIntelligenceReports';
 import { MessageCardMediaSummaryCarousel } from './attachment-preview/MediaSummaryPreview';
 import {
   pointBlacklistLabelKey,
@@ -252,6 +255,8 @@ export function MessageCardMessageBody({
   networks,
   unitsMap,
   messageComments = [],
+  reportGroupInfos,
+  onEditReport,
   signalMessageSenderLabel,
   searchText,
   onOpenPointsOnMap,
@@ -277,6 +282,8 @@ export function MessageCardMessageBody({
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
   messageComments?: MessageComment[];
+  reportGroupInfos: Record<string, SignalGroupEntry>;
+  onEditReport?: (reportId: number) => void;
   signalMessageSenderLabel?: string | null;
   searchText?: string | null;
   onOpenPointsOnMap?: (etalons: string[], message: InboxMessage) => void;
@@ -789,6 +796,12 @@ export function MessageCardMessageBody({
           </Typography>
         </div>
       ) : null}
+      <MessageCardIntelligenceReports
+        reports={getIntelligenceReports(msg)}
+        parents={getParentMessages(msg)}
+        groupInfos={reportGroupInfos}
+        onEdit={readOnly ? undefined : onEditReport}
+      />
       {messageComments.length > 0 ? (
         <MessageCardComments
           messageComments={messageComments}

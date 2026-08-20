@@ -9,9 +9,34 @@ use crate::types::*;
 use actix_web::{post, web};
 use api_error::{DirectSubmitAction, DirectSubmitApiError};
 use types::{
-    DirectSubmitParsePayload, DirectSubmitParseRsp, DirectSubmitPayload,
-    DirectSubmitRsp,
+    DirectSubmitCopyReq, DirectSubmitCopyRsp, DirectSubmitParsePayload,
+    DirectSubmitParseRsp, DirectSubmitPayload, DirectSubmitRsp,
 };
+
+#[post("/api/1.1/messages/copy")]
+pub async fn copy_message(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    payload: web::Json<DirectSubmitCopyReq>,
+) -> Result<web::Json<DirectSubmitCopyRsp>, DirectSubmitApiError> {
+    let action = DirectSubmitAction::Copy;
+    ensure_rer_role(&env.dbx, &user)
+        .await
+        .c(h!())
+        .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    let login = login_id_from_identity(&user)
+        .map_err(|err| DirectSubmitApiError::new(err, action))?;
+    Ok(web::Json(
+        bl::copy_signal_messages(
+            &login,
+            &env,
+            payload.into_inner().message_ids,
+        )
+        .await
+        .c(h!())
+        .map_err(|err| DirectSubmitApiError::new(err, action))?,
+    ))
+}
 
 #[post("/api/1.1/submit-direct")]
 pub async fn submit_direct(

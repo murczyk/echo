@@ -10,6 +10,8 @@ type Props = {
   groupsLoading: boolean;
   busy: boolean;
   isEditMode: boolean;
+  groupOptional?: boolean;
+  groupEditable?: boolean;
   cyberEchoEnabled: boolean;
   deviceNameOptions: string[];
   deviceNamesLoading: boolean;
@@ -22,6 +24,8 @@ export function SystemSection({
   groupsLoading,
   busy,
   isEditMode,
+  groupOptional = false,
+  groupEditable = false,
   cyberEchoEnabled,
   deviceNameOptions,
   deviceNamesLoading,
@@ -74,7 +78,7 @@ export function SystemSection({
                 );
               }}
               loading={groupsLoading}
-              disabled={busy || isEditMode}
+              disabled={busy || (isEditMode && !groupEditable)}
               value={signalGroups.find((g) => g.masterKey === field.value) || null}
               onChange={(_, newValue) => field.onChange(newValue?.masterKey || '')}
               renderInput={(params) => (
@@ -83,10 +87,10 @@ export function SystemSection({
                   label="Група"
                   size="small"
                   fullWidth
-                  required
+                  required={!groupOptional}
                   error={!!errors.signalGroupMasterKey}
                   helperText={errors.signalGroupMasterKey?.message}
-                  disabled={busy || isEditMode || groupsLoading}
+                  disabled={busy || (isEditMode && !groupEditable) || groupsLoading}
                   slotProps={{
                     input: {
                       ...params.InputProps,

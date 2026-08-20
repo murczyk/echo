@@ -803,49 +803,6 @@ describe('useRerDutyMessageActions', () => {
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(5);
   });
 
-  it('derives a friendly comment preview from the opened duty message', async () => {
-    const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
-    await act(async () => {
-      root.render(
-        <TestHarness
-          apiRef={apiRef}
-          initialFeeds={[
-            buildFeed({
-              items: [
-                [
-                  7,
-                  minimalInboxMessage({
-                    groupMasterKey: 'group-1',
-                    sender: 'sender-1',
-                    text: 'hello',
-                    freq: '100.000',
-                  }),
-                ],
-              ],
-            }),
-          ]}
-        />,
-      );
-    });
-    await act(async () => {
-      await flushMicrotasks();
-    });
-
-    await act(async () => {
-      apiRef.current!.setCommentMessageId(7);
-      apiRef.current!.setCommentFeedId('mf-0');
-    });
-
-    expect(apiRef.current!.commentMessagePreview).toEqual({
-      text: 'hello',
-      freq: '100.000',
-      groupMasterKey: 'group-1',
-      groupName: 'Група 1',
-      sender: 'sender-1',
-      senderName: 'BBC SPORT',
-    });
-  });
-
   it('keeps saved-filter updates scoped to the feed that selected them', async () => {
     const apiRef: MutableRefObject<HarnessApi | null> = { current: null };
     const firstFeed = buildFeed({

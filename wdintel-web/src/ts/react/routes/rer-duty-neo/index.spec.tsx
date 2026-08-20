@@ -81,14 +81,24 @@ vi.mock('./RerDutyNeoWorkspace', () => ({
         }
       />
       {messageFeeds[0]?.items[0] ? (
-        <button
-          type="button"
-          aria-label="Редагувати повідомлення"
-          onClick={() => {
-            const [id, message] = messageFeeds[0].items[0];
-            buildFeedColumnModel(messageFeeds[0]).actions.onMessageEdit(id, message);
-          }}
-        />
+        <>
+          <button
+            type="button"
+            aria-label="Редагувати повідомлення"
+            onClick={() => {
+              const [id, message] = messageFeeds[0].items[0];
+              buildFeedColumnModel(messageFeeds[0]).actions.onMessageEdit(id, message);
+            }}
+          />
+          <button
+            type="button"
+            aria-label="Створити розвіддонесення"
+            onClick={() => {
+              const [id, message] = messageFeeds[0].items[0];
+              buildFeedColumnModel(messageFeeds[0]).actions.onMessageCreateReport(id, message);
+            }}
+          />
+        </>
       ) : null}
     </div>
   ),
@@ -99,18 +109,22 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onClose,
     onCreated,
     editTarget,
+    reportSource,
     onSubmitEdit,
     onEditSuccess,
+    onDeleteSuccess,
   }: {
     open: boolean;
     onClose: () => void;
     onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
     editTarget?: { id: number; message: any } | null;
+    reportSource?: { id: number; message: any } | null;
     onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
     onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
+    onDeleteSuccess?: (messageId: number) => Promise<void> | void;
   }) =>
     open ? (
-      <div role="dialog" data-testid="composer">
+      <div role="dialog" data-testid="composer" data-report-source-id={reportSource?.id ?? ''}>
         <button type="button" aria-label="Закрити повідомлення" onClick={onClose}>
           Закрити
         </button>
@@ -118,14 +132,24 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
           Помилка
         </button>
         {editTarget ? (
-          <button
-            type="button"
-            aria-label="Зберегти редагування"
-            onClick={async () => {
-              await onEditSuccess?.({ signal_message_id: editTarget.id });
-              onClose();
-            }}
-          />
+          <>
+            <button
+              type="button"
+              aria-label="Зберегти редагування"
+              onClick={async () => {
+                await onEditSuccess?.({ signal_message_id: editTarget.id });
+                onClose();
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Видалити через редактор"
+              onClick={async () => {
+                onClose();
+                await onDeleteSuccess?.(editTarget.id);
+              }}
+            />
+          </>
         ) : null}
         <button
           type="button"
@@ -142,9 +166,8 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
       </div>
     ) : null,
 }));
-vi.mock('./CommentDialog', () => ({ CommentDialog: () => null }));
 vi.mock('./DeleteConfirmDialog', () => ({ DeleteConfirmDialog: () => null }));
-vi.mock('./dialogs', () => ({ CommentDialog: () => null, DeleteConfirmDialog: () => null }));
+vi.mock('./dialogs', () => ({ DeleteConfirmDialog: () => null }));
 vi.mock('../../components/PowerAlert', () => ({
   PowerAlert: ({
     children,
@@ -281,20 +304,12 @@ function buildFeedsState() {
     handleDeleteConfirm: vi.fn(),
     setDeleteConfirmId: vi.fn(),
     setDeleteConfirmFeedId: vi.fn(),
-    openCommentDialog: vi.fn(),
-    commentMessagePreview: null,
-    handleCommentSave: vi.fn(),
     handleToggleTag: vi.fn(),
     botTagAction: null,
     onCancelBotTagAction: vi.fn(),
     onMarkBotTagWrong: vi.fn(),
     handleArrowClick: vi.fn(),
     handleVisibleMessageIds: vi.fn(),
-    commentMessageId: null,
-    commentText: '',
-    setCommentText: vi.fn(),
-    setCommentMessageId: vi.fn(),
-    setCommentFeedId: vi.fn(),
     deleteConfirmId: null,
     deleteConfirmFeedId: null,
     profiles: {
@@ -427,6 +442,44 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('refreshes all feeds after deletion from the editor', async () => {
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    await click(container.querySelector('button[aria-label="Видалити через редактор"]'));
+
+    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
+    expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Розвіддонесення успішно видалено.',
+      severity: 'success',
+    });
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it('opens report mode and refreshes all feeds after creation', async () => {
+    nextCreatedResponse.value = { signal_message_id: 91 };
+    const { container, root, state } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Створити розвіддонесення"]'));
+    expect(
+      container.querySelector('[data-testid="composer"]')?.getAttribute('data-report-source-id'),
+    ).toBe('42');
+
+    await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
+
+    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
+    expect(state.reloadEmptyFeeds).not.toHaveBeenCalled();
+    expect(notifyMock).toHaveBeenCalledWith({
+      message: 'Розвіддонесення успішно створено.',
+      severity: 'success',
+    });
+
+    await act(async () => root.unmount());
   });
 
   it('enqueues separate Snackbar notifications for repeated creations', async () => {

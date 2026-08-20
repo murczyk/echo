@@ -300,6 +300,7 @@ inboxChangedEvent messageId =
     , eventType = B.EtInboxChanged messageId
     , createdAt = 0
     , origin = Nothing
+    , intelligenceReport = False
     }
 
 
@@ -309,4 +310,5 @@ genericEvent =
     , eventType = B.EtGeneric
     , createdAt = 0
     , origin = Nothing
+    , intelligenceReport = False
     }

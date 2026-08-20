@@ -111,6 +111,8 @@ message textMarked callsigns networkIds =
     , deviceName = Nothing
     , inboxTags = Nothing
     , metadata = []
+    , parentMessages = []
+    , intelligenceReports = []
     }
 
 

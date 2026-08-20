@@ -1916,6 +1916,7 @@ mod messenger_media_tests {
             file_name: Some("negative.txt".to_string()),
             size_bytes: -1,
             is_encrypted: false,
+            storage_key: None,
             created_at: chrono::Utc::now().naive_utc(),
         })
         .collect::<Vec<_>>();

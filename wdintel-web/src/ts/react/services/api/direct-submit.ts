@@ -204,10 +204,17 @@ export type DirectSubmitRequest = {
   locations?: string[];
   network?: SubmitNetwork;
   dmr?: SubmitDmrMetadata[];
-  signal_group_master_key: string;
+  signal_group_master_key: string | null;
   device_name_id?: number | null;
   upload_urls?: string[] | null;
   deleted_media_ids?: string[];
+  retained_media_ids?: string[];
+  parent_signal_message_ids?: number[];
+  copy_source_signal_message_ids?: number[];
+};
+
+export type DirectSubmitCopyResponse = {
+  payloads: DirectSubmitRequest[];
 };
 
 export type DirectSubmitResponse = {
@@ -245,11 +252,18 @@ export type DirectSubmitParseResponse = {
   locations: string[];
 };
 
-export function formatDirectSubmitError(error: unknown, action: 'parse' | 'save'): string {
+export function formatDirectSubmitError(
+  error: unknown,
+  action: 'copy' | 'delete' | 'parse' | 'save',
+): string {
   const fallback =
     action === 'parse'
       ? 'Не вдалося розпізнати повідомлення. Спробуйте ще раз.'
-      : 'Не вдалося зберегти повідомлення. Спробуйте ще раз.';
+      : action === 'copy'
+        ? 'Не вдалося підготувати розвіддонесення. Спробуйте ще раз.'
+        : action === 'delete'
+          ? 'Не вдалося видалити розвіддонесення. Спробуйте ще раз.'
+          : 'Не вдалося зберегти повідомлення. Спробуйте ще раз.';
 
   if (!(error instanceof HttpRequestError)) {
     return error instanceof Error && error.message.trim() ? error.message : fallback;
@@ -258,6 +272,17 @@ export function formatDirectSubmitError(error: unknown, action: 'parse' | 'save'
   if (error.status === 0) return error.message;
   if (error.message.trim() && error.message !== 'Internal server error') return error.message;
   return `${fallback} Якщо помилка повторюється, зверніться до адміністратора.`;
+}
+
+export async function copyDirectSubmit(
+  ids: number[],
+  options?: RequestOptions,
+): Promise<DirectSubmitCopyResponse> {
+  return await postJson<DirectSubmitCopyResponse>(
+    '/api/1.1/messages/copy',
+    { message_ids: ids },
+    options,
+  );
 }
 
 export async function submitDirect(
