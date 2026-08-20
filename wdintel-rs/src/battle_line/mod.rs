@@ -1109,7 +1109,7 @@ fn line_string_to_wkt(
     if !line_has_length(coordinates) {
         let coordinate = coordinates.first().c(h!())?;
         warn!(
-            "Invalid, poorly supported zero-length LineString geometry was replaced with a Point at {}, {}",
+            "Poorly supported zero-length LineString geometry was replaced with a Point at {}, {}",
             coordinate.lon, coordinate.lat
         );
         return Ok(format!("POINT({} {})", coordinate.lon, coordinate.lat));
