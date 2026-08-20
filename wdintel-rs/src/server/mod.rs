@@ -795,6 +795,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::messenger_media_ocr_download)
             .service(crate::ocr::messenger_media_ocr_status)
             .service(crate::media_summary::messenger_media_summary)
+            .service(crate::media_summary::messenger_media_summary_retry)
             .service(
                 crate::media_summary::messenger_media_summary_coordinates,
             )
@@ -969,6 +970,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::admin_ocr_media)
             .service(crate::ocr::gateway::infer)
             .service(crate::media_summary::admin_ocr_media_summary)
+            .service(crate::media_summary::admin_ocr_media_summary_retry)
             .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)
             .service(crate::transcriber::create_instance)

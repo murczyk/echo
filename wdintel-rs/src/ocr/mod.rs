@@ -535,7 +535,7 @@ async fn serve_ocr_html(
         .body(body))
 }
 
-async fn load_sanitized_ocr_html(
+pub(crate) async fn load_sanitized_ocr_html(
     env: &Env,
     media_id: Uuid,
 ) -> Result<String, crate::error::AppError> {

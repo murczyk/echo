@@ -40,6 +40,18 @@ const AI_INTEL_REPORT_DURATION_DESCRIPTION: &str =
     "Quick intelligence-report suggestion duration";
 const AI_INTEL_REPORT_DURATION_BUCKETS_SECS: &[f64] =
     &[0.25, 0.5, 1.0, 2.5, 5.0, 8.0, 10.0];
+const MEDIA_SUMMARY_ATTEMPTS_COUNT: &str = "echo.media_summary.attempts.count";
+const MEDIA_SUMMARY_ATTEMPTS_DESCRIPTION: &str =
+    "Number of media-summary attempt outcomes";
+const MEDIA_SUMMARY_DURATION: &str = "echo.media_summary.attempt.duration";
+const MEDIA_SUMMARY_DURATION_DESCRIPTION: &str =
+    "Media-summary attempt duration";
+const MEDIA_SUMMARY_COORDINATE_DROPS_COUNT: &str =
+    "echo.media_summary.coordinate_drops.count";
+const MEDIA_SUMMARY_COORDINATE_DROPS_DESCRIPTION: &str =
+    "Number of invalid coordinate candidates skipped while retaining a media summary";
+const MEDIA_SUMMARY_DURATION_BUCKETS_SECS: &[f64] =
+    &[0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0];
 
 const FILE_ANALYSIS_RUNS_COUNT: &str = "echo.device_files.analysis.runs.count";
 const FILE_ANALYSIS_RUNS_STATUS_COUNT: &str =
@@ -122,6 +134,9 @@ pub struct Metrics {
     messenger_nlp_ready: Gauge<u64>,
     ai_intel_report_suggestions: Counter<u64>,
     ai_intel_report_duration: Histogram<f64>,
+    media_summary_attempts: Counter<u64>,
+    media_summary_duration: Histogram<f64>,
+    media_summary_coordinate_drops: Counter<u64>,
 }
 
 impl Metrics {
@@ -297,6 +312,21 @@ impl Metrics {
             .with_description(AI_INTEL_REPORT_DURATION_DESCRIPTION)
             .with_unit("s")
             .build();
+        let media_summary_attempts = meter
+            .u64_counter(MEDIA_SUMMARY_ATTEMPTS_COUNT)
+            .with_description(MEDIA_SUMMARY_ATTEMPTS_DESCRIPTION)
+            .with_unit("1")
+            .build();
+        let media_summary_duration = meter
+            .f64_histogram(MEDIA_SUMMARY_DURATION)
+            .with_description(MEDIA_SUMMARY_DURATION_DESCRIPTION)
+            .with_unit("s")
+            .build();
+        let media_summary_coordinate_drops = meter
+            .u64_counter(MEDIA_SUMMARY_COORDINATE_DROPS_COUNT)
+            .with_description(MEDIA_SUMMARY_COORDINATE_DROPS_DESCRIPTION)
+            .with_unit("1")
+            .build();
 
         Self {
             provider,
@@ -321,7 +351,30 @@ impl Metrics {
             messenger_nlp_ready,
             ai_intel_report_suggestions,
             ai_intel_report_duration,
+            media_summary_attempts,
+            media_summary_duration,
+            media_summary_coordinate_drops,
         }
+    }
+
+    pub(crate) fn record_media_summary_attempt(
+        &self,
+        outcome: &'static str,
+        duration: Duration,
+    ) {
+        let attributes = [KeyValue::new("outcome", outcome)];
+        self.media_summary_attempts.add(1, &attributes);
+        self.media_summary_duration
+            .record(duration.as_secs_f64(), &attributes);
+    }
+
+    pub(crate) fn record_media_summary_coordinate_drops(
+        &self,
+        reason: &'static str,
+        count: u64,
+    ) {
+        self.media_summary_coordinate_drops
+            .add(count, &[KeyValue::new("reason", reason)]);
     }
 
     pub(crate) fn record_messenger_ingested(
@@ -567,6 +620,11 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             AI_INTEL_REPORT_DURATION => {
                 (&["outcome"], Some(AI_INTEL_REPORT_DURATION_BUCKETS_SECS))
             }
+            MEDIA_SUMMARY_ATTEMPTS_COUNT => (&["outcome"], None),
+            MEDIA_SUMMARY_DURATION => {
+                (&["outcome"], Some(MEDIA_SUMMARY_DURATION_BUCKETS_SECS))
+            }
+            MEDIA_SUMMARY_COORDINATE_DROPS_COUNT => (&["reason"], None),
             _ => return None,
         };
     let mut stream = Stream::builder().with_allowed_attribute_keys(

@@ -23,6 +23,19 @@ export function getMediaSummary(
   return getJson<MediaSummaryResult>(`${prefix}/${encodeURIComponent(mediaId)}/summary`, options);
 }
 
+export function retryMediaSummary(
+  mediaId: string,
+  options?: RequestOptions,
+  access: MediaSummaryAccess = 'messenger',
+): Promise<MediaSummaryResult> {
+  const prefix = access === 'admin-ocr' ? '/api/admin/ocr' : '/api/messenger/media';
+  return postJson<MediaSummaryResult>(
+    `${prefix}/${encodeURIComponent(mediaId)}/summary/retry`,
+    undefined,
+    options,
+  );
+}
+
 export function getMediaSummaryCoordinates(
   mediaId: string,
 ): Promise<MediaSummaryCoordinatesResult> {
