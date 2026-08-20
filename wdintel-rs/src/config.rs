@@ -60,6 +60,25 @@ pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
+pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;
+pub const AI_INTEL_REPORT_HISTORY_DAYS: i64 = 3;
+pub const AI_INTEL_REPORT_BUCKET_CANDIDATE_LIMIT: u64 = 12;
+pub const AI_INTEL_REPORT_BUCKET_EXAMPLE_LIMIT: usize = 2;
+pub const AI_INTEL_REPORT_EXAMPLE_LIMIT: usize = 6;
+pub const AI_INTEL_REPORT_EXAMPLE_SOURCE_MAX_CHARS: usize = 1_500;
+pub const AI_INTEL_REPORT_SOURCE_MATERIALS_MAX_CHARS: usize = 12_000;
+pub const AI_INTEL_REPORT_PROMPT_MAX_CHARS: usize = 24_000;
+pub const AI_INTEL_REPORT_OUTPUT_MAX_TOKENS: u32 = 512;
+pub const AI_INTEL_REPORT_OUTPUT_MAX_CHARS: usize = 1_000;
+pub const AI_INTEL_REPORT_SUGGESTION_LIMIT: usize = 3;
+pub const AI_INTEL_REPORT_TIMEOUT_SECS: u64 = 20;
+pub const AI_INTEL_REPORT_EXAMPLE_REPORT_MAX_CHARS: usize = 160;
+pub const AI_INTEL_REPORT_ADMIN_ATTEMPT_LIMIT: u64 = 500;
+pub const AI_INTEL_REPORT_ATTEMPT_ERROR_MAX_CHARS: usize = 4_000;
+pub const AI_INTEL_REPORT_ATTEMPT_RAW_RESPONSE_MAX_CHARS: usize = 8_000;
+pub const AI_INTEL_REPORT_PROMPT: &str = include_str!(
+    "../../ai-eval/2026-08-19-intelligence-report-prompt/prompt.txt"
+);
 pub const AI_CHAT_ROLE_SYSTEM: &str = "system";
 pub const AI_CHAT_ROLE_USER: &str = "user";
 pub const AI_CHAT_ROLE_ASSISTANT: &str = "assistant";
@@ -684,9 +703,14 @@ pub const RER_REPORT_OTHER_TAG_LABEL: &str = "інше";
 pub const TAG_MINIMUM_CONFIDENCE: f64 = 0.7;
 pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
-
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+UPDATE ai_intel_report_settings
+SET quick_suggestion_enabled = false,
+    quick_ai_engine_id = NULL,
+    legacy_comment_cutoff = (now() at time zone 'utc'),
+    updated_at = (now() at time zone 'utc')
+WHERE id = 1;
 DELETE FROM echo_gpu_transcription_queue;
 DELETE FROM gpu_config;
 DELETE FROM secret_group_user;
@@ -725,6 +749,7 @@ DELETE FROM freq_location;
 DELETE FROM sigint_bookmark;
 DELETE FROM sigint_comment;
 DELETE FROM sigint_important;
+DELETE FROM ai_intel_report_attempt;
 DELETE FROM signal_message_media;
 DELETE FROM signal_message_queue_attachment;
 DELETE FROM signal_message_queue;

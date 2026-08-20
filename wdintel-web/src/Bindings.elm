@@ -11888,6 +11888,108 @@ sendAiChatMessageReqEncoder struct =
         ]
 
 
+type alias AiIntelReportSettingsItem =
+    { quickSuggestionEnabled : Bool
+    , quickAiEngineId : Maybe (String)
+    , legacyCommentCutoff : Int
+    , updatedAt : Int
+    }
+
+
+aiIntelReportSettingsItemEncoder : AiIntelReportSettingsItem -> Json.Encode.Value
+aiIntelReportSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
+        , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        , ( "legacyCommentCutoff", (Json.Encode.int) struct.legacyCommentCutoff )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias SaveAiIntelReportSettingsReq =
+    { quickSuggestionEnabled : Bool
+    , quickAiEngineId : Maybe (String)
+    }
+
+
+saveAiIntelReportSettingsReqEncoder : SaveAiIntelReportSettingsReq -> Json.Encode.Value
+saveAiIntelReportSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
+        , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        ]
+
+
+type alias QuickIntelReportSuggestionReq =
+    { messageId : Int
+    }
+
+
+quickIntelReportSuggestionReqEncoder : QuickIntelReportSuggestionReq -> Json.Encode.Value
+quickIntelReportSuggestionReqEncoder struct =
+    Json.Encode.object
+        [ ( "messageId", (Json.Encode.int) struct.messageId )
+        ]
+
+
+type alias QuickIntelReportSuggestionRsp =
+    { suggestions : List (String)
+    }
+
+
+quickIntelReportSuggestionRspEncoder : QuickIntelReportSuggestionRsp -> Json.Encode.Value
+quickIntelReportSuggestionRspEncoder struct =
+    Json.Encode.object
+        [ ( "suggestions", (Json.Encode.list (Json.Encode.string)) struct.suggestions )
+        ]
+
+
+type alias AiIntelReportAttemptItem =
+    { id : String
+    , loginId : String
+    , login : String
+    , aiEngineId : Maybe (String)
+    , aiEngineName : Maybe (String)
+    , sourceMessageId : Int
+    , outcome : String
+    , suggestions : List (String)
+    , rawResponse : Maybe (String)
+    , error : Maybe (String)
+    , durationMs : Int
+    , createdAt : Int
+    }
+
+
+aiIntelReportAttemptItemEncoder : AiIntelReportAttemptItem -> Json.Encode.Value
+aiIntelReportAttemptItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "loginId", (Json.Encode.string) struct.loginId )
+        , ( "login", (Json.Encode.string) struct.login )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "aiEngineName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineName )
+        , ( "sourceMessageId", (Json.Encode.int) struct.sourceMessageId )
+        , ( "outcome", (Json.Encode.string) struct.outcome )
+        , ( "suggestions", (Json.Encode.list (Json.Encode.string)) struct.suggestions )
+        , ( "rawResponse", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.rawResponse )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "durationMs", (Json.Encode.int) struct.durationMs )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias AiIntelReportAttemptListRsp =
+    { items : List (AiIntelReportAttemptItem)
+    }
+
+
+aiIntelReportAttemptListRspEncoder : AiIntelReportAttemptListRsp -> Json.Encode.Value
+aiIntelReportAttemptListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiIntelReportAttemptItemEncoder)) struct.items )
+        ]
+
+
 type alias AiAgentProviderItem =
     { id : String
     , name : String
@@ -21144,6 +21246,57 @@ sendAiChatMessageReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "chatId" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+
+
+aiIntelReportSettingsItemDecoder : Json.Decode.Decoder AiIntelReportSettingsItem
+aiIntelReportSettingsItemDecoder =
+    Json.Decode.succeed AiIntelReportSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "legacyCommentCutoff" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+saveAiIntelReportSettingsReqDecoder : Json.Decode.Decoder SaveAiIntelReportSettingsReq
+saveAiIntelReportSettingsReqDecoder =
+    Json.Decode.succeed SaveAiIntelReportSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+quickIntelReportSuggestionReqDecoder : Json.Decode.Decoder QuickIntelReportSuggestionReq
+quickIntelReportSuggestionReqDecoder =
+    Json.Decode.succeed QuickIntelReportSuggestionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageId" (Json.Decode.int)))
+
+
+quickIntelReportSuggestionRspDecoder : Json.Decode.Decoder QuickIntelReportSuggestionRsp
+quickIntelReportSuggestionRspDecoder =
+    Json.Decode.succeed QuickIntelReportSuggestionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suggestions" (Json.Decode.list (Json.Decode.string))))
+
+
+aiIntelReportAttemptItemDecoder : Json.Decode.Decoder AiIntelReportAttemptItem
+aiIntelReportAttemptItemDecoder =
+    Json.Decode.succeed AiIntelReportAttemptItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "loginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceMessageId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "outcome" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suggestions" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rawResponse" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "durationMs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+aiIntelReportAttemptListRspDecoder : Json.Decode.Decoder AiIntelReportAttemptListRsp
+aiIntelReportAttemptListRspDecoder =
+    Json.Decode.succeed AiIntelReportAttemptListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiIntelReportAttemptItemDecoder))))
 
 
 aiAgentProviderItemDecoder : Json.Decode.Decoder AiAgentProviderItem

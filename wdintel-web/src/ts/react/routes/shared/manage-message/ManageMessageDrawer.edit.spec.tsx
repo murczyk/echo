@@ -29,6 +29,9 @@ const unitMocks = vi.hoisted(() => ({
 const inboxMessageActionMocks = vi.hoisted(() => ({
   deleteMessage: vi.fn().mockResolvedValue(undefined),
 }));
+const aiIntelReportMocks = vi.hoisted(() => ({
+  quickIntelReportSuggestion: vi.fn().mockResolvedValue(null),
+}));
 const uppyMocks = vi.hoisted(() => ({
   latest: null as {
     emitUploadProgress: (percentage: number) => void;
@@ -66,6 +69,9 @@ vi.mock('../../../services/api/units', () => ({
 }));
 vi.mock('../../../services/api/inbox-message-actions', () => ({
   deleteMessage: inboxMessageActionMocks.deleteMessage,
+}));
+vi.mock('../../../services/api/ai-intel-report', () => ({
+  quickIntelReportSuggestion: aiIntelReportMocks.quickIntelReportSuggestion,
 }));
 vi.mock('../../../components/ConfirmDangerDialog', () => ({
   ConfirmDangerDialog: ({
@@ -178,6 +184,17 @@ vi.mock('@uppy/core', () => {
 vi.mock('@uppy/tus', () => ({ default: class {} }));
 vi.mock('@mui/icons-material/Add', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/DeleteOutline', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/SmartToyOutlined', () => ({
+  default: ({
+    'aria-label': ariaLabel,
+    'aria-busy': ariaBusy,
+    'data-testid': testId,
+  }: {
+    'aria-label'?: string;
+    'aria-busy'?: boolean;
+    'data-testid'?: string;
+  }) => <span aria-label={ariaLabel} aria-busy={ariaBusy} data-testid={testId} />,
+}));
 vi.mock('./drawer-sections/CoordinateInputPreview', () => ({ CoordinateInputPreview: () => null }));
 
 vi.mock('../../../components/PowerDateTimePicker', () => ({
@@ -280,9 +297,25 @@ vi.mock('@mui/material', () => ({
   ),
   ListItemIcon: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   ListItemText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-  Typography: ({ children, component = 'div' }: { children?: ReactNode; component?: string }) => {
+  Typography: ({
+    children,
+    component = 'div',
+    onClick,
+    title,
+    type,
+  }: {
+    children?: ReactNode;
+    component?: string;
+    onClick?: () => void;
+    title?: string;
+    type?: 'button';
+  }) => {
     const Component = component as keyof HTMLElementTagNameMap;
-    return <Component>{children}</Component>;
+    return (
+      <Component onClick={onClick} title={title} type={type}>
+        {children}
+      </Component>
+    );
   },
   Drawer: ({
     children,
@@ -329,7 +362,9 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  CircularProgress: () => <span data-testid="spinner" />,
+  CircularProgress: ({ 'data-testid': testId = 'spinner' }: { 'data-testid'?: string }) => (
+    <span data-testid={testId} />
+  ),
   LinearProgress: ({
     value,
     'aria-label': ariaLabel,
@@ -530,6 +565,8 @@ describe('ManageMessageDrawer edit mode', () => {
     unitMocks.getUnitsByIds.mockResolvedValue([]);
     inboxMessageActionMocks.deleteMessage.mockReset();
     inboxMessageActionMocks.deleteMessage.mockResolvedValue(undefined);
+    aiIntelReportMocks.quickIntelReportSuggestion.mockReset();
+    aiIntelReportMocks.quickIntelReportSuggestion.mockResolvedValue(null);
     document.body.innerHTML = '';
     referenceDataMocks.getTagsForDisplay.mockResolvedValue({ tagsMap: {}, tagsOrder: [] });
     referenceDataMocks.getUserSigintGroups.mockReset();
@@ -562,6 +599,267 @@ describe('ManageMessageDrawer edit mode', () => {
       'original card body',
     );
     expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+
+    root.unmount();
+  });
+
+  it('offers a suggestion for explicit application without auto-filling the report', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    aiIntelReportMocks.quickIntelReportSuggestion.mockResolvedValue({
+      suggestions: ['Політ БпЛА.'],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[aria-label="ШІ пропозиція"]')).not.toBeNull();
+    expect(aiIntelReportMocks.quickIntelReportSuggestion).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+    expect(container.textContent).toContain('Політ БпЛА.');
+    const suggestionButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Політ БпЛА.',
+    );
+    await act(async () => suggestionButton?.click());
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('Політ БпЛА.');
+
+    root.unmount();
+  });
+
+  it('navigates multiple suggestions and applies the selected variant', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    aiIntelReportMocks.quickIntelReportSuggestion.mockResolvedValue({
+      suggestions: ['Облаштування позицій', 'Зайняття позицій', 'Виставлення НП'],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Облаштування позицій');
+    expect(container.textContent).toContain('1/3');
+    await act(async () => {
+      (
+        container.querySelector('[aria-label="Наступна ШІ пропозиція"]') as HTMLButtonElement
+      ).click();
+    });
+    expect(container.textContent).toContain('Зайняття позицій');
+    expect(container.textContent).toContain('2/3');
+    const suggestionButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Зайняття позицій',
+    );
+    await act(async () => suggestionButton?.click());
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('Зайняття позицій');
+
+    root.unmount();
+  });
+
+  it('preserves operator text and offers the late suggestion for explicit application', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    let resolveSuggestion: ((value: { suggestions: string[] }) => void) | undefined;
+    aiIntelReportMocks.quickIntelReportSuggestion.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSuggestion = resolve;
+      }),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="quick-suggestion-loading"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="ШІ пропозиція"]')?.getAttribute('aria-busy')).toBe(
+      'true',
+    );
+    expect(container.textContent).toContain('Формуємо ШІ пропозицію…');
+
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст розвіддонесення')
+        ?.onChange?.({ target: { value: 'Текст оператора' } });
+      resolveSuggestion?.({ suggestions: ['Політ БпЛА.'] });
+      await Promise.resolve();
+    });
+
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('Текст оператора');
+    expect(container.textContent).toContain('Політ БпЛА.');
+    const suggestionButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Політ БпЛА.',
+    );
+    await act(async () => suggestionButton?.click());
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('Політ БпЛА.');
+
+    root.unmount();
+  });
+
+  it('retries a failed suggestion request', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    aiIntelReportMocks.quickIntelReportSuggestion
+      .mockRejectedValueOnce(new Error('request failed'))
+      .mockResolvedValueOnce({ suggestions: ['Наявність БпЛА.'] });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося сформувати пропозицію розвіддонесення.');
+    expect(container.textContent).not.toContain('Повторити');
+    const retryButton = container.querySelector(
+      '[aria-label="Повторити формування ШІ пропозиції"]',
+    ) as HTMLButtonElement;
+    await act(async () => {
+      retryButton?.click();
+      await Promise.resolve();
+    });
+    expect(aiIntelReportMocks.quickIntelReportSuggestion).toHaveBeenCalledTimes(2);
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('');
+    expect(container.textContent).toContain('Наявність БпЛА.');
+
+    root.unmount();
+  });
+
+  it('aborts a stale suggestion request when the drawer closes', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    let requestSignal: AbortSignal | undefined;
+    aiIntelReportMocks.quickIntelReportSuggestion.mockImplementation(
+      (_messageId: number, options?: { signal?: AbortSignal }) => {
+        requestSignal = options?.signal;
+        return new Promise(() => {});
+      },
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(requestSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open={false}
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+    });
+    expect(requestSignal?.aborted).toBe(true);
+
+    root.unmount();
+  });
+
+  it('allows report submission while a suggestion request is pending', async () => {
+    directSubmitMocks.copyDirectSubmit.mockResolvedValue({
+      payloads: [{ full_body: 'copied source', parent_signal_message_ids: [42] }],
+    });
+    aiIntelReportMocks.quickIntelReportSuggestion.mockReturnValue(new Promise(() => {}));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          reportSource={{ id: 42, message: buildMessage() }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    await act(async () => {
+      textFieldPropsByLabel
+        .get('Текст розвіддонесення')
+        ?.onChange?.({ target: { value: 'Готовий текст оператора' } });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(directSubmitMocks.submitDirect).toHaveBeenCalledWith(
+      expect.objectContaining({ full_body: 'Готовий текст оператора' }),
+    );
 
     root.unmount();
   });

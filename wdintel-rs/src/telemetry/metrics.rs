@@ -30,6 +30,16 @@ const DEVICE_FILES_SYNC_DURATION_DESCRIPTION: &str =
 const DEVICE_FILES_SYNC_DURATION_BUCKETS_SECS: &[f64] = &[
     0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0,
 ];
+const AI_INTEL_REPORT_SUGGESTIONS_COUNT: &str =
+    "echo.ai_intel_report.quick_suggestions.count";
+const AI_INTEL_REPORT_SUGGESTIONS_DESCRIPTION: &str =
+    "Number of quick intelligence-report suggestion outcomes";
+const AI_INTEL_REPORT_DURATION: &str =
+    "echo.ai_intel_report.quick_suggestion.duration";
+const AI_INTEL_REPORT_DURATION_DESCRIPTION: &str =
+    "Quick intelligence-report suggestion duration";
+const AI_INTEL_REPORT_DURATION_BUCKETS_SECS: &[f64] =
+    &[0.25, 0.5, 1.0, 2.5, 5.0, 8.0, 10.0];
 
 const FILE_ANALYSIS_RUNS_COUNT: &str = "echo.device_files.analysis.runs.count";
 const FILE_ANALYSIS_RUNS_STATUS_COUNT: &str =
@@ -110,6 +120,8 @@ pub struct Metrics {
     messenger_queue_items: Gauge<u64>,
     messenger_queue_oldest_age: Gauge<f64>,
     messenger_nlp_ready: Gauge<u64>,
+    ai_intel_report_suggestions: Counter<u64>,
+    ai_intel_report_duration: Histogram<f64>,
 }
 
 impl Metrics {
@@ -275,6 +287,16 @@ impl Metrics {
             .with_description("Whether the local NLP dependency is ready")
             .with_unit("1")
             .build();
+        let ai_intel_report_suggestions = meter
+            .u64_counter(AI_INTEL_REPORT_SUGGESTIONS_COUNT)
+            .with_description(AI_INTEL_REPORT_SUGGESTIONS_DESCRIPTION)
+            .with_unit("1")
+            .build();
+        let ai_intel_report_duration = meter
+            .f64_histogram(AI_INTEL_REPORT_DURATION)
+            .with_description(AI_INTEL_REPORT_DURATION_DESCRIPTION)
+            .with_unit("s")
+            .build();
 
         Self {
             provider,
@@ -297,6 +319,8 @@ impl Metrics {
             messenger_queue_items,
             messenger_queue_oldest_age,
             messenger_nlp_ready,
+            ai_intel_report_suggestions,
+            ai_intel_report_duration,
         }
     }
 
@@ -491,6 +515,17 @@ impl Metrics {
         }
     }
 
+    pub(crate) fn record_ai_intel_report_suggestion(
+        &self,
+        outcome: &'static str,
+        duration: Duration,
+    ) {
+        let attributes = [KeyValue::new("outcome", outcome)];
+        self.ai_intel_report_suggestions.add(1, &attributes);
+        self.ai_intel_report_duration
+            .record(duration.as_secs_f64(), &attributes);
+    }
+
     pub fn shutdown(&self) {
         if let Err(error) = self.provider.shutdown() {
             warn!("Failed to shut down Signoz metrics provider: {error}");
@@ -528,6 +563,10 @@ fn metrics_view(instrument: &Instrument) -> Option<Stream> {
             ),
             MESSENGER_QUEUE_ITEMS => (&["state"], None),
             MESSENGER_QUEUE_OLDEST_AGE | MESSENGER_NLP_READY => (&[], None),
+            AI_INTEL_REPORT_SUGGESTIONS_COUNT => (&["outcome"], None),
+            AI_INTEL_REPORT_DURATION => {
+                (&["outcome"], Some(AI_INTEL_REPORT_DURATION_BUCKETS_SECS))
+            }
             _ => return None,
         };
     let mut stream = Stream::builder().with_allowed_attribute_keys(

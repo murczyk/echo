@@ -42,6 +42,13 @@ import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
 import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
 import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
+import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
+import { isAbortError } from '../../../services/api/client';
+
+export type QuickIntelReportSuggestionState =
+  | { status: 'idle' | 'loading' | 'applied' }
+  | { status: 'available'; suggestions: string[]; selectedIndex: number }
+  | { status: 'error'; message: string };
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
@@ -86,9 +93,15 @@ export function useManageMessageDrawer({
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [copyLoading, setCopyLoading] = useState(false);
-  const [reportCopyLoaded, setReportCopyLoaded] = useState(false);
+  const [reportCopyLoadedSourceId, setReportCopyLoadedSourceId] = useState<number | null>(null);
   const [originalReportText, setOriginalReportText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [quickSuggestion, setQuickSuggestion] = useState<QuickIntelReportSuggestionState>({
+    status: 'idle',
+  });
+  const [quickSuggestionAttempt, setQuickSuggestionAttempt] = useState(0);
+  const reportCopyLoaded =
+    isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
   const { recentValues, addValues } = useRecentValues();
 
@@ -449,7 +462,7 @@ export function useManageMessageDrawer({
     setErrorMsg(null);
     setSelectedNetwork(null);
     setUnitLocked(false);
-    setReportCopyLoaded(false);
+    setReportCopyLoadedSourceId(null);
     setOriginalReportText(reportParents.map(({ text }) => text).join('\n\n'));
     if (isEditMode && editTarget) {
       const metadata = editTarget.message.metadata ?? [];
@@ -520,7 +533,7 @@ export function useManageMessageDrawer({
             signalGroupMasterKey: '',
             deviceName: '',
           });
-          setReportCopyLoaded(true);
+          setReportCopyLoadedSourceId(reportSource.id);
         }
       })
       .catch((error) => {
@@ -535,6 +548,69 @@ export function useManageMessageDrawer({
       active = false;
     };
   }, [open, isReportCreateMode, isReportMode, reportParentIdsKey, reportSource?.id, reset]);
+
+  useEffect(() => {
+    if (!open || !isReportCreateMode || !reportCopyLoaded || !reportSource) {
+      setQuickSuggestion({ status: 'idle' });
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setQuickSuggestion({ status: 'loading' });
+    quickIntelReportSuggestion(reportSource.id, { signal: controller.signal })
+      .then((response) => {
+        if (!active) return;
+        if (!response) {
+          setQuickSuggestion({ status: 'idle' });
+          return;
+        }
+        const suggestions = response.suggestions
+          .map((suggestion) => suggestion.trim())
+          .filter(Boolean);
+        if (suggestions.length === 0) {
+          setQuickSuggestion({
+            status: 'error',
+            message: 'ШІ повернув порожню пропозицію.',
+          });
+          return;
+        }
+        setQuickSuggestion({ status: 'available', suggestions, selectedIndex: 0 });
+      })
+      .catch((requestError) => {
+        if (!active || isAbortError(requestError)) return;
+        setQuickSuggestion({
+          status: 'error',
+          message: 'Не вдалося сформувати пропозицію розвіддонесення.',
+        });
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [isReportCreateMode, open, quickSuggestionAttempt, reportCopyLoaded, reportSource?.id]);
+
+  const applyQuickSuggestion = () => {
+    if (quickSuggestion.status !== 'available') return;
+    setValue('full_body', quickSuggestion.suggestions[quickSuggestion.selectedIndex], {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+    setQuickSuggestion({ status: 'applied' });
+  };
+
+  const selectAdjacentQuickSuggestion = (offset: number) => {
+    setQuickSuggestion((current) => {
+      if (current.status !== 'available' || current.suggestions.length < 2) return current;
+      const selectedIndex =
+        (current.selectedIndex + offset + current.suggestions.length) % current.suggestions.length;
+      return { ...current, selectedIndex };
+    });
+  };
+
+  const retryQuickSuggestion = () => {
+    setQuickSuggestionAttempt((attempt) => attempt + 1);
+  };
 
   useEffect(() => {
     if (!open || !isEditMode || !editTarget) return;
@@ -641,6 +717,10 @@ export function useManageMessageDrawer({
     isReportMode,
     isReportCreateMode,
     originalReportText,
+    quickSuggestion,
+    applyQuickSuggestion,
+    selectAdjacentQuickSuggestion,
+    retryQuickSuggestion,
     existingMedia,
     showAdvanced,
     setShowAdvanced,
