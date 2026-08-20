@@ -54,6 +54,12 @@ supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
 independently from the main `wd` database.
 
+Analytics control scripts and units are deployed as one content-addressed
+release to both the application and its paired analytics container. Source
+operations refuse to cross a release mismatch. A dedicated serialized
+analytics reconciler owns schema repair, while the frequent health service is
+read-only apart from its replication heartbeat and only reports drift.
+
 ## Messenger processing
 
 Messenger receipt and processing are separate. Receipt persists snapshots in

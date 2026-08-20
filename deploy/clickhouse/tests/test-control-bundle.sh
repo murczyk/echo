@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+TEST_DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=../bin/lib.sh
+source "$TEST_DIR/../bin/lib.sh"
+
+case_dir=$(mktemp -d /tmp/echo-control-bundle-test.XXXXXX)
+cleanup() {
+  rm -rf -- "$case_dir"
+}
+trap cleanup EXIT
+
+mkdir -p \
+  "$case_dir/bin" \
+  "$case_dir/env" \
+  "$case_dir/shims" \
+  "$case_dir/source-systemd" \
+  "$case_dir/systemd"
+printf '1\n' >"$case_dir/control-protocol-version"
+printf 'table\n' >"$case_dir/env/tables-exclude.txt"
+printf '{}\n' >"$case_dir/migration-impact.json"
+printf 'VERSION=1\n' >"$case_dir/versions.env"
+printf 'command\n' >"$case_dir/bin/command.sh"
+printf 'shim\n' >"$case_dir/shims/command.sh"
+printf 'source unit\n' >"$case_dir/source-systemd/source.service"
+printf 'analytics unit\n' >"$case_dir/systemd/analytics.service"
+
+first_release=$(control_bundle_release_id "$case_dir")
+printf '%s\n' "$first_release" >"$case_dir/release-id"
+[[ $(control_bundle_release_id "$case_dir") == "$first_release" ]]
+
+printf 'ignored\n' >"$case_dir/README.md"
+[[ $(control_bundle_release_id "$case_dir") == "$first_release" ]]
+
+printf 'changed command\n' >"$case_dir/bin/command.sh"
+second_release=$(control_bundle_release_id "$case_dir")
+[[ "$second_release" != "$first_release" ]]
+printf '%s\n' "$second_release" >"$case_dir/release-id"
+
+BUNDLE_DIR=$case_dir
+ECHO_TEST_REMOTE_RELEASE=$first_release
+ssh() {
+  printf '%s\n' "$ECHO_TEST_REMOTE_RELEASE"
+}
+if (require_paired_control_release echo@example.invalid >/dev/null 2>&1); then
+  printf 'release handshake unexpectedly accepted mismatched hosts\n' >&2
+  exit 1
+fi
+ECHO_TEST_REMOTE_RELEASE=$second_release
+[[ $(require_paired_control_release echo@example.invalid) == "$second_release" ]]
+
+archive_dir=$case_dir/archive
+mkdir "$archive_dir"
+archive_control_bundle "$case_dir" | tar -C "$archive_dir" -xf -
+[[ ! -e "$archive_dir/README.md" ]]
+[[ ! -e "$archive_dir/release-id" ]]
+[[ -f "$archive_dir/bin/command.sh" ]]
+
+printf 'Analytics control bundle tests passed\n'

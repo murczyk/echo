@@ -31,5 +31,3 @@ if [[ "$desired_fingerprint" != "$publication_fingerprint" \
   ECHO_PEERDB_RECONCILE_LOCK_HELD=true \
     "$SCRIPT_DIR/source-reconcile-tables.sh" --yes
 fi
-
-"$SCRIPT_DIR/source-reconcile-derived-schema.sh"

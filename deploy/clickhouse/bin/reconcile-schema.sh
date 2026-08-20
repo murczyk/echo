@@ -8,6 +8,30 @@ source "$SCRIPT_DIR/lib.sh"
 load_analytics_config
 validate_runtime_identifiers
 
+check_only=false
+case ${1:-} in
+  '')
+    ;;
+  --check)
+    check_only=true
+    ;;
+  *)
+    die "usage: $0 [--check]"
+    ;;
+esac
+acquire_analytics_reconcile_lock
+require_expected_control_release
+
+print_schema_difference() {
+  local expected_label=$1 actual_label=$2 expected=$3 actual=$4
+  log "Columns present only in $expected_label:"
+  comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
+    | sed 's/^/  /' >&2
+  log "Columns present only in $actual_label:"
+  comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
+    | sed 's/^/  /' >&2
+}
+
 source_columns() {
   source_psql -Atq -F $'\t' \
     -v ON_ERROR_STOP=1 \
@@ -77,12 +101,8 @@ source_schema=$(source_columns)
 raw_schema=$(clickhouse_raw_columns)
 [[ -n "$source_schema" ]] || die "source publication has no columns"
 if [[ "$source_schema" != "$raw_schema" ]]; then
-  log "Columns present only in the source publication:"
-  comm -23 <(printf '%s\n' "$source_schema") <(printf '%s\n' "$raw_schema") \
-    | sed 's/^/  /' >&2
-  log "Columns present only in raw ClickHouse:"
-  comm -13 <(printf '%s\n' "$source_schema") <(printf '%s\n' "$raw_schema") \
-    | sed 's/^/  /' >&2
+  print_schema_difference "the source publication" "raw ClickHouse" \
+    "$source_schema" "$raw_schema"
   die "source and raw ClickHouse schemas differ; waiting for PeerDB schema propagation or resync"
 fi
 
@@ -96,6 +116,18 @@ if [[ "$source_schema" != "$current_schema" ]]; then
   refresh_gateway=true
 elif [[ "$source_schema" != "$gateway_schema" ]]; then
   refresh_gateway=true
+fi
+
+if $check_only && [[ "$refresh_current" == true || "$refresh_gateway" == true ]]; then
+  if [[ "$refresh_current" == true ]]; then
+    print_schema_difference "the source publication" "current ClickHouse views" \
+      "$source_schema" "$current_schema"
+  fi
+  if [[ "$refresh_gateway" == true ]]; then
+    print_schema_difference "the source publication" "the PostgreSQL gateway" \
+      "$source_schema" "$gateway_schema"
+  fi
+  die "analytics schema drift detected"
 fi
 
 if [[ "$refresh_current" == true ]]; then

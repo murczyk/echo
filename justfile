@@ -948,7 +948,11 @@ deploy _server_pos="" server silent="false":
           apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs'
 
     ssh "$SERVER" 'set -euo pipefail
-      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      if sudo -n test -f /etc/echo-peerdb/source.env; then
+        /usr/share/echo/analytics-control/bin/source-activate-control.sh --yes
+        SOURCE_RECONCILE_LOCK_WAIT_SECONDS=300 \
+          /opt/echo-peerdb/current/bin/source-sync-exclusions-if-needed.sh --yes
+      fi
       sudo /usr/bin/wdintel-rs --mode=live migrate'
 
     # Re-assert critical services after deploy package update
@@ -1060,7 +1064,7 @@ deploy _server_pos="" server silent="false":
         exit 1
       fi
     '
-    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
@@ -1196,7 +1200,11 @@ deploy-from-local _server_pos="" server silent="false":
     REMOTE_DEB_PATH=""
 
     ssh "$SERVER" 'set -euo pipefail
-      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      if sudo -n test -f /etc/echo-peerdb/source.env; then
+        /usr/share/echo/analytics-control/bin/source-activate-control.sh --yes
+        SOURCE_RECONCILE_LOCK_WAIT_SECONDS=300 \
+          /opt/echo-peerdb/current/bin/source-sync-exclusions-if-needed.sh --yes
+      fi
       sudo /usr/bin/wdintel-rs --mode=live migrate'
 
     ssh "$SERVER" '
@@ -1308,7 +1316,7 @@ deploy-from-local _server_pos="" server silent="false":
 
       echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
     '
-    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi

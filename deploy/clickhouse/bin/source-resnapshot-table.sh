@@ -9,7 +9,6 @@ SOURCE_LIB=${ECHO_PEERDB_LIB:-$SCRIPT_DIR/lib.sh}
 source "$SOURCE_LIB"
 
 migration_impact_file=${ECHO_PEERDB_MIGRATION_IMPACT_FILE:-$BUNDLE_DIR/migration-impact.json}
-analytics_resnapshot_script=${ECHO_ANALYTICS_RESNAPSHOT_SCRIPT:-$SCRIPT_DIR/resnapshot-table.sh}
 remote_timeout=${ANALYTICS_TABLE_RESNAPSHOT_REMOTE_TIMEOUT_SECONDS:-7500}
 
 validate_source_table() {
@@ -65,8 +64,7 @@ run_remote_resnapshot() {
       -o ServerAliveInterval=15 \
       -o ServerAliveCountMax=3 \
       "$analytics_ssh_target" \
-      "sudo -n env ECHO_ANALYTICS_LIB=/opt/echo-analytics/bin/lib.sh bash -s -- $source_table" \
-    <"$analytics_resnapshot_script"
+      "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/resnapshot-table.sh $source_table"
 }
 
 main() {
@@ -93,13 +91,13 @@ main() {
   require_cmd ssh
   require_cmd timeout
   require_file "$migration_impact_file"
-  require_file "$analytics_resnapshot_script"
   [[ "$remote_timeout" =~ ^[1-9][0-9]*$ ]] \
     || die "ANALYTICS_TABLE_RESNAPSHOT_REMOTE_TIMEOUT_SECONDS must be a positive integer"
 
   analytics_ssh_target=${ANALYTICS_SSH_TARGET:-echo@${ANALYTICS_ADDRESS%/*}}
   [[ "$analytics_ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] \
     || die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
+  control_release=$(require_paired_control_release "$analytics_ssh_target")
   acquire_source_reconcile_lock
 
   if [[ "$mode" == --table ]]; then

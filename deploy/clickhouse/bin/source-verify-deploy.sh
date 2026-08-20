@@ -20,6 +20,7 @@ health_timeout=${ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS:-300}
 analytics_ssh_target=${ANALYTICS_SSH_TARGET:-echo@${ANALYTICS_ADDRESS%/*}}
 [[ "$analytics_ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] \
   || die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
+control_release=$(require_paired_control_release "$analytics_ssh_target")
 
 reconcile_retry_attempts=${ANALYTICS_RECONCILE_DEPLOY_RETRY_ATTEMPTS:-$SOURCE_RECONCILE_DEPLOY_RETRY_ATTEMPTS_DEFAULT}
 [[ "$reconcile_retry_attempts" =~ ^[1-9][0-9]*$ ]] \
@@ -123,7 +124,12 @@ while ((SECONDS < deadline)); do
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     "$analytics_ssh_target" \
-    'sudo systemctl reset-failed echo-analytics-health.service >/dev/null 2>&1 || true; sudo systemctl start echo-analytics-health.service'
+    "set -euo pipefail
+     test \"\$(cat /opt/echo-analytics/current/release-id)\" = '$control_release'
+     sudo systemctl reset-failed echo-analytics-reconcile.service >/dev/null 2>&1 || true
+     sudo systemctl start echo-analytics-reconcile.service
+     sudo systemctl reset-failed echo-analytics-health.service >/dev/null 2>&1 || true
+     sudo systemctl start echo-analytics-health.service"
   then
     log "Analytics deployment health check passed"
     exit 0
@@ -136,6 +142,6 @@ ssh -n \
   -o BatchMode=yes \
   -o ConnectTimeout=10 \
   "$analytics_ssh_target" \
-  'cd /opt/echo-analytics/deploy; bin/reconcile-schema.sh || true; bin/table-status.sh || true; sudo journalctl -u echo-analytics-health.service -n 40 --no-pager' \
+  '/opt/echo-analytics/current/bin/reconcile-schema.sh --check || true; /opt/echo-analytics/current/bin/table-status.sh || true; sudo journalctl -u echo-analytics-health.service -n 40 --no-pager' \
   >&2 || true
 die "analytics did not become healthy within ${health_timeout}s"

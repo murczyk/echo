@@ -23,35 +23,9 @@ for binary in /opt/peerdb/bin/peer-flow /opt/peerdb/bin/peerdb-server /opt/tempo
   [[ -x "$binary" ]] || die "missing runtime binary: $binary"
 done
 
-sudo install -d -o root -g root -m 0755 /opt/echo-analytics
-sudo install -d -o root -g root -m 0755 /opt/echo-analytics/bin
-sudo install -o root -g root -m 0755 "$SCRIPT_DIR/lib.sh" \
-  /opt/echo-analytics/bin/lib.sh
-sudo install -o root -g root -m 0755 "$SCRIPT_DIR/clickhouse-system-log-policy.sh" \
-  /opt/echo-analytics/bin/clickhouse-system-log-policy.sh
-sudo install -o root -g root -m 0644 "$BUNDLE_DIR/versions.env" \
-  /opt/echo-analytics/versions.env
-for wrapper in \
-  run-peer-flow.sh \
-  run-peerdb-server.sh \
-  run-minio.sh \
-  apply-firewall.sh \
-  check-analytics-health.sh \
-  reconcile-schema.sh \
-  reconcile-derived-schema.sh \
-  reconcile-table-selection.sh \
-  refresh-current-views.sh \
-  refresh-gateway.sh \
-  query-performance-report.sh \
-  manage-system-logs.sh
-do
-  sudo install -m 0755 "$SCRIPT_DIR/$wrapper" "/opt/echo-analytics/bin/$wrapper"
-done
-for unit in "$BUNDLE_DIR"/systemd/*; do
-  sudo install -m 0644 "$unit" "/etc/systemd/system/$(basename "$unit")"
-done
-
-sudo systemctl daemon-reload
+control_release=$(control_bundle_release_id "$BUNDLE_DIR")
+sudo env ECHO_ANALYTICS_CONTROL_START_TIMERS="$start_services" \
+  "$SCRIPT_DIR/install-control-release.sh" analytics "$control_release"
 $start_services || {
   log "Native systemd services installed without enabling or starting the analytics target"
   exit 0

@@ -7,6 +7,8 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 source "$SCRIPT_DIR/lib.sh"
 load_analytics_config
 validate_runtime_identifiers
+acquire_analytics_reconcile_lock
+require_expected_control_release
 require_cmd curl
 require_cmd jq
 

@@ -5,7 +5,8 @@ After=network-online.target postgresql.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/echo-peerdb/bin/source-reconcile-if-needed.sh
+Environment=SOURCE_RECONCILE_LOCK_BUSY_IS_SUCCESS=true
+ExecStart=/opt/echo-peerdb/current/bin/source-reconcile-if-needed.sh
 TimeoutStartSec=7500s
 PrivateTmp=true
 ProtectHome=read-only

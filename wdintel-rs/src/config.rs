@@ -941,7 +941,7 @@ pub const ANALYTICS_SOURCE_CONFIG_PATH: &str = "/etc/echo-peerdb/source.env";
 pub const ANALYTICS_SOURCE_EXCLUSIONS_PATH: &str =
     "/etc/echo-peerdb/tables-exclude.txt";
 pub const ANALYTICS_PACKAGED_EXCLUSIONS_PATH: &str =
-    "/opt/echo-peerdb/env/tables-exclude.txt";
+    "/opt/echo-peerdb/current/env/tables-exclude.txt";
 pub const ANALYTICS_LOCAL_EXCLUSIONS_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../deploy/clickhouse/env/tables-exclude.txt"

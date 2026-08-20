@@ -38,6 +38,7 @@ SQL
 analytics_ssh_target=${ANALYTICS_SSH_TARGET:-echo@${ANALYTICS_ADDRESS%/*}}
 [[ "$analytics_ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] \
   || die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
+control_release=$(require_paired_control_release "$analytics_ssh_target")
 
 run_remote_reconcile() {
   ssh -n \
@@ -46,7 +47,7 @@ run_remote_reconcile() {
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     "$analytics_ssh_target" \
-    "/opt/echo-analytics/bin/reconcile-table-selection.sh $1"
+    "ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/reconcile-table-selection.sh $1"
 }
 
 timeout --foreground 30s \
@@ -54,7 +55,7 @@ timeout --foreground 30s \
     -o BatchMode=yes \
     -o ConnectTimeout=10 \
     "$analytics_ssh_target" \
-    'test -x /opt/echo-analytics/bin/reconcile-table-selection.sh' \
+    'test -x /opt/echo-analytics/current/bin/reconcile-table-selection.sh' \
   || die "analytics reconciliation script is unavailable on $analytics_ssh_target"
 
 reconciliation_complete=false

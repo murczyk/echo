@@ -1,0 +1,13 @@
+[Unit]
+Description=Reconcile Echo analytics desired state every minute
+PartOf=echo-analytics.target
+
+[Timer]
+OnBootSec=5s
+OnUnitInactiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=echo-analytics-reconcile.service
+
+[Install]
+WantedBy=echo-analytics.target

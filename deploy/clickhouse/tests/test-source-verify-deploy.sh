@@ -37,6 +37,7 @@ SOURCE_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS_DEFAULT=30
 protected_file_exists() { [[ -f "$1" ]]; }
 load_source_config() { ANALYTICS_ADDRESS=192.0.2.10/32; }
 require_cmd() { command -v "$1" >/dev/null 2>&1; }
+require_paired_control_release() { printf '%064d\n' 0; }
 log() { printf '[echo-analytics] %s\n' "$*"; }
 die() { printf '[echo-analytics] ERROR: %s\n' "$*" >&2; exit 1; }
 LIB

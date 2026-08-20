@@ -15,6 +15,10 @@ SOURCE_RECONCILE_STATE_DIR=${ECHO_PEERDB_RECONCILE_STATE_DIR:-/var/lib/echo-peer
 SOURCE_RECONCILE_FINGERPRINT_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.sha256
 SOURCE_RECONCILE_LOCK_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.lock
 SOURCE_RECONCILE_DDL_LOCK_TIMEOUT=2s
+ANALYTICS_RECONCILE_STATE_DIR=${ECHO_ANALYTICS_RECONCILE_STATE_DIR:-/var/lib/echo-analytics/reconcile}
+# shellcheck disable=SC2034
+ANALYTICS_RECONCILE_STATE_FILE=$ANALYTICS_RECONCILE_STATE_DIR/desired-state-id
+ANALYTICS_RECONCILE_LOCK_FILE=${ECHO_ANALYTICS_RECONCILE_LOCK_FILE:-/run/lock/echo-analytics-reconcile.lock}
 # shellcheck disable=SC2034
 SOURCE_RECONCILE_DEPLOY_RETRY_ATTEMPTS_DEFAULT=5
 # shellcheck disable=SC2034
@@ -252,10 +256,202 @@ ensure_source_reconcile_state_dir() {
 }
 
 acquire_source_reconcile_lock() {
+  local wait_seconds=${SOURCE_RECONCILE_LOCK_WAIT_SECONDS:-0}
+  [[ "$wait_seconds" =~ ^[0-9]+$ ]] \
+    || die "SOURCE_RECONCILE_LOCK_WAIT_SECONDS must be a non-negative integer"
   require_cmd flock
   ensure_source_reconcile_state_dir
   exec 9>"$SOURCE_RECONCILE_LOCK_FILE"
-  flock -n 9 || die "another table-selection reconciliation is already running"
+  if ((wait_seconds > 0)); then
+    flock -w "$wait_seconds" 9 \
+      || die "table-selection reconciliation lock was not available within ${wait_seconds}s"
+  else
+    if ! flock -n 9; then
+      if [[ ${SOURCE_RECONCILE_LOCK_BUSY_IS_SUCCESS:-false} == true ]]; then
+        log "Another table-selection reconciliation owns the lock; skipping this timer run"
+        exit 0
+      fi
+      die "another table-selection reconciliation is already running"
+    fi
+  fi
+  export ECHO_PEERDB_RECONCILE_LOCK_HELD=true
+}
+
+acquire_analytics_reconcile_lock() {
+  if [[ ${ECHO_ANALYTICS_RECONCILE_LOCK_HELD:-false} == true \
+    && -e /proc/$$/fd/8 ]]; then
+    return 0
+  fi
+
+  local old_umask wait_seconds=${ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS:-300}
+  [[ "$wait_seconds" =~ ^[0-9]+$ ]] \
+    || die "ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS must be a non-negative integer"
+  require_cmd flock
+  old_umask=$(umask)
+  umask 000
+  : >>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  umask "$old_umask"
+  exec 8>>"$ANALYTICS_RECONCILE_LOCK_FILE"
+  flock -w "$wait_seconds" 8 \
+    || die "analytics reconciliation lock was not available within ${wait_seconds}s"
+  export ECHO_ANALYTICS_RECONCILE_LOCK_HELD=true
+}
+
+control_bundle_release_id() {
+  local bundle_dir=$1 relative_path digest
+  require_cmd find
+  require_cmd sha256sum
+  require_cmd sort
+  require_cmd awk
+  validate_control_bundle "$bundle_dir"
+
+  while IFS= read -r -d '' relative_path; do
+    digest=$(sha256sum "$bundle_dir/$relative_path" | awk '{print $1}')
+    printf '%s  %s\n' "$digest" "$relative_path"
+  done < <(control_bundle_file_list "$bundle_dir") \
+    | sha256sum | awk '{print $1}'
+}
+
+validate_control_bundle() {
+  local bundle_dir=$1 relative_path
+  local -a files=(
+    control-protocol-version
+    env/tables-exclude.txt
+    migration-impact.json
+    versions.env
+  )
+  local -a directories=(bin shims source-systemd systemd)
+
+  for relative_path in "${files[@]}"; do
+    require_file "$bundle_dir/$relative_path"
+  done
+  for relative_path in "${directories[@]}"; do
+    [[ -d "$bundle_dir/$relative_path" ]] \
+      || die "missing control bundle directory: $bundle_dir/$relative_path"
+  done
+  [[ $(tr -d '\r\n' <"$bundle_dir/control-protocol-version") == 1 ]] \
+    || die "unsupported analytics control protocol version"
+}
+
+control_bundle_file_list() {
+  local bundle_dir=$1 relative_path
+  local -a files=(
+    control-protocol-version
+    env/tables-exclude.txt
+    migration-impact.json
+    versions.env
+  )
+  local -a directories=(bin shims source-systemd systemd)
+
+  {
+    for relative_path in "${files[@]}"; do
+      printf '%s\0' "$relative_path"
+    done
+    for relative_path in "${directories[@]}"; do
+      find "$bundle_dir/$relative_path" -type f -printf '%P\0' \
+        | while IFS= read -r -d '' child_path; do
+            printf '%s/%s\0' "$relative_path" "$child_path"
+          done
+    done
+  } | LC_ALL=C sort -z
+}
+
+archive_control_bundle() {
+  local bundle_dir=$1
+  validate_control_bundle "$bundle_dir"
+  tar -C "$bundle_dir" \
+    --null \
+    --files-from=<(control_bundle_file_list "$bundle_dir") \
+    --create \
+    --file=-
+}
+
+active_control_release_id() {
+  require_file "$BUNDLE_DIR/release-id"
+  local release_id
+  release_id=$(tr -d '\r\n' <"$BUNDLE_DIR/release-id")
+  [[ "$release_id" =~ ^[a-f0-9]{64}$ ]] \
+    || die "invalid active analytics control release id: $release_id"
+  printf '%s\n' "$release_id"
+}
+
+analytics_desired_state_id() {
+  local release_id raw_table_state
+  release_id=$(active_control_release_id)
+  raw_table_state=$(clickhouse_admin_http "
+    SELECT concat(name, '=', toString(uuid))
+    FROM system.tables
+    WHERE database = '$CLICKHOUSE_RAW_DB'
+      AND name IN (
+        'sigint_inbox_item',
+        'signal_message',
+        'signal_message_group',
+        'sigint_inbox_item_tag',
+        'sigint_inbox_item_network'
+      )
+    ORDER BY name
+  ")
+  printf '%s\n%s\n' "$release_id" "$raw_table_state" \
+    | sha256sum | awk '{print $1}'
+}
+
+current_control_release_id() {
+  if [[ -f "$BUNDLE_DIR/release-id" ]]; then
+    active_control_release_id
+  else
+    control_bundle_release_id "$BUNDLE_DIR"
+  fi
+}
+
+require_paired_control_release() {
+  local analytics_ssh_target=$1 expected actual
+  expected=$(current_control_release_id)
+  actual=$(ssh -n \
+    -o BatchMode=yes \
+    -o ConnectTimeout=10 \
+    "$analytics_ssh_target" \
+    'cat /opt/echo-analytics/current/release-id' 2>/dev/null || true)
+  [[ "$actual" == "$expected" ]] \
+    || die "paired analytics control release mismatch: source $expected, analytics ${actual:-missing}"
+  printf '%s\n' "$expected"
+}
+
+require_expected_control_release() {
+  local expected=${ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE:-}
+  [[ -n "$expected" ]] || return 0
+
+  local active
+  active=$(active_control_release_id)
+  [[ "$active" == "$expected" ]] \
+    || die "analytics control release mismatch: expected $expected, active $active"
+}
+
+delegate_paired_analytics_operation_if_source() {
+  local operation=$1
+  shift
+  protected_file_exists "$SOURCE_CONFIG_FILE" || return 0
+  [[ "$operation" == resync.sh || "$operation" == finish-resync.sh ]] \
+    || die "unsupported paired analytics operation: $operation"
+  if (($# > 0)); then
+    [[ $# -eq 1 && $1 == --yes ]] \
+      || die "unsupported arguments for paired analytics operation: $*"
+  fi
+
+  load_source_config
+  local analytics_ssh_target control_release remote_argument=
+  analytics_ssh_target=${ANALYTICS_SSH_TARGET:-echo@${ANALYTICS_ADDRESS%/*}}
+  [[ "$analytics_ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] \
+    || die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
+  control_release=$(require_paired_control_release "$analytics_ssh_target")
+  (($# == 0)) || remote_argument=" $1"
+  ssh -n \
+    -o BatchMode=yes \
+    -o ConnectTimeout=10 \
+    -o ServerAliveInterval=15 \
+    -o ServerAliveCountMax=3 \
+    "$analytics_ssh_target" \
+    "ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/$operation$remote_argument"
+  exit 0
 }
 
 record_source_table_selection_fingerprint() {
