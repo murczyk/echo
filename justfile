@@ -1019,11 +1019,11 @@ deploy _server_pos="" server silent="false":
 
       queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
         select coalesce(
-          extract(epoch from ((now() at time zone 'utc') - min(created_at))),
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
           0
         )::bigint
         from signal_message_queue
-        where next_attempt_at <= now() at time zone 'utc'
+        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
       ")
       if [ "$queue_age_before" -gt 30 ]; then
         queue_draining=0
@@ -1031,11 +1031,11 @@ deploy _server_pos="" server silent="false":
           sleep 5
           queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
             select coalesce(
-              extract(epoch from ((now() at time zone 'utc') - min(created_at))),
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
               0
             )::bigint
             from signal_message_queue
-            where next_attempt_at <= now() at time zone 'utc'
+            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
           ")
           if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
             queue_draining=1
@@ -1265,11 +1265,11 @@ deploy-from-local _server_pos="" server silent="false":
 
       queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
         select coalesce(
-          extract(epoch from ((now() at time zone 'utc') - min(created_at))),
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
           0
         )::bigint
         from signal_message_queue
-        where next_attempt_at <= now() at time zone 'utc'
+        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
       ")
       if [ "$queue_age_before" -gt 30 ]; then
         queue_draining=0
@@ -1277,11 +1277,11 @@ deploy-from-local _server_pos="" server silent="false":
           sleep 5
           queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
             select coalesce(
-              extract(epoch from ((now() at time zone 'utc') - min(created_at))),
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
               0
             )::bigint
             from signal_message_queue
-            where next_attempt_at <= now() at time zone 'utc'
+            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
           ")
           if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
             queue_draining=1
