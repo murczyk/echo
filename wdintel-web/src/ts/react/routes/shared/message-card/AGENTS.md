@@ -7,15 +7,16 @@ Protected hot path:
 - `MessageCard.tsx`
 - `MessageCardHeader.tsx`
 - `MessageCardContent.tsx`
-- default or closed card content repeated across Duty feeds
+- `MessageCardTags.tsx` and other default/closed card content repeated across Duty feeds
 
 Rules:
 
 - Do not introduce structural `Box`, `Stack`, `Grid`, `Container`, or equivalent wrapper components into the protected hot path.
 - Do not introduce custom wrapper components that only hide those MUI layout abstractions.
 - Do not migrate native structural layout into per-card `sx` objects.
-- Prefer semantic/native HTML, existing utility classes, and shared theme-backed CSS variables.
-- `sx` remains valid on leaf or interactive MUI components such as `Button`, `Menu`, `MenuItem`, `Typography`, icons, tooltips, progress indicators, dialogs, and popovers.
+- Prefer semantic/native HTML, Tailwind utility classes, application-owned CSS classes, and shared theme-backed CSS variables.
+- Use `sx`, `Box`, `Stack`, and other MUI layout/styling APIs only when absolutely necessary (for example theme-coupled leaf controls, menus, dialogs, popovers, or behavior that native HTML + Tailwind cannot provide). On repeated per-tag / per-card nodes, prefer static `className` over `sx` — Emotion/`sx` recalculates at runtime and multiplies cost across Duty feeds.
+- Leaf MUI components (`Button`, `Menu`, `MenuItem`, `Typography`, icons, tooltips, progress indicators, dialogs, popovers) remain valid when they provide required theme, accessibility, or interaction behavior; style them with Tailwind or app-owned classes when a static class is enough.
 - MUI layout components remain valid for dialogs, previews, controls, and other non-repeated surfaces.
 - Do not interpret this rule as "remove all MUI".
 - Closed menus, dialogs, and popovers should remain unmounted when practical.
