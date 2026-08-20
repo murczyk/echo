@@ -11,6 +11,7 @@ import {
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import { FeedFilterSelectionSection } from './FeedFilterSelectionSection';
 import { ADJACENT_FREQS_RANGE_OPTIONS } from './utils';
+import { useDutyBulkCopy } from './useDutyBulkCopy';
 
 type FeedFilterFrequencySectionProps = {
   mode: 'include' | 'exclude';
@@ -37,6 +38,10 @@ export function FeedFilterFrequencySection({
   adjacentFreqsRange,
   onAdjacentFreqsRangeChange,
 }: FeedFilterFrequencySectionProps) {
+  const onBulkCopy = useDutyBulkCopy({
+    entityLabel: 'частоти',
+    serialize: (selected: readonly string[]) => selected.join('\n'),
+  });
   return (
     <Box>
       <FeedFilterSelectionSection
@@ -49,6 +54,14 @@ export function FeedFilterFrequencySection({
         getOptionLabel={(option) => option}
         placeholder={placeholder}
         autocompleteClassName="min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1"
+        bulkPaste
+        bulkPasteSeparators={[',', '\n']}
+        bulkPasteMenuLabel="Додати кілька частот"
+        bulkPasteDialogTitle="Додати кілька частот"
+        bulkPasteInputLabel="Частоти"
+        bulkCopy
+        bulkCopyMenuLabel="Копіювати обрані частоти"
+        onBulkCopy={onBulkCopy}
         headerRight={
           <Tooltip title="Оновити список частот">
             <span>

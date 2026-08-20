@@ -372,6 +372,7 @@ export async function fetchAnalysisMapPoints(
     inboxItemsFilter: unknown;
     mapFilter: null;
     pageId: string;
+    showSettlements?: boolean;
   },
   options?: RequestOptions,
 ): Promise<MapPointsRsp> {
@@ -556,6 +557,7 @@ export type AnalysisFilterReferenceData = {
 export type AnalysisMapData = {
   points: FreqDetailedPoint[];
   networkUnits: NetworkUnit[];
+  settlements: MapPointsRsp['settlements'];
 };
 
 export type AnalysisMetadataOptionGroups = {

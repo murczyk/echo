@@ -14,7 +14,8 @@ use crate::palitra::bl::collect_accessible_palitra_ids;
 use crate::rer_importer::collect_profiles_data;
 use crate::rer_importer::highlight::*;
 use crate::rer_importer::inbox::query::{
-    build_inbox_map_query, inbox_results_reverse_query_order,
+    build_inbox_map_query, build_inbox_settlement_ids_query,
+    inbox_results_reverse_query_order,
 };
 use crate::rer_importer::signals::*;
 use crate::storage::mk_media_url;
@@ -203,6 +204,80 @@ pub async fn get_inbox_map_items(
         });
     }
     Ok(result)
+}
+
+pub async fn get_inbox_map_settlements(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+) -> Result<Vec<MapSettlement>, AppError> {
+    let filtered_ids = build_inbox_settlement_ids_query(login, env, req)
+        .await
+        .c(h!())?;
+    let sql = format!(
+        r#"
+with filtered_items as ({filtered_ids})
+select
+    s.id as settlement_id,
+    s.name,
+    s.region,
+    s.lat,
+    s.lon,
+    count(distinct link.item_id)::bigint as inbox_item_count
+from filtered_items
+join sigint_inbox_item_settlement link on link.item_id = filtered_items.id
+join settlement s on s.id = link.settlement_id
+where s.lat is not null
+  and s.lon is not null
+group by s.id, s.name, s.region, s.lat, s.lon
+order by inbox_item_count desc, s.id
+        "#
+    );
+    Ok(MapSettlement::find_by_statement(Statement::from_string(
+        DatabaseBackend::Postgres,
+        sql,
+    ))
+    .all(&env.dbx)
+    .await
+    .c(h!())?)
+}
+
+#[cfg(test)]
+pub(crate) async fn get_inbox_map_settlements_for_items<C>(
+    dbx: &C,
+    inbox_item_ids: &[i64],
+) -> Result<Vec<MapSettlement>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if inbox_item_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Ok(
+        MapSettlement::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+select
+    s.id as settlement_id,
+    s.name,
+    s.region,
+    s.lat,
+    s.lon,
+    count(distinct link.item_id)::bigint as inbox_item_count
+from sigint_inbox_item_settlement link
+join settlement s on s.id = link.settlement_id
+where link.item_id = any($1::bigint[])
+  and s.lat is not null
+  and s.lon is not null
+group by s.id, s.name, s.region, s.lat, s.lon
+order by inbox_item_count desc, s.id
+        "#,
+            [inbox_item_ids.to_vec().into()],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?,
+    )
 }
 
 pub async fn aggregate_to_inbox_messages(
@@ -1369,6 +1444,13 @@ pub async fn submit_upsert_inbox_item(
         .await
         .c(h!())?
         .c(h!())?;
+    crate::battle_line::settlement_queue::reconcile_item_locations(
+        txn,
+        inbox_id,
+        new_item.location_v2.as_deref(),
+    )
+    .await
+    .c(h!())?;
     let existing_alg2 = if invalidate_body_derived_fields {
         Vec::new()
     } else {

@@ -3,11 +3,17 @@ import type { Dispatch, SetStateAction } from 'react';
 
 export type FeedFilterMode = 'include' | 'exclude';
 
+export type FeedFilterModeTransfer = {
+  includeValues: string[];
+  excludeValues: string[];
+};
+
 type UseFeedFilterSelectionStateParams<TLocal> = {
   includeValues: readonly string[];
   excludeValues: readonly string[];
   onIncludeChange: (next: string[]) => void;
   onExcludeChange: (next: string[]) => void;
+  onModeTransfer: (next: FeedFilterModeTransfer) => void;
   toLocalValues: (values: readonly string[]) => TLocal[];
   toParentValues: (values: readonly TLocal[]) => string[];
 };
@@ -28,6 +34,7 @@ export function useFeedFilterSelectionState<TLocal>({
   excludeValues,
   onIncludeChange,
   onExcludeChange,
+  onModeTransfer,
   toLocalValues,
   toParentValues,
 }: UseFeedFilterSelectionStateParams<TLocal>): SelectionStateResult<TLocal> {
@@ -37,11 +44,26 @@ export function useFeedFilterSelectionState<TLocal>({
     toLocalValues(initialMode === 'include' ? includeValues : excludeValues),
   );
   const skipWritebackRef = useRef(false);
+  const pendingModeTransferRef = useRef<{
+    mode: FeedFilterMode;
+    values: string[];
+  } | null>(null);
   const previousSelectionKeyRef = useRef<string | null>(null);
   const includeKey = useMemo(() => JSON.stringify(includeValues), [includeValues]);
   const excludeKey = useMemo(() => JSON.stringify(excludeValues), [excludeValues]);
 
   useLayoutEffect(() => {
+    const pendingTransfer = pendingModeTransferRef.current;
+    if (pendingTransfer != null && mode === pendingTransfer.mode) {
+      const transferredValues = pendingTransfer.values;
+      const activeValues = mode === 'include' ? includeValues : excludeValues;
+      const opposingValues = mode === 'include' ? excludeValues : includeValues;
+      if (sameSelection(activeValues, transferredValues) && opposingValues.length === 0) {
+        pendingModeTransferRef.current = null;
+        previousSelectionKeyRef.current = `${mode}:${mode === 'include' ? includeKey : excludeKey}`;
+      }
+      return;
+    }
     const nextMode: FeedFilterMode =
       mode === 'include'
         ? includeValues.length === 0 && excludeValues.length > 0
@@ -103,13 +125,23 @@ export function useFeedFilterSelectionState<TLocal>({
     localValue,
     setLocalValue,
     setMode: (nextMode) => {
+      if (nextMode === mode) return;
+      const transferredValues = toParentValues(localValue);
+      pendingModeTransferRef.current = { mode: nextMode, values: transferredValues };
+      skipWritebackRef.current = true;
       setMode(nextMode);
-      setLocalValue([]);
-      if (nextMode === 'include') {
-        onExcludeChange([]);
-      } else {
-        onIncludeChange([]);
+      if (
+        transferredValues.length === 0 &&
+        includeValues.length === 0 &&
+        excludeValues.length === 0
+      ) {
+        return;
       }
+      onModeTransfer(
+        nextMode === 'include'
+          ? { includeValues: transferredValues, excludeValues: [] }
+          : { includeValues: [], excludeValues: transferredValues },
+      );
     },
   };
 }

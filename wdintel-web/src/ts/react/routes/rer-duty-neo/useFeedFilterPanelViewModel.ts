@@ -8,6 +8,7 @@ import {
   type FeedFilterSavedFiltersViewModel,
 } from './useFeedFilterSavedFiltersViewModel';
 import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
+import { useDutyBulkCopy } from './useDutyBulkCopy';
 
 type FeedFilterMode = 'include' | 'exclude';
 
@@ -17,6 +18,7 @@ type FeedFilterSelectionViewModel<T> = {
   onModeChange: (mode: FeedFilterMode) => void;
   onValueChange: (value: T[]) => void;
   options: readonly T[];
+  bulkPasteOptions?: readonly T[];
   getOptionLabel: (option: T) => string;
   getOptionKey?: (option: T) => string;
   isOptionEqualToValue?: (option: T, value: T) => boolean;
@@ -35,6 +37,12 @@ type FeedFilterSelectionViewModel<T> = {
   groupCatalogError?: GroupCatalogError | null;
   catalogLoading?: boolean;
   onRetryGroupCatalog?: () => void;
+  bulkCopy: boolean;
+  bulkCopyMenuLabel: string;
+  onBulkCopy?: (selected: readonly T[]) => Promise<void>;
+  getBulkPasteToken?: (option: T) => string;
+  getBulkPasteAliases?: (option: T) => readonly string[];
+  getBulkCopyText?: (selected: readonly T[]) => string;
 };
 
 export type FeedFilterPanelViewModel = {
@@ -65,7 +73,15 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === 'dark';
   const { filterState, sources, toggles, actions } = panel;
-  const { groupsList, groupInfos, senderOptions, freqs, postsList, unitsList } = sources;
+  const {
+    groupsList,
+    groupInfos,
+    senderOptions,
+    freqs,
+    postsList,
+    unitsList,
+    persistentUnitFilterValues = [],
+  } = sources;
   const {
     adjacentFreqsRange,
     highlightSignalsEnabled,
@@ -78,14 +94,19 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
   const {
     onGroupsChange,
     onDeniedGroupsChange,
+    onGroupsModeTransfer,
     onSendersChange,
     onDeniedSendersChange,
+    onSendersModeTransfer,
     onFreqsChange,
     onFreqsDeniedChange,
+    onFreqsModeTransfer,
     onPostsChange,
     onPostsDeniedChange,
+    onPostsModeTransfer,
     onUnitsChange,
     onUnitsDeniedChange,
+    onUnitsModeTransfer,
     onUnitsExactMatchOnlyChange,
     onAdjacentFreqsRangeChange,
     onHighlightSignalsChange,
@@ -101,12 +122,45 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       ),
     [groupInfos, groupsList],
   );
+  const groupNameCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    sortedGroupKeys.forEach((key) => {
+      const name = groupInfos[key]?.name;
+      if (name != null) counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return counts;
+  }, [groupInfos, sortedGroupKeys]);
+  const senderLabelCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    senderOptions.forEach((sender) =>
+      counts.set(sender.label, (counts.get(sender.label) ?? 0) + 1),
+    );
+    return counts;
+  }, [senderOptions]);
+  const copyGroups = useDutyBulkCopy({
+    entityLabel: 'групи',
+    serialize: (selected: readonly string[]) => selected.join('\n'),
+  });
+  const copySenders = useDutyBulkCopy({
+    entityLabel: 'відправників',
+    serialize: (selected: readonly { id: string }[]) =>
+      selected.map((sender) => sender.id).join('\n'),
+  });
+  const copyPosts = useDutyBulkCopy({
+    entityLabel: 'пости',
+    serialize: (selected: readonly string[]) => selected.join('\n'),
+  });
+  const copyUnits = useDutyBulkCopy({
+    entityLabel: 'підрозділи',
+    serialize: (selected: readonly string[]) => selected.join('\n'),
+  });
 
   const groupsSelectionState = useFeedFilterSelectionState<string>({
     includeValues: filterState.groupsSelected,
     excludeValues: filterState.deniedGroups,
     onIncludeChange: onGroupsChange,
     onExcludeChange: onDeniedGroupsChange,
+    onModeTransfer: onGroupsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -115,6 +169,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.deniedSenders,
     onIncludeChange: onSendersChange,
     onExcludeChange: onDeniedSendersChange,
+    onModeTransfer: onSendersModeTransfer,
     toLocalValues: (values) =>
       values.map((id) => senderOptions.find((opt) => opt.id === id) ?? { id, label: id }),
     toParentValues: (values) => values.map((option) => option.id),
@@ -124,6 +179,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.freqsDenied,
     onIncludeChange: onFreqsChange,
     onExcludeChange: onFreqsDeniedChange,
+    onModeTransfer: onFreqsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -132,6 +188,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     excludeValues: filterState.postsDenied ?? [],
     onIncludeChange: onPostsChange ?? (() => {}),
     onExcludeChange: onPostsDeniedChange ?? (() => {}),
+    onModeTransfer: onPostsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -147,11 +204,16 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     () => buildUnitFilterOptions(unitsList ?? []).map(getUnitFilterValue),
     [unitsCatalogKey],
   );
+  const unitBulkPasteOptions = useMemo(
+    () => [...new Set([...unitOptions, ...persistentUnitFilterValues])],
+    [persistentUnitFilterValues, unitOptions],
+  );
   const unitSelectionState = useFeedFilterSelectionState<string>({
     includeValues: filterState.unitsSelected ?? [],
     excludeValues: filterState.unitsDenied ?? [],
     onIncludeChange: onUnitsChange ?? (() => {}),
     onExcludeChange: onUnitsDeniedChange ?? (() => {}),
+    onModeTransfer: onUnitsModeTransfer,
     toLocalValues: (values) => [...values],
     toParentValues: (values) => [...values],
   });
@@ -192,6 +254,14 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       preserveInputOnSelect: false,
       groupCatalogError: visibleGroupCatalogError,
       onRetryGroupCatalog: onReloadGroupCatalog,
+      bulkCopy: true,
+      bulkCopyMenuLabel: 'Копіювати обрані групи',
+      onBulkCopy: copyGroups,
+      getBulkPasteToken: (key: string) => key,
+      getBulkPasteAliases: (key: string) => {
+        const name = groupInfos[key]?.name;
+        return name != null && groupNameCounts.get(name) === 1 ? [name] : [];
+      },
     },
     senders: {
       mode: senderSelectionState.mode,
@@ -207,6 +277,12 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       ) => option.id === value.id,
       placeholder: senderSelectionState.localValue.length === 0 ? senderEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[180px] min-[1024px]:flex-1',
+      bulkCopy: true,
+      bulkCopyMenuLabel: 'Копіювати обраних відправників',
+      onBulkCopy: copySenders,
+      getBulkPasteToken: (sender) => sender.id,
+      getBulkPasteAliases: (sender) =>
+        senderLabelCounts.get(sender.label) === 1 ? [sender.label] : [],
     },
     freqs: {
       mode: freqSelectionState.mode,
@@ -221,6 +297,8 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       onReloadFreqs,
       adjacentFreqsRange,
       onAdjacentFreqsRangeChange,
+      bulkCopy: true,
+      bulkCopyMenuLabel: 'Копіювати обрані частоти',
     },
     posts: {
       mode: postSelectionState.mode,
@@ -231,6 +309,9 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       getOptionLabel: (option: string) => option,
       placeholder: postSelectionState.localValue.length === 0 ? postEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
+      bulkCopy: true,
+      bulkCopyMenuLabel: 'Копіювати обрані пости',
+      onBulkCopy: copyPosts,
     },
     units: {
       mode: unitSelectionState.mode,
@@ -238,6 +319,7 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       onModeChange: unitSelectionState.setMode,
       onValueChange: unitSelectionState.setLocalValue,
       options: unitOptions,
+      bulkPasteOptions: unitBulkPasteOptions,
       getOptionLabel: (name: string) => name,
       getOptionKey: (name: string) => name,
       rankedSearch: true,
@@ -246,6 +328,10 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
       unitsExactMatchOnly: unitsExactMatchOnly ?? false,
       onUnitsExactMatchOnlyChange: onUnitsExactMatchOnlyChange ?? (() => {}),
+      bulkCopy: true,
+      bulkCopyMenuLabel: 'Копіювати обрані підрозділи',
+      onBulkCopy: copyUnits,
+      getBulkPasteToken: (name: string) => name,
     },
     advanced: {
       highlightSignalsEnabled,

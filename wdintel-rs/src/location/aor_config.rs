@@ -63,6 +63,68 @@ fn pick_settlements_data_for_configs(
     Ok(Arc::new(settlements_data))
 }
 
+struct SettlementsAorMap {
+    data_by_aor_id: HashMap<i64, Arc<SettlementsData>>,
+    config_names_by_aor_id: HashMap<i64, Vec<String>>,
+}
+
+async fn build_settlements_aor_map<C>(
+    dbx: &C,
+    settlements: &RwLock<crate::location::types::SettlementsDataConfig>,
+) -> anyhow::Result<SettlementsAorMap>
+where
+    C: ConnectionTrait,
+{
+    let rows = aor_location_config::Entity::find().all(dbx).await.c(h!())?;
+    let (
+        available_configs,
+        settlements_data_by_config,
+        default_settlements_data,
+        mode,
+    ) = {
+        let settlements =
+            settlements.read().map_err(|e| anyhow!("{e:?}")).c(h!())?;
+        (
+            settlements.available_settlements_configs.clone(),
+            settlements.settlements_data_by_config.clone(),
+            settlements.default_settlements_data.clone(),
+            settlements.mode,
+        )
+    };
+    let mut data_by_aor_id = HashMap::new();
+    let mut config_names_by_aor_id = HashMap::new();
+    for row in rows {
+        let selected_configs = normalize_selected_configs(
+            parse_selected_configs(&row),
+            &available_configs,
+        );
+        let settlements_data = pick_settlements_data_for_configs(
+            &selected_configs,
+            &settlements_data_by_config,
+            default_settlements_data.clone(),
+            mode,
+        )
+        .c(h!())?;
+        data_by_aor_id.insert(row.aor_id, settlements_data);
+        config_names_by_aor_id.insert(row.aor_id, selected_configs);
+    }
+    Ok(SettlementsAorMap {
+        data_by_aor_id,
+        config_names_by_aor_id,
+    })
+}
+
+fn publish_settlements_aor_map(
+    settlements: &RwLock<crate::location::types::SettlementsDataConfig>,
+    aor_map: SettlementsAorMap,
+) -> anyhow::Result<()> {
+    let mut settlements =
+        settlements.write().map_err(|e| anyhow!("{e:?}")).c(h!())?;
+    settlements.aor_id_to_settlements_data = aor_map.data_by_aor_id;
+    settlements.aor_id_to_config_names = aor_map.config_names_by_aor_id;
+    Ok(())
+}
+
 pub async fn init_aor_location_config(
     dbx: &DatabaseConnection,
     settlements: Arc<RwLock<crate::location::types::SettlementsDataConfig>>,
@@ -111,40 +173,15 @@ pub async fn init_aor_location_config(
     Ok(())
 }
 
-pub async fn refresh_settlements_aor_map(
-    dbx: &DatabaseConnection,
+pub async fn refresh_settlements_aor_map<C>(
+    dbx: &C,
     settlements: Arc<RwLock<crate::location::types::SettlementsDataConfig>>,
-) -> anyhow::Result<()> {
-    let rows = aor_location_config::Entity::find().all(dbx).await.c(h!())?;
-
-    let mut settlements_lock =
-        settlements.write().map_err(|e| anyhow!("{e:?}")).c(h!())?;
-    settlements_lock.aor_id_to_settlements_data.clear();
-    settlements_lock.aor_id_to_config_names.clear();
-    let available_configs =
-        settlements_lock.available_settlements_configs.clone();
-    let mode = settlements_lock.mode;
-
-    for row in rows {
-        let selected_configs = normalize_selected_configs(
-            parse_selected_configs(&row),
-            &available_configs,
-        );
-        let settlements_data = pick_settlements_data_for_configs(
-            &selected_configs,
-            &settlements_lock.settlements_data_by_config,
-            settlements_lock.default_settlements_data.clone(),
-            mode,
-        )
-        .c(h!())?;
-        settlements_lock
-            .aor_id_to_settlements_data
-            .insert(row.aor_id, settlements_data);
-        settlements_lock
-            .aor_id_to_config_names
-            .insert(row.aor_id, selected_configs);
-    }
-    Ok(())
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let aor_map = build_settlements_aor_map(dbx, &settlements).await.c(h!())?;
+    publish_settlements_aor_map(&settlements, aor_map).c(h!())
 }
 
 #[post("/api/admin/location-config/list")]
@@ -239,9 +276,12 @@ pub async fn save_aor_location_config(
         .c(h!())?
         .c(h!())?;
 
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
+
     let existing = aor_location_config::Entity::find()
         .filter(aor_location_config::Column::AorId.eq(req.aor_id))
-        .one(&env.dbx)
+        .one(&txn)
         .await
         .c(h!())?;
 
@@ -253,7 +293,7 @@ pub async fn save_aor_location_config(
             rec.settlements_configs =
                 Set(serde_json::json!(selected_configs.clone()));
             rec.updated_at = NotSet;
-            rec.update(&env.dbx).await.c(h!())?;
+            rec.update(&txn).await.c(h!())?;
         }
         None => {
             aor_location_config::ActiveModel {
@@ -265,14 +305,20 @@ pub async fn save_aor_location_config(
                 created_at: NotSet,
                 updated_at: NotSet,
             }
-            .insert(&env.dbx)
+            .insert(&txn)
             .await
             .c(h!())?;
         }
     }
 
-    refresh_settlements_aor_map(&env.dbx, env.settlements.clone())
+    let settlements_aor_map = build_settlements_aor_map(&txn, &env.settlements)
         .await
+        .c(h!())?;
+    crate::battle_line::requeue_settlement_links(&txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    publish_settlements_aor_map(&env.settlements, settlements_aor_map)
         .c(h!())?;
 
     Ok(Json(AorLocationConfigItem {

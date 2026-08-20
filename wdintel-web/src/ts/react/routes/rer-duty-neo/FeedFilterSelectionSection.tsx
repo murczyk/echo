@@ -1,15 +1,9 @@
-import {
-  Autocomplete,
-  Box,
-  ToggleButton,
-  ToggleButtonGroup,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Box, ToggleButton, ToggleButtonGroup, TextField, Typography } from '@mui/material';
 import { useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createRankedFilterOptions } from '../../utils/search-filter';
 import { isNullOrUndefined } from '../../utils/misc';
+import { PowerAutocomplete } from '../../components/PowerAutocomplete';
 
 type FeedFilterSelectionMode = 'include' | 'exclude';
 
@@ -38,6 +32,18 @@ export type FeedFilterSelectionSectionProps<T> = {
   closeText?: string;
   keepOpenOnSelect?: boolean;
   preserveInputOnSelect?: boolean;
+  bulkPaste?: boolean;
+  bulkPasteOptions?: readonly T[];
+  bulkPasteSeparators?: string[];
+  bulkPasteMenuLabel?: string;
+  bulkPasteDialogTitle?: string;
+  bulkPasteInputLabel?: string;
+  bulkCopy?: boolean;
+  bulkCopyMenuLabel?: string;
+  onBulkCopy?: (selected: readonly T[]) => Promise<void> | void;
+  getBulkPasteToken?: (option: T) => string;
+  getBulkPasteAliases?: (option: T) => readonly string[];
+  getBulkCopyText?: (selected: readonly T[]) => string;
 };
 
 export function FeedFilterSelectionSection<T>({
@@ -65,6 +71,18 @@ export function FeedFilterSelectionSection<T>({
   closeText = 'Закрити',
   keepOpenOnSelect,
   preserveInputOnSelect,
+  bulkPaste = false,
+  bulkPasteOptions,
+  bulkPasteSeparators,
+  bulkPasteMenuLabel,
+  bulkPasteDialogTitle,
+  bulkPasteInputLabel,
+  bulkCopy = false,
+  bulkCopyMenuLabel,
+  onBulkCopy,
+  getBulkPasteToken,
+  getBulkPasteAliases,
+  getBulkCopyText,
 }: FeedFilterSelectionSectionProps<T>) {
   const shouldKeepOpen = keepOpenOnSelect ?? keepOpenAndPreserveInputOnSelect;
   const shouldPreserveInput = preserveInputOnSelect ?? keepOpenAndPreserveInputOnSelect;
@@ -154,8 +172,7 @@ export function FeedFilterSelectionSection<T>({
           <ToggleButton value="include">{includeLabel}</ToggleButton>
           <ToggleButton value="exclude">{excludeLabel}</ToggleButton>
         </ToggleButtonGroup>
-        <Autocomplete
-          multiple
+        <PowerAutocomplete
           size="small"
           options={options as T[]}
           getOptionLabel={getOptionLabel}
@@ -168,6 +185,18 @@ export function FeedFilterSelectionSection<T>({
             }
             onValueChange(nextValue);
           }}
+          bulkPaste={bulkPaste}
+          bulkPasteOptions={bulkPasteOptions}
+          bulkPasteSeparators={bulkPasteSeparators}
+          bulkPasteMenuLabel={bulkPasteMenuLabel}
+          bulkPasteDialogTitle={bulkPasteDialogTitle}
+          bulkPasteInputLabel={bulkPasteInputLabel}
+          bulkCopy={bulkCopy}
+          bulkCopyMenuLabel={bulkCopyMenuLabel}
+          onBulkCopy={onBulkCopy}
+          getBulkPasteToken={getBulkPasteToken}
+          getBulkPasteAliases={getBulkPasteAliases}
+          getBulkCopyText={getBulkCopyText}
           onInputChange={
             rankedSearch || shouldKeepOpen
               ? (_, nextValue, reason) => {

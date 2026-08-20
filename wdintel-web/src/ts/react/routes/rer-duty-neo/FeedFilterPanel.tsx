@@ -5,6 +5,7 @@ import type {
   Unit,
 } from '../../../../Bindings';
 import type { GroupCatalogError } from './useRerDutyFilterOptions';
+import type { FeedFilterModeTransfer } from './useFeedFilterSelectionState';
 import { FeedFilterPanelView } from './FeedFilterPanelView';
 import { useFeedFilterPanelViewModel } from './useFeedFilterPanelViewModel';
 
@@ -30,6 +31,7 @@ export type FeedFilterPanelModel = {
     freqs: string[];
     postsList?: string[];
     unitsList?: Unit[];
+    persistentUnitFilterValues?: string[];
   };
   toggles: {
     adjacentFreqsRange?: number;
@@ -48,14 +50,19 @@ export type FeedFilterPanelModel = {
   actions: {
     onGroupsChange: (v: string[]) => void;
     onDeniedGroupsChange: (v: string[]) => void;
+    onGroupsModeTransfer: (next: FeedFilterModeTransfer) => void;
     onSendersChange: (v: string[]) => void;
     onDeniedSendersChange: (v: string[]) => void;
+    onSendersModeTransfer: (next: FeedFilterModeTransfer) => void;
     onFreqsChange: (v: string[]) => void;
     onFreqsDeniedChange: (v: string[]) => void;
+    onFreqsModeTransfer: (next: FeedFilterModeTransfer) => void;
     onPostsChange?: (v: string[]) => void;
     onPostsDeniedChange?: (v: string[]) => void;
+    onPostsModeTransfer: (next: FeedFilterModeTransfer) => void;
     onUnitsChange?: (v: string[]) => void;
     onUnitsDeniedChange?: (v: string[]) => void;
+    onUnitsModeTransfer: (next: FeedFilterModeTransfer) => void;
     onUnitsExactMatchOnlyChange?: (v: boolean) => void;
     onAdjacentFreqsRangeChange?: (v: number) => void;
     onHighlightSignalsChange?: (v: boolean) => void;

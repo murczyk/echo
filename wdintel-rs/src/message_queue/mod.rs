@@ -69,7 +69,13 @@ pub async fn process_signal_message_queue_item_with_options(
     options: ProcessSignalMessageQueueItemOptions,
 ) -> Result<ProcessSignalMessageQueueItemResult, AppError> {
     // Normalize body
-    info!("received message: {:?}", m);
+    info!(
+        "received message for processing: datasource_id={} inbox_message_id={:?} group_id_present={} attachments_count={}",
+        m.datasource_id,
+        m.inbox_message_id,
+        !m.group_id.is_empty(),
+        attachments.len(),
+    );
     let body = m.body.replace("\r\n", "\n");
     let attachment_paths: Vec<_> =
         attachments.iter().map(|a| a.path.clone()).collect();

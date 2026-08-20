@@ -16,12 +16,14 @@ flowchart LR
         api
         bg["wdintel-rs-bgworker"]
         reports["wdintel-rs-report-worker"]
+        nlp["wdintel-py · NLP"]
         postgres[("PostgreSQL · wd")]
         redis[("Redis")]
         vector["Vector · optional"]
 
         api --> postgres
         bg --> postgres
+        bg -->|readiness + NLP requests| nlp
         reports --> postgres
         api --> redis
         bg --> redis
@@ -41,6 +43,22 @@ container and stores only derived data. PostgreSQL remains authoritative, and
 supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
 independently from the main `wd` database.
+
+## Messenger processing
+
+Messenger receipt and processing are separate. Receipt persists snapshots in
+PostgreSQL even while NLP is unavailable. The queue processor waits for
+`wdintel-py` readiness, then catches up automatically; failed rows use durable
+backoff so they cannot block newer messages.
+
+## Background worker ownership
+
+`wdintel-rs-bgworker` owns `inbox_settlement_worker`. Inbox parsing and edits
+reconcile its PostgreSQL queue in the same transaction as `location_v2`;
+workers claim rows with `FOR UPDATE SKIP LOCKED` and rank settlement candidates
+against the active Battle Line or the item's AOR segments. Battle Line and AOR
+changes requeue affected links, while attempted misses remain available for
+administrator review.
 
 ## Focused documentation
 

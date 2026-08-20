@@ -48,6 +48,8 @@ pub enum Relation {
     AorLocationConfig,
     #[sea_orm(has_one = "super::area_of_responsibility_report_order::Entity")]
     AreaOfResponsibilityReportOrder,
+    #[sea_orm(has_many = "super::battle_line_aor_geometry::Entity")]
+    BattleLineAorGeometry,
     #[sea_orm(has_many = "super::datasource::Entity")]
     Datasource,
     #[sea_orm(has_many = "super::device_aor::Entity")]
@@ -93,6 +95,12 @@ impl Related<super::aor_location_config::Entity> for Entity {
 impl Related<super::area_of_responsibility_report_order::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AreaOfResponsibilityReportOrder.def()
+    }
+}
+
+impl Related<super::battle_line_aor_geometry::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::BattleLineAorGeometry.def()
     }
 }
 
