@@ -122,6 +122,7 @@ vi.mock('@mui/material', () => ({
     return <div>{children}</div>;
   },
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
+  ListItemIcon: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   InputAdornment: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   MenuItem: ({
     children,
@@ -160,6 +161,14 @@ vi.mock('@mui/material', () => ({
 
 vi.mock('@mui/icons-material/MoreVert', () => ({
   default: () => <span data-testid="more-vert-icon" />,
+}));
+
+vi.mock('@mui/icons-material/PlaylistAdd', () => ({
+  default: () => <span data-testid="playlist-add-icon" />,
+}));
+
+vi.mock('@mui/icons-material/ContentCopy', () => ({
+  default: () => <span data-testid="content-copy-icon" />,
 }));
 
 vi.mock('./PowerIconButton', () => ({

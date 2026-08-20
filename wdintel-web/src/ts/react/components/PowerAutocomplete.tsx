@@ -1,4 +1,6 @@
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import PlaylistAdd from '@mui/icons-material/PlaylistAdd';
 import {
   Autocomplete,
   Box,
@@ -6,6 +8,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  ListItemIcon,
   MenuItem,
   TextField,
   Typography,
@@ -480,7 +483,14 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
             open={bulkMenuAnchorEl != null}
             onClose={closeBulkMenu}
           >
-            {bulkPaste ? <MenuItem onClick={openBulkDialog}>{menuLabel}</MenuItem> : null}
+            {bulkPaste ? (
+              <MenuItem onClick={openBulkDialog}>
+                <ListItemIcon>
+                  <PlaylistAdd fontSize="small" />
+                </ListItemIcon>
+                {menuLabel}
+              </MenuItem>
+            ) : null}
             {bulkCopy ? (
               <MenuItem
                 disabled={selectedValue.length === 0}
@@ -489,6 +499,9 @@ export function PowerAutocomplete<T>(props: PowerAutocompleteProps<T>) {
                   void onBulkCopy?.(selectedValue, bulkCopyText(selectedValue));
                 }}
               >
+                <ListItemIcon>
+                  <ContentCopyIcon fontSize="small" />
+                </ListItemIcon>
                 {bulkCopyMenuLabel}
               </MenuItem>
             ) : null}
