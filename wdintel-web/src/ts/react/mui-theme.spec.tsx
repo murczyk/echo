@@ -23,7 +23,7 @@ import { useTheme } from '@mui/material/styles';
 
 import type { InboxMessage } from '../../Bindings';
 import { MessageCard } from './routes/shared/message-card/MessageCard';
-import { NeoMuiThemeProvider } from './mui-theme';
+import { createNeoMuiTheme, NeoMuiThemeProvider } from './mui-theme';
 import { emptyFilter } from './routes/rer-duty-neo/utils';
 import { MessageCardDisabledControlCursorWrapper } from './routes/shared/message-card/MessageCardDisabledControlCursorWrapper';
 
@@ -171,8 +171,26 @@ describe('mui-theme', () => {
       container.remove();
     });
     document.documentElement.style.fontSize = '';
+    document.documentElement.style.removeProperty('--color-primary');
+    document.documentElement.style.removeProperty('--test-primary');
+    document.documentElement.style.removeProperty('--background-color');
     document.body.style.fontSize = '';
     document.body.innerHTML = '';
+  });
+
+  it('bridges shared design tokens into MUI without changing legacy framework scales', () => {
+    document.documentElement.style.setProperty('--color-primary', 'var(--test-primary)');
+    document.documentElement.style.setProperty('--test-primary', '#123456');
+    document.documentElement.style.setProperty('--background-color', '#f1f2f3');
+
+    const theme = createNeoMuiTheme('light');
+
+    expect(theme.palette.primary.main).toBe('#123456');
+    expect(theme.palette.background.default).toBe('#f1f2f3');
+    expect(theme.echo.spacing.sm).toBe('var(--echo-spacing-sm)');
+    expect(theme.echo.breakpoint.lg).toBe('1024px');
+    expect(theme.spacing(1)).toBe('8px');
+    expect(theme.breakpoints.values.lg).toBe(1200);
   });
 
   it('calibrates shared typography to the 14px application root', async () => {
