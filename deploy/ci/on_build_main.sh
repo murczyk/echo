@@ -59,8 +59,9 @@ run_tests() {
 }
 
 build_debs() {
-  require_commands cargo file git node npm
+  require_commands cargo file git just node npm
   export GITHUB_ACTIONS="${GITHUB_ACTIONS:-true}"
+  just prepare-workspace
   bash deploy/ci/build_debs.sh
   save_local_caches
 }
