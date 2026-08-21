@@ -503,10 +503,13 @@ pub async fn prepare_battle_line_import(
     let parsed = parse_point_line_features(&source_file_name, data)
         .await
         .c(h!())?;
-    let mut summary = summarize_features(&parsed.features).c(h!())?;
+    let source_summary = summarize_features(&parsed.features).c(h!())?;
+    let features = cleanup::clean_features(parsed.features).c(h!())?.features;
+    let mut summary = summarize_features(&features).c(h!())?;
     summary.empty_point_count = parsed.empty_point_count;
     summary.empty_line_string_count = parsed.empty_line_string_count;
-    let features = cleanup::clean_features(parsed.features).c(h!())?.features;
+    summary.zero_length_line_string_count =
+        source_summary.zero_length_line_string_count;
     let geometry_wkt = features_to_wkt(&features).c(h!())?;
     Ok(PreparedBattleLineImport {
         geometry_wkt,
@@ -1664,8 +1667,10 @@ mod tests {
         let prepared =
             prepare_battle_line_import("legacy.kml", kml).await.unwrap();
 
-        assert_eq!(prepared.summary.line_string_count, 2);
+        assert_eq!(prepared.summary.point_count, 0);
+        assert_eq!(prepared.summary.line_string_count, 1);
         assert_eq!(prepared.summary.zero_length_line_string_count, 1);
+        assert_eq!(prepared.summary.coordinate_count, 2);
         assert_eq!(
             prepared.geometry_wkt,
             "GEOMETRYCOLLECTION(LINESTRING(31 49,32 50))"
