@@ -26,6 +26,7 @@ use sea_orm::*;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeSet;
 
+pub mod cleanup;
 pub mod oneoff;
 pub mod settlement_queue;
 pub mod types;
@@ -505,16 +506,7 @@ pub async fn prepare_battle_line_import(
     let mut summary = summarize_features(&parsed.features).c(h!())?;
     summary.empty_point_count = parsed.empty_point_count;
     summary.empty_line_string_count = parsed.empty_line_string_count;
-    let features = parsed
-        .features
-        .into_iter()
-        .filter(|feature| match feature {
-            ImportedGeometryFeature::Point(_) => true,
-            ImportedGeometryFeature::LineString(coordinates) => {
-                line_has_length(coordinates)
-            }
-        })
-        .collect::<Vec<_>>();
+    let features = cleanup::clean_features(parsed.features).c(h!())?.features;
     let geometry_wkt = features_to_wkt(&features).c(h!())?;
     Ok(PreparedBattleLineImport {
         geometry_wkt,
@@ -1663,17 +1655,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn excludes_zero_length_lines_from_stored_geometry() {
+    async fn cleans_features_before_storing_geometry() {
         let kml = br#"<kml><Document><Placemark><MultiGeometry>
 <Point><coordinates>31,49,0</coordinates></Point>
 <LineString><coordinates>32,50,0 32,50,0</coordinates></LineString>
+<LineString><coordinates>31,49,0 32,50,0</coordinates></LineString>
 </MultiGeometry></Placemark></Document></kml>"#;
         let prepared =
             prepare_battle_line_import("legacy.kml", kml).await.unwrap();
 
-        assert_eq!(prepared.summary.line_string_count, 1);
+        assert_eq!(prepared.summary.line_string_count, 2);
         assert_eq!(prepared.summary.zero_length_line_string_count, 1);
-        assert_eq!(prepared.geometry_wkt, "GEOMETRYCOLLECTION(POINT(31 49))");
+        assert_eq!(
+            prepared.geometry_wkt,
+            "GEOMETRYCOLLECTION(LINESTRING(31 49,32 50))"
+        );
     }
 
     #[test]

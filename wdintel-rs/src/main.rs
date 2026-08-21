@@ -240,6 +240,12 @@ pub struct OneoffFixKmzPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffCleanBattleLineKmzPs {
+    pub input: std::path::PathBuf,
+    pub output: std::path::PathBuf,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct RestreamerPs {
     #[arg(long, value_enum)]
     pub noauto: bool,
@@ -966,6 +972,7 @@ enum Cmd {
     OneoffRadioByFreq,
     OneoffRadioPerDayPerAbonent(OneoffRadioPerDayPerAbonentPs),
     OneoffFixKmz(OneoffFixKmzPs),
+    OneoffCleanBattleLineKmz(OneoffCleanBattleLineKmzPs),
     OneoffDeltaCsvToKmz(OneoffDeltaCsvToKmzPs),
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
     /// Reprocess inbox callsigns in a table TUI with before/after columns.
@@ -1562,6 +1569,9 @@ async fn async_main(
                 .map(|_| ())
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
+        Cmd::OneoffCleanBattleLineKmz(ps) => {
+            battle_line::cleanup::oneoff_clean_kmz(&ps).await
+        }
         Cmd::Migrate => migration::run_migration_1(mode).await,
         Cmd::OneoffCreateFileRegistryDatabase => {
             file_registry::provisioning::oneoff_create_database(mode).await
