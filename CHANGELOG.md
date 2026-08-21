@@ -11,6 +11,9 @@
 ## NEXT
 
 - [#2308](https://github.com/echoua/echo/issues/2308) 🐞🛡️ Аналітика: збій окремого аналітичного запиту більше не перемикає всі звіти й фільтри на PostgreSQL; узгодження gateway автоматично вимикає небезпечні для ClickHouse merge join-плани.
+
+## 2026-08-21
+
 - [#3113](https://github.com/echoua/echo/issues/3113) 🐞👷 Підрозділи: тривале узгодження ORBIT фіксує зміни окремими короткими транзакціями, щоб не блокувати приймання повідомлень до завершення всього проходу.
 - [#3093](https://github.com/echoua/echo/issues/3093) 🚨👷 УВАГА! потребує mirror_resync для signal_message_media та sigint_commentю Аналіз проводити деплой вечірній час з мінімальним завантаження, після міграцій виконати `oneoff-migrate-sigint-comments --batch-size=1000` до переведення всіх читачів на linked messages, а на інстансах із ClickHouse виконати повний resync дзеркал для `signal_message_media`, `intel_product` і `sigint_comment` — `/opt/echo-peerdb/bin/resync.sh --yes`, дочекатися успішного завершення `/opt/echo-peerdb/bin/finish-resync.sh`, перевірити snapshot-таблиці та успішний analytics health check перед продовженням деплою.
 - [#3093](https://github.com/echoua/echo/issues/3093) ✅ Аналіз, Оперативний: додано механізм копіювання одного або кількох повідомлень із редагуванням для формування розвід-донесення та переадресацією його до обраної групи.
