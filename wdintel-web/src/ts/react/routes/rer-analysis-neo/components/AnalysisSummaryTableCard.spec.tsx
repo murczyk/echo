@@ -117,7 +117,11 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
-  useTheme: () => ({ breakpoints: { down: vi.fn(() => 'down-sm') } }),
+  ThemeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useTheme: () => ({
+    breakpoints: { down: vi.fn(() => 'down-sm') },
+    zIndex: { tooltip: 1500 },
+  }),
 }));
 
 vi.mock('material-react-table', () => ({

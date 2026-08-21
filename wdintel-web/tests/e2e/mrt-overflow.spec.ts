@@ -504,6 +504,61 @@ test.describe('Analysis Neo MRT overflow @smoke', () => {
         await header.elementHandle(),
       ),
     ).toBe(true);
+    const hiddenCallsignChip = body
+      .locator('span[tabindex="0"]')
+      .filter({ hasText: hidden[0] })
+      .first();
+    const hiddenCallsignTooltip = page.getByRole('tooltip', { name: hidden[0] });
+    await expect(hiddenCallsignChip).toBeVisible();
+    const beforeCallsignTooltip = {
+      paper: await readRect(dialog),
+      header: await readRect(header),
+      body: await readRect(body),
+      document: await readDocumentMetrics(page),
+    };
+    await hiddenCallsignChip.hover();
+    await expect(hiddenCallsignTooltip).toHaveCount(1);
+    await expect(hiddenCallsignTooltip).toBeVisible();
+    expect(await readEffectiveZIndex(hiddenCallsignTooltip)).toBeGreaterThan(
+      await readEffectiveZIndex(dialog),
+    );
+    const hiddenTooltipRect = await readRect(hiddenCallsignTooltip);
+    const viewport = await page.viewportSize();
+    expect(viewport).not.toBeNull();
+    expect(hiddenTooltipRect.x).toBeGreaterThanOrEqual(0);
+    expect(hiddenTooltipRect.x + hiddenTooltipRect.width).toBeLessThanOrEqual(viewport!.width);
+    expect(hiddenTooltipRect.y).toBeGreaterThanOrEqual(0);
+    expect(hiddenTooltipRect.y + hiddenTooltipRect.height).toBeLessThanOrEqual(viewport!.height);
+    expect(
+      await hiddenCallsignTooltip.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const paintedElement = document.elementFromPoint(
+          rect.x + rect.width / 2,
+          rect.y + rect.height / 2,
+        );
+        return paintedElement === element || element.contains(paintedElement);
+      }),
+    ).toBe(true);
+    expectRectsClose(beforeCallsignTooltip.paper, await readRect(dialog));
+    expectRectsClose(beforeCallsignTooltip.header, await readRect(header));
+    expectRectsClose(beforeCallsignTooltip.body, await readRect(body));
+    expect(await readDocumentMetrics(page)).toEqual(beforeCallsignTooltip.document);
+    await page.mouse.move(0, 0);
+    await expect(hiddenCallsignTooltip).toHaveCount(0);
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await expect(hiddenCallsignChip).toBeFocused();
+    await expect(hiddenCallsignTooltip).toHaveCount(1);
+    await expect(hiddenCallsignTooltip).toBeVisible();
+    expect(await readEffectiveZIndex(hiddenCallsignTooltip)).toBeGreaterThan(
+      await readEffectiveZIndex(dialog),
+    );
+    await page.keyboard.press('Tab');
+    await expect(hiddenCallsignTooltip).toHaveCount(0);
+    expectRectsClose(beforeCallsignTooltip.paper, await readRect(dialog));
+    expectRectsClose(beforeCallsignTooltip.header, await readRect(header));
+    expectRectsClose(beforeCallsignTooltip.body, await readRect(body));
+    expect(await readDocumentMetrics(page)).toEqual(beforeCallsignTooltip.document);
     await copyAll.hover();
     const copyTooltip = page.getByRole('tooltip', { name: 'Скопіювати всі значення' });
     await expect(copyTooltip).toBeVisible();
@@ -546,6 +601,7 @@ test.describe('Analysis Neo MRT overflow @smoke', () => {
       .toBe('A\nBRAVO-VERY-LONG-CALLSIGN\nCHARLIE-VERY-LONG-CALLSIGN');
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await trigger.focus();
     const focusStyles = await trigger.evaluate((element) => {

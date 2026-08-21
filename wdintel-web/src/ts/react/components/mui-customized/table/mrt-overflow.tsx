@@ -1,5 +1,6 @@
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import { Box, ClickAwayListener, Paper, Popper, Tooltip, Typography } from '@mui/material';
+import { ThemeProvider, useTheme } from '@mui/material/styles';
 import type { SxProps, Theme } from '@mui/material/styles';
 import type { ElementType, MouseEvent, ReactNode, RefObject } from 'react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -451,6 +452,17 @@ function MrtOverflowDisclosureSurface<T>({
   onClose,
   surfaceRef,
 }: OverflowDisclosureSurfaceProps<T>) {
+  const inheritedTheme = useTheme<Theme>();
+  const disclosureTheme = useMemo(
+    () => ({
+      ...inheritedTheme,
+      zIndex: {
+        ...inheritedTheme.zIndex,
+        tooltip: inheritedTheme.zIndex.tooltip + 2,
+      },
+    }),
+    [inheritedTheme],
+  );
   const [copyStatus, setCopyStatus] = useState<'success' | 'failure' | null>(null);
   const copyAllItems = async (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -536,44 +548,46 @@ function MrtOverflowDisclosureSurface<T>({
               </Tooltip>
             </Box>
           </Box>
-          <Box
-            component={disclosureLayout === 'list' ? 'ul' : 'div'}
-            data-mrt-overflow-disclosure-body=""
-            sx={{
-              m: 0,
-              p: 1,
-              minHeight: 0,
-              minWidth: 0,
-              overflowY: 'auto',
-              overflowX: 'hidden',
-              overscrollBehavior: 'contain',
-              scrollbarGutter: 'stable',
-              display: disclosureLayout === 'list' ? 'block' : 'flex',
-              flexWrap: disclosureLayout === 'list' ? undefined : 'wrap',
-              gap: disclosureLayout === 'list' ? 0 : 0.5,
-              listStyle: 'none',
-            }}
-          >
-            {hiddenItems.map((item, index) => (
-              <Box
-                component={disclosureLayout === 'list' ? 'li' : 'div'}
-                key={getItemKey(item, representedCount + index)}
-                sx={
-                  disclosureLayout === 'list'
-                    ? {
-                        width: '100%',
-                        minWidth: 0,
-                        overflowWrap: 'anywhere',
-                        whiteSpace: 'normal',
-                        py: 0.25,
-                      }
-                    : undefined
-                }
-              >
-                {renderDisclosureItem(item, representedCount + index)}
-              </Box>
-            ))}
-          </Box>
+          <ThemeProvider theme={disclosureTheme}>
+            <Box
+              component={disclosureLayout === 'list' ? 'ul' : 'div'}
+              data-mrt-overflow-disclosure-body=""
+              sx={{
+                m: 0,
+                p: 1,
+                minHeight: 0,
+                minWidth: 0,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                overscrollBehavior: 'contain',
+                scrollbarGutter: 'stable',
+                display: disclosureLayout === 'list' ? 'block' : 'flex',
+                flexWrap: disclosureLayout === 'list' ? undefined : 'wrap',
+                gap: disclosureLayout === 'list' ? 0 : 0.5,
+                listStyle: 'none',
+              }}
+            >
+              {hiddenItems.map((item, index) => (
+                <Box
+                  component={disclosureLayout === 'list' ? 'li' : 'div'}
+                  key={getItemKey(item, representedCount + index)}
+                  sx={
+                    disclosureLayout === 'list'
+                      ? {
+                          width: '100%',
+                          minWidth: 0,
+                          overflowWrap: 'anywhere',
+                          whiteSpace: 'normal',
+                          py: 0.25,
+                        }
+                      : undefined
+                  }
+                >
+                  {renderDisclosureItem(item, representedCount + index)}
+                </Box>
+              ))}
+            </Box>
+          </ThemeProvider>
         </Paper>
       </ClickAwayListener>
     </Popper>
