@@ -11,18 +11,14 @@ local PostgreSQL 18 gateway uses `pg_clickhouse` to expose current-state
 ClickHouse views with PostgreSQL syntax. Echo connects only to that gateway;
 instances without an `[analytics]` section continue to use PostgreSQL only.
 
-```text
-Echo -> source PostgreSQL 18 (transactions and fallback)
-  |                         |
-  |                         +-- logical publication/slot
-  |                                           |
-  +-> PostgreSQL 18 gateway                  PeerDB
-         + public compatibility views         |
-         + private pg_clickhouse tables       |
-                |                        MinIO staging
-                +----------------------> ClickHouse
-                                           echo_cdc raw tables
-                                           echo_analytics current views
+```mermaid
+flowchart LR
+    echo["Echo"] -->|transactions and fallback| source[("Source PostgreSQL 18")]
+    echo --> gateway["PostgreSQL 18 gateway<br/>public compatibility views<br/>private pg_clickhouse tables"]
+    source -->|logical publication/slot| peerdb["PeerDB"]
+    peerdb --> staging[("MinIO staging")]
+    staging --> clickhouse[("ClickHouse<br/>echo_cdc raw tables<br/>echo_analytics current views")]
+    gateway --> clickhouse
 ```
 
 ## Supported topology
