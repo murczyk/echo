@@ -14,7 +14,9 @@ Run the extractor live suite by setting `ECHO_DOC_LIVE_CONFIG`,
 `ECHO_DOC_LIVE_LAYOUT_MANIFEST` to `layout-suite-manifest.json`, and
 `ECHO_DOC_LIVE_RAW` to this evaluation's `raw/` directory.
 
-The dense numeric report must never finish with failed quality, and the
-declared critical anchors must remain searchable. If every model candidate
-fails, degraded local OCR is allowed only when the original raster is retained.
-The canonical result must not add figure crops that duplicate recognized text.
+The dense numeric report and observation-post rotation schedule must never
+finish with failed quality, and their declared critical anchors must remain
+searchable. The schedule must remain a single 22-by-41 table. If every model
+candidate fails, degraded local OCR is allowed only when the original raster is
+retained. The canonical result must not add figure crops that duplicate
+recognized text.
