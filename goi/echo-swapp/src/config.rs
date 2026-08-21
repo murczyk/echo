@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 pub const DEFAULT_CONFIG_PATH: &str = "/etc/echo-swapp/config.toml";
+pub const ECHO_SWAPP_JSON_PAYLOAD_MAX_BYTES: usize = 1024 * 1024 * 1024;
 pub const AUTOMATION_SEND_LOG_RETENTION_DAYS: i64 = 30;
 pub const AUTOMATION_MAP_SCREENSHOT_WIDTH: u32 = 800;
 pub const AUTOMATION_MAP_SCREENSHOT_HEIGHT: u32 = 600;
