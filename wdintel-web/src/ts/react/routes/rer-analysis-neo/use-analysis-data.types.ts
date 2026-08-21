@@ -89,6 +89,10 @@ export type UseAnalysisDataResult = {
   loadMoreMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
+  loadSettlementMessagesForMap: (
+    settlementId: number,
+    beforeIdNoninclusive?: number | null,
+  ) => Promise<boolean>;
   mapAttrs: AnalysisMapAttrs;
   messageActionLoading: boolean;
   messagesLoading: boolean;

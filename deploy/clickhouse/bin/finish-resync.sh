@@ -5,8 +5,11 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=./lib.sh
 source "$SCRIPT_DIR/lib.sh"
+delegate_paired_analytics_operation_if_source finish-resync.sh "$@"
 load_analytics_config
 validate_runtime_identifiers
+acquire_analytics_reconcile_lock
+require_expected_control_release
 
 timeout=${MIRROR_RESYNC_TIMEOUT_SECONDS:-7200}
 poll_interval=${MIRROR_RESYNC_POLL_SECONDS:-5}
@@ -67,6 +70,7 @@ done
 
 "$SCRIPT_DIR/refresh-current-views.sh"
 "$SCRIPT_DIR/refresh-gateway.sh"
+"$SCRIPT_DIR/reconcile-if-needed.sh"
 
 for ((attempt = 1; attempt <= health_attempts; attempt++)); do
   if "$SCRIPT_DIR/check-analytics-health.sh"; then

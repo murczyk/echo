@@ -221,6 +221,12 @@ export const aiAgentAdminSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/ai/intelligence-reports' },
+    activeName: 'ai-agent-intelligence-reports',
+    label: 'Розвіддонесення',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/ai/ocr' },
     activeName: 'ai-agent-ocr',
     label: 'OCR',

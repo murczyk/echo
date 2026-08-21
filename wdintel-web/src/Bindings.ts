@@ -1190,6 +1190,12 @@ export type MapSettlement = {
   inboxItemCount: number;
 };
 
+export type MapSettlementMessagesReq = {
+  settlementId: number;
+  inboxItemsFilter: InboxMessagesReq;
+  beforeIdNoninclusive: number | null;
+};
+
 export type MapPointsRsp = {
   networkUnits: Array<NetworkUnit>;
   points: Array<FreqDetailedPoint>;
@@ -1241,6 +1247,7 @@ export type BattleLineTestReq = {
 export type BattleLineSettlementCandidate = {
   settlementId: number;
   name: string;
+  district: string;
   region: string;
   coordinate: BattleLineCoordinate;
 };
@@ -4596,6 +4603,45 @@ export type SendAiChatMessageReq = {
   aiEngineId: string;
   chatId: string | null;
   prompt: string;
+};
+
+export type AiIntelReportSettingsItem = {
+  quickSuggestionEnabled: boolean;
+  quickAiEngineId: string | null;
+  legacyCommentCutoff: number;
+  updatedAt: number;
+};
+
+export type SaveAiIntelReportSettingsReq = {
+  quickSuggestionEnabled: boolean;
+  quickAiEngineId: string | null;
+};
+
+export type QuickIntelReportSuggestionReq = {
+  messageId: number;
+};
+
+export type QuickIntelReportSuggestionRsp = {
+  suggestions: Array<string>;
+};
+
+export type AiIntelReportAttemptItem = {
+  id: string;
+  loginId: string;
+  login: string;
+  aiEngineId: string | null;
+  aiEngineName: string | null;
+  sourceMessageId: number;
+  outcome: string;
+  suggestions: Array<string>;
+  rawResponse: string | null;
+  error: string | null;
+  durationMs: number;
+  createdAt: number;
+};
+
+export type AiIntelReportAttemptListRsp = {
+  items: Array<AiIntelReportAttemptItem>;
 };
 
 export type AiAgentProviderItem = {

@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 pub mod ai_agent;
 pub mod ai_callsign;
 pub mod ai_engine;
+pub mod ai_intel_report;
 mod alpine;
 pub mod api_integrations;
 pub mod atak;
@@ -328,12 +329,28 @@ pub struct OneoffBackfillInboxUnitLinksPs {
 
 #[derive(clap::Parser, Debug)]
 pub struct OneoffLinkInboxSettlementsPs {
-    /// Start datetime in configured local time (inclusive). Example: `2026-08-18T00:00:00`
+    /// Start datetime in configured local time (inclusive). Example: `2026-08-18T00:00:00` or `2026-08-18 00:00:00`
     #[arg(long)]
     pub since_ts: Option<String>,
-    /// End datetime in configured local time (non-inclusive). Example: `2026-08-19T00:00:00`
+    /// End datetime in configured local time (non-inclusive). Example: `2026-08-19T00:00:00` or `2026-08-19 00:00:00`
     #[arg(long)]
     pub till_ts: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffImportBattleLineFromDeltaKmlPs {
+    /// Successful enemy_units_geojson row to import.
+    #[arg(
+        long,
+        default_value_t = crate::config::BATTLE_LINE_INITIAL_DELTA_KML_ID
+    )]
+    pub source_id: i32,
+    /// Parse and report the source without changing Battle Line.
+    #[arg(long, action)]
+    pub dry_run: bool,
+    /// Replace an existing active Battle Line.
+    #[arg(long, action)]
+    pub force: bool,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -870,6 +887,21 @@ pub struct OneoffReprocessAudioTranscriberPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffReprocessMediaSummariesPs {
+    #[arg(
+        long,
+        default_value_t = crate::config::MEDIA_SUMMARY_REPROCESS_DEFAULT_LIMIT
+    )]
+    pub limit: u64,
+    #[arg(long)]
+    pub media_id: Option<Uuid>,
+    #[arg(long, action)]
+    pub dry_run: bool,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct BackupPs {
     /// Skip the configured sleep_before_backup_mins delay.
     #[arg(long, action)]
@@ -1006,6 +1038,7 @@ enum Cmd {
     OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
+    OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1022,6 +1055,7 @@ enum Cmd {
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
+    OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
     OneoffEnsureApiIntegrationIggyTopics,
@@ -1774,6 +1808,12 @@ async fn async_main(
             )
             .await
         }
+        Cmd::OneoffImportBattleLineFromDeltaKml(ps) => {
+            battle_line::oneoff::oneoff_import_battle_line_from_delta_kml(
+                mode, &ps,
+            )
+            .await
+        }
         Cmd::OneoffReprocessInboxMetadata(ps) => {
             rer_importer::inbox::metadata::oneoff::oneoff_reprocess_inbox_metadata(
                 mode, &ps,
@@ -1870,6 +1910,9 @@ async fn async_main(
         }
         Cmd::OneoffRetranscribeAudioTranscriber(ps) => {
             transcriber::backfill::retranscribe_completed(mode, ps).await
+        }
+        Cmd::OneoffReprocessMediaSummaries(ps) => {
+            media_summary::reprocess::run(mode, ps).await
         }
         Cmd::OneoffMergeDatasourceGroup(ps) => {
             operator::oneoff::oneoff_merge_datasource_group(mode, ps).await

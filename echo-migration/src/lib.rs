@@ -381,8 +381,12 @@ mod m20260818_081034_inbox_unit_backfill_lookup_indexes;
 mod m20260818_104740_sigint_comment_migration_indexes;
 mod m20260818_130237_battle_line_and_inbox_settlement;
 mod m20260818_142214_unique_sigint_inbox_item_network;
+mod m20260819_064249_ai_intel_report_settings;
 mod m20260819_175820_device_settings;
 mod m20260820_081114_messenger_queue_retry;
+mod m20260820_115208_battle_line_source_provenance;
+mod m20260820_121919_ai_intel_report_attempt;
+mod m20260821_080931_recalculate_battle_line_aor_sectors;
 
 pub struct Migrator;
 
@@ -883,8 +887,16 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260818_142214_unique_sigint_inbox_item_network::Migration,
             ),
+            Box::new(m20260819_064249_ai_intel_report_settings::Migration),
             Box::new(m20260820_081114_messenger_queue_retry::Migration),
             Box::new(m20260819_175820_device_settings::Migration),
+            Box::new(
+                m20260820_115208_battle_line_source_provenance::Migration,
+            ),
+            Box::new(m20260820_121919_ai_intel_report_attempt::Migration),
+            Box::new(
+                m20260821_080931_recalculate_battle_line_aor_sectors::Migration,
+            ),
         ]
     }
 }

@@ -13,9 +13,7 @@ use crate::config::{
     MEDIA_SUMMARY_OUTPUT_TOKENS, MEDIA_SUMMARY_RETRY_BASE_SECS,
     MEDIA_SUMMARY_RETRY_MAX_SECS, MEDIA_SUMMARY_SYSTEM_PROMPT,
 };
-use crate::entities::{
-    ai_engine, media_summary as media_summary_entity, signal_message_media,
-};
+use crate::entities::{ai_engine, media_summary as media_summary_entity};
 use crate::h;
 use crate::media_summary::types::MediaSummaryCoordinate;
 use crate::types::{error, info, Env, ShortContext};
@@ -28,9 +26,10 @@ use sea_orm::{
     EntityTrait, FromQueryResult, QueryFilter, Statement,
 };
 use serde_json::{json, Map, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 const RESULT_FIELDS: [&str; 2] = ["summary", "coordinates"];
@@ -46,6 +45,42 @@ const COORDINATE_FIELDS: [&str; 5] = [
 struct StructuredSummary {
     summary: String,
     coordinates: Vec<MediaSummaryCoordinate>,
+    coordinate_drops: Vec<CoordinateDropReason>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CoordinateDropReason {
+    InvalidShape,
+    InvalidFields,
+    InvalidText,
+    UnsupportedSystem,
+    InvalidGridFormat,
+    GridOutOfRange,
+    GridZoneOutOfRange,
+    InvalidWgs84Format,
+    Wgs84OutOfRange,
+    InvalidMgrsFormat,
+    Duplicate,
+    Excess,
+}
+
+impl CoordinateDropReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidShape => "invalid_shape",
+            Self::InvalidFields => "invalid_fields",
+            Self::InvalidText => "invalid_text",
+            Self::UnsupportedSystem => "unsupported_system",
+            Self::InvalidGridFormat => "invalid_grid_format",
+            Self::GridOutOfRange => "grid_out_of_range",
+            Self::GridZoneOutOfRange => "grid_zone_out_of_range",
+            Self::InvalidWgs84Format => "invalid_wgs84_format",
+            Self::Wgs84OutOfRange => "wgs84_out_of_range",
+            Self::InvalidMgrsFormat => "invalid_mgrs_format",
+            Self::Duplicate => "duplicate",
+            Self::Excess => "excess",
+        }
+    }
 }
 
 pub async fn run_nofail(env: Arc<Env>, cancellation_token: CancellationToken) {
@@ -74,13 +109,18 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
     let Some(job) = claim_next(&env.dbx).await.c(h!())? else {
         return Ok(false);
     };
+    let started_at = Instant::now();
     let response = summarize(&env.dbx, &job).await;
     match response {
         Ok((summary, response)) => {
+            record_coordinate_drops(env, &job, &summary.coordinate_drops);
             complete(&env.dbx, &job, summary, response.model_name)
                 .await
                 .c(h!())?;
-            publish_inbox_change(env, job.media_id).await.c(h!())?;
+            super::publish_inbox_change(env, job.media_id)
+                .await
+                .c(h!())?;
+            record_attempt(env, "completed", started_at.elapsed());
         }
         Err(err) => {
             let diagnostic = format!("{err:#}");
@@ -94,11 +134,53 @@ async fn process_next(env: &Env) -> anyhow::Result<bool> {
             let terminal =
                 retry_or_fail(&env.dbx, &job, diagnostic).await.c(h!())?;
             if terminal {
-                publish_inbox_change(env, job.media_id).await.c(h!())?;
+                super::publish_inbox_change(env, job.media_id)
+                    .await
+                    .c(h!())?;
             }
+            record_attempt(
+                env,
+                if terminal { "failed" } else { "retry" },
+                started_at.elapsed(),
+            );
         }
     }
     Ok(true)
+}
+
+fn record_attempt(env: &Env, outcome: &'static str, duration: Duration) {
+    if let Some(metrics) = &env.metrics {
+        metrics.record_media_summary_attempt(outcome, duration);
+    }
+}
+
+fn record_coordinate_drops(
+    env: &Env,
+    job: &media_summary_entity::Model,
+    drops: &[CoordinateDropReason],
+) {
+    if drops.is_empty() {
+        return;
+    }
+    let mut counts = BTreeMap::new();
+    for reason in drops {
+        *counts.entry(reason.as_str()).or_insert(0_u64) += 1;
+    }
+    let reasons = counts
+        .iter()
+        .map(|(reason, count)| format!("{reason}={count}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    log::warn!(
+        "media summary skipped invalid coordinate candidates: media_id={} reasons={}",
+        job.media_id,
+        reasons
+    );
+    if let Some(metrics) = &env.metrics {
+        for (reason, count) in counts {
+            metrics.record_media_summary_coordinate_drops(reason, count);
+        }
+    }
 }
 
 async fn claim_next(
@@ -252,26 +334,6 @@ async fn retry_or_fail(
     Ok(terminal)
 }
 
-async fn publish_inbox_change(
-    env: &Env,
-    media_id: uuid::Uuid,
-) -> anyhow::Result<()> {
-    let Some(media) = signal_message_media::Entity::find_by_id(media_id)
-        .one(&env.dbx)
-        .await
-        .c(h!())?
-    else {
-        return Ok(());
-    };
-    crate::inbox::fanout_inbox_changed(
-        &mut env.redis.clone(),
-        media.signal_message_id,
-    )
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
 fn summary_messages(source_text: &str) -> Vec<AiEngineMessage> {
     vec![
         AiEngineMessage {
@@ -347,10 +409,11 @@ fn parse_response(response: &str) -> anyhow::Result<StructuredSummary> {
     let object = value.as_object().c(h!())?;
     validate_keys(object).c(h!())?;
     let summary = parse_field(object, "summary").c(h!())?.c(h!())?;
-    let coordinates = parse_coordinates(object).c(h!())?;
+    let (coordinates, coordinate_drops) = parse_coordinates(object).c(h!())?;
     Ok(StructuredSummary {
         summary,
         coordinates,
+        coordinate_drops,
     })
 }
 
@@ -367,30 +430,41 @@ fn validate_keys(object: &Map<String, Value>) -> anyhow::Result<()> {
 
 fn parse_coordinates(
     object: &Map<String, Value>,
-) -> anyhow::Result<Vec<MediaSummaryCoordinate>> {
+) -> anyhow::Result<(Vec<MediaSummaryCoordinate>, Vec<CoordinateDropReason>)> {
     let values = object.get("coordinates").c(h!())?.as_array().c(h!())?;
-    if values.len() > MEDIA_SUMMARY_COORDINATES_MAX_COUNT {
-        anyhow::bail!("media summary has too many coordinates");
-    }
-
-    let mut coordinates = Vec::with_capacity(values.len());
+    let retained_count = values.len().min(MEDIA_SUMMARY_COORDINATES_MAX_COUNT);
+    let mut coordinates = Vec::with_capacity(retained_count);
+    let mut drops = Vec::new();
+    drops.extend(std::iter::repeat_n(
+        CoordinateDropReason::Excess,
+        values
+            .len()
+            .saturating_sub(MEDIA_SUMMARY_COORDINATES_MAX_COUNT),
+    ));
     let mut seen = HashSet::new();
-    for value in values {
+    for value in values.iter().take(MEDIA_SUMMARY_COORDINATES_MAX_COUNT) {
         if is_missing_coordinate_placeholder(value) {
             continue;
         }
-        let coordinate = parse_coordinate(value).c(h!())?;
+        let coordinate = match parse_coordinate(value) {
+            Ok(coordinate) => coordinate,
+            Err(reason) => {
+                drops.push(reason);
+                continue;
+            }
+        };
         let key = format!(
             "{}:{}",
             coordinate.coordinate_system,
             coordinate.value.to_lowercase()
         );
         if !seen.insert(key) {
-            anyhow::bail!("media summary has duplicate coordinates");
+            drops.push(CoordinateDropReason::Duplicate);
+            continue;
         }
         coordinates.push(coordinate);
     }
-    Ok(coordinates)
+    Ok((coordinates, drops))
 }
 
 fn is_missing_coordinate_placeholder(value: &Value) -> bool {
@@ -407,46 +481,53 @@ fn is_missing_coordinate_placeholder(value: &Value) -> bool {
     )
 }
 
-fn parse_coordinate(value: &Value) -> anyhow::Result<MediaSummaryCoordinate> {
-    let object = value.as_object().c(h!())?;
+fn parse_coordinate(
+    value: &Value,
+) -> Result<MediaSummaryCoordinate, CoordinateDropReason> {
+    let Some(object) = value.as_object() else {
+        return Err(CoordinateDropReason::InvalidShape);
+    };
     let expected = COORDINATE_FIELDS.into_iter().collect::<HashSet<_>>();
     let actual = object.keys().map(String::as_str).collect::<HashSet<_>>();
     if actual != expected {
-        anyhow::bail!(
-            "media summary coordinate has unexpected or missing fields"
-        );
+        return Err(CoordinateDropReason::InvalidFields);
     }
 
-    let title = parse_bounded_string(
+    let Some(title) = parse_bounded_string(
         object,
         "title",
         MEDIA_SUMMARY_COORDINATE_TITLE_MAX_CHARS,
-    )
-    .c(h!())?;
-    let description = parse_bounded_string(
+    ) else {
+        return Err(CoordinateDropReason::InvalidText);
+    };
+    let Some(description) = parse_bounded_string(
         object,
         "description",
         MEDIA_SUMMARY_COORDINATE_DESCRIPTION_MAX_CHARS,
-    )
-    .c(h!())?;
-    let planned_means = parse_optional_bounded_string(
+    ) else {
+        return Err(CoordinateDropReason::InvalidText);
+    };
+    let Some(planned_means) = parse_optional_bounded_string(
         object,
         "plannedMeans",
         MEDIA_SUMMARY_COORDINATE_PLANNED_MEANS_MAX_CHARS,
-    )
-    .c(h!())?;
-    let coordinate_system =
+    ) else {
+        return Err(CoordinateDropReason::InvalidText);
+    };
+    let Some(coordinate_system) =
         parse_bounded_string(object, "coordinateSystem", 16)
-            .c(h!())?
-            .to_lowercase();
-    let value = parse_bounded_string(
+    else {
+        return Err(CoordinateDropReason::InvalidText);
+    };
+    let coordinate_system = coordinate_system.to_lowercase();
+    let Some(value) = parse_bounded_string(
         object,
         "value",
         MEDIA_SUMMARY_COORDINATE_VALUE_MAX_CHARS,
-    )
-    .c(h!())?;
-    let value =
-        normalize_coordinate_value(&coordinate_system, &value).c(h!())?;
+    ) else {
+        return Err(CoordinateDropReason::InvalidText);
+    };
+    let value = normalize_coordinate_value(&coordinate_system, &value)?;
 
     Ok(MediaSummaryCoordinate {
         title,
@@ -461,57 +542,70 @@ fn parse_optional_bounded_string(
     object: &Map<String, Value>,
     name: &str,
     max_chars: usize,
-) -> anyhow::Result<Option<String>> {
-    if object.get(name).c(h!())?.is_null() {
-        return Ok(None);
+) -> Option<Option<String>> {
+    let value = object.get(name)?;
+    if value.is_null() {
+        return Some(None);
     }
-    Ok(Some(parse_bounded_string(object, name, max_chars).c(h!())?))
+    Some(Some(parse_bounded_string(object, name, max_chars)?))
 }
 
 fn parse_bounded_string(
     object: &Map<String, Value>,
     name: &str,
     max_chars: usize,
-) -> anyhow::Result<String> {
-    let value = object.get(name).c(h!())?.as_str().c(h!())?;
+) -> Option<String> {
+    let value = object.get(name)?.as_str()?;
     let value = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if value.is_empty() || value.chars().count() > max_chars {
-        anyhow::bail!("media summary field {name} has invalid length");
+        return None;
     }
-    Ok(value)
+    Some(value)
 }
 
 fn normalize_coordinate_value(
     coordinate_system: &str,
     value: &str,
-) -> anyhow::Result<String> {
+) -> Result<String, CoordinateDropReason> {
     match coordinate_system {
         "sk42" | "usk2000" => normalize_grid_value(coordinate_system, value),
         "wgs84" => normalize_wgs84_value(value),
         "mgrs" => normalize_mgrs_value(value),
-        _ => anyhow::bail!("unsupported media summary coordinate system"),
+        _ => Err(CoordinateDropReason::UnsupportedSystem),
     }
 }
 
 fn normalize_grid_value(
     coordinate_system: &str,
     value: &str,
-) -> anyhow::Result<String> {
+) -> Result<String, CoordinateDropReason> {
     lazy_static! {
         static ref GRID: Regex = Regex::new(
             r"(?ix)^\s*(?:[xх]\s*[:=]?\s*)?(?P<x>(?:\d{7}|\d{2}[-‐–— ]\d{5})(?:[.,]\d+)?)\s*[,;/\s]+\s*(?:[yу]\s*[:=]?\s*)?(?P<y>(?:\d{7}|\d{2}[-‐–— ]\d{5})(?:[.,]\d+)?)\s*$"
         )
         .unwrap();
     }
-    let captures = GRID.captures(value).c(h!())?;
-    let x = compact_grid_component(captures.name("x").c(h!())?.as_str());
-    let y = compact_grid_component(captures.name("y").c(h!())?.as_str());
-    let x_number = x.parse::<f64>().c(h!())?;
-    let y_number = y.parse::<f64>().c(h!())?;
+    let Some(captures) = GRID.captures(value) else {
+        return Err(CoordinateDropReason::InvalidGridFormat);
+    };
+    let Some(x) = captures.name("x") else {
+        return Err(CoordinateDropReason::InvalidGridFormat);
+    };
+    let Some(y) = captures.name("y") else {
+        return Err(CoordinateDropReason::InvalidGridFormat);
+    };
+    let x = compact_grid_component(x.as_str());
+    let y = compact_grid_component(y.as_str());
+    let Ok(x_number) = x.parse::<f64>() else {
+        return Err(CoordinateDropReason::InvalidGridFormat);
+    };
+    let Ok(y_number) = y.parse::<f64>() else {
+        return Err(CoordinateDropReason::InvalidGridFormat);
+    };
     if !(3_000_000.0..9_000_000.0).contains(&x_number)
         || !(3_000_000.0..9_000_000.0).contains(&y_number)
     {
-        anyhow::bail!("media summary grid coordinate is out of range");
+        return Err(CoordinateDropReason::GridOutOfRange);
     }
     let easting_zone = (y_number / 1_000_000.0).floor() as i32;
     let valid_zone = match coordinate_system {
@@ -520,7 +614,7 @@ fn normalize_grid_value(
         _ => false,
     };
     if !valid_zone {
-        anyhow::bail!("media summary grid coordinate zone is out of range");
+        return Err(CoordinateDropReason::GridZoneOutOfRange);
     }
     Ok(format!("X={x}, Y={y}"))
 }
@@ -536,27 +630,39 @@ fn compact_grid_component(value: &str) -> String {
         .replace(',', ".")
 }
 
-fn normalize_wgs84_value(value: &str) -> anyhow::Result<String> {
+fn normalize_wgs84_value(value: &str) -> Result<String, CoordinateDropReason> {
     lazy_static! {
         static ref WGS84: Regex = Regex::new(
             r"^\s*(?P<lat>-?\d{1,3}(?:[.,]\d+)?)\s*[,;/\s]+\s*(?P<lng>-?\d{1,3}(?:[.,]\d+)?)\s*$"
         )
         .unwrap();
     }
-    let captures = WGS84.captures(value).c(h!())?;
-    let lat = captures.name("lat").c(h!())?.as_str().replace(',', ".");
-    let lng = captures.name("lng").c(h!())?.as_str().replace(',', ".");
-    let lat_number = lat.parse::<f64>().c(h!())?;
-    let lng_number = lng.parse::<f64>().c(h!())?;
+    let Some(captures) = WGS84.captures(value) else {
+        return Err(CoordinateDropReason::InvalidWgs84Format);
+    };
+    let Some(lat) = captures.name("lat") else {
+        return Err(CoordinateDropReason::InvalidWgs84Format);
+    };
+    let Some(lng) = captures.name("lng") else {
+        return Err(CoordinateDropReason::InvalidWgs84Format);
+    };
+    let lat = lat.as_str().replace(',', ".");
+    let lng = lng.as_str().replace(',', ".");
+    let Ok(lat_number) = lat.parse::<f64>() else {
+        return Err(CoordinateDropReason::InvalidWgs84Format);
+    };
+    let Ok(lng_number) = lng.parse::<f64>() else {
+        return Err(CoordinateDropReason::InvalidWgs84Format);
+    };
     if !(-90.0..=90.0).contains(&lat_number)
         || !(-180.0..=180.0).contains(&lng_number)
     {
-        anyhow::bail!("media summary WGS-84 coordinate is out of range");
+        return Err(CoordinateDropReason::Wgs84OutOfRange);
     }
     Ok(format!("{lat}, {lng}"))
 }
 
-fn normalize_mgrs_value(value: &str) -> anyhow::Result<String> {
+fn normalize_mgrs_value(value: &str) -> Result<String, CoordinateDropReason> {
     lazy_static! {
         static ref MGRS: Regex = Regex::new(
             r"^(?P<zone>\d{1,2})(?P<band>[C-HJ-NP-X])(?P<square>[A-HJ-NP-Z]{2})(?P<digits>\d{2,10})$"
@@ -564,23 +670,34 @@ fn normalize_mgrs_value(value: &str) -> anyhow::Result<String> {
         .unwrap();
     }
     let compact = value.split_whitespace().collect::<String>().to_uppercase();
-    let captures = MGRS.captures(&compact).c(h!())?;
-    let zone = captures
-        .name("zone")
-        .c(h!())?
-        .as_str()
-        .parse::<u8>()
-        .c(h!())?;
-    let digits = captures.name("digits").c(h!())?.as_str();
+    let Some(captures) = MGRS.captures(&compact) else {
+        return Err(CoordinateDropReason::InvalidMgrsFormat);
+    };
+    let Some(zone) = captures.name("zone") else {
+        return Err(CoordinateDropReason::InvalidMgrsFormat);
+    };
+    let Ok(zone) = zone.as_str().parse::<u8>() else {
+        return Err(CoordinateDropReason::InvalidMgrsFormat);
+    };
+    let Some(digits) = captures.name("digits") else {
+        return Err(CoordinateDropReason::InvalidMgrsFormat);
+    };
+    let digits = digits.as_str();
     if !(1..=60).contains(&zone) || digits.len() % 2 != 0 {
-        anyhow::bail!("media summary MGRS coordinate is invalid");
+        return Err(CoordinateDropReason::InvalidMgrsFormat);
     }
     let half = digits.len() / 2;
+    let Some(band) = captures.name("band") else {
+        return Err(CoordinateDropReason::InvalidMgrsFormat);
+    };
+    let Some(square) = captures.name("square") else {
+        return Err(CoordinateDropReason::InvalidMgrsFormat);
+    };
     Ok(format!(
         "{}{} {} {} {}",
         zone,
-        captures.name("band").c(h!())?.as_str(),
-        captures.name("square").c(h!())?.as_str(),
+        band.as_str(),
+        square.as_str(),
         &digits[..half],
         &digits[half..]
     ))
@@ -618,7 +735,9 @@ fn truncate_error(error: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_response, response_format, summary_messages};
+    use super::{
+        parse_response, response_format, summary_messages, CoordinateDropReason,
+    };
     use crate::config::MEDIA_SUMMARY_SYSTEM_PROMPT;
     use serde_json::json;
 
@@ -636,10 +755,15 @@ mod tests {
         .is_err());
         assert!(parse_response(r#"{"summary":null,"coordinates":[]}"#).is_err());
         assert!(parse_response(r#"{"summary":"x"}"#).is_err());
-        assert!(parse_response(
+        let parsed = parse_response(
             r#"{"summary":"x","coordinates":[{"title":"Точка","coordinateSystem":"wgs84","value":"47.1, 35.2"}]}"#
         )
-        .is_err());
+        .unwrap();
+        assert!(parsed.coordinates.is_empty());
+        assert_eq!(
+            parsed.coordinate_drops,
+            vec![CoordinateDropReason::InvalidFields]
+        );
     }
 
     #[test]
@@ -718,7 +842,12 @@ mod tests {
                 {"title": "Малокатеринівка", "description": "Квадрат.", "plannedMeans": null, "coordinateSystem": "sk42", "value": "8370 8371"}
             ]
         });
-        assert!(parse_response(&invalid_square.to_string()).is_err());
+        let parsed = parse_response(&invalid_square.to_string()).unwrap();
+        assert!(parsed.coordinates.is_empty());
+        assert_eq!(
+            parsed.coordinate_drops,
+            vec![CoordinateDropReason::InvalidGridFormat]
+        );
     }
 
     #[test]
@@ -740,16 +869,30 @@ mod tests {
     }
 
     #[test]
-    fn malformed_out_of_range_duplicate_and_excess_coordinates_are_rejected() {
-        for coordinate in [
-            json!({"title": "Поза діапазоном", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "wgs84", "value": "91.1, 35.1"}),
-            json!({"title": "Неповна", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "sk42", "value": "5291456"}),
-            json!({"title": "Сітка", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "mgrs", "value": "61U DR 05997 22279"}),
-            json!({"title": "Невідома", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "utm", "value": "37U 405997 5222279"}),
+    fn malformed_out_of_range_duplicate_and_excess_coordinates_are_skipped() {
+        for (coordinate, reason) in [
+            (
+                json!({"title": "Поза діапазоном", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "wgs84", "value": "91.1, 35.1"}),
+                CoordinateDropReason::Wgs84OutOfRange,
+            ),
+            (
+                json!({"title": "Неповна", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "sk42", "value": "5291456"}),
+                CoordinateDropReason::InvalidGridFormat,
+            ),
+            (
+                json!({"title": "Сітка", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "mgrs", "value": "61U DR 05997 22279"}),
+                CoordinateDropReason::InvalidMgrsFormat,
+            ),
+            (
+                json!({"title": "Невідома", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "utm", "value": "37U 405997 5222279"}),
+                CoordinateDropReason::UnsupportedSystem,
+            ),
         ] {
             let response =
                 json!({"summary": "Координати.", "coordinates": [coordinate]});
-            assert!(parse_response(&response.to_string()).is_err());
+            let parsed = parse_response(&response.to_string()).unwrap();
+            assert!(parsed.coordinates.is_empty());
+            assert_eq!(parsed.coordinate_drops, vec![reason]);
         }
 
         let duplicate = json!({
@@ -759,7 +902,12 @@ mod tests {
                 {"title": "Друга", "description": "Опис.", "plannedMeans": null, "coordinateSystem": "sk42", "value": "X=5291456, Y=6662340"}
             ]
         });
-        assert!(parse_response(&duplicate.to_string()).is_err());
+        let parsed = parse_response(&duplicate.to_string()).unwrap();
+        assert_eq!(parsed.coordinates.len(), 1);
+        assert_eq!(
+            parsed.coordinate_drops,
+            vec![CoordinateDropReason::Duplicate]
+        );
 
         let coordinates = (0..51)
             .map(|index| {
@@ -774,7 +922,9 @@ mod tests {
             .collect::<Vec<_>>();
         let excess =
             json!({"summary": "Координати.", "coordinates": coordinates});
-        assert!(parse_response(&excess.to_string()).is_err());
+        let parsed = parse_response(&excess.to_string()).unwrap();
+        assert_eq!(parsed.coordinates.len(), 50);
+        assert_eq!(parsed.coordinate_drops, vec![CoordinateDropReason::Excess]);
     }
 
     #[test]

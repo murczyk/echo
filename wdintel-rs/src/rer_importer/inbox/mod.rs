@@ -157,6 +157,48 @@ async fn get_inbox_map_inner(
     }))
 }
 
+#[post("/api/rer-importer/map-settlement-messages")]
+async fn map_settlement_messages(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MapSettlementMessagesReq>,
+) -> Result<Json<MessageIdsRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let mut filter = req.inbox_items_filter;
+    filter.nolimit = Some(true);
+    let filtered_ids = build_inbox_settlement_ids_query(&login, &env, &filter)
+        .await
+        .c(h!())?;
+    let message_ids = get_inbox_map_settlement_message_ids(
+        &env.dbx,
+        &filtered_ids,
+        req.settlement_id,
+        req.before_id_noninclusive,
+        INBOX_MAP_SETTLEMENT_MESSAGES_PAGE_SIZE,
+    )
+    .await
+    .c(h!())?;
+    let mut messages =
+        messages_by_id_bl(&login, &logins, &env, &message_ids, &filter)
+            .await
+            .context(h!())?;
+    let message_order = message_ids
+        .iter()
+        .enumerate()
+        .map(|(position, message_id)| (*message_id, position))
+        .collect::<HashMap<_, _>>();
+    messages.sort_by_key(|(message_id, _)| {
+        message_order.get(message_id).copied().unwrap_or(usize::MAX)
+    });
+    Ok(Json(MessageIdsRsp { messages }))
+}
+
 fn get_inbox_filter_active_range(
     filter: &InboxMessagesReq,
 ) -> Result<Option<(NaiveDateTime, NaiveDateTime)>, AppError> {
@@ -478,7 +520,7 @@ pub(crate) async fn messages_by_id_bl(
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(intel_product::Column::RelationKind.is_in([
+        .and_where(intel_product::relation_kind_is_in([
             intel_product::RELATION_KIND_REPORT,
             intel_product::RELATION_KIND_COMMENT,
         ]))
@@ -1460,10 +1502,9 @@ async fn delete_message(
     let txn = env.dbx.begin().await.context(h!())?;
     let intelligence_report_parent_ids = intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(req.id))
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .select_only()
         .column(intel_product::Column::SourceMessageId)
         .into_tuple::<i64>()
@@ -2591,10 +2632,9 @@ async fn ensure_comment_save_access(
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .and_where(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .and_where(
             Expr::col((
                 intel_product::Entity,

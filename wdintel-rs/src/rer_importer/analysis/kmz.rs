@@ -79,8 +79,7 @@ pub(crate) async fn rer_analysis_kmz_bytes(
         .await
         .c(h!())?
         .into_iter()
-        .filter(|comment| comment.post_id.is_none())
-        .next();
+        .find(|comment| comment.post_id.is_none());
 
         let icon_href = format!(
             "https://f000.backblazeb2.com/file/wildducks-online-public/icons/{sidc}.png",

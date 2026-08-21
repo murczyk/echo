@@ -83,6 +83,12 @@ struct ProfileEngine {
     token: Option<String>,
     model_name: String,
     enabled: bool,
+    #[serde(default = "default_true")]
+    callsign_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 pub async fn export(
@@ -683,6 +689,7 @@ where
     engine.token = Set(profile_engine.token.clone());
     engine.model_name = Set(profile_engine.model_name.clone());
     engine.enabled = Set(profile_engine.enabled);
+    engine.callsign_enabled = Set(profile_engine.callsign_enabled);
     engine.updated_at = Set(Utc::now().naive_utc());
     Ok(engine.update(dbx).await.c(h!())?)
 }
@@ -702,7 +709,7 @@ where
         token: Set(profile_engine.token.clone()),
         model_name: Set(profile_engine.model_name.clone()),
         enabled: Set(profile_engine.enabled),
-        callsign_enabled: Set(true),
+        callsign_enabled: Set(profile_engine.callsign_enabled),
         ocr_enabled: Set(false),
         ocr_request_profile: Set("openai_vision".to_string()),
         created_at: Set(now),
@@ -810,6 +817,7 @@ impl From<ai_engine::Model> for ProfileEngine {
             token: engine.token,
             model_name: engine.model_name,
             enabled: engine.enabled,
+            callsign_enabled: engine.callsign_enabled,
         }
     }
 }
@@ -825,7 +833,7 @@ fn engine_record(engine: &ProfileEngine) -> ai_engine::Model {
         created_at: now,
         updated_at: now,
         enabled: engine.enabled,
-        callsign_enabled: true,
+        callsign_enabled: engine.callsign_enabled,
         ocr_enabled: false,
         ocr_request_profile: "openai_vision".to_string(),
     }
@@ -873,6 +881,7 @@ mod tests {
                 token: Some("secret-token".to_string()),
                 model_name: "local".to_string(),
                 enabled: true,
+                callsign_enabled: true,
             }],
         }
     }

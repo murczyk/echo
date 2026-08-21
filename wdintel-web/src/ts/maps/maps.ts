@@ -1,7 +1,6 @@
 import { L } from './leaflet-markercluster';
 import 'leaflet/dist/leaflet.css';
 import { getNavigationApi } from '../browser/navigation-api';
-import { kmzLayerFactory } from './leaflet-kmz';
 import '../web-components/range-date-selector';
 import './maps.css';
 import type { MapPointShort } from './types';
@@ -155,42 +154,10 @@ export function toggleMapSize(
   }, 0);
 }
 
-let cachedKmzData: string | null = null;
-let kmzResponseResolved = false;
-
-export async function loadKmzData() {
-  if (!kmzResponseResolved) {
-    try {
-      const response = await fetch('/api/delta/kml/latest');
-      if (!response.ok) {
-        if (response.status === 404) {
-          kmzResponseResolved = true;
-          console.info('[Map] /api/delta/kml/latest returned 404. KMZ layer will be skipped.');
-          cachedKmzData = null;
-          return null;
-        }
-        console.warn(
-          `[Map] Failed to load KMZ: HTTP ${response.status}. KMZ layer will be skipped.`,
-        );
-        cachedKmzData = null;
-        return null;
-      }
-      kmzResponseResolved = true;
-      cachedKmzData = await response.text();
-    } catch (error) {
-      console.warn('[Map] Failed to fetch KMZ data. KMZ layer will be skipped.', error);
-      cachedKmzData = null;
-      return null;
-    }
-  }
-  return cachedKmzData;
-}
-
 export async function setupMap(
   data: { points: MapPointShort[]; containerId: string },
   exitCallback: () => void,
 ) {
-  const kmzData = await loadKmzData();
   requestAnimationFrame(() => {
     const mapContainer = document.getElementById(`map-container-${data.containerId}`);
     if (mapContainer) {
@@ -238,36 +205,6 @@ export async function setupMap(
       const fullScreenControl: any = new FullScreenControl();
       map.addControl(new (createExitControl(exitCallback))({ position: 'topright' }));
       map.addControl(fullScreenControl);
-
-      if (kmzData) {
-        const kmz = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false });
-        kmz.addTo(map);
-        kmz.parse(kmzData, {});
-
-        fullScreenControl.on('fullscreen-toggled', (e) => {
-          const isMapOpened = map.getSize().x > 250;
-          kmz.eachLayer((layer: any) => {
-            layer.eachLayer((l: any) => {
-              if (l.feature.properties.name) {
-                l.unbindTooltip();
-                if (isMapOpened) {
-                  l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
-                    permanent: true,
-                    direction: 'center',
-                    opacity: 0,
-                  });
-                } else {
-                  l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
-                    permanent: false,
-                    direction: 'center',
-                    opacity: 0,
-                  });
-                }
-              }
-            });
-          });
-        });
-      }
     } else {
       throw Error('Map container is not found');
     }

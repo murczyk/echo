@@ -86,6 +86,7 @@ export function buildMapAttrs(params: {
   canShowSettlements: boolean;
   showSettlements: boolean;
   messages: Array<[number, InboxMessage]>;
+  settlementMessagesHasMore: boolean;
   networkUnits: NetworkUnit[];
   selectedUnits: string[];
   palitras: PalitraReadV2[];
@@ -113,6 +114,7 @@ export function buildMapAttrs(params: {
       networkUnits: filteredNetworkUnits,
       messages: snakeMessages,
     }),
+    settlementMessagesHasMore: String(params.settlementMessagesHasMore),
     selectedUnits: JSON.stringify(params.selectedUnits),
     palitras: JSON.stringify(toMapPalitras(params.palitras)),
     palitrasLoaded: JSON.stringify(params.palitrasLoaded),

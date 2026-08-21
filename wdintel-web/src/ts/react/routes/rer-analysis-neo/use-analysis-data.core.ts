@@ -666,6 +666,7 @@ export function useAnalysisData({
     loadMoreMessages: messageList.loadMoreMessages,
     loadPrevPage: messageList.loadPrevPage,
     loadMessagesForMap: mapData.loadMessagesForMap,
+    loadSettlementMessagesForMap: mapData.loadSettlementMessagesForMap,
     mapAttrs: mapData.mapAttrs,
     messageActionLoading: messageActionState.messageActionCount > 0,
     messagesLoading: messageList.messagesLoading,

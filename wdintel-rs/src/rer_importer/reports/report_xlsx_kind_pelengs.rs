@@ -195,7 +195,7 @@ async fn get_inbox_messages_report_chunk(
                             signal_message::Column::Id,
                         )),
                     )
-                    .filter(intel_product::Column::RelationKind.is_in([
+                    .filter(intel_product::relation_kind_is_in([
                         intel_product::RELATION_KIND_REPORT,
                         intel_product::RELATION_KIND_COMMENT,
                     ]))

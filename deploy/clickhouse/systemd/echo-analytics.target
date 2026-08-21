@@ -1,6 +1,6 @@
 [Unit]
 Description=Echo ClickHouse and PeerDB analytics stack
-Wants=clickhouse-server.service postgresql@18-main.service echo-analytics-firewall.service echo-temporal.service echo-minio.service echo-peerdb-migrate.service echo-peer-flow-api.service echo-peer-flow-worker.service echo-peer-flow-snapshot-worker.service echo-peerdb-server.service echo-analytics-health.timer
+Wants=clickhouse-server.service postgresql@18-main.service echo-analytics-firewall.service echo-temporal.service echo-minio.service echo-peerdb-migrate.service echo-peer-flow-api.service echo-peer-flow-worker.service echo-peer-flow-snapshot-worker.service echo-peerdb-server.service echo-analytics-memory-limit.timer echo-analytics-health.timer echo-analytics-reconcile.timer
 After=clickhouse-server.service postgresql@18-main.service echo-analytics-firewall.service echo-temporal.service echo-minio.service echo-peerdb-migrate.service echo-peer-flow-api.service echo-peer-flow-worker.service echo-peer-flow-snapshot-worker.service echo-peerdb-server.service
 
 [Install]

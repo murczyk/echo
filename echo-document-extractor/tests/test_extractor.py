@@ -371,6 +371,32 @@ async def test_reconciliation_prefers_clean_candidate_over_fragmented_table(
     assert sum(isinstance(block, Table) for block in result.document.pages[0].blocks) == 1
 
 
+async def test_overlapping_retry_table_does_not_fail_extraction(
+    tmp_path: Path, config: ExtractionConfig
+) -> None:
+    source = tmp_path / "source.png"
+    create_image(source)
+    valid = "<article><table><tr><td>A</td><td>B</td></tr></table></article>"
+    overlapping = (
+        '<article><table><tr><td rowspan="2">A</td><td>B</td>'
+        '<td rowspan="2">C</td></tr><tr><td colspan="2">D</td></tr></table></article>'
+    )
+
+    result = await Extractor(
+        config,
+        [StaticAdapter("nuextract3", valid), StaticAdapter("gemma", overlapping)],
+    ).extract([source])
+
+    assert result.status == Status.DEGRADED
+    malformed_retry_evidence = [
+        item
+        for item in result.evidence
+        if not item.valid and "malformed_table_payload" in item.rejection_reasons
+    ]
+    assert len(malformed_retry_evidence) == 1
+    assert sum(isinstance(block, Table) for block in result.document.pages[0].blocks) == 1
+
+
 def test_cell_retry_preserves_base_table_topology() -> None:
     base = Cell(
         id="p1-t1-c2",
@@ -391,6 +417,27 @@ def test_cell_retry_preserves_base_table_topology() -> None:
     evidence, values = _retry_cell_values([candidate], base)
     selected = values[evidence[0].id]
     assert (selected.row, selected.column, selected.rowspan, selected.colspan) == (1, 2, 2, 3)
+
+
+def test_cell_retry_rejects_overlapping_table_payload() -> None:
+    base = Cell(id="p1-t1-c1", row=0, column=0, bbox=(0, 0, 100, 100))
+    candidate = CandidateEvidence(
+        id="gemma-p1-t1-c1-retry",
+        source="gemma",
+        page_id="p1",
+        unit_id=base.id,
+        bbox=base.bbox,
+        html=(
+            '<article><table><tr><td rowspan="2">A</td><td>B</td>'
+            '<td rowspan="2">C</td></tr><tr><td colspan="2">D</td></tr></table></article>'
+        ),
+    )
+
+    evidence, values = _retry_cell_values([candidate], base)
+
+    assert values == {}
+    assert not evidence[0].valid
+    assert "malformed_cell_payload" in evidence[0].rejection_reasons
 
 
 def test_geometry_supported_empty_cell_does_not_trigger_model_retry() -> None:
@@ -551,6 +598,28 @@ async def test_text_retry_rejects_payload_without_canonical_text_block(
         config,
         [StaticAdapter("gemma", "<article><table><tr><td>A 123</td></tr></table></article>")],
     )
+
+    evidence, values = await extractor._retry_text(raster, "p1", base.id, base)
+
+    assert values == {}
+    assert not evidence[0].valid
+    assert "malformed_text_payload" in evidence[0].rejection_reasons
+
+
+async def test_text_retry_rejects_overlapping_table_payload(config: ExtractionConfig) -> None:
+    raster = RasterPage("page.png", 0, "source", "raster", Image.new("RGB", (100, 100)))
+    base = TextBlock(
+        kind="paragraph",
+        id="p1-b1",
+        bbox=(0, 0, 100, 50),
+        reading_order=0,
+        paragraphs=["Expected text"],
+    )
+    overlapping = (
+        '<article><table><tr><td rowspan="2">A</td><td>B</td>'
+        '<td rowspan="2">C</td></tr><tr><td colspan="2">D</td></tr></table></article>'
+    )
+    extractor = Extractor(config, [StaticAdapter("gemma", overlapping)])
 
     evidence, values = await extractor._retry_text(raster, "p1", base.id, base)
 

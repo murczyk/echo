@@ -8,6 +8,8 @@ ANALYTICS_LIB=${ECHO_ANALYTICS_LIB:-$SCRIPT_DIR/lib.sh}
 source "$ANALYTICS_LIB"
 load_analytics_config
 validate_runtime_identifiers
+acquire_analytics_reconcile_lock
+require_expected_control_release
 
 # Source deploys can stream this script before the analytics library is updated.
 : "${ANALYTICS_SCHEMA_RECONCILE_LOCK_NAME:=echo_analytics_schema_reconciliation}"

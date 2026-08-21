@@ -710,10 +710,10 @@ fn non_empty_comment_exists() -> SimpleExpr {
     let subquery = intel_product::Entity::find()
         .select_only()
         .expr(Expr::value(1))
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_COMMENT),
-        )
+        .filter(intel_product::relation_kind_is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
+        ]))
         .join_as(
             JoinType::InnerJoin,
             intel_product::Relation::SignalMessage1.def(),
@@ -761,7 +761,7 @@ async fn load_non_empty_comments(
     blacklist: &[String],
 ) -> Result<Vec<String>, AppError> {
     let comments =
-        crate::sigint::comments::find_linked_message_comments(dbx, &[item_id])
+        crate::sigint::comments::find_report_comments(dbx, &[item_id], None)
             .await
             .c(h!())?
             .into_iter()

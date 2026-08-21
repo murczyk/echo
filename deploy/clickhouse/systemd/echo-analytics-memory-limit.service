@@ -1,0 +1,21 @@
+[Unit]
+Description=Reconcile Echo ClickHouse container memory limit
+After=clickhouse-server.service
+Requires=clickhouse-server.service
+PartOf=echo-analytics.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/opt/echo-analytics/current/bin/reconcile-clickhouse-memory-limit.sh
+TimeoutStartSec=60s
+UMask=0027
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+AmbientCapabilities=
+RestrictSUIDSGID=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/etc/clickhouse-server/config.d

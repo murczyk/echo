@@ -19,6 +19,12 @@ SQL, trivial helpers, defaults, formatting, or mocks without protecting a
 real failure mode. Prefer a focused fixture in an existing functional or
 parser test over adding another isolated unit test.
 
+## Query performance
+
+Review database access using [QUERY_PERF.md](QUERY_PERF.md). Require
+production-scale plan evidence for high-risk queries and oneoffs; ORM-generated
+SQL is not exempt.
+
 ## Replicated PostgreSQL migrations
 
 CI compares migration DDL with

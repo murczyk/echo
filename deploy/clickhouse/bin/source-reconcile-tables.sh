@@ -38,6 +38,7 @@ SQL
 analytics_ssh_target=${ANALYTICS_SSH_TARGET:-echo@${ANALYTICS_ADDRESS%/*}}
 [[ "$analytics_ssh_target" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9._:-]+$ ]] \
   || die "invalid ANALYTICS_SSH_TARGET: $analytics_ssh_target"
+control_release=$(require_paired_control_release "$analytics_ssh_target")
 
 run_remote_reconcile() {
   ssh -n \
@@ -46,7 +47,7 @@ run_remote_reconcile() {
     -o ServerAliveInterval=15 \
     -o ServerAliveCountMax=3 \
     "$analytics_ssh_target" \
-    "/opt/echo-analytics/bin/reconcile-table-selection.sh $1"
+    "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/reconcile-table-selection.sh $1"
 }
 
 timeout --foreground 30s \
@@ -54,7 +55,7 @@ timeout --foreground 30s \
     -o BatchMode=yes \
     -o ConnectTimeout=10 \
     "$analytics_ssh_target" \
-    'test -x /opt/echo-analytics/bin/reconcile-table-selection.sh' \
+    'test -x /opt/echo-analytics/current/bin/reconcile-table-selection.sh' \
   || die "analytics reconciliation script is unavailable on $analytics_ssh_target"
 
 reconciliation_complete=false
@@ -69,12 +70,15 @@ trap warn_if_incomplete EXIT
 
 log "Pausing the mirror on $analytics_ssh_target"
 run_remote_reconcile --pause
-reconcile_source_table_access
-reconcile_source_publication
+retry_source_reconciliation_step \
+  "Source table-access reconciliation" reconcile_source_table_access
+retry_source_reconciliation_step \
+  "Source publication reconciliation" reconcile_source_publication
 
 log "Applying the table selection to PeerDB, ClickHouse, and the gateway"
 run_remote_reconcile --yes
-reset_excluded_replica_identities
+retry_source_reconciliation_step \
+  "Excluded replica-identity reset" reset_excluded_replica_identities
 source_local_psql -q -v ON_ERROR_STOP=1 \
   -c "SELECT pg_logical_emit_message(true, 'echo_peerdb_table_selection', 'reconciled')"
 record_source_table_selection_fingerprint

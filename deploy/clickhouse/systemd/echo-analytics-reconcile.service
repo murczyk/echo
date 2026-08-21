@@ -1,0 +1,26 @@
+[Unit]
+Description=Reconcile Echo analytics desired state
+After=network-online.target postgresql@18-main.service clickhouse-server.service echo-peer-flow-worker.service echo-peerdb-server.service
+Wants=network-online.target
+PartOf=echo-analytics.target
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+SupplementaryGroups=echo-analytics
+Environment=ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS=10
+Environment=ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS=true
+ExecStart=/opt/echo-analytics/current/bin/reconcile-if-needed.sh
+TimeoutStartSec=600s
+StateDirectory=echo-analytics/reconcile
+StateDirectoryMode=0755
+UMask=0027
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/echo-analytics/reconcile /run/lock

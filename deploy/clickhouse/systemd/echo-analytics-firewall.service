@@ -6,7 +6,7 @@ PartOf=echo-analytics.target
 [Service]
 Type=oneshot
 EnvironmentFile=/etc/echo-analytics/instance.env
-ExecStart=/opt/echo-analytics/bin/apply-firewall.sh
+ExecStart=/opt/echo-analytics/current/bin/apply-firewall.sh
 ExecStop=-/usr/sbin/nft delete table inet echo_analytics_guard
 RemainAfterExit=true
 

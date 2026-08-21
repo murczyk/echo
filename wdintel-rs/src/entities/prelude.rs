@@ -18,6 +18,8 @@ pub use super::ai_callsign_worker_job::Entity as AiCallsignWorkerJob;
 pub use super::ai_chat::Entity as AiChat;
 pub use super::ai_chat_message::Entity as AiChatMessage;
 pub use super::ai_engine::Entity as AiEngine;
+pub use super::ai_intel_report_attempt::Entity as AiIntelReportAttempt;
+pub use super::ai_intel_report_settings::Entity as AiIntelReportSettings;
 pub use super::alert::Entity as Alert;
 pub use super::aor_location_config::Entity as AorLocationConfig;
 pub use super::api_integration::Entity as ApiIntegration;

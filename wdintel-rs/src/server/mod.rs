@@ -316,9 +316,9 @@ async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
             info!("analytics pool configured {host}:{port}");
             Some(AnalyticsPool {
                 conn: pool,
-                retry_after_unix_ms: Arc::new(
-                    std::sync::atomic::AtomicU64::new(0),
-                ),
+                retry_after_unix_ms_by_operation: Arc::new(RwLock::new(
+                    HashMap::new(),
+                )),
             })
         }
         Err(err) => {
@@ -795,6 +795,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::messenger_media_ocr_download)
             .service(crate::ocr::messenger_media_ocr_status)
             .service(crate::media_summary::messenger_media_summary)
+            .service(crate::media_summary::messenger_media_summary_retry)
             .service(
                 crate::media_summary::messenger_media_summary_coordinates,
             )
@@ -827,6 +828,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_messages)
             .service(crate::rer_importer::inbox::inbox_group_stats)
             .service(crate::rer_importer::inbox::get_inbox_map)
+            .service(crate::rer_importer::inbox::map_settlement_messages)
             .service(crate::rer_importer::inbox::inbox_messages_count)
             .service(crate::rer_importer::inbox::delete_message)
             .service(crate::rer_importer::inbox::comment_save)
@@ -919,6 +921,10 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_engine::list_ai_chats)
             .service(crate::ai_engine::get_ai_chat)
             .service(crate::ai_engine::send_ai_chat_message)
+            .service(crate::ai_intel_report::get_settings)
+            .service(crate::ai_intel_report::save_settings)
+            .service(crate::ai_intel_report::list_attempts)
+            .service(crate::ai_intel_report::quick_suggestion)
             .service(crate::ai_agent::configuration)
             .service(crate::ai_agent::list_conversations)
             .service(crate::ai_agent::create_conversation)
@@ -965,6 +971,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ocr::admin_ocr_media)
             .service(crate::ocr::gateway::infer)
             .service(crate::media_summary::admin_ocr_media_summary)
+            .service(crate::media_summary::admin_ocr_media_summary_retry)
             .service(crate::media_summary::save_settings)
             .service(crate::transcriber::list_instances)
             .service(crate::transcriber::create_instance)

@@ -63,7 +63,11 @@ pub fn dt_zoned_from_millis(
 
 pub fn parse_local_datetime(val: &str) -> Result<NaiveDateTime, AppError> {
     let local_datetime =
-        NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S").c(h!())?;
+        NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S")
+            .or_else(|_| {
+                NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S")
+            })
+            .c(h!())?;
     let zoned = local_datetime.and_local_timezone(get_tz()).single().ok_or(
         AppError::BL {
             msg: format!("Ambiguous local datetime: {val}"),
@@ -244,5 +248,13 @@ mod tests {
         let res = Utc.from_utc_datetime(&dt).with_timezone(&tz);
         let res_s = res.format("%Y-%m-%d %H:%M:%S").to_string();
         assert_eq!(res_s, "2024-06-29 22:00:00");
+    }
+
+    #[test]
+    fn local_datetime_accepts_t_or_space() {
+        assert_eq!(
+            parse_local_datetime("2026-01-01T00:00:00").unwrap(),
+            parse_local_datetime("2026-01-01 00:00:00").unwrap()
+        );
     }
 }

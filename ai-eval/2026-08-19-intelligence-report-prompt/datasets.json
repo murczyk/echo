@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "name": "cbr",
+      "workflow": "CBR/Cyber",
+      "path": "raw/cbr-human-pairs.jsonl.zst",
+      "developmentTargets": 150,
+      "validationTargets": 75
+    },
+    {
+      "name": "pivnich",
+      "workflow": "Pivnich/RER",
+      "path": "raw/pivnich-human-pairs.jsonl.zst",
+      "developmentTargets": 300,
+      "validationTargets": 150
+    },
+    {
+      "name": "linked-goi",
+      "workflow": "Pivnich/GOI evaluation-only",
+      "path": "raw/pivnich-linked-goi.jsonl.zst",
+      "developmentTargets": 80,
+      "validationTargets": 40
+    }
+  ],
+  "recordSchema": {
+    "dataset": "string",
+    "sourceMessageId": "integer",
+    "authorKey": "string",
+    "groupKey": "string|null",
+    "frequency": "string|null",
+    "messageAt": "UTC timestamp",
+    "reportAt": "UTC timestamp",
+    "source": "string",
+    "report": "string"
+  }
+}

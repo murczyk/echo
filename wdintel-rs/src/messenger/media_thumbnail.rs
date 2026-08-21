@@ -591,6 +591,21 @@ pub async fn remove_media_thumbnail_files_best_effort(
     config: &Config,
     media_id: Uuid,
 ) {
+    remove_media_thumbnail_files(config, media_id, true).await;
+}
+
+pub async fn remove_uncommitted_media_thumbnail_files_best_effort(
+    config: &Config,
+    media_id: Uuid,
+) {
+    remove_media_thumbnail_files(config, media_id, false).await;
+}
+
+async fn remove_media_thumbnail_files(
+    config: &Config,
+    media_id: Uuid,
+    delete_source: bool,
+) {
     with_thumbnail_operation(media_id, async {
         let paths = [
             media_thumbnail_path(config, media_id),
@@ -609,7 +624,7 @@ pub async fn remove_media_thumbnail_files_best_effort(
         if let Err(err) = finalize_thumbnail_source_reference_locked(
             &thumbnail_source_dir(config),
             &reference_path,
-            true,
+            delete_source,
         )
         .await
         {

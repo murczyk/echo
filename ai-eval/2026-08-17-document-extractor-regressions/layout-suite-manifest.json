@@ -1,5 +1,5 @@
 {
-  "suite_id": "17aug26-document-extractor-regressions-v1",
+  "suite_id": "17aug26-document-extractor-regressions-v2",
   "canonical_format": "semantic-html",
   "documents": [
     {
@@ -26,6 +26,35 @@
           "mime_type": "image/png",
           "width": 688,
           "height": 1035
+        }
+      ]
+    },
+    {
+      "id": "observation-post-rotation-schedule",
+      "title": "Observation post rotation schedule",
+      "profile": "document",
+      "expect": {
+        "retain_original_raster_on_model_failure": true,
+        "min_tables": 1,
+        "table_rows": [22],
+        "table_columns": [41],
+        "max_figures": 0,
+        "anchors": [
+          "НП Веном",
+          "5269123",
+          "6676868",
+          "6677526",
+          "Смена 135 мсп"
+        ]
+      },
+      "pages": [
+        {
+          "index": 1,
+          "filename": "A2h6FMRRiyDPd_zNsSPH.png",
+          "sha256": "db6d073c64384f7cc2b1fed585f7151dc22cb5f54c785049e07209ed02be83ec",
+          "mime_type": "image/png",
+          "width": 1878,
+          "height": 626
         }
       ]
     }

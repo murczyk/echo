@@ -7,6 +7,8 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 source "$SCRIPT_DIR/lib.sh"
 load_analytics_config
 validate_runtime_identifiers
+acquire_analytics_reconcile_lock
+require_expected_control_release
 require_cmd curl
 require_cmd jq
 
@@ -204,10 +206,7 @@ SQL
       "DROP TABLE IF EXISTS \`$CLICKHOUSE_RAW_DB\`.\`$target\` SYNC"
   done
 
-  "$SCRIPT_DIR/refresh-current-views.sh"
-  "$SCRIPT_DIR/refresh-gateway.sh"
-  "$SCRIPT_DIR/reconcile-schema.sh"
-  "$SCRIPT_DIR/check-analytics-health.sh"
+  reconcile_analytics_schema_with_retry "$SCRIPT_DIR"
   log "Mirror table selection is reconciled"
 }
 

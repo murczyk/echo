@@ -8,6 +8,9 @@ describe('buildMapAttrs', () => {
     const attrs = buildMapAttrs({
       dateRange: { startDate: 1, endDate: 2 },
       isLoading: false,
+      settlements: [],
+      canShowSettlements: false,
+      showSettlements: false,
       points: [
         {
           messageId: 17,
@@ -36,6 +39,7 @@ describe('buildMapAttrs', () => {
           } as InboxMessage,
         ],
       ],
+      settlementMessagesHasMore: false,
       networkUnits: [{ name: 'Unit', frequencies: ['145.5'] }],
       selectedUnits: ['Unit'],
       palitras: [],
@@ -75,5 +79,6 @@ describe('buildMapAttrs', () => {
         ],
       ],
     });
+    expect(attrs.settlementMessagesHasMore).toBe('false');
   });
 });

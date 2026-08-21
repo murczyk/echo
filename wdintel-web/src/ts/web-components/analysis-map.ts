@@ -1,7 +1,6 @@
 import { L } from '../maps/leaflet-markercluster';
 import type * as Leaflet from 'leaflet';
 
-import { KMZLayer } from '../maps/leaflet-kmz';
 import { MapPointDetailed } from '../maps/types';
 import {
   TimeswitchControl,
@@ -19,7 +18,6 @@ import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 import { AnalysisMapCoordMenuController } from './analysis-map/coord-menu-controller';
-import { applyKmzVisibility, loadKmzLayer } from './analysis-map/kmz-layer';
 import { initializeAnalysisMapControls } from './analysis-map/map-controls';
 import {
   patchMouseDownMapFocus,
@@ -58,6 +56,7 @@ class AnalysisMap extends HTMLElement {
     'messages',
     'messages-loading',
     'messages-load-serial',
+    'settlement-messages-has-more',
     'visibility',
     'network-units',
     'selected-units',
@@ -86,10 +85,10 @@ class AnalysisMap extends HTMLElement {
   private _markersGroup: Leaflet.MarkerClusterGroup | null = null;
   private _clickedPoint: DataCircleMarker | null = null;
   private _clickedLatLng: L.LatLng | null = null;
+  private _clickedSettlementId: number | null = null;
+  private _clickedSettlementLabel: string | null = null;
   private _boundedAlready = false;
   private _initialized = false;
-  private _kmzLayer: KMZLayer | null = null;
-  private _kmzLoading: Promise<void> | null = null;
   private _selectedUnits: string[] = [];
 
   private _palitraManager: PalitraManager | null = null;
@@ -100,7 +99,6 @@ class AnalysisMap extends HTMLElement {
   private _palitrasLoaded = false;
   private _palitrasLoadState: PalitrasLoadState = 'idle';
   private _palitrasEnabled = true;
-  private _kmzEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
   private _mapSettingsControl: MapSettingsControl | null = null;
@@ -119,6 +117,7 @@ class AnalysisMap extends HTMLElement {
   private _messagesLoading = false;
   private _messagesPopupPending = false;
   private _messagesLoadSerial = 0;
+  private _settlementMessagesHasMore = false;
   private _messagesLoadingTarget: L.Layer | null = null;
   private _messagesPopupOpenFrame: number | null = null;
   private _messagesPopupOpenRetryCount = 0;
@@ -296,6 +295,9 @@ class AnalysisMap extends HTMLElement {
       case 'messages-load-serial':
         this._handleMessagesLoadSerialAttributeChanged(newValue);
         break;
+      case 'settlement-messages-has-more':
+        this._settlementMessagesHasMore = this._parseBooleanAttribute(newValue);
+        break;
       case 'selected-units':
         this._handleSelectedUnitsAttributeChanged(newValue);
         break;
@@ -384,6 +386,10 @@ class AnalysisMap extends HTMLElement {
     const parsed = JSON.parse(newValue);
     this._messages = parsed['messages'];
     this._networkUnits = parsed['networkUnits'];
+    if (!this._messagesLoading && this._messages.length === 0) {
+      this._clearMessagesPopupState();
+      return;
+    }
     this._scheduleMessagesPopupOpen();
   }
 
@@ -612,8 +618,6 @@ class AnalysisMap extends HTMLElement {
       ) {
         this._runSearchQueryIfSet();
       }
-
-      void this._loadKmzLayer();
     }
   }
 
@@ -761,12 +765,20 @@ class AnalysisMap extends HTMLElement {
         weight: 2,
       });
       const name = this._escapeHtml(settlement.name);
-      const region = settlement.region ? `, ${this._escapeHtml(settlement.region)}` : '';
       const count = settlement.inbox_item_count;
       marker.bindTooltip(`${name} (${count})`, {
         direction: 'top',
       });
-      marker.bindPopup(`<strong>${name}</strong>${region}<br>Пов'язаних перехоплень: ${count}`);
+      marker.on('click', () => {
+        this._clickedPoint = null;
+        this._clickedLatLng = marker.getLatLng();
+        this._clickedSettlementId = settlement.settlement_id;
+        this._clickedSettlementLabel = [settlement.name, settlement.region]
+          .filter((value): value is string => Boolean(value))
+          .join(', ');
+        this._setMessagesLoading(true, marker);
+        this._emitLoadSettlementMessages(settlement.settlement_id, null);
+      });
       marker.addTo(this._settlementsLayerGroup);
       this._settlementMarkers.set(settlement.settlement_id, marker);
     }
@@ -793,6 +805,8 @@ class AnalysisMap extends HTMLElement {
       onPointClick: (point, circle) => {
         this._clickedPoint = circle;
         this._clickedLatLng = circle.getLatLng();
+        this._clickedSettlementId = null;
+        this._clickedSettlementLabel = null;
         this._setMessagesLoading(true, circle);
         this._emitLoadMessagesDescriptions([circle.getData().messageId]);
       },
@@ -801,11 +815,15 @@ class AnalysisMap extends HTMLElement {
         originalEvent?.stopPropagation();
         this._clickedPoint = null;
         this._clickedLatLng = null;
+        this._clickedSettlementId = null;
+        this._clickedSettlementLabel = null;
         this._openPointContextMenu(target, latlng);
       },
       onClusterClick: (messageIds, latlng, cluster) => {
         this._clickedPoint = null;
         this._clickedLatLng = latlng;
+        this._clickedSettlementId = null;
+        this._clickedSettlementLabel = null;
         this._setMessagesLoading(true, cluster);
         this._emitLoadMessagesDescriptions(messageIds);
       },
@@ -823,6 +841,33 @@ class AnalysisMap extends HTMLElement {
     this.dispatchEvent(event);
   }
 
+  private _emitLoadSettlementMessages(settlementId: number, beforeIdNoninclusive: number | null) {
+    const event = new CustomEvent('load-settlement-messages', {
+      detail: {
+        settlementId,
+        beforeIdNoninclusive,
+      },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
+
+  private _loadMoreSettlementMessages(): void {
+    if (
+      this._messagesLoading ||
+      !this._settlementMessagesHasMore ||
+      this._clickedSettlementId === null
+    )
+      return;
+    const messageIds = this._messages
+      .map(([messageId]) => messageId)
+      .filter((messageId) => Number.isSafeInteger(messageId));
+    if (messageIds.length === 0) return;
+    this._setMessagesLoading(true);
+    this._emitLoadSettlementMessages(this._clickedSettlementId, Math.min(...messageIds));
+  }
+
   private _findPointMarkerByMessageId(messageId: number): DataCircleMarker | null {
     return findPointMarkerByMessageId(this._markersGroup, messageId);
   }
@@ -830,7 +875,6 @@ class AnalysisMap extends HTMLElement {
   private _getFeatureToggleState(): FeatureToggleState {
     return {
       palitrasEnabled: this._palitrasEnabled,
-      kmzEnabled: this._kmzEnabled,
       pelengsEnabled: this._pelengsEnabled,
     };
   }
@@ -853,7 +897,6 @@ class AnalysisMap extends HTMLElement {
 
   private _applyState(state: AnalysisMapStoredState) {
     this._palitrasEnabled = state.features.palitras;
-    this._kmzEnabled = state.features.kmz;
     this._pelengsEnabled = state.features.pelengs;
     this._visiblePalitraIds = state.visiblePalitraIds;
   }
@@ -863,9 +906,6 @@ class AnalysisMap extends HTMLElement {
     this._applyState(state);
     if (feature === 'palitras') {
       this._applyPalitraVisibility();
-    }
-    if (feature === 'kmz') {
-      this._applyKmzVisibility();
     }
     if (feature === 'pelengs') {
       this._applyPelengVisibility();
@@ -907,30 +947,6 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._palitraManager.setEnabled(this._palitrasEnabled);
-  }
-
-  private async _loadKmzLayer() {
-    await loadKmzLayer({
-      map: this._map,
-      isKmzEnabled: () => this._kmzEnabled,
-      kmzLayer: this._kmzLayer,
-      kmzLoading: this._kmzLoading,
-      setKmzLayer: (kmzLayer) => {
-        this._kmzLayer = kmzLayer;
-      },
-      setKmzLoading: (kmzLoading) => {
-        this._kmzLoading = kmzLoading;
-      },
-    });
-  }
-
-  private _applyKmzVisibility() {
-    applyKmzVisibility({
-      map: this._map,
-      isKmzEnabled: () => this._kmzEnabled,
-      kmzLayer: this._kmzLayer,
-      loadKmzLayer: () => this._loadKmzLayer(),
-    });
   }
 
   private _handleVisiblePalitraIdsChange(visibleIds: number[]): void {
@@ -1034,6 +1050,9 @@ class AnalysisMap extends HTMLElement {
       selectedUnits: this._selectedUnits,
       findPointMarkerByMessageId: (messageId) => this._findPointMarkerByMessageId(messageId),
       onUnitClicked: (networkUnitName) => this._emitMessageUnitClicked(networkUnitName),
+      hasMoreMessages: this._clickedSettlementId !== null && this._settlementMessagesHasMore,
+      onLoadMoreMessages: () => this._loadMoreSettlementMessages(),
+      contextTitle: this._clickedSettlementLabel ?? undefined,
       setClickedState: (clickedPoint, clickedLatLng) => {
         this._clickedPoint = clickedPoint;
         this._clickedLatLng = clickedLatLng;
@@ -1065,6 +1084,8 @@ class AnalysisMap extends HTMLElement {
 
     this._clickedPoint = null;
     this._clickedLatLng = null;
+    this._clickedSettlementId = null;
+    this._clickedSettlementLabel = null;
   }
 
   private _scheduleMessagesPopupOpen(): void {
@@ -1112,7 +1133,7 @@ class AnalysisMap extends HTMLElement {
       return;
     }
 
-    if (this._messagesLoadingTarget instanceof DataCircleMarker) {
+    if (this._messagesLoadingTarget instanceof L.CircleMarker) {
       this._syncPointMessagesLoadingIndicator(this._messagesLoadingTarget);
       return;
     }
@@ -1121,7 +1142,7 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _clearMessagesLoadingIndicator(): void {
-    if (this._messagesLoadingTarget instanceof DataCircleMarker) {
+    if (this._messagesLoadingTarget instanceof L.CircleMarker) {
       const path = this._messagesLoadingTarget.getElement() as
         (SVGPathElement & { classList: DOMTokenList }) | null;
       if (path) {
@@ -1137,7 +1158,7 @@ class AnalysisMap extends HTMLElement {
     this._messagesLoadingTarget = null;
   }
 
-  private _syncPointMessagesLoadingIndicator(target: DataCircleMarker): void {
+  private _syncPointMessagesLoadingIndicator(target: L.CircleMarker): void {
     const path = target.getElement() as (SVGPathElement & { classList: DOMTokenList }) | null;
     if (!path) {
       return;

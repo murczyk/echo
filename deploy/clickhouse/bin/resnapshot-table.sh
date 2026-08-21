@@ -515,6 +515,8 @@ main() {
 
   load_analytics_config
   validate_runtime_identifiers
+  acquire_analytics_reconcile_lock
+  require_expected_control_release
   require_cmd comm
   require_cmd curl
   require_cmd jq
