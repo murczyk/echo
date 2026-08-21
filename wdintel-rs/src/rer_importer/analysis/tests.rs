@@ -5557,6 +5557,28 @@ fn summary_table_xlsx_chunks_merge_without_coordinate_data() {
 }
 
 #[test]
+fn summary_table_xlsx_list_cells_summarize_omitted_values() {
+    let first = "і".repeat(RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT - 20);
+    let values = [&first, "1234567890", "abcdefghij"];
+
+    let text = xlsx_list_cell_text(values);
+
+    assert_eq!(
+        text,
+        format!("{first}{RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR}та ще 2 ін.")
+    );
+    assert!(
+        text.chars().count() <= RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT
+    );
+    assert_eq!(
+        xlsx_list_cell_text([
+            "x".repeat(RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT + 1)
+        ]),
+        "та ще 1 ін."
+    );
+}
+
+#[test]
 fn summary_table_coordinate_data_keeps_geocoded_localities() {
     let rows = vec![
         SummaryTableCoordinateRow {
