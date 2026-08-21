@@ -142,7 +142,8 @@ pub struct Env {
 #[derive(Clone)]
 pub struct AnalyticsPool {
     pub conn: sea_orm::DatabaseConnection,
-    pub retry_after_unix_ms: Arc<std::sync::atomic::AtomicU64>,
+    pub retry_after_unix_ms_by_operation:
+        Arc<RwLock<HashMap<String, Arc<std::sync::atomic::AtomicU64>>>>,
 }
 
 #[derive(Debug)]

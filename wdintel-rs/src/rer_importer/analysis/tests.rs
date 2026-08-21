@@ -7279,6 +7279,26 @@ fn count_stats_closed_circuit_allows_concurrent_analytics_attempts() {
 }
 
 #[test]
+fn analytics_retry_cooldowns_are_scoped_to_operation() {
+    let retry_states = RwLock::new(HashMap::new());
+    let report_retry_state =
+        analytics_retry_state_for_operation(&retry_states, "report");
+    let inbox_retry_state =
+        analytics_retry_state_for_operation(&retry_states, "inbox");
+
+    analytics_retry_attempt(&report_retry_state)
+        .unwrap()
+        .record_failure(core::time::Duration::from_secs(30));
+
+    assert!(analytics_retry_attempt(&report_retry_state).is_none());
+    assert!(analytics_retry_attempt(&inbox_retry_state).is_some());
+    assert!(Arc::ptr_eq(
+        &report_retry_state,
+        &analytics_retry_state_for_operation(&retry_states, "report")
+    ));
+}
+
+#[test]
 fn count_stats_analytics_open_circuit_allows_one_half_open_attempt() {
     const ATTEMPT_COUNT: usize = 8;
     let retry_state = Arc::new(std::sync::atomic::AtomicU64::new(1));

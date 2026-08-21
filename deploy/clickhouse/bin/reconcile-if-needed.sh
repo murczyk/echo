@@ -29,6 +29,7 @@ if [[ -r "$ANALYTICS_RECONCILE_STATE_FILE" ]]; then
 fi
 
 if $check_only; then
+  "$SCRIPT_DIR/reconcile-gateway-settings.sh" --check
   "$SCRIPT_DIR/reconcile-schema.sh" --check
   [[ "$reconciled_state_id" == "$desired_state_id" ]] \
     || die "derived analytics state is stale: expected $desired_state_id, reconciled ${reconciled_state_id:-missing}"
@@ -42,6 +43,7 @@ if $check_only; then
   exit 0
 fi
 
+"$SCRIPT_DIR/reconcile-gateway-settings.sh"
 "$SCRIPT_DIR/reconcile-schema.sh"
 if [[ "$reconciled_state_id" != "$desired_state_id" ]]; then
   "$SCRIPT_DIR/reconcile-derived-schema.sh"

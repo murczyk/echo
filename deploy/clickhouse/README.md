@@ -936,6 +936,12 @@ shape above 100 remote executions per minute, a fragment returning more than
 100,000 rows to the gateway, and a bounded facet reading more than 10 million
 rows. The report never resets either statistics source.
 
+Gateway reconciliation disables PostgreSQL merge joins for the analytics
+role. ClickHouse text ordering does not guarantee PostgreSQL collation order,
+so accepting a merge-join plan can fail at runtime with `mergejoin input data
+is out of order`. `bin/reconcile-if-needed.sh` repairs and verifies this role
+setting automatically.
+
 `status.sh` exits nonzero when the freshness record is unhealthy or older than
 the configured threshold. When analytics is configured,
 `wdintel-rs-bgworker` also checks this record immediately at startup and once

@@ -316,9 +316,9 @@ async fn connect_analytics(config: &Config) -> Option<AnalyticsPool> {
             info!("analytics pool configured {host}:{port}");
             Some(AnalyticsPool {
                 conn: pool,
-                retry_after_unix_ms: Arc::new(
-                    std::sync::atomic::AtomicU64::new(0),
-                ),
+                retry_after_unix_ms_by_operation: Arc::new(RwLock::new(
+                    HashMap::new(),
+                )),
             })
         }
         Err(err) => {

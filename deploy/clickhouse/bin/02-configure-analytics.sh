@@ -123,6 +123,7 @@ SELECT format(
   :'gateway_user',
   :'gateway_statement_timeout'
 ) \gexec
+SELECT format('ALTER ROLE %I SET enable_mergejoin = off', :'gateway_user') \gexec
 SQL
 } | postgres_psql \
   -v ON_ERROR_STOP=1 \

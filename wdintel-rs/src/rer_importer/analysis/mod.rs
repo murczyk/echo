@@ -7706,10 +7706,15 @@ async fn count_stats(
     } else {
         None
     };
-    let analytics_attempt = analytics.and_then(|analytics| {
-        analytics_retry_attempt(&analytics.retry_after_unix_ms)
-            .map(|retry_attempt| (analytics, retry_attempt))
+    let analytics_retry_state = analytics.map(|analytics| {
+        analytics_retry_state(analytics, "analysis stats count")
     });
+    let analytics_attempt = analytics
+        .zip(analytics_retry_state.as_deref())
+        .and_then(|(analytics, retry_state)| {
+            analytics_retry_attempt(retry_state)
+                .map(|retry_attempt| (analytics, retry_attempt))
+        });
     let freshness_max_age_ms = analytics_config
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
@@ -7990,11 +7995,16 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
+    let analytics_retry_state = env
+        .analytics
+        .as_ref()
+        .map(|analytics| analytics_retry_state(analytics, operation));
     let analytics_attempt = analytics_supported
         .then_some(env.analytics.as_ref())
         .flatten()
-        .and_then(|analytics| {
-            analytics_retry_attempt(&analytics.retry_after_unix_ms)
+        .zip(analytics_retry_state.as_deref())
+        .and_then(|(analytics, retry_state)| {
+            analytics_retry_attempt(retry_state)
                 .map(|retry_attempt| (analytics, retry_attempt))
         });
 
@@ -8137,6 +8147,37 @@ fn analytics_retry_attempt(
             });
         }
     }
+}
+
+fn analytics_retry_state(
+    analytics: &AnalyticsPool,
+    operation: &str,
+) -> Arc<AtomicU64> {
+    analytics_retry_state_for_operation(
+        &analytics.retry_after_unix_ms_by_operation,
+        operation,
+    )
+}
+
+fn analytics_retry_state_for_operation(
+    retry_states: &RwLock<HashMap<String, Arc<AtomicU64>>>,
+    operation: &str,
+) -> Arc<AtomicU64> {
+    if let Some(retry_state) = retry_states
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(operation)
+        .cloned()
+    {
+        return retry_state;
+    }
+
+    retry_states
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(operation.to_string())
+        .or_insert_with(|| Arc::new(AtomicU64::new(0)))
+        .clone()
 }
 
 fn analytics_retry_deadline(retry_cooldown: core::time::Duration) -> u64 {
