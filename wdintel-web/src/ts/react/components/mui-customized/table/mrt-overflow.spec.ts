@@ -1041,6 +1041,8 @@ describe('MRT rendered overflow components', () => {
     const copy = dialog?.querySelector<HTMLButtonElement>(
       '[aria-label="Скопіювати всі 3 значення"]',
     );
+    const header = dialog?.firstElementChild as HTMLElement | null;
+    const status = dialog?.querySelector<HTMLElement>('[role="status"]');
     expect(dialog?.textContent).toContain('Додаткові значення (2)');
     expect(list?.querySelectorAll('li')).toHaveLength(2);
     expect(list?.textContent).toContain('beta');
@@ -1049,20 +1051,27 @@ describe('MRT rendered overflow components', () => {
     expect(getComputedStyle(list!).overflowY).toBe('auto');
     expect(getComputedStyle(list!).overflowX).toBe('hidden');
     expect(copy).not.toBeNull();
+    expect(status?.textContent).toBe('');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(status?.parentElement?.parentElement).toBe(header);
+    expect(status?.nextElementSibling?.contains(copy!)).toBe(true);
+    expect(list?.previousElementSibling).toBe(header);
     const getGeometry = (element: Element | null | undefined) => {
       const rect = element?.getBoundingClientRect();
       return rect && [rect.x, rect.y, rect.width, rect.height];
     };
-    const geometryBeforeCopy = [dialog, dialog?.firstElementChild, list].map(getGeometry);
+    const geometryBeforeCopy = [dialog, header, copy, list].map(getGeometry);
 
     act(() => copy?.click());
     await act(async () => Promise.resolve());
     expect(copyTextToClipboard).toHaveBeenCalledWith('full alpha\nfull beta\nfull gamma');
     expect(document.body.querySelector('[role="status"]')?.textContent).toBe('Скопійовано');
+    const copiedDialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
     const geometryAfterCopy = [
-      document.body.querySelector('[role="dialog"]'),
-      document.body.querySelector('[role="dialog"]')?.firstElementChild,
-      document.body.querySelector('[role="dialog"] ul'),
+      copiedDialog,
+      copiedDialog?.firstElementChild,
+      copiedDialog?.querySelector('[aria-label="Скопіювати всі 3 значення"]'),
+      copiedDialog?.querySelector('ul'),
     ].map(getGeometry);
     expect(geometryAfterCopy).toEqual(geometryBeforeCopy);
 
@@ -1098,9 +1107,9 @@ describe('MRT rendered overflow components', () => {
         ?.click(),
     );
     await act(async () => Promise.resolve());
-    expect(document.body.querySelector('[role="status"]')?.textContent).toBe(
-      'Не вдалося скопіювати',
-    );
+    const failureStatus = document.body.querySelector<HTMLElement>('[role="status"]');
+    expect(failureStatus?.textContent).toBe('Не вдалося скопіювати');
+    expect(failureStatus?.getAttribute('aria-live')).toBe('polite');
     destroy(failureView);
   });
 

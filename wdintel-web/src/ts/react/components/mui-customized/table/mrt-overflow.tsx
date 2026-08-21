@@ -508,32 +508,34 @@ function MrtOverflowDisclosureSurface<T>({
             }}
           >
             <Typography variant="subtitle2">Додаткові значення ({hiddenCount})</Typography>
-            <Tooltip
-              title="Скопіювати всі значення"
-              placement="top-end"
-              slotProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.tooltip + 2 } } }}
-            >
-              <PowerIconButton
-                size="small"
-                aria-label={`Скопіювати всі ${formatValueCount(items.length)}`}
-                onClick={copyAllItems}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography
+                role="status"
+                aria-live="polite"
+                variant="caption"
+                sx={{ minWidth: '11rem', textAlign: 'right' }}
               >
-                <ContentCopyOutlinedIcon fontSize="inherit" />
-              </PowerIconButton>
-            </Tooltip>
+                {copyStatus === 'success'
+                  ? 'Скопійовано'
+                  : copyStatus === 'failure'
+                    ? 'Не вдалося скопіювати'
+                    : ''}
+              </Typography>
+              <Tooltip
+                title="Скопіювати всі значення"
+                placement="top-end"
+                slotProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.tooltip + 2 } } }}
+              >
+                <PowerIconButton
+                  size="small"
+                  aria-label={`Скопіювати всі ${formatValueCount(items.length)}`}
+                  onClick={copyAllItems}
+                >
+                  <ContentCopyOutlinedIcon fontSize="inherit" />
+                </PowerIconButton>
+              </Tooltip>
+            </Box>
           </Box>
-          <Typography
-            role="status"
-            aria-live="polite"
-            variant="caption"
-            sx={{ px: 1, pt: 0.5, minHeight: 22 }}
-          >
-            {copyStatus === 'success'
-              ? 'Скопійовано'
-              : copyStatus === 'failure'
-                ? 'Не вдалося скопіювати'
-                : ''}
-          </Typography>
           <Box
             component={disclosureLayout === 'list' ? 'ul' : 'div'}
             data-mrt-overflow-disclosure-body=""

@@ -488,8 +488,22 @@ test.describe('Analysis Neo MRT overflow @smoke', () => {
     const dialog = page.getByRole('dialog', { name: 'Додаткові значення' });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Додаткові значення (2)', { exact: true })).toBeVisible();
+    const body = dialog.locator('[data-mrt-overflow-disclosure-body]');
     const copyAll = dialog.getByRole('button', { name: 'Скопіювати всі 3 значення' });
     await expect(copyAll).toHaveCount(1);
+    const header = copyAll.locator('xpath=../..');
+    const status = header.getByRole('status');
+    await expect(status).toHaveText('');
+    await expect(status.locator('xpath=following-sibling::*[1]')).toHaveAttribute(
+      'aria-label',
+      'Скопіювати всі 3 значення',
+    );
+    expect(
+      await body.evaluate(
+        (element, headerElement) => element.previousElementSibling === headerElement,
+        await header.elementHandle(),
+      ),
+    ).toBe(true);
     await copyAll.hover();
     const copyTooltip = page.getByRole('tooltip', { name: 'Скопіювати всі значення' });
     await expect(copyTooltip).toBeVisible();
@@ -522,7 +536,7 @@ test.describe('Analysis Neo MRT overflow @smoke', () => {
     expect(tooltipGeometry.paper).not.toBeNull();
     expect(tooltipGeometry.tooltip.width).toBeGreaterThan(0);
     await copyAll.click();
-    await expect(dialog.getByRole('status')).toHaveText('Скопійовано');
+    await expect(status).toHaveText('Скопійовано');
     await expect
       .poll(() =>
         page.evaluate(
