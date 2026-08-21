@@ -710,7 +710,7 @@ fn non_empty_comment_exists() -> SimpleExpr {
     let subquery = intel_product::Entity::find()
         .select_only()
         .expr(Expr::value(1))
-        .filter(intel_product::Column::RelationKind.is_in([
+        .filter(intel_product::relation_kind_is_in([
             intel_product::RELATION_KIND_COMMENT,
             intel_product::RELATION_KIND_REPORT,
         ]))
