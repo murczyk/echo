@@ -5,6 +5,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PowerSnackbarProvider } from '../../../components/PowerSnackbar';
 import { ANALYSIS_NARROW_MAP_HEIGHT, AnalysisMapPane } from './AnalysisMapPane';
 
 function buildProps(
@@ -89,6 +90,27 @@ describe('AnalysisMapPane', () => {
 
     const map = container.querySelector('analysis-map');
     expect(map?.getAttribute('overlay-controls-collapsed')).toBe('true');
+  });
+
+  it('shows Delta KML loading failures in a toast', async () => {
+    await act(async () => {
+      root.render(
+        <PowerSnackbarProvider>
+          <AnalysisMapPane {...buildProps()} />
+        </PowerSnackbarProvider>,
+      );
+    });
+
+    const map = container.querySelector('analysis-map');
+    await act(async () => {
+      map?.dispatchEvent(
+        new CustomEvent('delta-kml-load-error', {
+          detail: { message: 'HTTP 500' },
+        }),
+      );
+    });
+
+    expect(document.body.textContent).toContain('Не вдалося завантажити шар Delta KML: HTTP 500');
   });
 
   it('exposes a loading state while map messages are being fetched', async () => {

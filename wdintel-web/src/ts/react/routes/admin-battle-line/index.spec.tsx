@@ -186,7 +186,7 @@ describe('AdminBattleLinePage', () => {
     await setInputValue(idInput, '42');
     await act(async () => button('Перевірити').click());
     await vi.waitFor(() => expect(container.textContent).toContain('У location_v2 немає локацій'));
-    expect(api.testBattleLine).toHaveBeenCalledWith('42');
+    expect(api.testBattleLine).toHaveBeenCalledWith({ inboxItemId: '42', messageUid: null });
 
     vi.stubGlobal(
       'confirm',
@@ -210,12 +210,18 @@ describe('AdminBattleLinePage', () => {
   it('searches for a Battle Line test message by message UID', async () => {
     await renderPage();
     api.testBattleLine.mockResolvedValueOnce(testResponse());
+    await act(async () => button('UID').click());
     const idInput = container.querySelector('input:not([type="file"])');
     if (!(idInput instanceof HTMLInputElement)) throw new Error('ID input not found');
     await setInputValue(idInput, 'signal-message-uid');
     await act(async () => button('Перевірити').click());
 
-    await vi.waitFor(() => expect(api.testBattleLine).toHaveBeenCalledWith('signal-message-uid'));
+    await vi.waitFor(() =>
+      expect(api.testBattleLine).toHaveBeenCalledWith({
+        inboxItemId: null,
+        messageUid: 'signal-message-uid',
+      }),
+    );
   });
 
   it('ignores a pending test response and reports an upload refresh failure', async () => {

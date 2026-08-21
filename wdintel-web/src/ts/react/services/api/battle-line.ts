@@ -1,6 +1,7 @@
 import type {
   BattleLineAdminPageReq,
   BattleLineState,
+  BattleLineTestReq,
   BattleLineTestRsp,
   BattleLineUnlinkedInboxRsp,
   BattleLineUnresolvedLocationsRsp,
@@ -24,14 +25,10 @@ export async function uploadBattleLine(
 }
 
 export async function testBattleLine(
-  inboxItemId: string,
+  req: BattleLineTestReq,
   options?: RequestOptions,
 ): Promise<BattleLineTestRsp> {
-  const raw = await postJson<unknown>(
-    '/api/battle-line/test',
-    transformCamelToSnake({ inboxItemId }),
-    options,
-  );
+  const raw = await postJson<unknown>('/api/battle-line/test', transformCamelToSnake(req), options);
   return transformSnakeToCamel<BattleLineTestRsp>(raw);
 }
 

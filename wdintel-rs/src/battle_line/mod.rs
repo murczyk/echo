@@ -24,7 +24,7 @@ use log::warn;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub mod cleanup;
 pub mod oneoff;
@@ -198,13 +198,16 @@ pub async fn test_battle_line(
 ) -> Result<Json<BattleLineTestRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     ensure_active_battle_line(&env.dbx).await.c(h!())?;
-    let inbox_item_id =
-        resolve_test_inbox_item_id(&env.dbx, req.inbox_item_id.trim())
-            .await
-            .c(h!())?;
-    let Some(inbox_item_id) = inbox_item_id else {
+    let inbox_item_ids = resolve_test_inbox_item_ids(
+        &env.dbx,
+        req.inbox_item_id.as_deref(),
+        req.message_uid.as_deref(),
+    )
+    .await
+    .c(h!())?;
+    if inbox_item_ids.is_empty() {
         return Err(AppError::NotFound);
-    };
+    }
     let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
     let organism_logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
@@ -213,16 +216,23 @@ pub async fn test_battle_line(
         highlight_points: Some(true),
         ..Default::default()
     };
-    let mut messages = crate::rer_importer::inbox::messages_by_id_bl(
+    let messages = crate::rer_importer::inbox::messages_by_id_bl(
         &login_id,
         &organism_logins,
         &env,
-        &[inbox_item_id],
+        &inbox_item_ids,
         &inbox_req,
     )
     .await
     .c(h!())?;
-    let Some((_, message)) = messages.pop() else {
+    let mut messages = messages.into_iter().collect::<BTreeMap<_, _>>();
+    let Some((inbox_item_id, message)) =
+        inbox_item_ids.into_iter().find_map(|inbox_item_id| {
+            messages
+                .remove(&inbox_item_id)
+                .map(|message| (inbox_item_id, message))
+        })
+    else {
         return Err(AppError::NotFound);
     };
     let location_v2 = sigint_inbox_item::Entity::find_by_id(inbox_item_id)
@@ -270,26 +280,41 @@ pub async fn test_battle_line(
     }))
 }
 
-async fn resolve_test_inbox_item_id<C>(
+async fn resolve_test_inbox_item_ids<C>(
     dbx: &C,
-    input: &str,
-) -> anyhow::Result<Option<i64>>
+    inbox_item_id: Option<&str>,
+    message_uid: Option<&str>,
+) -> anyhow::Result<Vec<i64>>
 where
     C: ConnectionTrait,
 {
-    if let Ok(inbox_item_id) = input.parse::<i64>() {
-        return Ok(Some(inbox_item_id));
+    let message_uid = match (inbox_item_id, message_uid) {
+        (Some(inbox_item_id), None) => {
+            return Ok(inbox_item_id
+                .trim()
+                .parse::<i64>()
+                .ok()
+                .into_iter()
+                .collect());
+        }
+        (None, Some(message_uid)) => message_uid.trim(),
+        _ => return Ok(vec![]),
+    };
+    if message_uid.is_empty() {
+        return Ok(vec![]);
     }
     sigint_inbox_item::Entity::find()
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
-        .filter(signal_message::Column::MessageUid.eq(input))
+        .filter(signal_message::Column::MessageUid.eq(message_uid))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .order_by_desc(sigint_inbox_item::Column::Id)
         .select_only()
         .column(sigint_inbox_item::Column::Id)
         .into_tuple::<i64>()
-        .one(dbx)
+        .all(dbx)
         .await
         .c(h!())
 }
@@ -1877,24 +1902,82 @@ mod tests {
         .insert(&txn)
         .await
         .unwrap();
+        let newer_message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(newer_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let deleted_message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(deleted_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let numeric_message_uid = i64::MAX.to_string();
+        let numeric_uid_message = signal_message::ActiveModel {
+            message_uid: Set(Some(numeric_message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(numeric_uid_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
 
         assert_eq!(
-            resolve_test_inbox_item_id(&txn, &message.id.to_string())
-                .await
-                .unwrap(),
-            Some(message.id)
+            resolve_test_inbox_item_ids(
+                &txn,
+                Some(&message.id.to_string()),
+                None
+            )
+            .await
+            .unwrap(),
+            vec![message.id]
         );
         assert_eq!(
-            resolve_test_inbox_item_id(&txn, &message_uid)
+            resolve_test_inbox_item_ids(&txn, None, Some(&message_uid))
                 .await
                 .unwrap(),
-            Some(message.id)
+            vec![newer_message.id, message.id]
         );
         assert_eq!(
-            resolve_test_inbox_item_id(&txn, "missing-battle-line-message-uid")
+            resolve_test_inbox_item_ids(&txn, None, Some(&numeric_message_uid))
                 .await
                 .unwrap(),
-            None
+            vec![numeric_uid_message.id]
+        );
+        assert_eq!(
+            resolve_test_inbox_item_ids(
+                &txn,
+                None,
+                Some("missing-battle-line-message-uid")
+            )
+            .await
+            .unwrap(),
+            Vec::<i64>::new()
         );
         txn.rollback().await.unwrap();
     }

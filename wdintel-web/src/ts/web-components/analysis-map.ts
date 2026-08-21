@@ -18,7 +18,7 @@ import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 import { AnalysisMapCoordMenuController } from './analysis-map/coord-menu-controller';
-import { loadDeltaKmlLayer } from './analysis-map/delta-kml-layer';
+import { loadDeltaKmlLayer, updateDeltaKmlLayerZoom } from './analysis-map/delta-kml-layer';
 import { initializeAnalysisMapControls } from './analysis-map/map-controls';
 import {
   patchMouseDownMapFocus,
@@ -128,6 +128,7 @@ class AnalysisMap extends HTMLElement {
   private static readonly _messagesPopupOpenRetryLimit = 3;
   private _handleMapViewChanged = () => {
     this._renderPelengLabelGroups();
+    this._updateDeltaKmlLayerZoom();
   };
   private _handleFocusPalitrasRequest = (palitraIds: number[]) => {
     this._palitraManager?.fitPalitras(palitraIds);
@@ -964,6 +965,7 @@ class AnalysisMap extends HTMLElement {
     if (!this._map || !this._deltaKmlEnabled) return;
     if (this._deltaKmlLayer) {
       this._deltaKmlLayer.addTo(this._map);
+      this._updateDeltaKmlLayerZoom();
       return;
     }
     if (this._deltaKmlLoading) {
@@ -977,9 +979,20 @@ class AnalysisMap extends HTMLElement {
         this._deltaKmlLayer = layer;
         if (layer && this._map && this._deltaKmlEnabled) {
           layer.addTo(this._map);
+          this._updateDeltaKmlLayerZoom();
         }
       } catch (error) {
         console.error('Failed to load Delta KML', error);
+        this.dispatchEvent(
+          new CustomEvent('delta-kml-load-error', {
+            detail: {
+              message:
+                error instanceof Error && error.message.trim() ? error.message : 'Невідома помилка',
+            },
+            bubbles: true,
+            composed: true,
+          }),
+        );
       } finally {
         this._deltaKmlLoading = null;
       }
@@ -994,6 +1007,12 @@ class AnalysisMap extends HTMLElement {
       return;
     }
     void this._loadDeltaKmlLayer();
+  }
+
+  private _updateDeltaKmlLayerZoom(): void {
+    if (this._deltaKmlLayer && this._map) {
+      updateDeltaKmlLayerZoom(this._deltaKmlLayer, this._map);
+    }
   }
 
   private _handleVisiblePalitraIdsChange(visibleIds: number[]): void {

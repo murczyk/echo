@@ -187,7 +187,11 @@ function parseFeaturesState(input: unknown): AnalysisMapFeaturesState {
   const record = isRecord(input) ? input : {};
   return {
     palitras: readBool(record, 'palitras', DEFAULT_FEATURES_STATE.palitras),
-    deltaKml: readBool(record, 'deltaKml', DEFAULT_FEATURES_STATE.deltaKml),
+    deltaKml: readBool(
+      record,
+      'deltaKml',
+      readBool(record, 'kmz', DEFAULT_FEATURES_STATE.deltaKml),
+    ),
     pelengs: readBool(record, 'pelengs', DEFAULT_FEATURES_STATE.pelengs),
   };
 }

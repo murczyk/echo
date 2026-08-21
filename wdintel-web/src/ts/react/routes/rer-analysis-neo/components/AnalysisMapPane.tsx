@@ -1,6 +1,7 @@
 import { Box } from '@mui/material';
 import { createElement, useEffect, useRef, useState } from 'react';
 
+import { useOptionalPowerSnackbar } from '../../../components/PowerSnackbar';
 import type { AnalysisMapAttrs } from '../types';
 
 type Props = {
@@ -29,6 +30,7 @@ export function AnalysisMapPane({
   onUnitClick,
   onShowSettlementsChange = async () => undefined,
 }: Props) {
+  const { notify } = useOptionalPowerSnackbar();
   const hostRef = useRef<HTMLElement | null>(null);
   const [renderedVisible, setRenderedVisible] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -127,6 +129,13 @@ export function AnalysisMapPane({
       const show = (event as CustomEvent<{ show: boolean }>).detail?.show === true;
       void onShowSettlementsChange(show);
     };
+    const handleDeltaKmlLoadError = (event: Event) => {
+      const message = (event as CustomEvent<{ message?: string }>).detail?.message;
+      notify({
+        severity: 'error',
+        message: `Не вдалося завантажити шар Delta KML${message ? `: ${message}` : ''}`,
+      });
+    };
 
     host.addEventListener('date-range-changed', handleDateRangeChange as EventListener);
     host.addEventListener('load-messages-description', handleLoadMessages as EventListener);
@@ -136,6 +145,7 @@ export function AnalysisMapPane({
     );
     host.addEventListener('message-unit-clicked', handleUnitClick as EventListener);
     host.addEventListener('show-settlements-change', handleShowSettlementsChange as EventListener);
+    host.addEventListener('delta-kml-load-error', handleDeltaKmlLoadError as EventListener);
 
     return () => {
       host.removeEventListener('date-range-changed', handleDateRangeChange as EventListener);
@@ -149,8 +159,10 @@ export function AnalysisMapPane({
         'show-settlements-change',
         handleShowSettlementsChange as EventListener,
       );
+      host.removeEventListener('delta-kml-load-error', handleDeltaKmlLoadError as EventListener);
     };
   }, [
+    notify,
     onDateRangeChange,
     onLoadMessages,
     onLoadSettlementMessages,

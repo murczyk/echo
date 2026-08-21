@@ -1241,7 +1241,8 @@ export type BattleLineState = {
 };
 
 export type BattleLineTestReq = {
-  inboxItemId: string;
+  inboxItemId: string | null;
+  messageUid: string | null;
 };
 
 export type BattleLineSettlementCandidate = {

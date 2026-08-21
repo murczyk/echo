@@ -3,6 +3,9 @@ import * as L from 'leaflet';
 
 const DELTA_KML_URL = '/api/delta/kml/latest';
 const EMPTY_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+const DELTA_KML_DETAILS_MIN_ZOOM = 11;
+const DELTA_KML_DETAILS_SMALL_MAP_MIN_ZOOM = 10;
+const DELTA_KML_SMALL_MAP_MAX_WIDTH = 250;
 
 export async function loadDeltaKmlLayer(): Promise<L.GeoJSON | null> {
   const response = await fetch(DELTA_KML_URL);
@@ -23,6 +26,7 @@ function createDeltaKmlLayer(geojson: GeoJSON.GeoJsonObject): L.GeoJSON {
     pointToLayer: (feature, latlng) => {
       const icon = feature.properties?.icon;
       return L.marker(latlng, {
+        opacity: 0,
         icon: L.icon({
           iconUrl: typeof icon === 'string' && icon ? icon : EMPTY_ICON,
           iconSize: [17, 17],
@@ -30,16 +34,7 @@ function createDeltaKmlLayer(geojson: GeoJSON.GeoJsonObject): L.GeoJSON {
         }),
       });
     },
-    style: (feature) => {
-      const properties = feature?.properties ?? {};
-      return {
-        color: stringProperty(properties, 'stroke'),
-        fillColor: stringProperty(properties, 'fill') ?? stringProperty(properties, 'stroke'),
-        fillOpacity: numberProperty(properties, 'fill-opacity'),
-        opacity: numberProperty(properties, 'stroke-opacity') ?? 0.3,
-        weight: numberProperty(properties, 'stroke-width'),
-      };
-    },
+    style: deltaKmlStyle,
     onEachFeature: (feature, layer) => {
       const name = feature.properties?.name;
       if (typeof name === 'string' && name) {
@@ -48,10 +43,41 @@ function createDeltaKmlLayer(geojson: GeoJSON.GeoJsonObject): L.GeoJSON {
         layer.bindTooltip(label, {
           permanent: true,
           direction: 'center',
+          opacity: 0,
         });
       }
     },
   });
+}
+
+export function updateDeltaKmlLayerZoom(layer: L.GeoJSON, map: L.Map): void {
+  const minZoom =
+    map.getSize().x > DELTA_KML_SMALL_MAP_MAX_WIDTH
+      ? DELTA_KML_DETAILS_MIN_ZOOM
+      : DELTA_KML_DETAILS_SMALL_MAP_MIN_ZOOM;
+  const showDetails = map.getZoom() >= minZoom;
+  layer.eachLayer((featureLayer) => {
+    if (featureLayer instanceof L.Marker) {
+      featureLayer.setOpacity(showDetails ? 1 : 0);
+    }
+    featureLayer.getTooltip()?.setOpacity(showDetails ? 0.9 : 0);
+  });
+}
+
+function deltaKmlStyle(feature?: GeoJSON.Feature): L.PathOptions {
+  const properties = feature?.properties ?? {};
+  const style: L.PathOptions = {
+    opacity: numberProperty(properties, 'stroke-opacity') ?? 0.3,
+  };
+  const color = stringProperty(properties, 'stroke');
+  const fillColor = stringProperty(properties, 'fill') ?? color;
+  const fillOpacity = numberProperty(properties, 'fill-opacity');
+  const weight = numberProperty(properties, 'stroke-width');
+  if (color !== undefined) style.color = color;
+  if (fillColor !== undefined) style.fillColor = fillColor;
+  if (fillOpacity !== undefined) style.fillOpacity = fillOpacity;
+  if (weight !== undefined) style.weight = weight;
+  return style;
 }
 
 function stringProperty(properties: GeoJSON.GeoJsonProperties, name: string): string | undefined {
