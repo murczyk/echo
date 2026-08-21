@@ -23,6 +23,7 @@ export function CallsignChip({
 }: {
   entry: AnalysisSummaryTableRowView['callsignChips'][number];
 }) {
+  const tooltipText = entry.tooltip ?? entry.callsign.toUpperCase();
   const hintIcon =
     entry.iconClass === 'info-circle-fill' ? (
       <InfoIcon fontSize="inherit" />
@@ -56,13 +57,12 @@ export function CallsignChip({
       }
       tone={entry.tooltip ? 'primary' : 'neutral'}
       selected={entry.isHighlighted}
-      title={entry.tooltip ?? entry.callsign.toUpperCase()}
       className="max-w-full min-w-0 cursor-default"
     />
   );
 
   return (
-    <Tooltip describeChild title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
+    <Tooltip describeChild title={<span>{tooltipText}</span>} placement="top">
       <span
         tabIndex={0}
         style={{ display: 'inline-flex', minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}

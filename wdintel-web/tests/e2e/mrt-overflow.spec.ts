@@ -510,6 +510,8 @@ test.describe('Analysis Neo MRT overflow @smoke', () => {
       .first();
     const hiddenCallsignTooltip = page.getByRole('tooltip', { name: hidden[0] });
     await expect(hiddenCallsignChip).toBeVisible();
+    await expect(hiddenCallsignChip).not.toHaveAttribute('title');
+    await expect(hiddenCallsignChip.locator('.echo-chip')).not.toHaveAttribute('title');
     const beforeCallsignTooltip = {
       paper: await readRect(dialog),
       header: await readRect(header),
