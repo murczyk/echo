@@ -18,6 +18,7 @@ use crate::rer_importer::inbox::query::{
     inbox_results_reverse_query_order,
 };
 use crate::rer_importer::signals::*;
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::storage::mk_media_url;
 use crate::types::*;
 use crate::utils::string::*;
@@ -805,8 +806,8 @@ pub async fn aggregate_to_inbox_messages(
     if let Some(selected_senders) = req.selected_senders.as_ref() {
         if !selected_senders.is_empty() {
             group_query = group_query.filter(
-                signal_message_group::Column::Sender
-                    .eq_any(selected_senders.clone()),
+                preferred_group_sender_expr(None)
+                    .is_in(selected_senders.clone()),
             );
         }
     }

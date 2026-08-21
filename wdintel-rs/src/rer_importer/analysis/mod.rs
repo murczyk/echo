@@ -13,6 +13,7 @@ use crate::rer_importer::report_chunking::{
     report_period_chunks, ReportPeriodEnd,
 };
 use crate::sigint::aor::bl::collect_group_aors;
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::types::*;
 use crate::users::{
     ensure_rer_role, ensure_rer_role_by_id, has_any_role, has_role,
@@ -273,7 +274,7 @@ fn message_in_groups_with_senders_exists(
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(keys.to_vec()),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+        .filter(preferred_group_sender_expr(None).is_in(senders.to_vec()));
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,
@@ -354,7 +355,7 @@ fn message_has_sender_in_groups_exists(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(allowed_groups.to_vec()),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+        .filter(preferred_group_sender_expr(None).is_in(senders.to_vec()));
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,
@@ -385,7 +386,7 @@ fn message_has_sender_exists(
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+        .filter(preferred_group_sender_expr(None).is_in(senders.to_vec()));
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,

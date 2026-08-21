@@ -1,6 +1,7 @@
 use crate::config::ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT;
 use crate::rer_importer::types::SenderFrequencyBreakdown;
 use crate::sigint::network::types::NetworkCallsignRelationMessage;
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::types::ShortContext;
 use crate::types::{debug, warn};
 use crate::users::login_id_from_identity;
@@ -853,8 +854,7 @@ where
         .filter(|senders| !senders.is_empty())
     {
         Some(selected_senders) => query.filter(
-            signal_message_group::Column::Sender
-                .eq_any(selected_senders.clone()),
+            preferred_group_sender_expr(None).is_in(selected_senders.clone()),
         ),
         None => query,
     }
@@ -915,7 +915,7 @@ where
         .filter(|senders| !senders.is_empty())
     {
         query = query.filter(
-            Expr::col((access_alias, signal_message_group::Column::Sender))
+            preferred_group_sender_expr(Some("analytics_message_access"))
                 .is_in(selected_senders.clone()),
         );
     }
@@ -1609,7 +1609,7 @@ pub(super) fn build_sender_breakdown_query(
     let breakdown_query =
         build_join_for_sender_stats(&sender_stats_groups, scope)
             .select_only()
-            .column_as(signal_message_group::Column::Sender, "uuid")
+            .column_as(preferred_group_sender_expr(None), "uuid")
             .column(sigint_inbox_item::Column::Freq)
             .column(sigint_inbox_item::Column::PostId)
             .column_as(per_day_expr.clone(), "date")
@@ -1619,7 +1619,7 @@ pub(super) fn build_sender_breakdown_query(
             )
             .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
             .filter(sigint_inbox_item::Column::Datetime.lt(dt_till))
-            .group_by(signal_message_group::Column::Sender)
+            .group_by(preferred_group_sender_expr(None))
             .group_by(sigint_inbox_item::Column::Freq)
             .group_by(sigint_inbox_item::Column::PostId)
             .group_by(per_day_expr);
@@ -1693,15 +1693,8 @@ pub(super) async fn count_senders_with_db(
         scope,
         units.as_deref(),
     )?;
-    count_distinct_with_db(
-        senders_res,
-        Expr::col((
-            signal_message_group::Entity,
-            signal_message_group::Column::Sender,
-        )),
-        db,
-    )
-    .await
+    count_distinct_with_db(senders_res, preferred_group_sender_expr(None), db)
+        .await
 }
 
 fn build_senders_filtered_query(
@@ -1829,8 +1822,7 @@ fn apply_sender_dimension_filters(
         .filter(|senders| !senders.is_empty())
     {
         Some(selected_senders) => query.filter(
-            signal_message_group::Column::Sender
-                .eq_any(selected_senders.clone()),
+            preferred_group_sender_expr(None).is_in(selected_senders.clone()),
         ),
         None => query,
     }
