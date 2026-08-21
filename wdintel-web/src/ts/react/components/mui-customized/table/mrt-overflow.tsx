@@ -110,6 +110,7 @@ type OverflowItemsProps<T> = {
 
 type ItemMeasurements = {
   signature: string;
+  measuredItemCount: number;
   itemWidths: number[];
   triggerWidths: number[];
   itemGap: number;
@@ -279,12 +280,10 @@ function queueMeasurementJob(
   }
 }
 
-function completeMeasurementJob(ownerId: string) {
-  const job = [...activeMeasurementJobs.values()].find(
-    (candidate) => candidate.ownerId === ownerId,
-  );
-  if (!job) return;
-  activeMeasurementJobs.delete(job.cacheKey);
+function completeMeasurementJob(ownerId: string, cacheKey: string) {
+  const job = activeMeasurementJobs.get(cacheKey);
+  if (!job || job.ownerId !== ownerId) return;
+  activeMeasurementJobs.delete(cacheKey);
   job.ownerId = null;
   job.subscribers.forEach((subscriber) => subscriber.resolve());
   if (visibleMeasurementJobs.size > 0 && !isDrainingMeasurementJobs && !cancelMeasurementDrain) {
@@ -292,12 +291,10 @@ function completeMeasurementJob(ownerId: string) {
   }
 }
 
-function failMeasurementOwner(ownerId: string) {
-  const job = [...activeMeasurementJobs.values()].find(
-    (candidate) => candidate.ownerId === ownerId,
-  );
-  if (!job) return;
-  activeMeasurementJobs.delete(job.cacheKey);
+function failMeasurementOwner(ownerId: string, cacheKey: string) {
+  const job = activeMeasurementJobs.get(cacheKey);
+  if (!job || job.ownerId !== ownerId) return;
+  activeMeasurementJobs.delete(cacheKey);
   job.ownerId = null;
   job.failedSubscriberIds.add(ownerId);
   if (job.subscribers.size === 0) return;
@@ -312,12 +309,12 @@ function failMeasurementOwner(ownerId: string) {
   }
 }
 
-function cancelMeasurementSubscriber(subscriberId: string) {
-  const pendingJob = [
-    ...visibleMeasurementJobs.values(),
-    ...deferredMeasurementJobs.values(),
-    ...parkedMeasurementJobs.values(),
-  ].find((job) => job.subscribers.has(subscriberId));
+function cancelMeasurementSubscriber(subscriberId: string, cacheKey: string) {
+  const pendingJob =
+    visibleMeasurementJobs.get(cacheKey) ??
+    deferredMeasurementJobs.get(cacheKey) ??
+    parkedMeasurementJobs.get(cacheKey);
+  if (pendingJob && !pendingJob.subscribers.has(subscriberId)) return;
   pendingJob?.subscribers.delete(subscriberId);
   pendingJob?.failedSubscriberIds.delete(subscriberId);
   if (pendingJob && pendingJob.subscribers.size === 0) {
@@ -325,10 +322,8 @@ function cancelMeasurementSubscriber(subscriberId: string) {
     deferredMeasurementJobs.delete(pendingJob.cacheKey);
     parkedMeasurementJobs.delete(pendingJob.cacheKey);
   }
-  const activeJob = [...activeMeasurementJobs.values()].find((candidate) =>
-    candidate.subscribers.has(subscriberId),
-  );
-  if (!activeJob) return;
+  const activeJob = activeMeasurementJobs.get(cacheKey);
+  if (!activeJob || !activeJob.subscribers.has(subscriberId)) return;
   activeJob.subscribers.delete(subscriberId);
   activeJob.failedSubscriberIds.delete(subscriberId);
   if (activeJob.ownerId !== subscriberId) return;
@@ -485,10 +480,10 @@ export function MrtOverflowItems<T>({
     [items.length],
   );
 
-  const updateVisibleCount = useCallback((measurements: ItemMeasurements) => {
+  const getVisibleCount = useCallback((measurements: ItemMeasurements) => {
     const container = containerRef.current;
-    if (!container || container.clientWidth <= 0) return;
-    const nextCount = calculateVisibleItemCount({
+    if (!container || container.clientWidth <= 0) return null;
+    return calculateVisibleItemCount({
       itemWidths: measurements.itemWidths,
       contentWidth: container.clientWidth,
       triggerWidths: measurements.triggerWidths,
@@ -496,20 +491,47 @@ export function MrtOverflowItems<T>({
       triggerGap: measurements.triggerGap,
       spacerWidth: measurements.spacerWidth,
     });
-    layoutSignatureRef.current = measurements.signature;
-    setVisibleCount((current) => (current === nextCount ? current : nextCount));
   }, []);
+
+  const updateVisibleCount = useCallback(
+    (measurements: ItemMeasurements) => {
+      const nextCount = getVisibleCount(measurements);
+      if (nextCount == null) return null;
+      layoutSignatureRef.current = measurements.signature;
+      setVisibleCount((current) => (current === nextCount ? current : nextCount));
+      return nextCount;
+    },
+    [getVisibleCount],
+  );
 
   const startMeasurement = useCallback(() => {
     const cachedMeasurements = readMeasurementCache(cacheKey);
     if (cachedMeasurements?.signature === measurementSignature) {
       measurementsRef.current = cachedMeasurements;
-      updateVisibleCount(cachedMeasurements);
-      completeMeasurementJob(measurementJobId);
-      return;
+      const cachedVisibleCount = getVisibleCount(cachedMeasurements);
+      if (
+        cachedMeasurements.measuredItemCount === items.length ||
+        cachedVisibleCount == null ||
+        cachedVisibleCount < cachedMeasurements.measuredItemCount
+      ) {
+        updateVisibleCount(cachedMeasurements);
+        completeMeasurementJob(measurementJobId, cacheKey);
+        return;
+      }
+      setMeasurementBatch({
+        start: cachedMeasurements.measuredItemCount,
+        end: Math.min(cachedMeasurements.measuredItemCount + MAX_MEASURED_ITEMS, items.length),
+      });
     }
     setIsMeasuring(true);
-  }, [cacheKey, measurementJobId, measurementSignature, updateVisibleCount]);
+  }, [
+    cacheKey,
+    getVisibleCount,
+    items.length,
+    measurementJobId,
+    measurementSignature,
+    updateVisibleCount,
+  ]);
 
   const resolveMeasurement = useCallback(() => {
     const cachedMeasurements = measurementsRef.current ?? readMeasurementCache(cacheKey);
@@ -524,8 +546,15 @@ export function MrtOverflowItems<T>({
     const cachedMeasurements = measurementsRef.current ?? readMeasurementCache(cacheKey);
     if (cachedMeasurements?.signature === measurementSignature) {
       measurementsRef.current = cachedMeasurements;
-      updateVisibleCount(cachedMeasurements);
-      return;
+      const cachedVisibleCount = getVisibleCount(cachedMeasurements);
+      if (
+        cachedMeasurements.measuredItemCount === items.length ||
+        cachedVisibleCount == null ||
+        cachedVisibleCount < cachedMeasurements.measuredItemCount
+      ) {
+        updateVisibleCount(cachedMeasurements);
+        return;
+      }
     }
     queueMeasurementJob(
       measurementJobId,
@@ -536,6 +565,7 @@ export function MrtOverflowItems<T>({
     );
   }, [
     cacheKey,
+    getVisibleCount,
     isVisible,
     items.length,
     measurementBatch.end,
@@ -554,13 +584,13 @@ export function MrtOverflowItems<T>({
     const measuredItems = measureRef.current?.children;
     if (items.length === 0 || !container || !measuredItems) {
       setIsMeasuring(false);
-      failMeasurementOwner(measurementJobId);
+      failMeasurementOwner(measurementJobId, cacheKey);
       return;
     }
     const availableWidth = container.clientWidth;
     if (availableWidth <= 0) {
       setIsMeasuring(false);
-      failMeasurementOwner(measurementJobId);
+      failMeasurementOwner(measurementJobId, cacheKey);
       return;
     }
     const measuredItemWidths = Array.from(measuredItems)
@@ -595,6 +625,7 @@ export function MrtOverflowItems<T>({
     const spacerWidth = spacerMeasureRef.current?.getBoundingClientRect().width ?? 0;
     const nextMeasurements = {
       signature: measurementSignature,
+      measuredItemCount: measurementBatch.end,
       itemWidths,
       triggerWidths,
       itemGap,
@@ -609,9 +640,9 @@ export function MrtOverflowItems<T>({
       triggerGap,
       spacerWidth,
     });
-    if (nextVisibleCount === measurementBatch.end && measurementBatch.end < items.length) {
-      layoutSignatureRef.current = measurementSignature;
-      setVisibleCount(nextVisibleCount);
+    if (nextVisibleCount >= measurementBatch.end && measurementBatch.end < items.length) {
+      measurementsRef.current = nextMeasurements;
+      writeMeasurementCache(cacheKey, nextMeasurements);
       setMeasurementBatch((current) => ({
         start: current.end,
         end: Math.min(current.end + MAX_MEASURED_ITEMS, items.length),
@@ -620,10 +651,10 @@ export function MrtOverflowItems<T>({
     } else {
       measurementsRef.current = nextMeasurements;
       writeMeasurementCache(cacheKey, nextMeasurements);
+      setIsMeasuring(false);
       updateVisibleCount(nextMeasurements);
     }
-    setIsMeasuring(false);
-    completeMeasurementJob(measurementJobId);
+    completeMeasurementJob(measurementJobId, cacheKey);
   }, [
     cacheKey,
     items.length,
@@ -639,7 +670,7 @@ export function MrtOverflowItems<T>({
   useLayoutEffect(() => {
     if (items.length === 0) {
       measurementsRef.current = null;
-      cancelMeasurementSubscriber(measurementJobId);
+      cancelMeasurementSubscriber(measurementJobId, cacheKey);
       setIsMeasuring(false);
       layoutSignatureRef.current = measurementSignature;
       setVisibleCount(0);
@@ -653,10 +684,15 @@ export function MrtOverflowItems<T>({
     const cachedMeasurements = readMeasurementCache(cacheKey);
     measurementsRef.current = cachedMeasurements ?? null;
     measuredWidthsRef.current =
-      cachedMeasurements?.itemWidths.filter((width) => width !== Number.MAX_SAFE_INTEGER) ?? [];
+      cachedMeasurements?.itemWidths.slice(0, cachedMeasurements.measuredItemCount) ?? [];
     layoutSignatureRef.current = measurementSignature;
+    setIsMeasuring(false);
     setVisibleCount(items.length === 0 ? 0 : 1);
-    setMeasurementBatch({ start: 0, end: Math.min(items.length, MAX_MEASURED_ITEMS) });
+    const measuredItemCount = cachedMeasurements?.measuredItemCount ?? 0;
+    setMeasurementBatch({
+      start: measuredItemCount,
+      end: Math.min(measuredItemCount + MAX_MEASURED_ITEMS, items.length),
+    });
   }, [cacheKey, items.length]);
 
   useLayoutEffect(() => {
@@ -665,30 +701,10 @@ export function MrtOverflowItems<T>({
     return observeMeasurementVisibility(element, (visible) => {
       setIsVisible(visible);
       if (visible && element.clientWidth > 0) {
-        const cachedMeasurements = measurementsRef.current ?? readMeasurementCache(cacheKey);
-        if (cachedMeasurements?.signature === measurementSignature) {
-          measurementsRef.current = cachedMeasurements;
-          updateVisibleCount(cachedMeasurements);
-          return;
-        }
-        queueMeasurementJob(
-          measurementJobId,
-          cacheKey,
-          startMeasurement,
-          'visible',
-          resolveMeasurement,
-        );
+        queueMeasurementRef.current();
       }
     });
-  }, [
-    cacheKey,
-    items.length,
-    measurementJobId,
-    measurementSignature,
-    resolveMeasurement,
-    startMeasurement,
-    updateVisibleCount,
-  ]);
+  }, [items.length]);
 
   useLayoutEffect(() => {
     queueMeasurement();
@@ -701,10 +717,10 @@ export function MrtOverflowItems<T>({
 
   useEffect(
     () => () => {
-      cancelMeasurementSubscriber(measurementJobId);
+      cancelMeasurementSubscriber(measurementJobId, cacheKey);
       cancelPendingFocusRestore();
     },
-    [measurementJobId],
+    [cacheKey, measurementJobId],
   );
 
   useEffect(() => {
