@@ -98,7 +98,11 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The importer downloads and unpacks the newest timestamped snapshot. It fails
 before starting if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers three workflows.
+PostgreSQL advisory lock. Linked-unit reconciliation keeps that advisory lock
+for the full run but commits each unit or duplicate component separately, so
+live message ingestion is not blocked behind the full reconciliation and an
+interrupted run can be restarted safely. The first screen offers three
+workflows.
 
 ### Sync ORBIT units and rebuild links
 
