@@ -56,8 +56,61 @@ const EMPTY_COORDINATES: MediaSummaryCoordinate[] = [];
 const SUMMARY_LOAD_ERROR = 'Не вдалося завантажити стислий опис';
 const SUMMARY_RETRY_ERROR = 'Не вдалося повторно запустити створення опису';
 
+export const MEDIA_SUMMARY_CACHE_LIMIT = 50;
+export const MEDIA_SUMMARY_LOCALITY_CACHE_LIMIT = 500;
 const summaryCache = new Map<string, MediaSummaryResult>();
 const localityCache = new Map<string, CoordinateLocality | null>();
+
+function getLruCacheValue<Value>(cache: Map<string, Value>, key: string): Value | undefined {
+  const cached = cache.get(key);
+  if (cached === undefined) return undefined;
+
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached;
+}
+
+function setLruCacheValue<Value>(
+  cache: Map<string, Value>,
+  key: string,
+  value: Value,
+  limit: number,
+): void {
+  cache.delete(key);
+  while (cache.size >= limit) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+  cache.set(key, value);
+}
+
+function summaryResultMatchesStatus(
+  result: MediaSummaryResult,
+  status: MediaSummaryStatus | null | undefined,
+): boolean {
+  const hasCoordinates = result.state === 'completed' && result.coordinates.length > 0;
+  return (
+    status != null &&
+    result.state === status.state &&
+    result.lastError === status.lastError &&
+    hasCoordinates === status.hasCoordinates
+  );
+}
+
+function getCompatibleCachedSummary(
+  cacheKey: string | null,
+  status: MediaSummaryStatus | null | undefined,
+): MediaSummaryResult | null {
+  if (cacheKey == null) return null;
+  const cached = getLruCacheValue(summaryCache, cacheKey) ?? null;
+  if (cached == null) return null;
+
+  if (summaryResultMatchesStatus(cached, status)) return cached;
+
+  summaryCache.delete(cacheKey);
+  return null;
+}
 
 export function clearMediaSummaryCache(
   mediaId?: string,
@@ -94,7 +147,7 @@ function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
   const [localities, setLocalities] = useState<Array<CoordinateLocality | null>>(() =>
     resolvedPoints.map((point) => {
       if (point == null) return null;
-      return localityCache.get(getLocalityCacheKey(point.lat, point.lng)) ?? null;
+      return getLruCacheValue(localityCache, getLocalityCacheKey(point.lat, point.lng)) ?? null;
     }),
   );
   const [loading, setLoading] = useState<boolean>(false);
@@ -105,7 +158,7 @@ function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
   useEffect(() => {
     const nextLocalities = resolvedPoints.map((point) => {
       if (point == null) return null;
-      return localityCache.get(getLocalityCacheKey(point.lat, point.lng)) ?? null;
+      return getLruCacheValue(localityCache, getLocalityCacheKey(point.lat, point.lng)) ?? null;
     });
 
     const missingPoints: Array<{ index: number; lat: number; lon: number }> = [];
@@ -137,7 +190,7 @@ function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
           const source = missingPoints[idx];
           if (source != null) {
             const key = getLocalityCacheKey(source.lat, source.lon);
-            localityCache.set(key, item.locality);
+            setLruCacheValue(localityCache, key, item.locality, MEDIA_SUMMARY_LOCALITY_CACHE_LIMIT);
             nextLocalities[source.index] = item.locality;
           }
         });
@@ -445,7 +498,7 @@ function useMediaSummaryResult({
 }) {
   const cacheKey = mediaId != null ? `${summaryAccess}:${mediaId}` : null;
   const [result, setResult] = useState<MediaSummaryResult | null>(() =>
-    cacheKey ? (summaryCache.get(cacheKey) ?? null) : null,
+    getCompatibleCachedSummary(cacheKey, status),
   );
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -459,7 +512,7 @@ function useMediaSummaryResult({
   useEffect(() => {
     refreshControllerRef.current?.abort();
     refreshControllerRef.current = null;
-    const cached = cacheKey ? (summaryCache.get(cacheKey) ?? null) : null;
+    const cached = getCompatibleCachedSummary(cacheKey, status);
     setResult(cached);
     setRefreshing(false);
     setRefreshError(null);
@@ -468,6 +521,13 @@ function useMediaSummaryResult({
       refreshControllerRef.current = null;
     };
   }, [cacheKey, mediaId, summaryAccess]);
+
+  useEffect(() => {
+    const cached = getCompatibleCachedSummary(cacheKey, status);
+    setResult((current) =>
+      current != null && summaryResultMatchesStatus(current, status) ? current : cached,
+    );
+  }, [cacheKey, status?.hasCoordinates, status?.lastError, status?.state]);
 
   const request = useCallback(
     async (quiet: boolean, requeue: boolean) => {
@@ -482,7 +542,9 @@ function useMediaSummaryResult({
           : await getMediaSummary(mediaId, { signal: controller.signal }, summaryAccess);
         if (controller.signal.aborted) return;
         if (nextResult.state === 'completed' || nextResult.state === 'failed') {
-          summaryCache.set(key, nextResult);
+          setLruCacheValue(summaryCache, key, nextResult, MEDIA_SUMMARY_CACHE_LIMIT);
+        } else {
+          summaryCache.delete(key);
         }
         setResult(nextResult);
         setRefreshError(null);
@@ -516,7 +578,7 @@ function useMediaSummaryResult({
   useEffect(() => {
     if (!enabled || !hasStatus) return;
     const key = mediaId != null ? `${summaryAccess}:${mediaId}` : null;
-    const cached = key ? summaryCache.get(key) : null;
+    const cached = getCompatibleCachedSummary(key, status);
     if (cached != null) {
       setResult(cached);
       onStatusChangeRef.current?.({
@@ -527,7 +589,17 @@ function useMediaSummaryResult({
     } else if (result == null) {
       void refresh(false);
     }
-  }, [enabled, hasStatus, mediaId, refresh, result, summaryAccess]);
+  }, [
+    enabled,
+    hasStatus,
+    mediaId,
+    refresh,
+    result,
+    status?.hasCoordinates,
+    status?.lastError,
+    status?.state,
+    summaryAccess,
+  ]);
 
   const state = result?.state ?? status?.state;
   useEffect(() => {
@@ -606,7 +678,7 @@ export function MessageCardMediaSummary({
               aria-label={state === 'failed' ? 'Повторити стислий опис' : 'Оновити стислий опис'}
               disabled={refreshing}
               onClick={() => void (state === 'failed' ? retry() : refresh(false))}
-              className="p-1! text-red-500! hover:bg-black/10 dark:hover:bg-white/10"
+              className="p-1! text-white! hover:bg-black/10 dark:hover:bg-white/10"
             >
               <RefreshIcon className="text-lg!" />
             </IconButton>
