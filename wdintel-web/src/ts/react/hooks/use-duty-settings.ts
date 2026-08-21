@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { DEFAULT_DUTY_TAGS_LAYOUT, type TagsLayoutVariant } from '../routes/rer-duty-neo/utils';
+import { DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS } from './duty-settings-defaults';
 import {
   USER_SETTINGS_UPDATED_EVENT,
   fetchUserSettings,
@@ -41,7 +42,8 @@ function normalizeDutySettings(
     showAnalysisCallsignAddForm: settings?.showAnalysisCallsignAddForm ?? false,
     showClassicDuty: settings?.showClassicDuty ?? false,
     showClassicAnalysis: settings?.showClassicAnalysis ?? false,
-    dutyCollapseMediaPreviews: settings?.dutyCollapseMediaPreviews ?? false,
+    dutyCollapseMediaPreviews:
+      settings?.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   };
 }
 
