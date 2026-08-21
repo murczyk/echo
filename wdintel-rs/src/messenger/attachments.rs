@@ -4,7 +4,7 @@ use echo_im::types::MessageAttachmentF1;
 use sea_orm::*;
 
 pub async fn load_latest_echo_attachment_batch(
-    txn: &DatabaseTransaction,
+    txn: &impl ConnectionTrait,
     datasource_id: i64,
     echo_inbox_message_id: i32,
 ) -> anyhow::Result<Option<Vec<MessageAttachmentF1>>> {
@@ -52,7 +52,7 @@ pub fn latest_attachment_batch_by_expected_count(
 }
 
 async fn datasource_echo_account_id(
-    txn: &DatabaseTransaction,
+    txn: &impl ConnectionTrait,
     datasource_id: i64,
 ) -> anyhow::Result<Option<i32>> {
     let Some(datasource) = datasource::Entity::find_by_id(datasource_id)

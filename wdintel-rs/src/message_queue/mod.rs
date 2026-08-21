@@ -1,7 +1,6 @@
 use crate::config::*;
 use crate::entities::*;
-use crate::messenger::dedupe;
-use crate::messenger::media::MediaUploadInput;
+use crate::messenger::media::{MediaUploadInput, StagedMediaAttachments};
 use crate::{
     location::SettlementsDataConfig, messenger::types::Message, types::*,
 };
@@ -68,26 +67,80 @@ pub async fn process_signal_message_queue_item_with_options(
     changed_inbox_item_ids: &mut Vec<i64>,
     options: ProcessSignalMessageQueueItemOptions,
 ) -> Result<ProcessSignalMessageQueueItemResult, AppError> {
+    let staged_media =
+        stage_queue_media(&attachments, config, s3).await.c(h!())?;
+    process_signal_message_queue_item_with_staged_media_and_options(
+        m,
+        &staged_media,
+        redis,
+        settlements,
+        rq,
+        config,
+        txn,
+        skip_process_inbox_item,
+        changed_inbox_item_ids,
+        options,
+    )
+    .await
+}
+
+pub async fn process_signal_message_queue_item_with_staged_media(
+    m: Message,
+    staged_media: &StagedMediaAttachments,
+    redis: &mut ConnectionManager,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
+    rq: &reqwest::Client,
+    config: &Config,
+    txn: &DatabaseTransaction,
+    skip_process_inbox_item: bool,
+    changed_inbox_item_ids: &mut Vec<i64>,
+) -> Result<ProcessSignalMessageQueueItemResult, AppError> {
+    process_signal_message_queue_item_with_staged_media_and_options(
+        m,
+        staged_media,
+        redis,
+        settlements,
+        rq,
+        config,
+        txn,
+        skip_process_inbox_item,
+        changed_inbox_item_ids,
+        ProcessSignalMessageQueueItemOptions::default(),
+    )
+    .await
+}
+
+pub async fn process_signal_message_queue_item_with_staged_media_and_options(
+    m: Message,
+    staged_media: &StagedMediaAttachments,
+    redis: &mut ConnectionManager,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
+    rq: &reqwest::Client,
+    config: &Config,
+    txn: &DatabaseTransaction,
+    skip_process_inbox_item: bool,
+    changed_inbox_item_ids: &mut Vec<i64>,
+    options: ProcessSignalMessageQueueItemOptions,
+) -> Result<ProcessSignalMessageQueueItemResult, AppError> {
     // Normalize body
     info!(
         "received message for processing: datasource_id={} inbox_message_id={:?} group_id_present={} attachments_count={}",
         m.datasource_id,
         m.inbox_message_id,
         !m.group_id.is_empty(),
-        attachments.len(),
+        staged_media.len(),
     );
     let body = m.body.replace("\r\n", "\n");
-    let attachment_paths: Vec<_> =
-        attachments.iter().map(|a| a.path.clone()).collect();
     info!(
-        "processing queue item: datasource_id={} attachments_count={} attachment_paths={:?}",
+        "processing queue item: datasource_id={} attachments_count={}",
         m.datasource_id,
-        attachments.len(),
-        attachment_paths
+        staged_media.len(),
     );
-    let attachments_hash = dedupe::attachments_hash(&attachments).await;
-    let body_for_dedupe =
-        dedupe::body_with_attachments_hash(&body, attachments_hash.as_deref());
+    let attachments_hash = staged_media.attachments_hash().map(str::to_string);
+    let body_for_dedupe = crate::messenger::dedupe::body_with_attachments_hash(
+        &body,
+        attachments_hash.as_deref(),
+    );
     let datasource_group_id =
         crate::messenger::group::ensure_datasource_group_id(
             txn,
@@ -143,10 +196,8 @@ pub async fn process_signal_message_queue_item_with_options(
         let uploaded_files_ready_for_deletion =
             store_kept_duplicate_trace_media(
                 txn,
-                config,
-                s3,
                 staged_signal_message_id,
-                &attachments,
+                staged_media,
             )
             .await
             .c(h!())?;
@@ -197,10 +248,10 @@ pub async fn process_signal_message_queue_item_with_options(
 
     let message_uid = signal_message.message_uid.clone().c(h!())?;
 
-    let uploaded_files_ready_for_deletion = if attachments.is_empty() {
+    let uploaded_files_ready_for_deletion = if staged_media.is_empty() {
         vec![]
     } else {
-        store_queue_media(txn, config, s3, signal_message.id, &attachments)
+        store_queue_media(txn, signal_message.id, staged_media)
             .await
             .c(h!())?
     };
@@ -236,12 +287,10 @@ pub async fn process_signal_message_queue_item_with_options(
 
 async fn store_kept_duplicate_trace_media(
     txn: &DatabaseTransaction,
-    config: &Config,
-    s3: &Option<opendal::Operator>,
     signal_message_id: i64,
-    attachments: &[MessageAttachmentF1],
+    staged_media: &StagedMediaAttachments,
 ) -> Result<Vec<MediaUploadInput>, AppError> {
-    if attachments.is_empty() {
+    if staged_media.is_empty() {
         return Ok(vec![]);
     }
     if signal_message::Entity::find_by_id(signal_message_id)
@@ -252,34 +301,19 @@ async fn store_kept_duplicate_trace_media(
     {
         return Ok(vec![]);
     }
-    store_queue_media(txn, config, s3, signal_message_id, attachments).await
+    store_queue_media(txn, signal_message_id, staged_media).await
 }
 
 async fn store_queue_media(
     txn: &DatabaseTransaction,
-    config: &Config,
-    s3: &Option<opendal::Operator>,
     signal_message_id: i64,
-    attachments: &[MessageAttachmentF1],
+    staged_media: &StagedMediaAttachments,
 ) -> Result<Vec<MediaUploadInput>, AppError> {
     // Recovery wraps this error in a rollback because media may carry critical context.
-    let upload_inputs: Vec<MediaUploadInput> =
-        attachments.iter().cloned().map(Into::into).collect();
-    let delete_uploaded = config
-        .feature_delete_uploaded_attachment
-        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
-    let deletion = if delete_uploaded {
-        crate::messenger::media::UploadedAttachmentDeletion::DeleteAfterCommit
-    } else {
-        crate::messenger::media::UploadedAttachmentDeletion::Preserve
-    };
-    let result = crate::messenger::media::store_media_attachments(
-        &upload_inputs,
+    crate::messenger::media::persist_staged_media(
+        staged_media,
         signal_message_id,
-        config,
-        s3,
         txn,
-        deletion,
     )
     .await
     .c(h!())?;
@@ -290,10 +324,75 @@ async fn store_queue_media(
     )
     .await
     .c(h!())?;
-    if delete_uploaded {
-        Ok(result.uploaded_files_ready_for_deletion)
+    Ok(vec![])
+}
+
+pub async fn stage_queue_media(
+    attachments: &[MessageAttachmentF1],
+    config: &Config,
+    s3: &Option<opendal::Operator>,
+) -> Result<StagedMediaAttachments, AppError> {
+    stage_queue_media_with_previous_hash(attachments, config, s3, None).await
+}
+
+pub async fn stage_queue_media_for_active_edit(
+    attachments: &[MessageAttachmentF1],
+    previous_attachments_hash: &Option<String>,
+    config: &Config,
+    s3: &Option<opendal::Operator>,
+) -> Result<StagedMediaAttachments, AppError> {
+    stage_queue_media_with_previous_hash(
+        attachments,
+        config,
+        s3,
+        Some(previous_attachments_hash),
+    )
+    .await
+}
+
+async fn stage_queue_media_with_previous_hash(
+    attachments: &[MessageAttachmentF1],
+    config: &Config,
+    s3: &Option<opendal::Operator>,
+    previous_attachments_hash: Option<&Option<String>>,
+) -> Result<StagedMediaAttachments, AppError> {
+    let upload_inputs = attachments
+        .iter()
+        .cloned()
+        .map(MediaUploadInput::from)
+        .collect::<Vec<_>>();
+    let deletion = queue_media_deletion(config);
+    let attachments_hash =
+        crate::messenger::dedupe::attachments_hash(&upload_inputs).await;
+    if previous_attachments_hash.is_some_and(|previous_attachments_hash| {
+        previous_attachments_hash == &attachments_hash
+    }) {
+        return Ok(StagedMediaAttachments::without_uploaded_objects(
+            upload_inputs.len(),
+            attachments_hash,
+            deletion,
+        ));
+    }
+    crate::messenger::media::stage_media_attachments(
+        &upload_inputs,
+        config,
+        s3,
+        deletion,
+        attachments_hash,
+    )
+    .await
+}
+
+fn queue_media_deletion(
+    config: &Config,
+) -> crate::messenger::media::UploadedAttachmentDeletion {
+    if config
+        .feature_delete_uploaded_attachment
+        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT)
+    {
+        crate::messenger::media::UploadedAttachmentDeletion::DeleteAfterCommit
     } else {
-        Ok(vec![])
+        crate::messenger::media::UploadedAttachmentDeletion::Preserve
     }
 }
 
@@ -301,6 +400,86 @@ async fn store_queue_media(
 mod tests {
     use super::*;
     use opendal::{services::Memory, Operator};
+
+    fn memory_s3_config(config: &mut Config) {
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+    }
+
+    #[tokio::test]
+    async fn media_staging_finishes_before_waiting_for_the_update_lock() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let holder = env.dbx.begin().await.unwrap();
+        crate::battle_line::lock_updates(&holder).await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("lock-held.txt");
+        tokio::fs::write(&path, b"staged before transaction")
+            .await
+            .unwrap();
+        let mut config = env.config.clone();
+        memory_s3_config(&mut config);
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+
+        let staged_media = stage_queue_media(
+            &[MessageAttachmentF1 {
+                path: path.display().to_string(),
+                name: Some("lock-held.txt".into()),
+            }],
+            &config,
+            &s3,
+        )
+        .await
+        .unwrap();
+        assert_eq!(staged_media.len(), 1);
+
+        let contender = env.dbx.begin().await.unwrap();
+        contender
+            .execute_unprepared("set local lock_timeout = '50ms'")
+            .await
+            .unwrap();
+        assert!(crate::battle_line::lock_updates(&contender).await.is_err());
+        contender.rollback().await.unwrap();
+        staged_media.cleanup_after_rollback(&config, &s3).await;
+        assert!(path.exists());
+        holder.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn unchanged_active_edit_hash_skips_object_upload() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("unchanged.txt");
+        let payload = b"unchanged media";
+        tokio::fs::write(&path, payload).await.unwrap();
+        let mut config = env.config.clone();
+        memory_s3_config(&mut config);
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let previous_attachments_hash =
+            Some(format!("[attachment sha256:{}]", sha256::digest(payload)));
+
+        let staged_media = stage_queue_media_for_active_edit(
+            &[MessageAttachmentF1 {
+                path: path.display().to_string(),
+                name: Some("unchanged.txt".into()),
+            }],
+            &previous_attachments_hash,
+            &config,
+            &s3,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(staged_media.len(), 1);
+        assert_eq!(staged_media.uploaded_object_count(), 0);
+    }
 
     #[tokio::test]
     async fn queue_ingestion_enqueues_stored_audio_before_commit() {
@@ -323,29 +502,24 @@ mod tests {
         let path = temp.path().join("queue-audio.ogg");
         tokio::fs::write(&path, b"queue audio").await.unwrap();
         let mut config = env.config.clone();
-        config.s3_config = Some(crate::config::S3Config {
-            s3_access_key_id: "test".into(),
-            s3_secret_access_key: "test".into(),
-            s3_endpoint: String::new(),
-            s3_region: String::new(),
-            s3_bucket: "test".into(),
-            strongbox_key: crate::storage::generate_strongbox_key_b64(),
-        });
+        config.feature_delete_uploaded_attachment = Some(true);
+        memory_s3_config(&mut config);
         let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
-        let txn = env.dbx.begin().await.unwrap();
-
-        store_queue_media(
-            &txn,
-            &config,
-            &s3,
-            message.id,
+        let staged_media = stage_queue_media(
             &[MessageAttachmentF1 {
                 path: path.display().to_string(),
                 name: Some("queue-audio.ogg".into()),
             }],
+            &config,
+            &s3,
         )
         .await
         .unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+
+        store_queue_media(&txn, message.id, &staged_media)
+            .await
+            .unwrap();
         let media = signal_message_media::Entity::find()
             .filter(
                 signal_message_media::Column::SignalMessageId.eq(message.id),
@@ -358,7 +532,18 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+        assert!(path.exists());
         txn.commit().await.unwrap();
+        staged_media
+            .finalize_after_commit(&config, &s3, &env.dbx)
+            .await;
+        assert!(!path.exists());
+        let remote_key =
+            crate::storage::S3Config::from(config.s3_config.as_ref().unwrap())
+                .prefixed_key(&crate::messenger::media::media_object_key(
+                    &media,
+                ));
+        s3.as_ref().unwrap().stat(&remote_key).await.unwrap();
         assert!(echo_gpu_client::lookup(&env.dbx, media.id)
             .await
             .unwrap()
