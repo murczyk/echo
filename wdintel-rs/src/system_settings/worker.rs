@@ -575,6 +575,7 @@ where
         created_at: NotSet,
         timestamp: Set(Some(replay_ts)),
         sender: Set(source.message.sender.clone()),
+        login_id: NotSet,
         format: Set(source.message.format),
         deleted: Set(false),
         external_id: Set(None),

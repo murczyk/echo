@@ -964,6 +964,7 @@ async fn xlsx_import_process_one(
         datasource_group_id: Set(Some(datasource_group_id)),
         timestamp: Set(Some(timestamp)),
         sender: Set(Some(sender_uuid.to_string())),
+        login_id: NotSet,
         format: Set(Some(2)),
         deleted: Set(false),
         external_id: NotSet,

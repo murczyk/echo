@@ -222,6 +222,7 @@ pub async fn rer_delta_kmz_import_go(
             created_at: NotSet,
             timestamp: Set(Some(timestamp)),
             sender: Set(Some(source_uuid.to_string())),
+            login_id: NotSet,
             format: Set(Some(2)),
             deleted: Set(false),
             external_id: NotSet,
