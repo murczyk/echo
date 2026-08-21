@@ -44,6 +44,7 @@ export type UseAnalysisMapDataResult = {
   mapSettlements: MapSettlement[];
   showSettlements: boolean;
   mapOpenMessages: Array<[number, InboxMessage]>;
+  settlementMessagesHasMore: boolean;
   mapPalitras: PalitraReadV2[];
   mapPalitrasLoaded: boolean;
   mapPalitrasLoadState: AnalysisPalitrasLoadState;
@@ -52,7 +53,10 @@ export type UseAnalysisMapDataResult = {
   mapAttrs: AnalysisMapAttrs;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
-  loadSettlementMessagesForMap: (settlementId: number) => Promise<boolean>;
+  loadSettlementMessagesForMap: (
+    settlementId: number,
+    beforeIdNoninclusive?: number | null,
+  ) => Promise<boolean>;
   loadMapPalitras: () => Promise<void>;
   setMapLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMapDateRange: React.Dispatch<React.SetStateAction<{ startDate: number; endDate: number }>>;
@@ -82,6 +86,7 @@ export function useAnalysisMapData({
   const [mapSettlementsState, setMapSettlementsState] = useState<MapSettlement[]>([]);
   const [showSettlements, setShowSettlementsState] = useState(false);
   const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [settlementMessagesHasMore, setSettlementMessagesHasMore] = useState(false);
   const [mapPalitras, setMapPalitras] = useState<PalitraReadV2[]>([]);
   const [mapPalitrasLoaded, setMapPalitrasLoaded] = useState(false);
   const [mapPalitrasLoadState, setMapPalitrasLoadState] =
@@ -111,6 +116,7 @@ export function useAnalysisMapData({
       mapDateRangeLoadVersionRef.current = loadVersion;
       setMapLoading(true);
       setMapDateRange(range);
+      setSettlementMessagesHasMore(false);
       const requestedShowSettlements = canShowSettlements && showSettlementsRef.current;
       if (requestedShowSettlements) setMapSettlementsState([]);
 
@@ -159,6 +165,7 @@ export function useAnalysisMapData({
         settlementToggleAbortRef.current = null;
         settlementToggleLoadVersionRef.current = null;
         setMapSettlementsState([]);
+        setSettlementMessagesHasMore(false);
         if (mapDateRangeLoadVersionRef.current === toggleLoadVersion) setMapLoading(false);
         return;
       }
@@ -230,6 +237,7 @@ export function useAnalysisMapData({
     settlementToggleAbortRef.current?.abort();
     mapDateRangeLoadVersionRef.current += 1;
     setMapSettlementsState([]);
+    setSettlementMessagesHasMore(false);
   }, [settlementQueryKey]);
 
   useEffect(() => {
@@ -243,6 +251,7 @@ export function useAnalysisMapData({
     settlementToggleAbortRef.current = null;
     setShowSettlementsState(false);
     setMapSettlementsState([]);
+    setSettlementMessagesHasMore(false);
   }, [canShowSettlements]);
 
   const loadMessagesForMap = useCallback(
@@ -251,6 +260,7 @@ export function useAnalysisMapData({
       if (cleanMessageIds.length === 0) {
         mapMessagesLoadVersionRef.current += 1;
         setMapOpenMessages([]);
+        setSettlementMessagesHasMore(false);
         return false;
       }
 
@@ -265,6 +275,7 @@ export function useAnalysisMapData({
           setMapPoints((current) => removeMapPointsForMissingMessages(current, missingMessageIds));
         }
         setMapOpenMessages(nextMessages);
+        setSettlementMessagesHasMore(false);
         void loadMissingNetworksForMessages(nextMessages);
         return nextMessages.length > 0;
       } catch (loadError) {
@@ -277,12 +288,13 @@ export function useAnalysisMapData({
   );
 
   const loadSettlementMessagesForMap = useCallback(
-    async (settlementId: number) => {
+    async (settlementId: number, beforeIdNoninclusive: number | null = null) => {
       if (!Number.isSafeInteger(settlementId) || settlementId <= 0) return false;
       const inboxReq = buildInboxReq(queryState, optionsFreqValues);
       if (isNullOrUndefined(inboxReq)) return false;
       const loadVersion = mapMessagesLoadVersionRef.current + 1;
       mapMessagesLoadVersionRef.current = loadVersion;
+      if (beforeIdNoninclusive === null) setSettlementMessagesHasMore(false);
       const filter =
         mapDateRange.startDate > 0 && mapDateRange.endDate > 0
           ? {
@@ -297,12 +309,24 @@ export function useAnalysisMapData({
         const nextMessages = await fetchMapSettlementMessages({
           settlementId,
           inboxItemsFilter: filter,
-          beforeIdNoninclusive: null,
+          beforeIdNoninclusive,
         });
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
-        setMapOpenMessages(nextMessages);
+        const currentMessages = beforeIdNoninclusive === null ? [] : mapOpenMessages;
+        const currentMessageIds = new Set(currentMessages.map(([messageId]) => messageId));
+        const combinedMessages = [
+          ...currentMessages,
+          ...nextMessages.filter(([messageId]) => !currentMessageIds.has(messageId)),
+        ];
+        const totalCount =
+          mapSettlementsState.find((settlement) => settlement.settlementId === settlementId)
+            ?.inboxItemCount ?? combinedMessages.length;
+        setMapOpenMessages(combinedMessages);
+        setSettlementMessagesHasMore(
+          nextMessages.length > 0 && combinedMessages.length < totalCount,
+        );
         void loadMissingNetworksForMessages(nextMessages);
-        return nextMessages.length > 0;
+        return combinedMessages.length > 0;
       } catch (loadError) {
         if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
@@ -312,6 +336,8 @@ export function useAnalysisMapData({
     [
       loadMissingNetworksForMessages,
       mapDateRange,
+      mapOpenMessages,
+      mapSettlementsState,
       newestFirst,
       onError,
       onUnauthorized,
@@ -355,6 +381,7 @@ export function useAnalysisMapData({
         canShowSettlements,
         showSettlements,
         messages: mapOpenMessages,
+        settlementMessagesHasMore,
         networkUnits: mapNetworkUnits,
         selectedUnits: queryState.unitsSelected,
         palitras: mapPalitras,
@@ -366,6 +393,7 @@ export function useAnalysisMapData({
       mapLoading,
       mapNetworkUnits,
       mapOpenMessages,
+      settlementMessagesHasMore,
       mapPalitras,
       mapPalitrasLoaded,
       mapPalitrasLoadState,
@@ -385,6 +413,7 @@ export function useAnalysisMapData({
     mapSettlements: mapSettlementsState,
     showSettlements,
     mapOpenMessages,
+    settlementMessagesHasMore,
     mapPalitras,
     mapPalitrasLoaded,
     mapPalitrasLoadState,

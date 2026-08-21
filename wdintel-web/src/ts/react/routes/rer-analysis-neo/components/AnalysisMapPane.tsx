@@ -9,7 +9,10 @@ type Props = {
   visible: boolean;
   onDateRangeChange: (range: { startDate: number; endDate: number }) => void;
   onLoadMessages: (messageIds: number[]) => Promise<boolean>;
-  onLoadSettlementMessages: (settlementId: number) => Promise<boolean>;
+  onLoadSettlementMessages: (
+    settlementId: number,
+    beforeIdNoninclusive?: number | null,
+  ) => Promise<boolean>;
   onUnitClick: (unitName: string | null) => void;
   onShowSettlementsChange?: (show: boolean) => Promise<void>;
 };
@@ -99,9 +102,21 @@ export function AnalysisMapPane({
       );
     };
     const handleLoadSettlementMessages = (event: Event) => {
-      const settlementId = (event as CustomEvent<{ settlementId: number }>).detail?.settlementId;
+      const detail = (
+        event as CustomEvent<{
+          settlementId: number;
+          beforeIdNoninclusive?: number | null;
+        }>
+      ).detail;
+      const settlementId = detail?.settlementId;
       if (typeof settlementId !== 'number' || !Number.isSafeInteger(settlementId)) return;
-      loadMessages(onLoadSettlementMessages(settlementId));
+      const beforeIdNoninclusive = detail.beforeIdNoninclusive ?? null;
+      if (
+        beforeIdNoninclusive !== null &&
+        (typeof beforeIdNoninclusive !== 'number' || !Number.isSafeInteger(beforeIdNoninclusive))
+      )
+        return;
+      loadMessages(onLoadSettlementMessages(settlementId, beforeIdNoninclusive));
     };
     const handleUnitClick = (event: Event) => {
       onUnitClick(
@@ -169,6 +184,7 @@ export function AnalysisMapPane({
         'can-show-settlements': mapAttrs.canShowSettlements,
         'show-settlements': mapAttrs.showSettlements,
         messages: mapAttrs.messages,
+        'settlement-messages-has-more': mapAttrs.settlementMessagesHasMore,
         'selected-units': mapAttrs.selectedUnits,
         palitras: mapAttrs.palitras,
         'palitras-loaded': mapAttrs.palitrasLoaded,

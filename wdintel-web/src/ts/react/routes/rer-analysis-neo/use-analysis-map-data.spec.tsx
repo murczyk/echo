@@ -119,6 +119,37 @@ describe('useAnalysisMapData settlement overlays', () => {
     });
   });
 
+  it('appends subsequent settlement pages until the advertised count is loaded', async () => {
+    const firstPage = [
+      [30, { text: 'newest' }],
+      [20, { text: 'middle' }],
+    ];
+    const secondPage = [[10, { text: 'oldest' }]];
+    api.fetchAnalysisMapPoints.mockResolvedValueOnce(response());
+    api.fetchMapSettlementMessages
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(secondPage);
+    await renderHook();
+    await act(async () => latest!.setShowSettlements(true));
+
+    await act(async () => {
+      await latest!.loadSettlementMessagesForMap(7);
+    });
+    expect(latest?.settlementMessagesHasMore).toBe(true);
+
+    await act(async () => {
+      await latest!.loadSettlementMessagesForMap(7, 20);
+    });
+
+    expect(api.fetchMapSettlementMessages).toHaveBeenLastCalledWith({
+      settlementId: 7,
+      inboxItemsFilter: expect.any(Object),
+      beforeIdNoninclusive: 20,
+    });
+    expect(latest?.mapOpenMessages.map(([messageId]) => messageId)).toEqual([30, 20, 10]);
+    expect(latest?.settlementMessagesHasMore).toBe(false);
+  });
+
   it('propagates the toggle and ignores its response after an immediate toggle off', async () => {
     const request = deferred<MapPointsRsp>();
     api.fetchAnalysisMapPoints.mockReturnValueOnce(request.promise);

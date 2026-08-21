@@ -272,7 +272,34 @@ describe('analysis-map', () => {
 
     expect(marker.bindTooltip).toHaveBeenCalledWith('&lt;Харків&gt; (3)', { direction: 'top' });
     expect(listener).toHaveBeenCalledOnce();
-    expect(listener.mock.calls[0][0].detail).toEqual({ settlementId: 7 });
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      settlementId: 7,
+      beforeIdNoninclusive: null,
+    });
+  });
+
+  it('requests the next settlement page from the oldest loaded message', () => {
+    const analysisMap = document.createElement('analysis-map') as HTMLElement & {
+      _clickedSettlementId: number;
+      _loadMoreSettlementMessages: () => void;
+      _messages: Array<[number, unknown]>;
+      _settlementMessagesHasMore: boolean;
+    };
+    analysisMap._clickedSettlementId = 7;
+    analysisMap._messages = [
+      [30, {}],
+      [20, {}],
+    ];
+    analysisMap._settlementMessagesHasMore = true;
+    const listener = vi.fn();
+    analysisMap.addEventListener('load-settlement-messages', listener);
+
+    analysisMap._loadMoreSettlementMessages();
+
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      settlementId: 7,
+      beforeIdNoninclusive: 20,
+    });
   });
 
   it('does not redispatch settlement changes already emitted by the settings control', () => {

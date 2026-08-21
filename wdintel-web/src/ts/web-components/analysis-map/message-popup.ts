@@ -13,6 +13,8 @@ type OpenMessagePopupOptions = {
   selectedUnits: string[];
   findPointMarkerByMessageId: (messageId: number) => DataCircleMarker | null;
   onUnitClicked: (networkUnitName: string | null) => void;
+  hasMoreMessages?: boolean;
+  onLoadMoreMessages?: () => void;
   setClickedState: (clickedPoint: DataCircleMarker | null, clickedLatLng: L.LatLng | null) => void;
 };
 
@@ -26,6 +28,8 @@ export function openMessagesPopup({
   selectedUnits,
   findPointMarkerByMessageId,
   onUnitClicked,
+  hasMoreMessages = false,
+  onLoadMoreMessages,
   setClickedState,
 }: OpenMessagePopupOptions): boolean {
   if ((!clickedPoint && !clickedLatLng) || messages.length === 0) {
@@ -37,7 +41,7 @@ export function openMessagesPopup({
     const datetime2 = new Date(`${message2[1].date}T${message2[1].time} `);
     return datetime2.getTime() - datetime1.getTime();
   });
-  const popupContent = getPointPopupTemplate(sortedMessages, selectedUnits);
+  const popupContent = getPointPopupTemplate(sortedMessages, selectedUnits, hasMoreMessages);
   const clickedMessageId = sortedMessages[0]?.[0];
   const isCluster = sortedMessages.length > 1;
   const clickedPointOnMap =
@@ -67,6 +71,7 @@ export function openMessagesPopup({
     map,
     clickedPoint: restoredPoint && canOpenOnRestoredPoint ? restoredPoint : null,
     onUnitClicked,
+    onLoadMoreMessages,
     setClickedState,
   });
 
@@ -77,15 +82,22 @@ function bindPopupUnitClickHandlers({
   map,
   clickedPoint,
   onUnitClicked,
+  onLoadMoreMessages,
   setClickedState,
 }: {
   map: L.Map | null;
   clickedPoint: DataCircleMarker | null;
   onUnitClicked: (networkUnitName: string | null) => void;
+  onLoadMoreMessages?: () => void;
   setClickedState: (clickedPoint: DataCircleMarker | null, clickedLatLng: L.LatLng | null) => void;
 }): void {
   const elements = document.querySelectorAll('[id^="map-message-id-"]');
   const handlersMap = new Map<string, () => void>();
+  const loadMoreButton = document.querySelector<HTMLElement>(
+    '[data-map-settlement-messages-load-more]',
+  );
+  const handleLoadMore = () => onLoadMoreMessages?.();
+  loadMoreButton?.addEventListener('click', handleLoadMore);
 
   elements.forEach((element) => {
     const handleClick = () => {
@@ -102,6 +114,7 @@ function bindPopupUnitClickHandlers({
   });
 
   const clearPopupHandlers = () => {
+    loadMoreButton?.removeEventListener('click', handleLoadMore);
     elements.forEach((element) => {
       const handler = handlersMap.get(element.id);
       if (handler) {
