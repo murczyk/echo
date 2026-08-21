@@ -38,7 +38,7 @@ pub fn clean_features(
         .filter_map(|feature| match feature {
             ImportedGeometryFeature::Point(_) => None,
             ImportedGeometryFeature::LineString(coordinates) => {
-                Some(line_length_m(coordinates))
+                Some(unique_line_length_m(coordinates))
             }
         })
         .fold(0.0_f64, f64::max);
@@ -124,6 +124,16 @@ fn validate_features(
 fn line_length_m(coordinates: &[ImportedCoordinate]) -> f64 {
     coordinates
         .windows(2)
+        .map(|pair| coordinate_distance_m(&pair[0], &pair[1]))
+        .sum()
+}
+
+fn unique_line_length_m(coordinates: &[ImportedCoordinate]) -> f64 {
+    let mut seen = HashSet::new();
+    coordinates
+        .windows(2)
+        .filter(|pair| pair[0] != pair[1])
+        .filter(|pair| seen.insert(segment_key(&pair[0], &pair[1])))
         .map(|pair| coordinate_distance_m(&pair[0], &pair[1]))
         .sum()
 }
@@ -362,5 +372,32 @@ mod tests {
         let cleanup = clean_features(vec![first.clone(), second]).unwrap();
 
         assert_eq!(cleanup.features, vec![first, line(-1.0)]);
+    }
+
+    #[test]
+    fn repeated_traversals_do_not_inflate_length_cutoff() {
+        let repeated = ImportedGeometryFeature::LineString(
+            (0..=100)
+                .map(|index| ImportedCoordinate {
+                    lat: 49.0,
+                    lon: if index % 2 == 0 { 30.0 } else { 31.0 },
+                })
+                .collect(),
+        );
+        let independent = ImportedGeometryFeature::LineString(vec![
+            ImportedCoordinate {
+                lat: 49.0,
+                lon: 40.0,
+            },
+            ImportedCoordinate {
+                lat: 49.0,
+                lon: 41.0,
+            },
+        ]);
+
+        let cleanup =
+            clean_features(vec![repeated, independent.clone()]).unwrap();
+
+        assert_eq!(cleanup.features, vec![line(1.0), independent]);
     }
 }
