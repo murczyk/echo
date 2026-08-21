@@ -13,17 +13,18 @@ impl MigrationTrait for Migration {
 alter table signal_message
     add column login_id uuid;
 
+alter table signal_message_group
+    add column login_id uuid;
+
 update signal_message
 set login_id = login.id
 from login
 where signal_message.sender = login.id::text;
 
 update signal_message_group group_link
-set sender = null
-from signal_message message
-where group_link.signal_message_id = message.id
-  and message.login_id is not null
-  and group_link.sender is not null;
+set login_id = login.id
+from login
+where group_link.sender = login.id::text;
 
 update signal_message
 set sender = null
@@ -35,6 +36,14 @@ alter table signal_message
 
 create index signal_message_login_id_idx
     on signal_message (login_id)
+    where login_id is not null;
+
+alter table signal_message_group
+    add constraint signal_message_group_login_id_fk
+    foreign key (login_id) references login(id) on delete set null;
+
+create index signal_message_group_login_id_idx
+    on signal_message_group (login_id)
     where login_id is not null;
                 "#,
             )
@@ -48,11 +57,18 @@ create index signal_message_login_id_idx
             .execute_unprepared(
                 r#"
 drop index if exists signal_message_login_id_idx;
+drop index if exists signal_message_group_login_id_idx;
 
 alter table signal_message
     drop constraint if exists signal_message_login_id_fk;
 
+alter table signal_message_group
+    drop constraint if exists signal_message_group_login_id_fk;
+
 alter table signal_message
+    drop column if exists login_id;
+
+alter table signal_message_group
     drop column if exists login_id;
                 "#,
             )

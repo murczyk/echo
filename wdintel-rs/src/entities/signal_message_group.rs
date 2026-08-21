@@ -15,6 +15,7 @@ pub struct Model {
     pub group_master_key: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
+    pub login_id: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub message_uid: Option<String>,
     pub datasource_group_id: Option<i64>,
@@ -40,6 +41,14 @@ pub enum Relation {
     )]
     SignalGroup,
     #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    Login,
+    #[sea_orm(
         belongs_to = "super::signal_message::Entity",
         from = "Column::SignalMessageId",
         to = "super::signal_message::Column::Id",
@@ -58,6 +67,12 @@ impl Related<super::datasource_group::Entity> for Entity {
 impl Related<super::signal_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SignalGroup.def()
+    }
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
     }
 }
 
