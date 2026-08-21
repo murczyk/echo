@@ -24,6 +24,7 @@ use std::collections::BTreeMap;
 use std::io::{BufWriter, Seek, Write};
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
 use tokio_util::io::ReaderStream;
+use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 
 pub mod analysis;
@@ -1661,12 +1662,43 @@ where
         .iter()
         .map(|p| (p.uuid.clone(), p.clone()))
         .collect();
+    let echo_senders = echo_sender::Entity::find()
+        .filter(echo_sender::Column::Uuid.eq_any(sender_uuids.clone()))
+        .all(txn)
+        .await
+        .c(h!())?;
+    let login_ids = sender_uuids
+        .iter()
+        .filter_map(|sender| Uuid::parse_str(sender).ok())
+        .collect::<Vec<_>>();
+    let logins = login::Entity::find()
+        .filter(login::Column::Id.eq_any(login_ids))
+        .all(txn)
+        .await
+        .c(h!())?;
     let mut data = BTreeMap::new();
     for id in sender_uuids {
-        let m_profile = profiles.get(&id).map(|p| SignalProfileEntry {
-            family_name: p.family_name.clone(),
-            given_name: p.given_name.clone(),
-        });
+        let m_profile = echo_senders
+            .iter()
+            .find(|sender| sender.uuid == id)
+            .map(|sender| SignalProfileEntry {
+                family_name: None,
+                given_name: sender.name.clone(),
+            })
+            .or_else(|| {
+                logins.iter().find(|login| login.id.to_string() == id).map(
+                    |login| SignalProfileEntry {
+                        family_name: None,
+                        given_name: Some(login.login.clone()),
+                    },
+                )
+            })
+            .or_else(|| {
+                profiles.get(&id).map(|p| SignalProfileEntry {
+                    family_name: p.family_name.clone(),
+                    given_name: p.given_name.clone(),
+                })
+            });
         data.insert(id, m_profile);
     }
     Ok(data)

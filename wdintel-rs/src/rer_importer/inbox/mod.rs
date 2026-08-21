@@ -2001,6 +2001,7 @@ async fn upsert_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
     datasource_id: Option<i64>,
+    login_id: &Uuid,
     message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
@@ -2011,6 +2012,7 @@ async fn upsert_submit_signal_message(
         txn,
         config,
         datasource_id,
+        login_id,
         message_uid,
         message,
         timestamp,
@@ -2025,6 +2027,7 @@ async fn update_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
     signal_message_id: i64,
+    login_id: &Uuid,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
     operator_tags: Option<serde_json::Value>,
@@ -2037,11 +2040,15 @@ async fn update_submit_signal_message(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    let assign_author =
+        signal_message.login_id.is_none() && signal_message.sender.is_none();
     let mut signal_message = signal_message.into_active_model();
     signal_message.body = Set(Some(message.text.clone()));
     signal_message.datasource_group_id = Set(datasource_group_id);
     signal_message.timestamp = Set(timestamp);
-    signal_message.sender = Set(message.sender.clone());
+    if assign_author {
+        signal_message.login_id = Set(Some(*login_id));
+    }
     if operator_tags.is_some() {
         signal_message.operator_tags = Set(operator_tags);
     }
@@ -2058,6 +2065,7 @@ async fn upsert_submit_signal_message_inner(
     txn: &DatabaseTransaction,
     config: &Config,
     datasource_id: Option<i64>,
+    login_id: &Uuid,
     message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
@@ -2095,12 +2103,16 @@ async fn upsert_submit_signal_message_inner(
                 .c(h!())?;
             match signal_message {
                 Some(signal_message) => {
+                    let assign_author = signal_message.login_id.is_none()
+                        && signal_message.sender.is_none();
                     let mut signal_message = signal_message.into_active_model();
                     signal_message.body = Set(Some(message.text.clone()));
                     signal_message.datasource_group_id =
                         Set(datasource_group_id);
                     signal_message.timestamp = Set(timestamp);
-                    signal_message.sender = Set(message.sender.clone());
+                    if assign_author {
+                        signal_message.login_id = Set(Some(*login_id));
+                    }
                     signal_message.operator_tags = Set(operator_tags);
                     signal_message.deleted = Set(false);
                     signal_message.update(txn).await.c(h!())?
@@ -2111,7 +2123,8 @@ async fn upsert_submit_signal_message_inner(
                     datasource_group_id: Set(datasource_group_id),
                     created_at: NotSet,
                     timestamp: Set(timestamp),
-                    sender: Set(message.sender.clone()),
+                    sender: Set(None),
+                    login_id: Set(Some(*login_id)),
                     format: NotSet,
                     deleted: Set(false),
                     external_id: Set(None),
@@ -2132,7 +2145,8 @@ async fn upsert_submit_signal_message_inner(
             datasource_group_id: Set(datasource_group_id),
             created_at: NotSet,
             timestamp: Set(timestamp),
-            sender: Set(message.sender.clone()),
+            sender: Set(None),
+            login_id: Set(Some(*login_id)),
             format: NotSet,
             deleted: Set(false),
             external_id: Set(None),
@@ -5437,6 +5451,7 @@ mod tests {
             &txn,
             &env.config,
             Some(datasource.id),
+            &login.id,
             Some(&uid),
             &message,
             Some(now),

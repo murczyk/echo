@@ -13,9 +13,10 @@ fn preferred_sender_sql(table_alias: Option<&str>) -> String {
         "\"signal_message\"".to_string()
     });
     format!(
-        "(SELECT sender FROM signal_message_group \
+        "coalesce((SELECT sender FROM signal_message_group \
          WHERE signal_message_group.signal_message_id = {table}.id \
-         ORDER BY signal_message_group.id ASC LIMIT 1)"
+         ORDER BY signal_message_group.id ASC LIMIT 1), \
+         {table}.login_id::text)"
     )
 }
 

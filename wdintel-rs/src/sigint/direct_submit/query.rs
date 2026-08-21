@@ -73,7 +73,8 @@ where
             .await
             .c(h!())?
             .is_none()
-        && (message.sender.as_deref() == Some(login.as_str())
+        && (message.login_id == Uuid::parse_str(&login).ok()
+            || message.sender.as_deref() == Some(login.as_str())
             || message.sender.as_deref().is_some_and(|sender| {
                 Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
                     organism_logins.contains(&sender_id)
