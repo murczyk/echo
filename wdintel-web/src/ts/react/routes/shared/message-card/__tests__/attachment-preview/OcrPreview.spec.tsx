@@ -745,6 +745,151 @@ describe('OcrPreview', () => {
     root.unmount();
   });
 
+  it('supports expand and collapse of summary text in carousel', async () => {
+    const longSummary = 'Перший рядок опису.\n'.repeat(5) + 'Останній рядок опису.';
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'completed',
+      summary: longSummary,
+      coordinates: [],
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 100,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={[
+            {
+              id: 'image-1',
+              summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            },
+          ]}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const expandBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Розгорнути опис"]',
+    );
+    expect(expandBtn).not.toBeNull();
+    expect(expandBtn?.disabled).toBe(false);
+
+    await act(async () => {
+      expandBtn?.click();
+      await Promise.resolve();
+    });
+
+    const collapseBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Згорнути опис"]',
+    );
+    expect(collapseBtn).not.toBeNull();
+
+    await act(async () => {
+      collapseBtn?.click();
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="Розгорнути опис"]'),
+    ).not.toBeNull();
+    root.unmount();
+  });
+
+  it('renders no result state when summary is empty', async () => {
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'completed',
+      summary: '',
+      coordinates: [],
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 0,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={[
+            {
+              id: 'image-1',
+              summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            },
+          ]}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не розпізнаний контент');
+    root.unmount();
+  });
+
+  it('renders error state and retries on refresh button click', async () => {
+    getMediaSummary
+      .mockResolvedValueOnce({
+        state: 'failed',
+        summary: '',
+        coordinates: [],
+        lastError: 'Помилка розпізнавання',
+        sourceKind: 'ocr_text',
+        sourceCharCount: 0,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      })
+      .mockResolvedValueOnce({
+        state: 'completed',
+        summary: 'Успішний опис після повтору',
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 20,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={[
+            {
+              id: 'image-1',
+              summary: { state: 'failed', lastError: null, hasCoordinates: false },
+            },
+          ]}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося створити опис');
+    const refreshBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Оновити стислий опис"]',
+    );
+    expect(refreshBtn).not.toBeNull();
+
+    await act(async () => {
+      refreshBtn?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Успішний опис після повтору');
+    root.unmount();
+  });
+
   it('keeps both panels open on desktop and closes summary on mobile (mutually exclusive)', async () => {
     useMediaQueryMock.mockReturnValue(false);
     const onSummaryVisibleChange = vi.fn();

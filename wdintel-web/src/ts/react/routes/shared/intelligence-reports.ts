@@ -1,4 +1,5 @@
 import type { InboxMessage, InboxMessageSummary } from '../../../../Bindings';
+import { formatCoordinateLocality } from '../../../maps/coordinate-locality';
 
 export type IntelligenceReportSummary = InboxMessageSummary & {
   coords?: string | null;
@@ -18,7 +19,13 @@ export function summarizeIntelligenceMessage(
     message.location?.trim() ||
     (message.coordsWithLocality && message.coordsWithLocality.length > 0
       ? message.coordsWithLocality
-          .map((c) => c.locality || c.coord)
+          .map((c) =>
+            c.locality
+              ? formatCoordinateLocality(c.locality)
+              : c.coords
+                ? `${c.coords.lat}, ${c.coords.lon}`
+                : '',
+          )
           .filter(Boolean)
           .join(', ')
       : null);

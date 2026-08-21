@@ -1,5 +1,9 @@
+import ArrowLeftIcon from '@mui/icons-material/ArrowLeft';
+import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
   Button,
@@ -247,7 +251,7 @@ function MediaSummaryCoordinateList({
                   size="small"
                   aria-label={`Деталі координати: ${coordinate.title}`}
                   data-media-summary-coordinate-info="true"
-                  className="w-7! h-7! text-(--color-text-secondary)!"
+                  className="w-7! h-7! text-(--color-text-muted)!"
                 >
                   <InfoOutlinedIcon className="text-[17px]!" />
                 </IconButton>
@@ -292,7 +296,7 @@ export function MediaSummaryAction({
               ? 'text-(--color-primary)!'
               : processing
                 ? 'text-blue-500!'
-                : 'text-(--color-text-secondary)! hover:text-(--color-text)!'
+                : 'text-(--color-text-muted)! hover:text-(--color-text)!'
           }
         >
           <Icon fontSize="small" />
@@ -383,13 +387,25 @@ function SummaryContent({
   }
 
   return (
-    <div className="flex flex-col gap-2 items-start py-0.5 min-h-10 justify-center">
-      <div className="flex flex-row gap-2 items-center">
-        {isMediaSummaryProcessing(state) ? <CircularProgress size={18} /> : null}
+    <div className="flex flex-col gap-2 py-0.5 min-h-10 justify-center">
+      <div className="flex flex-row items-center gap-3 flex-wrap">
+        <div className="flex flex-row gap-2 items-center">
+          {isMediaSummaryProcessing(state) ? <CircularProgress size={18} /> : null}
 
-        <Typography variant="body2" className="font-semibold">
-          {STATE_LABELS[state] ?? state}
-        </Typography>
+          <Typography variant="body2" className="font-semibold">
+            {STATE_LABELS[state] ?? state}
+          </Typography>
+        </div>
+
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={refreshing ? <CircularProgress size={14} /> : <RefreshIcon />}
+          disabled={refreshing}
+          onClick={onRefresh}
+        >
+          Оновити
+        </Button>
       </div>
 
       {lastError ? (
@@ -403,16 +419,6 @@ function SummaryContent({
           {refreshError}
         </Typography>
       ) : null}
-
-      <Button
-        size="small"
-        variant="outlined"
-        startIcon={refreshing ? <CircularProgress size={14} /> : <RefreshIcon />}
-        disabled={refreshing}
-        onClick={onRefresh}
-      >
-        Оновити
-      </Button>
     </div>
   );
 }
@@ -528,11 +534,16 @@ function useMediaSummaryResult({
 export function MessageCardMediaSummary({
   mediaId,
   status,
-  navigationOverlay = false,
+  pagination,
 }: {
   mediaId?: string | null;
   status?: MediaSummaryStatus | null;
-  navigationOverlay?: boolean;
+  pagination?: {
+    index: number;
+    total: number;
+    onPrev: () => void;
+    onNext: () => void;
+  } | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { result, refreshing, refreshError, refresh } = useMediaSummaryResult({
@@ -541,68 +552,138 @@ export function MessageCardMediaSummary({
     enabled: mediaId != null && status != null,
     summaryAccess: 'messenger',
   });
+
   const state = result?.state ?? status?.state;
   const summary = result?.summary?.trim() ?? '';
+  const isFailed = state === 'failed' || refreshError != null;
+  const isProcessing = (state != null && isMediaSummaryProcessing(state)) || refreshing;
+  const isNoResult = mediaId == null || status == null || (state === 'completed' && summary === '');
+  const hasSummary = !isNoResult && !isFailed && !isProcessing && summary !== '';
   const expandable = summary.length > 280 || summary.split(/\r?\n/).length > 3;
 
   useEffect(() => setExpanded(false), [mediaId, summary]);
 
-  if (mediaId == null || status == null || state == null) return null;
+  if (mediaId == null && pagination == null) return null;
+
+  const borderColorClass = isFailed
+    ? 'border-l-red-500'
+    : isNoResult
+      ? 'border-l-(--color-text-muted)'
+      : 'border-l-(--color-primary)';
+
+  const iconColorClass = isFailed
+    ? 'text-red-500'
+    : isNoResult
+      ? 'text-(--color-text-muted)'
+      : 'text-(--color-primary)';
 
   return (
     <div
       data-media-summary-inline="true"
-      className={`min-w-0 w-[min(460px,100%)] ${navigationOverlay ? 'mt-0' : 'mt-1'}`}
+      className={`min-w-0 w-[min(580px,100%)] p-1 rounded bg-black/5 dark:bg-white/5 border-l-[3px] ${borderColorClass} flex flex-row items-start gap-1`}
     >
-      {state === 'completed' && summary !== '' ? (
-        <blockquote
-          onClick={expandable ? () => setExpanded((current) => !current) : undefined}
-          role={expandable ? 'button' : undefined}
-          tabIndex={expandable ? 0 : undefined}
-          aria-expanded={expandable ? expanded : undefined}
-          onKeyDown={(event) => {
-            if (!expandable || (event.key !== 'Enter' && event.key !== ' ')) return;
-            event.preventDefault();
-            setExpanded((current) => !current);
-          }}
-          className={`m-0 pl-2 py-1.5 border-l-[3px] border-(--color-primary) rounded bg-black/5 dark:bg-white/5 text-(--color-text) ${
-            navigationOverlay ? 'pr-20' : 'pr-2'
-          } ${expandable ? 'cursor-pointer' : 'cursor-default'}`}
-        >
-          <div className="flex flex-row gap-1.5 items-start">
-            <DescriptionIcon className="mt-0.5 text-[17px]! text-(--color-text-secondary)" />
+      <DescriptionIcon className={`text-[20px]! shrink-0 mt-0.5 ${iconColorClass}`} />
+
+      <div className="flex-1 min-w-0 px-1 py-0.5">
+        {isFailed ? (
+          <div className="flex flex-row items-center gap-1.5 flex-wrap">
             <Typography
               variant="body2"
-              className={`min-w-0 whitespace-pre-wrap wrap-break-word ${
-                !expanded ? 'line-clamp-3 overflow-hidden' : ''
-              }`}
+              className="text-red-500 font-normal text-sm leading-5 wrap-break-word"
             >
-              {summary}
+              {refreshError || 'Не вдалося створити опис'}
             </Typography>
-          </div>
-        </blockquote>
-      ) : (
-        <div
-          className={`flex flex-row gap-1.5 items-center pl-2 py-1 ${
-            navigationOverlay ? 'pr-20' : 'pr-2'
-          } ${state === 'failed' ? 'text-red-500' : 'text-(--color-text-secondary)'}`}
-        >
-          {isMediaSummaryProcessing(state) || refreshing ? <CircularProgress size={14} /> : null}
-          <Typography variant="caption" className="wrap-break-word">
-            {refreshError || STATE_LABELS[state] || state}
-          </Typography>
-          {state === 'failed' || refreshError != null ? (
             <IconButton
               size="small"
               aria-label="Оновити стислий опис"
               disabled={refreshing}
               onClick={() => void refresh(false)}
+              className="p-1! text-red-500! hover:bg-black/10 dark:hover:bg-white/10"
             >
               <RefreshIcon className="text-lg!" />
             </IconButton>
-          ) : null}
-        </div>
-      )}
+          </div>
+        ) : isNoResult ? (
+          <Typography
+            variant="body2"
+            className="text-(--color-text-muted) font-normal text-sm leading-5"
+          >
+            Не розпізнаний контент
+          </Typography>
+        ) : isProcessing ? (
+          <div className="flex flex-row items-center gap-1.5">
+            <CircularProgress size={14} className="text-(--color-primary)!" />
+            <Typography
+              variant="body2"
+              className="text-(--color-text-muted) font-normal text-sm leading-5"
+            >
+              {STATE_LABELS[state ?? ''] ?? state ?? 'Опис створюється'}
+            </Typography>
+          </div>
+        ) : (
+          <Typography
+            variant="body2"
+            className={`min-w-0 text-(--color-text) font-normal text-sm leading-5 whitespace-pre-wrap wrap-break-word ${
+              !expanded ? 'line-clamp-3 overflow-hidden' : ''
+            }`}
+          >
+            {summary}
+          </Typography>
+        )}
+      </div>
+
+      <div className="flex flex-col items-end justify-between self-stretch shrink-0 gap-1 pl-1">
+        {pagination != null && pagination.total > 1 ? (
+          <div
+            data-media-summary-navigation="true"
+            className="flex flex-row items-center gap-0.5 bg-black/10 dark:bg-white/10 rounded px-0.5"
+          >
+            <IconButton
+              size="small"
+              aria-label="Попередній стислий опис"
+              disabled={pagination.index === 0}
+              onClick={pagination.onPrev}
+              className="w-6! h-6! p-0.5! text-xl! text-(--color-text-muted) disabled:opacity-50"
+            >
+              <ArrowLeftIcon className="text-xl!" />
+            </IconButton>
+            <Typography
+              variant="caption"
+              aria-live="polite"
+              className="min-w-6 text-center tabular-nums font-semibold text-xs text-(--color-primary)"
+            >
+              {`${pagination.index + 1}/${pagination.total}`}
+            </Typography>
+            <IconButton
+              size="small"
+              aria-label="Наступний стислий опис"
+              disabled={pagination.index === pagination.total - 1}
+              onClick={pagination.onNext}
+              className="w-6! h-6! p-0.5! text-xl! text-(--color-text-muted) disabled:opacity-50"
+            >
+              <ArrowRightIcon className="text-xl!" />
+            </IconButton>
+          </div>
+        ) : (
+          <div />
+        )}
+
+        {hasSummary ? (
+          <IconButton
+            size="small"
+            aria-label={expanded ? 'Згорнути опис' : 'Розгорнути опис'}
+            disabled={!expandable && !expanded}
+            onClick={expandable ? () => setExpanded((curr) => !curr) : undefined}
+            className="w-7! h-7! p-1! text-(--color-text-muted) hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-50 disabled:pointer-events-none self-end mt-auto"
+          >
+            {expanded ? (
+              <KeyboardArrowUpIcon className="text-xl!" />
+            ) : (
+              <KeyboardArrowDownIcon className="text-xl!" />
+            )}
+          </IconButton>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -630,76 +711,38 @@ export function MessageCardMediaSummaryCarousel({
   const resolvedIndex = Math.min(index, media.length - 1);
   const current = media[resolvedIndex];
   if (firstSummaryIndex < 0 || current == null) return null;
-  const hasCurrentSummary = current.id != null && current.summary != null;
 
   const selectIndex = (nextIndex: number) => {
     setIndex(nextIndex);
     onIndexChange?.(nextIndex);
   };
 
+  const pagination =
+    media.length > 1
+      ? {
+          index: resolvedIndex,
+          total: media.length,
+          onPrev: () => selectIndex(Math.max(0, resolvedIndex - 1)),
+          onNext: () => selectIndex(Math.min(media.length - 1, resolvedIndex + 1)),
+        }
+      : null;
+
   return (
     <div
       data-media-summary-carousel="true"
-      className={`relative mt-2 max-w-full min-w-0 ${
-        hasCurrentSummary ? 'w-[min(460px,100%)]' : 'w-fit'
-      }`}
+      className="relative mt-2 max-w-full min-w-0 w-[min(580px,100%)]"
     >
       <div
         key={`${current.id ?? resolvedIndex}:${resolvedIndex}`}
         data-media-summary-carousel-content="true"
-        className={`animate-[media-summary-carousel-in_160ms_ease-out] ${
-          hasCurrentSummary ? 'min-h-18' : ''
-        }`}
+        className="animate-[media-summary-carousel-in_160ms_ease-out]"
       >
-        {hasCurrentSummary ? (
-          <MessageCardMediaSummary
-            mediaId={current.id}
-            status={current.summary}
-            navigationOverlay={media.length > 1}
-          />
-        ) : (
-          <div
-            data-media-summary-inline="true"
-            className="w-fit max-w-full min-w-0 pl-2 pr-20 py-1.5 border-l-[3px] border-(--color-border) rounded bg-black/5 dark:bg-white/5"
-          >
-            <Typography variant="caption" color="text.secondary">
-              Стислий опис відсутній
-            </Typography>
-          </div>
-        )}
+        <MessageCardMediaSummary
+          mediaId={current.id}
+          status={current.summary}
+          pagination={pagination}
+        />
       </div>
-      {media.length > 1 ? (
-        <div
-          data-media-summary-navigation="true"
-          className="flex flex-row gap-0.5 items-center absolute top-1 right-1 z-10 bg-(--color-card) rounded shadow"
-        >
-          <IconButton
-            size="small"
-            aria-label="Попередній стислий опис"
-            disabled={resolvedIndex === 0}
-            onClick={() => selectIndex(Math.max(0, resolvedIndex - 1))}
-            className="w-6! h-6! p-0! text-sm!"
-          >
-            {'<'}
-          </IconButton>
-          <Typography
-            variant="caption"
-            aria-live="polite"
-            className="min-w-7.5 text-center tabular-nums"
-          >
-            {`${resolvedIndex + 1}/${media.length}`}
-          </Typography>
-          <IconButton
-            size="small"
-            aria-label="Наступний стислий опис"
-            disabled={resolvedIndex === media.length - 1}
-            onClick={() => selectIndex(Math.min(media.length - 1, resolvedIndex + 1))}
-            className="w-6! h-6! p-0! text-sm!"
-          >
-            {'>'}
-          </IconButton>
-        </div>
-      ) : null}
     </div>
   );
 }
