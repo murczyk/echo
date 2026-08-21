@@ -112,6 +112,33 @@ async function installVisualFixture(
 }
 
 test.describe('message card visual regression', () => {
+  test('keeps native EchoChip tone opacity contracts in the compiled stylesheet', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty');
+    const opacity = await page.evaluate(() => {
+      const tones = [
+        ['tag', false],
+        ['tag', true],
+        ['primary', false],
+        ['neutral', false],
+      ] as const;
+      const chips = tones.map(([tone, selected]) => {
+        const chip = document.createElement('span');
+        chip.className = `echo-chip echo-chip--${tone}`;
+        chip.dataset.selected = String(selected);
+        chip.dataset.interactive = 'false';
+        document.body.appendChild(chip);
+        return chip;
+      });
+      const result = chips.map((chip) => getComputedStyle(chip).opacity);
+      chips.forEach((chip) => chip.remove());
+      return result;
+    });
+
+    expect(opacity).toEqual(['0.75', '1', '1', '1']);
+  });
+
   test('keeps exclusion-menu labels readable at 14px', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 

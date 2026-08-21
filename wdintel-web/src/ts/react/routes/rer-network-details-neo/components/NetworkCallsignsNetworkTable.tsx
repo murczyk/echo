@@ -550,7 +550,6 @@ function NetworkCallsignsNetworkTableContent({
                   selected={normalizedStatusFilter === filter}
                   onClick={() => onStatusFilterChange(filter)}
                   interactive
-                  fontSize="0.75rem"
                   fontWeight={600}
                   labelPaddingX={0.85}
                   labelPaddingY={0.1}

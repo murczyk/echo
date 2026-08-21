@@ -20,7 +20,6 @@ type PowerChipProps = {
   unselectedBorderColor?: string;
   autoTextContrast?: boolean;
   unselectedOpacity?: number;
-  fontSize?: string | number;
   fontWeight?: string | number;
   fontFamily?: string;
   minWidth?: string | number;
@@ -58,7 +57,6 @@ export function PowerChip({
   unselectedBorderColor,
   autoTextContrast = false,
   unselectedOpacity,
-  fontSize = '0.8125rem',
   fontWeight = 500,
   fontFamily,
   minWidth,
@@ -124,7 +122,7 @@ export function PowerChip({
           borderWidth: 1,
           borderStyle: 'solid',
           borderColor: activeBorderColor,
-          fontSize,
+          fontSize: '0.875rem',
           fontWeight,
           fontFamily,
           minWidth,

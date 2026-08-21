@@ -331,7 +331,7 @@ a {
 }
 
 /* Native tag chips for MessageCardTags hot path (avoid MUI Chip/emotion per card). */
-.message-card-tag-chip {
+.echo-chip {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -343,7 +343,7 @@ a {
   border-style: solid;
   border-radius: 16px;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: 13px;
   font-weight: 500;
   line-height: normal;
   white-space: nowrap;
@@ -353,43 +353,112 @@ a {
     filter 0.12s ease;
 }
 
-.message-card-tag-chip__label {
+.echo-chip__label {
   display: inline-flex;
   align-items: center;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.message-card-tag-chip[data-selected='false'] {
+.echo-chip--primary[data-selected='false'] {
+  background-color: transparent;
+  border-color: var(--echo-color-primary);
+  color: var(--echo-color-primary);
+  opacity: 1;
+}
+
+.echo-chip--primary[data-selected='true'] {
+  background-color: var(--echo-color-primary);
+  border-color: var(--echo-color-primary);
+  color: var(--echo-color-on-primary);
+  opacity: 1;
+}
+
+.echo-chip--neutral[data-selected='false'] {
+  background-color: transparent;
+  border-color: var(--echo-color-divider);
+  color: var(--echo-color-text);
+  opacity: 1;
+}
+
+.echo-chip--neutral[data-selected='true'] {
+  background-color: var(--echo-color-selected);
+  border-color: var(--echo-color-divider);
+  color: var(--echo-color-text);
+  opacity: 1;
+}
+
+.echo-chip--tag {
+  font-size: 0.875rem;
+}
+
+.echo-chip--tag[data-selected='false'] {
   background-color: var(--color-background);
   border-color: var(--text-color);
   color: var(--text-color);
   opacity: 0.75;
 }
 
-.message-card-tag-chip[data-selected='true'] {
+.echo-chip--tag[data-selected='true'] {
   background-color: var(--color-tag-selected);
   border-color: var(--color-border-selected);
   color: var(--neutral-900);
   opacity: 1;
 }
 
-.message-card-tag-chip[data-interactive='true'] {
+.echo-chip[data-interactive='true'] {
   cursor: pointer;
 }
 
-.message-card-tag-chip[data-interactive='false'] {
+.echo-chip[data-interactive='false'] {
   cursor: text;
-  opacity: 1;
 }
 
-.message-card-tag-chip[data-interactive='true']:hover {
+.echo-chip[data-interactive='true']:hover {
   opacity: 1;
   filter: brightness(0.95);
 }
 
-.message-card-tag-chip:focus-visible {
+.echo-chip:focus-visible {
   outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.mrt-overflow-trigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--echo-color-divider);
+  border-radius: 6px;
+  appearance: none;
+  background: var(--echo-color-surface-raised);
+  color: var(--echo-color-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-decoration: none;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mrt-overflow-trigger:hover {
+  background: color-mix(in srgb, var(--echo-color-primary) 8%, var(--echo-color-surface-raised));
+}
+
+.mrt-overflow-trigger:active {
+  background: color-mix(in srgb, var(--echo-color-primary) 14%, var(--echo-color-surface-raised));
+}
+
+.mrt-overflow-trigger:focus-visible {
+  outline: 2px solid var(--echo-color-primary);
   outline-offset: 2px;
 }
 

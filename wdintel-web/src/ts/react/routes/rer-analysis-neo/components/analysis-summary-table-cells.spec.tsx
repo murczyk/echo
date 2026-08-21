@@ -58,7 +58,8 @@ beforeEach(() => {
     const text = this.textContent ?? '';
     if (this.hasAttribute('data-mrt-overflow-measured-item')) measurementRuns += 1;
     const measuredWidth = text.includes('SAME')
-      ? this.querySelector('[data-testid="InfoIcon"]')
+      ? this.querySelector('[data-testid="InfoIcon"]') ||
+        this.querySelector('[data-callsign-measure-icon]')
         ? 125
         : 60
       : text.includes('NEXT')
@@ -110,7 +111,9 @@ afterEach(() => {
 it('keeps specialized callsign chips in compact mode for both consumers', async () => {
   const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const container = document.createElement('div');
+  const outside = document.createElement('button');
   document.body.appendChild(container);
+  document.body.appendChild(outside);
   const root = createRoot(container);
   try {
     const column = buildAnalysisSummaryTableColumns({
@@ -122,21 +125,44 @@ it('keeps specialized callsign chips in compact mode for both consumers', async 
     act(() => root.render(node));
     triggerResize();
     vi.useFakeTimers();
-    expect(container.querySelector('.MuiChip-root')).not.toBeNull();
+    expect(container.querySelector('.echo-chip')).not.toBeNull();
     expect(container.textContent).toContain('FIRST-OVERSIZED-CALLSIGN');
     expect(container.querySelector('[data-testid="InfoIcon"]')).not.toBeNull();
-    expect(container.querySelector('.MuiChip-filled')).not.toBeNull();
-    const chip = container.querySelector<HTMLElement>('.MuiChip-root');
+    expect(container.querySelector('[data-selected="true"]')).not.toBeNull();
+    const chip = container.querySelector<HTMLElement>('.echo-chip');
     expect(
-      getComputedStyle(chip?.querySelector<HTMLElement>('.MuiChip-label span span')!).textOverflow,
+      getComputedStyle(chip?.querySelector<HTMLElement>('.echo-chip__label span span')!)
+        .textOverflow,
     ).toBe('ellipsis');
     const tooltipAnchor = chip?.parentElement;
+    expect(chip?.getAttribute('title')).toBeNull();
+    expect(tooltipAnchor?.getAttribute('title')).toBeNull();
     act(() => tooltipAnchor?.focus());
     await act(async () => vi.runAllTimers());
+    expect(document.body.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
     expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe('Підказка домену');
+    act(() =>
+      tooltipAnchor?.dispatchEvent(
+        new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }),
+      ),
+    );
+    await act(async () => vi.runAllTimers());
     act(() => tooltipAnchor?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
     await act(async () => vi.runAllTimers());
+    expect(document.body.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
     expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe('Підказка домену');
+    act(() =>
+      tooltipAnchor?.dispatchEvent(
+        new MouseEvent('mouseout', { bubbles: true, relatedTarget: outside }),
+      ),
+    );
+    await act(async () => vi.runAllTimers());
+    act(() => root.render(null));
+    await act(async () => vi.runAllTimers());
+    expect(document.body.querySelectorAll('[role="tooltip"]')).toHaveLength(0);
+    act(() => root.render(createElement(CallsignChipsCell, { callsigns })));
+    width = 80;
+    triggerResize();
     expect(container.querySelector('[aria-label="Показати ще 1 значення"]')).not.toBeNull();
     act(() =>
       container.querySelector<HTMLElement>('[aria-label="Показати ще 1 значення"]')?.click(),
@@ -145,19 +171,47 @@ it('keeps specialized callsign chips in compact mode for both consumers', async 
     expect(document.body.querySelector('[role="dialog"]')?.textContent).not.toContain(
       'FIRST-OVERSIZED',
     );
+    const disclosureChip = document.body.querySelector<HTMLElement>('[role="dialog"] .echo-chip');
+    const disclosureTooltipAnchor = disclosureChip?.parentElement;
+    expect(disclosureChip?.getAttribute('title')).toBeNull();
+    expect(disclosureTooltipAnchor?.getAttribute('title')).toBeNull();
+    act(() =>
+      disclosureTooltipAnchor?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })),
+    );
+    await act(async () => vi.runAllTimers());
+    expect(
+      Array.from(document.body.querySelectorAll('[role="tooltip"]')).filter(
+        (tooltip) => tooltip.textContent === 'SECOND',
+      ),
+    ).toHaveLength(1);
+    act(() =>
+      disclosureTooltipAnchor?.dispatchEvent(
+        new MouseEvent('mouseout', { bubbles: true, relatedTarget: outside }),
+      ),
+    );
+    await act(async () => vi.runAllTimers());
+    act(() => disclosureTooltipAnchor?.focus());
+    await act(async () => vi.runAllTimers());
+    expect(
+      Array.from(document.body.querySelectorAll('[role="tooltip"]')).filter(
+        (tooltip) => tooltip.textContent === 'SECOND',
+      ),
+    ).toHaveLength(1);
+    act(() =>
+      disclosureTooltipAnchor?.dispatchEvent(
+        new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }),
+      ),
+    );
+    await act(async () => vi.runAllTimers());
     width = 400;
     triggerResize();
-    expect(container.querySelectorAll('.MuiChip-root')).toHaveLength(2);
+    expect(container.querySelectorAll('.echo-chip')).toHaveLength(2);
     expect(container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
-    act(() => root.render(createElement(CallsignChipsCell, { callsigns })));
-    width = 80;
-    triggerResize();
-    expect(container.querySelector('.MuiChip-root')).not.toBeNull();
-    expect(container.textContent).toContain('FIRST-OVERSIZED-CALLSIGN');
   } finally {
     act(() => root.unmount());
     container.remove();
+    outside.remove();
     const output = errors.mock.calls.map((args) => args.join(' ')).join('\n');
     errors.mockRestore();
     vi.useRealTimers();
@@ -187,16 +241,16 @@ it('remeasures callsigns when width-affecting chip decoration changes', () => {
   try {
     act(() => root.render(createElement(CallsignChipsCell, { callsigns: undecorated })));
     triggerResize();
-    expect(container.querySelectorAll('.MuiChip-root')).toHaveLength(2);
+    expect(container.querySelectorAll('.echo-chip')).toHaveLength(2);
     expect(container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
     const initialMeasurementRuns = measurementRuns;
 
     act(() => root.render(createElement(CallsignChipsCell, { callsigns: decorated })));
     triggerResize();
     expect(measurementRuns).toBeGreaterThan(initialMeasurementRuns);
-    expect(container.querySelector('.MuiChip-root')).not.toBeNull();
+    expect(container.querySelector('.echo-chip')).not.toBeNull();
     expect(container.querySelector('[data-testid="InfoIcon"]')).not.toBeNull();
-    expect(container.querySelector('.MuiChip-filled')).not.toBeNull();
+    expect(container.querySelector('[data-selected="true"]')).not.toBeNull();
     expect(container.querySelector('[aria-label="Показати ще 1 значення"]')).not.toBeNull();
   } finally {
     act(() => root.unmount());

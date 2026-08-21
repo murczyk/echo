@@ -5,6 +5,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
 import type { InboxMessage, Tag } from '../../../../../Bindings';
+import { EchoChip } from '../../../components/EchoChip';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import { buildMessageCardTagRows } from './MessageCardTags.helpers';
 import type { MessageCardTagRow } from './MessageCardTags.helpers';
@@ -38,8 +39,6 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
 }) {
   const tipInstanceId = useId();
   const canToggle = interactive && onToggleTag != null;
-  const chipClassName = 'message-card-tag-chip';
-  const chipLabel = <span className="message-card-tag-chip__label">{row.label}</span>;
   const tipText = row.tip?.trim() ? row.tip : null;
   const tipId = tipText != null ? `message-card-tag-${row.tagId}-tip-${tipInstanceId}` : undefined;
   const tipProps =
@@ -57,27 +56,13 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
       style={{ paddingTop: TAG_CHIP_BADGE_TOP_PADDING_PX }}
     >
       <span className="relative inline-flex max-w-full shrink-0">
-        {canToggle ? (
-          <button
-            type="button"
-            className={chipClassName}
-            data-selected={row.isSet ? 'true' : 'false'}
-            data-interactive="true"
-            onClick={() => onToggleTag(Number(row.tagId))}
-            {...tipProps}
-          >
-            {chipLabel}
-          </button>
-        ) : (
-          <span
-            className={chipClassName}
-            data-selected={row.isSet ? 'true' : 'false'}
-            data-interactive="false"
-            {...tipProps}
-          >
-            {chipLabel}
-          </span>
-        )}
+        <EchoChip
+          label={row.label}
+          tone="tag"
+          selected={row.isSet}
+          onClick={canToggle ? () => onToggleTag(Number(row.tagId)) : undefined}
+          {...tipProps}
+        />
         {tipId != null && tipText != null ? (
           <span id={tipId} className="sr-only">
             {tipText}

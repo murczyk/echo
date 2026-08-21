@@ -30,10 +30,6 @@ vi.mock('@mui/material', () => ({
   ),
 }));
 
-vi.mock('../../../components/CompactPowerChip', () => ({
-  CompactPowerChip: ({ label }: { label: string }) => <span>{label}</span>,
-}));
-
 function buildRow() {
   return {
     activeFrequencies: [

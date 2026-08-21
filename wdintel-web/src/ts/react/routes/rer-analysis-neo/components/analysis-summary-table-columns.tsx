@@ -128,6 +128,8 @@ export function buildAnalysisSummaryTableColumns({
         items: ({ row }) => row.original.coordinateLabels,
         getItemText: (item) => item,
         renderItem: (item) => <Box component="span">{item}</Box>,
+        measurementScope: 'analysis-summary:coordinates',
+        disclosureLayout: 'list',
       }),
     },
     {
@@ -154,6 +156,8 @@ export function buildAnalysisSummaryTableColumns({
         items: ({ row }) => row.original.unitLabels,
         getItemText: (item) => item,
         renderItem: (item) => <Box component="span">{item}</Box>,
+        measurementScope: 'analysis-summary:units',
+        disclosureLayout: 'list',
       }),
     },
     {
@@ -166,6 +170,8 @@ export function buildAnalysisSummaryTableColumns({
         items: ({ row }) => row.original.locationLabels,
         getItemText: (item) => item,
         renderItem: (item) => <Box component="span">{item}</Box>,
+        measurementScope: 'analysis-summary:locations',
+        disclosureLayout: 'list',
       }),
     },
   ];

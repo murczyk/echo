@@ -358,7 +358,6 @@ function CreatePalitraDrawerComponent({
                                         <PowerChip
                                           label={option.colorHex}
                                           size="small"
-                                          fontSize="0.875rem"
                                           fontWeight={600}
                                           backgroundColor={option.colorHex}
                                           autoTextContrast

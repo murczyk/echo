@@ -1,6 +1,7 @@
 import type { DutyTagsLayout, UserDutySettingsDto } from '../../../../Bindings';
 
 import { getJson, putJson } from './client';
+import { DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS } from '../../hooks/duty-settings-defaults';
 import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
 export const USER_SETTINGS_UPDATED_EVENT = 'user-settings-updated';
@@ -79,7 +80,8 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     showAnalysisCallsignAddForm: raw.showAnalysisCallsignAddForm ?? false,
     showClassicDuty: raw.showClassicDuty ?? false,
     showClassicAnalysis: raw.showClassicAnalysis ?? false,
-    dutyCollapseMediaPreviews: raw.dutyCollapseMediaPreviews ?? false,
+    dutyCollapseMediaPreviews:
+      raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   };
 }
 

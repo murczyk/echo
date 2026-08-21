@@ -140,7 +140,6 @@ export function NetworkCallsignSourceChip({
       onClick={disabled ? undefined : onClick}
       interactive={!disabled}
       title={source.name}
-      fontSize="0.75rem"
       fontWeight={600}
       labelPaddingX={0.85}
       labelPaddingY={0.1}

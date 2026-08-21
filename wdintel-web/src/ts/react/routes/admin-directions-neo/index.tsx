@@ -60,7 +60,7 @@ import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerButton } from '../../components/PowerButton';
-import { PowerChip } from '../../components/PowerChip';
+import { EchoChip } from '../../components/EchoChip';
 import {
   CUSTOM_STYLES,
   FULL_WIDTH_TABLE_PAPER_SX,
@@ -869,7 +869,8 @@ function OrphanGroupsTable(props: {
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<OrphanSignalGroupEntry, string>({
           items: ({ row }) => buildAorNames(row.original?.areasOfResponsibility),
-          renderItem: (name) => <PowerChip label={name} size="small" interactive={false} />,
+          renderItem: (name) => <EchoChip label={name} tone="neutral" />,
+          measurementScope: 'admin-directions:orphan-aors',
           getItemKey: (name) => name,
           getItemText: (name) => name,
         }),
@@ -1259,7 +1260,8 @@ function ZoneGroupsTable(props: {
             );
             return items;
           },
-          renderItem: (item) => <PowerChip label={item.label} size="small" interactive={false} />,
+          renderItem: (item) => <EchoChip label={item.label} tone="neutral" />,
+          measurementScope: 'admin-directions:access',
           getItemKey: (item) => `${item.kind}:${item.id}`,
           getItemText: (item) => item.label,
           emptyValue: 'без обмежень',
@@ -1293,7 +1295,8 @@ function ZoneGroupsTable(props: {
                 )
               : [NO_DATA_LABEL];
           },
-          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          renderItem: (label) => <EchoChip label={label} tone="neutral" />,
+          measurementScope: 'admin-directions:admins',
           getItemKey: (label) => label,
           getItemText: (label) => label,
         }),
@@ -1306,7 +1309,8 @@ function ZoneGroupsTable(props: {
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<ZoneGroupRow, string>({
           items: ({ row }) => buildAorNames(row.original?.group?.areasOfResponsibility),
-          renderItem: (name) => <PowerChip label={name} size="small" interactive={false} />,
+          renderItem: (name) => <EchoChip label={name} tone="neutral" />,
+          measurementScope: 'admin-directions:aors',
           getItemKey: (name) => name,
           getItemText: (name) => name,
         }),
