@@ -1229,6 +1229,7 @@ pub(crate) async fn count_inbox_unit_link_backfill_items(
             sigint_inbox_item::Relation::SignalMessage.def(),
         )
         .filter(sigint_inbox_item::Column::Id.gt(after_inbox_item_id))
+        .filter(signal_message::Column::Id.gt(after_inbox_item_id))
         .filter(signal_message::Column::CreatedAt.gte(start_ts))
         .filter(signal_message::Column::CreatedAt.lt(till_ts))
         .count(db)
