@@ -598,6 +598,7 @@ where
             signal_message_id: Set(inserted.id),
             group_master_key: Set(group.group_master_key.clone()),
             sender: Set(group.sender.clone()),
+            login_id: Set(group.login_id),
             message_uid: Set(inserted.message_uid.clone()),
             datasource_group_id: Set(group
                 .datasource_group_id

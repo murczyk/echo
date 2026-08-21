@@ -2190,6 +2190,7 @@ async fn ensure_submit_signal_message_groups(
         if let Some(existing) = existing {
             let mut existing = existing.into_active_model();
             existing.sender = Set(signal_message.sender.clone());
+            existing.login_id = Set(signal_message.login_id);
             existing.message_uid = Set(signal_message.message_uid.clone());
             existing.datasource_group_id = Set(Some(*datasource_group_id));
             existing.update(txn).await.c(h!())?;
@@ -2201,6 +2202,7 @@ async fn ensure_submit_signal_message_groups(
             signal_message_id: Set(signal_message.id),
             group_master_key: Set(Some(group_master_key.clone())),
             sender: Set(signal_message.sender.clone()),
+            login_id: Set(signal_message.login_id),
             message_uid: Set(signal_message.message_uid.clone()),
             datasource_group_id: Set(Some(*datasource_group_id)),
             created_at: Set(signal_message.created_at),

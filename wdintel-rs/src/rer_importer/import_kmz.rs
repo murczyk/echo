@@ -242,6 +242,7 @@ pub async fn rer_delta_kmz_import_go(
             signal_message_id: Set(message.id),
             group_master_key: Set(Some(master_key.clone())),
             sender: Set(message.sender.clone()),
+            login_id: Set(message.login_id),
             message_uid: Set(message.message_uid.clone()),
             datasource_group_id: Set(message.datasource_group_id),
             created_at: Set(message.created_at),
