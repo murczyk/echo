@@ -3213,14 +3213,14 @@ battleLineStateEncoder struct =
 
 
 type alias BattleLineTestReq =
-    { inboxItemId : Int
+    { inboxItemId : String
     }
 
 
 battleLineTestReqEncoder : BattleLineTestReq -> Json.Encode.Value
 battleLineTestReqEncoder struct =
     Json.Encode.object
-        [ ( "inbox_item_id", (Json.Encode.int) struct.inboxItemId )
+        [ ( "inbox_item_id", (Json.Encode.string) struct.inboxItemId )
         ]
 
 
@@ -15625,7 +15625,7 @@ battleLineStateDecoder =
 battleLineTestReqDecoder : Json.Decode.Decoder BattleLineTestReq
 battleLineTestReqDecoder =
     Json.Decode.succeed BattleLineTestReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.string)))
 
 
 battleLineSettlementCandidateDecoder : Json.Decode.Decoder BattleLineSettlementCandidate

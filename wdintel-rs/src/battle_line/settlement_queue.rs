@@ -5,6 +5,7 @@ use crate::battle_line::{
 };
 use crate::config::{
     get_tz, INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
+    INBOX_SETTLEMENT_ONEOFF_TRANSACTION_BATCH_SIZE,
     INBOX_SETTLEMENT_WORKER_BATCH_SIZE, INBOX_SETTLEMENT_WORKER_SLEEP_SECS,
 };
 use crate::entities::{
@@ -18,7 +19,7 @@ use crate::{h, OneoffLinkInboxSettlementsPs};
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
 use sea_orm::*;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -27,6 +28,19 @@ pub struct OneoffLinkInboxSettlementsStats {
     pub skipped: usize,
     pub matched: usize,
     pub unmatched: usize,
+}
+
+impl OneoffLinkInboxSettlementsStats {
+    fn completed(&self) -> usize {
+        self.processed + self.skipped
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.processed += other.processed;
+        self.skipped += other.skipped;
+        self.matched += other.matched;
+        self.unmatched += other.unmatched;
+    }
 }
 
 pub async fn reconcile_item_locations<C>(
@@ -269,6 +283,10 @@ pub async fn oneoff_link_inbox_settlements(
     info!("Starting inbox settlement linking one-off");
     let (since_ts, till_ts) = oneoff_bounds(ps).c(h!())?;
     let env = crate::server::new_env(mode).await.c(h!())?;
+    let total = count_oneoff_items(&env.dbx, since_ts, till_ts)
+        .await
+        .c(h!())?;
+    println!("Inbox settlement linking: total items={total}");
     let mut stats = OneoffLinkInboxSettlementsStats::default();
     let mut cursor = None;
     loop {
@@ -284,10 +302,13 @@ pub async fn oneoff_link_inbox_settlements(
         if items.is_empty() {
             break;
         }
-        for (_, item_id) in &items {
-            process_oneoff_item(&env, *item_id, &mut stats)
-                .await
-                .c(h!())?;
+        for items in
+            items.chunks(INBOX_SETTLEMENT_ONEOFF_TRANSACTION_BATCH_SIZE)
+        {
+            let batch_stats =
+                process_oneoff_batch(&env, items).await.c(h!())?;
+            stats.merge(batch_stats);
+            print_oneoff_progress(&stats, total);
         }
         cursor = items.last().copied();
         if items.len() < INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE as usize {
@@ -301,33 +322,82 @@ pub async fn oneoff_link_inbox_settlements(
     Ok(())
 }
 
-async fn process_oneoff_item(
+async fn process_oneoff_batch(
     env: &Env,
-    item_id: i64,
-    stats: &mut OneoffLinkInboxSettlementsStats,
-) -> anyhow::Result<()> {
+    items: &[(NaiveDateTime, i64)],
+) -> anyhow::Result<OneoffLinkInboxSettlementsStats> {
     let txn = env.dbx.begin().await.c(h!())?;
     lock_updates(&txn).await.c(h!())?;
     ensure_active_battle_line(&txn).await.c(h!())?;
-    let location_v2 = sigint_inbox_item::Entity::find_by_id(item_id)
-        .lock(LockType::Update)
-        .one(&txn)
+    let item_locations =
+        lock_oneoff_item_locations(&txn, items).await.c(h!())?;
+    let mut stats = OneoffLinkInboxSettlementsStats::default();
+    for (_, item_id) in items {
+        let location_v2 = item_locations.get(item_id).c(h!())?;
+        process_oneoff_item_in_transaction(
+            env,
+            &txn,
+            *item_id,
+            location_v2.as_deref(),
+            &mut stats,
+        )
         .await
-        .c(h!())?
-        .c(h!())?
-        .location_v2;
-    let settlement_texts = location_texts(location_v2.as_deref());
+        .c(h!())?;
+    }
+    txn.commit().await.c(h!())?;
+    Ok(stats)
+}
+
+async fn lock_oneoff_item_locations(
+    txn: &DatabaseTransaction,
+    items: &[(NaiveDateTime, i64)],
+) -> anyhow::Result<BTreeMap<i64, Option<String>>> {
+    sigint_inbox_item::Entity::find()
+        .filter(
+            sigint_inbox_item::Column::Id
+                .is_in(items.iter().map(|(_, item_id)| *item_id)),
+        )
+        .lock(LockType::Update)
+        .select_only()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::LocationV2,
+        ])
+        .into_tuple::<(i64, Option<String>)>()
+        .all(txn)
+        .await
+        .c(h!())
+        .map(|rows| rows.into_iter().collect())
+}
+
+fn print_oneoff_progress(stats: &OneoffLinkInboxSettlementsStats, total: u64) {
+    let completed = stats.completed() as u64;
+    println!(
+        "Inbox settlement linking: processed items={completed}/{total}, remaining items={}, matched locations={}, unmatched locations={}",
+        total.saturating_sub(completed),
+        stats.matched,
+        stats.unmatched,
+    );
+}
+
+async fn process_oneoff_item_in_transaction(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    item_id: i64,
+    location_v2: Option<&str>,
+    stats: &mut OneoffLinkInboxSettlementsStats,
+) -> anyhow::Result<()> {
+    let settlement_texts = location_texts(location_v2);
     if settlement_texts.is_empty() {
-        txn.rollback().await.c(h!())?;
         stats.skipped += 1;
         return Ok(());
     }
     let aor_context =
-        resolve_inbox_item_aors(&txn, item_id, None).await.c(h!())?;
+        resolve_inbox_item_aors(txn, item_id, None).await.c(h!())?;
     let mut resolutions = vec![];
     for settlement_text in settlement_texts {
         let result = resolve_location_to_settlement_with_db(
-            &txn,
+            txn,
             env,
             settlement_text.clone(),
             &aor_context.aor_ids,
@@ -336,7 +406,7 @@ async fn process_oneoff_item(
         .c(h!())?;
         resolutions.push((settlement_text, result.chosen_settlement_id));
     }
-    reconcile_item_locations(&txn, item_id, location_v2.as_deref())
+    reconcile_item_locations(txn, item_id, location_v2)
         .await
         .c(h!())?;
     sigint_inbox_item_settlement::Entity::update_many()
@@ -349,7 +419,7 @@ async fn process_oneoff_item(
             Expr::value(Option::<bool>::None),
         )
         .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
-        .exec(&txn)
+        .exec(txn)
         .await
         .c(h!())?;
     for (settlement_text, settlement_id) in resolutions {
@@ -368,7 +438,7 @@ async fn process_oneoff_item(
                 sigint_inbox_item_settlement::Column::SettlementText
                     .eq(settlement_text),
             )
-            .exec(&txn)
+            .exec(txn)
             .await
             .c(h!())?;
         if matched {
@@ -377,7 +447,6 @@ async fn process_oneoff_item(
             stats.unmatched += 1;
         }
     }
-    txn.commit().await.c(h!())?;
     stats.processed += 1;
     Ok(())
 }
@@ -389,21 +458,9 @@ async fn load_oneoff_item_page(
     cursor: Option<(NaiveDateTime, i64)>,
     limit: u64,
 ) -> anyhow::Result<Vec<(NaiveDateTime, i64)>> {
-    let mut query = sigint_inbox_item::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(sigint_inbox_item::Column::Datetime.is_not_null())
+    let mut query = oneoff_items_query(since_ts, till_ts)
         .order_by_asc(sigint_inbox_item::Column::Datetime)
         .order_by_asc(sigint_inbox_item::Column::Id);
-    if let Some(since_ts) = since_ts {
-        query = query.filter(sigint_inbox_item::Column::Datetime.gte(since_ts));
-    }
-    if let Some(till_ts) = till_ts {
-        query = query.filter(sigint_inbox_item::Column::Datetime.lt(till_ts));
-    }
     if let Some((datetime, item_id)) = cursor {
         query = query.filter(
             Condition::any()
@@ -426,6 +483,37 @@ async fn load_oneoff_item_page(
         .all(dbx)
         .await
         .c(h!())
+}
+
+async fn count_oneoff_items(
+    dbx: &DatabaseConnection,
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+) -> anyhow::Result<u64> {
+    oneoff_items_query(since_ts, till_ts)
+        .count(dbx)
+        .await
+        .c(h!())
+}
+
+fn oneoff_items_query(
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+) -> Select<sigint_inbox_item::Entity> {
+    let mut query = sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(sigint_inbox_item::Column::Datetime.is_not_null());
+    if let Some(since_ts) = since_ts {
+        query = query.filter(sigint_inbox_item::Column::Datetime.gte(since_ts));
+    }
+    if let Some(till_ts) = till_ts {
+        query = query.filter(sigint_inbox_item::Column::Datetime.lt(till_ts));
+    }
+    query
 }
 
 fn oneoff_bounds(

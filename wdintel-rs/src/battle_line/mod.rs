@@ -198,6 +198,13 @@ pub async fn test_battle_line(
 ) -> Result<Json<BattleLineTestRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     ensure_active_battle_line(&env.dbx).await.c(h!())?;
+    let inbox_item_id =
+        resolve_test_inbox_item_id(&env.dbx, req.inbox_item_id.trim())
+            .await
+            .c(h!())?;
+    let Some(inbox_item_id) = inbox_item_id else {
+        return Err(AppError::NotFound);
+    };
     let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
     let organism_logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
@@ -210,7 +217,7 @@ pub async fn test_battle_line(
         &login_id,
         &organism_logins,
         &env,
-        &[req.inbox_item_id],
+        &[inbox_item_id],
         &inbox_req,
     )
     .await
@@ -218,7 +225,7 @@ pub async fn test_battle_line(
     let Some((_, message)) = messages.pop() else {
         return Err(AppError::NotFound);
     };
-    let location_v2 = sigint_inbox_item::Entity::find_by_id(req.inbox_item_id)
+    let location_v2 = sigint_inbox_item::Entity::find_by_id(inbox_item_id)
         .select_only()
         .column(sigint_inbox_item::Column::LocationV2)
         .into_tuple::<Option<String>>()
@@ -233,13 +240,10 @@ pub async fn test_battle_line(
     .c(h!())?
     .into_iter()
     .collect::<BTreeSet<_>>();
-    let aor_context = resolve_inbox_item_aors(
-        &env.dbx,
-        req.inbox_item_id,
-        Some(&allowed_groups),
-    )
-    .await
-    .c(h!())?;
+    let aor_context =
+        resolve_inbox_item_aors(&env.dbx, inbox_item_id, Some(&allowed_groups))
+            .await
+            .c(h!())?;
     let mut locations = vec![];
     for location in location_v2
         .as_deref()
@@ -257,13 +261,37 @@ pub async fn test_battle_line(
         );
     }
     Ok(Json(BattleLineTestRsp {
-        inbox_item_id: req.inbox_item_id,
+        inbox_item_id,
         message,
         group_master_keys: aor_context.group_master_keys,
         aor_ids: aor_context.aor_ids,
         locations,
         battle_line: read_battle_line_state(&env.dbx).await.c(h!())?,
     }))
+}
+
+async fn resolve_test_inbox_item_id<C>(
+    dbx: &C,
+    input: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    if let Ok(inbox_item_id) = input.parse::<i64>() {
+        return Ok(Some(inbox_item_id));
+    }
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::MessageUid.eq(input))
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())
 }
 
 #[post("/api/battle-line/unlinked-inbox")]
@@ -1823,6 +1851,50 @@ mod tests {
                     lon: 10.0,
                 },
             }]
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn resolves_battle_line_test_input_by_id_or_message_uid() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let message_uid = format!("battle-line-test-{}", uuid::Uuid::now_v7());
+        let message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            resolve_test_inbox_item_id(&txn, &message.id.to_string())
+                .await
+                .unwrap(),
+            Some(message.id)
+        );
+        assert_eq!(
+            resolve_test_inbox_item_id(&txn, &message_uid)
+                .await
+                .unwrap(),
+            Some(message.id)
+        );
+        assert_eq!(
+            resolve_test_inbox_item_id(&txn, "missing-battle-line-message-uid")
+                .await
+                .unwrap(),
+            None
         );
         txn.rollback().await.unwrap();
     }

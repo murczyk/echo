@@ -24,7 +24,7 @@ export async function uploadBattleLine(
 }
 
 export async function testBattleLine(
-  inboxItemId: number,
+  inboxItemId: string,
   options?: RequestOptions,
 ): Promise<BattleLineTestRsp> {
   const raw = await postJson<unknown>(

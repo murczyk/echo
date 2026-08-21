@@ -1241,7 +1241,7 @@ export type BattleLineState = {
 };
 
 export type BattleLineTestReq = {
-  inboxItemId: number;
+  inboxItemId: string;
 };
 
 export type BattleLineSettlementCandidate = {

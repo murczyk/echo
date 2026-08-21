@@ -18,6 +18,7 @@ import { parseCoordinateInput } from '../maps/coordinate-search';
 import { PalitraManager } from '../maps/palitra-manager';
 import { PalitraDetails } from '../maps/palitra-types';
 import { AnalysisMapCoordMenuController } from './analysis-map/coord-menu-controller';
+import { loadDeltaKmlLayer } from './analysis-map/delta-kml-layer';
 import { initializeAnalysisMapControls } from './analysis-map/map-controls';
 import {
   patchMouseDownMapFocus,
@@ -89,6 +90,8 @@ class AnalysisMap extends HTMLElement {
   private _clickedSettlementLabel: string | null = null;
   private _boundedAlready = false;
   private _initialized = false;
+  private _deltaKmlLayer: L.GeoJSON | null = null;
+  private _deltaKmlLoading: Promise<void> | null = null;
   private _selectedUnits: string[] = [];
 
   private _palitraManager: PalitraManager | null = null;
@@ -99,6 +102,7 @@ class AnalysisMap extends HTMLElement {
   private _palitrasLoaded = false;
   private _palitrasLoadState: PalitrasLoadState = 'idle';
   private _palitrasEnabled = true;
+  private _deltaKmlEnabled = true;
   private _pelengsEnabled = true;
   private _layerSwitchControl: LayerSwitchControl | null = null;
   private _mapSettingsControl: MapSettingsControl | null = null;
@@ -618,6 +622,8 @@ class AnalysisMap extends HTMLElement {
       ) {
         this._runSearchQueryIfSet();
       }
+
+      void this._loadDeltaKmlLayer();
     }
   }
 
@@ -875,6 +881,7 @@ class AnalysisMap extends HTMLElement {
   private _getFeatureToggleState(): FeatureToggleState {
     return {
       palitrasEnabled: this._palitrasEnabled,
+      deltaKmlEnabled: this._deltaKmlEnabled,
       pelengsEnabled: this._pelengsEnabled,
     };
   }
@@ -897,6 +904,7 @@ class AnalysisMap extends HTMLElement {
 
   private _applyState(state: AnalysisMapStoredState) {
     this._palitrasEnabled = state.features.palitras;
+    this._deltaKmlEnabled = state.features.deltaKml;
     this._pelengsEnabled = state.features.pelengs;
     this._visiblePalitraIds = state.visiblePalitraIds;
   }
@@ -906,6 +914,9 @@ class AnalysisMap extends HTMLElement {
     this._applyState(state);
     if (feature === 'palitras') {
       this._applyPalitraVisibility();
+    }
+    if (feature === 'deltaKml') {
+      this._applyDeltaKmlVisibility();
     }
     if (feature === 'pelengs') {
       this._applyPelengVisibility();
@@ -947,6 +958,42 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._palitraManager.setEnabled(this._palitrasEnabled);
+  }
+
+  private async _loadDeltaKmlLayer(): Promise<void> {
+    if (!this._map || !this._deltaKmlEnabled) return;
+    if (this._deltaKmlLayer) {
+      this._deltaKmlLayer.addTo(this._map);
+      return;
+    }
+    if (this._deltaKmlLoading) {
+      await this._deltaKmlLoading;
+      return;
+    }
+
+    this._deltaKmlLoading = (async () => {
+      try {
+        const layer = await loadDeltaKmlLayer();
+        this._deltaKmlLayer = layer;
+        if (layer && this._map && this._deltaKmlEnabled) {
+          layer.addTo(this._map);
+        }
+      } catch (error) {
+        console.error('Failed to load Delta KML', error);
+      } finally {
+        this._deltaKmlLoading = null;
+      }
+    })();
+    await this._deltaKmlLoading;
+  }
+
+  private _applyDeltaKmlVisibility(): void {
+    if (!this._map) return;
+    if (!this._deltaKmlEnabled) {
+      if (this._deltaKmlLayer) this._map.removeLayer(this._deltaKmlLayer);
+      return;
+    }
+    void this._loadDeltaKmlLayer();
   }
 
   private _handleVisiblePalitraIdsChange(visibleIds: number[]): void {

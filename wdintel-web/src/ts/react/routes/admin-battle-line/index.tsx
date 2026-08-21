@@ -125,9 +125,9 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
   };
 
   const submitTest = async () => {
-    const id = Number(inboxItemId);
-    if (!Number.isSafeInteger(id) || id <= 0) {
-      setError('Вкажіть коректний ID перехоплення');
+    const query = inboxItemId.trim();
+    if (!query) {
+      setError('Вкажіть ID або UID перехоплення');
       return;
     }
     const serial = testSerialRef.current + 1;
@@ -136,7 +136,7 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
     setTestResult(null);
     setError(null);
     try {
-      const result = await testBattleLine(id);
+      const result = await testBattleLine(query);
       if (testSerialRef.current === serial) setTestResult(result);
     } catch (testError) {
       if (testSerialRef.current === serial) setError(toErrorMessage(testError));
@@ -191,12 +191,13 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
           Перевірка прив'язки населених пунктів
         </Typography>
         <Typography variant="body2" color="text.secondary" gutterBottom>
-          Введіть ID перехоплення. Пошук використовує всі доступні групи та об'єднання їхніх AOR.
+          Введіть ID або UID перехоплення. Пошук використовує всі доступні групи та об'єднання їхніх
+          AOR.
         </Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 2 }}>
           <TextField
             size="small"
-            label="ID перехоплення"
+            label="ID або UID перехоплення"
             value={inboxItemId}
             onChange={(event) => setInboxItemId(event.target.value)}
           />

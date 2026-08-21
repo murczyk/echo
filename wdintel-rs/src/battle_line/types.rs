@@ -54,7 +54,7 @@ pub struct BattleLineState {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct BattleLineTestReq {
-    pub inbox_item_id: i64,
+    pub inbox_item_id: String,
 }
 
 #[derive(

@@ -107,6 +107,14 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
             onClick={() => props.onFeatureToggle('pelengsEnabled', !props.features.pelengsEnabled)}
             type="checkbox"
           />
+          <LayerRow
+            checked={props.features.deltaKmlEnabled}
+            label="Delta KML"
+            onClick={() =>
+              props.onFeatureToggle('deltaKmlEnabled', !props.features.deltaKmlEnabled)
+            }
+            type="checkbox"
+          />
           <Typography className="layer-switch-subheader">Основа</Typography>
           <LayerRow
             checked={props.currentLayer === 'googleHybrid'}
