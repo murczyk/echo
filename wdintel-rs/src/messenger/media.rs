@@ -577,10 +577,9 @@ pub(crate) async fn ensure_media_access(
             intel_product::Relation::SignalMessage1.def(),
         )
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .filter(signal_message::Column::Deleted.eq(true))
         .select_only()
         .column(intel_product::Column::IntelMessageId)
@@ -613,10 +612,9 @@ pub(crate) async fn ensure_media_access(
 
     let parent_signal_message_ids = intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .select_only()
         .column(intel_product::Column::SourceMessageId)
         .into_tuple::<i64>()
@@ -659,10 +657,9 @@ pub(crate) async fn ensure_media_access(
             crate::entities::intel_product::Column::IntelMessageId
                 .eq(signal_message_id),
         )
-        .filter(
-            crate::entities::intel_product::Column::RelationKind
-                .eq(crate::entities::intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(crate::entities::intel_product::relation_kind_eq(
+            crate::entities::intel_product::RELATION_KIND_REPORT,
+        ))
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
         )

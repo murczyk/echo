@@ -147,10 +147,9 @@ where
 {
     Ok(intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .order_by_asc(intel_product::Column::CreatedAt)
         .all(dbx)
         .await
@@ -175,10 +174,9 @@ where
             intel_product::Column::IntelMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .order_by_asc(intel_product::Column::CreatedAt)
         .order_by_asc(intel_product::Column::SourceMessageId)
         .all(dbx)
@@ -579,10 +577,9 @@ where
             intel_product::Column::IntelMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .count(dbx)
         .await
         .c(h!())?;

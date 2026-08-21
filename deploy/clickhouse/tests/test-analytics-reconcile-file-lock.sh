@@ -39,11 +39,23 @@ busy_output=$(ECHO_ANALYTICS_RECONCILE_LOCK_FILE="$lock_file" \
   bash -c 'source "$1"; acquire_analytics_reconcile_lock' _ "$LIB")
 grep -q 'skipping this timer run' <<<"$busy_output"
 
+busy_output=$(ECHO_ANALYTICS_RECONCILE_LOCK_FILE="$lock_file" \
+  ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS=1 \
+  ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS=true \
+  bash -c 'source "$1"; acquire_analytics_reconcile_lock' _ "$LIB")
+grep -q 'owns the lock after 1s; skipping this timer run' <<<"$busy_output"
+
 if ECHO_ANALYTICS_RECONCILE_LOCK_FILE="$lock_file" \
   ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS=0 \
   bash -c 'source "$1"; acquire_analytics_reconcile_lock' _ "$LIB" \
   >/dev/null 2>&1; then
   printf 'busy analytics lock unexpectedly succeeded without timer mode\n' >&2
+  exit 1
+fi
+
+if grep -q '^[[:space:]]*acquire_analytics_reconcile_lock' \
+  "$TEST_DIR/../bin/check-analytics-health.sh"; then
+  printf 'health probe unexpectedly holds the reconciliation lock for its full run\n' >&2
   exit 1
 fi
 

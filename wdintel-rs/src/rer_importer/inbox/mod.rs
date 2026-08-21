@@ -478,7 +478,7 @@ pub(crate) async fn messages_by_id_bl(
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(intel_product::Column::RelationKind.is_in([
+        .and_where(intel_product::relation_kind_is_in([
             intel_product::RELATION_KIND_REPORT,
             intel_product::RELATION_KIND_COMMENT,
         ]))
@@ -1460,10 +1460,9 @@ async fn delete_message(
     let txn = env.dbx.begin().await.context(h!())?;
     let intelligence_report_parent_ids = intel_product::Entity::find()
         .filter(intel_product::Column::IntelMessageId.eq(req.id))
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .select_only()
         .column(intel_product::Column::SourceMessageId)
         .into_tuple::<i64>()
@@ -2591,10 +2590,9 @@ async fn ensure_comment_save_access(
     let parent_access_query = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .and_where(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .and_where(
             Expr::col((
                 intel_product::Entity,

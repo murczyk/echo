@@ -665,14 +665,7 @@ async fn build_inbox_messages_report_sql(
             datasource_group::Column::GroupMasterKey
                 .eq_any(sigint_groups.clone()),
         );
-    let linked_message_ids = intel_product::Entity::find()
-        .select_only()
-        .column(intel_product::Column::IntelMessageId)
-        .filter(intel_product::Column::RelationKind.is_in([
-            intel_product::RELATION_KIND_COMMENT,
-            intel_product::RELATION_KIND_REPORT,
-        ]))
-        .into_query();
+    let linked_message_ids = linked_intel_product_message_ids_query();
     q = q
         .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
 
@@ -836,6 +829,17 @@ async fn build_inbox_messages_report_sql(
         .to_string(PostgresQueryBuilder);
 
     Ok(combined_query)
+}
+
+fn linked_intel_product_message_ids_query() -> SelectStatement {
+    intel_product::Entity::find()
+        .select_only()
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::relation_kind_is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
+        ]))
+        .into_query()
 }
 
 fn write_data_to_sheet(
@@ -1176,8 +1180,9 @@ mod tests {
     use super::{
         eject_body_from_message, ensure_interception_report_row_limit,
         interception_report_chunks, interception_report_newest_first,
+        linked_intel_product_message_ids_query,
         merge_interception_report_chunk, select_report_message_body,
-        sort_interception_report_messages, InboxMessage,
+        sort_interception_report_messages, InboxMessage, PostgresQueryBuilder,
     };
     use crate::config::XLSX_WORKSHEET_ROW_MAX;
     use crate::rer_importer::report_chunking::ReportPeriodEnd;
@@ -1186,6 +1191,16 @@ mod tests {
     use std::collections::HashSet;
 
     const HOUR_MS: i64 = 60 * 60 * 1_000;
+
+    #[test]
+    fn linked_message_filter_uses_gateway_compatible_enum_literals() {
+        let sql = linked_intel_product_message_ids_query()
+            .to_string(PostgresQueryBuilder);
+
+        assert!(sql.contains("'comment'"), "{sql}");
+        assert!(sql.contains("'report'"), "{sql}");
+        assert!(!sql.contains("intel_product_relation_kind"), "{sql}");
+    }
 
     fn interception_message(
         date: &str,

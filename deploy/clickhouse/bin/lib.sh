@@ -365,8 +365,13 @@ acquire_analytics_reconcile_lock() {
   umask "$old_umask"
   exec 8>>"$ANALYTICS_RECONCILE_LOCK_FILE"
   if ((wait_seconds > 0)); then
-    flock -w "$wait_seconds" 8 \
-      || die "analytics reconciliation lock was not available within ${wait_seconds}s"
+    if ! flock -w "$wait_seconds" 8; then
+      if [[ ${ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS:-false} == true ]]; then
+        log "Another analytics reconciliation owns the lock after ${wait_seconds}s; skipping this timer run"
+        exit 0
+      fi
+      die "analytics reconciliation lock was not available within ${wait_seconds}s"
+    fi
   else
     if ! flock -n 8; then
       if [[ ${ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS:-false} == true ]]; then

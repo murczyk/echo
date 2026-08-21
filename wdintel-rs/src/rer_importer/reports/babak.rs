@@ -1286,7 +1286,7 @@ async fn load_babak_candidate_page(
     let linked_message_ids = intel_product::Entity::find()
         .select_only()
         .column(intel_product::Column::IntelMessageId)
-        .filter(intel_product::Column::RelationKind.is_in([
+        .filter(intel_product::relation_kind_is_in([
             intel_product::RELATION_KIND_COMMENT,
             intel_product::RELATION_KIND_REPORT,
         ]))
@@ -1530,7 +1530,7 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
         Query::select()
             .expr(Expr::value(1))
             .from(intel_product::Entity)
-            .and_where(intel_product::Column::RelationKind.is_in([
+            .and_where(intel_product::relation_kind_is_in([
                 intel_product::RELATION_KIND_COMMENT,
                 intel_product::RELATION_KIND_REPORT,
             ]))

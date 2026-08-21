@@ -84,9 +84,9 @@ where
             intel_product::Column::SourceMessageId
                 .is_in(parent_signal_message_ids.to_vec()),
         )
-        .filter(
-            intel_product::Column::RelationKind.is_in(relation_kinds.to_vec()),
-        )
+        .filter(intel_product::relation_kind_is_in(
+            relation_kinds.iter().copied(),
+        ))
         .order_by_asc(intel_product::Column::CreatedAt)
         .order_by_asc(intel_product::Column::IntelMessageId)
         .all(dbx)
@@ -957,10 +957,9 @@ async fn load_echo_commented_message_rows(
             JoinType::InnerJoin,
             intel_product::Relation::SignalMessage1.def(),
         )
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_COMMENT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_COMMENT,
+        ))
         .filter(signal_message::Column::CreatedAt.gte(since_ts))
         .filter(signal_message::Column::CreatedAt.lt(till_ts))
         .filter(signal_message::Column::Deleted.eq(false))

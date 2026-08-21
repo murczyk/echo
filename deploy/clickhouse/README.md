@@ -437,7 +437,10 @@ The health timer compares the source publication, raw ClickHouse tables,
 current-state views, and gateway compatibility views after each successful
 replication probe. It never repairs schema drift. A separate one-minute
 `echo-analytics-reconcile.timer` owns current-view, gateway, and derived-schema
-repair under one host-wide lock. Once PeerDB observes a post-DDL row change and
+repair under one host-wide lock. Health probes acquire that lock only for their
+final desired-state check. The timer waits briefly for a concurrent health
+check, but skips a run when a long operation such as a mirror resync owns the
+lock. Once PeerDB observes a post-DDL row change and
 propagates a simple added column, that reconciler refreshes stale definitions
 without operator action. A quiet table therefore needs a reviewed, safe row
 touch in the migration or a table/mirror resync; deployment tooling must not

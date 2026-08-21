@@ -1154,6 +1154,7 @@ pub(crate) async fn backfill_inbox_unit_links(
                 sigint_inbox_item::Relation::SignalMessage.def(),
             )
             .filter(sigint_inbox_item::Column::Id.gt(last_id))
+            .filter(signal_message::Column::Id.gt(last_id))
             .filter(signal_message::Column::CreatedAt.gte(start_ts))
             .filter(signal_message::Column::CreatedAt.lt(till_ts))
             .order_by_asc(sigint_inbox_item::Column::Id)

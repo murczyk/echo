@@ -8,7 +8,6 @@ source "$SCRIPT_DIR/lib.sh"
 load_analytics_config
 validate_runtime_identifiers
 ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS=${ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS:-90}
-acquire_analytics_reconcile_lock
 require_expected_control_release
 
 probe_timeout=${ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS:-45}

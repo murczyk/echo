@@ -710,10 +710,9 @@ fn non_empty_comment_exists() -> SimpleExpr {
     let subquery = intel_product::Entity::find()
         .select_only()
         .expr(Expr::value(1))
-        .filter(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_COMMENT),
-        )
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_COMMENT,
+        ))
         .join_as(
             JoinType::InnerJoin,
             intel_product::Relation::SignalMessage1.def(),

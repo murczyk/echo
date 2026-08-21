@@ -195,7 +195,7 @@ async fn load_intelligence_report_summaries(
         return Ok(IntelligenceReportSummaries::default());
     }
     let links = intel_product::Entity::find()
-        .filter(intel_product::Column::RelationKind.is_in([
+        .filter(intel_product::relation_kind_is_in([
             intel_product::RELATION_KIND_REPORT,
             intel_product::RELATION_KIND_COMMENT,
         ]))

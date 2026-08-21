@@ -1952,10 +1952,9 @@ where
         let linked_comment_exists = intel_product::Entity::find()
             .select_only()
             .expr(Expr::value(1))
-            .filter(
-                intel_product::Column::RelationKind
-                    .eq(intel_product::RELATION_KIND_COMMENT),
-            )
+            .filter(intel_product::relation_kind_eq(
+                intel_product::RELATION_KIND_COMMENT,
+            ))
             .join_as(
                 JoinType::InnerJoin,
                 intel_product::Relation::SignalMessage1.def(),
@@ -6391,10 +6390,9 @@ async fn accessible_message_ids(
     let parent_access = Query::select()
         .expr(Expr::value(1))
         .from(intel_product::Entity)
-        .and_where(
-            intel_product::Column::RelationKind
-                .eq(intel_product::RELATION_KIND_REPORT),
-        )
+        .and_where(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
         .and_where(
             Expr::col((
                 intel_product::Entity,

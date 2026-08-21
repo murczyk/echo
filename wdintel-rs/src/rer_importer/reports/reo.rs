@@ -317,7 +317,7 @@ async fn load_reo_inbox_messages(
             intel_product::Entity::find()
                 .select_only()
                 .column(intel_product::Column::IntelMessageId)
-                .filter(intel_product::Column::RelationKind.is_in([
+                .filter(intel_product::relation_kind_is_in([
                     intel_product::RELATION_KIND_COMMENT,
                     intel_product::RELATION_KIND_REPORT,
                 ]))
