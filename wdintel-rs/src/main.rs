@@ -329,10 +329,10 @@ pub struct OneoffBackfillInboxUnitLinksPs {
 
 #[derive(clap::Parser, Debug)]
 pub struct OneoffLinkInboxSettlementsPs {
-    /// Start datetime in configured local time (inclusive). Example: `2026-08-18T00:00:00`
+    /// Start datetime in configured local time (inclusive). Example: `2026-08-18T00:00:00` or `2026-08-18 00:00:00`
     #[arg(long)]
     pub since_ts: Option<String>,
-    /// End datetime in configured local time (non-inclusive). Example: `2026-08-19T00:00:00`
+    /// End datetime in configured local time (non-inclusive). Example: `2026-08-19T00:00:00` or `2026-08-19 00:00:00`
     #[arg(long)]
     pub till_ts: Option<String>,
 }

@@ -119,6 +119,7 @@ export type AnalysisMapAttrs = {
   canShowSettlements: string;
   showSettlements: string;
   messages: string;
+  settlementMessagesHasMore: string;
   selectedUnits: string;
   palitras: string;
   palitrasLoaded: string;
@@ -263,6 +264,10 @@ export type AnalysisPageActions = {
   loadMoreMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
+  loadSettlementMessagesForMap: (
+    settlementId: number,
+    beforeIdNoninclusive?: number | null,
+  ) => Promise<boolean>;
   loadNewCallsigns: () => Promise<void>;
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction: () => void;

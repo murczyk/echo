@@ -328,6 +328,7 @@ export function AnalysisCenterPanel({
               visible
               onDateRangeChange={page.refreshMapDateRange}
               onLoadMessages={page.loadMessagesForMap}
+              onLoadSettlementMessages={page.loadSettlementMessagesForMap}
               onUnitClick={page.toggleUnitFromMap}
               onShowSettlementsChange={page.setShowSettlements}
             />

@@ -22,6 +22,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
+  BattleLineSettlementCandidate,
   BattleLineState,
   BattleLineTestRsp,
   BattleLineUnlinkedInboxRsp,
@@ -61,6 +62,15 @@ function formatVersionTime(timestamp: number | null): string {
   return timestamp == null ? '—' : new Date(timestamp).toLocaleString('uk-UA');
 }
 
+function formatSettlementCandidate(candidate: BattleLineSettlementCandidate): string {
+  const administrativeDetails = [candidate.district.trim(), candidate.region.trim()].filter(
+    Boolean,
+  );
+  return `${candidate.name} #${candidate.settlementId}${
+    administrativeDetails.length > 0 ? ` ${administrativeDetails.join(' ')}` : ''
+  }`;
+}
+
 function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promise<void> }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const testSerialRef = useRef(0);
@@ -88,7 +98,7 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
                 id: selected.settlementId,
                 lat: selected.coordinate.lat,
                 lon: selected.coordinate.lon,
-                label: `${location.location}: ${selected.name}`,
+                label: `${location.location}: ${formatSettlementCandidate(selected)}`,
               },
             ]
           : [];
@@ -217,26 +227,32 @@ function LbzTab({ state, reload }: { state: BattleLineState; reload: () => Promi
               {testResult.locations.length === 0 ? (
                 <Alert severity="info">У location_v2 немає локацій</Alert>
               ) : (
-                testResult.locations.map((location) => (
-                  <Paper key={location.location} variant="outlined" sx={{ p: 1.5 }}>
-                    <Typography fontWeight={600}>{location.location}</Typography>
-                    <Typography variant="body2">
-                      Обрано: {location.chosenSettlementId ?? 'немає'}
-                      {location.distanceM == null ? '' : ` · ${Math.round(location.distanceM)} м`}
-                    </Typography>
-                    <Typography variant="caption" display="block">
-                      Кандидати:{' '}
-                      {location.candidates
-                        .map((candidate) => `${candidate.name} #${candidate.settlementId}`)
-                        .join(', ') || 'немає'}
-                    </Typography>
-                    {location.invalidAorIds.length > 0 ? (
-                      <Typography variant="caption" color="warning.main">
-                        Недійсні AOR: {location.invalidAorIds.join(', ')}
+                testResult.locations.map((location) => {
+                  const chosen = location.candidates.find(
+                    (candidate) => candidate.settlementId === location.chosenSettlementId,
+                  );
+                  return (
+                    <Paper key={location.location} variant="outlined" sx={{ p: 1.5 }}>
+                      <Typography fontWeight={600}>{location.location}</Typography>
+                      <Typography variant="body2">
+                        Обрано:{' '}
+                        {chosen
+                          ? formatSettlementCandidate(chosen)
+                          : (location.chosenSettlementId ?? 'немає')}
+                        {location.distanceM == null ? '' : ` · ${Math.round(location.distanceM)} м`}
                       </Typography>
-                    ) : null}
-                  </Paper>
-                ))
+                      <Typography variant="caption" display="block">
+                        Кандидати:{' '}
+                        {location.candidates.map(formatSettlementCandidate).join(', ') || 'немає'}
+                      </Typography>
+                      {location.invalidAorIds.length > 0 ? (
+                        <Typography variant="caption" color="warning.main">
+                          Недійсні AOR: {location.invalidAorIds.join(', ')}
+                        </Typography>
+                      ) : null}
+                    </Paper>
+                  );
+                })
               )}
             </Stack>
           </Box>

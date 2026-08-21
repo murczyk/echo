@@ -63,6 +63,7 @@ pub struct BattleLineTestReq {
 pub struct BattleLineSettlementCandidate {
     pub settlement_id: i32,
     pub name: String,
+    pub district: String,
     pub region: String,
     pub coordinate: BattleLineCoordinate,
 }

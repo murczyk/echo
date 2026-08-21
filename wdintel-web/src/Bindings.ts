@@ -1190,6 +1190,12 @@ export type MapSettlement = {
   inboxItemCount: number;
 };
 
+export type MapSettlementMessagesReq = {
+  settlementId: number;
+  inboxItemsFilter: InboxMessagesReq;
+  beforeIdNoninclusive: number | null;
+};
+
 export type MapPointsRsp = {
   networkUnits: Array<NetworkUnit>;
   points: Array<FreqDetailedPoint>;
@@ -1241,6 +1247,7 @@ export type BattleLineTestReq = {
 export type BattleLineSettlementCandidate = {
   settlementId: number;
   name: string;
+  district: string;
   region: string;
   coordinate: BattleLineCoordinate;
 };

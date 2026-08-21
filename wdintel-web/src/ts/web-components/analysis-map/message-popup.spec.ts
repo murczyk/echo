@@ -167,4 +167,43 @@ describe('openMessagesPopup', () => {
     expect(bindPopup).not.toHaveBeenCalled();
     expect(openPopup).not.toHaveBeenCalled();
   });
+
+  it('loads another settlement page from the popup control', () => {
+    const loadMoreButton = document.createElement('button');
+    loadMoreButton.dataset.mapSettlementMessagesLoadMore = '';
+    document.body.appendChild(loadMoreButton);
+    const onLoadMoreMessages = vi.fn();
+    const clickedPoint = {
+      getElement: () => document.createElementNS('http://www.w3.org/2000/svg', 'path'),
+      getLatLng: () => L.latLng(49.2, 37.3),
+      bindPopup: vi.fn(),
+      openPopup: vi.fn(),
+      once: vi.fn(),
+    };
+
+    openMessagesPopup({
+      map: null,
+      clickedPoint: clickedPoint as never,
+      clickedLatLng: L.latLng(49.2, 37.3),
+      preferClickedLatLng: false,
+      messages: [[17, { text: 'body', date: '2026-04-30', time: '01:42:11' }]],
+      networkUnits: [],
+      selectedUnits: [],
+      findPointMarkerByMessageId: vi.fn(),
+      hasMoreMessages: true,
+      onLoadMoreMessages,
+      contextTitle: 'Харків, Харківська',
+      onUnitClicked: vi.fn(),
+      setClickedState: vi.fn(),
+    });
+
+    loadMoreButton.click();
+
+    expect(clickedPoint.bindPopup).toHaveBeenCalledWith(
+      expect.stringMatching(/Харків, Харківська.*data-map-settlement-messages-load-more/s),
+      expect.any(Object),
+    );
+    expect(onLoadMoreMessages).toHaveBeenCalledOnce();
+    loadMoreButton.remove();
+  });
 });

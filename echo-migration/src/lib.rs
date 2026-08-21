@@ -385,6 +385,7 @@ mod m20260819_064249_ai_intel_report_settings;
 mod m20260819_175820_device_settings;
 mod m20260820_081114_messenger_queue_retry;
 mod m20260820_121919_ai_intel_report_attempt;
+mod m20260821_080931_recalculate_battle_line_aor_sectors;
 
 pub struct Migrator;
 
@@ -889,6 +890,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260820_081114_messenger_queue_retry::Migration),
             Box::new(m20260819_175820_device_settings::Migration),
             Box::new(m20260820_121919_ai_intel_report_attempt::Migration),
+            Box::new(
+                m20260821_080931_recalculate_battle_line_aor_sectors::Migration,
+            ),
         ]
     }
 }

@@ -69,6 +69,7 @@ describe('analysis-map', () => {
       _map: typeof map | null;
       _clickedPoint: typeof clickedPoint | null;
       _clickedLatLng: null;
+      _messagesLoading: boolean;
       _messagesPopupPending: boolean;
       _messagesPopupOpenRetryCount: number;
       attributeChangedCallback: (name: string, oldValue: string | null, newValue: string) => void;
@@ -77,6 +78,7 @@ describe('analysis-map', () => {
     analysisMap._map = map;
     analysisMap._clickedPoint = clickedPoint;
     analysisMap._clickedLatLng = null;
+    analysisMap._messagesLoading = true;
     analysisMap._messagesPopupPending = true;
     analysisMap._messagesPopupOpenRetryCount = 2;
 
@@ -92,6 +94,33 @@ describe('analysis-map', () => {
     expect(analysisMap._messagesPopupOpenRetryCount).toBe(2);
     expect(analysisMap._clickedPoint).toBe(clickedPoint);
     expect(analysisMap._clickedLatLng).toBeNull();
+  });
+
+  it('closes an open popup when its messages are cleared outside a load', () => {
+    const element = Object.create(
+      (customElements.get('analysis-map') as CustomElementConstructor).prototype,
+    ) as HTMLElement;
+    const clickedPoint = { closePopup: vi.fn() };
+    const analysisMap = element as unknown as {
+      _clickedPoint: typeof clickedPoint | null;
+      _clickedLatLng: null;
+      _messagesLoading: boolean;
+      _messagesPopupPending: boolean;
+      attributeChangedCallback: (name: string, oldValue: string | null, newValue: string) => void;
+    };
+    analysisMap._clickedPoint = clickedPoint;
+    analysisMap._clickedLatLng = null;
+    analysisMap._messagesLoading = false;
+    analysisMap._messagesPopupPending = false;
+
+    analysisMap.attributeChangedCallback(
+      'messages',
+      JSON.stringify({ messages: [{ id: 1 }], networkUnits: [] }),
+      JSON.stringify({ messages: [], networkUnits: [] }),
+    );
+
+    expect(clickedPoint.closePopup).toHaveBeenCalledOnce();
+    expect(analysisMap._clickedPoint).toBeNull();
   });
 
   it('clears stale popup state when loading finishes without messages', () => {
@@ -226,19 +255,23 @@ describe('analysis-map', () => {
     expect(map.flyTo).toHaveBeenCalledWith([47.42135, 35.62197], 13, { duration: 0.4 });
   });
 
-  it('renders settlement quantities in marker labels and popups', () => {
+  it('loads linked inbox items when a settlement marker is clicked', () => {
+    let clickHandler: (() => void) | undefined;
     const marker = {
       addTo: vi.fn(),
-      bindPopup: vi.fn(),
       bindTooltip: vi.fn(),
+      getElement: vi.fn().mockReturnValue(null),
+      getLatLng: vi.fn().mockReturnValue({ lat: 49.99, lng: 36.23 }),
+      on: vi.fn((_event: string, handler: () => void) => {
+        clickHandler = handler;
+      }),
     };
     vi.spyOn(L, 'circleMarker').mockReturnValue(marker as never);
     const layer = { addTo: vi.fn(), clearLayers: vi.fn() };
     const map = { removeLayer: vi.fn() };
-    const analysisMap = Object.create(
-      (customElements.get('analysis-map') as CustomElementConstructor).prototype,
-    ) as {
+    const analysisMap = document.createElement('analysis-map') as HTMLElement & {
       _canShowSettlements: boolean;
+      _clickedSettlementLabel: string | null;
       _map: typeof map;
       _replaceSettlementsOnMap: () => void;
       _settlementMarkers: Map<number, unknown>;
@@ -261,13 +294,43 @@ describe('analysis-map', () => {
         inbox_item_count: 3,
       },
     ];
+    const listener = vi.fn();
+    analysisMap.addEventListener('load-settlement-messages', listener);
 
     analysisMap._replaceSettlementsOnMap();
+    clickHandler?.();
 
     expect(marker.bindTooltip).toHaveBeenCalledWith('&lt;Харків&gt; (3)', { direction: 'top' });
-    expect(marker.bindPopup).toHaveBeenCalledWith(
-      "<strong>&lt;Харків&gt;</strong>, Харківська<br>Пов'язаних перехоплень: 3",
-    );
+    expect(listener).toHaveBeenCalledOnce();
+    expect(analysisMap._clickedSettlementLabel).toBe('<Харків>, Харківська');
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      settlementId: 7,
+      beforeIdNoninclusive: null,
+    });
+  });
+
+  it('requests the next settlement page from the oldest loaded message', () => {
+    const analysisMap = document.createElement('analysis-map') as HTMLElement & {
+      _clickedSettlementId: number;
+      _loadMoreSettlementMessages: () => void;
+      _messages: Array<[number, unknown]>;
+      _settlementMessagesHasMore: boolean;
+    };
+    analysisMap._clickedSettlementId = 7;
+    analysisMap._messages = [
+      [30, {}],
+      [20, {}],
+    ];
+    analysisMap._settlementMessagesHasMore = true;
+    const listener = vi.fn();
+    analysisMap.addEventListener('load-settlement-messages', listener);
+
+    analysisMap._loadMoreSettlementMessages();
+
+    expect(listener.mock.calls[0][0].detail).toEqual({
+      settlementId: 7,
+      beforeIdNoninclusive: 20,
+    });
   });
 
   it('does not redispatch settlement changes already emitted by the settings control', () => {
