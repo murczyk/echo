@@ -581,14 +581,15 @@ export function RerDutyNeoPage({
   }, []);
   const handleCreatedMessage = useCallback(() => {
     setCreateMessageOpen(false);
-    if (reportSource) {
-      reloadFeeds();
-      notify({ message: 'Розвіддонесення успішно створено.', severity: 'success' });
-      return;
-    }
+    // Do not reloadFeeds(): that re-pins the scroller to the bottom.
     reloadEmptyFeeds();
-    notify({ message: 'Повідомлення успішно створено.', severity: 'success' });
-  }, [notify, reloadEmptyFeeds, reloadFeeds, reportSource]);
+    notify({
+      message: reportSource
+        ? 'Розвіддонесення успішно створено.'
+        : 'Повідомлення успішно створено.',
+      severity: 'success',
+    });
+  }, [notify, reloadEmptyFeeds, reportSource]);
 
   useEffect(() => {
     if (
