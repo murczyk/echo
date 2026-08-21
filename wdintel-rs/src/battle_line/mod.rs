@@ -856,7 +856,10 @@ with input as (
     from clipped
 ), result as (
     select *, ST_ForceCollection(
-        ST_Transform(ST_Collect(clipped_points, clipped_lines), 4326)
+        ST_Transform(ST_Collect(
+            case when ST_IsEmpty(clipped_points) then null else clipped_points end,
+            case when ST_IsEmpty(clipped_lines) then null else clipped_lines end
+        ), 4326)
     ) as geometry
     from geometry_parts
 )
@@ -1522,12 +1525,18 @@ fn append_geojson_features(
                 append_geojson_features(geometry, features).c(h!())?;
             }
         }
-        "Point" => features.push(BattleLineFeature {
-            kind: "Point".to_string(),
-            coordinates: vec![
-                coordinate_from_json(&geometry["coordinates"]).c(h!())?
-            ],
-        }),
+        "Point" => {
+            let coordinates = geometry["coordinates"].as_array().c(h!())?;
+            if !coordinates.is_empty() {
+                features.push(BattleLineFeature {
+                    kind: "Point".to_string(),
+                    coordinates: vec![coordinate_from_json(
+                        &geometry["coordinates"],
+                    )
+                    .c(h!())?],
+                });
+            }
+        }
         "LineString" => features.push(BattleLineFeature {
             kind: "LineString".to_string(),
             coordinates: coordinates_from_json(&geometry["coordinates"])
@@ -1686,6 +1695,37 @@ mod tests {
             ])
             .unwrap(),
             "GEOMETRYCOLLECTION(POINT(32 50),POINT(31 49))"
+        );
+    }
+
+    #[test]
+    fn ignores_empty_point_geojson_2287() {
+        let geometry = serde_json::json!({
+            "type": "GeometryCollection",
+            "geometries": [
+                { "type": "Point", "coordinates": [] },
+                {
+                    "type": "LineString",
+                    "coordinates": [[31.0, 49.0], [32.0, 50.0]]
+                }
+            ]
+        });
+
+        assert_eq!(
+            features_from_geojson(&geometry).unwrap(),
+            vec![BattleLineFeature {
+                kind: "LineString".to_string(),
+                coordinates: vec![
+                    BattleLineCoordinate {
+                        lat: 49.0,
+                        lon: 31.0,
+                    },
+                    BattleLineCoordinate {
+                        lat: 50.0,
+                        lon: 32.0,
+                    },
+                ],
+            }]
         );
     }
 
