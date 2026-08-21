@@ -522,6 +522,13 @@ cooldown instead of making every request wait for the unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
 the supplied values are 90 seconds.
 
+ClickHouse receives an explicit `max_server_memory_usage` calculated from the
+smaller of `/proc/meminfo` and the cgroup memory limit. This avoids using the
+physical host size inside a constrained container. The control-release install
+applies the cap immediately, and `echo-analytics-memory-limit.timer` repairs
+configuration or live-setting drift every minute without restarting
+ClickHouse.
+
 Gateway refresh reads the published source schema and restores compatibility
 types that ClickHouse cannot distinguish on its own, including JSON/JSONB,
 bytea, tsvector, and `timestamp without time zone`. This keeps application
@@ -632,6 +639,7 @@ bin/status.sh
 bin/logs.sh echo-peer-flow-worker.service
 systemctl status echo-analytics-health.timer
 systemctl status echo-analytics-reconcile.timer
+systemctl status echo-analytics-memory-limit.timer
 systemctl status echo-peerdb-table-reconcile.timer
 journalctl -u echo-analytics-reconcile.service
 journalctl -u echo-peerdb-table-reconcile.service

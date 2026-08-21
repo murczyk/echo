@@ -28,11 +28,21 @@ cat >"$case_dir/bin/reconcile-schema.sh" <<'MOCK'
 #!/usr/bin/env bash
 printf 'schema %s\n' "$*" >>"$ECHO_TEST_OPERATIONS"
 MOCK
+cat >"$case_dir/bin/reconcile-clickhouse-memory-limit.sh" <<'MOCK'
+#!/usr/bin/env bash
+printf 'memory %s\n' "$*" >>"$ECHO_TEST_OPERATIONS"
+MOCK
+cat >"$case_dir/bin/reconcile-gateway-settings.sh" <<'MOCK'
+#!/usr/bin/env bash
+printf 'gateway %s\n' "$*" >>"$ECHO_TEST_OPERATIONS"
+MOCK
 cat >"$case_dir/bin/reconcile-derived-schema.sh" <<'MOCK'
 #!/usr/bin/env bash
 printf 'derived\n' >>"$ECHO_TEST_OPERATIONS"
 MOCK
 chmod +x \
+  "$case_dir/bin/reconcile-clickhouse-memory-limit.sh" \
+  "$case_dir/bin/reconcile-gateway-settings.sh" \
   "$case_dir/bin/reconcile-schema.sh" \
   "$case_dir/bin/reconcile-derived-schema.sh"
 
@@ -44,6 +54,7 @@ run_reconcile() {
 }
 
 run_reconcile
+[[ $(grep -c '^memory --check$' "$operations") == 1 ]]
 [[ $(grep -c '^schema $' "$operations") == 1 ]]
 [[ $(grep -c '^derived$' "$operations") == 1 ]]
 [[ $(<"$case_dir/state/desired-state-id") == "$(printf '%064d' 1)" ]]
@@ -54,10 +65,12 @@ if grep -q 'install -d -o' "$COMMAND"; then
 fi
 
 run_reconcile
+[[ $(grep -c '^memory --check$' "$operations") == 2 ]]
 [[ $(grep -c '^schema $' "$operations") == 2 ]]
 [[ $(grep -c '^derived$' "$operations") == 1 ]]
 
 run_reconcile --check
+[[ $(grep -c '^memory --check$' "$operations") == 3 ]]
 grep -q '^schema --check$' "$operations"
 [[ $(grep -c '^derived$' "$operations") == 1 ]]
 

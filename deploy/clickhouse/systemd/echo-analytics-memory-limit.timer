@@ -1,0 +1,13 @@
+[Unit]
+Description=Reconcile Echo ClickHouse memory limit every minute
+PartOf=echo-analytics.target
+
+[Timer]
+OnBootSec=10s
+OnUnitInactiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=echo-analytics-memory-limit.service
+
+[Install]
+WantedBy=echo-analytics.target

@@ -200,6 +200,7 @@ SQL
 
 log "Configuring ClickHouse for local-only access"
 admin_hash=$(printf '%s' "$CLICKHOUSE_ADMIN_PASSWORD" | sha256sum | awk '{print $1}')
+clickhouse_memory_limit=$(clickhouse_memory_limit_bytes)
 sudo install -d -m 0755 /etc/clickhouse-server/config.d /etc/clickhouse-server/users.d
 sudo tee /etc/clickhouse-server/config.d/echo-analytics.xml >/dev/null <<EOF
 <clickhouse>
@@ -208,6 +209,11 @@ sudo tee /etc/clickhouse-server/config.d/echo-analytics.xml >/dev/null <<EOF
   <tcp_port>${CLICKHOUSE_NATIVE_PORT:-9000}</tcp_port>
   <http_port>${CLICKHOUSE_HTTP_PORT:-8123}</http_port>
   <max_server_memory_usage_to_ram_ratio>0.55</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+EOF
+sudo tee /etc/clickhouse-server/config.d/echo-memory-limit.xml >/dev/null <<EOF
+<clickhouse>
+  <max_server_memory_usage>$clickhouse_memory_limit</max_server_memory_usage>
 </clickhouse>
 EOF
 sudo tee /etc/clickhouse-server/users.d/echo-analytics.xml >/dev/null <<EOF
@@ -230,8 +236,10 @@ EOF
 sudo chmod 0640 \
   /etc/clickhouse-server/config.d/echo-analytics.xml \
   /etc/clickhouse-server/users.d/echo-analytics.xml
+sudo chmod 0644 /etc/clickhouse-server/config.d/echo-memory-limit.xml
 sudo chown root:clickhouse \
   /etc/clickhouse-server/config.d/echo-analytics.xml \
+  /etc/clickhouse-server/config.d/echo-memory-limit.xml \
   /etc/clickhouse-server/users.d/echo-analytics.xml
 sudo systemctl restart clickhouse-server
 wait_for_command ClickHouse clickhouse_admin --query 'SELECT 1'
