@@ -563,6 +563,7 @@ async fn build_inbox_messages_report_sql(
         .column(sigint_inbox_item::Column::Date)
         .column(sigint_inbox_item::Column::Time)
         .column(sigint_inbox_item::Column::Freq)
+        .column(signal_message::Column::Id)
         .column(signal_message::Column::Body)
         .expr_as(
             Expr::cust(
@@ -662,6 +663,7 @@ async fn build_inbox_messages_report_sql(
         .group_by(sigint_inbox_item::Column::Date)
         .group_by(sigint_inbox_item::Column::Time)
         .group_by(sigint_inbox_item::Column::Freq)
+        .group_by(sigint_inbox_item::Column::UnitV2)
         .group_by(signal_message::Column::Body)
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
