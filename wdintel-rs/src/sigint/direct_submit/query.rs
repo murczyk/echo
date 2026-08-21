@@ -558,7 +558,8 @@ where
     let login = login_id.to_string();
     Ok(message.datasource_group_id.is_none()
         && groups.is_empty()
-        && (message.sender.as_deref() == Some(login.as_str())
+        && (message.login_id == Some(*login_id)
+            || message.sender.as_deref() == Some(login.as_str())
             || message.sender.as_deref().is_some_and(|sender| {
                 Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
                     organism_logins.contains(&sender_id)

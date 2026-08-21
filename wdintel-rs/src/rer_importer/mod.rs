@@ -20,7 +20,7 @@ use rand::prelude::IndexedRandom;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
 use sqlx::Row;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufWriter, Seek, Write};
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
 use tokio_util::io::ReaderStream;
@@ -1625,22 +1625,30 @@ pub async fn senders(
     .await
     .c(h!())?;
 
-    let sender_uuids = signal_message_group::Entity::find()
+    let sender_rows = signal_message_group::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message_group::Relation::SignalMessage.def(),
         )
         .select_only()
         .column(signal_message_group::Column::Sender)
+        .column(signal_message_group::Column::LoginId)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message_group::Column::Sender.is_not_null())
-        .filter(signal_message_group::Column::Sender.ne(""))
-        .group_by(signal_message_group::Column::Sender)
-        .order_by_asc(signal_message_group::Column::Sender)
-        .into_tuple::<String>()
+        .into_tuple::<(Option<String>, Option<Uuid>)>()
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let sender_uuids = sender_rows
+        .into_iter()
+        .flat_map(|(sender, login_id)| {
+            sender
+                .into_iter()
+                .chain(login_id.map(|login_id| login_id.to_string()))
+        })
+        .filter(|sender| !sender.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     let data = collect_profiles_data(&env.dbx, sender_uuids)
         .await
         .c(h!())?;

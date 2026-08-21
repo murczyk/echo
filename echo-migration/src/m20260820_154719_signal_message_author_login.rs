@@ -26,6 +26,10 @@ set login_id = login.id
 from login
 where group_link.sender = login.id::text;
 
+update signal_message_group
+set sender = null
+where login_id is not null;
+
 update signal_message
 set sender = null
 where login_id is not null;
