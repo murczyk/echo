@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BattleLineState, BattleLineTestRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from '../rer-duty-neo/inbox-message-mocks';
-import { AdminBattleLinePage } from './index';
+import { AdminBattleLinePage, formatSettlementCandidate } from './index';
 
 const api = vi.hoisted(() => ({
   fetchBattleLineState: vi.fn(),
@@ -127,6 +127,18 @@ afterEach(() => {
 });
 
 describe('AdminBattleLinePage', () => {
+  it('formats settlement candidates with district and region details', () => {
+    expect(
+      formatSettlementCandidate({
+        settlementId: 18105,
+        name: 'Лебедівка',
+        district: 'Хмельницький',
+        region: 'Хмельницька',
+        coordinate: { lat: 49.0, lon: 27.0 },
+      }),
+    ).toBe('Лебедівка #18105 Хмельницький р-н Хмельницька обл.');
+  });
+
   it('renders current/history data and loads both paginated tabs', async () => {
     await renderPage();
     expect(container.textContent).toContain('previous.kml');
@@ -256,6 +268,7 @@ describe('AdminBattleLinePage', () => {
             {
               settlementId: 7,
               name: 'Харків',
+              district: 'Харківський',
               region: 'Харківська',
               coordinate: { lat: 49.99, lon: 36.23 },
             },
@@ -270,11 +283,13 @@ describe('AdminBattleLinePage', () => {
     if (!(idInput instanceof HTMLInputElement)) throw new Error('ID input not found');
     await setInputValue(idInput, '42');
     await act(async () => button('Перевірити').click());
-    await vi.waitFor(() => expect(container.textContent).toContain('ХАРКІВ: Харків'));
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('ХАРКІВ: Харків #7 Харківський р-н Харківська обл.'),
+    );
 
     api.testBattleLine.mockRejectedValueOnce(new Error('test failed'));
     await act(async () => button('Перевірити').click());
     await vi.waitFor(() => expect(container.textContent).toContain('test failed'));
-    expect(container.textContent).not.toContain('ХАРКІВ: Харків');
+    expect(container.textContent).not.toContain('ХАРКІВ: Харків #7');
   });
 });

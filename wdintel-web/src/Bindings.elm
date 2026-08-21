@@ -3065,6 +3065,7 @@ type alias MapSettlement =
     , lat : Float
     , lon : Float
     , inboxItemCount : Int
+    , inboxItemIds : List (Int)
     }
 
 
@@ -3077,6 +3078,7 @@ mapSettlementEncoder struct =
         , ( "lat", (Json.Encode.float) struct.lat )
         , ( "lon", (Json.Encode.float) struct.lon )
         , ( "inbox_item_count", (Json.Encode.int) struct.inboxItemCount )
+        , ( "inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.inboxItemIds )
         ]
 
 
@@ -3211,6 +3213,7 @@ battleLineTestReqEncoder struct =
 type alias BattleLineSettlementCandidate =
     { settlementId : Int
     , name : String
+    , district : String
     , region : String
     , coordinate : BattleLineCoordinate
     }
@@ -3221,6 +3224,7 @@ battleLineSettlementCandidateEncoder struct =
     Json.Encode.object
         [ ( "settlement_id", (Json.Encode.int) struct.settlementId )
         , ( "name", (Json.Encode.string) struct.name )
+        , ( "district", (Json.Encode.string) struct.district )
         , ( "region", (Json.Encode.string) struct.region )
         , ( "coordinate", (battleLineCoordinateEncoder) struct.coordinate )
         ]
@@ -15536,6 +15540,7 @@ mapSettlementDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_ids" (Json.Decode.list (Json.Decode.int))))
 
 
 mapPointsRspDecoder : Json.Decode.Decoder MapPointsRsp
@@ -15607,6 +15612,7 @@ battleLineSettlementCandidateDecoder =
     Json.Decode.succeed BattleLineSettlementCandidate
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "region" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinate" (battleLineCoordinateDecoder)))
 

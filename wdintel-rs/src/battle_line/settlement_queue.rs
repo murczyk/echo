@@ -267,8 +267,8 @@ pub async fn oneoff_link_inbox_settlements(
     ps: &OneoffLinkInboxSettlementsPs,
 ) -> Result<(), AppError> {
     info!("Starting inbox settlement linking one-off");
-    let env = crate::server::new_env(mode).await.c(h!())?;
     let (since_ts, till_ts) = oneoff_bounds(ps).c(h!())?;
+    let env = crate::server::new_env(mode).await.c(h!())?;
     let mut stats = OneoffLinkInboxSettlementsStats::default();
     let mut cursor = None;
     loop {
@@ -693,8 +693,10 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].settlement_id, settlement_id);
         assert_eq!(rows[0].inbox_item_count, 2);
+        assert_eq!(rows[0].inbox_item_ids, item_ids);
         assert_eq!(rows[1].settlement_id, second_settlement_id);
         assert_eq!(rows[1].inbox_item_count, 2);
+        assert_eq!(rows[1].inbox_item_ids, item_ids);
         txn.rollback().await.unwrap();
     }
 

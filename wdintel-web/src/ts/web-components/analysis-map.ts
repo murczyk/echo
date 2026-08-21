@@ -45,6 +45,7 @@ type MapSettlementPoint = {
   lat: number;
   lon: number;
   inbox_item_count: number;
+  inbox_item_ids: number[];
 };
 
 class AnalysisMap extends HTMLElement {
@@ -761,12 +762,16 @@ class AnalysisMap extends HTMLElement {
         weight: 2,
       });
       const name = this._escapeHtml(settlement.name);
-      const region = settlement.region ? `, ${this._escapeHtml(settlement.region)}` : '';
       const count = settlement.inbox_item_count;
       marker.bindTooltip(`${name} (${count})`, {
         direction: 'top',
       });
-      marker.bindPopup(`<strong>${name}</strong>${region}<br>Пов'язаних перехоплень: ${count}`);
+      marker.on('click', () => {
+        this._clickedPoint = null;
+        this._clickedLatLng = marker.getLatLng();
+        this._setMessagesLoading(true, marker);
+        this._emitLoadMessagesDescriptions(settlement.inbox_item_ids);
+      });
       marker.addTo(this._settlementsLayerGroup);
       this._settlementMarkers.set(settlement.settlement_id, marker);
     }
@@ -1112,7 +1117,7 @@ class AnalysisMap extends HTMLElement {
       return;
     }
 
-    if (this._messagesLoadingTarget instanceof DataCircleMarker) {
+    if (this._messagesLoadingTarget instanceof L.CircleMarker) {
       this._syncPointMessagesLoadingIndicator(this._messagesLoadingTarget);
       return;
     }
@@ -1121,7 +1126,7 @@ class AnalysisMap extends HTMLElement {
   }
 
   private _clearMessagesLoadingIndicator(): void {
-    if (this._messagesLoadingTarget instanceof DataCircleMarker) {
+    if (this._messagesLoadingTarget instanceof L.CircleMarker) {
       const path = this._messagesLoadingTarget.getElement() as
         (SVGPathElement & { classList: DOMTokenList }) | null;
       if (path) {
@@ -1137,7 +1142,7 @@ class AnalysisMap extends HTMLElement {
     this._messagesLoadingTarget = null;
   }
 
-  private _syncPointMessagesLoadingIndicator(target: DataCircleMarker): void {
+  private _syncPointMessagesLoadingIndicator(target: L.CircleMarker): void {
     const path = target.getElement() as (SVGPathElement & { classList: DOMTokenList }) | null;
     if (!path) {
       return;

@@ -1,6 +1,7 @@
 use crate::battle_line::types::*;
 use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
+    BATTLE_LINE_AOR_ANCHOR_LATITUDE, BATTLE_LINE_AOR_ANCHOR_LONGITUDE,
     BATTLE_LINE_CLIP_EXTENT_METERS,
     BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
     BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
@@ -80,6 +81,7 @@ struct MatchRow {
 struct CanonicalSettlementRow {
     settlement_id: i32,
     name: String,
+    district: String,
     region: String,
     lat: f64,
     lon: f64,
@@ -607,7 +609,12 @@ where aor_id = $1
     dbx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         AOR_GEOMETRY_INSERT_SQL,
-        [aor_id.into(), BATTLE_LINE_CLIP_EXTENT_METERS.into()],
+        [
+            aor_id.into(),
+            BATTLE_LINE_CLIP_EXTENT_METERS.into(),
+            BATTLE_LINE_AOR_ANCHOR_LONGITUDE.into(),
+            BATTLE_LINE_AOR_ANCHOR_LATITUDE.into(),
+        ],
     ))
     .await
     .c(h!())?;
@@ -621,7 +628,8 @@ with input as (
         a.id as aor_id,
         ST_Transform(bl.geometry, 3857) as full_geometry,
         ST_Transform(ST_SetSRID(ST_MakePoint(a.left_lon, a.left_lat), 4326), 3857) as start_hint,
-        ST_Transform(ST_SetSRID(ST_MakePoint(a.right_lon, a.right_lat), 4326), 3857) as end_hint
+        ST_Transform(ST_SetSRID(ST_MakePoint(a.right_lon, a.right_lat), 4326), 3857) as end_hint,
+        ST_Transform(ST_SetSRID(ST_MakePoint($3, $4), 4326), 3857) as anchor
     from battle_line_version bl
     join area_of_responsibility a on a.id = $1
     where bl.retired_at is null
@@ -635,25 +643,39 @@ with input as (
         version_id,
         aor_id,
         full_geometry,
+        start_hint,
+        end_hint,
+        anchor,
         ST_ClosestPoint(full_geometry, start_hint) as snapped_start,
         ST_ClosestPoint(full_geometry, end_hint) as snapped_end
     from input
 ), directed as (
     select *,
-        ST_X(snapped_end) - ST_X(snapped_start) as dx,
-        ST_Y(snapped_end) - ST_Y(snapped_start) as dy,
+        ST_X(start_hint) - ST_X(anchor) as start_dx,
+        ST_Y(start_hint) - ST_Y(anchor) as start_dy,
+        ST_X(end_hint) - ST_X(anchor) as end_dx,
+        ST_Y(end_hint) - ST_Y(anchor) as end_dy,
+        ST_Distance(anchor, start_hint) as start_length,
+        ST_Distance(anchor, end_hint) as end_length,
         ST_Distance(snapped_start, snapped_end) as guide_length
     from snapped
 ), clipped as (
     select *, ST_SetSRID(ST_MakePolygon(ST_MakeLine(array[
-        ST_MakePoint(ST_X(snapped_start) - dy / guide_length * $2, ST_Y(snapped_start) + dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_end) - dy / guide_length * $2, ST_Y(snapped_end) + dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_end) + dy / guide_length * $2, ST_Y(snapped_end) - dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_start) + dy / guide_length * $2, ST_Y(snapped_start) - dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_start) - dy / guide_length * $2, ST_Y(snapped_start) + dx / guide_length * $2)
+        ST_MakePoint(ST_X(anchor), ST_Y(anchor)),
+        ST_MakePoint(
+            ST_X(anchor) + start_dx / start_length * $2,
+            ST_Y(anchor) + start_dy / start_length * $2
+        ),
+        ST_MakePoint(
+            ST_X(anchor) + end_dx / end_length * $2,
+            ST_Y(anchor) + end_dy / end_length * $2
+        ),
+        ST_MakePoint(ST_X(anchor), ST_Y(anchor))
     ])), 3857) as span
     from directed
     where guide_length > 0.01
+      and start_length > 0.01
+      and end_length > 0.01
 ), geometry_parts as (
     select *,
         ST_Intersection(ST_CollectionExtract(full_geometry, 1), span) as clipped_points,
@@ -980,12 +1002,14 @@ with candidates as (
 select
     matched.id as settlement_id,
     matched.name,
+    coalesce(matched.district, '') as district,
     coalesce(matched.region, '') as region,
     matched.lat,
     matched.lon
 from candidates candidate
 cross join lateral (
-    select settlement.id, settlement.name, settlement.region,
+    select settlement.id, settlement.name, settlement.district,
+        settlement.region,
         settlement.lat, settlement.lon
     from settlement
     where settlement.lat is not null
@@ -1024,6 +1048,7 @@ order by candidate.candidate_index
                 BattleLineSettlementCandidate {
                     settlement_id: row.settlement_id,
                     name: row.name,
+                    district: row.district,
                     region: row.region,
                     coordinate: BattleLineCoordinate {
                         lat: row.lat,
@@ -1412,6 +1437,7 @@ mod tests {
             id: Set(canonical_id),
             kind: Set(SettlementKind::Village),
             name: Set("#2287 CANONICAL".to_string()),
+            district: Set(Some("#2287 DISTRICT".to_string())),
             region: Set(Some("#2287 REGION".to_string())),
             lat: Set(Some(10.0)),
             lon: Set(Some(10.0)),
@@ -1452,6 +1478,7 @@ mod tests {
             vec![BattleLineSettlementCandidate {
                 settlement_id: canonical_id,
                 name: "#2287 CANONICAL".to_string(),
+                district: "#2287 DISTRICT".to_string(),
                 region: "#2287 REGION".to_string(),
                 coordinate: BattleLineCoordinate {
                     lat: 10.0,
@@ -1464,7 +1491,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn clips_aor_geometry_at_snapped_perpendicular_boundaries() {
+    async fn clips_aor_geometry_to_anchor_ray_sector() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -1489,7 +1516,7 @@ mod tests {
 insert into battle_line_version
     (geometry, source_file_name, uploaded_by_login_id)
 select
-    ST_GeomFromText('GEOMETRYCOLLECTION(POINT(31 49),POINT(34 49),LINESTRING(29 49,34 49,29 49.1,34 49.1),LINESTRING(29 48,30 49))', 4326),
+    ST_GeomFromText('GEOMETRYCOLLECTION(POINT(31 48),POINT(35 49),LINESTRING(29 49,38 49),LINESTRING(31 48,32 48))', 4326),
     'test.kml',
     id
 from login
@@ -1505,7 +1532,7 @@ limit 1
             DatabaseBackend::Postgres,
             r#"
 update area_of_responsibility
-set left_lat = 49, left_lon = 30, right_lat = 49, right_lon = 33
+set left_lat = 49, left_lon = 34, right_lat = 49, right_lon = 36
 where id = $1
             "#,
             [aor_id.into()],
@@ -1542,20 +1569,20 @@ where aor_id = $1
         let start_lon: f64 = row.try_get("", "start_lon").unwrap();
         let end_lon: f64 = row.try_get("", "end_lon").unwrap();
         assert_eq!(point_count, 1);
-        assert_eq!(line_count, 3);
-        assert!((min_lon - 30.0).abs() < 0.000_001);
-        assert!((max_lon - 33.0).abs() < 0.000_001);
-        assert!((start_lon - 30.0).abs() < 0.000_001);
-        assert!((end_lon - 33.0).abs() < 0.000_001);
+        assert_eq!(line_count, 1);
+        assert!((min_lon - 34.0).abs() < 0.000_001);
+        assert!((max_lon - 36.0).abs() < 0.000_001);
+        assert!((start_lon - 34.0).abs() < 0.000_001);
+        assert!((end_lon - 36.0).abs() < 0.000_001);
 
         let candidates = vec![
             BattleLineCandidatePoint {
                 lat: 49.0,
-                lon: 34.0,
+                lon: 37.0,
             },
             BattleLineCandidatePoint {
                 lat: 49.0,
-                lon: 31.0,
+                lon: 35.0,
             },
         ];
         let unrestricted =
@@ -1600,11 +1627,11 @@ where aor_id = $1
             &[
                 BattleLineCandidatePoint {
                     lat: 49.0,
-                    lon: 31.0,
+                    lon: 35.0,
                 },
                 BattleLineCandidatePoint {
                     lat: 49.0,
-                    lon: 31.0,
+                    lon: 35.0,
                 },
             ],
             Some(&[aor_id]),

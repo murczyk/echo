@@ -1188,6 +1188,7 @@ export type MapSettlement = {
   lat: number;
   lon: number;
   inboxItemCount: number;
+  inboxItemIds: Array<number>;
 };
 
 export type MapPointsRsp = {
@@ -1241,6 +1242,7 @@ export type BattleLineTestReq = {
 export type BattleLineSettlementCandidate = {
   settlementId: number;
   name: string;
+  district: string;
   region: string;
   coordinate: BattleLineCoordinate;
 };

@@ -311,6 +311,7 @@ pub struct MapSettlement {
     pub lat: f64,
     pub lon: f64,
     pub inbox_item_count: i64,
+    pub inbox_item_ids: Vec<i64>,
 }
 
 #[derive(

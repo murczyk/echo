@@ -609,7 +609,8 @@ select
     s.region,
     s.lat,
     s.lon,
-    count(distinct link.item_id)::bigint as inbox_item_count
+    count(distinct link.item_id)::bigint as inbox_item_count,
+    array_agg(distinct link.item_id order by link.item_id) as inbox_item_ids
 from filtered_items
 join sigint_inbox_item_settlement link on link.item_id = filtered_items.id
 join settlement s on s.id = link.settlement_id
@@ -649,7 +650,8 @@ select
     s.region,
     s.lat,
     s.lon,
-    count(distinct link.item_id)::bigint as inbox_item_count
+    count(distinct link.item_id)::bigint as inbox_item_count,
+    array_agg(distinct link.item_id order by link.item_id) as inbox_item_ids
 from sigint_inbox_item_settlement link
 join settlement s on s.id = link.settlement_id
 where link.item_id = any($1::bigint[])

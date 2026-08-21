@@ -226,18 +226,21 @@ describe('analysis-map', () => {
     expect(map.flyTo).toHaveBeenCalledWith([47.42135, 35.62197], 13, { duration: 0.4 });
   });
 
-  it('renders settlement quantities in marker labels and popups', () => {
+  it('loads linked inbox items when a settlement marker is clicked', () => {
+    let clickHandler: (() => void) | undefined;
     const marker = {
       addTo: vi.fn(),
-      bindPopup: vi.fn(),
       bindTooltip: vi.fn(),
+      getElement: vi.fn().mockReturnValue(null),
+      getLatLng: vi.fn().mockReturnValue({ lat: 49.99, lng: 36.23 }),
+      on: vi.fn((_event: string, handler: () => void) => {
+        clickHandler = handler;
+      }),
     };
     vi.spyOn(L, 'circleMarker').mockReturnValue(marker as never);
     const layer = { addTo: vi.fn(), clearLayers: vi.fn() };
     const map = { removeLayer: vi.fn() };
-    const analysisMap = Object.create(
-      (customElements.get('analysis-map') as CustomElementConstructor).prototype,
-    ) as {
+    const analysisMap = document.createElement('analysis-map') as HTMLElement & {
       _canShowSettlements: boolean;
       _map: typeof map;
       _replaceSettlementsOnMap: () => void;
@@ -259,15 +262,18 @@ describe('analysis-map', () => {
         lat: 49.99,
         lon: 36.23,
         inbox_item_count: 3,
+        inbox_item_ids: [11, 12, 13],
       },
     ];
+    const listener = vi.fn();
+    analysisMap.addEventListener('load-messages-description', listener);
 
     analysisMap._replaceSettlementsOnMap();
+    clickHandler?.();
 
     expect(marker.bindTooltip).toHaveBeenCalledWith('&lt;Харків&gt; (3)', { direction: 'top' });
-    expect(marker.bindPopup).toHaveBeenCalledWith(
-      "<strong>&lt;Харків&gt;</strong>, Харківська<br>Пов'язаних перехоплень: 3",
-    );
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener.mock.calls[0][0].detail).toEqual({ messageIds: [11, 12, 13] });
   });
 
   it('does not redispatch settlement changes already emitted by the settings control', () => {
