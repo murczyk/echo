@@ -638,17 +638,23 @@ describe('MRT rendered overflow components', () => {
         emptyValue: 'порожньо',
       }),
     );
+    const unresolvedVisible = view.container.querySelector<HTMLElement>(
+      '[data-mrt-overflow-visible]',
+    );
+    expect(unresolvedVisible?.style.visibility).toBe('hidden');
+    expect(view.container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
     triggerResize();
-    vi.useFakeTimers();
-    expect(view.container.querySelectorAll('[data-item]')).toHaveLength(1);
-    expect(view.container.querySelector('[data-item="alpha"]')).not.toBeNull();
+    const visible = view.container.querySelector('[data-mrt-overflow-visible]');
+    expect((visible as HTMLElement | null)?.style.visibility).toBe('visible');
+    expect(visible?.querySelectorAll('[data-item]')).toHaveLength(1);
+    expect(visible?.querySelector('[data-item="alpha"]')).not.toBeNull();
+    expect(visible?.querySelector('[title="alpha-0"]')).not.toBeNull();
     expect(getItemText).toHaveBeenCalledWith('beta', 1);
     expect(getItemKey).toHaveBeenCalledWith('beta', 1);
     const trigger = view.container.querySelector<HTMLButtonElement>(
       'button[aria-label="Показати ще 1 значення"]',
     );
     expect(trigger?.textContent).toBe('Ще 1');
-    vi.useRealTimers();
     act(() => trigger?.click());
     const beta = document.body.querySelector<HTMLButtonElement>(
       '[role="dialog"] [data-item="beta"]',
@@ -682,7 +688,7 @@ describe('MRT rendered overflow components', () => {
     destroy(empty);
   });
 
-  it('keeps the same renderer without a bare disclosure for a zero-fit single item', () => {
+  it('keeps a zero-fit single renderer stable with native full-value disclosure', () => {
     itemWidths = { alpha: 140, 'Ще 1': 32 };
     availableWidth = 80;
     const view = render(
@@ -692,11 +698,48 @@ describe('MRT rendered overflow components', () => {
         getItemText: (value) => value,
       }),
     );
+    const visible = view.container.querySelector<HTMLElement>('[data-mrt-overflow-visible]');
+    const itemBefore = visible?.querySelector('[data-item="alpha"]');
+    expect(visible?.style.visibility).toBe('hidden');
+    expect(itemBefore).not.toBeNull();
+    expect(view.container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
     triggerResize();
-    expect(view.container.querySelector('[data-item="alpha"]')).not.toBeNull();
-    expect(view.container.textContent).toContain('alpha');
+    expect(visible?.style.visibility).toBe('visible');
+    expect(visible?.querySelector('[data-item="alpha"]')).toBe(itemBefore);
+    expect(visible?.querySelector('[title="alpha"]')).not.toBeNull();
     expect(view.container.querySelector('button[aria-label^="Показати ще"]')).toBeNull();
     expect(view.container.querySelector('[data-mrt-overflow-fade]')).toBeNull();
+    destroy(view);
+  });
+
+  it('keeps cell and document geometry stable while a layout is unresolved', () => {
+    itemWidths = { alpha: 140, beta: 30, 'Ще 1': 32 };
+    availableWidth = 80;
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta'],
+        renderItem: (value) => createElement(EchoChip, { label: value }),
+        getItemText: (value) => value,
+      }),
+    );
+    const cell = view.container.querySelector<HTMLElement>('[data-mrt-overflow-items]');
+    const surface = view.container.querySelector<HTMLElement>('[data-mrt-overflow-visible]');
+    const geometryBefore = cell?.getBoundingClientRect();
+    const documentWidthBefore = document.documentElement.scrollWidth;
+    const documentHeightBefore = document.documentElement.scrollHeight;
+
+    expect(surface?.style.visibility).toBe('hidden');
+    expect(surface?.getAttribute('aria-hidden')).toBe('true');
+    expect(view.container.querySelector('[data-mrt-overflow-fade]')).toBeNull();
+    expect(view.container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
+    expect(view.container.querySelector('[data-mrt-overflow-measurement-host]')).not.toBeNull();
+
+    triggerResize();
+    expect(surface?.style.visibility).toBe('visible');
+    expect(cell?.getBoundingClientRect().width).toBe(geometryBefore?.width);
+    expect(cell?.getBoundingClientRect().height).toBe(geometryBefore?.height);
+    expect(document.documentElement.scrollWidth).toBe(documentWidthBefore);
+    expect(document.documentElement.scrollHeight).toBe(documentHeightBefore);
     destroy(view);
   });
 
@@ -769,7 +812,8 @@ describe('MRT rendered overflow components', () => {
     expect(host?.style.visibility).toBe('hidden');
     expect(host?.style.contain).toBe('layout style paint');
     expect(measure?.parentElement).toBe(host);
-    expect(measuredTrigger?.className).toBe(visibleTrigger?.className);
+    expect(visibleTrigger).toBeNull();
+    expect(measuredTrigger?.className).toBe('mrt-overflow-trigger');
 
     flushFrames();
     expect(view.container.querySelector('[data-mrt-overflow-measure]')).toBeNull();
@@ -870,6 +914,9 @@ describe('MRT rendered overflow components', () => {
     );
 
     expect(
+      view.container.querySelector<HTMLElement>('[data-mrt-overflow-visible]')?.style.visibility,
+    ).toBe('hidden');
+    expect(
       view.container.querySelector('[data-mrt-overflow-visible]')?.querySelectorAll('.echo-chip'),
     ).toHaveLength(1);
     expect(renderItem.mock.calls.length).toBeLessThan(4);
@@ -878,6 +925,12 @@ describe('MRT rendered overflow components', () => {
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
     flushFrames();
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(
+      view.container.querySelector<HTMLElement>('[data-mrt-overflow-visible]')?.style.visibility,
+    ).toBe('visible');
+    expect(view.container.querySelector('[data-mrt-overflow-visible]')?.textContent).toContain(
+      'chip-0',
+    );
     expect(
       view.container.querySelector('[data-mrt-overflow-visible]')?.querySelectorAll('.echo-chip'),
     ).toHaveLength(1);
@@ -1445,6 +1498,12 @@ describe('MRT rendered overflow components', () => {
       ),
     );
 
+    expect(view.container.querySelectorAll('[data-mrt-overflow-visible]')).toHaveLength(400);
+    expect(
+      [...view.container.querySelectorAll<HTMLElement>('[data-mrt-overflow-visible]')].every(
+        (surface) => surface.style.visibility === 'hidden',
+      ),
+    ).toBe(true);
     expect(view.container.querySelectorAll('[data-mrt-overflow-visible] .echo-chip')).toHaveLength(
       400,
     );
@@ -1455,13 +1514,19 @@ describe('MRT rendered overflow components', () => {
     flushFrames();
     flushFrames();
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(view.container.querySelectorAll('[data-mrt-overflow-visible]')).toHaveLength(400);
+    expect(
+      [...view.container.querySelectorAll<HTMLElement>('[data-mrt-overflow-visible]')].every(
+        (surface) => surface.style.visibility === 'visible',
+      ),
+    ).toBe(true);
     expect(view.container.querySelectorAll('[data-mrt-overflow-visible] .echo-chip')).toHaveLength(
       400,
     );
     destroy(view);
   });
 
-  it('uses a conservative rich preview immediately when a virtualized row signature changes', () => {
+  it('hides provisional rich content when a virtualized row signature changes', () => {
     itemWidths = { old: 30, old2: 30, next: 140, next2: 140, 'Ще 1': 32 };
     availableWidth = 300;
     const renderCell = (items: string[]) =>
@@ -1481,9 +1546,12 @@ describe('MRT rendered overflow components', () => {
     expect(view.container.textContent).toContain('next');
     expect(view.container.textContent).not.toContain('old');
     expect(
+      view.container.querySelector<HTMLElement>('[data-mrt-overflow-visible]')?.style.visibility,
+    ).toBe('hidden');
+    expect(
       view.container.querySelector('[data-mrt-overflow-visible]')?.querySelectorAll('.echo-chip'),
     ).toHaveLength(1);
-    expect(view.container.querySelector('[aria-label="Показати ще 1 значення"]')).not.toBeNull();
+    expect(view.container.querySelector('[aria-label="Показати ще 1 значення"]')).toBeNull();
     destroy(view);
   });
 

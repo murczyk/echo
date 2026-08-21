@@ -118,6 +118,11 @@ type ItemMeasurements = {
   spacerWidth: number;
 };
 
+type CommittedLayout = {
+  cacheKey: string;
+  visibleCount: number;
+};
+
 const measurementCache = new Map<string, ItemMeasurements>();
 const MAX_MEASURED_ITEMS = 16;
 const MAX_ACTIVE_MEASUREMENT_JOBS = 8;
@@ -423,7 +428,8 @@ export function MrtOverflowItems<T>({
   const measuredWidthsRef = useRef<number[]>([]);
   const [isMeasuring, setIsMeasuring] = useState(false);
   const [isVisible, setIsVisible] = useState(() => typeof IntersectionObserver === 'undefined');
-  const [visibleCount, setVisibleCount] = useState(() => (items.length > 0 ? 1 : 0));
+  const [hasMeasurableWidth, setHasMeasurableWidth] = useState(true);
+  const [committedLayout, setCommittedLayout] = useState<CommittedLayout | null>(null);
   const [measurementBatch, setMeasurementBatch] = useState(() => ({
     start: 0,
     end: Math.min(items.length, MAX_MEASURED_ITEMS),
@@ -453,18 +459,19 @@ export function MrtOverflowItems<T>({
       measurementSignaturePart(getItemMeasurementKey?.(item, index) ?? ''),
     ]),
   ].join('|');
-  const layoutSignatureRef = useRef(measurementSignature);
-  const currentVisibleCount =
-    layoutSignatureRef.current === measurementSignature ? visibleCount : Math.min(items.length, 1);
-  const compactFirstItem = currentVisibleCount === 0;
-  const representedCount = compactFirstItem ? 1 : currentVisibleCount;
-  const hiddenCount = items.length - representedCount;
+  const cacheKey = `${measurementScope ?? measurementJobId}|${measurementSignature}`;
+  const isLayoutCommitted = committedLayout?.cacheKey === cacheKey;
+  const currentVisibleCount = isLayoutCommitted ? committedLayout.visibleCount : 0;
+  const compactFirstItem = isLayoutCommitted && currentVisibleCount === 0;
+  const hasUnmeasurableFallback = !isLayoutCommitted && !hasMeasurableWidth && items.length > 1;
+  const representedCount = compactFirstItem || hasUnmeasurableFallback ? 1 : currentVisibleCount;
+  const hiddenCount =
+    isLayoutCommitted || hasUnmeasurableFallback ? items.length - representedCount : 0;
   const hasOverflow = hiddenCount > 0;
   const hiddenItems = items.slice(representedCount);
   const hiddenItemText = hiddenItems
     .map((item, index) => getItemText(item, representedCount + index))
     .join(', ');
-  const cacheKey = `${measurementScope ?? measurementJobId}|${measurementSignature}`;
   const cacheKeyRef = useRef(cacheKey);
   cacheKeyRef.current = cacheKey;
   const measuredItemCount = measurementBatch.end - measurementBatch.start;
@@ -497,11 +504,14 @@ export function MrtOverflowItems<T>({
     (measurements: ItemMeasurements) => {
       const nextCount = getVisibleCount(measurements);
       if (nextCount == null) return null;
-      layoutSignatureRef.current = measurements.signature;
-      setVisibleCount((current) => (current === nextCount ? current : nextCount));
+      setCommittedLayout((current) =>
+        current?.cacheKey === cacheKey && current.visibleCount === nextCount
+          ? current
+          : { cacheKey, visibleCount: nextCount },
+      );
       return nextCount;
     },
-    [getVisibleCount],
+    [cacheKey, getVisibleCount],
   );
 
   const startMeasurement = useCallback(() => {
@@ -546,7 +556,10 @@ export function MrtOverflowItems<T>({
 
   const queueMeasurement = useCallback(() => {
     const container = containerRef.current;
-    if (items.length === 0 || !container || container.clientWidth <= 0) return;
+    if (items.length === 0 || !container) return;
+    if (container.clientWidth <= 0) setHasMeasurableWidth(false);
+    if (container.clientWidth <= 0) return;
+    if (!hasMeasurableWidth) setHasMeasurableWidth(true);
     const cachedMeasurements = measurementsRef.current ?? readMeasurementCache(cacheKey);
     if (cachedMeasurements?.signature === measurementSignature) {
       measurementsRef.current = cachedMeasurements;
@@ -570,6 +583,7 @@ export function MrtOverflowItems<T>({
   }, [
     cacheKey,
     getVisibleCount,
+    hasMeasurableWidth,
     isVisible,
     items.length,
     measurementBatch.end,
@@ -676,8 +690,7 @@ export function MrtOverflowItems<T>({
       measurementsRef.current = null;
       cancelMeasurementSubscriber(measurementJobId, cacheKey);
       setIsMeasuring(false);
-      layoutSignatureRef.current = measurementSignature;
-      setVisibleCount(0);
+      setCommittedLayout(null);
       measuredWidthsRef.current = [];
       setMeasurementBatch({ start: 0, end: 0 });
       closeSurface();
@@ -686,18 +699,27 @@ export function MrtOverflowItems<T>({
 
   useLayoutEffect(() => {
     const cachedMeasurements = readMeasurementCache(cacheKey);
+    if ((containerRef.current?.clientWidth ?? 0) <= 0) setHasMeasurableWidth(false);
     measurementsRef.current = cachedMeasurements ?? null;
     measuredWidthsRef.current =
       cachedMeasurements?.itemWidths.slice(0, cachedMeasurements.measuredItemCount) ?? [];
-    layoutSignatureRef.current = measurementSignature;
     setIsMeasuring(false);
-    setVisibleCount(items.length === 0 ? 0 : 1);
+    setCommittedLayout(null);
     const measuredItemCount = cachedMeasurements?.measuredItemCount ?? 0;
     setMeasurementBatch({
       start: measuredItemCount,
       end: Math.min(measuredItemCount + MAX_MEASURED_ITEMS, items.length),
     });
-  }, [cacheKey, items.length]);
+    if (cachedMeasurements?.signature !== measurementSignature) return;
+    const cachedVisibleCount = getVisibleCount(cachedMeasurements);
+    if (
+      cachedMeasurements.measuredItemCount === items.length ||
+      cachedVisibleCount == null ||
+      cachedVisibleCount < cachedMeasurements.measuredItemCount
+    ) {
+      updateVisibleCount(cachedMeasurements);
+    }
+  }, [cacheKey, getVisibleCount, items.length, measurementSignature, updateVisibleCount]);
 
   useLayoutEffect(() => {
     const element = containerRef.current;
@@ -836,6 +858,15 @@ export function MrtOverflowItems<T>({
     </div>
   ) : null;
 
+  const compactItemText = getItemText(items[0], 0);
+  const renderCompactFirstItem = () =>
+    renderCompactItem ? renderCompactItem(items[0], 0) : renderItem(items[0], 0);
+  const visibleItems = items.slice(0, currentVisibleCount).map((item, index) => (
+    <span key={getItemKey(item, index)} className="min-w-0 shrink-0">
+      {renderItem(item, index)}
+    </span>
+  ));
+
   return (
     <>
       <div
@@ -847,20 +878,37 @@ export function MrtOverflowItems<T>({
         <div
           data-mrt-overflow-visible=""
           className="flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden"
+          aria-hidden={isLayoutCommitted ? undefined : true}
+          {...(isLayoutCommitted ? {} : ({ inert: '' } as any))}
+          style={{ visibility: isLayoutCommitted ? 'visible' : 'hidden' }}
         >
-          {compactFirstItem ? (
-            <span className="min-w-0 max-w-full flex-1 overflow-hidden">
-              {(renderCompactItem ?? renderItem)(items[0], 0)}
+          {compactFirstItem || !isLayoutCommitted ? (
+            <span
+              className="min-w-0 max-w-full flex-1 overflow-hidden"
+              title={renderCompactItem ? undefined : compactItemText}
+              aria-label={renderCompactItem ? undefined : compactItemText}
+            >
+              {renderCompactFirstItem()}
             </span>
           ) : (
-            items.slice(0, currentVisibleCount).map((item, index) => (
-              <span key={getItemKey(item, index)} className="min-w-0 shrink-0">
-                {renderItem(item, index)}
-              </span>
-            ))
+            visibleItems
           )}
+          {hasUnmeasurableFallback ? (
+            <button
+              ref={triggerRef}
+              type="button"
+              onClick={() => (isOpen ? closeSurface() : openSurface())}
+              aria-label={`Показати ще ${hiddenCount} значення`}
+              aria-expanded={isOpen}
+              aria-controls={isOpen ? surfaceId : undefined}
+              title={hiddenItemText || `Показати ще ${hiddenCount} значення`}
+              className={OVERFLOW_TRIGGER_CLASS_NAME}
+            >
+              Ще {hiddenCount}
+            </button>
+          ) : null}
         </div>
-        {hasOverflow && !compactFirstItem ? (
+        {isLayoutCommitted && hasOverflow && !compactFirstItem ? (
           <span
             aria-hidden
             data-mrt-overflow-fade=""
@@ -871,7 +919,7 @@ export function MrtOverflowItems<T>({
             }}
           />
         ) : null}
-        {hasOverflow ? (
+        {isLayoutCommitted && hasOverflow ? (
           <button
             ref={triggerRef}
             type="button"
