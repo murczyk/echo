@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { HttpRequestError } from './client';
-import { editDirectSubmit, formatDirectSubmitError, submitDirect } from './direct-submit';
+import {
+  copyDirectSubmit,
+  editDirectSubmit,
+  formatDirectSubmitError,
+  submitDirect,
+} from './direct-submit';
 
 const apiMocks = vi.hoisted(() => ({
   postJson: vi.fn(),
@@ -32,6 +37,14 @@ describe('formatDirectSubmitError', () => {
       'Не вдалося зберегти повідомлення. Спробуйте ще раз. Якщо помилка повторюється, зверніться до адміністратора.',
     );
   });
+
+  it('formats an internal report deletion error', () => {
+    const error = new HttpRequestError(500, 'Internal server error');
+
+    expect(formatDirectSubmitError(error, 'delete')).toBe(
+      'Не вдалося видалити розвіддонесення. Спробуйте ще раз. Якщо помилка повторюється, зверніться до адміністратора.',
+    );
+  });
 });
 
 const request = { signal_group_master_key: 'group-1' };
@@ -53,6 +66,27 @@ const rawMessage = {
 };
 
 describe('direct-submit response normalization', () => {
+  it('loads the report-copy payload from the message endpoint', async () => {
+    const response = {
+      payloads: [
+        {
+          full_body: 'original',
+          signal_group_master_key: null,
+          retained_media_ids: ['media-1'],
+          parent_signal_message_ids: [42],
+        },
+      ],
+    };
+    apiMocks.postJson.mockResolvedValueOnce(response);
+
+    await expect(copyDirectSubmit([42])).resolves.toEqual(response);
+    expect(apiMocks.postJson).toHaveBeenCalledWith(
+      '/api/1.1/messages/copy',
+      { message_ids: [42] },
+      undefined,
+    );
+  });
+
   it('normalizes an inline snake_case create message', async () => {
     apiMocks.postJson.mockResolvedValueOnce({ signal_message_id: 101, message: rawMessage });
 

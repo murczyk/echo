@@ -34,6 +34,25 @@
         }
       ]
     },
+    "echo:m20260812_113859_signal_message_copy": {
+      "changes": [
+        { "table": "public.signal_message_media", "strategy": "mirror_resync" },
+        { "table": "public.intel_product", "strategy": "replicated_snapshot" }
+      ]
+    },
+    "echo:m20260815_125337_add_sigint_comment_migration_marker": {
+      "changes": [
+        { "table": "public.sigint_comment", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260817_125243_add_intel_prod_relation_kind": {
+      "changes": [
+        { "table": "public.intel_product", "strategy": "mirror_resync" }
+      ]
+    },
+    "echo:m20260818_104740_sigint_comment_migration_indexes": {
+      "changes": []
+    },
     "echo:m20260810_062938_echo_automation_coordinates_screenshot": {
       "changes": [
         {
@@ -253,9 +272,19 @@
     "echo:m20260818_081034_inbox_unit_backfill_lookup_indexes": {
       "changes": []
     },
+    "echo:m20260819_064249_ai_intel_report_settings": {
+      "changes": [
+        { "table": "public.ai_intel_report_settings", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260819_175820_device_settings": {
       "changes": [
         { "table": "public.device_settings", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260820_121919_ai_intel_report_attempt": {
+      "changes": [
+        { "table": "public.ai_intel_report_attempt", "strategy": "excluded" }
       ]
     }
   },

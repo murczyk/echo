@@ -19,6 +19,7 @@ import { getAnalysisCenterTabs } from './types';
 import { useMinDurationBusy } from './use-min-duration-busy';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
+import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerAnalysisNeoPageProps = {
@@ -227,28 +228,42 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
 
       {!analysisMapVisible ? <CreateMessageFab onClick={() => setCreateMessageOpen(true)} /> : null}
       <ManageMessageDrawer
-        open={createMessageOpen || isPresent(page.editorMessage)}
+        open={createMessageOpen || isPresent(page.editorMessage) || isPresent(page.reportSource)}
         cyberEchoEnabled={page.cyberEchoEnabled}
         currentUser={page.currentUser}
         editTarget={page.editorMessage}
+        reportSource={page.reportSource}
         editSaveInFlight={page.editorSaveInFlight}
         onClose={() => {
-          if (isPresent(page.editorMessage)) {
+          if (isPresent(page.editorMessage) || isPresent(page.reportSource)) {
             page.closeEditor();
           } else {
             setCreateMessageOpen(false);
           }
         }}
-        onSubmitEdit={async (_id, message) => {
-          await Promise.resolve(page.saveEditor(message));
-        }}
+        onSubmitEdit={
+          page.editorMessage && !isIntelligenceReport(page.editorMessage.message)
+            ? async (_id, message) => {
+                await Promise.resolve(page.saveEditor(message));
+              }
+            : undefined
+        }
         onEditSuccess={() => {
           page.reload();
+        }}
+        onDeleteSuccess={() => {
+          page.reload();
+          notify({ message: 'Розвіддонесення успішно видалено.', severity: 'success' });
         }}
         onCreated={async () => {
           setCreateMessageOpen(false);
           page.reload();
-          notify({ message: 'Повідомлення успішно створено.', severity: 'success' });
+          notify({
+            message: page.reportSource
+              ? 'Розвіддонесення успішно створено.'
+              : 'Повідомлення успішно створено.',
+            severity: 'success',
+          });
         }}
       />
     </Box>

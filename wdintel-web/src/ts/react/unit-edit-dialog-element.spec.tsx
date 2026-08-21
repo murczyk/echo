@@ -7,10 +7,16 @@ import './unit-edit-dialog-element';
 
 const UNIT = {
   id: 1,
+  other: '',
+  team_or_crew: '',
+  section: '',
+  squad: '',
+  platoon: '',
   company: '1 рота',
   battalion: '',
   regiment: '',
   division: '',
+  corps: '',
   army: '',
   military_district: '',
   army_region: '',
@@ -23,6 +29,7 @@ const UNIT = {
   created_by_login_id: '',
   has_orbit: false,
   orbit_unit_ids: [],
+  orbit_unit_generative_names: [],
 };
 
 afterEach(async () => {

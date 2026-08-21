@@ -535,7 +535,7 @@ async fn serve_ocr_html(
         .body(body))
 }
 
-async fn load_sanitized_ocr_html(
+pub(crate) async fn load_sanitized_ocr_html(
     env: &Env,
     media_id: Uuid,
 ) -> Result<String, crate::error::AppError> {
@@ -1133,7 +1133,11 @@ mod tests {
         signal_message_media,
     };
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+    use sea_orm::{
+        ActiveModelTrait,
+        ActiveValue::{NotSet, Set},
+        EntityTrait,
+    };
     use serde_json::json;
     use uuid::Uuid;
 
@@ -1151,6 +1155,7 @@ mod tests {
             size_bytes: 1,
             created_at: Utc::now().naive_utc(),
             is_encrypted: true,
+            storage_key: None,
         }
     }
 
@@ -1208,6 +1213,7 @@ mod tests {
                 size_bytes: Set(1),
                 created_at: Set(now + chrono::Duration::milliseconds(index)),
                 is_encrypted: Set(true),
+                storage_key: NotSet,
             }
             .insert(&env.dbx)
             .await
@@ -1258,6 +1264,7 @@ mod tests {
             size_bytes: Set(1),
             created_at: Set(now),
             is_encrypted: Set(true),
+            storage_key: NotSet,
         }
         .insert(&env.dbx)
         .await

@@ -45,13 +45,20 @@ pub struct DirectSubmitPayload {
     pub network: Option<SubmitNetwork>,
     #[serde(default)]
     pub dmr: Vec<SubmitDmrMetadata>,
-    pub signal_group_master_key: String,
+    #[serde(default)]
+    pub signal_group_master_key: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_update")]
     pub device_name_id: Option<Option<i64>>,
     #[serde(default)]
     pub upload_urls: Option<Vec<String>>,
     #[serde(default)]
     pub deleted_media_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub retained_media_ids: Option<Vec<String>>,
+    #[serde(default)]
+    pub parent_signal_message_ids: Vec<i64>,
+    #[serde(default)]
+    pub copy_source_signal_message_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -59,6 +66,16 @@ pub struct DirectSubmitRsp {
     pub signal_message_id: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<crate::rer_importer::types::InboxMessage>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitCopyRsp {
+    pub payloads: Vec<DirectSubmitPayload>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct DirectSubmitCopyReq {
+    pub message_ids: Vec<i64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
@@ -109,5 +126,23 @@ mod tests {
         assert_eq!(missing.device_name_id, None);
         assert_eq!(clear.device_name_id, Some(None));
         assert_eq!(value.device_name_id, Some(Some(42)));
+    }
+
+    #[test]
+    fn copy_fields_are_deserialized_for_direct_submit() {
+        let payload: DirectSubmitPayload = serde_json::from_value(json!({
+            "signal_group_master_key": "group",
+            "retained_media_ids": ["media-id"],
+            "parent_signal_message_ids": [42],
+            "copy_source_signal_message_ids": [84],
+        }))
+        .unwrap();
+
+        assert_eq!(
+            payload.retained_media_ids,
+            Some(vec!["media-id".to_string()])
+        );
+        assert_eq!(payload.parent_signal_message_ids, vec![42]);
+        assert_eq!(payload.copy_source_signal_message_ids, vec![84]);
     }
 }

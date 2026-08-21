@@ -2,12 +2,13 @@ import { useEffect, useRef } from 'react';
 
 type Params = {
   ignoreEvent?: (event: InboxChangedEvent) => boolean;
-  onMessageIds: (messageIds: number[]) => void | Promise<void>;
+  onMessageIds: (messageIds: number[], events: InboxChangedEvent[]) => void | Promise<void>;
 };
 
 export type InboxChangedEvent = {
   messageId: number;
   origin: string | null;
+  intelligenceReport: boolean;
 };
 
 function isMessageId(messageId: unknown): messageId is number {
@@ -25,7 +26,13 @@ function inboxChangedEvents(detail: unknown): InboxChangedEvent[] {
       if (!isMessageId(messageId)) return;
       const rawOrigin = (event as { origin?: unknown }).origin;
       const origin = typeof rawOrigin === 'string' && rawOrigin !== '' ? rawOrigin : null;
-      uniqueEvents.set(`${messageId}:${origin ?? ''}`, { messageId, origin });
+      const intelligenceReport =
+        (event as { intelligenceReport?: unknown }).intelligenceReport === true;
+      uniqueEvents.set(`${messageId}:${origin ?? ''}:${intelligenceReport}`, {
+        messageId,
+        origin,
+        intelligenceReport,
+      });
     });
     return Array.from(uniqueEvents.values());
   }
@@ -35,13 +42,14 @@ function inboxChangedEvents(detail: unknown): InboxChangedEvent[] {
   return Array.from(new Set(messageIds.filter(isMessageId))).map((messageId) => ({
     messageId,
     origin: null,
+    intelligenceReport: false,
   }));
 }
 
 export function useInboxChangedMessageIds({ ignoreEvent, onMessageIds }: Params) {
   const ignoreEventRef = useRef(ignoreEvent);
   const onMessageIdsRef = useRef(onMessageIds);
-  const pendingIdsRef = useRef<Set<number>>(new Set());
+  const pendingEventsRef = useRef<Map<number, InboxChangedEvent>>(new Map());
   const refreshInFlightRef = useRef(false);
   const isMountedRef = useRef(false);
 
@@ -57,11 +65,14 @@ export function useInboxChangedMessageIds({ ignoreEvent, onMessageIds }: Params)
       if (refreshInFlightRef.current) return;
       refreshInFlightRef.current = true;
       try {
-        while (pendingIdsRef.current.size > 0 && isMountedRef.current) {
-          const pendingIds = Array.from(pendingIdsRef.current);
-          pendingIdsRef.current.clear();
+        while (pendingEventsRef.current.size > 0 && isMountedRef.current) {
+          const pendingEvents = Array.from(pendingEventsRef.current.values());
+          pendingEventsRef.current.clear();
           try {
-            await onMessageIdsRef.current(pendingIds);
+            await onMessageIdsRef.current(
+              pendingEvents.map((event) => event.messageId),
+              pendingEvents,
+            );
           } catch (error) {
             console.error(error);
           }
@@ -71,25 +82,31 @@ export function useInboxChangedMessageIds({ ignoreEvent, onMessageIds }: Params)
       }
     };
 
-    const enqueueMessageIds = (messageIds: number[]) => {
-      if (messageIds.length === 0) return;
-      messageIds.forEach((messageId) => pendingIdsRef.current.add(messageId));
+    const enqueueEvents = (events: InboxChangedEvent[]) => {
+      if (events.length === 0) return;
+      events.forEach((event) => {
+        const pendingEvent = pendingEventsRef.current.get(event.messageId);
+        pendingEventsRef.current.set(event.messageId, {
+          messageId: event.messageId,
+          origin: event.origin ?? pendingEvent?.origin ?? null,
+          intelligenceReport: event.intelligenceReport || pendingEvent?.intelligenceReport === true,
+        });
+      });
       void flushPendingIds();
     };
 
     const onInboxChanged = (event: Event) => {
-      const messageIds = inboxChangedEvents((event as CustomEvent<unknown>).detail)
-        .filter((inboxEvent) => !ignoreEventRef.current?.(inboxEvent))
-        .map((inboxEvent) => inboxEvent.messageId);
-      if (messageIds.length === 0) return;
-      enqueueMessageIds(messageIds);
+      const events = inboxChangedEvents((event as CustomEvent<unknown>).detail).filter(
+        (inboxEvent) => !ignoreEventRef.current?.(inboxEvent),
+      );
+      enqueueEvents(events);
     };
 
     window.addEventListener('echo-inbox-changed', onInboxChanged);
 
     return () => {
       isMountedRef.current = false;
-      pendingIdsRef.current.clear();
+      pendingEventsRef.current.clear();
       window.removeEventListener('echo-inbox-changed', onInboxChanged);
     };
   }, []);

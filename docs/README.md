@@ -5,6 +5,16 @@ container per installation. PostgreSQL 18 is the system of record, Redis owns
 sessions and transient coordination, and separate API, background-worker, and
 report-worker processes isolate interactive traffic from long-running work.
 
+Quick intelligence-report suggestions are a synchronous, optional API path
+that makes exactly one structured vLLM request. It reads only the selected
+message and already-completed transcription/summary records. Historical style
+examples come only from preceding accessible human `intel_product` links and
+`sigint_comment` rows. The feature is disabled by default and does not persist
+or log source text or prompts. Validated suggestions and bounded model replies
+are retained in the administrator review journal. See
+[Quick intelligence-report suggestions](AI_INTELLIGENCE_REPORT_SUGGESTIONS.md)
+for access boundaries, limits, telemetry, evaluation, and rollout.
+
 ## Core topology
 
 ```mermaid
@@ -43,6 +53,12 @@ container and stores only derived data. PostgreSQL remains authoritative, and
 supported analytical reads fall back to PostgreSQL when analytics is stale or
 unavailable. The optional `wd_files` database stores device file metadata
 independently from the main `wd` database.
+
+Analytics control scripts and units are deployed as one content-addressed
+release to both the application and its paired analytics container. Source
+operations refuse to cross a release mismatch. A dedicated serialized
+analytics reconciler owns schema repair, while the frequent health service is
+read-only apart from its replication heartbeat and only reports drift.
 
 ## Messenger processing
 

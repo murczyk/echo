@@ -1,8 +1,9 @@
 use crate::battle_line::types::*;
 use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
-    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY,
-    BATTLE_LINE_UPLOAD_MAX_BYTES,
+    BATTLE_LINE_CLIP_EXTENT_METERS,
+    BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
+    BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
 };
 use crate::entities::*;
 use crate::error::AppError;
@@ -17,6 +18,7 @@ use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use anyhow::Context;
 use chrono::NaiveDateTime;
+use log::warn;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
@@ -72,6 +74,15 @@ struct AorGeometryRow {
 struct MatchRow {
     candidate_index: i64,
     distance_m: f64,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct CanonicalSettlementRow {
+    settlement_id: i32,
+    name: String,
+    region: String,
+    lat: f64,
+    lon: f64,
 }
 
 #[get("/api/battle-line")]
@@ -905,22 +916,9 @@ where
     )
     .c(h!())?;
     let settlements = prefer_exact_settlement_names(&location, settlements);
-    let mut seen = BTreeSet::new();
-    let candidates = settlements
-        .into_iter()
-        .filter_map(|settlement| {
-            let settlement_id = settlement.id?;
-            let (lat, lon) = settlement.coords?;
-            seen.insert(settlement_id).then_some(
-                BattleLineSettlementCandidate {
-                    settlement_id,
-                    name: settlement.name,
-                    region: settlement.region,
-                    coordinate: BattleLineCoordinate { lat, lon },
-                },
-            )
-        })
-        .collect::<Vec<_>>();
+    let candidates = canonicalize_settlement_candidates(dbx, settlements)
+        .await
+        .c(h!())?;
     let points = candidates
         .iter()
         .map(|candidate| BattleLineCandidatePoint {
@@ -948,6 +946,93 @@ where
         distance_m,
         invalid_aor_ids: matched.invalid_aor_ids,
     })
+}
+
+async fn canonicalize_settlement_candidates<C>(
+    dbx: &C,
+    settlements: Vec<crate::location::types::SettlementDetails>,
+) -> anyhow::Result<Vec<BattleLineSettlementCandidate>>
+where
+    C: ConnectionTrait,
+{
+    let coordinates = settlements
+        .into_iter()
+        .filter_map(|settlement| settlement.coords)
+        .collect::<Vec<_>>();
+    if coordinates.is_empty() {
+        return Ok(vec![]);
+    }
+    let latitudes = coordinates.iter().map(|(lat, _)| *lat).collect::<Vec<_>>();
+    let longitudes =
+        coordinates.iter().map(|(_, lon)| *lon).collect::<Vec<_>>();
+    let rows = CanonicalSettlementRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+with candidates as (
+    select
+        ordinality - 1 as candidate_index,
+        latitude,
+        longitude
+    from unnest($1::double precision[], $2::double precision[])
+        with ordinality as candidate(latitude, longitude, ordinality)
+)
+select
+    matched.id as settlement_id,
+    matched.name,
+    coalesce(matched.region, '') as region,
+    matched.lat,
+    matched.lon
+from candidates candidate
+cross join lateral (
+    select settlement.id, settlement.name, settlement.region,
+        settlement.lat, settlement.lon
+    from settlement
+    where settlement.lat is not null
+      and settlement.lon is not null
+      and ST_DWithin(
+          ST_SetSRID(ST_MakePoint(settlement.lon, settlement.lat), 4326)::geography,
+          ST_SetSRID(ST_MakePoint(candidate.longitude, candidate.latitude), 4326)::geography,
+          $3
+      )
+    order by
+        ST_DistanceSphere(
+            ST_SetSRID(ST_MakePoint(settlement.lon, settlement.lat), 4326),
+            ST_SetSRID(ST_MakePoint(candidate.longitude, candidate.latitude), 4326)
+        ),
+        settlement.id
+    limit 1
+) matched
+order by candidate.candidate_index
+            "#,
+            [
+                latitudes.into(),
+                longitudes.into(),
+                BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS
+                    .into(),
+            ],
+        ),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
+    let mut seen = BTreeSet::new();
+    Ok(rows
+        .into_iter()
+        .filter_map(|row| {
+            seen.insert(row.settlement_id).then_some(
+                BattleLineSettlementCandidate {
+                    settlement_id: row.settlement_id,
+                    name: row.name,
+                    region: row.region,
+                    coordinate: BattleLineCoordinate {
+                        lat: row.lat,
+                        lon: row.lon,
+                    },
+                },
+            )
+        })
+        .collect())
 }
 
 fn prefer_exact_settlement_names(
@@ -1106,9 +1191,12 @@ fn line_string_to_wkt(
         validate_coordinate(coordinate).c(h!())?;
     }
     if !line_has_length(coordinates) {
-        anyhow::bail!(
-            "LineString must contain at least two distinct coordinates"
+        let coordinate = coordinates.first().c(h!())?;
+        warn!(
+            "Poorly supported zero-length LineString geometry was replaced with a Point at {}, {}",
+            coordinate.lon, coordinate.lat
         );
+        return Ok(format!("POINT({} {})", coordinate.lon, coordinate.lat));
     }
     Ok(format!(
         "LINESTRING({})",
@@ -1267,22 +1355,25 @@ mod tests {
     }
 
     #[test]
-    fn rejects_empty_or_degenerate_geometry() {
+    fn rejects_empty_geometry_and_replaces_degenerate_line_with_point() {
         assert!(features_to_wkt(&[]).is_err());
-        assert!(features_to_wkt(&[
-            ImportedGeometryFeature::Point(ImportedCoordinate {
-                lat: 50.0,
-                lon: 32.0,
-            }),
-            ImportedGeometryFeature::LineString(vec![
-                ImportedCoordinate {
-                    lat: 49.0,
-                    lon: 31.0,
-                };
-                2
-            ]),
-        ])
-        .is_err());
+        assert_eq!(
+            features_to_wkt(&[
+                ImportedGeometryFeature::Point(ImportedCoordinate {
+                    lat: 50.0,
+                    lon: 32.0,
+                }),
+                ImportedGeometryFeature::LineString(vec![
+                    ImportedCoordinate {
+                        lat: 49.0,
+                        lon: 31.0,
+                    };
+                    2
+                ]),
+            ])
+            .unwrap(),
+            "GEOMETRYCOLLECTION(POINT(32 50),POINT(31 49))"
+        );
     }
 
     #[test]
@@ -1305,6 +1396,70 @@ mod tests {
 
         assert_eq!(settlements.len(), 1);
         assert_eq!(settlements[0].id, Some(2));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn maps_external_settlement_ids_to_canonical_database_ids() {
+        use crate::entities::sea_orm_active_enums::SettlementKind;
+
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let canonical_id = 2_287_101;
+        settlement::ActiveModel {
+            id: Set(canonical_id),
+            kind: Set(SettlementKind::Village),
+            name: Set("#2287 CANONICAL".to_string()),
+            region: Set(Some("#2287 REGION".to_string())),
+            lat: Set(Some(10.0)),
+            lon: Set(Some(10.0)),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        let candidates = canonicalize_settlement_candidates(
+            &txn,
+            vec![
+                crate::location::types::SettlementDetails {
+                    id: Some(6_615_355),
+                    name: "EXTERNAL".to_string(),
+                    coords: Some((10.005, 10.005)),
+                    ..Default::default()
+                },
+                crate::location::types::SettlementDetails {
+                    id: Some(6_615_356),
+                    name: "DUPLICATE".to_string(),
+                    coords: Some((10.006, 10.006)),
+                    ..Default::default()
+                },
+                crate::location::types::SettlementDetails {
+                    id: Some(6_615_357),
+                    name: "TOO FAR".to_string(),
+                    coords: Some((20.0, 20.0)),
+                    ..Default::default()
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            candidates,
+            vec![BattleLineSettlementCandidate {
+                settlement_id: canonical_id,
+                name: "#2287 CANONICAL".to_string(),
+                region: "#2287 REGION".to_string(),
+                coordinate: BattleLineCoordinate {
+                    lat: 10.0,
+                    lon: 10.0,
+                },
+            }]
+        );
+        txn.rollback().await.unwrap();
     }
 
     #[tokio::test]

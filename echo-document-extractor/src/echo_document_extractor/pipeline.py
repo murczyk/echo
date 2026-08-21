@@ -93,6 +93,8 @@ class InputManifest(BaseModel):
     @classmethod
     def safe_inputs(cls, values: list[str]) -> list[str]:
         return [safe_relative_path(value) for value in values]
+
+
 @dataclass
 class CandidateDocument:
     evidence: Evidence
@@ -799,16 +801,13 @@ class Extractor:
         evidence = []
         result: dict[str, TextBlock] = {}
         for candidate in candidates:
-            blocks = (
-                blocks_from_html(
-                    candidate.html,
-                    f"{unit_id}-retry",
-                    base.bbox,
-                    f"decision-{unit_id}",
-                    [base],
-                )
-                if candidate.valid
-                else []
+            candidate, blocks = _retry_candidate_blocks(
+                candidate,
+                f"{unit_id}-retry",
+                base.bbox,
+                f"decision-{unit_id}",
+                "malformed_text_payload",
+                [base],
             )
             block = next((item for item in blocks if isinstance(item, TextBlock)), None)
             if block:
@@ -1875,10 +1874,16 @@ def _retry_cell_values(candidates: list[Evidence], base: Cell) -> tuple[list[Evi
     evidence = []
     values = {}
     for candidate in candidates:
+        candidate, blocks = _retry_candidate_blocks(
+            candidate,
+            f"{base.id}-retry",
+            base.bbox,
+            f"decision-{base.id}",
+            "malformed_cell_payload",
+        )
         if not candidate.valid:
             evidence.append(candidate)
             continue
-        blocks = blocks_from_html(candidate.html, f"{base.id}-retry", base.bbox, f"decision-{base.id}")
         cell = next(
             (item for block in blocks if isinstance(block, Table) for item in block.cells),
             None,
@@ -1909,34 +1914,54 @@ def _retry_table_values(
     evidence = []
     values = []
     for candidate in candidates:
-        tables = (
-            [
-                block
-                for block in blocks_from_html(
-                    candidate.html,
-                    f"{base.id}-retry",
-                    base.bbox,
-                    f"decision-{base.id}",
-                    [base],
-                )
-                if isinstance(block, Table)
-            ]
-            if candidate.valid
-            else []
+        candidate, blocks = _retry_candidate_blocks(
+            candidate,
+            f"{base.id}-retry",
+            base.bbox,
+            f"decision-{base.id}",
+            "malformed_table_payload",
+            [base],
         )
+        tables = [block for block in blocks if isinstance(block, Table)]
+        if candidate.valid and not tables:
+            candidate = _reject_retry_candidate(candidate, "malformed_table_payload")
         table = tables[0] if tables else base
         unit = _evidence_for_table(candidate, table, base.id, base.bbox)
         if not tables:
             unit = unit.model_copy(
                 update={
                     "valid": False,
-                    "rejection_reasons": [*unit.rejection_reasons, "malformed_table_payload"],
                     "metadata": {"topology": ""},
                 }
             )
         evidence.append(unit)
         values.append((candidate, table))
     return evidence, values
+
+
+def _retry_candidate_blocks(
+    candidate: Evidence,
+    page_id: str,
+    bbox: BBox,
+    decision_id: str,
+    rejection_reason: str,
+    skeleton: list[Block] | None = None,
+) -> tuple[Evidence, list[Block]]:
+    if not candidate.valid:
+        return candidate, []
+    try:
+        return candidate, blocks_from_html(candidate.html, page_id, bbox, decision_id, skeleton)
+    except (ValueError, TypeError):
+        return _reject_retry_candidate(candidate, rejection_reason), []
+
+
+def _reject_retry_candidate(candidate: Evidence, reason: str) -> Evidence:
+    return candidate.model_copy(
+        update={
+            "valid": False,
+            "rejection_reasons": sorted(set([*candidate.rejection_reasons, reason])),
+        }
+    )
 
 
 def _project_retry_table_values(
@@ -1962,6 +1987,8 @@ def _matching_table_cells(
     result = []
     location = (base.row, base.column, base.rowspan, base.colspan)
     for parent, table in tables:
+        if not parent.valid:
+            continue
         matching = next(
             (
                 cell

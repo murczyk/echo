@@ -9,6 +9,8 @@ use echo_gpu_client::{
     TranscriptionAdapter, WorkError, WorkerIterationResult, WorkerPolicy,
 };
 use futures_util::TryStreamExt;
+#[cfg(test)]
+use sea_orm::NotSet;
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
 };
@@ -699,6 +701,7 @@ mod tests {
             file_name: Set(Some("recording.ogg".into())),
             size_bytes: Set(size_bytes),
             is_encrypted: Set(is_encrypted),
+            storage_key: NotSet,
             created_at: Set(chrono::Utc::now().naive_utc()),
         }
         .insert(&env.dbx)
@@ -733,6 +736,7 @@ mod tests {
             file_name: Some("recording.M4A".to_string()),
             size_bytes: 1,
             is_encrypted: false,
+            storage_key: None,
             created_at: chrono::Utc::now().naive_utc(),
         }
     }

@@ -17,7 +17,11 @@ import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
 type SubmitOptions = {
   busy: boolean;
   isEditMode: boolean;
+  isReportMode: boolean;
+  isReportCreateMode: boolean;
   editTarget: { id: number; message: InboxMessage } | null | undefined;
+  reportSource: { id: number; message: InboxMessage } | null | undefined;
+  existingMedia: InboxMessage['media'];
   onSubmitEdit: ((id: number, message: InboxMessage) => void | Promise<void>) | undefined;
   tagsLoaded: boolean;
   setSubmitting: (val: boolean) => void;
@@ -32,7 +36,11 @@ type SubmitOptions = {
 export function useMessageSubmit({
   busy,
   isEditMode,
+  isReportMode,
+  isReportCreateMode,
   editTarget,
+  reportSource,
+  existingMedia,
   onSubmitEdit,
   tagsLoaded,
   setSubmitting,
@@ -47,17 +55,24 @@ export function useMessageSubmit({
     if (busy) return;
     let createdResult: DirectSubmitResponse | null = null;
 
-    const hasTextContent = !!(data.text?.trim() || data.full_body?.trim());
+    const hasTextContent = isReportMode
+      ? Boolean(data.full_body?.trim())
+      : Boolean(data.text?.trim() || data.full_body?.trim());
     const uppyFiles = uppy.getFiles();
     const hasNewFiles = uppyFiles.length > 0;
 
     // In edit mode, check if there are existing media files that are not deleted
     const deletedMediaIds = new Set(data.deleted_media_ids ?? []);
-    const retainedMediaCount = isEditMode
-      ? (editTarget?.message.media.filter((media) => !deletedMediaIds.has(media.id)).length ?? 0)
-      : 0;
+    const retainedMediaIds = existingMedia
+      .filter((media) => !deletedMediaIds.has(media.id))
+      .map((media) => media.id);
+    const retainedMediaCount = isEditMode || isReportCreateMode ? retainedMediaIds.length : 0;
     const hasExistingMedia = retainedMediaCount > 0;
 
+    if (isReportMode && !hasTextContent) {
+      setErrorMsg('Текст розвіддонесення є обов’язковим');
+      return;
+    }
     if (!hasTextContent && !hasNewFiles && !hasExistingMedia) {
       setErrorMsg("Текст повідомлення або вкладення є обов'язковими");
       return;
@@ -146,7 +161,7 @@ export function useMessageSubmit({
         full_body: data.full_body?.trim() || undefined,
         text: shortBodyForSubmit(data, isEditMode ? editTarget : null),
         comment: data.comment?.trim() || undefined,
-        signal_group_master_key: data.signalGroupMasterKey,
+        signal_group_master_key: data.signalGroupMasterKey?.trim() || (isReportMode ? null : ''),
         device_name_id: deviceNameId,
         upload_urls: uploadUrls.length > 0 ? uploadUrls : null,
         freq: data.freq || undefined,
@@ -159,7 +174,10 @@ export function useMessageSubmit({
         locations: data.locations || [],
         network: networkObj,
         dmr: dmrArr,
-        deleted_media_ids: data.deleted_media_ids || [],
+        deleted_media_ids: isEditMode ? (data.deleted_media_ids ?? []) : [],
+        retained_media_ids: isReportCreateMode ? retainedMediaIds : undefined,
+        parent_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
+        copy_source_signal_message_ids: isReportCreateMode ? [reportSource!.id] : undefined,
       };
 
       if (isEditMode && editTarget) {

@@ -7,6 +7,8 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 source "$SCRIPT_DIR/lib.sh"
 load_analytics_config
 validate_runtime_identifiers
+ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS=${ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS:-90}
+require_expected_control_release
 
 probe_timeout=${ANALYTICS_HEALTH_PROBE_TIMEOUT_SECONDS:-45}
 [[ "$probe_timeout" =~ ^[1-9][0-9]*$ ]] \
@@ -132,12 +134,8 @@ WHERE singleton
 SQL
   )
   if [[ "$destination_visible" == t ]]; then
-    if ! "$SCRIPT_DIR/reconcile-schema.sh"; then
-      fail_health "analytics schema reconciliation failed" \
-        "$source_lsn" "$confirmed_flush_lsn"
-    fi
-    if ! "$SCRIPT_DIR/reconcile-derived-schema.sh"; then
-      fail_health "derived analytics schema reconciliation failed" \
+    if ! "$SCRIPT_DIR/reconcile-if-needed.sh" --check; then
+      fail_health "analytics desired-state check failed" \
         "$source_lsn" "$confirmed_flush_lsn"
     fi
     record_health true "source heartbeat visible through ClickHouse gateway" \

@@ -6,6 +6,7 @@ import Core.Types exposing (..)
 type alias InboxChangedEvent =
     { messageId : Int
     , origin : Maybe String
+    , intelligenceReport : Bool
     }
 
 

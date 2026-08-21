@@ -1,5 +1,4 @@
 use super::*;
-use crate::rer_importer::inbox::bl::find_sigint_comment_by_signal_message_id_and_logins;
 use crate::types::ShortContext;
 use crate::users::get_organism_login_ids_by_id;
 use tempfile::TempDir;
@@ -72,10 +71,15 @@ pub(crate) async fn rer_analysis_kmz_bytes(
         let Some(ref freq) = item.freq else { continue };
         let Some(ref lat) = item.lat else { continue };
         let Some(ref lng) = item.lng else { continue };
-        let m_comment = find_sigint_comment_by_signal_message_id_and_logins(
-            env, item.id, &login_ids,
+        let m_comment = crate::sigint::comments::find_report_comments(
+            &env.dbx,
+            &[item.id],
+            Some(&login_ids),
         )
-        .await?;
+        .await
+        .c(h!())?
+        .into_iter()
+        .find(|comment| comment.post_id.is_none());
 
         let icon_href = format!(
             "https://f000.backblazeb2.com/file/wildducks-online-public/icons/{sidc}.png",
@@ -89,9 +93,7 @@ pub(crate) async fn rer_analysis_kmz_bytes(
                 "{}<br>\n<br>\n{}<br>\n<br>\n",
                 item.body.clone().unwrap_or("".to_string()),
                 m_comment
-                    .map(|x| x.comment)
-                    .clone()
-                    .map(|x| format!("Коментар: {x}"))
+                    .map(|x| format!("Коментар: {}", x.comment))
                     .unwrap_or("".to_string())
             )),
             style: Some(Style {

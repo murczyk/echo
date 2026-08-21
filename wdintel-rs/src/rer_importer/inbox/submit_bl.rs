@@ -83,7 +83,7 @@ pub(crate) async fn submit_generic_inbox_item(
     submit_inbox_item_with_groups(
         env.as_ref(),
         txn,
-        datasource.id,
+        Some(datasource.id),
         &groups,
         login,
         logins,
@@ -96,7 +96,7 @@ pub(crate) async fn submit_generic_inbox_item(
 pub(crate) async fn submit_inbox_item_with_groups(
     env: &Env,
     txn: &DatabaseTransaction,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     groups: &[(String, i64)],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -112,6 +112,7 @@ pub(crate) async fn submit_inbox_item_with_groups(
         logins,
         item,
         allow_empty_content,
+        false,
         super::InboxLocationSubmitMode::Parse,
     )
     .await
@@ -120,35 +121,7 @@ pub(crate) async fn submit_inbox_item_with_groups(
 pub(crate) async fn submit_inbox_item_with_groups_location_mode(
     env: &Env,
     txn: &DatabaseTransaction,
-    datasource_id: i64,
-    groups: &[(String, i64)],
-    login: &uuid::Uuid,
-    logins: &Vec<uuid::Uuid>,
-    item: InboxSubmitItem,
-    allow_empty_content: bool,
-    location_mode: super::InboxLocationSubmitMode,
-) -> Result<SubmittedInboxItem, AppError> {
-    submit_inbox_item_with_groups_inner(
-        env,
-        txn,
-        datasource_id,
-        groups,
-        login,
-        logins,
-        item,
-        None,
-        allow_empty_content,
-        false,
-        location_mode,
-    )
-    .await
-}
-
-pub(crate) async fn edit_inbox_item_with_groups_location_mode(
-    env: &Env,
-    txn: &DatabaseTransaction,
-    signal_message_id: i64,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     groups: &[(String, i64)],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -158,7 +131,68 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
     location_mode: super::InboxLocationSubmitMode,
 ) -> Result<SubmittedInboxItem, AppError> {
     submit_inbox_item_with_groups_inner(
-        env,
+        &env.config,
+        env.settlements.clone(),
+        txn,
+        datasource_id,
+        groups,
+        login,
+        logins,
+        item,
+        None,
+        allow_empty_content,
+        keep_timestamp_missing,
+        location_mode,
+    )
+    .await
+}
+
+pub(crate) async fn submit_inbox_item_with_groups_location_mode_context(
+    config: &crate::config::Config,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    txn: &DatabaseTransaction,
+    datasource_id: Option<i64>,
+    groups: &[(String, i64)],
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    item: InboxSubmitItem,
+    allow_empty_content: bool,
+    keep_timestamp_missing: bool,
+    location_mode: super::InboxLocationSubmitMode,
+) -> Result<SubmittedInboxItem, AppError> {
+    submit_inbox_item_with_groups_inner(
+        config,
+        settlements,
+        txn,
+        datasource_id,
+        groups,
+        login,
+        logins,
+        item,
+        None,
+        allow_empty_content,
+        keep_timestamp_missing,
+        location_mode,
+    )
+    .await
+}
+
+pub(crate) async fn edit_inbox_item_with_groups_location_mode(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    signal_message_id: i64,
+    datasource_id: Option<i64>,
+    groups: &[(String, i64)],
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    item: InboxSubmitItem,
+    allow_empty_content: bool,
+    keep_timestamp_missing: bool,
+    location_mode: super::InboxLocationSubmitMode,
+) -> Result<SubmittedInboxItem, AppError> {
+    submit_inbox_item_with_groups_inner(
+        &env.config,
+        env.settlements.clone(),
         txn,
         datasource_id,
         groups,
@@ -174,9 +208,10 @@ pub(crate) async fn edit_inbox_item_with_groups_location_mode(
 }
 
 async fn submit_inbox_item_with_groups_inner(
-    env: &Env,
+    config: &crate::config::Config,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
     txn: &DatabaseTransaction,
-    datasource_id: i64,
+    datasource_id: Option<i64>,
     groups: &[(String, i64)],
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -209,7 +244,7 @@ async fn submit_inbox_item_with_groups_inner(
     let signal_message = match signal_message_id {
         Some(signal_message_id) => super::update_submit_signal_message(
             txn,
-            &env.config,
+            config,
             signal_message_id,
             &prepared.message,
             prepared.timestamp,
@@ -220,7 +255,7 @@ async fn submit_inbox_item_with_groups_inner(
         .c(h!())?,
         None => super::upsert_submit_signal_message(
             txn,
-            &env.config,
+            config,
             datasource_id,
             None,
             &prepared.message,
@@ -232,7 +267,7 @@ async fn submit_inbox_item_with_groups_inner(
         .c(h!())?,
     };
     let inbox_id = super::submit_upsert_inbox_item(
-        env.settlements.clone(),
+        settlements,
         txn,
         signal_message.id,
         &prepared.message,
@@ -283,6 +318,14 @@ async fn delete_cleared_edit_comment(
     {
         return Ok(());
     }
+    super::delete_editable_linked_message_comments(
+        txn,
+        signal_message_id,
+        login,
+        logins,
+    )
+    .await
+    .c(h!())?;
     super::delete_editable_sigint_comments(
         txn,
         signal_message_id,
@@ -318,6 +361,7 @@ async fn prepare_inbox_submit_item(
     let timestamp = if keep_timestamp_missing {
         message.date = None;
         message.time = None;
+        message.timestamp = None;
         None
     } else {
         Some(timestamp)

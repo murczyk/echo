@@ -171,6 +171,7 @@ async fn run_locked_replay_iteration(
         comment: Set(RER_DUTY_TEST_REPLAY_COMMENT.to_string()),
         created_at: Set(now),
         sigint_post_id: Set(None),
+        migrated_signal_message_id: NotSet,
     }
     .insert(&txn)
     .await

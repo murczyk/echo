@@ -433,17 +433,21 @@ raw ClickHouse strings as `bytea` for source binary columns. A
 source/view table or column mismatch aborts the transaction and preserves the
 previous working gateway definitions.
 
-The health timer automatically compares the source publication, raw
-ClickHouse tables, current-state views, and gateway compatibility views after
-each successful replication probe. Once PeerDB observes a post-DDL row change
-and propagates a simple added column, it refreshes stale current and gateway
-definitions without operator action. A quiet table therefore needs a reviewed,
-safe row touch in the migration or a table/mirror resync; deployment tooling
-must not issue generic no-op updates because tables may have mutating triggers.
-Normal and local package deploys do not wait for this asynchronous step;
-queries that use the new column fall back to PostgreSQL until analytics is
-reconciled. Columns added with a PostgreSQL default still require an explicit
-historical backfill or full mirror resync.
+The health timer compares the source publication, raw ClickHouse tables,
+current-state views, and gateway compatibility views after each successful
+replication probe. It never repairs schema drift. A separate one-minute
+`echo-analytics-reconcile.timer` owns current-view, gateway, and derived-schema
+repair under one host-wide lock. Health probes acquire that lock only for their
+final desired-state check. The timer waits briefly for a concurrent health
+check, but skips a run when a long operation such as a mirror resync owns the
+lock. Once PeerDB observes a post-DDL row change and
+propagates a simple added column, that reconciler refreshes stale definitions
+without operator action. A quiet table therefore needs a reviewed, safe row
+touch in the migration or a table/mirror resync; deployment tooling must not
+issue generic no-op updates because tables may have mutating triggers. Queries
+that use an unreconciled column fall back to PostgreSQL. Columns added with a
+PostgreSQL default still require an explicit historical backfill or full mirror
+resync.
 
 The same reconciliation installs versioned ClickHouse derived views and
 exposes owner-owned compatibility views over private foreign tables in the
@@ -477,7 +481,7 @@ PostgreSQL indexes, and a mirror resync replaces raw tables, so the reconciler
 checks the raw table UUID, adds the expected `minmax` definitions, and
 materializes historical parts once per UUID. Its state is stored in
 `<CLICKHOUSE_CURRENT_DB>_meta.query_index_reconciliation`; a replacement table
-therefore automatically receives fresh indexes during gateway/health
+therefore automatically receives fresh indexes during desired-state
 reconciliation.
 
 Every analysis facet and dedicated facet count first resolves one shared
@@ -631,7 +635,9 @@ bin/stop.sh
 bin/status.sh
 bin/logs.sh echo-peer-flow-worker.service
 systemctl status echo-analytics-health.timer
+systemctl status echo-analytics-reconcile.timer
 systemctl status echo-peerdb-table-reconcile.timer
+journalctl -u echo-analytics-reconcile.service
 journalctl -u echo-peerdb-table-reconcile.service
 bin/table-status.sh
 bin/refresh-current-views.sh
@@ -768,11 +774,20 @@ source to install this automation. Its invoking account must have passwordless
 sudo and working non-interactive SSH to the paired analytics host.
 
 The standard `just deploy` and `just deploy-from-local` workflows install the
-packaged exclusion file before migrations when its selected table set differs
-from `/etc/echo-peerdb/tables-exclude.txt`. They then run migrations once while
-workers are stopped and require the source reconciliation plus end-to-end
-analytics health check to succeed after service startup. The default health
-deadline is 300 seconds and can be changed with
+complete analytics control bundle before migrations. The bundle is hashed,
+staged under `/opt/echo-peerdb/releases` and
+`/opt/echo-analytics/releases`, and activated through each host's atomic
+`current` symlink. Source-side remote operations compare both active release
+IDs before making changes; a partial activation therefore fails closed instead
+of mixing script versions. Legacy `/opt/.../bin` commands forward to the active
+release.
+
+The workflows then install the packaged exclusion file when its selected table
+set differs from `/etc/echo-peerdb/tables-exclude.txt`, run migrations once
+while workers are stopped, explicitly start the serialized analytics
+reconciler, and require the source reconciliation plus end-to-end health check
+to succeed after service startup. The default health deadline is 300 seconds
+and can be changed with
 `ANALYTICS_DEPLOY_HEALTH_TIMEOUT_SECONDS` in `source.env`. A direct
 `wdintel-rs migrate` refuses to run while the packaged and deployed exclusion
 sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
@@ -780,8 +795,10 @@ sets differ; use `source-sync-exclusions-if-needed.sh --yes` first.
 Post-migration verification recognizes transient PostgreSQL deadlocks, tuple
 update conflicts, reconciliation-lock contention, and DDL lock timeouts. It
 makes up to five attempts at 30-second intervals before failing the deployment.
-Gateway and derived-schema catalog writes share a PostgreSQL transaction lock,
-so health probes wait for an in-progress deployment reconciliation.
+All analytics repair and resync entrypoints share the host-wide reconciliation
+lock, and gateway plus derived-schema catalog writes retain their PostgreSQL
+transaction lock. Health probes wait for the writer and report drift without
+competing to repair it.
 An unrecognized failure stops immediately. If all transient
 attempts fail, the deployment prints a prominent banner, the latest service
 log, and asks for one retry after two minutes; a further failure requires
@@ -892,8 +909,8 @@ After adding/removing an exclusion, run the explicit setup reconciliation
 above. `RESYNC MIRROR` only snapshots the existing mapping; it does not add or
 remove tables. `table-status.sh` reports drift and never mutates the mirror.
 Added columns continue through PeerDB schema propagation and the analytics
-health timer refreshes stale current and gateway definitions. New tables are
-handled by the source reconciliation timer.
+reconciliation timer refreshes stale current and gateway definitions. New
+tables are handled by the source reconciliation timer.
 
 ### Credential rotation
 

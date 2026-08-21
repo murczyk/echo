@@ -19,47 +19,16 @@ id "$automation_user" >/dev/null 2>&1 \
   || die "automation user does not exist: $automation_user"
 automation_group=$(id -gn "$automation_user")
 
-sudo install -d -o root -g root -m 0755 /opt/echo-peerdb/bin
-sudo install -d -o root -g root -m 0755 /opt/echo-peerdb/env
+SOURCE_RECONCILE_LOCK_WAIT_SECONDS=${SOURCE_RECONCILE_LOCK_WAIT_SECONDS:-300}
+acquire_source_reconcile_lock
 sudo install -d -o "$automation_user" -g "$automation_group" -m 0750 \
   /var/lib/echo-peerdb
-sudo install -o root -g root -m 0644 "$SCRIPT_DIR/lib.sh" /opt/echo-peerdb/bin/lib.sh
-sudo install -o root -g root -m 0755 "$SCRIPT_DIR/wal-status.sh" /opt/echo-peerdb/bin/wal-status.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/source-sync-exclusions.sh" \
-  /opt/echo-peerdb/bin/source-sync-exclusions.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/source-sync-exclusions-if-needed.sh" \
-  /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/source-verify-deploy.sh" \
-  /opt/echo-peerdb/bin/source-verify-deploy.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/source-reconcile-tables.sh" \
-  /opt/echo-peerdb/bin/source-reconcile-tables.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/source-reconcile-if-needed.sh" \
-  /opt/echo-peerdb/bin/source-reconcile-if-needed.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/source-reconcile-derived-schema.sh" \
-  /opt/echo-peerdb/bin/source-reconcile-derived-schema.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/source-resnapshot-table.sh" \
-  /opt/echo-peerdb/bin/source-resnapshot-table.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/resnapshot-table.sh" \
-  /opt/echo-peerdb/bin/resnapshot-table.sh
-sudo install -o root -g root -m 0755 \
-  "$SCRIPT_DIR/reconcile-derived-schema.sh" \
-  /opt/echo-peerdb/bin/reconcile-derived-schema-remote.sh
-sudo install -o root -g root -m 0644 \
-  "$BUNDLE_DIR/env/tables-exclude.txt" \
-  /opt/echo-peerdb/env/tables-exclude.txt
-sudo install -o root -g root -m 0644 \
-  "$BUNDLE_DIR/migration-impact.json" \
-  /opt/echo-peerdb/migration-impact.json
-for unit in "$BUNDLE_DIR"/source-systemd/*; do
-  sudo install -o root -g root -m 0644 "$unit" "/etc/systemd/system/$(basename "$unit")"
+control_release=$(control_bundle_release_id "$BUNDLE_DIR")
+sudo "$SCRIPT_DIR/install-control-release.sh" source "$control_release"
+sudo install -d -o root -g root -m 0755 /opt/echo-peerdb/bin
+for shim in "$BUNDLE_DIR"/shims/*; do
+  sudo install -o root -g root -m 0755 \
+    "$shim" "/opt/echo-peerdb/bin/$(basename "$shim")"
 done
 
 unit_override=$(mktemp /tmp/echo-peerdb-table-reconcile-user.XXXXXX)

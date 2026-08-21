@@ -18,6 +18,7 @@ use tokio_util::sync::CancellationToken;
 pub mod ai_agent;
 pub mod ai_callsign;
 pub mod ai_engine;
+pub mod ai_intel_report;
 mod alpine;
 pub mod api_integrations;
 pub mod atak;
@@ -426,6 +427,16 @@ pub struct OneoffImportSigintCommentsPs {
     pub excluded_organisms: Vec<String>,
     #[arg(long)]
     pub excluded_logins: Vec<String>,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffMigrateSigintCommentsPs {
+    /// Number of comments processed in one transaction.
+    #[arg(long, default_value_t = 500)]
+    pub batch_size: u64,
+    /// Only report pending comments without creating messages.
+    #[arg(long, action)]
+    pub dry_run: bool,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -856,6 +867,21 @@ pub struct OneoffReprocessAudioTranscriberPs {
 }
 
 #[derive(clap::Args, Debug, Clone)]
+pub struct OneoffReprocessMediaSummariesPs {
+    #[arg(
+        long,
+        default_value_t = crate::config::MEDIA_SUMMARY_REPROCESS_DEFAULT_LIMIT
+    )]
+    pub limit: u64,
+    #[arg(long)]
+    pub media_id: Option<Uuid>,
+    #[arg(long, action)]
+    pub dry_run: bool,
+    #[arg(long, action)]
+    pub yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
 pub struct BackupPs {
     /// Skip the configured sleep_before_backup_mins delay.
     #[arg(long, action)]
@@ -932,6 +958,7 @@ enum Cmd {
     OneoffExportSigintComments(OneoffExportSigintCommentsPs),
     OneoffExportCommentedMessages(OneoffExportCommentedMessagesPs),
     OneoffImportSigintComments(OneoffImportSigintCommentsPs),
+    OneoffMigrateSigintComments(OneoffMigrateSigintCommentsPs),
     OneoffReviewParsedSigintComments(OneoffReviewParsedSigintCommentsPs),
     OneoffTagMessagesReport(OneoffTagMessagesReportPs),
     OneoffEtalonkaReportNetworksFromRerAnalysis(
@@ -1007,6 +1034,7 @@ enum Cmd {
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
+    OneoffReprocessMediaSummaries(OneoffReprocessMediaSummariesPs),
     OneoffMergeDatasourceGroup(OneoffMergeDatasourceGroupPs),
     OneoffCompactDatasourceGroup,
     OneoffEnsureApiIntegrationIggyTopics,
@@ -1564,6 +1592,9 @@ async fn async_main(
         Cmd::OneoffImportSigintComments(ps) => {
             sigint::comments::oneoff_import_sigint_comments(mode, &ps).await
         }
+        Cmd::OneoffMigrateSigintComments(ps) => {
+            sigint::comments::oneoff_migrate_sigint_comments(mode, &ps).await
+        }
         Cmd::OneoffReviewParsedSigintComments(ps) => {
             sigint::comment_review_tui::run_comment_review_tui(mode, &ps).await
         }
@@ -1847,6 +1878,9 @@ async fn async_main(
         }
         Cmd::OneoffRetranscribeAudioTranscriber(ps) => {
             transcriber::backfill::retranscribe_completed(mode, ps).await
+        }
+        Cmd::OneoffReprocessMediaSummaries(ps) => {
+            media_summary::reprocess::run(mode, ps).await
         }
         Cmd::OneoffMergeDatasourceGroup(ps) => {
             operator::oneoff::oneoff_merge_datasource_group(mode, ps).await

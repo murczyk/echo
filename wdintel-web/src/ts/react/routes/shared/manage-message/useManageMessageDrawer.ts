@@ -16,14 +16,21 @@ import {
   searchSignalNames,
   searchCallsignNames,
   searchFreqs,
+  copyDirectSubmit,
+  formatDirectSubmitError,
   type NetworkSearchResult,
 } from '../../../services/api/direct-submit';
 import { getNetworksByIds } from '../../../services/api/networks';
 import { getUnitsByIds } from '../../../services/api/units';
-import type { InboxMessage, SignalGroupEntry, Tag, User } from '../../../../../Bindings';
-import { mapInboxMessageToForm } from './manage-message-drawer.mappers';
+import type {
+  InboxMessage,
+  MessageMediaInfo,
+  SignalGroupEntry,
+  Tag,
+  User,
+} from '../../../../../Bindings';
+import { mapDirectSubmitCopyToForm, mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
-import { hasRole } from '../../../utils/roles';
 import { isPresent } from '../../../utils/misc';
 import {
   makeMessageSchema,
@@ -34,6 +41,14 @@ import { MAX_MESSAGE_ATTACHMENTS, useMessageUppy } from './useMessageUppy';
 import { useMessageParser } from './useMessageParser';
 import { useMessageSubmit } from './useMessageSubmit';
 import { isManageMessageSubmitEligible } from './manage-message-submit-eligibility';
+import { getAccessibleParentMessages, summarizeIntelligenceMessage } from '../intelligence-reports';
+import { quickIntelReportSuggestion } from '../../../services/api/ai-intel-report';
+import { isAbortError } from '../../../services/api/client';
+
+export type QuickIntelReportSuggestionState =
+  | { status: 'idle' | 'loading' | 'applied' }
+  | { status: 'available'; suggestions: string[]; selectedIndex: number }
+  | { status: 'error'; message: string };
 
 export type UseManageMessageDrawerProps = {
   open: boolean;
@@ -47,6 +62,7 @@ export type UseManageMessageDrawerProps = {
     result: import('../../../services/api/direct-submit').DirectSubmitResponse,
   ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
+  reportSource?: { id: number; message: InboxMessage } | null;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
@@ -54,25 +70,42 @@ export type UseManageMessageDrawerProps = {
 export function useManageMessageDrawer({
   open,
   cyberEchoEnabled,
-  currentUser,
   onClose,
   onCreated,
   onEditSuccess,
   editTarget = null,
+  reportSource = null,
   editSaveInFlight,
   onSubmitEdit,
 }: UseManageMessageDrawerProps) {
-  const isAdmin = hasRole(currentUser?.roles, 'Admin');
   const isEditMode = isPresent(editTarget);
+  const reportParents = isPresent(reportSource)
+    ? [summarizeIntelligenceMessage(reportSource.id, reportSource.message)]
+    : isPresent(editTarget)
+      ? getAccessibleParentMessages(editTarget.message)
+      : [];
+  const reportParentIds = reportParents.map(({ id }) => id);
+  const reportParentIdsKey = reportParentIds.join(',');
+  const isReportCreateMode = isPresent(reportSource) && !isEditMode;
+  const isReportMode = reportParentIds.length > 0;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [copyLoading, setCopyLoading] = useState(false);
+  const [reportCopyLoadedSourceId, setReportCopyLoadedSourceId] = useState<number | null>(null);
+  const [originalReportText, setOriginalReportText] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [quickSuggestion, setQuickSuggestion] = useState<QuickIntelReportSuggestionState>({
+    status: 'idle',
+  });
+  const [quickSuggestionAttempt, setQuickSuggestionAttempt] = useState(0);
+  const reportCopyLoaded =
+    isReportCreateMode && reportCopyLoadedSourceId === (reportSource?.id ?? null);
 
   const { recentValues, addValues } = useRecentValues();
 
-  const busy = submitting || (isEditMode && Boolean(editSaveInFlight));
+  const busy = copyLoading || submitting || (isEditMode && Boolean(editSaveInFlight));
 
   const [tagOptions, setTagOptions] = useState<string[]>([]);
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
@@ -258,7 +291,10 @@ export function useManageMessageDrawer({
     };
   }, [freqInput, open]);
 
-  const resolver = useMemo(() => zodResolver(makeMessageSchema(isEditMode)), [isEditMode]);
+  const resolver = useMemo(
+    () => zodResolver(makeMessageSchema(isEditMode, isReportMode, isReportMode)),
+    [isEditMode, isReportMode],
+  );
 
   const methods = useForm<MessageFormData>({
     resolver,
@@ -270,11 +306,38 @@ export function useManageMessageDrawer({
   const { control, formState, getValues, setValue, reset } = methods;
   const formValues = useWatch({ control });
 
-  const retainedAttachmentCount = isEditMode
-    ? (editTarget?.message.media.filter(
-        (media) => !(formValues.deleted_media_ids ?? []).includes(media.id),
-      ).length ?? 0)
-    : 0;
+  const existingMedia: MessageMediaInfo[] = useMemo(() => {
+    const rawList = isEditMode
+      ? (editTarget?.message.media ?? [])
+      : (reportSource?.message.media ?? []);
+    return rawList.map((m) => {
+      const raw = m as MessageMediaInfo & {
+        file_name?: string | null;
+        content_type?: string | null;
+        size_bytes?: number | null;
+      };
+      const id = String(m.id ?? (raw as any).id ?? '');
+      const fileName = m.fileName ?? raw.file_name ?? null;
+      const contentType = m.contentType ?? raw.content_type ?? '';
+      const sizeBytes = m.sizeBytes ?? raw.size_bytes ?? 0;
+      const href = m.href || (id ? `/api/messenger/media/${id}` : '');
+      return {
+        id,
+        fileName,
+        contentType,
+        sizeBytes,
+        href,
+        transcription: m.transcription ?? (raw as any).transcription ?? null,
+        ocr: m.ocr ?? (raw as any).ocr ?? null,
+        summary: m.summary ?? (raw as any).summary ?? null,
+      };
+    });
+  }, [isEditMode, editTarget?.message.media, reportSource?.message.media]);
+  const retainedAttachmentCount =
+    isEditMode || isReportCreateMode
+      ? (existingMedia.filter((media) => !(formValues.deleted_media_ids ?? []).includes(media.id))
+          .length ?? 0)
+      : 0;
   const {
     uppy,
     uppyFiles,
@@ -298,28 +361,34 @@ export function useManageMessageDrawer({
   const canSubmit = useMemo(
     () =>
       isManageMessageSubmitEligible({
-        busy,
+        busy: busy || (isReportCreateMode && !reportCopyLoaded),
         parsing,
         schemaValid: formState.isValid,
         isEditMode,
+        groupOptional: isReportMode,
+        reportTextRequired: isReportMode,
         groupsLoading,
         selectedGroupKey: formValues.signalGroupMasterKey ?? '',
         accessibleGroupKeys: signalGroups.map((group) => group.masterKey),
         text: formValues.text ?? '',
         fullBody: formValues.full_body ?? '',
         newAttachmentCount: uppyFiles.length,
-        existingAttachmentIds: editTarget?.message.media.map((media) => media.id) ?? [],
+        existingAttachmentIds: existingMedia.map((media) => media.id),
         deletedAttachmentIds: formValues.deleted_media_ids ?? [],
         maxAttachmentCount: MAX_MESSAGE_ATTACHMENTS,
       }),
     [
       busy,
       editTarget,
+      existingMedia,
       formState.isValid,
       formValues,
       groupsLoading,
       isEditMode,
+      isReportCreateMode,
+      isReportMode,
       parsing,
+      reportCopyLoaded,
       signalGroups,
       uppyFiles.length,
     ],
@@ -347,7 +416,7 @@ export function useManageMessageDrawer({
         // selection while the value still passes required-validation — letting submit
         // or parse run against a group the user cannot actually see. Clear it so the
         // user must pick a valid group.
-        if (!isEditMode && getValues('signalGroupMasterKey')) {
+        if (!isEditMode && !isReportMode && getValues('signalGroupMasterKey')) {
           const seededKey = getValues('signalGroupMasterKey');
           if (!available.some((g) => g.masterKey === seededKey)) {
             setValue('signalGroupMasterKey', '', { shouldValidate: true });
@@ -393,6 +462,8 @@ export function useManageMessageDrawer({
     setErrorMsg(null);
     setSelectedNetwork(null);
     setUnitLocked(false);
+    setReportCopyLoadedSourceId(null);
+    setOriginalReportText(reportParents.map(({ text }) => text).join('\n\n'));
     if (isEditMode && editTarget) {
       const metadata = editTarget.message.metadata ?? [];
       reset({
@@ -414,6 +485,12 @@ export function useManageMessageDrawer({
           hash_id: item.hashId ?? '',
         })),
       });
+    } else if (isReportCreateMode && reportSource) {
+      reset({
+        ...EMPTY_FORM_VALUES,
+        date: dayjs(),
+        time: dayjs(),
+      });
     } else {
       // Pre-fill the last-used values (MRU head) so repeated message creation
       // doesn't require re-entering the same group/device/unit each time.
@@ -429,7 +506,111 @@ export function useManageMessageDrawer({
         unit: recentValues.unit[0] ?? '',
       });
     }
-  }, [open, isEditMode, editTarget?.id, recentValues]);
+  }, [open, isEditMode, isReportCreateMode, editTarget?.id, reportSource?.id, recentValues]);
+
+  useEffect(() => {
+    if (!open || !isReportMode) return;
+    let active = true;
+    setCopyLoading(true);
+    copyDirectSubmit(reportParentIds)
+      .then(({ payloads }) => {
+        if (!active) return;
+        setOriginalReportText(
+          payloads
+            .map(
+              (payload, index) =>
+                payload.full_body ?? payload.text ?? reportParents[index]?.text ?? '',
+            )
+            .join('\n\n'),
+        );
+        const payload = payloads[0];
+        if (isReportCreateMode && payload) {
+          reset({
+            ...mapDirectSubmitCopyToForm(payload),
+            full_body: '',
+            text: '',
+            comment: '',
+            signalGroupMasterKey: '',
+            deviceName: '',
+          });
+          setReportCopyLoadedSourceId(reportSource.id);
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        setErrorMsg(formatDirectSubmitError(error, 'copy'));
+      })
+      .finally(() => {
+        if (active) setCopyLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [open, isReportCreateMode, isReportMode, reportParentIdsKey, reportSource?.id, reset]);
+
+  useEffect(() => {
+    if (!open || !isReportCreateMode || !reportCopyLoaded || !reportSource) {
+      setQuickSuggestion({ status: 'idle' });
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setQuickSuggestion({ status: 'loading' });
+    quickIntelReportSuggestion(reportSource.id, { signal: controller.signal })
+      .then((response) => {
+        if (!active) return;
+        if (!response) {
+          setQuickSuggestion({ status: 'idle' });
+          return;
+        }
+        const suggestions = response.suggestions
+          .map((suggestion) => suggestion.trim())
+          .filter(Boolean);
+        if (suggestions.length === 0) {
+          setQuickSuggestion({
+            status: 'error',
+            message: 'ШІ повернув порожню пропозицію.',
+          });
+          return;
+        }
+        setQuickSuggestion({ status: 'available', suggestions, selectedIndex: 0 });
+      })
+      .catch((requestError) => {
+        if (!active || isAbortError(requestError)) return;
+        setQuickSuggestion({
+          status: 'error',
+          message: 'Не вдалося сформувати пропозицію розвіддонесення.',
+        });
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [isReportCreateMode, open, quickSuggestionAttempt, reportCopyLoaded, reportSource?.id]);
+
+  const applyQuickSuggestion = () => {
+    if (quickSuggestion.status !== 'available') return;
+    setValue('full_body', quickSuggestion.suggestions[quickSuggestion.selectedIndex], {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    });
+    setQuickSuggestion({ status: 'applied' });
+  };
+
+  const selectAdjacentQuickSuggestion = (offset: number) => {
+    setQuickSuggestion((current) => {
+      if (current.status !== 'available' || current.suggestions.length < 2) return current;
+      const selectedIndex =
+        (current.selectedIndex + offset + current.suggestions.length) % current.suggestions.length;
+      return { ...current, selectedIndex };
+    });
+  };
+
+  const retryQuickSuggestion = () => {
+    setQuickSuggestionAttempt((attempt) => attempt + 1);
+  };
 
   useEffect(() => {
     if (!open || !isEditMode || !editTarget) return;
@@ -515,7 +696,11 @@ export function useManageMessageDrawer({
   const { onSubmit } = useMessageSubmit({
     busy,
     isEditMode,
+    isReportMode,
+    isReportCreateMode,
     editTarget,
+    reportSource,
+    existingMedia,
     onSubmitEdit,
     tagsLoaded,
     setSubmitting,
@@ -528,8 +713,15 @@ export function useManageMessageDrawer({
   });
 
   return {
-    isAdmin,
     isEditMode,
+    isReportMode,
+    isReportCreateMode,
+    originalReportText,
+    quickSuggestion,
+    applyQuickSuggestion,
+    selectAdjacentQuickSuggestion,
+    retryQuickSuggestion,
+    existingMedia,
     showAdvanced,
     setShowAdvanced,
     signalGroups,
@@ -564,6 +756,7 @@ export function useManageMessageDrawer({
     setSignalNameInput,
     callsignOptions,
     callsignLoading,
+    callsignInput,
     setCallsignInput,
     freqOptions,
     freqLoading,

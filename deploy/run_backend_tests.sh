@@ -7,11 +7,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# Push and manual workflow runs do not provide GITHUB_BASE_REF. The CI
+# workflow targets main, so use it when the pull-request-only variable is absent.
+export GITHUB_BASE_REF="${GITHUB_BASE_REF:-main}"
+
 python3 -m unittest scripts/ci/test_check_analytics_migrations.py
 python3 scripts/ci/check_analytics_migrations.py
 bash deploy/clickhouse/tests/test-resnapshot-table.sh
 bash deploy/clickhouse/tests/test-manage-system-logs.sh
 bash deploy/clickhouse/tests/test-source-verify-deploy.sh
+bash deploy/clickhouse/tests/test-control-bundle.sh
+bash deploy/clickhouse/tests/test-analytics-reconcile-file-lock.sh
+bash deploy/clickhouse/tests/test-reconcile-if-needed.sh
 
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"
 bash deploy/clickhouse/tests/test-analytics-schema-reconcile-lock.sh

@@ -164,6 +164,7 @@ export type AnalysisPageState = {
   copiedFeedbackId: string | null;
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
+  reportSource: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
   currentUser: User | null;
   filtersLoading: boolean;
@@ -264,7 +265,6 @@ export type AnalysisPageActions = {
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadNewCallsigns: () => Promise<void>;
   onDeleteMessage: (messageId: number) => void;
-  onSaveMessageComment: (messageId: number, comment: string | null) => void;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => void;
   renameSummaryUnit: (freq: string, unit: string, unitNew: string) => Promise<void>;
@@ -287,6 +287,8 @@ export type AnalysisPageActions = {
   closeEditor: () => void;
   openReport: () => void;
   openEditor: (messageId: number) => void;
+  openReportCreator: (messageId: number) => void;
+  openReportEditor: (messageId: number) => Promise<void>;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;
   setShowSettlements: (show: boolean) => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => void;

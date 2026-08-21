@@ -25,4 +25,15 @@ describe('makeMessageSchema', () => {
     expect(result.success).toBe(true);
     expect(parseCoords(value)).toHaveLength(2);
   });
+
+  it('requires report text', () => {
+    const emptyResult = makeMessageSchema(false, true, true).safeParse(EMPTY_FORM_VALUES);
+    const filledResult = makeMessageSchema(false, true, true).safeParse({
+      ...EMPTY_FORM_VALUES,
+      full_body: 'Розвіддонесення',
+    });
+
+    expect(emptyResult.success).toBe(false);
+    expect(filledResult.success).toBe(true);
+  });
 });

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
-import type { InboxMessage, SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
+import type { InboxMessage } from '../../../../Bindings';
 import {
   buildAnalysisMapHrefWithSearch,
   sortMessageItemsByTime,
@@ -10,7 +10,6 @@ import {
 import {
   bookmarkAdd,
   bookmarkRemove,
-  commentSave,
   deleteMessage,
   importantAdd,
   importantRemove,
@@ -20,7 +19,6 @@ import {
 } from '../../services/api/inbox';
 import { addPalitraHighlightBlacklistEntry } from '../../services/api/palitra';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
-import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import {
   hasBotTag,
@@ -65,26 +63,13 @@ type Params = {
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
   authUserName: string | null;
   currentUserOrganismId: number | null;
-  profiles: Record<string, SignalProfileEntry | null>;
-  groupInfos: Record<string, SignalGroupEntry>;
   setError: (value: string) => void;
 };
 
 export function useRerDutyMessageItemActions(params: Params) {
-  const {
-    messageFeeds,
-    setMessageFeeds,
-    authUserName,
-    currentUserOrganismId,
-    profiles,
-    groupInfos,
-    setError,
-  } = params;
+  const { messageFeeds, setMessageFeeds, authUserName, currentUserOrganismId, setError } = params;
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [deleteConfirmFeedId, setDeleteConfirmFeedId] = useState<string | null>(null);
-  const [commentMessageId, setCommentMessageId] = useState<number | null>(null);
-  const [commentFeedId, setCommentFeedId] = useState<string | null>(null);
-  const [commentText, setCommentText] = useState('');
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(null);
   const [botTagAction, setBotTagAction] = useState<MessageCardBotTagAction | null>(null);
   const copiedFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -181,48 +166,6 @@ export function useRerDutyMessageItemActions(params: Params) {
     setDeleteConfirmId(null);
     setDeleteConfirmFeedId(null);
   }, [deleteConfirmFeedId, deleteConfirmId, setMessageFeeds, setError]);
-
-  const openCommentDialog = useCallback(
-    (msgId: number, feedId: string, currentComment: string | null) => {
-      setCommentMessageId(msgId);
-      setCommentFeedId(feedId);
-      setCommentText(currentComment ?? '');
-    },
-    [],
-  );
-
-  const commentMessagePreview = useMemo(() => {
-    if (commentMessageId == null || commentFeedId == null) return null;
-    const feed = messageFeeds.find((item) => item.id === commentFeedId);
-    if (!feed) return null;
-    const message = feed.items.find(([id]) => id === commentMessageId)?.[1];
-    if (!message) return null;
-    return buildMessageCardDisplayLabels(message, { groupInfos, profiles }).commentPreview;
-  }, [commentFeedId, commentMessageId, groupInfos, messageFeeds, profiles]);
-
-  const handleCommentSave = useCallback(async () => {
-    if (commentMessageId == null || commentFeedId == null) return;
-    const trimmed = commentText.trim() || null;
-    try {
-      await commentSave({ messageId: commentMessageId, comment: trimmed });
-      setMessageFeeds((prev) =>
-        prev.map((w) =>
-          w.id === commentFeedId
-            ? {
-                ...w,
-                items: w.items.map(([id, m]) =>
-                  id === commentMessageId ? [id, { ...m, extendedForm: trimmed }] : [id, m],
-                ),
-              }
-            : w,
-        ),
-      );
-      setCommentMessageId(null);
-      setCommentFeedId(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [commentFeedId, commentMessageId, commentText, setMessageFeeds, setError]);
 
   const handleToggleTag = useCallback(
     async (feedId: string, msgId: number, tagId: number) => {
@@ -343,19 +286,11 @@ export function useRerDutyMessageItemActions(params: Params) {
     handleDeleteConfirm,
     setDeleteConfirmId,
     setDeleteConfirmFeedId,
-    openCommentDialog,
-    commentMessagePreview,
-    handleCommentSave,
     handleToggleTag,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
     handleEditedMessage,
-    commentMessageId,
-    commentText,
-    setCommentText,
-    setCommentMessageId,
-    setCommentFeedId,
     deleteConfirmId,
     deleteConfirmFeedId,
     copiedFeedbackId,

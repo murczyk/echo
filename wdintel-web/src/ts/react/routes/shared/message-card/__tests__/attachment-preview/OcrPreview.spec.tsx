@@ -6,11 +6,14 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getMediaOcrStatus, getMediaSummary, mapCoordinates } = vi.hoisted(() => ({
-  getMediaOcrStatus: vi.fn(),
-  getMediaSummary: vi.fn(),
-  mapCoordinates: vi.fn(),
-}));
+const { getMediaOcrStatus, getMediaSummary, retryMediaSummary, mapCoordinates } = vi.hoisted(
+  () => ({
+    getMediaOcrStatus: vi.fn(),
+    getMediaSummary: vi.fn(),
+    retryMediaSummary: vi.fn(),
+    mapCoordinates: vi.fn(),
+  }),
+);
 
 vi.mock('@mui/material', () => ({
   alpha: () => 'transparent',
@@ -59,7 +62,10 @@ vi.mock('@mui/icons-material/Description', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/InfoOutlined', () => ({ default: () => <span /> }));
 
 vi.mock('../../../../../services/api/ocr', () => ({ getMediaOcrStatus }));
-vi.mock('../../../../../services/api/media-summary', () => ({ getMediaSummary }));
+vi.mock('../../../../../services/api/media-summary', () => ({
+  getMediaSummary,
+  retryMediaSummary,
+}));
 vi.mock('../../../../../services/api/location', () => ({ mapCoordinates }));
 
 import {
@@ -606,6 +612,58 @@ describe('OcrPreview', () => {
 
     expect(container.textContent).toContain('Не вдалося завантажити стислий опис');
     expect(container.textContent).not.toContain(internalError);
+    root.unmount();
+  });
+
+  it('requeues a failed summary instead of only refreshing it', async () => {
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'failed',
+      summary: null,
+      coordinates: [],
+      lastError: 'Internal server error',
+      sourceKind: 'ocr_text',
+      sourceCharCount: 10,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    retryMediaSummary.mockResolvedValueOnce({
+      state: 'queued',
+      summary: null,
+      coordinates: [],
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 10,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummary
+          mediaId="media-id"
+          status={{ state: 'failed', lastError: null, hasCoordinates: false }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    const retry = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Повторити стислий опис"]',
+    );
+    expect(retry).not.toBeNull();
+    await act(async () => {
+      retry?.click();
+      await Promise.resolve();
+    });
+
+    expect(retryMediaSummary).toHaveBeenCalledWith(
+      'media-id',
+      { signal: expect.any(AbortSignal) },
+      'messenger',
+    );
+    expect(container.textContent).toContain('Опис у черзі');
     root.unmount();
   });
 

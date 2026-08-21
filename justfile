@@ -948,7 +948,11 @@ deploy _server_pos="" server silent="false":
           apt-get -o Dpkg::Lock::Timeout=120 -o Dpkg::Options::=--force-confnew -y -qq install echo-install wdintel-rs'
 
     ssh "$SERVER" 'set -euo pipefail
-      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      if sudo -n test -f /etc/echo-peerdb/source.env; then
+        /usr/share/echo/analytics-control/bin/source-activate-control.sh --yes
+        SOURCE_RECONCILE_LOCK_WAIT_SECONDS=300 \
+          /opt/echo-peerdb/current/bin/source-sync-exclusions-if-needed.sh --yes
+      fi
       sudo /usr/bin/wdintel-rs --mode=live migrate'
 
     # Re-assert critical services after deploy package update
@@ -1019,11 +1023,20 @@ deploy _server_pos="" server silent="false":
 
       queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
         select coalesce(
-          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
           0
         )::bigint
-        from signal_message_queue
-        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+        from signal_message_queue as queue
+        join datasource on datasource.id = queue.datasource_id
+        join echo_client_lock as client_lock
+          on client_lock.id = datasource.echo_client_lock_id
+        join echo_account as account on account.id = client_lock.account_id
+        join echo_client as client on client.id = client_lock.client_id
+        where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+          and not datasource.deleted
+          and datasource.status = '"'"'active'"'"'
+          and account.is_linked
+          and not coalesce(client.deleted, false)
       ")
       if [ "$queue_age_before" -gt 30 ]; then
         queue_draining=0
@@ -1031,11 +1044,20 @@ deploy _server_pos="" server silent="false":
           sleep 5
           queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
             select coalesce(
-              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
               0
             )::bigint
-            from signal_message_queue
-            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+            from signal_message_queue as queue
+            join datasource on datasource.id = queue.datasource_id
+            join echo_client_lock as client_lock
+              on client_lock.id = datasource.echo_client_lock_id
+            join echo_account as account on account.id = client_lock.account_id
+            join echo_client as client on client.id = client_lock.client_id
+            where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+              and not datasource.deleted
+              and datasource.status = '"'"'active'"'"'
+              and account.is_linked
+              and not coalesce(client.deleted, false)
           ")
           if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
             queue_draining=1
@@ -1060,7 +1082,7 @@ deploy _server_pos="" server silent="false":
         exit 1
       fi
     '
-    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi
@@ -1196,7 +1218,11 @@ deploy-from-local _server_pos="" server silent="false":
     REMOTE_DEB_PATH=""
 
     ssh "$SERVER" 'set -euo pipefail
-      /opt/echo-peerdb/bin/source-sync-exclusions-if-needed.sh --yes
+      if sudo -n test -f /etc/echo-peerdb/source.env; then
+        /usr/share/echo/analytics-control/bin/source-activate-control.sh --yes
+        SOURCE_RECONCILE_LOCK_WAIT_SECONDS=300 \
+          /opt/echo-peerdb/current/bin/source-sync-exclusions-if-needed.sh --yes
+      fi
       sudo /usr/bin/wdintel-rs --mode=live migrate'
 
     ssh "$SERVER" '
@@ -1265,11 +1291,20 @@ deploy-from-local _server_pos="" server silent="false":
 
       queue_age_before=$(sudo -u postgres psql -d wd -Atqc "
         select coalesce(
-          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+          extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
           0
         )::bigint
-        from signal_message_queue
-        where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+        from signal_message_queue as queue
+        join datasource on datasource.id = queue.datasource_id
+        join echo_client_lock as client_lock
+          on client_lock.id = datasource.echo_client_lock_id
+        join echo_account as account on account.id = client_lock.account_id
+        join echo_client as client on client.id = client_lock.client_id
+        where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+          and not datasource.deleted
+          and datasource.status = '"'"'active'"'"'
+          and account.is_linked
+          and not coalesce(client.deleted, false)
       ")
       if [ "$queue_age_before" -gt 30 ]; then
         queue_draining=0
@@ -1277,11 +1312,20 @@ deploy-from-local _server_pos="" server silent="false":
           sleep 5
           queue_age_after=$(sudo -u postgres psql -d wd -Atqc "
             select coalesce(
-              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(created_at))),
+              extract(epoch from ((now() at time zone '"'"'utc'"'"') - min(queue.created_at))),
               0
             )::bigint
-            from signal_message_queue
-            where next_attempt_at <= now() at time zone '"'"'utc'"'"'
+            from signal_message_queue as queue
+            join datasource on datasource.id = queue.datasource_id
+            join echo_client_lock as client_lock
+              on client_lock.id = datasource.echo_client_lock_id
+            join echo_account as account on account.id = client_lock.account_id
+            join echo_client as client on client.id = client_lock.client_id
+            where queue.next_attempt_at <= now() at time zone '"'"'utc'"'"'
+              and not datasource.deleted
+              and datasource.status = '"'"'active'"'"'
+              and account.is_linked
+              and not coalesce(client.deleted, false)
           ")
           if [ "$queue_age_after" -le 30 ] || [ "$queue_age_after" -lt "$queue_age_before" ]; then
             queue_draining=1
@@ -1308,7 +1352,7 @@ deploy-from-local _server_pos="" server silent="false":
 
       echo "✅✅✅ deploy OK on $HOSTNAME: wdintel-rs.socket, wdintel-rs-bgworker.service, wdintel-rs-report-worker.service, wdintel-py.service, 8081 via systemd ✅✅✅"
     '
-    ssh "$SERVER" '/opt/echo-peerdb/bin/source-verify-deploy.sh'
+    ssh "$SERVER" 'if sudo -n test -f /etc/echo-peerdb/source.env; then /opt/echo-peerdb/current/bin/source-verify-deploy.sh; fi'
     if ! bash "{{ justfile_directory() }}/deploy/deployment-maintenance.sh" clear "$SERVER"; then
       echo "WARNING: failed to clear deployment maintenance; Redis TTL will clear it automatically." >&2
     fi

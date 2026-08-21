@@ -37,6 +37,12 @@ SOURCE_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS_DEFAULT=30
 protected_file_exists() { [[ -f "$1" ]]; }
 load_source_config() { ANALYTICS_ADDRESS=192.0.2.10/32; }
 require_cmd() { command -v "$1" >/dev/null 2>&1; }
+require_paired_control_release() { printf '%064d\n' 0; }
+source_reconciliation_failure_is_transient() {
+  grep -Eiq \
+    'deadlock detected|tuple concurrently updated|another table-selection reconciliation is already running|canceling statement due to lock timeout' \
+    <<<"$1"
+}
 log() { printf '[echo-analytics] %s\n' "$*"; }
 die() { printf '[echo-analytics] ERROR: %s\n' "$*" >&2; exit 1; }
 LIB

@@ -119,12 +119,14 @@ struct OcrUsage {
 
 pub struct AiEngineResponse {
     pub content: String,
+    pub finish_reason: Option<String>,
     pub model_name: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct OpenAiChatChoice {
     message: OpenAiChatResponseMessage,
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -201,16 +203,17 @@ pub async fn update_ai_engine(
     let ai_engine_id = parse_uuid(&req.id)?;
     let ai_engine = find_ai_engine(&env.dbx, ai_engine_id).await?;
     let values = validate_update_values(req, ai_engine.token.clone())?;
-    if !values.enabled {
+    if !values.enabled || !values.callsign_enabled {
         ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
             .await?;
-        ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+        crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
             .await
             .c(h!())?;
     }
-    if !values.callsign_enabled {
-        ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
-            .await?;
+    if !values.enabled {
+        ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+            .await
+            .c(h!())?;
     }
     if !values.ocr_enabled {
         ensure_not_used_by_ocr(&env.dbx, ai_engine_id).await?;
@@ -239,6 +242,9 @@ pub async fn delete_ai_engine(
     let ai_engine_id = parse_uuid(&req.id)?;
     find_ai_engine(&env.dbx, ai_engine_id).await?;
     ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id).await?;
+    crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
+        .await
+        .c(h!())?;
     ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
         .await
         .c(h!())?;
@@ -807,16 +813,29 @@ async fn request_ai_response_with_options(
     }
     let response: OpenAiChatCompletionRsp =
         serde_json::from_str(&body).c(h!())?;
-    let content = response
+    let choice = response
         .choices
         .into_iter()
-        .find_map(|choice| choice.message.content)
-        .filter(|content| !content.trim().is_empty())
+        .find(|choice| {
+            choice
+                .message
+                .content
+                .as_deref()
+                .is_some_and(|content| !content.trim().is_empty())
+        })
         .ok_or_else(|| AppError::BL {
             msg: "ШІ API повернув порожню відповідь".to_string(),
         })?;
+    let content = choice
+        .message
+        .content
+        .ok_or_else(|| AppError::BL {
+            msg: "ШІ API повернув порожню відповідь".to_string(),
+        })
+        .c(h!())?;
     Ok(AiEngineResponse {
         content,
+        finish_reason: choice.finish_reason,
         model_name: response.model,
     })
 }

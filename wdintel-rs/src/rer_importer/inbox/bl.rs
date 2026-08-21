@@ -65,6 +65,392 @@ pub struct InboxMessageDesc {
     pub metadata: Option<serde_json::Value>,
 }
 
+#[derive(Default)]
+struct IntelligenceReportSummaries {
+    parents_by_message: HashMap<i64, Vec<InboxMessageSummary>>,
+    reports_by_message: HashMap<i64, Vec<InboxMessageSummary>>,
+}
+
+fn reference_inbox_message_summary(
+    message_id: i64,
+    is_accessible: bool,
+    is_deleted: bool,
+    timestamp: Option<i64>,
+    date: Option<String>,
+    time: Option<String>,
+    group_name: Option<String>,
+) -> InboxMessageSummary {
+    let (timestamp, date, time, group_name) = if is_deleted {
+        (None, None, None, None)
+    } else {
+        (timestamp, date, time, group_name)
+    };
+    InboxMessageSummary {
+        id: message_id,
+        is_accessible,
+        is_deleted,
+        text: String::new(),
+        attachments_count: 0,
+        timestamp,
+        date,
+        time,
+        group_name,
+        group_master_key: None,
+        coords: None,
+        media_file_names: Vec::new(),
+    }
+}
+
+fn inbox_message_summary(
+    message_id: i64,
+    is_accessible: bool,
+    messages: &HashMap<i64, signal_message::Model>,
+    inbox_items: &HashMap<i64, sigint_inbox_item::Model>,
+    group_names: &HashMap<i64, String>,
+    group_master_keys: &HashMap<i64, String>,
+    attachment_counts: &HashMap<i64, i64>,
+    media_file_names: &HashMap<i64, Vec<String>>,
+) -> Option<InboxMessageSummary> {
+    let message = messages.get(&message_id)?;
+    let inbox_item = inbox_items.get(&message_id);
+    let timestamp = message
+        .timestamp
+        .map(|timestamp| timestamp.and_utc().timestamp_millis());
+    let date = inbox_item.and_then(|item| item.date.clone());
+    let time = inbox_item.and_then(|item| item.time.clone());
+    let group_name = group_names.get(&message_id).cloned();
+    let coords = inbox_item.and_then(|item| item.coords.clone());
+    let file_names = media_file_names
+        .get(&message_id)
+        .cloned()
+        .unwrap_or_default();
+    if message.deleted || !is_accessible {
+        return Some(reference_inbox_message_summary(
+            message_id,
+            is_accessible,
+            message.deleted,
+            timestamp,
+            date,
+            time,
+            group_name,
+        ));
+    }
+    Some(InboxMessageSummary {
+        id: message_id,
+        is_accessible: true,
+        is_deleted: false,
+        text: message.body.clone().unwrap_or_default(),
+        attachments_count: attachment_counts
+            .get(&message_id)
+            .copied()
+            .unwrap_or_default(),
+        timestamp,
+        date,
+        time,
+        group_name,
+        group_master_key: group_master_keys.get(&message_id).cloned(),
+        coords,
+        media_file_names: file_names,
+    })
+}
+
+async fn load_attachment_info(
+    message_ids: &HashSet<i64>,
+    dbx: &DatabaseConnection,
+) -> Result<(HashMap<i64, i64>, HashMap<i64, Vec<String>>), AppError> {
+    let rows = signal_message_media::Entity::find()
+        .filter(
+            signal_message_media::Column::SignalMessageId
+                .is_in(message_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    let mut counts = HashMap::new();
+    let mut names: HashMap<i64, Vec<String>> = HashMap::new();
+    for row in rows {
+        *counts.entry(row.signal_message_id).or_insert(0) += 1;
+        if let Some(file_name) = row.file_name {
+            let trimmed = file_name.trim();
+            if !trimmed.is_empty() {
+                names
+                    .entry(row.signal_message_id)
+                    .or_default()
+                    .push(trimmed.to_string());
+            }
+        }
+    }
+    Ok((counts, names))
+}
+
+async fn load_intelligence_report_summaries(
+    message_ids: &[i64],
+    allowed_groups: &[String],
+    login: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+    dbx: &DatabaseConnection,
+) -> Result<IntelligenceReportSummaries, AppError> {
+    if message_ids.is_empty() {
+        return Ok(IntelligenceReportSummaries::default());
+    }
+    let links = intel_product::Entity::find()
+        .filter(intel_product::relation_kind_is_in([
+            intel_product::RELATION_KIND_REPORT,
+            intel_product::RELATION_KIND_COMMENT,
+        ]))
+        .filter(
+            Condition::any()
+                .add(
+                    intel_product::Column::IntelMessageId
+                        .is_in(message_ids.to_vec()),
+                )
+                .add(
+                    intel_product::Column::SourceMessageId
+                        .is_in(message_ids.to_vec()),
+                ),
+        )
+        .order_by_asc(intel_product::Column::CreatedAt)
+        .order_by_asc(intel_product::Column::IntelMessageId)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    if links.is_empty() {
+        return Ok(IntelligenceReportSummaries::default());
+    }
+
+    let related_ids = links
+        .iter()
+        .flat_map(|link| [link.intel_message_id, link.source_message_id])
+        .collect::<HashSet<_>>();
+    let messages = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.is_in(related_ids.iter().copied()))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|message| (message.id, message))
+        .collect::<HashMap<_, _>>();
+    let datasource_group_ids = messages
+        .values()
+        .filter_map(|message| message.datasource_group_id)
+        .collect::<HashSet<_>>();
+    let datasource_groups = datasource_group::Entity::find()
+        .filter(datasource_group::Column::Id.is_in(datasource_group_ids))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|group| (group.id, group))
+        .collect::<HashMap<_, _>>();
+    let inbox_items = sigint_inbox_item::Entity::find()
+        .filter(
+            sigint_inbox_item::Column::Id.is_in(related_ids.iter().copied()),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|item| (item.id, item))
+        .collect::<HashMap<_, _>>();
+    let (attachment_counts, media_file_names) =
+        load_attachment_info(&related_ids, dbx).await.c(h!())?;
+    let group_rows = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .is_in(related_ids.iter().copied()),
+        )
+        .order_by_asc(signal_message_group::Column::Id)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let mut group_master_keys = group_rows
+        .iter()
+        .filter_map(|group| group.group_master_key.clone())
+        .collect::<HashSet<_>>();
+    group_master_keys.extend(
+        datasource_groups
+            .values()
+            .map(|group| group.group_master_key.clone()),
+    );
+    let group_names_by_master_key = signal_group::Entity::find()
+        .filter(signal_group::Column::MasterKey.is_in(group_master_keys))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|group| {
+            let name = group.name.unwrap_or_else(|| group.master_key.clone());
+            (group.master_key, name)
+        })
+        .collect::<HashMap<_, _>>();
+    let allowed_groups = allowed_groups.iter().collect::<HashSet<_>>();
+    let mut grouped_message_ids = HashSet::new();
+    let mut group_names = HashMap::new();
+    let mut accessible_group_master_keys = HashMap::new();
+    for group in group_rows {
+        grouped_message_ids.insert(group.signal_message_id);
+        let Some(group_master_key) = group.group_master_key else {
+            continue;
+        };
+        let group_name =
+            group_names_by_master_key.get(&group_master_key).cloned();
+        if allowed_groups.contains(&group_master_key)
+            && !accessible_group_master_keys
+                .contains_key(&group.signal_message_id)
+        {
+            if let Some(group_name) = group_name {
+                group_names.insert(group.signal_message_id, group_name);
+            }
+            accessible_group_master_keys
+                .entry(group.signal_message_id)
+                .or_insert(group_master_key);
+        } else if let Some(group_name) = group_name {
+            group_names
+                .entry(group.signal_message_id)
+                .or_insert(group_name);
+        }
+    }
+    for message in messages.values() {
+        let Some(datasource_group_id) = message.datasource_group_id else {
+            continue;
+        };
+        grouped_message_ids.insert(message.id);
+        let Some(datasource_group) =
+            datasource_groups.get(&datasource_group_id)
+        else {
+            continue;
+        };
+        if allowed_groups.contains(&datasource_group.group_master_key) {
+            accessible_group_master_keys
+                .entry(message.id)
+                .or_insert_with(|| datasource_group.group_master_key.clone());
+            if let Some(group_name) = group_names_by_master_key
+                .get(&datasource_group.group_master_key)
+                .cloned()
+            {
+                group_names.entry(message.id).or_insert(group_name);
+            }
+        }
+    }
+
+    let owner_sender_ids = organism_logins
+        .iter()
+        .chain(std::iter::once(login))
+        .map(ToString::to_string)
+        .collect::<HashSet<_>>();
+    let owner_message_ids = messages
+        .values()
+        .filter(|message| {
+            message.datasource_group_id.is_none()
+                && !grouped_message_ids.contains(&message.id)
+                && message
+                    .sender
+                    .as_ref()
+                    .is_some_and(|sender| owner_sender_ids.contains(sender))
+        })
+        .map(|message| message.id)
+        .collect::<HashSet<_>>();
+
+    let requested_ids = message_ids.iter().copied().collect::<HashSet<_>>();
+    let mut summaries = IntelligenceReportSummaries::default();
+    for link in links {
+        let parent_is_accessible = accessible_group_master_keys
+            .contains_key(&link.source_message_id)
+            || owner_message_ids.contains(&link.source_message_id);
+        let message_is_deleted = messages
+            .get(&link.intel_message_id)
+            .is_none_or(|message| message.deleted);
+
+        if link.relation_kind == intel_product::RELATION_KIND_COMMENT {
+            if requested_ids.contains(&link.intel_message_id) {
+                if let Some(parent) = inbox_message_summary(
+                    link.source_message_id,
+                    parent_is_accessible,
+                    &messages,
+                    &inbox_items,
+                    &group_names,
+                    &accessible_group_master_keys,
+                    &attachment_counts,
+                    &media_file_names,
+                ) {
+                    summaries
+                        .parents_by_message
+                        .entry(link.intel_message_id)
+                        .or_default()
+                        .push(parent);
+                }
+            }
+            if requested_ids.contains(&link.source_message_id)
+                && !message_is_deleted
+                && parent_is_accessible
+            {
+                if let Some(linked_message) = inbox_message_summary(
+                    link.intel_message_id,
+                    true,
+                    &messages,
+                    &inbox_items,
+                    &group_names,
+                    &accessible_group_master_keys,
+                    &attachment_counts,
+                    &media_file_names,
+                ) {
+                    summaries
+                        .reports_by_message
+                        .entry(link.source_message_id)
+                        .or_default()
+                        .push(linked_message);
+                }
+            }
+            continue;
+        }
+
+        if requested_ids.contains(&link.intel_message_id) {
+            if let Some(parent) = inbox_message_summary(
+                link.source_message_id,
+                parent_is_accessible,
+                &messages,
+                &inbox_items,
+                &group_names,
+                &accessible_group_master_keys,
+                &attachment_counts,
+                &media_file_names,
+            ) {
+                summaries
+                    .parents_by_message
+                    .entry(link.intel_message_id)
+                    .or_default()
+                    .push(parent);
+            }
+        }
+        let report_is_accessible = accessible_group_master_keys
+            .contains_key(&link.intel_message_id)
+            || !grouped_message_ids.contains(&link.intel_message_id)
+            || parent_is_accessible;
+        if requested_ids.contains(&link.source_message_id)
+            && !message_is_deleted
+        {
+            if let Some(report) = inbox_message_summary(
+                link.intel_message_id,
+                report_is_accessible,
+                &messages,
+                &inbox_items,
+                &group_names,
+                &accessible_group_master_keys,
+                &attachment_counts,
+                &media_file_names,
+            ) {
+                summaries
+                    .reports_by_message
+                    .entry(link.source_message_id)
+                    .or_default()
+                    .push(report);
+            }
+        }
+    }
+    Ok(summaries)
+}
+
 async fn load_coords_with_locality(
     message_ids: &[i64],
     env: &Env,
@@ -337,6 +723,15 @@ pub async fn aggregate_to_inbox_messages(
         crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
             .await
             .c(h!())?;
+    let mut intelligence_report_summaries = load_intelligence_report_summaries(
+        &message_ids,
+        &sigint_groups,
+        login,
+        logins,
+        &env.dbx,
+    )
+    .await
+    .c(h!())?;
     let mut group_query = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId
@@ -392,6 +787,7 @@ pub async fn aggregate_to_inbox_messages(
             signal_message_media::Column::SignalMessageId
                 .eq_any(message_ids.clone()),
         )
+        .order_by_asc(signal_message_media::Column::Id)
         .all(&env.dbx)
         .await
         .c(h!())?;
@@ -588,11 +984,11 @@ pub async fn aggregate_to_inbox_messages(
                 highlight_searchres: req.highlight_searchres,
             },
         )?;
-        let m_comment =
-            find_editable_sigint_comment_by_signal_message_id_and_logins(
-                &env.dbx, message.id, login, logins,
-            )
-            .await?;
+        let m_comment = find_editable_linked_message_comment(
+            &env.dbx, message.id, login, logins,
+        )
+        .await
+        .c(h!())?;
         let location = format_inbox_message_location(
             message.location,
             message.location_v2,
@@ -654,6 +1050,14 @@ pub async fn aggregate_to_inbox_messages(
                 device_name: message.device_name,
                 inbox_tags: m_inbox_tags,
                 metadata,
+                parent_messages: intelligence_report_summaries
+                    .parents_by_message
+                    .remove(&message.id)
+                    .unwrap_or_default(),
+                intelligence_reports: intelligence_report_summaries
+                    .reports_by_message
+                    .remove(&message.id)
+                    .unwrap_or_default(),
             },
         ));
     }
@@ -676,6 +1080,202 @@ fn comment_ownership_logins(
         }
     }
     res
+}
+
+pub(crate) async fn find_editable_linked_message_comment<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+) -> Result<Option<crate::sigint::comments::LinkedMessageComment>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    Ok(
+        crate::sigint::comments::find_linked_message_comments(db, &[item_id])
+            .await
+            .c(h!())?
+            .into_iter()
+            .filter(|comment| {
+                comment.post_id.is_none()
+                    && comment.login_id.is_some_and(|login_id| {
+                        owner_logins.contains(&login_id)
+                    })
+            })
+            .min_by_key(|comment| {
+                (
+                    comment.login_id != Some(*login),
+                    comment.created_at,
+                    comment.intel_message_id,
+                )
+            }),
+    )
+}
+
+pub(crate) async fn upsert_existing_editable_linked_message_comment<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    comment: &str,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(existing) =
+        find_editable_linked_message_comment(db, item_id, login, logins)
+            .await
+            .c(h!())?
+    else {
+        return Ok(false);
+    };
+    update_linked_message_comment(db, &existing, comment)
+        .await
+        .c(h!())?;
+    delete_editable_linked_message_comment_duplicates(
+        db, item_id, login, logins, &existing,
+    )
+    .await
+    .c(h!())?;
+    Ok(true)
+}
+
+pub(crate) async fn upsert_editable_linked_message_comment(
+    db: &DatabaseTransaction,
+    env: &Env,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    comment: &str,
+) -> Result<(), AppError> {
+    if !upsert_existing_editable_linked_message_comment(
+        db, item_id, login, logins, comment,
+    )
+    .await
+    .c(h!())?
+    {
+        crate::sigint::comments::create_linked_message_comment(
+            env, db, item_id, login, logins, comment, None, None,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn update_linked_message_comment<C>(
+    db: &C,
+    comment: &crate::sigint::comments::LinkedMessageComment,
+    text: &str,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(legacy_comment_id) = comment.legacy_comment_id {
+        let mut legacy_comment =
+            sigint_comment::Entity::find_by_id(legacy_comment_id)
+                .one(db)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
+                .into_active_model();
+        legacy_comment.comment = Set(text.to_string());
+        legacy_comment.update(db).await.c(h!())?;
+    } else {
+        let mut message =
+            signal_message::Entity::find_by_id(comment.intel_message_id)
+                .one(db)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
+                .into_active_model();
+        message.body = Set(Some(text.to_string()));
+        message.update(db).await.c(h!())?;
+    }
+    Ok(())
+}
+
+async fn delete_editable_linked_message_comment_duplicates<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+    retained: &crate::sigint::comments::LinkedMessageComment,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    let comments =
+        crate::sigint::comments::find_linked_message_comments(db, &[item_id])
+            .await
+            .c(h!())?;
+    for comment in comments.into_iter().filter(|comment| {
+        comment.post_id.is_none()
+            && comment
+                .login_id
+                .is_some_and(|login_id| owner_logins.contains(&login_id))
+            && (comment.intel_message_id != retained.intel_message_id
+                || comment.legacy_comment_id != retained.legacy_comment_id)
+    }) {
+        delete_linked_message_comment(db, &comment).await.c(h!())?;
+    }
+    Ok(())
+}
+
+async fn delete_linked_message_comment<C>(
+    db: &C,
+    comment: &crate::sigint::comments::LinkedMessageComment,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(legacy_comment_id) = comment.legacy_comment_id {
+        sigint_comment::Entity::delete_by_id(legacy_comment_id)
+            .exec(db)
+            .await
+            .c(h!())?;
+    } else {
+        let mut message =
+            signal_message::Entity::find_by_id(comment.intel_message_id)
+                .one(db)
+                .await
+                .c(h!())?
+                .ok_or(AppError::NotFound)
+                .c(h!())?
+                .into_active_model();
+        message.deleted = Set(true);
+        message.update(db).await.c(h!())?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn delete_editable_linked_message_comments<C>(
+    db: &C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let owner_logins = comment_ownership_logins(login, logins);
+    let comments =
+        crate::sigint::comments::find_linked_message_comments(db, &[item_id])
+            .await
+            .c(h!())?;
+    for comment in comments.into_iter().filter(|comment| {
+        comment.post_id.is_none()
+            && comment
+                .login_id
+                .is_some_and(|login_id| owner_logins.contains(&login_id))
+    }) {
+        delete_linked_message_comment(db, &comment).await.c(h!())?;
+    }
+    Ok(())
 }
 
 pub(crate) async fn find_editable_sigint_comments_by_signal_message_id_and_logins<
@@ -712,6 +1312,7 @@ where
     Ok(comments)
 }
 
+#[allow(dead_code)]
 pub(crate) async fn find_editable_sigint_comment_by_signal_message_id_and_logins<
     'a,
     'async_trait,
@@ -758,6 +1359,7 @@ where
             comment: Set(comment.to_string()),
             created_at: NotSet,
             sigint_post_id: NotSet,
+            migrated_signal_message_id: NotSet,
         }
         .insert(db)
         .await
@@ -772,29 +1374,15 @@ where
         comment: Set(comment.to_string()),
         created_at: NotSet,
         sigint_post_id: NotSet,
+        migrated_signal_message_id: Set(
+            comment_to_update.migrated_signal_message_id
+        ),
     }
     .update(db)
     .await
     .c(h!())?;
 
     comments.remove(0);
-    delete_sigint_comments(db, comments).await
-}
-
-pub(crate) async fn delete_editable_sigint_comments<'a, 'async_trait, C>(
-    db: &'a C,
-    item_id: i64,
-    login: &uuid::Uuid,
-    logins: &[uuid::Uuid],
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
-    let comments =
-        find_editable_sigint_comments_by_signal_message_id_and_logins(
-            db, item_id, login, logins,
-        )
-        .await?;
     delete_sigint_comments(db, comments).await
 }
 
@@ -819,6 +1407,25 @@ where
     Ok(())
 }
 
+#[allow(dead_code)]
+pub(crate) async fn delete_editable_sigint_comments<'a, 'async_trait, C>(
+    db: &'a C,
+    item_id: i64,
+    login: &uuid::Uuid,
+    logins: &[uuid::Uuid],
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait + 'async_trait,
+{
+    let comments =
+        find_editable_sigint_comments_by_signal_message_id_and_logins(
+            db, item_id, login, logins,
+        )
+        .await?;
+    delete_sigint_comments(db, comments).await
+}
+
+#[allow(dead_code)]
 pub(crate) async fn find_sigint_comment_by_signal_message_id_and_logins(
     env: &Env,
     item_id: i64,
@@ -1321,9 +1928,26 @@ pub async fn submit_upsert_inbox_item(
     };
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
-        upsert_editable_sigint_comment(txn, id, login, logins, extended_form)
+        if !upsert_existing_editable_linked_message_comment(
+            txn,
+            id,
+            login,
+            logins,
+            extended_form,
+        )
+        .await
+        .c(h!())?
+        {
+            upsert_editable_sigint_comment(
+                txn,
+                id,
+                login,
+                logins,
+                extended_form,
+            )
             .await
             .c(h!())?;
+        }
     }
 
     let location = message
@@ -1685,6 +2309,52 @@ fn split_manual_locations(location: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn redacted_intelligence_summary_exposes_only_safe_metadata() {
+        let summary = reference_inbox_message_summary(
+            42,
+            false,
+            false,
+            Some(1_755_252_200_000),
+            Some("2026-08-15".to_string()),
+            Some("09:10".to_string()),
+            Some("Група оригіналу".to_string()),
+        );
+
+        assert_eq!(summary.id, 42);
+        assert!(!summary.is_accessible);
+        assert!(!summary.is_deleted);
+        assert!(summary.text.is_empty());
+        assert_eq!(summary.attachments_count, 0);
+        assert_eq!(summary.timestamp, Some(1_755_252_200_000));
+        assert_eq!(summary.date.as_deref(), Some("2026-08-15"));
+        assert_eq!(summary.time.as_deref(), Some("09:10"));
+        assert_eq!(summary.group_name.as_deref(), Some("Група оригіналу"));
+        assert_eq!(summary.group_master_key, None);
+    }
+
+    #[test]
+    fn deleted_intelligence_summary_is_a_tombstone() {
+        let summary = reference_inbox_message_summary(
+            42,
+            true,
+            true,
+            Some(1_755_252_200_000),
+            Some("2026-08-15".to_string()),
+            Some("09:10".to_string()),
+            Some("Група оригіналу".to_string()),
+        );
+
+        assert!(summary.is_accessible);
+        assert!(summary.is_deleted);
+        assert!(summary.text.is_empty());
+        assert_eq!(summary.attachments_count, 0);
+        assert_eq!(summary.timestamp, None);
+        assert_eq!(summary.date, None);
+        assert_eq!(summary.time, None);
+        assert_eq!(summary.group_name, None);
+    }
 
     #[test]
     fn merge_point_palitra_ids_keeps_all_source_palitras() {

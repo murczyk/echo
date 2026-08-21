@@ -22,7 +22,11 @@ import { formatCoordinateLocality } from '../../../../../maps/coordinate-localit
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { isAbortError } from '../../../../services/api/client';
 import { mapCoordinates, type CoordinateLocality } from '../../../../services/api/location';
-import { getMediaSummary, type MediaSummaryAccess } from '../../../../services/api/media-summary';
+import {
+  getMediaSummary,
+  retryMediaSummary,
+  type MediaSummaryAccess,
+} from '../../../../services/api/media-summary';
 import { resolveMediaSummaryCoordinatePoint } from '../message-coordinate-preview';
 
 const STATE_LABELS: Record<string, string> = {
@@ -42,6 +46,7 @@ const COORDINATE_SYSTEM_LABELS: Record<string, string> = {
 
 const EMPTY_COORDINATES: MediaSummaryCoordinate[] = [];
 const SUMMARY_LOAD_ERROR = 'Не вдалося завантажити стислий опис';
+const SUMMARY_RETRY_ERROR = 'Не вдалося повторно запустити створення опису';
 
 function useCoordinateLocalities(
   coordinates: MediaSummaryCoordinate[],
@@ -267,6 +272,7 @@ function SummaryContent({
   refreshError,
   showErrorDetails,
   onRefresh,
+  onRetry,
 }: {
   result: MediaSummaryResult | null;
   status: MediaSummaryStatus;
@@ -274,6 +280,7 @@ function SummaryContent({
   refreshError: string | null;
   showErrorDetails: boolean;
   onRefresh: () => void;
+  onRetry: () => void;
 }) {
   const state = result?.state ?? status.state;
   const lastError = showErrorDetails ? (result?.lastError ?? status.lastError) : null;
@@ -344,9 +351,9 @@ function SummaryContent({
         variant="outlined"
         startIcon={refreshing ? <CircularProgress size={14} /> : <RefreshIcon />}
         disabled={refreshing}
-        onClick={onRefresh}
+        onClick={state === 'failed' ? onRetry : onRefresh}
       >
-        Оновити
+        {state === 'failed' ? 'Повторити' : 'Оновити'}
       </Button>
     </Stack>
   );
@@ -387,18 +394,16 @@ function useMediaSummaryResult({
     };
   }, [mediaId, summaryAccess]);
 
-  const refresh = useCallback(
-    async (quiet: boolean) => {
+  const request = useCallback(
+    async (quiet: boolean, requeue: boolean) => {
       if (mediaId == null || refreshControllerRef.current != null) return;
       const controller = new AbortController();
       refreshControllerRef.current = controller;
       setRefreshing(true);
       try {
-        const nextResult = await getMediaSummary(
-          mediaId,
-          { signal: controller.signal },
-          summaryAccess,
-        );
+        const nextResult = requeue
+          ? await retryMediaSummary(mediaId, { signal: controller.signal }, summaryAccess)
+          : await getMediaSummary(mediaId, { signal: controller.signal }, summaryAccess);
         if (controller.signal.aborted) return;
         setResult(nextResult);
         setRefreshError(null);
@@ -409,10 +414,11 @@ function useMediaSummaryResult({
         });
       } catch (error) {
         if (controller.signal.aborted || isAbortError(error)) return;
+        const baseMessage = requeue ? SUMMARY_RETRY_ERROR : SUMMARY_LOAD_ERROR;
         const message =
           summaryAccess === 'admin-ocr'
-            ? `${SUMMARY_LOAD_ERROR}: ${error instanceof Error ? error.message : String(error)}`
-            : SUMMARY_LOAD_ERROR;
+            ? `${baseMessage}: ${error instanceof Error ? error.message : String(error)}`
+            : baseMessage;
         setRefreshError(message);
         if (!quiet) notifyRef.current({ severity: 'error', message });
       } finally {
@@ -424,6 +430,8 @@ function useMediaSummaryResult({
     },
     [mediaId, summaryAccess],
   );
+  const refresh = useCallback((quiet: boolean) => request(quiet, false), [request]);
+  const retry = useCallback(() => request(false, true), [request]);
 
   const hasStatus = status != null;
   useEffect(() => {
@@ -437,7 +445,7 @@ function useMediaSummaryResult({
     return () => window.clearInterval(interval);
   }, [enabled, refresh, state]);
 
-  return { result, refreshing, refreshError, refresh };
+  return { result, refreshing, refreshError, refresh, retry };
 }
 
 export function MessageCardMediaSummary({
@@ -450,7 +458,7 @@ export function MessageCardMediaSummary({
   navigationOverlay?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { result, refreshing, refreshError, refresh } = useMediaSummaryResult({
+  const { result, refreshing, refreshError, refresh, retry } = useMediaSummaryResult({
     mediaId,
     status,
     enabled: mediaId != null && status != null,
@@ -535,9 +543,9 @@ export function MessageCardMediaSummary({
           {state === 'failed' || refreshError != null ? (
             <IconButton
               size="small"
-              aria-label="Оновити стислий опис"
+              aria-label={state === 'failed' ? 'Повторити стислий опис' : 'Оновити стислий опис'}
               disabled={refreshing}
-              onClick={() => void refresh(false)}
+              onClick={() => void (state === 'failed' ? retry() : refresh(false))}
             >
               <RefreshIcon sx={{ fontSize: 16 }} />
             </IconButton>
@@ -693,7 +701,7 @@ export function MediaSummaryOverlay({
   onClose: () => void;
   summaryAccess?: MediaSummaryAccess;
 }) {
-  const { result, refreshing, refreshError, refresh } = useMediaSummaryResult({
+  const { result, refreshing, refreshError, refresh, retry } = useMediaSummaryResult({
     mediaId,
     status,
     enabled: visible,
@@ -748,6 +756,7 @@ export function MediaSummaryOverlay({
             refreshError={refreshError}
             showErrorDetails={summaryAccess === 'admin-ocr'}
             onRefresh={() => void refresh(false)}
+            onRetry={() => void retry()}
           />
         </Box>
       ) : null}

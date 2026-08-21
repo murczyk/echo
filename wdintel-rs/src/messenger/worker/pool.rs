@@ -361,6 +361,7 @@ async fn process_item_once(
     let txn = context.dbx.begin().await.c(h!())?;
     let mut changed_inbox_item_ids = vec![];
     let mut superseded_media_ids = vec![];
+    let mut superseded_media_storage_keys = vec![];
     let mut superseded_ocr_result_keys = vec![];
     let mut pending_dedupe_updates = vec![];
     let mut uploaded_files_ready_for_deletion = vec![];
@@ -415,6 +416,8 @@ async fn process_item_once(
             .c(h!())?;
             changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
             superseded_media_ids.extend(result.superseded_media_ids);
+            superseded_media_storage_keys
+                .extend(result.superseded_media_storage_keys);
             superseded_ocr_result_keys
                 .extend(result.superseded_ocr_result_keys);
             pending_dedupe_updates.extend(result.pending_dedupe_updates);
@@ -481,7 +484,9 @@ async fn process_item_once(
     crate::messenger::reconcile::delete_media_objects_best_effort(
         &context.config,
         &context.s3,
+        &context.dbx,
         superseded_media_ids,
+        superseded_media_storage_keys,
         superseded_ocr_result_keys,
     )
     .await;

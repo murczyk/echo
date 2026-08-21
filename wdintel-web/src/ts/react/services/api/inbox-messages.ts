@@ -297,6 +297,8 @@ function normalizeInboxMessage(
     textMarked,
     pointTokens,
     media,
+    parentMessages: m.parentMessages ?? [],
+    intelligenceReports: m.intelligenceReports ?? [],
   };
 }
 

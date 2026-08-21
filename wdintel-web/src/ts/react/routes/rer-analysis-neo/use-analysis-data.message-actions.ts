@@ -5,7 +5,6 @@ import type { InboxMessage, SummaryTableFreqRow } from '../../../../Bindings';
 import {
   bookmarkAdd,
   bookmarkRemove,
-  commentSave,
   deleteMessage,
   editAnalysisFreqUnitName,
   importantAdd,
@@ -157,25 +156,6 @@ export function useAnalysisDataMessageActions(params: Params) {
     [params],
   );
 
-  const onSaveMessageComment = useCallback(
-    async (messageId: number, comment: string | null) => {
-      setMessageActionCount((current) => current + 1);
-      try {
-        await commentSave({ messageId, comment });
-        params.patchMessages((id, message) =>
-          id === messageId ? { ...message, extendedForm: comment } : message,
-        );
-      } catch (loadError) {
-        if (!params.onUnauthorized(loadError)) {
-          params.onError(params.toErrorMessage(loadError));
-        }
-      } finally {
-        setMessageActionCount((current) => Math.max(0, current - 1));
-      }
-    },
-    [params],
-  );
-
   const onToggleMessageTag = useCallback(
     async (messageId: number, tagId: number) => {
       const sourceMessage =
@@ -305,7 +285,6 @@ export function useAnalysisDataMessageActions(params: Params) {
     onCancelBotTagAction,
     onDeleteMessage,
     onMarkBotTagWrong,
-    onSaveMessageComment,
     onToggleMessageBookmark,
     onToggleMessageImportant,
     onToggleMessageTag,

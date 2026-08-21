@@ -13,7 +13,7 @@ function Form({ children }: { children: ReactNode }) {
   return createElement(FormProvider, methods, children);
 }
 
-async function renderSection(files: unknown[]) {
+async function renderSection(files: unknown[] = [], existingMedia: any[] = []) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -28,6 +28,7 @@ async function renderSection(files: unknown[]) {
           handleDrop={vi.fn()}
           handleDropzoneKeyDown={vi.fn()}
           busy={false}
+          existingMedia={existingMedia}
         />
       </Form>,
     );
@@ -46,7 +47,7 @@ function pendingFile(id: string, name: string, type: string) {
   };
 }
 
-describe('AttachmentsSection local media previews', () => {
+describe('AttachmentsSection media previews', () => {
   const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:local');
   const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
 
@@ -55,44 +56,50 @@ describe('AttachmentsSection local media previews', () => {
     document.body.replaceChildren();
   });
 
-  it('renders image thumbnails for pending image files', async () => {
+  it('renders image thumbnails at the start of the row for pending image files', async () => {
     const { container, root } = await renderSection([
       pendingFile('image', 'photo.JPG', 'image/jpeg'),
     ]);
 
     expect(createObjectURL).toHaveBeenCalledOnce();
-    const row = container.querySelector('button[aria-label="Видалити photo.JPG"]')?.parentElement;
     const preview = container.querySelector('img[src="blob:local"]');
     const filename = container.querySelector('p[title="photo.JPG"]');
-    const metadata = row?.querySelector('span');
-    expect(row?.firstElementChild?.tagName).toBe('svg');
+    const moreBtn = container.querySelector('button[aria-label="Більше дій для photo.JPG"]');
+    const deleteBtn = container.querySelector('button[aria-label="Видалити photo.JPG"]');
+
     expect(preview).not.toBeNull();
-    expect(filename?.compareDocumentPosition(preview!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(preview?.compareDocumentPosition(metadata!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(moreBtn).not.toBeNull();
+    expect(deleteBtn).not.toBeNull();
+    // Preview thumbnail is at the start (before filename)
+    expect(preview?.compareDocumentPosition(filename!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // More button is after metadata, before delete button
+    expect(moreBtn?.compareDocumentPosition(deleteBtn!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
     act(() => root.unmount());
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:local');
   });
 
-  it('renders paused video previews with a play affordance', async () => {
+  it('renders paused video previews with a play affordance at the start of the row', async () => {
     const { container, root } = await renderSection([
       pendingFile('video', 'clip.MP4', 'video/mp4'),
     ]);
     const video = container.querySelector('video');
-    const row = container.querySelector('button[aria-label="Видалити clip.MP4"]')?.parentElement;
+    const filename = container.querySelector('p[title="clip.MP4"]');
 
     expect(video?.getAttribute('src')).toBe('blob:local');
     expect(video?.getAttribute('autoplay')).toBeNull();
     expect(video?.muted).toBe(true);
-    expect(row?.firstElementChild?.tagName).toBe('svg');
-    expect(container.querySelector('svg')).not.toBeNull();
+    expect(video?.compareDocumentPosition(filename!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     act(() => root.unmount());
   });
 
-  it('keeps the icon fallback for unknown MIME types and broken previews', async () => {
-    const unknown = await renderSection([pendingFile('unknown', 'photo.jpg', '')]);
+  it('keeps the icon in the start slot for non-media files and broken previews', async () => {
+    const unknown = await renderSection([pendingFile('unknown', 'data.bin', '')]);
     expect(unknown.container.querySelector('img')).toBeNull();
-    expect(unknown.container.querySelector('svg')).not.toBeNull();
+    const icon = unknown.container.querySelector('svg');
+    const filename = unknown.container.querySelector('p[title="data.bin"]');
+    expect(icon).not.toBeNull();
+    expect(icon?.compareDocumentPosition(filename!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     act(() => unknown.root.unmount());
 
     const broken = await renderSection([pendingFile('broken', 'photo.jpg', 'image/jpeg')]);
@@ -122,6 +129,153 @@ describe('AttachmentsSection local media previews', () => {
     });
     expect(container.querySelector('img')).toBeNull();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:local');
+    act(() => root.unmount());
+  });
+
+  it('renders previews for existing image and video media in edit mode', async () => {
+    const existingMedia = [
+      {
+        id: 'media-1',
+        fileName: 'existing-image.png',
+        contentType: 'image/png',
+        sizeBytes: 1024,
+        href: 'https://example.com/existing-image.png',
+        transcription: null,
+      },
+      {
+        id: 'media-2',
+        fileName: 'existing-video.mp4',
+        contentType: 'video/mp4',
+        sizeBytes: 2048,
+        href: 'https://example.com/existing-video.mp4',
+        transcription: null,
+      },
+      {
+        id: 'media-3',
+        fileName: 'report.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 4096,
+        href: 'https://example.com/report.pdf',
+        transcription: null,
+      },
+    ];
+
+    const { container, root } = await renderSection([], existingMedia);
+
+    const img = container.querySelector('img[src="https://example.com/existing-image.png"]');
+    expect(img).not.toBeNull();
+
+    const video = container.querySelector('video[src="https://example.com/existing-video.mp4"]');
+    expect(video).not.toBeNull();
+
+    // PDF should render icon in the start slot
+    const pdfRow = container.querySelector(
+      'button[aria-label="Видалити report.pdf"]',
+    )?.parentElement;
+    expect(pdfRow?.querySelector('img')).toBeNull();
+    expect(pdfRow?.querySelector('video')).toBeNull();
+    expect(pdfRow?.querySelector('svg')).not.toBeNull();
+
+    // More buttons exist
+    expect(
+      container.querySelector('button[aria-label="Більше дій для existing-image.png"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Більше дій для report.pdf"]'),
+    ).not.toBeNull();
+
+    act(() => root.unmount());
+  });
+
+  it('opens attachment preview dialog when clicking on a preview thumbnail', async () => {
+    const existingMedia = [
+      {
+        id: 'media-1',
+        fileName: 'screenshot.png',
+        contentType: 'image/png',
+        sizeBytes: 1024,
+        href: 'https://example.com/screenshot.png',
+        transcription: null,
+      },
+    ];
+
+    const { container, root } = await renderSection(
+      [pendingFile('img-2', 'new-photo.jpg', 'image/jpeg')],
+      existingMedia,
+    );
+
+    const previewButtons = container.querySelectorAll('button[aria-label^="Переглянути "]');
+    expect(previewButtons.length).toBe(2);
+
+    // Click on the first preview (existing media because existing comes first)
+    await act(async () => {
+      (previewButtons[0] as HTMLElement).click();
+    });
+
+    const dialog = document.body.querySelector('div[role="dialog"]');
+    expect(dialog).not.toBeNull();
+
+    act(() => root.unmount());
+  });
+
+  it('triggers download when download menu item is clicked', async () => {
+    const linkClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    const existingMedia = [
+      {
+        id: 'media-1',
+        fileName: 'document.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1024,
+        href: 'https://example.com/document.pdf',
+        transcription: null,
+      },
+    ];
+
+    const { container, root } = await renderSection([], existingMedia);
+    const moreBtn = container.querySelector('button[aria-label="Більше дій для document.pdf"]');
+    expect(moreBtn).not.toBeNull();
+
+    await act(async () => {
+      (moreBtn as HTMLElement).click();
+    });
+
+    const downloadMenuItem = document.body.querySelector('li[role="menuitem"]');
+    expect(downloadMenuItem).not.toBeNull();
+
+    await act(async () => {
+      (downloadMenuItem as HTMLElement).click();
+    });
+
+    expect(linkClickSpy).toHaveBeenCalled();
+    linkClickSpy.mockRestore();
+    act(() => root.unmount());
+  });
+
+  it('opens attachment preview dialog when clicking on document icon', async () => {
+    const existingMedia = [
+      {
+        id: 'media-doc',
+        fileName: 'table.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        sizeBytes: 2048,
+        href: 'https://example.com/table.xlsx',
+        transcription: null,
+      },
+    ];
+
+    const { container, root } = await renderSection([], existingMedia);
+    const previewBtn = container.querySelector('button[aria-label="Переглянути table.xlsx"]');
+    expect(previewBtn).not.toBeNull();
+
+    await act(async () => {
+      (previewBtn as HTMLElement).click();
+    });
+
+    const dialog = document.body.querySelector('div[role="dialog"]');
+    expect(dialog).not.toBeNull();
+
     act(() => root.unmount());
   });
 });

@@ -1,3 +1,4 @@
+pub(crate) mod reprocess;
 pub mod types;
 pub mod worker;
 
@@ -22,10 +23,9 @@ use actix_identity::Identity;
 use actix_web::{get, post, web::Json};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait,
-    ActiveValue::{NotSet, Set},
-    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, TryInsertResult,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseConnection, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
+    TryInsertResult,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -105,27 +105,60 @@ where
     let source_char_count = source_text.chars().count();
     let source_digest = sha256::digest(source_text.as_bytes());
     let source_text = bound_source_text(&source_text);
+    let source_char_count = i32::try_from(source_char_count).c(h!())?;
+    let now = Utc::now().naive_utc();
+    if force {
+        let updated = media_summary_entity::Entity::update_many()
+            .set(media_summary_entity::ActiveModel {
+                source_kind: Set(source_kind.to_string()),
+                source_digest: Set(source_digest.clone()),
+                source_text: Set(Some(source_text.clone())),
+                source_char_count: Set(source_char_count),
+                state: Set("queued".to_string()),
+                ai_engine_id: Set(Some(ai_engine.id)),
+                ai_engine_name: Set(ai_engine.name.clone()),
+                model_name: Set(ai_engine.model_name.clone()),
+                attempts: Set(0),
+                lease_expires_at: Set(None),
+                next_attempt_at: Set(now),
+                last_error: Set(None),
+                summary: Set(None),
+                created_at: Set(now),
+                started_at: Set(None),
+                completed_at: Set(None),
+                updated_at: Set(now),
+                coordinates: Set(serde_json::json!([])),
+                ..Default::default()
+            })
+            .filter(media_summary_entity::Column::MediaId.eq(media_id))
+            .exec(dbx)
+            .await
+            .c(h!())?;
+        if updated.rows_affected == 1 {
+            return Ok(true);
+        }
+    }
     let inserted = media_summary_entity::Entity::insert(
         media_summary_entity::ActiveModel {
             media_id: Set(media_id),
             source_kind: Set(source_kind.to_string()),
             source_digest: Set(source_digest),
             source_text: Set(Some(source_text)),
-            source_char_count: Set(i32::try_from(source_char_count).c(h!())?),
-            state: NotSet,
+            source_char_count: Set(source_char_count),
+            state: Set("queued".to_string()),
             ai_engine_id: Set(Some(ai_engine.id)),
             ai_engine_name: Set(ai_engine.name),
             model_name: Set(ai_engine.model_name),
-            attempts: NotSet,
-            lease_expires_at: NotSet,
-            next_attempt_at: NotSet,
-            last_error: NotSet,
-            summary: NotSet,
-            coordinates: NotSet,
-            created_at: NotSet,
-            started_at: NotSet,
-            completed_at: NotSet,
-            updated_at: NotSet,
+            attempts: Set(0),
+            lease_expires_at: Set(None),
+            next_attempt_at: Set(now),
+            last_error: Set(None),
+            summary: Set(None),
+            coordinates: Set(serde_json::json!([])),
+            created_at: Set(now),
+            started_at: Set(None),
+            completed_at: Set(None),
+            updated_at: Set(now),
         },
     )
     .on_conflict_do_nothing()
@@ -133,6 +166,26 @@ where
     .await
     .c(h!())?;
     Ok(matches!(inserted, TryInsertResult::Inserted(_)))
+}
+
+pub(crate) async fn publish_inbox_change(
+    env: &Env,
+    media_id: Uuid,
+) -> anyhow::Result<()> {
+    let Some(media) = signal_message_media::Entity::find_by_id(media_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+    crate::inbox::fanout_inbox_changed(
+        &mut env.redis.clone(),
+        media.signal_message_id,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub fn plain_text_from_sanitized_html(html: &str) -> anyhow::Result<String> {
@@ -242,6 +295,21 @@ pub async fn messenger_media_summary(
     Ok(Json(result(summary, ErrorVisibility::Public).c(h!())?))
 }
 
+#[post("/api/messenger/media/{media_id}/summary/retry")]
+pub async fn messenger_media_summary_retry(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<Json<MediaSummaryResult>, crate::error::AppError> {
+    let media = crate::ocr::authorized_media(env.as_ref(), &user, path.0)
+        .await
+        .c(h!())?;
+    let summary = reprocess::requeue_stored_ocr(env.as_ref(), media.id)
+        .await
+        .c(h!())?;
+    Ok(Json(result(summary, ErrorVisibility::Public).c(h!())?))
+}
+
 #[get("/api/admin/ocr/{media_id}/summary")]
 pub async fn admin_ocr_media_summary(
     env: actix_web::web::Data<Env>,
@@ -254,6 +322,19 @@ pub async fn admin_ocr_media_summary(
         .await
         .c(h!())?
         .ok_or(crate::error::AppError::NotFound)
+        .c(h!())?;
+    Ok(Json(result(summary, ErrorVisibility::Admin).c(h!())?))
+}
+
+#[post("/api/admin/ocr/{media_id}/summary/retry")]
+pub async fn admin_ocr_media_summary_retry(
+    env: actix_web::web::Data<Env>,
+    user: Identity,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<Json<MediaSummaryResult>, crate::error::AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let summary = reprocess::requeue_stored_ocr(env.as_ref(), path.0)
+        .await
         .c(h!())?;
     Ok(Json(result(summary, ErrorVisibility::Admin).c(h!())?))
 }
@@ -398,7 +479,9 @@ mod tests {
         media_summary_settings, signal_message_media,
     };
     use sea_orm::{
-        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+        ActiveModelTrait,
+        ActiveValue::{NotSet, Set},
+        EntityTrait, IntoActiveModel,
     };
     use serde_json::json;
     use uuid::Uuid;
@@ -511,6 +594,7 @@ mod tests {
             size_bytes: Set(1),
             created_at: Set(now),
             is_encrypted: Set(true),
+            storage_key: NotSet,
         }
         .insert(&env.dbx)
         .await
@@ -586,6 +670,31 @@ mod tests {
         let summary = result(summary, ErrorVisibility::Public).unwrap();
         assert_eq!(summary.coordinates.len(), 1);
         assert_eq!(summary.coordinates[0].title, "Дамба");
+        assert!(super::enqueue_for_reprocessing(
+            &env.dbx,
+            media.id,
+            "ocr_text",
+            "Оновлений текст OCR",
+        )
+        .await
+        .unwrap());
+        let requeued = media_summary_entity::Entity::find_by_id(media.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(requeued.state, "queued");
+        assert_eq!(requeued.ai_engine_id, Some(second_engine.id));
+        assert_eq!(requeued.model_name, "second-model");
+        assert_eq!(requeued.attempts, 0);
+        assert_eq!(
+            requeued.source_text.as_deref(),
+            Some("Оновлений текст OCR")
+        );
+        assert_eq!(requeued.summary, None);
+        assert_eq!(requeued.coordinates, json!([]));
+        assert_eq!(requeued.last_error, None);
+        assert_eq!(requeued.completed_at, None);
         assert!(!super::enqueue(&env.dbx, media.id, "ocr_text", "  \n ")
             .await
             .unwrap());

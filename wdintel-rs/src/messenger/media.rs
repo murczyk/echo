@@ -1,5 +1,8 @@
 use crate::config::Config;
-use crate::entities::{signal_message_group, signal_message_media};
+use crate::entities::{
+    datasource_group, intel_product, signal_message, signal_message_group,
+    signal_message_media,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::storage;
@@ -9,7 +12,7 @@ use echo_im::types::MessageAttachmentF1;
 use opendal::Operator;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, NotSet, QueryFilter, QuerySelect, Set,
+    EntityTrait, NotSet, QueryFilter, QuerySelect, RelationTrait, Set,
 };
 use std::collections::HashSet;
 use std::io::ErrorKind;
@@ -419,6 +422,7 @@ pub async fn store_media_attachments(
             file_name: Set(file_name),
             size_bytes: Set(size_bytes),
             is_encrypted: Set(is_encrypted),
+            storage_key: Set(Some(object_key)),
             created_at: NotSet,
         }
         .insert(txn)
@@ -491,18 +495,8 @@ pub async fn delete_stored_media_files(
     config: &Config,
     s3: &Option<Operator>,
 ) {
-    if media.is_empty() {
+    if media.is_empty() && ocr_result_keys.is_empty() {
         return;
-    }
-    for media in media {
-        crate::messenger::media_cache::remove_cached_media_file_best_effort(
-            config, media.id,
-        )
-        .await;
-        crate::messenger::media_thumbnail::remove_media_thumbnail_files_best_effort(
-            config, media.id,
-        )
-        .await;
     }
     let Some(config) = config.s3_config.as_ref() else {
         warn!("S3 is not configured, cannot delete attachment files!");
@@ -514,11 +508,17 @@ pub async fn delete_stored_media_files(
         return;
     };
     for media in media {
-        let object_keys = [
+        let mut object_keys = vec![
+            media_object_key(media),
             storage::nested_object_key(&media.id),
             storage::plaintext_media_object_key(&media.id),
             storage::plaintext_media_migration_marker_object_key(&media.id),
         ];
+        if media.is_encrypted {
+            if let Some(storage_key) = media.storage_key.as_deref() {
+                object_keys.push(format!("{storage_key}.plaintext"));
+            }
+        }
         for object_key in object_keys {
             let remote_key = s3_config.prefixed_key(&object_key);
             if let Err(e) = s3.delete(&remote_key).await {
@@ -540,6 +540,25 @@ pub async fn delete_stored_media_files(
     }
 }
 
+pub async fn delete_local_media_files(
+    media: &[signal_message_media::Model],
+    config: &Config,
+) {
+    if media.is_empty() {
+        return;
+    }
+    for media in media {
+        crate::messenger::media_cache::remove_cached_media_file_best_effort(
+            config, media.id,
+        )
+        .await;
+        crate::messenger::media_thumbnail::remove_media_thumbnail_files_best_effort(
+            config, media.id,
+        )
+        .await;
+    }
+}
+
 /// Authorizes access to a message's media by requiring a group shared by the
 /// user and message. This gate is shared by individual and archive downloads;
 /// knowing a media or message URL alone must never grant access.
@@ -552,10 +571,95 @@ pub(crate) async fn ensure_media_access(
         crate::messenger::group::get_identity_sigint_groups(dbx, login)
             .await
             .c(h!())?;
+    let is_deleted_report = intel_product::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            intel_product::Relation::SignalMessage1.def(),
+        )
+        .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
+        .filter(signal_message::Column::Deleted.eq(true))
+        .select_only()
+        .column(intel_product::Column::IntelMessageId)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_deleted_report {
+        return Err(AppError::Forbidden("media access denied".into()));
+    }
     let is_allowed = signal_message_group::Entity::find()
         .filter(
             signal_message_group::Column::SignalMessageId.eq(signal_message_id),
         )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.clone()),
+        )
+        .select_only()
+        .column(signal_message_group::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_allowed {
+        return Ok(());
+    }
+
+    let parent_signal_message_ids = intel_product::Entity::find()
+        .filter(intel_product::Column::IntelMessageId.eq(signal_message_id))
+        .filter(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
+        .select_only()
+        .column(intel_product::Column::SourceMessageId)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let is_parent_datasource_allowed = signal_message::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Id.is_in(parent_signal_message_ids))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .eq_any(allowed_groups.clone()),
+        )
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_parent_datasource_allowed {
+        return Ok(());
+    }
+
+    let is_parent_allowed = signal_message_group::Entity::find()
+        .join(
+            sea_orm::JoinType::InnerJoin,
+            signal_message_group::Entity::belongs_to(
+                crate::entities::intel_product::Entity,
+            )
+            .from(signal_message_group::Column::SignalMessageId)
+            .to(crate::entities::intel_product::Column::SourceMessageId)
+            .into(),
+        )
+        .filter(
+            crate::entities::intel_product::Column::IntelMessageId
+                .eq(signal_message_id),
+        )
+        .filter(crate::entities::intel_product::relation_kind_eq(
+            crate::entities::intel_product::RELATION_KIND_REPORT,
+        ))
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(allowed_groups),
         )
@@ -566,11 +670,50 @@ pub(crate) async fn ensure_media_access(
         .await
         .c(h!())?
         .is_some();
-    if is_allowed {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden("media access denied".into()))
+    if is_parent_allowed {
+        return Ok(());
     }
+
+    let logins = crate::users::get_organism_login_ids_by_id(dbx, login)
+        .await
+        .c(h!())?;
+    let owner_sender_ids = logins
+        .iter()
+        .chain(std::iter::once(login))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let is_owner = signal_message::Entity::find_by_id(signal_message_id)
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::DatasourceGroupId.is_null())
+        .filter(signal_message::Column::Sender.is_in(owner_sender_ids))
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    let has_group_links = if is_owner {
+        signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId
+                    .eq(signal_message_id),
+            )
+            .select_only()
+            .column(signal_message_group::Column::Id)
+            .into_tuple::<i64>()
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_some()
+    } else {
+        false
+    };
+    if is_owner && !has_group_links {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden("media access denied".into()))
 }
 
 pub fn is_audio_media(media: &signal_message_media::Model) -> bool {
@@ -746,6 +889,9 @@ pub async fn stream_plaintext_media_range(
 }
 
 pub fn media_object_key(media: &signal_message_media::Model) -> String {
+    if let Some(storage_key) = &media.storage_key {
+        return storage_key.clone();
+    }
     if media.is_encrypted {
         storage::nested_object_key(&media.id)
     } else {
@@ -1099,6 +1245,7 @@ mod tests {
             file_name: file_name.map(str::to_string),
             size_bytes: 1,
             is_encrypted: true,
+            storage_key: None,
             created_at: Default::default(),
         }
     }
@@ -1284,6 +1431,14 @@ mod tests {
             media_object_key(&media),
             "019f7/019f7ec5-e60d-7e23-b4e7-b605ba6dcfff.plaintext"
         );
+    }
+
+    #[test]
+    fn media_object_key_reuses_shared_storage_key() {
+        let mut media = media("image/jpeg", Some("jpg"), Some("photo.jpg"));
+        media.storage_key = Some("shared/photo-object".to_string());
+
+        assert_eq!(media_object_key(&media), "shared/photo-object");
     }
 
     #[test]

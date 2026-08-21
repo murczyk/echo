@@ -1086,6 +1086,8 @@ type alias InboxMessage =
     , deviceName : Maybe (String)
     , inboxTags : Maybe (List (InboxMessageTag))
     , metadata : List (InboxMessageMetadata)
+    , parentMessages : List (InboxMessageSummary)
+    , intelligenceReports : List (InboxMessageSummary)
     }
 
 
@@ -1130,6 +1132,42 @@ inboxMessageEncoder struct =
         , ( "device_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.deviceName )
         , ( "inbox_tags", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (inboxMessageTagEncoder))) struct.inboxTags )
         , ( "metadata", (Json.Encode.list (inboxMessageMetadataEncoder)) struct.metadata )
+        , ( "parent_messages", (Json.Encode.list (inboxMessageSummaryEncoder)) struct.parentMessages )
+        , ( "intelligence_reports", (Json.Encode.list (inboxMessageSummaryEncoder)) struct.intelligenceReports )
+        ]
+
+
+type alias InboxMessageSummary =
+    { id : Int
+    , isAccessible : Bool
+    , isDeleted : Bool
+    , text : String
+    , attachmentsCount : Int
+    , timestamp : Maybe (Int)
+    , date : Maybe (String)
+    , time : Maybe (String)
+    , groupName : Maybe (String)
+    , groupMasterKey : Maybe (String)
+    , coords : Maybe (String)
+    , mediaFileNames : List (String)
+    }
+
+
+inboxMessageSummaryEncoder : InboxMessageSummary -> Json.Encode.Value
+inboxMessageSummaryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "is_accessible", (Json.Encode.bool) struct.isAccessible )
+        , ( "is_deleted", (Json.Encode.bool) struct.isDeleted )
+        , ( "text", (Json.Encode.string) struct.text )
+        , ( "attachments_count", (Json.Encode.int) struct.attachmentsCount )
+        , ( "timestamp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.timestamp )
+        , ( "date", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.date )
+        , ( "time", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.time )
+        , ( "group_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupName )
+        , ( "group_master_key", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.groupMasterKey )
+        , ( "coords", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.coords )
+        , ( "media_file_names", (Json.Encode.list (Json.Encode.string)) struct.mediaFileNames )
         ]
 
 
@@ -11850,6 +11888,108 @@ sendAiChatMessageReqEncoder struct =
         ]
 
 
+type alias AiIntelReportSettingsItem =
+    { quickSuggestionEnabled : Bool
+    , quickAiEngineId : Maybe (String)
+    , legacyCommentCutoff : Int
+    , updatedAt : Int
+    }
+
+
+aiIntelReportSettingsItemEncoder : AiIntelReportSettingsItem -> Json.Encode.Value
+aiIntelReportSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
+        , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        , ( "legacyCommentCutoff", (Json.Encode.int) struct.legacyCommentCutoff )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias SaveAiIntelReportSettingsReq =
+    { quickSuggestionEnabled : Bool
+    , quickAiEngineId : Maybe (String)
+    }
+
+
+saveAiIntelReportSettingsReqEncoder : SaveAiIntelReportSettingsReq -> Json.Encode.Value
+saveAiIntelReportSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "quickSuggestionEnabled", (Json.Encode.bool) struct.quickSuggestionEnabled )
+        , ( "quickAiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.quickAiEngineId )
+        ]
+
+
+type alias QuickIntelReportSuggestionReq =
+    { messageId : Int
+    }
+
+
+quickIntelReportSuggestionReqEncoder : QuickIntelReportSuggestionReq -> Json.Encode.Value
+quickIntelReportSuggestionReqEncoder struct =
+    Json.Encode.object
+        [ ( "messageId", (Json.Encode.int) struct.messageId )
+        ]
+
+
+type alias QuickIntelReportSuggestionRsp =
+    { suggestions : List (String)
+    }
+
+
+quickIntelReportSuggestionRspEncoder : QuickIntelReportSuggestionRsp -> Json.Encode.Value
+quickIntelReportSuggestionRspEncoder struct =
+    Json.Encode.object
+        [ ( "suggestions", (Json.Encode.list (Json.Encode.string)) struct.suggestions )
+        ]
+
+
+type alias AiIntelReportAttemptItem =
+    { id : String
+    , loginId : String
+    , login : String
+    , aiEngineId : Maybe (String)
+    , aiEngineName : Maybe (String)
+    , sourceMessageId : Int
+    , outcome : String
+    , suggestions : List (String)
+    , rawResponse : Maybe (String)
+    , error : Maybe (String)
+    , durationMs : Int
+    , createdAt : Int
+    }
+
+
+aiIntelReportAttemptItemEncoder : AiIntelReportAttemptItem -> Json.Encode.Value
+aiIntelReportAttemptItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "loginId", (Json.Encode.string) struct.loginId )
+        , ( "login", (Json.Encode.string) struct.login )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        , ( "aiEngineName", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineName )
+        , ( "sourceMessageId", (Json.Encode.int) struct.sourceMessageId )
+        , ( "outcome", (Json.Encode.string) struct.outcome )
+        , ( "suggestions", (Json.Encode.list (Json.Encode.string)) struct.suggestions )
+        , ( "rawResponse", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.rawResponse )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "durationMs", (Json.Encode.int) struct.durationMs )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        ]
+
+
+type alias AiIntelReportAttemptListRsp =
+    { items : List (AiIntelReportAttemptItem)
+    }
+
+
+aiIntelReportAttemptListRspEncoder : AiIntelReportAttemptListRsp -> Json.Encode.Value
+aiIntelReportAttemptListRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aiIntelReportAttemptItemEncoder)) struct.items )
+        ]
+
+
 type alias AiAgentProviderItem =
     { id : String
     , name : String
@@ -13276,6 +13416,7 @@ type alias EventMsg =
     , eventType : EventType
     , createdAt : Int
     , origin : Maybe (String)
+    , intelligenceReport : Bool
     }
 
 
@@ -13286,6 +13427,7 @@ eventMsgEncoder struct =
         , ( "event_type", (eventTypeEncoder) struct.eventType )
         , ( "created_at", (Json.Encode.int) struct.createdAt )
         , ( "origin", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.origin )
+        , ( "intelligence_report", (Json.Encode.bool) struct.intelligenceReport )
         ]
 
 
@@ -14395,6 +14537,25 @@ inboxMessageDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "device_name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_tags" (Json.Decode.nullable (Json.Decode.list (inboxMessageTagDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "metadata" (Json.Decode.list (inboxMessageMetadataDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "parent_messages" (Json.Decode.list (inboxMessageSummaryDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "intelligence_reports" (Json.Decode.list (inboxMessageSummaryDecoder))))
+
+
+inboxMessageSummaryDecoder : Json.Decode.Decoder InboxMessageSummary
+inboxMessageSummaryDecoder =
+    Json.Decode.succeed InboxMessageSummary
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_accessible" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "is_deleted" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "attachments_count" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "timestamp" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "date" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "time" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_name" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "group_master_key" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coords" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media_file_names" (Json.Decode.list (Json.Decode.string))))
 
 
 inboxMessageMetadataDecoder : Json.Decode.Decoder InboxMessageMetadata
@@ -21087,6 +21248,57 @@ sendAiChatMessageReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
 
 
+aiIntelReportSettingsItemDecoder : Json.Decode.Decoder AiIntelReportSettingsItem
+aiIntelReportSettingsItemDecoder =
+    Json.Decode.succeed AiIntelReportSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "legacyCommentCutoff" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+
+
+saveAiIntelReportSettingsReqDecoder : Json.Decode.Decoder SaveAiIntelReportSettingsReq
+saveAiIntelReportSettingsReqDecoder =
+    Json.Decode.succeed SaveAiIntelReportSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickSuggestionEnabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "quickAiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+quickIntelReportSuggestionReqDecoder : Json.Decode.Decoder QuickIntelReportSuggestionReq
+quickIntelReportSuggestionReqDecoder =
+    Json.Decode.succeed QuickIntelReportSuggestionReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageId" (Json.Decode.int)))
+
+
+quickIntelReportSuggestionRspDecoder : Json.Decode.Decoder QuickIntelReportSuggestionRsp
+quickIntelReportSuggestionRspDecoder =
+    Json.Decode.succeed QuickIntelReportSuggestionRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suggestions" (Json.Decode.list (Json.Decode.string))))
+
+
+aiIntelReportAttemptItemDecoder : Json.Decode.Decoder AiIntelReportAttemptItem
+aiIntelReportAttemptItemDecoder =
+    Json.Decode.succeed AiIntelReportAttemptItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "loginId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "login" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineName" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sourceMessageId" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "outcome" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "suggestions" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "rawResponse" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "durationMs" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+
+
+aiIntelReportAttemptListRspDecoder : Json.Decode.Decoder AiIntelReportAttemptListRsp
+aiIntelReportAttemptListRspDecoder =
+    Json.Decode.succeed AiIntelReportAttemptListRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aiIntelReportAttemptItemDecoder))))
+
+
 aiAgentProviderItemDecoder : Json.Decode.Decoder AiAgentProviderItem
 aiAgentProviderItemDecoder =
     Json.Decode.succeed AiAgentProviderItem
@@ -21995,6 +22207,7 @@ eventMsgDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "origin" (Json.Decode.nullable (Json.Decode.string)), Json.Decode.succeed Nothing ]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [ Json.Decode.field "intelligence_report" (Json.Decode.bool), Json.Decode.succeed False ]))
 
 
 deploymentMaintenanceDecoder : Json.Decode.Decoder DeploymentMaintenance
