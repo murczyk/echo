@@ -1996,6 +1996,26 @@ where aor_id = $1
             .await
             .unwrap()
             .expect("test database must contain a login");
+        let aor_id = area_of_responsibility::Entity::find()
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .select_only()
+            .column(area_of_responsibility::Column::Id)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .expect("test database must contain an AOR");
+        txn.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+update area_of_responsibility
+set left_lat = 52, left_lon = 33, right_lat = 48, right_lon = 39
+where id = $1
+            "#,
+            [aor_id.into()],
+        ))
+        .await
+        .unwrap();
         let prepared = test_prepared_import("a");
         let initial = activate_battle_line_import_in_transaction(
             &txn,
@@ -2081,6 +2101,7 @@ where aor_id = $1
                 .filter(
                     battle_line_aor_geometry::Column::VersionId.eq(version_id)
                 )
+                .filter(battle_line_aor_geometry::Column::AorId.eq(aor_id))
                 .count(&txn)
                 .await
                 .unwrap()
