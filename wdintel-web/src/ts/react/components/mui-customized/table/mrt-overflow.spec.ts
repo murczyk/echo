@@ -984,6 +984,79 @@ describe('MRT rendered overflow components', () => {
     destroy(view);
   });
 
+  it('publishes a shared resumed partial cache to every subscriber after widening', () => {
+    const items = Array.from({ length: 33 }, (_, index) => `shared-resume-${index}`);
+    itemWidths = Object.fromEntries(items.map((item) => [item, 20]));
+    availableWidth = 100;
+    const ownerMeasurements = vi.fn((item: string) => createElement('span', null, item));
+    const subscriberMeasurements = vi.fn((item: string) => createElement('span', null, item));
+    const cell = (key: string, renderMeasurementItem: (item: string, index: number) => ReactNode) =>
+      createElement(MrtOverflowItems<string>, {
+        key,
+        items,
+        renderItem: (item, index) =>
+          createElement('span', { 'data-shared-resume-item': `${key}-${index}` }, item),
+        renderMeasurementItem,
+        measurementScope: 'test:shared-resumed-prefix',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const view = render(
+      createElement(
+        'div',
+        null,
+        cell('owner', ownerMeasurements),
+        cell('subscriber', subscriberMeasurements),
+      ),
+    );
+    const itemCells = [
+      ...view.container.querySelectorAll<HTMLElement>('[data-mrt-overflow-items]'),
+    ];
+
+    try {
+      flushFrames();
+      expect(ownerMeasurements.mock.calls.map(([item]) => item)).toEqual(items.slice(0, 16));
+      expect(subscriberMeasurements).not.toHaveBeenCalled();
+      expect(
+        itemCells.map(
+          (itemCell) => itemCell.querySelector('[data-mrt-overflow-visible]')?.children.length ?? 0,
+        ),
+      ).toEqual([1, 1]);
+
+      itemCells.forEach((itemCell) => setCellWidth(itemCell, 500));
+      triggerResize();
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+      expect(ownerMeasurements.mock.calls.map(([item]) => item)).toEqual(items.slice(0, 32));
+      expect(subscriberMeasurements).not.toHaveBeenCalled();
+      expect(
+        itemCells.map(
+          (itemCell) => itemCell.querySelector('[data-mrt-overflow-visible]')?.children.length ?? 0,
+        ),
+      ).toEqual([1, 1]);
+
+      flushFrames();
+      const visibleCounts = itemCells.map(
+        (itemCell) => itemCell.querySelector('[data-mrt-overflow-visible]')?.children.length ?? 0,
+      );
+      const triggerLabels = itemCells.map(
+        (itemCell) => itemCell.querySelector('[aria-label^="Показати ще"]')?.textContent ?? null,
+      );
+      expect(visibleCounts[0]).toBeGreaterThan(16);
+      expect(visibleCounts).toEqual([visibleCounts[0], visibleCounts[0]]);
+      expect(
+        itemCells.map((itemCell) =>
+          itemCell.querySelector(
+            '[data-shared-resume-item="owner-16"], [data-shared-resume-item="subscriber-16"]',
+          ),
+        ),
+      ).not.toContain(null);
+      expect(triggerLabels).toEqual([`Ще ${items.length - visibleCounts[0]}`, triggerLabels[0]]);
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    } finally {
+      destroy(view);
+    }
+  });
+
   it('releases stale virtualized signature jobs before scheduling replacement cells', () => {
     const renderCells = (prefix: string, includeExtra = false) =>
       createElement(

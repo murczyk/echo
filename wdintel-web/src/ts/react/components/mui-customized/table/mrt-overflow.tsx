@@ -534,10 +534,14 @@ export function MrtOverflowItems<T>({
   ]);
 
   const resolveMeasurement = useCallback(() => {
-    const cachedMeasurements = measurementsRef.current ?? readMeasurementCache(cacheKey);
-    if (cachedMeasurements?.signature !== measurementSignature) return;
-    measurementsRef.current = cachedMeasurements;
-    updateVisibleCount(cachedMeasurements);
+    const completedMeasurements = readMeasurementCache(cacheKey);
+    const measurements =
+      completedMeasurements?.signature === measurementSignature
+        ? completedMeasurements
+        : measurementsRef.current;
+    if (measurements?.signature !== measurementSignature) return;
+    measurementsRef.current = measurements;
+    updateVisibleCount(measurements);
   }, [cacheKey, measurementSignature, updateVisibleCount]);
 
   const queueMeasurement = useCallback(() => {
