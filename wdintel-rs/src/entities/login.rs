@@ -98,6 +98,8 @@ pub enum Relation {
     SecretGroupUser,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
+    #[sea_orm(has_many = "super::signal_message::Entity")]
+    SignalMessage,
     #[sea_orm(has_many = "super::sigint_callsign_changelog::Entity")]
     SigintCallsignChangelog,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]

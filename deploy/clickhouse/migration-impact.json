@@ -16,6 +16,12 @@
         { "table": "public.signal_message_queue", "strategy": "excluded" }
       ]
     },
+    "echo:m20260820_154719_signal_message_author_login": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "mirror_resync" },
+        { "table": "public.signal_message_group", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260813_181612_add_duty_collapse_media_previews": {
       "changes": [
         {

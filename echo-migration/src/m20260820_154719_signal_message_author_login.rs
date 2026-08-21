@@ -1,0 +1,62 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared(
+                r#"
+alter table signal_message
+    add column login_id uuid;
+
+update signal_message
+set login_id = login.id
+from login
+where signal_message.sender = login.id::text;
+
+update signal_message_group group_link
+set sender = null
+from signal_message message
+where group_link.signal_message_id = message.id
+  and message.login_id is not null
+  and group_link.sender is not null;
+
+update signal_message
+set sender = null
+where login_id is not null;
+
+alter table signal_message
+    add constraint signal_message_login_id_fk
+    foreign key (login_id) references login(id) on delete set null;
+
+create index signal_message_login_id_idx
+    on signal_message (login_id)
+    where login_id is not null;
+                "#,
+            )
+            .await
+            .map(|_| ())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .get_connection()
+            .execute_unprepared(
+                r#"
+drop index if exists signal_message_login_id_idx;
+
+alter table signal_message
+    drop constraint if exists signal_message_login_id_fk;
+
+alter table signal_message
+    drop column if exists login_id;
+                "#,
+            )
+            .await
+            .map(|_| ())
+    }
+}
