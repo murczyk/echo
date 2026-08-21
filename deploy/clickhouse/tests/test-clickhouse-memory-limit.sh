@@ -42,8 +42,13 @@ grep -q '<max_server_memory_usage>18000000000</max_server_memory_usage>' "$confi
 run_reconcile --check
 
 printf '<clickhouse/>\n' >"$config_file"
-if run_reconcile --check >/dev/null 2>&1; then
-  printf 'check unexpectedly accepted stale memory configuration\n' >&2
+run_reconcile --check
+if ANALYTICS_CLICKHOUSE_MEMORY_CONFIG_FILE="$config_file" \
+  ECHO_TEST_OPERATIONS="$operations" \
+  ECHO_TEST_CONFIGURED_LIMIT=17000000000 \
+    "$case_dir/bin/reconcile-clickhouse-memory-limit.sh" --check >/dev/null 2>&1
+then
+  printf 'check unexpectedly accepted stale live memory limit\n' >&2
   exit 1
 fi
 

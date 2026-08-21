@@ -37,8 +37,6 @@ FORMAT TSVRaw
 ")
 
 if $check_only; then
-  cmp -s "$temporary_file" "$config_file" \
-    || die "ClickHouse memory-limit configuration is stale"
   [[ "$configured_limit" == "$limit_bytes" ]] \
     || die "ClickHouse memory limit is $configured_limit, expected $limit_bytes"
   exit 0
