@@ -324,15 +324,15 @@ export function DocumentAttachmentPreviewRenderer({
       infoSeverity={getOcrInfoSeverity(ocrStatus)}
       additionalActions={
         <>
-          <OcrPreviewAction
-            ocr={ocrStatus}
-            active={ocrVisible}
-            onClick={() => setOcrVisible((visible) => !visible)}
-          />
           <MediaSummaryAction
             status={summaryStatus}
             active={summaryVisible}
             onClick={() => setSummaryVisible((visible) => !visible)}
+          />
+          <OcrPreviewAction
+            ocr={ocrStatus}
+            active={ocrVisible}
+            onClick={() => setOcrVisible((visible) => !visible)}
           />
         </>
       }

@@ -1,7 +1,7 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { Box, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, CircularProgress, Divider, IconButton, Tooltip, Typography } from '@mui/material';
 import { MessageCardDisabledControlCursorWrapper } from '../MessageCardDisabledControlCursorWrapper';
 
 import {
@@ -647,15 +647,20 @@ export function ImageAttachmentPreviewRenderer({
       navigation={navigation}
       additionalActions={
         <>
+          <MediaSummaryAction
+            status={summaryStatus}
+            active={summaryVisible}
+            onClick={() => setSummaryVisible((visible) => !visible)}
+          />
           <OcrPreviewAction
             ocr={ocrStatus}
             active={ocrVisible}
             onClick={() => setOcrVisible((visible) => !visible)}
           />
-          <MediaSummaryAction
-            status={summaryStatus}
-            active={summaryVisible}
-            onClick={() => setSummaryVisible((visible) => !visible)}
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{ mx: 0.25, my: 0.75, borderColor: 'divider' }}
           />
           <ImageCopyAction
             status={copyStatus}

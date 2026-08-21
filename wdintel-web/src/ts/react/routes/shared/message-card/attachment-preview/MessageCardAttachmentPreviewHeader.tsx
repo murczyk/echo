@@ -2,8 +2,6 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIcon from '@mui/icons-material/Download';
-import FullscreenIcon from '@mui/icons-material/Fullscreen';
-import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import InfoIcon from '@mui/icons-material/Info';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { Box, CircularProgress, IconButton, Stack, Tooltip, Typography } from '@mui/material';
@@ -136,8 +134,8 @@ export function MessageCardAttachmentPreviewHeader({
         flexShrink: 0,
       }}
     >
-      {/* Left: File name + extension */}
-      <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', pr: 2 }}>
+      {/* Left: File name + extension + Info button */}
+      <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 1, pr: 2 }}>
         {fileName ? (
           <Typography
             variant="subtitle2"
@@ -154,6 +152,32 @@ export function MessageCardAttachmentPreviewHeader({
           >
             {fileName}
           </Typography>
+        ) : null}
+        {onInfoClick != null ? (
+          <Tooltip title="Інформація" enterDelay={300}>
+            <IconButton
+              aria-label="Інформація"
+              size="small"
+              onClick={onInfoClick}
+              sx={{
+                ...iconButtonSx,
+                color:
+                  infoSeverity === 'error'
+                    ? 'error.main'
+                    : infoSeverity === 'warning'
+                      ? 'warning.main'
+                      : iconButtonSx.color,
+                opacity: infoSeverity === 'error' ? 0.72 : infoSeverity === 'warning' ? 0.58 : 1,
+                '&:hover': {
+                  color: 'text.primary',
+                  backgroundColor: 'action.hover',
+                  opacity: 1,
+                },
+              }}
+            >
+              <InfoIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         ) : null}
       </Box>
 
@@ -215,35 +239,9 @@ export function MessageCardAttachmentPreviewHeader({
         ) : null}
       </Stack>
 
-      {/* Right: System actions: [Info] [Download] [Open in new tab] [Overflow] [Full screen] [Close (X)] */}
+      {/* Right: System actions: [Download] [Open in new tab] [Overflow] [Close (X)] */}
       <Stack direction="row" spacing={0.75} alignItems="center" sx={{ flexShrink: 0, zIndex: 2 }}>
         {status}
-        {onInfoClick != null ? (
-          <Tooltip title="Інформація" enterDelay={300}>
-            <IconButton
-              aria-label="Інформація"
-              size="small"
-              onClick={onInfoClick}
-              sx={{
-                ...iconButtonSx,
-                color:
-                  infoSeverity === 'error'
-                    ? 'error.main'
-                    : infoSeverity === 'warning'
-                      ? 'warning.main'
-                      : iconButtonSx.color,
-                opacity: infoSeverity === 'error' ? 0.72 : infoSeverity === 'warning' ? 0.58 : 1,
-                '&:hover': {
-                  color: 'text.primary',
-                  backgroundColor: 'action.hover',
-                  opacity: 1,
-                },
-              }}
-            >
-              <InfoIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        ) : null}
         {additionalActions}
         {downloadButton == null ? null : (
           <Tooltip title={downloading ? 'Завантаження…' : 'Скачати'} enterDelay={300}>
@@ -268,28 +266,6 @@ export function MessageCardAttachmentPreviewHeader({
           </Tooltip>
         ) : null}
         {overflowAction}
-        {canFullscreen && onToggleFullscreen ? (
-          <Tooltip
-            title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-            enterDelay={300}
-          >
-            <IconButton
-              aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-              size="small"
-              onClick={onToggleFullscreen}
-              sx={{
-                ...iconButtonSx,
-                display: { xs: 'none', sm: 'inline-flex' },
-              }}
-            >
-              {isFullscreen ? (
-                <FullscreenExitIcon fontSize="small" />
-              ) : (
-                <FullscreenIcon fontSize="small" />
-              )}
-            </IconButton>
-          </Tooltip>
-        ) : null}
         <Tooltip title="Закрити" enterDelay={300}>
           <IconButton aria-label="Закрити" size="small" onClick={onClose} sx={iconButtonSx}>
             <CloseIcon fontSize="small" />

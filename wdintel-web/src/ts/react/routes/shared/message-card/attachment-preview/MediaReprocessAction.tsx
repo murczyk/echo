@@ -141,7 +141,7 @@ export function MediaReprocessAction({
           {reprocessing || downloading ? (
             <CircularProgress size={16} color="inherit" />
           ) : (
-            <MoreVertIcon />
+            <MoreVertIcon fontSize="small" />
           )}
         </IconButton>
       </Tooltip>

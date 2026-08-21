@@ -1,4 +1,3 @@
-import CloseIcon from '@mui/icons-material/Close';
 import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -11,6 +10,10 @@ import type {
   MediaSummaryStatus,
 } from '../../../../../../Bindings';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
+import {
+  BottomPanelActiveIcon,
+  BottomPanelIcon,
+} from '../../../../components/SidePanelToggleButton';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { isAbortError } from '../../../../services/api/client';
 import { mapCoordinates, type CoordinateLocality } from '../../../../services/api/location';
@@ -35,6 +38,25 @@ const COORDINATE_SYSTEM_LABELS: Record<string, string> = {
 const EMPTY_COORDINATES: MediaSummaryCoordinate[] = [];
 const SUMMARY_LOAD_ERROR = 'Не вдалося завантажити стислий опис';
 
+const summaryCache = new Map<string, MediaSummaryResult>();
+const localityCache = new Map<string, CoordinateLocality | null>();
+
+export function clearMediaSummaryCache(
+  mediaId?: string,
+  summaryAccess: MediaSummaryAccess = 'messenger',
+): void {
+  if (mediaId != null) {
+    summaryCache.delete(`${summaryAccess}:${mediaId}`);
+  } else {
+    summaryCache.clear();
+    localityCache.clear();
+  }
+}
+
+function getLocalityCacheKey(lat: number, lon: number): string {
+  return `${lat.toFixed(5)},${lon.toFixed(5)}`;
+}
+
 function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
   localities: Array<CoordinateLocality | null>;
   loading: boolean;
@@ -43,21 +65,44 @@ function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
     () => coordinates.map(resolveMediaSummaryCoordinatePoint),
     [coordinates],
   );
-  const [localities, setLocalities] = useState<Array<CoordinateLocality | null>>([]);
+  const pointsKey = useMemo(
+    () =>
+      resolvedPoints
+        .flatMap((p) => (p == null ? [] : [`${p.lat.toFixed(5)},${p.lng.toFixed(5)}`]))
+        .join(';'),
+    [resolvedPoints],
+  );
+
+  const [localities, setLocalities] = useState<Array<CoordinateLocality | null>>(() =>
+    resolvedPoints.map((point) => {
+      if (point == null) return null;
+      return localityCache.get(getLocalityCacheKey(point.lat, point.lng)) ?? null;
+    }),
+  );
   const [loading, setLoading] = useState<boolean>(false);
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
 
   useEffect(() => {
-    const nextLocalities = Array.from<CoordinateLocality | null>({
-      length: coordinates.length,
-    }).fill(null);
-    const lookupPoints = resolvedPoints.flatMap((point, index) =>
-      point == null ? [] : [{ index, lat: point.lat, lon: point.lng }],
-    );
+    const nextLocalities = resolvedPoints.map((point) => {
+      if (point == null) return null;
+      return localityCache.get(getLocalityCacheKey(point.lat, point.lng)) ?? null;
+    });
+
+    const missingPoints: Array<{ index: number; lat: number; lon: number }> = [];
+    resolvedPoints.forEach((point, index) => {
+      if (point != null) {
+        const key = getLocalityCacheKey(point.lat, point.lng);
+        if (!localityCache.has(key)) {
+          missingPoints.push({ index, lat: point.lat, lon: point.lng });
+        }
+      }
+    });
+
     setLocalities(nextLocalities);
-    if (lookupPoints.length === 0) {
+
+    if (missingPoints.length === 0) {
       setLoading(false);
       return;
     }
@@ -65,14 +110,18 @@ function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
     setLoading(true);
     const controller = new AbortController();
     void mapCoordinates(
-      lookupPoints.map(({ lat, lon }) => ({ lat, lon })),
+      missingPoints.map(({ lat, lon }) => ({ lat, lon })),
       { signal: controller.signal },
     )
       .then((mapped) => {
         if (controller.signal.aborted) return;
-        mapped.forEach((item, index) => {
-          const sourceIndex = lookupPoints[index]?.index;
-          if (sourceIndex != null) nextLocalities[sourceIndex] = item.locality;
+        mapped.forEach((item, idx) => {
+          const source = missingPoints[idx];
+          if (source != null) {
+            const key = getLocalityCacheKey(source.lat, source.lon);
+            localityCache.set(key, item.locality);
+            nextLocalities[source.index] = item.locality;
+          }
         });
         setLocalities([...nextLocalities]);
         setLoading(false);
@@ -89,7 +138,7 @@ function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
       });
 
     return () => controller.abort();
-  }, [coordinates.length, resolvedPoints]);
+  }, [coordinates.length, pointsKey, resolvedPoints]);
 
   return { localities, loading };
 }
@@ -116,7 +165,7 @@ function MediaSummaryCoordinateList({
           <li
             key={`${coordinate.coordinateSystem}:${coordinate.value}:${index}`}
             data-media-summary-coordinate-item="true"
-            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 py-1 min-h-8 border-b border-white/12"
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 py-1 min-h-8 border-b last:border-b-0 border-white/12"
           >
             <div className="min-w-0 flex items-baseline gap-x-2 flex-wrap">
               <Typography variant="subtitle2" className="wrap-break-word">
@@ -218,6 +267,7 @@ export function MediaSummaryAction({
   if (status == null) return null;
   const processing = isMediaSummaryProcessing(status.state);
   const title = active ? 'Закрити стислий опис' : 'Показати стислий опис';
+  const Icon = active ? BottomPanelActiveIcon : BottomPanelIcon;
 
   return (
     <Tooltip title={title} enterDelay={300}>
@@ -236,7 +286,7 @@ export function MediaSummaryAction({
                 : 'text-(--color-text-secondary)! hover:text-(--color-text)!'
           }
         >
-          <DescriptionIcon fontSize="small" />
+          <Icon fontSize="small" />
         </IconButton>
         {processing ? (
           <CircularProgress
@@ -371,7 +421,10 @@ function useMediaSummaryResult({
   summaryAccess: MediaSummaryAccess;
   onStatusChange?: (status: MediaSummaryStatus) => void;
 }) {
-  const [result, setResult] = useState<MediaSummaryResult | null>(null);
+  const cacheKey = mediaId != null ? `${summaryAccess}:${mediaId}` : null;
+  const [result, setResult] = useState<MediaSummaryResult | null>(() =>
+    cacheKey ? (summaryCache.get(cacheKey) ?? null) : null,
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const refreshControllerRef = useRef<AbortController | null>(null);
@@ -384,18 +437,20 @@ function useMediaSummaryResult({
   useEffect(() => {
     refreshControllerRef.current?.abort();
     refreshControllerRef.current = null;
-    setResult(null);
+    const cached = cacheKey ? (summaryCache.get(cacheKey) ?? null) : null;
+    setResult(cached);
     setRefreshing(false);
     setRefreshError(null);
     return () => {
       refreshControllerRef.current?.abort();
       refreshControllerRef.current = null;
     };
-  }, [mediaId, summaryAccess]);
+  }, [cacheKey, mediaId, summaryAccess]);
 
   const refresh = useCallback(
     async (quiet: boolean) => {
       if (mediaId == null || refreshControllerRef.current != null) return;
+      const key = `${summaryAccess}:${mediaId}`;
       const controller = new AbortController();
       refreshControllerRef.current = controller;
       setRefreshing(true);
@@ -406,6 +461,9 @@ function useMediaSummaryResult({
           summaryAccess,
         );
         if (controller.signal.aborted) return;
+        if (nextResult.state === 'completed' || nextResult.state === 'failed') {
+          summaryCache.set(key, nextResult);
+        }
         setResult(nextResult);
         setRefreshError(null);
         onStatusChangeRef.current?.({
@@ -433,8 +491,20 @@ function useMediaSummaryResult({
 
   const hasStatus = status != null;
   useEffect(() => {
-    if (enabled && hasStatus) void refresh(false);
-  }, [enabled, hasStatus, mediaId, refresh]);
+    if (!enabled || !hasStatus) return;
+    const key = mediaId != null ? `${summaryAccess}:${mediaId}` : null;
+    const cached = key ? summaryCache.get(key) : null;
+    if (cached != null) {
+      setResult(cached);
+      onStatusChangeRef.current?.({
+        state: cached.state,
+        lastError: cached.lastError,
+        hasCoordinates: cached.state === 'completed' && cached.coordinates.length > 0,
+      });
+    } else if (result == null) {
+      void refresh(false);
+    }
+  }, [enabled, hasStatus, mediaId, refresh, result, summaryAccess]);
 
   const state = result?.state ?? status?.state;
   useEffect(() => {
@@ -659,16 +729,8 @@ export function MediaSummaryOverlay({
         <div
           role="region"
           aria-label="Стислий опис документа"
-          className="relative flex-none max-h-36 sm:max-h-44 flex flex-col pl-4 pr-12 py-3 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
+          className="relative flex-none max-h-36 sm:max-h-44 flex flex-col px-4 pt-2.5 pb-1 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
         >
-          <IconButton
-            size="small"
-            aria-label="Закрити стислий опис"
-            onClick={onClose}
-            className="absolute! top-1.5! right-2!"
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
           <SummaryContent
             result={result}
             status={status}

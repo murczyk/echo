@@ -18,6 +18,7 @@ import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../../Bindings';
+import { RightPanelActiveIcon, RightPanelIcon } from '../../../../components/SidePanelToggleButton';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { isAbortError } from '../../../../services/api/client';
 import { getMediaOcrStatus } from '../../../../services/api/ocr';
@@ -180,6 +181,8 @@ export function OcrPreviewAction({
         ? `OCR у черзі${queueLabel(ocr)}`
         : `OCR обробляється${progress}${queueLabel(ocr)}`;
 
+  const Icon = active ? RightPanelActiveIcon : RightPanelIcon;
+
   return (
     <Tooltip title={title} enterDelay={300}>
       <Box component="span" sx={{ display: 'inline-flex', position: 'relative' }}>
@@ -194,7 +197,7 @@ export function OcrPreviewAction({
             '&:hover': { color: active ? 'primary.dark' : 'text.primary' },
           }}
         >
-          <VisibilityIcon fontSize="small" />
+          <Icon fontSize="small" />
         </IconButton>
         {processing ? (
           <CircularProgress
@@ -407,94 +410,95 @@ export function OcrSplitPreview({
     />
   );
 
-  if (!visible || mediaId == null) {
-    if (summary == null || mediaId == null) return source;
-    return sourceWithSummary;
-  }
-  const showSource = mobile ? mobilePane === 'source' : !fullPane;
-  const showOcr = mobile ? mobilePane === 'ocr' : true;
+  if (mediaId == null) return source;
+  if (!visible && summary == null) return source;
+
+  const showSource = visible ? (mobile ? mobilePane === 'source' : !fullPane) : true;
+  const showOcr = visible ? (mobile ? mobilePane === 'ocr' : true) : false;
 
   return (
     <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', position: 'relative' }}>
       <Box
         sx={{
           display: showSource ? 'flex' : 'none',
-          flex: mobile ? '1 1 100%' : '1 1 50%',
+          flex: !visible || fullPane ? '1 1 100%' : mobile ? '1 1 100%' : '1 1 50%',
           minWidth: 0,
           minHeight: 0,
-          borderRight: mobile ? 0 : 1,
+          borderRight: visible && !mobile && showSource && showOcr ? 1 : 0,
           borderColor: 'divider',
         }}
       >
         {sourceWithSummary}
       </Box>
-      <Box
-        sx={{
-          display: showOcr ? 'flex' : 'none',
-          flex: fullPane || mobile ? '1 1 100%' : '1 1 50%',
-          minWidth: 0,
-          minHeight: 0,
-          position: 'relative',
-          bgcolor: 'background.paper',
-        }}
-      >
-        {ocr != null && isOcrReady(ocr) ? (
-          <Box
-            component="iframe"
-            title="OCR"
-            src={`/api/messenger/media/${encodeURIComponent(mediaId)}/ocr?revision=${iframeRevision}`}
-            sandbox=""
-            referrerPolicy="no-referrer"
-            sx={{ flex: 1, minWidth: 0, border: 0, bgcolor: 'background.paper' }}
-          />
-        ) : ocr != null ? (
-          <OcrStatusPane
-            ocr={ocr}
-            refreshing={refreshing}
-            refreshError={refreshError}
-            onRefresh={() => void refresh(false)}
-          />
-        ) : null}
-      </Box>
-      <Stack
-        direction="row"
-        spacing={0.5}
-        sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}
-      >
-        {mobile ? (
-          <>
-            <Button
-              size="small"
-              variant={mobilePane === 'source' ? 'contained' : 'outlined'}
-              onClick={() => setMobilePane('source')}
-            >
-              Оригінал
-            </Button>
-            <Button
-              size="small"
-              variant={mobilePane === 'ocr' ? 'contained' : 'outlined'}
-              onClick={() => setMobilePane('ocr')}
-            >
-              OCR
-            </Button>
-          </>
-        ) : (
-          <Tooltip title={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}>
-            <IconButton
-              size="small"
-              aria-label={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}
-              onClick={() => onFullPaneChange(!fullPane)}
-              sx={{ bgcolor: 'background.paper', boxShadow: 1 }}
-            >
-              {fullPane ? (
-                <FullscreenExitIcon fontSize="small" />
-              ) : (
-                <FullscreenIcon fontSize="small" />
-              )}
-            </IconButton>
-          </Tooltip>
-        )}
-      </Stack>
+      {visible ? (
+        <Box
+          sx={{
+            display: showOcr ? 'flex' : 'none',
+            flex: fullPane || mobile ? '1 1 100%' : '1 1 50%',
+            minWidth: 0,
+            minHeight: 0,
+            position: 'relative',
+            bgcolor: 'background.paper',
+          }}
+        >
+          {ocr != null && isOcrReady(ocr) ? (
+            <Box
+              component="iframe"
+              title="OCR"
+              src={`/api/messenger/media/${encodeURIComponent(mediaId)}/ocr?revision=${iframeRevision}`}
+              sandbox=""
+              referrerPolicy="no-referrer"
+              sx={{ flex: 1, minWidth: 0, border: 0, bgcolor: 'background.paper' }}
+            />
+          ) : ocr != null ? (
+            <OcrStatusPane
+              ocr={ocr}
+              refreshing={refreshing}
+              refreshError={refreshError}
+              onRefresh={() => void refresh(false)}
+            />
+          ) : null}
+          <Stack
+            direction="row"
+            spacing={0.5}
+            sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}
+          >
+            {mobile ? (
+              <>
+                <Button
+                  size="small"
+                  variant={mobilePane === 'source' ? 'contained' : 'outlined'}
+                  onClick={() => setMobilePane('source')}
+                >
+                  Оригінал
+                </Button>
+                <Button
+                  size="small"
+                  variant={mobilePane === 'ocr' ? 'contained' : 'outlined'}
+                  onClick={() => setMobilePane('ocr')}
+                >
+                  OCR
+                </Button>
+              </>
+            ) : (
+              <Tooltip title={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}>
+                <IconButton
+                  size="small"
+                  aria-label={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}
+                  onClick={() => onFullPaneChange(!fullPane)}
+                  sx={{ bgcolor: 'background.paper', boxShadow: 1 }}
+                >
+                  {fullPane ? (
+                    <FullscreenExitIcon fontSize="small" />
+                  ) : (
+                    <FullscreenIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
+        </Box>
+      ) : null}
     </Box>
   );
 }

@@ -33,7 +33,9 @@ vi.mock('@mui/material', () => ({
     <button {...props}>{children}</button>
   ),
   LinearProgress: () => <span data-linear-progress />,
+  Skeleton: () => <span data-skeleton />,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SvgIcon: ({ children }: { children?: ReactNode }) => <svg>{children}</svg>,
   Tooltip: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
     <span>
       {children}
@@ -70,6 +72,7 @@ import {
   OcrSplitPreview,
 } from '../../attachment-preview/OcrPreview';
 import {
+  clearMediaSummaryCache,
   MediaSummaryOverlay,
   MessageCardMediaSummary,
   MessageCardMediaSummaryCarousel,
@@ -86,6 +89,7 @@ function deferred<T>() {
 describe('OcrPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';
+    clearMediaSummaryCache();
   });
 
   it('exposes exports and quality details only for a completed usable result', () => {

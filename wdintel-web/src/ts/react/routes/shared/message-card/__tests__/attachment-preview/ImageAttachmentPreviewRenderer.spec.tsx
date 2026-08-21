@@ -87,6 +87,7 @@ vi.mock('@mui/material', () => ({
     return open ? <div role="dialog">{children}</div> : null;
   },
   DialogContent: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Divider: (props: Record<string, unknown>) => <hr {...props} />,
   IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <button {...props}>{children}</button>
   ),
