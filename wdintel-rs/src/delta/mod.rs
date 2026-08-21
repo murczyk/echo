@@ -856,8 +856,7 @@ pub async fn get_kml(
             }
             None => {
                 let kml_file =
-                    PathBuf::from(config::get_assets_folder(&env.config))
-                        .join(format!("enemy-units-{}.kml", geojson.id));
+                    config::get_enemy_units_kml_path(&env.config, geojson.id);
                 if kml_file.exists() {
                     let file = actix_files::NamedFile::open_async(&kml_file)
                         .await

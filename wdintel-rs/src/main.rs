@@ -338,6 +338,22 @@ pub struct OneoffLinkInboxSettlementsPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffImportBattleLineFromDeltaKmlPs {
+    /// Successful enemy_units_geojson row to import.
+    #[arg(
+        long,
+        default_value_t = crate::config::BATTLE_LINE_INITIAL_DELTA_KML_ID
+    )]
+    pub source_id: i32,
+    /// Parse and report the source without changing Battle Line.
+    #[arg(long, action)]
+    pub dry_run: bool,
+    /// Replace an existing active Battle Line.
+    #[arg(long, action)]
+    pub force: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessUnitNamesPs {
     /// Start datetime in UTC (inclusive). Example: `2026-07-16T05:45:00Z`
     #[arg(long)]
@@ -1018,6 +1034,7 @@ enum Cmd {
     OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
+    OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1783,6 +1800,12 @@ async fn async_main(
         }
         Cmd::OneoffLinkInboxSettlements(ps) => {
             battle_line::settlement_queue::oneoff_link_inbox_settlements(
+                mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffImportBattleLineFromDeltaKml(ps) => {
+            battle_line::oneoff::oneoff_import_battle_line_from_delta_kml(
                 mode, &ps,
             )
             .await
