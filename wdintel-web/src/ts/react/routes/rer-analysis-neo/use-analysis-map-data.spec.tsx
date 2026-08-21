@@ -12,12 +12,14 @@ import { useAnalysisMapData } from './use-analysis-map-data';
 
 const api = vi.hoisted(() => ({
   fetchAnalysisMapPoints: vi.fn(),
+  fetchMapSettlementMessages: vi.fn(),
   fetchMessagesByIds: vi.fn(),
   listMapPalitrasV2: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisMapPoints: api.fetchAnalysisMapPoints,
+  fetchMapSettlementMessages: api.fetchMapSettlementMessages,
   fetchMessagesByIds: api.fetchMessagesByIds,
 }));
 
@@ -90,6 +92,7 @@ beforeEach(() => {
   latest = null;
   onError = vi.fn();
   api.fetchAnalysisMapPoints.mockReset();
+  api.fetchMapSettlementMessages.mockReset();
 });
 
 afterEach(() => {
@@ -101,6 +104,21 @@ afterEach(() => {
 });
 
 describe('useAnalysisMapData settlement overlays', () => {
+  it('loads a bounded settlement page through the settlement endpoint', async () => {
+    api.fetchMapSettlementMessages.mockResolvedValueOnce([]);
+    await renderHook();
+
+    await act(async () => {
+      await latest!.loadSettlementMessagesForMap(7);
+    });
+
+    expect(api.fetchMapSettlementMessages).toHaveBeenCalledWith({
+      settlementId: 7,
+      inboxItemsFilter: expect.any(Object),
+      beforeIdNoninclusive: null,
+    });
+  });
+
   it('propagates the toggle and ignores its response after an immediate toggle off', async () => {
     const request = deferred<MapPointsRsp>();
     api.fetchAnalysisMapPoints.mockReturnValueOnce(request.promise);

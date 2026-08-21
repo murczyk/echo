@@ -828,6 +828,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_messages)
             .service(crate::rer_importer::inbox::inbox_group_stats)
             .service(crate::rer_importer::inbox::get_inbox_map)
+            .service(crate::rer_importer::inbox::map_settlement_messages)
             .service(crate::rer_importer::inbox::inbox_messages_count)
             .service(crate::rer_importer::inbox::delete_message)
             .service(crate::rer_importer::inbox::comment_save)

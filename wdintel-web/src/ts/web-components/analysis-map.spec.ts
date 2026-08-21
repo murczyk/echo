@@ -262,18 +262,17 @@ describe('analysis-map', () => {
         lat: 49.99,
         lon: 36.23,
         inbox_item_count: 3,
-        inbox_item_ids: [11, 12, 13],
       },
     ];
     const listener = vi.fn();
-    analysisMap.addEventListener('load-messages-description', listener);
+    analysisMap.addEventListener('load-settlement-messages', listener);
 
     analysisMap._replaceSettlementsOnMap();
     clickHandler?.();
 
     expect(marker.bindTooltip).toHaveBeenCalledWith('&lt;Харків&gt; (3)', { direction: 'top' });
     expect(listener).toHaveBeenCalledOnce();
-    expect(listener.mock.calls[0][0].detail).toEqual({ messageIds: [11, 12, 13] });
+    expect(listener.mock.calls[0][0].detail).toEqual({ settlementId: 7 });
   });
 
   it('does not redispatch settlement changes already emitted by the settings control', () => {

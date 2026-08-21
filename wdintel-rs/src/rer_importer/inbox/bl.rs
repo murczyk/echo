@@ -609,8 +609,7 @@ select
     s.region,
     s.lat,
     s.lon,
-    count(distinct link.item_id)::bigint as inbox_item_count,
-    array_agg(distinct link.item_id order by link.item_id) as inbox_item_ids
+    count(distinct link.item_id)::bigint as inbox_item_count
 from filtered_items
 join sigint_inbox_item_settlement link on link.item_id = filtered_items.id
 join settlement s on s.id = link.settlement_id
@@ -650,8 +649,7 @@ select
     s.region,
     s.lat,
     s.lon,
-    count(distinct link.item_id)::bigint as inbox_item_count,
-    array_agg(distinct link.item_id order by link.item_id) as inbox_item_ids
+    count(distinct link.item_id)::bigint as inbox_item_count
 from sigint_inbox_item_settlement link
 join settlement s on s.id = link.settlement_id
 where link.item_id = any($1::bigint[])
@@ -665,6 +663,59 @@ order by inbox_item_count desc, s.id
         .all(dbx)
         .await
         .c(h!())?,
+    )
+}
+
+pub(crate) async fn get_inbox_map_settlement_message_ids<C>(
+    dbx: &C,
+    filtered_ids: &str,
+    settlement_id: i32,
+    before_id_noninclusive: Option<i64>,
+    limit: u64,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    #[derive(FromQueryResult)]
+    struct SettlementMessageId {
+        item_id: i64,
+    }
+
+    let mut values = vec![settlement_id.into()];
+    let cursor_condition =
+        if let Some(before_id_noninclusive) = before_id_noninclusive {
+            values.push(before_id_noninclusive.into());
+            format!("and link.item_id < ${}", values.len())
+        } else {
+            String::new()
+        };
+    values.push(limit.into());
+    let limit_parameter = values.len();
+    let sql = format!(
+        r#"
+with filtered_items as ({filtered_ids})
+select link.item_id
+from sigint_inbox_item_settlement link
+join filtered_items on filtered_items.id = link.item_id
+where link.settlement_id = $1
+  {cursor_condition}
+group by link.item_id
+order by link.item_id desc
+limit ${limit_parameter}
+        "#
+    );
+    Ok(
+        SettlementMessageId::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            values,
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| row.item_id)
+        .collect(),
     )
 }
 

@@ -45,7 +45,6 @@ type MapSettlementPoint = {
   lat: number;
   lon: number;
   inbox_item_count: number;
-  inbox_item_ids: number[];
 };
 
 class AnalysisMap extends HTMLElement {
@@ -770,7 +769,7 @@ class AnalysisMap extends HTMLElement {
         this._clickedPoint = null;
         this._clickedLatLng = marker.getLatLng();
         this._setMessagesLoading(true, marker);
-        this._emitLoadMessagesDescriptions(settlement.inbox_item_ids);
+        this._emitLoadSettlementMessages(settlement.settlement_id);
       });
       marker.addTo(this._settlementsLayerGroup);
       this._settlementMarkers.set(settlement.settlement_id, marker);
@@ -821,6 +820,17 @@ class AnalysisMap extends HTMLElement {
     const event = new CustomEvent('load-messages-description', {
       detail: {
         messageIds,
+      },
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
+  }
+
+  private _emitLoadSettlementMessages(settlementId: number) {
+    const event = new CustomEvent('load-settlement-messages', {
+      detail: {
+        settlementId,
       },
       bubbles: true,
       composed: true,

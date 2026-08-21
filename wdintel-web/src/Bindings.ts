@@ -1188,7 +1188,12 @@ export type MapSettlement = {
   lat: number;
   lon: number;
   inboxItemCount: number;
-  inboxItemIds: Array<number>;
+};
+
+export type MapSettlementMessagesReq = {
+  settlementId: number;
+  inboxItemsFilter: InboxMessagesReq;
+  beforeIdNoninclusive: number | null;
 };
 
 export type MapPointsRsp = {

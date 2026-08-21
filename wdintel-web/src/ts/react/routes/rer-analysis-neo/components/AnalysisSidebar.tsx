@@ -65,6 +65,7 @@ type Props = Pick<
     | 'loadCorrelatedFreqs'
     | 'loadGroupsActivity'
     | 'loadMessagesForMap'
+    | 'loadSettlementMessagesForMap'
     | 'setRightSidebarTab'
     | 'refreshMapDateRange'
     | 'setShowSettlements'
@@ -107,6 +108,7 @@ export function AnalysisSidebar({
   loadCorrelatedFreqs,
   loadGroupsActivity,
   loadMessagesForMap,
+  loadSettlementMessagesForMap,
   newCallsigns,
   newCallsignsLoading,
   options,
@@ -425,6 +427,7 @@ export function AnalysisSidebar({
               visible={sidebarTab === 'map'}
               onDateRangeChange={refreshMapDateRange}
               onLoadMessages={loadMessagesForMap}
+              onLoadSettlementMessages={loadSettlementMessagesForMap}
               onUnitClick={toggleUnitFromMap}
               onShowSettlementsChange={setShowSettlements}
             />

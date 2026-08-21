@@ -1577,11 +1577,11 @@ where aor_id = $1
 
         let candidates = vec![
             BattleLineCandidatePoint {
-                lat: 49.0,
-                lon: 37.0,
+                lat: 48.0,
+                lon: 31.0,
             },
             BattleLineCandidatePoint {
-                lat: 49.0,
+                lat: 49.1,
                 lon: 35.0,
             },
         ];

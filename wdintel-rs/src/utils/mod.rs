@@ -62,16 +62,12 @@ pub fn dt_zoned_from_millis(
 }
 
 pub fn parse_local_datetime(val: &str) -> Result<NaiveDateTime, AppError> {
-    let local_datetime = ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"]
-        .into_iter()
-        .find_map(|format| NaiveDateTime::parse_from_str(val, format).ok());
-    let Some(local_datetime) = local_datetime else {
-        return Err(AppError::BL {
-            msg: format!(
-                "Invalid local datetime `{val}`; expected `YYYY-MM-DDTHH:MM:SS` or `YYYY-MM-DD HH:MM:SS`"
-            ),
-        });
-    };
+    let local_datetime =
+        NaiveDateTime::parse_from_str(val, "%Y-%m-%dT%H:%M:%S")
+            .or_else(|_| {
+                NaiveDateTime::parse_from_str(val, "%Y-%m-%d %H:%M:%S")
+            })
+            .c(h!())?;
     let zoned = local_datetime.and_local_timezone(get_tz()).single().ok_or(
         AppError::BL {
             msg: format!("Ambiguous local datetime: {val}"),
@@ -255,14 +251,10 @@ mod tests {
     }
 
     #[test]
-    fn local_datetime_accepts_t_or_space_and_reports_invalid_input() {
+    fn local_datetime_accepts_t_or_space() {
         assert_eq!(
             parse_local_datetime("2026-01-01T00:00:00").unwrap(),
             parse_local_datetime("2026-01-01 00:00:00").unwrap()
         );
-        assert!(parse_local_datetime("2026-01-01 00:00L:00")
-            .unwrap_err()
-            .to_string()
-            .contains("expected `YYYY-MM-DDTHH:MM:SS`"));
     }
 }

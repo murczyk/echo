@@ -3065,7 +3065,6 @@ type alias MapSettlement =
     , lat : Float
     , lon : Float
     , inboxItemCount : Int
-    , inboxItemIds : List (Int)
     }
 
 
@@ -3078,7 +3077,22 @@ mapSettlementEncoder struct =
         , ( "lat", (Json.Encode.float) struct.lat )
         , ( "lon", (Json.Encode.float) struct.lon )
         , ( "inbox_item_count", (Json.Encode.int) struct.inboxItemCount )
-        , ( "inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.inboxItemIds )
+        ]
+
+
+type alias MapSettlementMessagesReq =
+    { settlementId : Int
+    , inboxItemsFilter : InboxMessagesReq
+    , beforeIdNoninclusive : Maybe (Int)
+    }
+
+
+mapSettlementMessagesReqEncoder : MapSettlementMessagesReq -> Json.Encode.Value
+mapSettlementMessagesReqEncoder struct =
+    Json.Encode.object
+        [ ( "settlement_id", (Json.Encode.int) struct.settlementId )
+        , ( "inbox_items_filter", (inboxMessagesReqEncoder) struct.inboxItemsFilter )
+        , ( "before_id_noninclusive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.beforeIdNoninclusive )
         ]
 
 
@@ -15540,7 +15554,14 @@ mapSettlementDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_count" (Json.Decode.int)))
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_ids" (Json.Decode.list (Json.Decode.int))))
+
+
+mapSettlementMessagesReqDecoder : Json.Decode.Decoder MapSettlementMessagesReq
+mapSettlementMessagesReqDecoder =
+    Json.Decode.succeed MapSettlementMessagesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_items_filter" (inboxMessagesReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "before_id_noninclusive" (Json.Decode.nullable (Json.Decode.int))))
 
 
 mapPointsRspDecoder : Json.Decode.Decoder MapPointsRsp

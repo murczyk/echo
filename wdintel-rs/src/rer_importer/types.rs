@@ -311,7 +311,15 @@ pub struct MapSettlement {
     pub lat: f64,
     pub lon: f64,
     pub inbox_item_count: i64,
-    pub inbox_item_ids: Vec<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct MapSettlementMessagesReq {
+    pub settlement_id: i32,
+    pub inbox_items_filter: InboxMessagesReq,
+    pub before_id_noninclusive: Option<i64>,
 }
 
 #[derive(

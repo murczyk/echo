@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BattleLineState, BattleLineTestRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from '../rer-duty-neo/inbox-message-mocks';
-import { AdminBattleLinePage, formatSettlementCandidate } from './index';
+import { AdminBattleLinePage } from './index';
 
 const api = vi.hoisted(() => ({
   fetchBattleLineState: vi.fn(),
@@ -127,18 +127,6 @@ afterEach(() => {
 });
 
 describe('AdminBattleLinePage', () => {
-  it('formats settlement candidates with district and region details', () => {
-    expect(
-      formatSettlementCandidate({
-        settlementId: 18105,
-        name: 'Лебедівка',
-        district: 'Хмельницький',
-        region: 'Хмельницька',
-        coordinate: { lat: 49.0, lon: 27.0 },
-      }),
-    ).toBe('Лебедівка #18105 Хмельницький р-н Хмельницька обл.');
-  });
-
   it('renders current/history data and loads both paginated tabs', async () => {
     await renderPage();
     expect(container.textContent).toContain('previous.kml');

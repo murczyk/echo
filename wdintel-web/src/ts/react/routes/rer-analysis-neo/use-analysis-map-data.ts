@@ -7,7 +7,11 @@ import type {
   NetworkUnit,
   PalitraReadV2,
 } from '../../../../Bindings';
-import { fetchMessagesByIds, fetchAnalysisMapPoints } from '../../services/api/analysis';
+import {
+  fetchAnalysisMapPoints,
+  fetchMapSettlementMessages,
+  fetchMessagesByIds,
+} from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -48,6 +52,7 @@ export type UseAnalysisMapDataResult = {
   mapAttrs: AnalysisMapAttrs;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
+  loadSettlementMessagesForMap: (settlementId: number) => Promise<boolean>;
   loadMapPalitras: () => Promise<void>;
   setMapLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMapDateRange: React.Dispatch<React.SetStateAction<{ startDate: number; endDate: number }>>;
@@ -271,6 +276,50 @@ export function useAnalysisMapData({
     [loadMissingNetworksForMessages, onError, onUnauthorized],
   );
 
+  const loadSettlementMessagesForMap = useCallback(
+    async (settlementId: number) => {
+      if (!Number.isSafeInteger(settlementId) || settlementId <= 0) return false;
+      const inboxReq = buildInboxReq(queryState, optionsFreqValues);
+      if (isNullOrUndefined(inboxReq)) return false;
+      const loadVersion = mapMessagesLoadVersionRef.current + 1;
+      mapMessagesLoadVersionRef.current = loadVersion;
+      const filter =
+        mapDateRange.startDate > 0 && mapDateRange.endDate > 0
+          ? {
+              ...inboxReq,
+              sinceDateInclusiveMs: mapDateRange.startDate,
+              tillDateInclusiveMs: mapDateRange.endDate,
+              newestFirst,
+            }
+          : inboxReq;
+
+      try {
+        const nextMessages = await fetchMapSettlementMessages({
+          settlementId,
+          inboxItemsFilter: filter,
+          beforeIdNoninclusive: null,
+        });
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
+        setMapOpenMessages(nextMessages);
+        void loadMissingNetworksForMessages(nextMessages);
+        return nextMessages.length > 0;
+      } catch (loadError) {
+        if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+        return false;
+      }
+    },
+    [
+      loadMissingNetworksForMessages,
+      mapDateRange,
+      newestFirst,
+      onError,
+      onUnauthorized,
+      optionsFreqValues,
+      queryState,
+    ],
+  );
+
   const loadMapPalitras = useCallback(async () => {
     setMapPalitrasLoadState('loading');
     setMapPalitrasLoaded(false);
@@ -344,6 +393,7 @@ export function useAnalysisMapData({
     mapAttrs,
     refreshMapDateRange,
     loadMessagesForMap,
+    loadSettlementMessagesForMap,
     loadMapPalitras,
     setMapLoading,
     setMapDateRange,

@@ -263,6 +263,7 @@ export type AnalysisPageActions = {
   loadMoreMessages: () => Promise<boolean>;
   loadPrevPage: () => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
+  loadSettlementMessagesForMap: (settlementId: number) => Promise<boolean>;
   loadNewCallsigns: () => Promise<void>;
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction: () => void;

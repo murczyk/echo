@@ -610,6 +610,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     loadMoreMessages: data.loadMoreMessages,
     loadPrevPage: data.loadPrevPage,
     loadMessagesForMap: data.loadMessagesForMap,
+    loadSettlementMessagesForMap: data.loadSettlementMessagesForMap,
     closeReport: report.closeReport,
     closeEditor: editor.closeEditor,
     downloadGeojson: data.downloadGeojson,

@@ -157,6 +157,48 @@ async fn get_inbox_map_inner(
     }))
 }
 
+#[post("/api/rer-importer/map-settlement-messages")]
+async fn map_settlement_messages(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MapSettlementMessagesReq>,
+) -> Result<Json<MessageIdsRsp>, AppError> {
+    ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
+        .await
+        .context(h!())?;
+    let req = req.into_inner();
+    let mut filter = req.inbox_items_filter;
+    filter.nolimit = Some(true);
+    let filtered_ids = build_inbox_settlement_ids_query(&login, &env, &filter)
+        .await
+        .c(h!())?;
+    let message_ids = get_inbox_map_settlement_message_ids(
+        &env.dbx,
+        &filtered_ids,
+        req.settlement_id,
+        req.before_id_noninclusive,
+        INBOX_MAP_SETTLEMENT_MESSAGES_PAGE_SIZE,
+    )
+    .await
+    .c(h!())?;
+    let mut messages =
+        messages_by_id_bl(&login, &logins, &env, &message_ids, &filter)
+            .await
+            .context(h!())?;
+    let message_order = message_ids
+        .iter()
+        .enumerate()
+        .map(|(position, message_id)| (*message_id, position))
+        .collect::<HashMap<_, _>>();
+    messages.sort_by_key(|(message_id, _)| {
+        message_order.get(message_id).copied().unwrap_or(usize::MAX)
+    });
+    Ok(Json(MessageIdsRsp { messages }))
+}
+
 fn get_inbox_filter_active_range(
     filter: &InboxMessagesReq,
 ) -> Result<Option<(NaiveDateTime, NaiveDateTime)>, AppError> {

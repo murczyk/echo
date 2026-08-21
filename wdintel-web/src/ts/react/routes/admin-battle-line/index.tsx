@@ -62,7 +62,7 @@ function formatVersionTime(timestamp: number | null): string {
   return timestamp == null ? '—' : new Date(timestamp).toLocaleString('uk-UA');
 }
 
-export function formatSettlementCandidate(candidate: BattleLineSettlementCandidate): string {
+function formatSettlementCandidate(candidate: BattleLineSettlementCandidate): string {
   const administrativeDetails = [
     candidate.district ? `${candidate.district} р-н` : '',
     candidate.region ? `${candidate.region} обл.` : '',
