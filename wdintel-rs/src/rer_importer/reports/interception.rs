@@ -557,6 +557,7 @@ async fn build_inbox_messages_report_sql(
             .await
             .c(h!())?;
     let mut q = SignalMessage::find()
+        .select_only()
         .inner_join(sigint_inbox_item::Entity)
         .column(sigint_inbox_item::Column::Datetime)
         .column(sigint_inbox_item::Column::Date)
@@ -657,8 +658,14 @@ async fn build_inbox_messages_report_sql(
                         .into_condition()
                 }),
         )
+        .group_by(sigint_inbox_item::Column::Datetime)
+        .group_by(sigint_inbox_item::Column::Date)
+        .group_by(sigint_inbox_item::Column::Time)
+        .group_by(sigint_inbox_item::Column::Freq)
+        .group_by(signal_message::Column::Body)
         .group_by(signal_message::Column::Id)
         .group_by(sigint_inbox_item::Column::Id)
+        .group_by(sigint_inbox_item::Column::Coords)
         .group_by(sigint_important::Column::SignalMessageId)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(
