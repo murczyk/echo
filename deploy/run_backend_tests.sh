@@ -17,6 +17,7 @@ bash deploy/clickhouse/tests/test-resnapshot-table.sh
 bash deploy/clickhouse/tests/test-manage-system-logs.sh
 bash deploy/clickhouse/tests/test-source-verify-deploy.sh
 bash deploy/clickhouse/tests/test-control-bundle.sh
+bash deploy/clickhouse/tests/test-analytics-reconcile-file-lock.sh
 bash deploy/clickhouse/tests/test-reconcile-if-needed.sh
 
 bash "$SCRIPT_DIR/ensure_postgres_running.sh"

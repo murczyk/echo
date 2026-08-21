@@ -46,8 +46,7 @@ fi
 if [[ "$reconciled_state_id" != "$desired_state_id" ]]; then
   "$SCRIPT_DIR/reconcile-derived-schema.sh"
 fi
-install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 \
-  "$ANALYTICS_RECONCILE_STATE_DIR"
+install -d -m 0755 "$ANALYTICS_RECONCILE_STATE_DIR"
 temporary_file=$(mktemp "$ANALYTICS_RECONCILE_STATE_DIR/.state.XXXXXX")
 printf '%s\n' "$desired_state_id" >"$temporary_file"
 chmod 0644 "$temporary_file"

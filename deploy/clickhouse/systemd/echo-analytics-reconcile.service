@@ -9,6 +9,8 @@ Type=oneshot
 User=postgres
 Group=postgres
 SupplementaryGroups=echo-analytics
+Environment=ANALYTICS_RECONCILE_LOCK_WAIT_SECONDS=0
+Environment=ANALYTICS_RECONCILE_LOCK_BUSY_IS_SUCCESS=true
 ExecStart=/opt/echo-analytics/current/bin/reconcile-if-needed.sh
 TimeoutStartSec=600s
 StateDirectory=echo-analytics/reconcile

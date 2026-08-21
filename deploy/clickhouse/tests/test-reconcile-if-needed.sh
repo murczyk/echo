@@ -47,6 +47,11 @@ run_reconcile
 [[ $(grep -c '^schema $' "$operations") == 1 ]]
 [[ $(grep -c '^derived$' "$operations") == 1 ]]
 [[ $(<"$case_dir/state/desired-state-id") == "$(printf '%064d' 1)" ]]
+grep -q 'install -d -m 0755' "$COMMAND"
+if grep -q 'install -d -o' "$COMMAND"; then
+  printf 'reconciliation unexpectedly changes the shared state-directory owner\n' >&2
+  exit 1
+fi
 
 run_reconcile
 [[ $(grep -c '^schema $' "$operations") == 2 ]]
