@@ -63,10 +63,9 @@ function formatVersionTime(timestamp: number | null): string {
 }
 
 function formatSettlementCandidate(candidate: BattleLineSettlementCandidate): string {
-  const administrativeDetails = [
-    candidate.district ? `${candidate.district} р-н` : '',
-    candidate.region ? `${candidate.region} обл.` : '',
-  ].filter(Boolean);
+  const administrativeDetails = [candidate.district.trim(), candidate.region.trim()].filter(
+    Boolean,
+  );
   return `${candidate.name} #${candidate.settlementId}${
     administrativeDetails.length > 0 ? ` ${administrativeDetails.join(' ')}` : ''
   }`;

@@ -119,6 +119,7 @@ export function getPointPopupTemplate(
   sortedMessages: Message[],
   selectedUnits: string[],
   hasMoreMessages = false,
+  contextTitle?: string,
 ) {
   const body = sortedMessages
     .map((message) => {
@@ -128,7 +129,7 @@ export function getPointPopupTemplate(
 
   return `
     <div class="messages-popup" >
-      <p class="title" > ${messagesCountText(sortedMessages.length)} </p>
+      <p class="title" > ${contextTitle ? `${escapeHtml(contextTitle)} · ` : ''}${messagesCountText(sortedMessages.length)} </p>
         <ul>
             ${body}
         </ul>

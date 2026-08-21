@@ -88,6 +88,7 @@ class AnalysisMap extends HTMLElement {
   private _clickedPoint: DataCircleMarker | null = null;
   private _clickedLatLng: L.LatLng | null = null;
   private _clickedSettlementId: number | null = null;
+  private _clickedSettlementLabel: string | null = null;
   private _boundedAlready = false;
   private _initialized = false;
   private _kmzLayer: KMZLayer | null = null;
@@ -390,6 +391,10 @@ class AnalysisMap extends HTMLElement {
     const parsed = JSON.parse(newValue);
     this._messages = parsed['messages'];
     this._networkUnits = parsed['networkUnits'];
+    if (!this._messagesLoading && this._messages.length === 0) {
+      this._clearMessagesPopupState();
+      return;
+    }
     this._scheduleMessagesPopupOpen();
   }
 
@@ -775,6 +780,9 @@ class AnalysisMap extends HTMLElement {
         this._clickedPoint = null;
         this._clickedLatLng = marker.getLatLng();
         this._clickedSettlementId = settlement.settlement_id;
+        this._clickedSettlementLabel = [settlement.name, settlement.region]
+          .filter((value): value is string => Boolean(value))
+          .join(', ');
         this._setMessagesLoading(true, marker);
         this._emitLoadSettlementMessages(settlement.settlement_id, null);
       });
@@ -805,6 +813,7 @@ class AnalysisMap extends HTMLElement {
         this._clickedPoint = circle;
         this._clickedLatLng = circle.getLatLng();
         this._clickedSettlementId = null;
+        this._clickedSettlementLabel = null;
         this._setMessagesLoading(true, circle);
         this._emitLoadMessagesDescriptions([circle.getData().messageId]);
       },
@@ -814,12 +823,14 @@ class AnalysisMap extends HTMLElement {
         this._clickedPoint = null;
         this._clickedLatLng = null;
         this._clickedSettlementId = null;
+        this._clickedSettlementLabel = null;
         this._openPointContextMenu(target, latlng);
       },
       onClusterClick: (messageIds, latlng, cluster) => {
         this._clickedPoint = null;
         this._clickedLatLng = latlng;
         this._clickedSettlementId = null;
+        this._clickedSettlementLabel = null;
         this._setMessagesLoading(true, cluster);
         this._emitLoadMessagesDescriptions(messageIds);
       },
@@ -1077,6 +1088,7 @@ class AnalysisMap extends HTMLElement {
       onUnitClicked: (networkUnitName) => this._emitMessageUnitClicked(networkUnitName),
       hasMoreMessages: this._clickedSettlementId !== null && this._settlementMessagesHasMore,
       onLoadMoreMessages: () => this._loadMoreSettlementMessages(),
+      contextTitle: this._clickedSettlementLabel ?? undefined,
       setClickedState: (clickedPoint, clickedLatLng) => {
         this._clickedPoint = clickedPoint;
         this._clickedLatLng = clickedLatLng;
@@ -1109,6 +1121,7 @@ class AnalysisMap extends HTMLElement {
     this._clickedPoint = null;
     this._clickedLatLng = null;
     this._clickedSettlementId = null;
+    this._clickedSettlementLabel = null;
   }
 
   private _scheduleMessagesPopupOpen(): void {

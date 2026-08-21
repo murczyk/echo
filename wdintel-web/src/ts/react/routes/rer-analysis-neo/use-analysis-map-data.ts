@@ -96,6 +96,11 @@ export function useAnalysisMapData({
   const showSettlementsRef = useRef(false);
   const settlementToggleAbortRef = useRef<AbortController | null>(null);
   const settlementToggleLoadVersionRef = useRef<number | null>(null);
+  const resetMapMessageScope = useCallback(() => {
+    mapMessagesLoadVersionRef.current += 1;
+    setMapOpenMessages([]);
+    setSettlementMessagesHasMore(false);
+  }, []);
   const settlementQueryKey = JSON.stringify([queryState, optionsFreqValues]);
   const settlementQueryKeyRef = useRef(settlementQueryKey);
   settlementQueryKeyRef.current = settlementQueryKey;
@@ -116,7 +121,7 @@ export function useAnalysisMapData({
       mapDateRangeLoadVersionRef.current = loadVersion;
       setMapLoading(true);
       setMapDateRange(range);
-      setSettlementMessagesHasMore(false);
+      resetMapMessageScope();
       const requestedShowSettlements = canShowSettlements && showSettlementsRef.current;
       if (requestedShowSettlements) setMapSettlementsState([]);
 
@@ -151,6 +156,7 @@ export function useAnalysisMapData({
       optionsFreqValues,
       queryState,
       applyMapSettlements,
+      resetMapMessageScope,
     ],
   );
 
@@ -159,6 +165,7 @@ export function useAnalysisMapData({
       const enabled = canShowSettlements && show;
       showSettlementsRef.current = enabled;
       setShowSettlementsState(enabled);
+      resetMapMessageScope();
       if (!enabled) {
         const toggleLoadVersion = settlementToggleLoadVersionRef.current;
         settlementToggleAbortRef.current?.abort();
@@ -229,6 +236,7 @@ export function useAnalysisMapData({
       onUnauthorized,
       optionsFreqValues,
       queryState,
+      resetMapMessageScope,
       settlementQueryKey,
     ],
   );
@@ -237,8 +245,8 @@ export function useAnalysisMapData({
     settlementToggleAbortRef.current?.abort();
     mapDateRangeLoadVersionRef.current += 1;
     setMapSettlementsState([]);
-    setSettlementMessagesHasMore(false);
-  }, [settlementQueryKey]);
+    resetMapMessageScope();
+  }, [resetMapMessageScope, settlementQueryKey]);
 
   useEffect(() => {
     return () => settlementToggleAbortRef.current?.abort();
@@ -251,8 +259,8 @@ export function useAnalysisMapData({
     settlementToggleAbortRef.current = null;
     setShowSettlementsState(false);
     setMapSettlementsState([]);
-    setSettlementMessagesHasMore(false);
-  }, [canShowSettlements]);
+    resetMapMessageScope();
+  }, [canShowSettlements, resetMapMessageScope]);
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
@@ -294,6 +302,7 @@ export function useAnalysisMapData({
       if (isNullOrUndefined(inboxReq)) return false;
       const loadVersion = mapMessagesLoadVersionRef.current + 1;
       mapMessagesLoadVersionRef.current = loadVersion;
+      const queryKey = settlementQueryKey;
       if (beforeIdNoninclusive === null) setSettlementMessagesHasMore(false);
       const filter =
         mapDateRange.startDate > 0 && mapDateRange.endDate > 0
@@ -311,7 +320,11 @@ export function useAnalysisMapData({
           inboxItemsFilter: filter,
           beforeIdNoninclusive,
         });
-        if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
+        if (
+          mapMessagesLoadVersionRef.current !== loadVersion ||
+          settlementQueryKeyRef.current !== queryKey
+        )
+          return false;
         const currentMessages = beforeIdNoninclusive === null ? [] : mapOpenMessages;
         const currentMessageIds = new Set(currentMessages.map(([messageId]) => messageId));
         const combinedMessages = [
@@ -328,7 +341,11 @@ export function useAnalysisMapData({
         void loadMissingNetworksForMessages(nextMessages);
         return combinedMessages.length > 0;
       } catch (loadError) {
-        if (mapMessagesLoadVersionRef.current !== loadVersion) return false;
+        if (
+          mapMessagesLoadVersionRef.current !== loadVersion ||
+          settlementQueryKeyRef.current !== queryKey
+        )
+          return false;
         if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
         return false;
       }
@@ -343,6 +360,7 @@ export function useAnalysisMapData({
       onUnauthorized,
       optionsFreqValues,
       queryState,
+      settlementQueryKey,
     ],
   );
 

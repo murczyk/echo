@@ -104,21 +104,6 @@ afterEach(() => {
 });
 
 describe('useAnalysisMapData settlement overlays', () => {
-  it('loads a bounded settlement page through the settlement endpoint', async () => {
-    api.fetchMapSettlementMessages.mockResolvedValueOnce([]);
-    await renderHook();
-
-    await act(async () => {
-      await latest!.loadSettlementMessagesForMap(7);
-    });
-
-    expect(api.fetchMapSettlementMessages).toHaveBeenCalledWith({
-      settlementId: 7,
-      inboxItemsFilter: expect.any(Object),
-      beforeIdNoninclusive: null,
-    });
-  });
-
   it('appends subsequent settlement pages until the advertised count is loaded', async () => {
     const firstPage = [
       [30, { text: 'newest' }],
@@ -135,6 +120,11 @@ describe('useAnalysisMapData settlement overlays', () => {
     await act(async () => {
       await latest!.loadSettlementMessagesForMap(7);
     });
+    expect(api.fetchMapSettlementMessages).toHaveBeenNthCalledWith(1, {
+      settlementId: 7,
+      inboxItemsFilter: expect.any(Object),
+      beforeIdNoninclusive: null,
+    });
     expect(latest?.settlementMessagesHasMore).toBe(true);
 
     await act(async () => {
@@ -148,6 +138,30 @@ describe('useAnalysisMapData settlement overlays', () => {
     });
     expect(latest?.mapOpenMessages.map(([messageId]) => messageId)).toEqual([30, 20, 10]);
     expect(latest?.settlementMessagesHasMore).toBe(false);
+  });
+
+  it('ignores a pending settlement page after the map date range changes', async () => {
+    const request = deferred<Array<[number, never]>>();
+    api.fetchMapSettlementMessages.mockReturnValueOnce(request.promise);
+    api.fetchAnalysisMapPoints.mockResolvedValueOnce({
+      networkUnits: [],
+      points: [],
+      settlements: [],
+    });
+    await renderHook();
+
+    let settlementPromise!: Promise<boolean>;
+    await act(async () => {
+      settlementPromise = latest!.loadSettlementMessagesForMap(7);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await latest!.refreshMapDateRange({ startDate: 30, endDate: 40 });
+    });
+    request.resolve([[99, { text: 'stale' } as never]]);
+    await act(async () => settlementPromise);
+
+    expect(latest?.mapOpenMessages).toEqual([]);
   });
 
   it('propagates the toggle and ignores its response after an immediate toggle off', async () => {

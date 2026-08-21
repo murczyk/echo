@@ -15,6 +15,7 @@ type OpenMessagePopupOptions = {
   onUnitClicked: (networkUnitName: string | null) => void;
   hasMoreMessages?: boolean;
   onLoadMoreMessages?: () => void;
+  contextTitle?: string;
   setClickedState: (clickedPoint: DataCircleMarker | null, clickedLatLng: L.LatLng | null) => void;
 };
 
@@ -30,6 +31,7 @@ export function openMessagesPopup({
   onUnitClicked,
   hasMoreMessages = false,
   onLoadMoreMessages,
+  contextTitle,
   setClickedState,
 }: OpenMessagePopupOptions): boolean {
   if ((!clickedPoint && !clickedLatLng) || messages.length === 0) {
@@ -41,7 +43,12 @@ export function openMessagesPopup({
     const datetime2 = new Date(`${message2[1].date}T${message2[1].time} `);
     return datetime2.getTime() - datetime1.getTime();
   });
-  const popupContent = getPointPopupTemplate(sortedMessages, selectedUnits, hasMoreMessages);
+  const popupContent = getPointPopupTemplate(
+    sortedMessages,
+    selectedUnits,
+    hasMoreMessages,
+    contextTitle,
+  );
   const clickedMessageId = sortedMessages[0]?.[0];
   const isCluster = sortedMessages.length > 1;
   const clickedPointOnMap =

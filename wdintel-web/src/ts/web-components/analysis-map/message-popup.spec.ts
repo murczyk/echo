@@ -192,6 +192,7 @@ describe('openMessagesPopup', () => {
       findPointMarkerByMessageId: vi.fn(),
       hasMoreMessages: true,
       onLoadMoreMessages,
+      contextTitle: 'Харків, Харківська',
       onUnitClicked: vi.fn(),
       setClickedState: vi.fn(),
     });
@@ -199,7 +200,7 @@ describe('openMessagesPopup', () => {
     loadMoreButton.click();
 
     expect(clickedPoint.bindPopup).toHaveBeenCalledWith(
-      expect.stringContaining('data-map-settlement-messages-load-more'),
+      expect.stringMatching(/Харків, Харківська.*data-map-settlement-messages-load-more/s),
       expect.any(Object),
     );
     expect(onLoadMoreMessages).toHaveBeenCalledOnce();
