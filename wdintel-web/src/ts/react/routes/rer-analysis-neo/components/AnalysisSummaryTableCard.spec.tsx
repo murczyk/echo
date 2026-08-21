@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -56,10 +56,23 @@ vi.mock('@mui/material', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
   FormControl: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   InputLabel: ({ children }: { children: ReactNode }) => <label>{children}</label>,
+  IconButton: forwardRef<HTMLButtonElement, { children: ReactNode; onClick?: () => void }>(
+    ({ children, onClick }, ref) => (
+      <button ref={ref} type="button" onClick={onClick}>
+        {children}
+      </button>
+    ),
+  ),
   MenuItem: ({ children, value }: { children: ReactNode; value: string }) => (
     <option value={value}>{children}</option>
   ),
-  Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  Paper: forwardRef<HTMLElement, { children: ReactNode; [key: string]: unknown }>(
+    ({ children, ...props }, ref) => (
+      <section ref={ref} {...props}>
+        {children}
+      </section>
+    ),
+  ),
   Popper: ({ children, open }: { children: ReactNode; open: boolean }) =>
     open ? <>{children}</> : null,
   Select: (props: {

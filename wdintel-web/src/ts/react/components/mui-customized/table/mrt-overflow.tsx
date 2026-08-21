@@ -1,9 +1,25 @@
-import { Box, ClickAwayListener, Popper, Tooltip } from '@mui/material';
+import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
+import { Box, ClickAwayListener, Paper, Popper, Tooltip, Typography } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
-import type { ElementType, ReactNode, RefObject } from 'react';
+import type { ElementType, MouseEvent, ReactNode, RefObject } from 'react';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { copyTextToClipboard } from '../../../../copy-to-clipboard';
+import { PowerIconButton } from '../../PowerIconButton';
+
 export type MrtOverflowMode = 'text' | 'items' | 'wrap' | 'custom' | 'none';
+
+export function formatValueCount(count: number) {
+  const lastTwoDigits = count % 100;
+  const lastDigit = count % 10;
+  const noun =
+    lastTwoDigits >= 11 && lastTwoDigits <= 14
+      ? 'значень'
+      : lastDigit >= 1 && lastDigit <= 4
+        ? 'значення'
+        : 'значень';
+  return `${count} ${noun}`;
+}
 
 type OverflowTextProps = {
   displayValue: ReactNode;
@@ -97,6 +113,7 @@ export function MrtOverflowText({
 type OverflowItemsProps<T> = {
   items: readonly T[];
   renderItem: (item: T, index: number) => ReactNode;
+  renderDisclosureItem?: (item: T, index: number) => ReactNode;
   renderCompactItem?: (item: T, index: number) => ReactNode;
   renderMeasurementItem?: (item: T, index: number) => ReactNode;
   getItemKey?: (item: T, index: number) => string | number;
@@ -104,6 +121,7 @@ type OverflowItemsProps<T> = {
   getItemMeasurementKey?: (item: T, index: number) => string | number;
   /** Shared column/renderer namespace for reusable measurement geometry. */
   measurementScope?: string;
+  disclosureLayout?: 'wrap' | 'list';
   emptyValue?: ReactNode;
   containerProps?: Record<string, unknown>;
 };
@@ -402,15 +420,175 @@ export function calculateVisibleItemCount({
   return 0;
 }
 
+type OverflowDisclosureSurfaceProps<T> = {
+  anchorEl: HTMLElement | null;
+  surfaceId: string;
+  hiddenCount: number;
+  items: readonly T[];
+  hiddenItems: readonly T[];
+  representedCount: number;
+  disclosureLayout: 'wrap' | 'list';
+  renderItem: (item: T, index: number) => ReactNode;
+  renderDisclosureItem?: (item: T, index: number) => ReactNode;
+  getItemKey: (item: T, index: number) => string | number;
+  getItemText: (item: T, index: number) => string;
+  onClose: () => void;
+  surfaceRef: RefObject<HTMLDivElement | null>;
+};
+
+function MrtOverflowDisclosureSurface<T>({
+  anchorEl,
+  surfaceId,
+  hiddenCount,
+  items,
+  hiddenItems,
+  representedCount,
+  disclosureLayout,
+  renderItem,
+  renderDisclosureItem = renderItem,
+  getItemKey,
+  getItemText,
+  onClose,
+  surfaceRef,
+}: OverflowDisclosureSurfaceProps<T>) {
+  const [copyStatus, setCopyStatus] = useState<'success' | 'failure' | null>(null);
+  const copyAllItems = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    try {
+      await copyTextToClipboard(items.map((item, index) => getItemText(item, index)).join('\n'));
+      setCopyStatus('success');
+    } catch {
+      setCopyStatus('failure');
+    }
+  };
+
+  return (
+    <Popper
+      open
+      anchorEl={anchorEl}
+      placement="bottom-start"
+      sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
+      modifiers={[
+        { name: 'flip', enabled: true },
+        { name: 'preventOverflow', enabled: true, options: { padding: 8 } },
+      ]}
+    >
+      <ClickAwayListener onClickAway={onClose}>
+        <Paper
+          id={surfaceId}
+          ref={surfaceRef as RefObject<HTMLDivElement>}
+          role="dialog"
+          aria-label="Додаткові значення"
+          tabIndex={-1}
+          sx={{
+            width: 'max-content',
+            maxWidth: 'min(90vw, 640px)',
+            maxHeight: 'min(60dvh, 32rem)',
+            bgcolor: 'background.paper',
+            color: 'text.primary',
+            border: 1,
+            borderColor: 'divider',
+            boxShadow: 4,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+          }}
+        >
+          <Box
+            sx={{
+              px: 1,
+              py: 0.75,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+              borderBottom: 1,
+              borderColor: 'divider',
+              flex: '0 0 auto',
+            }}
+          >
+            <Typography variant="subtitle2">Додаткові значення ({hiddenCount})</Typography>
+            <Tooltip
+              title="Скопіювати всі значення"
+              placement="top-end"
+              slotProps={{ popper: { sx: { zIndex: (theme) => theme.zIndex.tooltip + 2 } } }}
+            >
+              <PowerIconButton
+                size="small"
+                aria-label={`Скопіювати всі ${formatValueCount(items.length)}`}
+                onClick={copyAllItems}
+              >
+                <ContentCopyOutlinedIcon fontSize="inherit" />
+              </PowerIconButton>
+            </Tooltip>
+          </Box>
+          <Typography
+            role="status"
+            aria-live="polite"
+            variant="caption"
+            sx={{ px: 1, pt: 0.5, minHeight: 22 }}
+          >
+            {copyStatus === 'success'
+              ? 'Скопійовано'
+              : copyStatus === 'failure'
+                ? 'Не вдалося скопіювати'
+                : ''}
+          </Typography>
+          <Box
+            component={disclosureLayout === 'list' ? 'ul' : 'div'}
+            data-mrt-overflow-disclosure-body=""
+            sx={{
+              m: 0,
+              p: 1,
+              minHeight: 0,
+              minWidth: 0,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              overscrollBehavior: 'contain',
+              scrollbarGutter: 'stable',
+              display: disclosureLayout === 'list' ? 'block' : 'flex',
+              flexWrap: disclosureLayout === 'list' ? undefined : 'wrap',
+              gap: disclosureLayout === 'list' ? 0 : 0.5,
+              listStyle: 'none',
+            }}
+          >
+            {hiddenItems.map((item, index) => (
+              <Box
+                component={disclosureLayout === 'list' ? 'li' : 'div'}
+                key={getItemKey(item, representedCount + index)}
+                sx={
+                  disclosureLayout === 'list'
+                    ? {
+                        width: '100%',
+                        minWidth: 0,
+                        overflowWrap: 'anywhere',
+                        whiteSpace: 'normal',
+                        py: 0.25,
+                      }
+                    : undefined
+                }
+              >
+                {renderDisclosureItem(item, representedCount + index)}
+              </Box>
+            ))}
+          </Box>
+        </Paper>
+      </ClickAwayListener>
+    </Popper>
+  );
+}
+
 export function MrtOverflowItems<T>({
   items,
   renderItem,
+  renderDisclosureItem,
   renderCompactItem,
   renderMeasurementItem = renderItem,
   getItemKey = (_, index) => index,
   getItemText = (_, index) => `Значення ${index + 1}`,
   getItemMeasurementKey,
   measurementScope,
+  disclosureLayout = 'wrap',
   emptyValue = '—',
   containerProps,
 }: OverflowItemsProps<T>) {
@@ -418,6 +596,7 @@ export function MrtOverflowItems<T>({
   const measureRef = useRef<HTMLDivElement>(null);
   const triggerMeasureRefs = useRef<Array<HTMLElement | null>>([]);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const compactItemRef = useRef<HTMLSpanElement>(null);
   const spacerMeasureRef = useRef<HTMLElement>(null);
   const previousTriggerRef = useRef<HTMLElement | null>(null);
   const restoreFocusTimeoutRef = useRef<number | null>(null);
@@ -435,6 +614,8 @@ export function MrtOverflowItems<T>({
     end: Math.min(items.length, MAX_MEASURED_ITEMS),
   }));
   const [isOpen, setIsOpen] = useState(false);
+  const [isCompactHovered, setIsCompactHovered] = useState(false);
+  const [isCompactFocused, setIsCompactFocused] = useState(false);
   const cancelPendingFocusRestore = () => {
     if (restoreFocusTimeoutRef.current == null) return;
     window.clearTimeout(restoreFocusTimeoutRef.current);
@@ -469,9 +650,6 @@ export function MrtOverflowItems<T>({
     isLayoutCommitted || hasUnmeasurableFallback ? items.length - representedCount : 0;
   const hasOverflow = hiddenCount > 0;
   const hiddenItems = items.slice(representedCount);
-  const hiddenItemText = hiddenItems
-    .map((item, index) => getItemText(item, representedCount + index))
-    .join(', ');
   const cacheKeyRef = useRef(cacheKey);
   cacheKeyRef.current = cacheKey;
   const measuredItemCount = measurementBatch.end - measurementBatch.start;
@@ -859,6 +1037,8 @@ export function MrtOverflowItems<T>({
   ) : null;
 
   const compactItemText = getItemText(items[0], 0);
+  const isCompactTooltipOpen =
+    compactFirstItem && !renderCompactItem && (isCompactHovered || isCompactFocused);
   const renderCompactFirstItem = () =>
     renderCompactItem ? renderCompactItem(items[0], 0) : renderItem(items[0], 0);
   const visibleItems = items.slice(0, currentVisibleCount).map((item, index) => (
@@ -884,9 +1064,15 @@ export function MrtOverflowItems<T>({
         >
           {compactFirstItem || !isLayoutCommitted ? (
             <span
+              ref={compactItemRef}
               className="min-w-0 max-w-full flex-1 overflow-hidden"
-              title={renderCompactItem ? undefined : compactItemText}
+              title={renderCompactItem || isCompactTooltipOpen ? undefined : compactItemText}
               aria-label={renderCompactItem ? undefined : compactItemText}
+              tabIndex={renderCompactItem ? undefined : 0}
+              onMouseEnter={renderCompactItem ? undefined : () => setIsCompactHovered(true)}
+              onMouseLeave={renderCompactItem ? undefined : () => setIsCompactHovered(false)}
+              onFocusCapture={renderCompactItem ? undefined : () => setIsCompactFocused(true)}
+              onBlurCapture={renderCompactItem ? undefined : () => setIsCompactFocused(false)}
             >
               {renderCompactFirstItem()}
             </span>
@@ -898,10 +1084,10 @@ export function MrtOverflowItems<T>({
               ref={triggerRef}
               type="button"
               onClick={() => (isOpen ? closeSurface() : openSurface())}
-              aria-label={`Показати ще ${hiddenCount} значення`}
+              aria-label={`Показати ще ${formatValueCount(hiddenCount)}`}
               aria-expanded={isOpen}
               aria-controls={isOpen ? surfaceId : undefined}
-              title={hiddenItemText || `Показати ще ${hiddenCount} значення`}
+              title={`Показати ще ${formatValueCount(hiddenCount)}`}
               className={OVERFLOW_TRIGGER_CLASS_NAME}
             >
               Ще {hiddenCount}
@@ -924,52 +1110,61 @@ export function MrtOverflowItems<T>({
             ref={triggerRef}
             type="button"
             onClick={() => (isOpen ? closeSurface() : openSurface())}
-            aria-label={`Показати ще ${hiddenCount} значення`}
+            aria-label={`Показати ще ${formatValueCount(hiddenCount)}`}
             aria-expanded={isOpen}
             aria-controls={isOpen ? surfaceId : undefined}
-            title={hiddenItemText || `Показати ще ${hiddenCount} значення`}
+            title={`Показати ще ${formatValueCount(hiddenCount)}`}
             className={OVERFLOW_TRIGGER_CLASS_NAME}
           >
             Ще {hiddenCount}
           </button>
         ) : null}
         {isOpen && hasOverflow ? (
-          <Popper
-            open={isOpen}
+          <MrtOverflowDisclosureSurface
             anchorEl={triggerRef.current}
-            placement="bottom-start"
-            sx={{ zIndex: (theme) => theme.zIndex.tooltip + 1 }}
+            surfaceId={surfaceId}
+            hiddenCount={hiddenCount}
+            items={items}
+            hiddenItems={hiddenItems}
+            representedCount={representedCount}
+            disclosureLayout={disclosureLayout}
+            renderItem={renderItem}
+            renderDisclosureItem={renderDisclosureItem}
+            getItemKey={getItemKey}
+            getItemText={getItemText}
+            onClose={() => closeSurface()}
+            surfaceRef={surfaceRef}
+          />
+        ) : null}
+        {isCompactTooltipOpen ? (
+          <Popper
+            open
+            anchorEl={compactItemRef.current}
+            placement="top-start"
+            role="presentation"
+            sx={{ zIndex: (theme) => theme.zIndex.tooltip + 2, pointerEvents: 'none' }}
+            modifiers={[
+              { name: 'flip', enabled: true },
+              { name: 'preventOverflow', enabled: true, options: { padding: 8 } },
+            ]}
           >
-            <ClickAwayListener onClickAway={() => closeSurface()}>
-              <Box
-                id={surfaceId}
-                ref={surfaceRef}
-                role="dialog"
-                aria-label="Додаткові значення"
-                tabIndex={-1}
-                sx={{
-                  p: 1,
-                  mt: 0.5,
-                  maxWidth: 'min(90vw, 640px)',
-                  bgcolor: 'background.paper',
-                  color: 'text.primary',
-                  border: 1,
-                  borderColor: 'divider',
-                  boxShadow: 4,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 0.5,
-                  whiteSpace: 'normal',
-                  overflowWrap: 'anywhere',
-                }}
-              >
-                {hiddenItems.map((item, index) => (
-                  <Box key={getItemKey(item, representedCount + index)}>
-                    {renderItem(item, representedCount + index)}
-                  </Box>
-                ))}
-              </Box>
-            </ClickAwayListener>
+            <Paper
+              role="tooltip"
+              sx={{
+                px: 1,
+                py: 0.5,
+                maxWidth: 'min(90vw, 40rem)',
+                bgcolor: 'grey.700',
+                color: 'common.white',
+                borderRadius: 1,
+                boxShadow: 3,
+                pointerEvents: 'none',
+              }}
+            >
+              <Typography variant="caption" sx={{ color: 'inherit', overflowWrap: 'anywhere' }}>
+                {compactItemText}
+              </Typography>
+            </Paper>
           </Popper>
         ) : null}
         <div

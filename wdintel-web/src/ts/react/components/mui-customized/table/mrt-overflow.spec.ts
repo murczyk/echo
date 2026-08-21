@@ -6,11 +6,16 @@ import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const copyTextToClipboard = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../copy-to-clipboard', () => ({ copyTextToClipboard }));
+
 import { EchoChip } from '../../EchoChip';
 import {
   calculateVisibleItemCount,
   MrtOverflowItems,
   MrtOverflowText,
+  formatValueCount,
   resetMrtOverflowMeasurementCacheForTests,
 } from './mrt-overflow';
 import {
@@ -36,6 +41,29 @@ function destroy(view: Rendered) {
 }
 
 describe('MRT overflow policies', () => {
+  it('formats Ukrainian value counts across grammatical boundaries', () => {
+    expect(
+      Object.fromEntries(
+        [1, 2, 4, 5, 10, 11, 14, 21, 22, 25, 101, 111].map((count) => [
+          count,
+          formatValueCount(count),
+        ]),
+      ),
+    ).toEqual({
+      1: '1 значення',
+      2: '2 значення',
+      4: '4 значення',
+      5: '5 значень',
+      10: '10 значень',
+      11: '11 значень',
+      14: '14 значень',
+      21: '21 значення',
+      22: '22 значення',
+      25: '25 значень',
+      101: '101 значення',
+      111: '111 значень',
+    });
+  });
   it('fits only whole items including gaps and the dynamic trigger width', () => {
     expect(
       calculateVisibleItemCount({
@@ -305,6 +333,8 @@ describe('MRT rendered overflow components', () => {
       },
     );
     vi.stubGlobal('IntersectionObserver', undefined);
+    copyTextToClipboard.mockReset();
+    copyTextToClipboard.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -945,6 +975,163 @@ describe('MRT rendered overflow components', () => {
       view.container.querySelector<HTMLButtonElement>('[aria-label^="Показати ще"]')?.click(),
     );
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    destroy(view);
+  });
+
+  it('keeps a generic oversized item stable while lazily enhancing its full-value tooltip', () => {
+    itemWidths = { alpha: 140 };
+    availableWidth = 80;
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha'],
+        renderItem: (value) => createElement('button', { 'data-item': value }, value),
+        getItemText: (value) => `complete ${value}`,
+      }),
+    );
+    triggerResize();
+
+    const item = view.container.querySelector<HTMLButtonElement>('[data-item="alpha"]');
+    const wrapper = item?.parentElement;
+    expect(wrapper?.getAttribute('title')).toBe('complete alpha');
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+
+    act(() => item?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    expect(wrapper?.getAttribute('title')).toBeNull();
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain(
+      'complete alpha',
+    );
+    expect(view.container.querySelector('[data-item="alpha"]')).toBe(item);
+    act(() => item?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })));
+    expect(wrapper?.getAttribute('title')).toBe('complete alpha');
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+
+    act(() => item?.focus());
+    expect(wrapper?.getAttribute('title')).toBeNull();
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toContain(
+      'complete alpha',
+    );
+    act(() => item?.blur());
+    expect(wrapper?.getAttribute('title')).toBe('complete alpha');
+    expect(document.body.querySelector('[role="tooltip"]')).toBeNull();
+    destroy(view);
+  });
+
+  it('renders a bounded list disclosure and lazily copies every original item', async () => {
+    itemWidths = { alpha: 60, beta: 60, gamma: 60, 'Ще 1': 32, 'Ще 2': 32 };
+    availableWidth = 150;
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta', 'gamma'],
+        disclosureLayout: 'list',
+        renderItem: (value) => createElement('span', { 'data-item': value }, value),
+        getItemText: (value) => `full ${value}`,
+      }),
+    );
+    triggerResize();
+    expect(view.container.querySelector('[aria-label^="Скопіювати всі"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+
+    act(() =>
+      view.container
+        .querySelector<HTMLButtonElement>('[aria-label="Показати ще 2 значення"]')
+        ?.click(),
+    );
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
+    const list = dialog?.querySelector<HTMLUListElement>('ul');
+    const copy = dialog?.querySelector<HTMLButtonElement>(
+      '[aria-label="Скопіювати всі 3 значення"]',
+    );
+    expect(dialog?.textContent).toContain('Додаткові значення (2)');
+    expect(list?.querySelectorAll('li')).toHaveLength(2);
+    expect(list?.textContent).toContain('beta');
+    expect(list?.textContent).toContain('gamma');
+    expect(list?.textContent).not.toContain('alpha');
+    expect(getComputedStyle(list!).overflowY).toBe('auto');
+    expect(getComputedStyle(list!).overflowX).toBe('hidden');
+    expect(copy).not.toBeNull();
+    const getGeometry = (element: Element | null | undefined) => {
+      const rect = element?.getBoundingClientRect();
+      return rect && [rect.x, rect.y, rect.width, rect.height];
+    };
+    const geometryBeforeCopy = [dialog, dialog?.firstElementChild, list].map(getGeometry);
+
+    act(() => copy?.click());
+    await act(async () => Promise.resolve());
+    expect(copyTextToClipboard).toHaveBeenCalledWith('full alpha\nfull beta\nfull gamma');
+    expect(document.body.querySelector('[role="status"]')?.textContent).toBe('Скопійовано');
+    const geometryAfterCopy = [
+      document.body.querySelector('[role="dialog"]'),
+      document.body.querySelector('[role="dialog"]')?.firstElementChild,
+      document.body.querySelector('[role="dialog"] ul'),
+    ].map(getGeometry);
+    expect(geometryAfterCopy).toEqual(geometryBeforeCopy);
+
+    act(() =>
+      view.container
+        .querySelector<HTMLButtonElement>('[aria-label="Показати ще 2 значення"]')
+        ?.click(),
+    );
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label^="Скопіювати всі"]')).toBeNull();
+    destroy(view);
+
+    copyTextToClipboard.mockReset();
+    copyTextToClipboard.mockRejectedValue(new Error('denied'));
+    availableWidth = 80;
+    itemWidths = { alpha: 60, beta: 60, 'Ще 1': 32 };
+    const failureView = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta'],
+        renderItem: (value) => createElement('span', null, value),
+        getItemText: (value) => value,
+      }),
+    );
+    triggerResize();
+    act(() =>
+      failureView.container
+        .querySelector<HTMLButtonElement>('[aria-label="Показати ще 1 значення"]')
+        ?.click(),
+    );
+    act(() =>
+      document.body
+        .querySelector<HTMLButtonElement>('[aria-label="Скопіювати всі 2 значення"]')
+        ?.click(),
+    );
+    await act(async () => Promise.resolve());
+    expect(document.body.querySelector('[role="status"]')?.textContent).toBe(
+      'Не вдалося скопіювати',
+    );
+    destroy(failureView);
+  });
+
+  it('keeps a thousand-item collection closed until its one bounded disclosure opens', () => {
+    const items = Array.from({ length: 1000 }, (_, index) => `large-${index}`);
+    itemWidths = Object.fromEntries(items.map((item) => [item, 60]));
+    itemWidths['Ще 999'] = 40;
+    availableWidth = 100;
+    const renderItem = vi.fn((item: string) => createElement('span', { 'data-item': item }, item));
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items,
+        renderItem,
+        getItemKey: (item) => item,
+        getItemText: (item) => `full ${item}`,
+        measurementScope: 'test:thousand-items',
+      }),
+    );
+
+    expect(renderItem.mock.calls.length).toBeLessThan(20);
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[aria-label^="Скопіювати всі"]')).toBeNull();
+    flushFrames();
+    expect(renderItem.mock.calls.length).toBeLessThan(20);
+    act(() =>
+      view.container.querySelector<HTMLButtonElement>('[aria-label^="Показати ще"]')?.click(),
+    );
+    expect(document.body.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    expect(
+      document.body.querySelectorAll('[aria-label="Скопіювати всі 1000 значень"]'),
+    ).toHaveLength(1);
     destroy(view);
   });
 

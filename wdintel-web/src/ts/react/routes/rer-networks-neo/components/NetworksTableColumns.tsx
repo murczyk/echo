@@ -91,6 +91,7 @@ export function useNetworksTableColumns({
           items: ({ row }) => row.original.aorLabels,
           renderItem: (label) => <Box component="span">{label}</Box>,
           measurementScope: 'networks:aors',
+          disclosureLayout: 'list',
           getItemKey: (label) => label,
           getItemText: (label) => label,
         }),

@@ -103,6 +103,7 @@ function useAttachmentColumns(
           items: ({ row }) => (row.original.aors ?? []).map(({ name }) => name),
           renderItem: (name) => <Box component="span">{name}</Box>,
           measurementScope: 'unit-attachments:aors',
+          disclosureLayout: 'list',
           getItemText: (name) => name,
         }),
       },

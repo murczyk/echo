@@ -308,7 +308,12 @@ function CallsignsTableComponent({
                 fullValue={`Основне: ${item.label}`}
               />
             ) : null,
+          renderDisclosureItem: (item) =>
+            item.kind === 'primary'
+              ? `Основне джерело: ${item.label}`
+              : `Підтверджено: ${item.label}`,
           measurementScope: 'callsigns:sources',
+          disclosureLayout: 'list',
           getItemKey: (item) => item.key,
           getItemText: (item) =>
             item.kind === 'primary'

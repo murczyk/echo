@@ -91,6 +91,7 @@ function LocationConfigsTable({
           items: ({ row }) => row.original.selectedConfigs,
           renderItem: (config) => <Typography variant="body2">{config}</Typography>,
           measurementScope: 'admin-location-configs:selected-configs',
+          disclosureLayout: 'list',
           getItemKey: (config) => config,
           getItemText: (config) => config,
         }),

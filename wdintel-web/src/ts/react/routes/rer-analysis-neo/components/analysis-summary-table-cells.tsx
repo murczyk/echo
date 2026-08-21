@@ -10,6 +10,7 @@ export function CompactListCell({ items }: { items: string[] }) {
   return (
     <MrtOverflowItems
       items={items}
+      disclosureLayout="list"
       measurementScope="analysis-summary:compact-list"
       getItemText={(item) => item}
       renderItem={(item) => <Box component="span">{item}</Box>}
