@@ -424,6 +424,44 @@ a {
   outline-offset: 2px;
 }
 
+.mrt-overflow-trigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--echo-color-divider);
+  border-radius: 6px;
+  appearance: none;
+  background: var(--echo-color-surface-raised);
+  color: var(--echo-color-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-decoration: none;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mrt-overflow-trigger:hover {
+  background: color-mix(in srgb, var(--echo-color-primary) 8%, var(--echo-color-surface-raised));
+}
+
+.mrt-overflow-trigger:active {
+  background: color-mix(in srgb, var(--echo-color-primary) 14%, var(--echo-color-surface-raised));
+}
+
+.mrt-overflow-trigger:focus-visible {
+  outline: 2px solid var(--echo-color-primary);
+  outline-offset: 2px;
+}
+
 .message-card-tag-expand {
   box-sizing: border-box;
   display: inline-flex;

@@ -51,8 +51,8 @@ Tailwind owns display, flex/grid, spacing, sizing, positioning, overflow, respon
 MUI or `Power*` owns buttons, fields, dialogs, drawers, menus, popovers, tabs, date/time pickers, validation, disabled behavior, focus management, and component-specific accessibility.
 
 `EchoChip` owns dense, repeated application chip rendering. Prefer it in MRT item-overflow cells;
-do not automatically use `PowerChip` there. `PowerChip` and `CompactPowerChip` remain MUI choices
-for lower-density surfaces or when their component features are needed.
+do not automatically use `PowerChip` there. `PowerChip` is the single MUI chip wrapper for
+lower-density or behavior-rich surfaces and uses standard 14px typography.
 
 New code must not introduce layout-only `Box`, `Stack`, `Grid`, or `Container`; wrappers that conceal them; structural `sx`; copied mode colors; clickable `div`s in place of semantic controls; or styling against generated `.Mui-*` class names. `sx` is allowed for documented MUI slots or states, component behavior, supported third-party boundaries, and dynamic values that stable classes or CSS variables cannot express.
 

@@ -235,7 +235,6 @@ export function DeviceFileJournal({
             label={countLabel}
             color="default"
             interactive={false}
-            fontSize="0.75rem"
             sx={{ fontVariantNumeric: 'tabular-nums' }}
           />
         </Box>

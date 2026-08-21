@@ -1,7 +1,6 @@
 import { Box, ClickAwayListener, Popper, Tooltip } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
 import type { ElementType, ReactNode, RefObject } from 'react';
-import { createPortal } from 'react-dom';
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 export type MrtOverflowMode = 'text' | 'items' | 'wrap' | 'custom' | 'none';
@@ -122,8 +121,7 @@ const measurementCache = new Map<string, ItemMeasurements>();
 const MAX_MEASURED_ITEMS = 16;
 const MAX_ACTIVE_MEASUREMENT_JOBS = 8;
 const MAX_MEASUREMENT_CACHE_ENTRIES = 512;
-const OVERFLOW_TRIGGER_CLASS_NAME =
-  'shrink-0 border-0 bg-transparent px-1 font-inherit text-sm leading-normal whitespace-nowrap tabular-nums text-primary hover:underline focus-visible:outline-2 focus-visible:outline-primary';
+const OVERFLOW_TRIGGER_CLASS_NAME = 'mrt-overflow-trigger';
 
 function readMeasurementCache(key: string) {
   const value = measurementCache.get(key);
@@ -768,58 +766,55 @@ export function MrtOverflowItems<T>({
     setIsOpen(true);
   };
 
-  const measurement =
-    isMeasuring && typeof document !== 'undefined'
-      ? createPortal(
-          <div
-            ref={measureRef}
-            data-mrt-overflow-measure={surfaceId}
-            aria-hidden
-            {...({ inert: '' } as any)}
-            style={{
-              position: 'absolute',
-              visibility: 'hidden',
-              pointerEvents: 'none',
-              display: 'flex',
-              gap: '4px',
-            }}
-          >
-            {items.slice(measurementBatch.start, measurementBatch.end).map((item, index) => (
-              <span
-                key={getItemKey(item, measurementBatch.start + index)}
-                data-mrt-overflow-measured-item=""
-                style={{ display: 'inline-flex', flexShrink: 0 }}
-              >
-                {renderMeasurementItem(item, measurementBatch.start + index)}
-              </span>
-            ))}
-            {triggerCounts.map((count, index) => (
-              <button
-                key={`trigger-${count}`}
-                type="button"
-                ref={(element) => {
-                  triggerMeasureRefs.current[index] = element as HTMLElement | null;
-                }}
-                aria-hidden
-                data-mrt-overflow-trigger-measure=""
-                {...({ inert: '' } as any)}
-                style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none' }}
-                className={OVERFLOW_TRIGGER_CLASS_NAME}
-              >
-                Ще {count}
-              </button>
-            ))}
-            <span
-              ref={spacerMeasureRef}
-              data-mrt-overflow-spacer-measure=""
-              aria-hidden
-              {...({ inert: '' } as any)}
-              style={{ width: '2rem', height: 1 }}
-            />
-          </div>,
-          document.body,
-        )
-      : null;
+  const measurement = isMeasuring ? (
+    <div
+      ref={measureRef}
+      data-mrt-overflow-measure={surfaceId}
+      aria-hidden
+      {...({ inert: '' } as any)}
+      style={{
+        position: 'absolute',
+        width: 'max-content',
+        visibility: 'hidden',
+        pointerEvents: 'none',
+        display: 'flex',
+        gap: '4px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {items.slice(measurementBatch.start, measurementBatch.end).map((item, index) => (
+        <span
+          key={getItemKey(item, measurementBatch.start + index)}
+          data-mrt-overflow-measured-item=""
+          style={{ display: 'inline-flex', flexShrink: 0 }}
+        >
+          {renderMeasurementItem(item, measurementBatch.start + index)}
+        </span>
+      ))}
+      {triggerCounts.map((count, index) => (
+        <button
+          key={`trigger-${count}`}
+          type="button"
+          ref={(element) => {
+            triggerMeasureRefs.current[index] = element as HTMLElement | null;
+          }}
+          aria-hidden
+          data-mrt-overflow-trigger-measure=""
+          {...({ inert: '' } as any)}
+          className={OVERFLOW_TRIGGER_CLASS_NAME}
+        >
+          Ще {count}
+        </button>
+      ))}
+      <span
+        ref={spacerMeasureRef}
+        data-mrt-overflow-spacer-measure=""
+        aria-hidden
+        {...({ inert: '' } as any)}
+        style={{ width: '2rem', height: 1 }}
+      />
+    </div>
+  ) : null;
 
   return (
     <>
@@ -909,8 +904,24 @@ export function MrtOverflowItems<T>({
             </ClickAwayListener>
           </Popper>
         ) : null}
+        <div
+          data-mrt-overflow-measurement-host=""
+          aria-hidden
+          {...({ inert: '' } as any)}
+          style={{
+            position: 'absolute',
+            inset: '0 auto auto 0',
+            width: 0,
+            height: 0,
+            overflow: 'hidden',
+            visibility: 'hidden',
+            pointerEvents: 'none',
+            contain: 'layout style paint',
+          }}
+        >
+          {measurement}
+        </div>
       </div>
-      {measurement}
     </>
   );
 }

@@ -64,7 +64,6 @@ function DirectoryFileCount({ fileCount }: { fileCount: number | null }) {
           color="default"
           interactive={false}
           minWidth={32}
-          fontSize="0.75rem"
           sx={{ height: 22, fontVariantNumeric: 'tabular-nums' }}
         />
       </Box>

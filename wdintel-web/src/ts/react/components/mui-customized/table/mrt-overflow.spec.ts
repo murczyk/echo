@@ -505,7 +505,9 @@ describe('MRT rendered overflow components', () => {
     );
     expect(trigger?.textContent).toBe('Ще 2');
     expect(trigger?.getAttribute('aria-label')).toBe('Показати ще 2 значення');
-    expect(trigger?.classList.contains('tabular-nums')).toBe(true);
+    expect(trigger?.classList.contains('mrt-overflow-trigger')).toBe(true);
+    expect(trigger?.tagName).toBe('BUTTON');
+    expect(trigger?.querySelector('button, a, input, select, textarea')).toBeNull();
     const fade = view.container.querySelector<HTMLElement>('[aria-hidden][inert]');
     expect(getComputedStyle(fade!).background).toContain('linear-gradient');
 
@@ -534,7 +536,7 @@ describe('MRT rendered overflow components', () => {
     triggerResize();
     expect(view.container.querySelectorAll('[data-item]').length).toBe(3);
     expect(view.container.querySelector('button[aria-label^="Показати ще"]')).toBeNull();
-    expect(view.container.querySelector('[aria-hidden][inert]')).toBeNull();
+    expect(view.container.querySelector('[data-mrt-overflow-fade]')).toBeNull();
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     destroy(view);
   });
@@ -736,6 +738,44 @@ describe('MRT rendered overflow components', () => {
     destroy(view);
   });
 
+  it('contains temporary measurement geometry within its clipped cell host', () => {
+    itemWidths = { alpha: 60, beta: 60, 'Ще 1': 32 };
+    availableWidth = 100;
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items: ['alpha', 'beta'],
+        renderItem: (value) => createElement('span', null, value),
+        renderMeasurementItem: (value) => createElement('span', null, value),
+        getItemKey: (value) => value,
+        getItemText: (value) => value,
+      }),
+    );
+    const cell = view.container.querySelector<HTMLElement>('[data-mrt-overflow-items]');
+    const host = view.container.querySelector<HTMLElement>('[data-mrt-overflow-measurement-host]');
+    const measure = view.container.querySelector<HTMLElement>('[data-mrt-overflow-measure]');
+    const visibleTrigger = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Показати ще"]',
+    );
+    const measuredTrigger = view.container.querySelector<HTMLButtonElement>(
+      '[data-mrt-overflow-trigger-measure]',
+    );
+
+    expect(host?.parentElement).toBe(cell);
+    expect(host?.contains(measure ?? null)).toBe(true);
+    expect(host?.style.position).toBe('absolute');
+    expect(host?.style.width).toBe('0px');
+    expect(host?.style.height).toBe('0px');
+    expect(host?.style.overflow).toBe('hidden');
+    expect(host?.style.visibility).toBe('hidden');
+    expect(host?.style.contain).toBe('layout style paint');
+    expect(measure?.parentElement).toBe(host);
+    expect(measuredTrigger?.className).toBe(visibleTrigger?.className);
+
+    flushFrames();
+    expect(view.container.querySelector('[data-mrt-overflow-measure]')).toBeNull();
+    destroy(view);
+  });
+
   it('keeps a specialized single zero-fit item without disclosure', () => {
     itemWidths = { alpha: 140 };
     availableWidth = 80;
@@ -789,7 +829,7 @@ describe('MRT rendered overflow components', () => {
     expect(
       document.body
         .querySelector('[data-mrt-overflow-trigger-measure]')
-        ?.classList.contains('tabular-nums'),
+        ?.classList.contains('mrt-overflow-trigger'),
     ).toBe(true);
 
     for (let index = 0; index < 30; index += 1) flushFrames();
@@ -829,14 +869,18 @@ describe('MRT rendered overflow components', () => {
       }),
     );
 
-    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(1);
+    expect(
+      view.container.querySelector('[data-mrt-overflow-visible]')?.querySelectorAll('.echo-chip'),
+    ).toHaveLength(1);
     expect(renderItem.mock.calls.length).toBeLessThan(4);
     expect(view.container.textContent).toContain('Ще 126');
     expect(renderMeasurementItem.mock.calls.length).toBeLessThanOrEqual(16);
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
     flushFrames();
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
-    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(1);
+    expect(
+      view.container.querySelector('[data-mrt-overflow-visible]')?.querySelectorAll('.echo-chip'),
+    ).toHaveLength(1);
 
     act(() =>
       view.container.querySelector<HTMLButtonElement>('[aria-label^="Показати ще"]')?.click(),
@@ -1205,13 +1249,19 @@ describe('MRT rendered overflow components', () => {
       ),
     );
 
-    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(400);
-    expect(view.container.textContent).not.toContain('beta');
+    expect(view.container.querySelectorAll('[data-mrt-overflow-visible] .echo-chip')).toHaveLength(
+      400,
+    );
+    expect(view.container.querySelector('[data-mrt-overflow-visible]')?.textContent).not.toContain(
+      'beta',
+    );
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
     flushFrames();
     flushFrames();
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
-    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(400);
+    expect(view.container.querySelectorAll('[data-mrt-overflow-visible] .echo-chip')).toHaveLength(
+      400,
+    );
     destroy(view);
   });
 
@@ -1234,7 +1284,9 @@ describe('MRT rendered overflow components', () => {
     act(() => view.root.render(renderCell(['next', 'next2'])));
     expect(view.container.textContent).toContain('next');
     expect(view.container.textContent).not.toContain('old');
-    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(1);
+    expect(
+      view.container.querySelector('[data-mrt-overflow-visible]')?.querySelectorAll('.echo-chip'),
+    ).toHaveLength(1);
     expect(view.container.querySelector('[aria-label="Показати ще 1 значення"]')).not.toBeNull();
     destroy(view);
   });

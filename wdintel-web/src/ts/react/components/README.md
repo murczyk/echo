@@ -101,19 +101,12 @@ Use for menus that should keep the app's Escape handling consistent inside dialo
 
 ## `PowerChip`
 
-Use for low-density MUI chip features and selectable chips with app styling. Use `EchoChip` for
-dense repeated native chips such as MRT overflow previews and message-card tags.
+Use for low-density or behavior-rich MUI chip features and selectable chips with app styling. Its
+standard typography is 14px. Use `EchoChip` for dense repeated native chips such as MRT overflow
+previews and message-card tags.
 
 ```tsx
 <PowerChip label="Активний" selected onClick={handleClick} />
-```
-
-## `CompactPowerChip`
-
-Use for compact MUI chip variants that need MUI behavior. It remains a MUI component.
-
-```tsx
-<CompactPowerChip label="Тег" />
 ```
 
 ## `EchoChip`
