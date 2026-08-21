@@ -101,7 +101,8 @@ Use for menus that should keep the app's Escape handling consistent inside dialo
 
 ## `PowerChip`
 
-Use for selectable chips with app styling.
+Use for low-density MUI chip features and selectable chips with app styling. Use `EchoChip` for
+dense repeated native chips such as MRT overflow previews and message-card tags.
 
 ```tsx
 <PowerChip label="Активний" selected onClick={handleClick} />
@@ -109,11 +110,16 @@ Use for selectable chips with app styling.
 
 ## `CompactPowerChip`
 
-Use for compact chip variants in dense UI.
+Use for compact MUI chip variants that need MUI behavior. It remains a MUI component.
 
 ```tsx
 <CompactPowerChip label="Тег" />
 ```
+
+## `EchoChip`
+
+Use for app-owned repeated dense chips. It is native HTML and does not add MUI/Emotion work to
+large table cells. It becomes an anchor for `href`, a button for `onClick`, and otherwise a span.
 
 ## `PowerDatePicker`
 

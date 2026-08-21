@@ -415,6 +415,7 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
   getItemKey,
   getItemText,
   getItemMeasurementKey,
+  measurementScope,
   emptyValue,
   containerProps,
 }: {
@@ -425,6 +426,7 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
   getItemKey?: (item: TItem, index: number) => string | number;
   getItemText?: (item: TItem, index: number) => string;
   getItemMeasurementKey?: (item: TItem, index: number) => string | number;
+  measurementScope: string | ((props: any) => string);
   emptyValue?: ReactNode;
   containerProps?: (props: any) => Record<string, unknown>;
 }): MrtItemsCellRenderer<TData> {
@@ -437,6 +439,9 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
       getItemKey={getItemKey}
       getItemText={getItemText}
       getItemMeasurementKey={getItemMeasurementKey}
+      measurementScope={
+        typeof measurementScope === 'function' ? measurementScope(props) : measurementScope
+      }
       emptyValue={emptyValue}
       containerProps={containerProps?.(props)}
     />

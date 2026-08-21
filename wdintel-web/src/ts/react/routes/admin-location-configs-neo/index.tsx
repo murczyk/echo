@@ -90,6 +90,7 @@ function LocationConfigsTable({
         Cell: mrtItemsCell<AorLocationConfigItem, string>({
           items: ({ row }) => row.original.selectedConfigs,
           renderItem: (config) => <Typography variant="body2">{config}</Typography>,
+          measurementScope: 'admin-location-configs:selected-configs',
           getItemKey: (config) => config,
           getItemText: (config) => config,
         }),

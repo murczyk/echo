@@ -6,7 +6,13 @@ import type { ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { calculateVisibleItemCount, MrtOverflowItems, MrtOverflowText } from './mrt-overflow';
+import { EchoChip } from '../../EchoChip';
+import {
+  calculateVisibleItemCount,
+  MrtOverflowItems,
+  MrtOverflowText,
+  resetMrtOverflowMeasurementCacheForTests,
+} from './mrt-overflow';
 import {
   assertMrtColumnPolicies,
   mrtCustomCell,
@@ -155,6 +161,7 @@ describe('MRT rendered overflow components', () => {
   let availableWidth = 100;
   let textWidth = 100;
   let itemWidths: Record<string, number> = {};
+  let cellWidths = new Map<HTMLElement, number>();
   let columnGap = '4px';
   let frames = new Map<number, FrameRequestCallback>();
   let nextFrame = 0;
@@ -182,6 +189,9 @@ describe('MRT rendered overflow components', () => {
       observers.forEach((observer) => observer.callback([], observer as unknown as ResizeObserver)),
     );
     flushFrames();
+  };
+  const setCellWidth = (cell: HTMLElement, width: number) => {
+    cellWidths.set(cell, width);
   };
   const installIntersectionObserver = () => {
     intersectionObservers = [];
@@ -220,6 +230,7 @@ describe('MRT rendered overflow components', () => {
   };
 
   beforeEach(() => {
+    resetMrtOverflowMeasurementCacheForTests();
     frames = new Map();
     nextFrame = 0;
     observers = [];
@@ -227,6 +238,7 @@ describe('MRT rendered overflow components', () => {
     availableWidth = 100;
     textWidth = 100;
     itemWidths = {};
+    cellWidths = new Map();
     columnGap = '4px';
     originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth');
     originalScrollWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth');
@@ -237,6 +249,8 @@ describe('MRT rendered overflow components', () => {
     Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
       configurable: true,
       get() {
+        const cell = this.closest?.('[data-mrt-overflow-items]') as HTMLElement | null;
+        if (cell && cellWidths.has(cell)) return cellWidths.get(cell)!;
         return availableWidth;
       },
     });
@@ -491,6 +505,7 @@ describe('MRT rendered overflow components', () => {
     );
     expect(trigger?.textContent).toBe('Ще 2');
     expect(trigger?.getAttribute('aria-label')).toBe('Показати ще 2 значення');
+    expect(trigger?.classList.contains('tabular-nums')).toBe(true);
     const fade = view.container.querySelector<HTMLElement>('[aria-hidden][inert]');
     expect(getComputedStyle(fade!).background).toContain('linear-gradient');
 
@@ -623,30 +638,14 @@ describe('MRT rendered overflow components', () => {
     );
     triggerResize();
     vi.useFakeTimers();
-    expect(view.container.querySelectorAll('[data-item]')).toHaveLength(0);
-    expect(view.container.textContent).toContain('alpha');
+    expect(view.container.querySelectorAll('[data-item]')).toHaveLength(1);
+    expect(view.container.querySelector('[data-item="alpha"]')).not.toBeNull();
     expect(getItemText).toHaveBeenCalledWith('beta', 1);
     expect(getItemKey).toHaveBeenCalledWith('beta', 1);
     const trigger = view.container.querySelector<HTMLButtonElement>(
       'button[aria-label="Показати ще 1 значення"]',
     );
     expect(trigger?.textContent).toBe('Ще 1');
-    const compactText = view.container.querySelector('span');
-    expect(getComputedStyle(compactText!).textOverflow).toBe('ellipsis');
-    act(() => compactText?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
-    await act(async () => vi.runAllTimers());
-    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe('alpha-0');
-    act(() =>
-      compactText?.dispatchEvent(
-        new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
-      ),
-    );
-    await act(async () => vi.runAllTimers());
-    act(() => compactText?.focus());
-    await act(async () => vi.runAllTimers());
-    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe('alpha-0');
-    act(() => compactText?.blur());
-    await act(async () => vi.runAllTimers());
     vi.useRealTimers();
     act(() => trigger?.click());
     const beta = document.body.querySelector<HTMLButtonElement>(
@@ -667,7 +666,6 @@ describe('MRT rendered overflow components', () => {
     expect(view.container.querySelector('[data-item="alpha"]')).not.toBeNull();
     expect(view.container.querySelector('[data-item="beta"]')).not.toBeNull();
     expect(view.container.querySelector('button[aria-label^="Показати ще"]')).toBeNull();
-    expect(view.container.querySelector('span')?.textContent).not.toBe('alpha');
     destroy(view);
     expect(observers.every((observer) => observer.disconnect.mock.calls.length === 1)).toBe(true);
 
@@ -682,7 +680,7 @@ describe('MRT rendered overflow components', () => {
     destroy(empty);
   });
 
-  it('uses the compact first-item text without a bare disclosure for a zero-fit single item', () => {
+  it('keeps the same renderer without a bare disclosure for a zero-fit single item', () => {
     itemWidths = { alpha: 140, 'Ще 1': 32 };
     availableWidth = 80;
     const view = render(
@@ -693,7 +691,7 @@ describe('MRT rendered overflow components', () => {
       }),
     );
     triggerResize();
-    expect(view.container.querySelector('[data-item]')).toBeNull();
+    expect(view.container.querySelector('[data-item="alpha"]')).not.toBeNull();
     expect(view.container.textContent).toContain('alpha');
     expect(view.container.querySelector('button[aria-label^="Показати ще"]')).toBeNull();
     expect(view.container.querySelector('[data-mrt-overflow-fade]')).toBeNull();
@@ -780,13 +778,19 @@ describe('MRT rendered overflow components', () => {
               createElement('span', null, value.replace(suffix, '')),
             getItemKey: (value) => value,
             getItemText: (value) => value,
+            measurementScope: 'test:shared-cells',
           }),
         ),
       );
     const view = render(createElement(StrictMode, null, renderCells()));
 
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
-    expect(document.body.querySelectorAll('[data-mrt-overflow-trigger-measure]')).toHaveLength(3);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-trigger-measure]')).toHaveLength(2);
+    expect(
+      document.body
+        .querySelector('[data-mrt-overflow-trigger-measure]')
+        ?.classList.contains('tabular-nums'),
+    ).toBe(true);
 
     for (let index = 0; index < 30; index += 1) flushFrames();
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
@@ -805,6 +809,434 @@ describe('MRT rendered overflow components', () => {
     destroy(view);
     flushFrames();
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+  });
+
+  it('keeps a 127-item chip collection bounded until its disclosure opens', () => {
+    const items = Array.from({ length: 127 }, (_, index) => `chip-${index}`);
+    itemWidths = Object.fromEntries(items.map((item) => [item, 60]));
+    itemWidths['Ще 126'] = 40;
+    availableWidth = 100;
+    const renderItem = vi.fn((item: string) => createElement(EchoChip, { label: item }));
+    const renderMeasurementItem = vi.fn((item: string) => createElement(EchoChip, { label: item }));
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items,
+        renderItem,
+        renderMeasurementItem,
+        measurementScope: 'test:large-native-chip',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      }),
+    );
+
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(1);
+    expect(renderItem.mock.calls.length).toBeLessThan(4);
+    expect(view.container.textContent).toContain('Ще 126');
+    expect(renderMeasurementItem.mock.calls.length).toBeLessThanOrEqual(16);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(1);
+
+    act(() =>
+      view.container.querySelector<HTMLButtonElement>('[aria-label^="Показати ще"]')?.click(),
+    );
+    expect(
+      document.body.querySelector('[role="dialog"]')?.querySelectorAll('.echo-chip'),
+    ).toHaveLength(126);
+    act(() =>
+      view.container.querySelector<HTMLButtonElement>('[aria-label^="Показати ще"]')?.click(),
+    );
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    destroy(view);
+  });
+
+  it('continues bounded batches when the first prefix fits', () => {
+    const items = Array.from({ length: 20 }, (_, index) => `wide-${index}`);
+    itemWidths = Object.fromEntries(items.map((item) => [item, 20]));
+    availableWidth = 1000;
+    const measured = vi.fn((item: string) => createElement('span', null, item));
+    const view = render(
+      createElement(MrtOverflowItems<string>, {
+        items,
+        renderItem: (item) => createElement(EchoChip, { label: item }),
+        renderMeasurementItem: measured,
+        measurementScope: 'test:incremental-batches',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      }),
+    );
+
+    expect(measured.mock.calls.length).toBeLessThanOrEqual(16);
+    flushFrames();
+    expect(measured).toHaveBeenCalledTimes(20);
+    triggerResize();
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(20);
+    expect(view.container.querySelector('[aria-label^="Показати ще"]')).toBeNull();
+    destroy(view);
+  });
+
+  it('keeps identical subscribers through incremental measurement batches', () => {
+    const items = Array.from({ length: 20 }, (_, index) => `shared-${index}`);
+    itemWidths = Object.fromEntries(items.map((item) => [item, 20]));
+    availableWidth = 1000;
+    const measured = vi.fn((item: string) => createElement('span', null, item));
+    const cell = (key: string) =>
+      createElement(MrtOverflowItems<string>, {
+        key,
+        items,
+        renderItem: (item) => createElement(EchoChip, { label: item }),
+        renderMeasurementItem: measured,
+        measurementScope: 'test:shared-incremental',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const view = render(createElement('div', null, cell('first'), cell('second')));
+
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measured-item]')).toHaveLength(16);
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measured-item]')).toHaveLength(4);
+    flushFrames();
+    expect(measured).toHaveBeenCalledTimes(20);
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(40);
+    expect(view.container.querySelectorAll('[aria-label^="Показати ще"]')).toHaveLength(0);
+    destroy(view);
+  });
+
+  it('promotes a remaining subscriber when an incremental measurement owner unmounts', () => {
+    const items = Array.from({ length: 20 }, (_, index) => `owner-${index}`);
+    itemWidths = Object.fromEntries(items.map((item) => [item, 20]));
+    availableWidth = 1000;
+    const ownerMeasurements = vi.fn((item: string) =>
+      createElement('span', { 'data-owner-measurement': item }, item),
+    );
+    const replacementMeasurements = vi.fn((item: string) =>
+      createElement('span', { 'data-replacement-measurement': item }, item),
+    );
+    const cell = (key: string, renderMeasurementItem: (item: string) => ReactNode) =>
+      createElement(MrtOverflowItems<string>, {
+        key,
+        items,
+        renderItem: (item) => createElement(EchoChip, { label: item }),
+        renderMeasurementItem,
+        measurementScope: 'test:owner-cancellation',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const renderCells = (withOwner: boolean) =>
+      createElement(
+        'div',
+        null,
+        ...(withOwner ? [cell('owner', ownerMeasurements)] : []),
+        cell('subscriber', replacementMeasurements),
+      );
+    const view = render(renderCells(true));
+    try {
+      expect(ownerMeasurements).toHaveBeenCalledTimes(16);
+      const ownerMeasurementCount = ownerMeasurements.mock.calls.length;
+      act(() => view.root.render(renderCells(false)));
+      flushFrames();
+      flushFrames();
+      flushFrames();
+      expect(ownerMeasurements).toHaveBeenCalledTimes(ownerMeasurementCount);
+      expect(replacementMeasurements).toHaveBeenCalledTimes(20);
+      expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(20);
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+      expect(frames.size).toBe(0);
+    } finally {
+      destroy(view);
+    }
+  });
+
+  it('does not interrupt an active owner when a non-owner subscriber unmounts', () => {
+    const items = Array.from({ length: 20 }, (_, index) => `non-owner-${index}`);
+    itemWidths = Object.fromEntries(items.map((item) => [item, 20]));
+    availableWidth = 1000;
+    const measured = vi.fn((item: string) => createElement('span', null, item));
+    const cell = (key: string) =>
+      createElement(MrtOverflowItems<string>, {
+        key,
+        items,
+        renderItem: (item) => createElement(EchoChip, { label: item }),
+        renderMeasurementItem: measured,
+        measurementScope: 'test:non-owner-cancellation',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const renderCells = (withMiddle: boolean) =>
+      createElement(
+        'div',
+        null,
+        cell('owner'),
+        ...(withMiddle ? [cell('middle')] : []),
+        cell('third'),
+      );
+    const view = render(renderCells(true));
+    try {
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+      flushFrames();
+      const measurementRenderCountBeforeRemoval = measured.mock.calls.length;
+      act(() => view.root.render(renderCells(false)));
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+      flushFrames();
+      expect(measured.mock.calls.length).toBeLessThanOrEqual(
+        measurementRenderCountBeforeRemoval + 4,
+      );
+      expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(40);
+      expect(frames.size).toBe(0);
+    } finally {
+      destroy(view);
+    }
+  });
+
+  it('recovers a shared job when its owner becomes zero-width before measurement', () => {
+    itemWidths = { alpha: 60 };
+    const measured = vi.fn((item: string) => createElement('span', null, item));
+    const cell = (key: string) =>
+      createElement(MrtOverflowItems<string>, {
+        key,
+        items: ['alpha'],
+        renderItem: (item) => createElement('span', { 'data-item': key }, item),
+        renderMeasurementItem: measured,
+        measurementScope: 'test:zero-width-owner',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const view = render(createElement('div', null, cell('owner'), cell('subscriber')));
+    try {
+      const [owner, subscriber] = [
+        ...view.container.querySelectorAll<HTMLElement>('[data-mrt-overflow-items]'),
+      ];
+      setCellWidth(owner!, 0);
+      setCellWidth(subscriber!, 100);
+      flushFrames();
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+      flushFrames();
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+      flushFrames();
+      expect(measured).toHaveBeenCalledTimes(2);
+      expect(view.container.querySelectorAll('[data-item]')).toHaveLength(2);
+      setCellWidth(owner!, 100);
+      triggerResize();
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    } finally {
+      destroy(view);
+    }
+  });
+
+  it('parks an all-zero-width shared job until a fresh resize makes one subscriber eligible', () => {
+    itemWidths = { alpha: 60 };
+    const cell = (key: string) =>
+      createElement(MrtOverflowItems<string>, {
+        key,
+        items: ['alpha'],
+        renderItem: (item) => createElement('span', { 'data-item': key }, item),
+        measurementScope: 'test:all-zero-width',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const view = render(createElement('div', null, cell('first'), cell('second')));
+    try {
+      const [first, second] = [
+        ...view.container.querySelectorAll<HTMLElement>('[data-mrt-overflow-items]'),
+      ];
+      setCellWidth(first!, 0);
+      setCellWidth(second!, 0);
+      flushFrames();
+      flushFrames();
+      flushFrames();
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+      expect(frames.size).toBe(0);
+
+      setCellWidth(second!, 100);
+      triggerResize();
+      flushFrames();
+      expect(view.container.querySelectorAll('[data-item]')).toHaveLength(2);
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+      expect(frames.size).toBe(0);
+    } finally {
+      destroy(view);
+    }
+  });
+
+  it('lets eligible jobs run while earlier all-zero-width jobs stay parked', () => {
+    itemWidths = {
+      'parked-first-a': 20,
+      'parked-first-b': 20,
+      'parked-second-a': 20,
+      'parked-second-b': 20,
+      'valid-a': 20,
+      'valid-b': 20,
+    };
+    availableWidth = 100;
+    const itemCell = (scope: string, label: string) =>
+      createElement(MrtOverflowItems<string>, {
+        key: scope,
+        items: [`${label}-a`, `${label}-b`],
+        renderItem: (item) => createElement('span', { 'data-item': scope }, item),
+        measurementScope: scope,
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const view = render(
+      createElement(
+        'div',
+        null,
+        itemCell('test:parked-first', 'parked'),
+        itemCell('test:parked-second', 'parked'),
+        itemCell('test:valid', 'valid'),
+      ),
+    );
+    try {
+      const [first, second, valid] = [
+        ...view.container.querySelectorAll<HTMLElement>('[data-mrt-overflow-items]'),
+      ];
+      setCellWidth(first!, 0);
+      setCellWidth(second!, 0);
+      setCellWidth(valid!, 100);
+      flushFrames();
+      flushFrames();
+      flushFrames();
+      expect(view.container.querySelectorAll('[data-item="test:valid"]')).toHaveLength(2);
+      expect(view.container.querySelectorAll('[data-item="test:parked-first"]')).toHaveLength(1);
+      expect(view.container.querySelectorAll('[data-item="test:parked-second"]')).toHaveLength(1);
+      expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+      expect(frames.size).toBe(0);
+
+      setCellWidth(first!, 100);
+      triggerResize();
+      flushFrames();
+      flushFrames();
+      expect(view.container.querySelectorAll('[data-item="test:parked-first"]')).toHaveLength(2);
+      expect(view.container.querySelectorAll('[data-item="test:parked-second"]')).toHaveLength(1);
+    } finally {
+      destroy(view);
+    }
+  });
+
+  it('starts distinct visible measurements in bounded concurrent batches', () => {
+    const view = render(
+      createElement(
+        'div',
+        null,
+        ...Array.from({ length: 10 }, (_, index) => {
+          const label = `distinct-${index}`;
+          itemWidths[label] = 60;
+          return createElement(MrtOverflowItems<string>, {
+            key: label,
+            items: [label],
+            renderItem: (item) => createElement('span', null, item),
+            measurementScope: `test:distinct-${index}`,
+            getItemKey: (item) => item,
+            getItemText: (item) => item,
+          });
+        }),
+      ),
+    );
+
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(8);
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measured-item]')).toHaveLength(8);
+    flushFrames();
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(2);
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(view.container.querySelectorAll('[data-mrt-overflow-items]')).toHaveLength(10);
+    destroy(view);
+  });
+
+  it('evicts least-recently-used measurement geometry while retaining recent entries', () => {
+    const measured = vi.fn((item: string) => createElement('span', null, item));
+    const renderCached = (scope: string) =>
+      render(
+        createElement(MrtOverflowItems<string>, {
+          items: [scope],
+          renderItem: (item) => createElement('span', null, item),
+          renderMeasurementItem: measured,
+          measurementScope: scope,
+          getItemKey: (item) => item,
+          getItemText: (item) => item,
+        }),
+      );
+    const oldest = renderCached('test:cache-oldest');
+    flushFrames();
+    destroy(oldest);
+    const recent = renderCached('test:cache-recent');
+    flushFrames();
+    destroy(recent);
+    for (let index = 0; index < 511; index += 1) {
+      const view = renderCached(`test:cache-${index}`);
+      flushFrames();
+      destroy(view);
+    }
+    const recentHit = renderCached('test:cache-recent');
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    destroy(recentHit);
+    const countBeforeOldest = measured.mock.calls.length;
+    const newest = renderCached('test:cache-newest');
+    flushFrames();
+    destroy(newest);
+    const evicted = renderCached('test:cache-oldest');
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    flushFrames();
+    expect(measured.mock.calls.length).toBeGreaterThan(countBeforeOldest + 1);
+    destroy(evicted);
+  });
+
+  it('keeps repeated table previews bounded and shares their measurement scope', () => {
+    const items = ['alpha', 'beta', 'gamma', 'delta'];
+    itemWidths = { alpha: 60, beta: 60, gamma: 60, delta: 60, 'Ще 3': 32 };
+    availableWidth = 100;
+    const view = render(
+      createElement(
+        'div',
+        null,
+        ...Array.from({ length: 400 }, (_, index) =>
+          createElement(MrtOverflowItems<string>, {
+            key: index,
+            items,
+            renderItem: (item) => createElement(EchoChip, { label: item }),
+            measurementScope: 'test:repeated-chip-column',
+            getItemKey: (item) => item,
+            getItemText: (item) => item,
+          }),
+        ),
+      ),
+    );
+
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(400);
+    expect(view.container.textContent).not.toContain('beta');
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
+    flushFrames();
+    flushFrames();
+    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(400);
+    destroy(view);
+  });
+
+  it('uses a conservative rich preview immediately when a virtualized row signature changes', () => {
+    itemWidths = { old: 30, old2: 30, next: 140, next2: 140, 'Ще 1': 32 };
+    availableWidth = 300;
+    const renderCell = (items: string[]) =>
+      createElement(MrtOverflowItems<string>, {
+        items,
+        renderItem: (item) => createElement(EchoChip, { label: item }),
+        measurementScope: 'test:virtualized-row',
+        getItemKey: (item) => item,
+        getItemText: (item) => item,
+      });
+    const view = render(renderCell(['old', 'old2']));
+    triggerResize();
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(2);
+
+    availableWidth = 80;
+    act(() => view.root.render(renderCell(['next', 'next2'])));
+    expect(view.container.textContent).toContain('next');
+    expect(view.container.textContent).not.toContain('old');
+    expect(view.container.querySelectorAll('.echo-chip')).toHaveLength(1);
+    expect(view.container.querySelector('[aria-label="Показати ще 1 значення"]')).not.toBeNull();
+    destroy(view);
   });
 
   it('defers offscreen jobs and lets a visible cell run ahead of them', () => {
@@ -870,11 +1302,6 @@ describe('MRT rendered overflow components', () => {
     setIntersection(cells[1], true);
     flushFrames();
     expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(0);
-    flushFrames();
-    expect(document.body.querySelectorAll('[data-mrt-overflow-measure]')).toHaveLength(1);
-    expect(document.body.querySelector('[data-mrt-overflow-measure]')?.textContent).toContain(
-      'promoted',
-    );
     destroy(view);
   });
 
