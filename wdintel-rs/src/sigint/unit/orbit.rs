@@ -1575,13 +1575,10 @@ pub(crate) struct OrbitUnitReconcileStats {
     pub merged: usize,
 }
 
-pub(crate) async fn reconcile_all_orbit_linked_units<C>(
-    dbx: &C,
+pub(crate) async fn reconcile_all_orbit_linked_units(
+    dbx: &DatabaseConnection,
     login: &Uuid,
-) -> Result<OrbitUnitReconcileStats, AppError>
-where
-    C: ConnectionTrait,
-{
+) -> Result<OrbitUnitReconcileStats, AppError> {
     let sigint_unit_ids = sigint_unit_ids_requiring_reconciliation(dbx)
         .await
         .c(h!())?;
@@ -1590,30 +1587,39 @@ where
         ..Default::default()
     };
     for sigint_unit_id in sigint_unit_ids {
-        let outcome =
-            reconcile_sigint_unit_orbit(dbx, login, sigint_unit_id, true)
-                .await
-                .c(h!())?;
+        let outcome = reconcile_sigint_unit_orbit_committed(
+            dbx,
+            login,
+            sigint_unit_id,
+            true,
+        )
+        .await
+        .c(h!())?;
         stats.hierarchy_updated += usize::from(outcome.hierarchy_updated);
         stats.multiple_links_skipped +=
             usize::from(outcome.orbit_link_count > 1);
     }
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+    reconcile_sigint_unit_deduplicate_candidates_committed(dbx)
         .await
         .c(h!())?;
     stats.merged = merge_identical_duplicate_candidates(dbx, login)
         .await
         .c(h!())?;
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+    reconcile_sigint_unit_deduplicate_candidates_committed(dbx)
         .await
         .c(h!())?;
     for sigint_unit_id in sigint_unit_ids_requiring_reconciliation(dbx)
         .await
         .c(h!())?
     {
-        reconcile_sigint_unit_orbit(dbx, login, sigint_unit_id, false)
-            .await
-            .c(h!())?;
+        reconcile_sigint_unit_orbit_committed(
+            dbx,
+            login,
+            sigint_unit_id,
+            false,
+        )
+        .await
+        .c(h!())?;
     }
     stats.inconsistent = usize::try_from(
         sigint_unit::Entity::find()
@@ -1625,6 +1631,36 @@ where
     )
     .c(h!())?;
     Ok(stats)
+}
+
+async fn reconcile_sigint_unit_orbit_committed(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+    sigint_unit_id: i64,
+    update_hierarchy: bool,
+) -> Result<UnitOrbitReconcileOutcome, AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let outcome = reconcile_sigint_unit_orbit(
+        &transaction,
+        login,
+        sigint_unit_id,
+        update_hierarchy,
+    )
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(outcome)
+}
+
+async fn reconcile_sigint_unit_deduplicate_candidates_committed(
+    dbx: &DatabaseConnection,
+) -> Result<(), AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await
+        .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
 }
 
 async fn sigint_unit_ids_requiring_reconciliation<C>(
@@ -1678,13 +1714,10 @@ where
         .c(h!())?)
 }
 
-async fn merge_identical_duplicate_candidates<C>(
-    dbx: &C,
+async fn merge_identical_duplicate_candidates(
+    dbx: &DatabaseConnection,
     login: &Uuid,
-) -> Result<usize, AppError>
-where
-    C: ConnectionTrait,
-{
+) -> Result<usize, AppError> {
     let links = orbit_unit_sigint_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -1716,6 +1749,7 @@ where
     let components = identical_duplicate_components(&links, &units);
     let mut merged = 0;
     for component in components {
+        let transaction = dbx.begin().await.c(h!())?;
         let mut candidates = component
             .into_iter()
             .filter_map(|unit_id| units.get(&unit_id).cloned())
@@ -1728,7 +1762,7 @@ where
         for duplicate in candidates.into_iter().skip(1) {
             super::merge_units_in_transaction(
                 *login,
-                dbx,
+                &transaction,
                 duplicate.id,
                 survivor_id,
             )
@@ -1736,6 +1770,7 @@ where
             .c(h!())?;
             merged += 1;
         }
+        transaction.commit().await.c(h!())?;
     }
     Ok(merged)
 }

@@ -4413,6 +4413,71 @@ fn finish_summary_table_merge(
     }
 }
 
+fn xlsx_list_cell_text<T>(values: impl IntoIterator<Item = T>) -> String
+where
+    T: ToString,
+{
+    let tokens = values
+        .into_iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>();
+    let token_count = tokens.len();
+    let mut collected_tokens = Vec::new();
+    let mut character_count = 0;
+    for token in tokens {
+        let separator_character_count = if collected_tokens.is_empty() {
+            0
+        } else {
+            RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR.chars().count()
+        };
+        let next_character_count =
+            character_count + separator_character_count + token.chars().count();
+        if next_character_count > RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT {
+            break;
+        }
+        collected_tokens.push(token);
+        character_count = next_character_count;
+    }
+    append_xlsx_omitted_count_token(
+        &mut collected_tokens,
+        &mut character_count,
+        token_count,
+    );
+    collected_tokens.join(RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR)
+}
+
+fn append_xlsx_omitted_count_token(
+    tokens: &mut Vec<String>,
+    character_count: &mut usize,
+    token_count: usize,
+) {
+    if tokens.len() == token_count {
+        return;
+    }
+    let separator_character_count =
+        RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR.chars().count();
+    loop {
+        let omitted_count = token_count - tokens.len();
+        let omitted_count_token = format!("та ще {omitted_count} ін.");
+        let next_character_count = *character_count
+            + if tokens.is_empty() {
+                0
+            } else {
+                separator_character_count
+            }
+            + omitted_count_token.chars().count();
+        if next_character_count <= RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT {
+            tokens.push(omitted_count_token);
+            return;
+        }
+        let removed = tokens.pop().expect("at least one collected XLSX token");
+        *character_count -= removed.chars().count();
+        if !tokens.is_empty() {
+            *character_count -= separator_character_count;
+        }
+    }
+}
+
 async fn build_summary_table_report(
     data: &SummaryTableReportData,
 ) -> Result<Vec<u8>, AppError> {
@@ -4472,19 +4537,16 @@ async fn build_summary_table_report(
             .unwrap_or_default();
         let related_networks = related_networks_by_freq
             .get(&row.freq)
-            .cloned()
-            .unwrap_or_default()
-            .join(", ");
+            .map(xlsx_list_cell_text)
+            .unwrap_or_default();
+        let callsigns = xlsx_list_cell_text(&row.callsigns);
+        let units = xlsx_list_cell_text(&row.units);
         sheet1.write_string(row_i, 0, &row.freq).context(h!())?; // Removed None
         sheet1
             .write_number(row_i, 1, row.count as f64)
             .context(h!())?; // Removed None
-        sheet1
-            .write_string(row_i, 2, row.callsigns.join(", "))
-            .context(h!())?; // Removed None
-        sheet1
-            .write_string(row_i, 3, row.units.join(", "))
-            .context(h!())?; // Removed None
+        sheet1.write_string(row_i, 2, callsigns).context(h!())?; // Removed None
+        sheet1.write_string(row_i, 3, units).context(h!())?; // Removed None
         sheet1
             .write_string(row_i, 4, &last_datetime)
             .context(h!())?;
@@ -7706,10 +7768,15 @@ async fn count_stats(
     } else {
         None
     };
-    let analytics_attempt = analytics.and_then(|analytics| {
-        analytics_retry_attempt(&analytics.retry_after_unix_ms)
-            .map(|retry_attempt| (analytics, retry_attempt))
+    let analytics_retry_state = analytics.map(|analytics| {
+        analytics_retry_state(analytics, "analysis stats count")
     });
+    let analytics_attempt = analytics
+        .zip(analytics_retry_state.as_deref())
+        .and_then(|(analytics, retry_state)| {
+            analytics_retry_attempt(retry_state)
+                .map(|retry_attempt| (analytics, retry_attempt))
+        });
     let freshness_max_age_ms = analytics_config
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
@@ -7990,11 +8057,16 @@ where
     P: FnOnce(DatabaseConnection) -> PFut,
     PFut: std::future::Future<Output = Result<T, AppError>>,
 {
+    let analytics_retry_state = env
+        .analytics
+        .as_ref()
+        .map(|analytics| analytics_retry_state(analytics, operation));
     let analytics_attempt = analytics_supported
         .then_some(env.analytics.as_ref())
         .flatten()
-        .and_then(|analytics| {
-            analytics_retry_attempt(&analytics.retry_after_unix_ms)
+        .zip(analytics_retry_state.as_deref())
+        .and_then(|(analytics, retry_state)| {
+            analytics_retry_attempt(retry_state)
                 .map(|retry_attempt| (analytics, retry_attempt))
         });
 
@@ -8137,6 +8209,37 @@ fn analytics_retry_attempt(
             });
         }
     }
+}
+
+fn analytics_retry_state(
+    analytics: &AnalyticsPool,
+    operation: &str,
+) -> Arc<AtomicU64> {
+    analytics_retry_state_for_operation(
+        &analytics.retry_after_unix_ms_by_operation,
+        operation,
+    )
+}
+
+fn analytics_retry_state_for_operation(
+    retry_states: &RwLock<HashMap<String, Arc<AtomicU64>>>,
+    operation: &str,
+) -> Arc<AtomicU64> {
+    if let Some(retry_state) = retry_states
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(operation)
+        .cloned()
+    {
+        return retry_state;
+    }
+
+    retry_states
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry(operation.to_string())
+        .or_insert_with(|| Arc::new(AtomicU64::new(0)))
+        .clone()
 }
 
 fn analytics_retry_deadline(retry_cooldown: core::time::Duration) -> u64 {

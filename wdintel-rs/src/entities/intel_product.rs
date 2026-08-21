@@ -2,7 +2,7 @@
 
 use super::sea_orm_active_enums::IntelProductRelationKind;
 use sea_orm::entity::prelude::*;
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::{Alias, Expr, SimpleExpr};
 use sea_orm::{ActiveEnum, ExprTrait};
 use serde::{Deserialize, Serialize};
 
@@ -31,11 +31,14 @@ where
     I: IntoIterator<Item = IntelProductRelationKind>,
 {
     Expr::col((Entity, Column::RelationKind))
+        .cast_as(Alias::new("text"))
         .is_in(relation_kinds.into_iter().map(|kind| kind.to_value()))
 }
 
 pub fn relation_kind_eq(relation_kind: IntelProductRelationKind) -> SimpleExpr {
-    Expr::col((Entity, Column::RelationKind)).eq(relation_kind.to_value())
+    Expr::col((Entity, Column::RelationKind))
+        .cast_as(Alias::new("text"))
+        .eq(relation_kind.to_value())
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

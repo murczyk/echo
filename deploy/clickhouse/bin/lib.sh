@@ -44,6 +44,33 @@ die() {
   exit 1
 }
 
+clickhouse_memory_limit_bytes() {
+  local percentage=${ANALYTICS_CLICKHOUSE_MEMORY_LIMIT_PERCENT:-55}
+  local meminfo_file=${ANALYTICS_PROC_MEMINFO_FILE:-/proc/meminfo}
+  local cgroup_v2_file=${ANALYTICS_CGROUP_V2_MEMORY_MAX_FILE:-/sys/fs/cgroup/memory.max}
+  local cgroup_v1_file=${ANALYTICS_CGROUP_V1_MEMORY_MAX_FILE:-/sys/fs/cgroup/memory/memory.limit_in_bytes}
+  local memory_limit_file memory_kib memory_bytes candidate limit_bytes
+
+  [[ "$percentage" =~ ^[1-9][0-9]?$ && "$percentage" -le 90 ]] \
+    || die "ANALYTICS_CLICKHOUSE_MEMORY_LIMIT_PERCENT must be between 1 and 90"
+  memory_kib=$(awk '/^MemTotal:/ { print $2; exit }' "$meminfo_file")
+  [[ "$memory_kib" =~ ^[1-9][0-9]*$ ]] \
+    || die "could not read MemTotal from $meminfo_file"
+  memory_bytes=$((memory_kib * 1024))
+
+  for memory_limit_file in "$cgroup_v2_file" "$cgroup_v1_file"; do
+    [[ -r "$memory_limit_file" ]] || continue
+    read -r candidate <"$memory_limit_file"
+    if [[ "$candidate" =~ ^[1-9][0-9]*$ && "$candidate" -lt "$memory_bytes" ]]; then
+      memory_bytes=$candidate
+    fi
+  done
+
+  limit_bytes=$((memory_bytes * percentage / 100))
+  ((limit_bytes > 0)) || die "calculated ClickHouse memory limit is zero"
+  printf '%s\n' "$limit_bytes"
+}
+
 reconcile_analytics_schema_with_retry() {
   local analytics_bin_dir=$1
   local attempts=${MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_ATTEMPTS:-$ANALYTICS_SCHEMA_PROPAGATION_RETRY_ATTEMPTS_DEFAULT}

@@ -35,6 +35,7 @@ actual_release=$(control_bundle_release_id "$BUNDLE_DIR")
 stage_dir=
 analytics_health_was_active=false
 analytics_reconcile_was_active=false
+analytics_memory_limit_was_active=false
 restore_interrupted_services() {
   if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then
     rm -rf -- "$stage_dir"
@@ -45,6 +46,9 @@ restore_interrupted_services() {
   if $analytics_reconcile_was_active; then
     systemctl enable --now echo-analytics-reconcile.timer >/dev/null 2>&1 || true
   fi
+  if $analytics_memory_limit_was_active; then
+    systemctl enable --now echo-analytics-memory-limit.timer >/dev/null 2>&1 || true
+  fi
 }
 trap restore_interrupted_services EXIT
 
@@ -54,9 +58,13 @@ if [[ $role == analytics ]]; then
     && analytics_health_was_active=true
   systemctl is-active --quiet echo-analytics-reconcile.timer \
     && analytics_reconcile_was_active=true
+  systemctl is-active --quiet echo-analytics-memory-limit.timer \
+    && analytics_memory_limit_was_active=true
   systemctl stop echo-analytics-health.timer echo-analytics-reconcile.timer \
+    echo-analytics-memory-limit.timer \
     >/dev/null 2>&1 || true
   systemctl stop echo-analytics-health.service echo-analytics-reconcile.service \
+    echo-analytics-memory-limit.service \
     >/dev/null 2>&1 || true
 fi
 
@@ -96,11 +104,14 @@ else
     ln -sfnT "../current/bin/$(basename "$command_path")" \
       "$install_root/bin/$(basename "$command_path")"
   done
+  "$install_root/current/bin/reconcile-clickhouse-memory-limit.sh"
   systemctl enable \
+    echo-analytics-memory-limit.timer \
     echo-analytics-health.timer \
     echo-analytics-reconcile.timer >/dev/null
   if [[ ${ECHO_ANALYTICS_CONTROL_START_TIMERS:-true} == true ]]; then
     systemctl start \
+      echo-analytics-memory-limit.timer \
       echo-analytics-health.timer \
       echo-analytics-reconcile.timer >/dev/null
   else
@@ -109,6 +120,9 @@ else
     fi
     if $analytics_reconcile_was_active; then
       systemctl start echo-analytics-reconcile.timer >/dev/null
+    fi
+    if $analytics_memory_limit_was_active; then
+      systemctl start echo-analytics-memory-limit.timer >/dev/null
     fi
   fi
 fi

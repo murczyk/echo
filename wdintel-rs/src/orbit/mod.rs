@@ -438,15 +438,14 @@ async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
         return Ok(());
     }
     let db = connect_database(mode).await.c(h!())?;
-    let transaction = acquire_import_lock(&db).await.c(h!())?;
-    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    let import_lock = acquire_import_lock(&db).await.c(h!())?;
+    let login = crate::users::system_login_id(&db).await.c(h!())?;
     let stats = crate::sigint::unit::orbit::reconcile_all_orbit_linked_units(
-        &transaction,
-        &login,
+        &db, &login,
     )
     .await
     .c(h!())?;
-    transaction.commit().await.c(h!())?;
+    import_lock.commit().await.c(h!())?;
     println!(
         "Reconciled {} linked SIGINT units: {} hierarchies updated, {} inconsistent, {} multiple-link hierarchies skipped, {} duplicates merged.",
         stats.scanned,

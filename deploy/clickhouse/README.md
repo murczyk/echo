@@ -11,18 +11,14 @@ local PostgreSQL 18 gateway uses `pg_clickhouse` to expose current-state
 ClickHouse views with PostgreSQL syntax. Echo connects only to that gateway;
 instances without an `[analytics]` section continue to use PostgreSQL only.
 
-```text
-Echo -> source PostgreSQL 18 (transactions and fallback)
-  |                         |
-  |                         +-- logical publication/slot
-  |                                           |
-  +-> PostgreSQL 18 gateway                  PeerDB
-         + public compatibility views         |
-         + private pg_clickhouse tables       |
-                |                        MinIO staging
-                +----------------------> ClickHouse
-                                           echo_cdc raw tables
-                                           echo_analytics current views
+```mermaid
+flowchart LR
+    echo["Echo"] -->|transactions and fallback| source[("Source PostgreSQL 18")]
+    echo --> gateway["PostgreSQL 18 gateway<br/>public compatibility views<br/>private pg_clickhouse tables"]
+    source -->|logical publication/slot| peerdb["PeerDB"]
+    peerdb --> staging[("MinIO staging")]
+    staging --> clickhouse[("ClickHouse<br/>echo_cdc raw tables<br/>echo_analytics current views")]
+    gateway --> clickhouse
 ```
 
 ## Supported topology
@@ -526,6 +522,13 @@ cooldown instead of making every request wait for the unavailable gateway.
 Keep `ANALYTICS_HEALTH_STALE_AFTER_SECONDS` and `freshness_max_age_ms` aligned;
 the supplied values are 90 seconds.
 
+ClickHouse receives an explicit `max_server_memory_usage` calculated from the
+smaller of `/proc/meminfo` and the cgroup memory limit. This avoids using the
+physical host size inside a constrained container. The control-release install
+applies the cap immediately, and `echo-analytics-memory-limit.timer` repairs
+configuration or live-setting drift every minute without restarting
+ClickHouse.
+
 Gateway refresh reads the published source schema and restores compatibility
 types that ClickHouse cannot distinguish on its own, including JSON/JSONB,
 bytea, tsvector, and `timestamp without time zone`. This keeps application
@@ -636,6 +639,7 @@ bin/status.sh
 bin/logs.sh echo-peer-flow-worker.service
 systemctl status echo-analytics-health.timer
 systemctl status echo-analytics-reconcile.timer
+systemctl status echo-analytics-memory-limit.timer
 systemctl status echo-peerdb-table-reconcile.timer
 journalctl -u echo-analytics-reconcile.service
 journalctl -u echo-peerdb-table-reconcile.service
@@ -939,6 +943,12 @@ of normalized gateway parent queries and ClickHouse fragments. It flags a
 shape above 100 remote executions per minute, a fragment returning more than
 100,000 rows to the gateway, and a bounded facet reading more than 10 million
 rows. The report never resets either statistics source.
+
+Gateway reconciliation disables PostgreSQL merge joins for the analytics
+role. ClickHouse text ordering does not guarantee PostgreSQL collation order,
+so accepting a merge-join plan can fail at runtime with `mergejoin input data
+is out of order`. `bin/reconcile-if-needed.sh` repairs and verifies this role
+setting automatically.
 
 `status.sh` exits nonzero when the freshness record is unhealthy or older than
 the configured threshold. When analytics is configured,
