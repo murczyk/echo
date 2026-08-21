@@ -60,6 +60,16 @@ create index signal_message_group_login_id_idx
             .get_connection()
             .execute_unprepared(
                 r#"
+update signal_message
+set sender = login_id::text
+where sender is null
+  and login_id is not null;
+
+update signal_message_group
+set sender = login_id::text
+where sender is null
+  and login_id is not null;
+
 drop index if exists signal_message_login_id_idx;
 drop index if exists signal_message_group_login_id_idx;
 
