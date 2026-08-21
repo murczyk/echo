@@ -7,7 +7,11 @@ import type {
   NetworkUnit,
   PalitraReadV2,
 } from '../../../../Bindings';
-import { fetchMessagesByIds, fetchAnalysisMapPoints } from '../../services/api/analysis';
+import {
+  fetchAnalysisMapPoints,
+  fetchMapSettlementMessages,
+  fetchMessagesByIds,
+} from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { isNullOrUndefined } from '../../utils/misc';
@@ -40,6 +44,7 @@ export type UseAnalysisMapDataResult = {
   mapSettlements: MapSettlement[];
   showSettlements: boolean;
   mapOpenMessages: Array<[number, InboxMessage]>;
+  settlementMessagesHasMore: boolean;
   mapPalitras: PalitraReadV2[];
   mapPalitrasLoaded: boolean;
   mapPalitrasLoadState: AnalysisPalitrasLoadState;
@@ -48,6 +53,10 @@ export type UseAnalysisMapDataResult = {
   mapAttrs: AnalysisMapAttrs;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
+  loadSettlementMessagesForMap: (
+    settlementId: number,
+    beforeIdNoninclusive?: number | null,
+  ) => Promise<boolean>;
   loadMapPalitras: () => Promise<void>;
   setMapLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setMapDateRange: React.Dispatch<React.SetStateAction<{ startDate: number; endDate: number }>>;
@@ -77,6 +86,7 @@ export function useAnalysisMapData({
   const [mapSettlementsState, setMapSettlementsState] = useState<MapSettlement[]>([]);
   const [showSettlements, setShowSettlementsState] = useState(false);
   const [mapOpenMessages, setMapOpenMessages] = useState<Array<[number, InboxMessage]>>([]);
+  const [settlementMessagesHasMore, setSettlementMessagesHasMore] = useState(false);
   const [mapPalitras, setMapPalitras] = useState<PalitraReadV2[]>([]);
   const [mapPalitrasLoaded, setMapPalitrasLoaded] = useState(false);
   const [mapPalitrasLoadState, setMapPalitrasLoadState] =
@@ -86,6 +96,11 @@ export function useAnalysisMapData({
   const showSettlementsRef = useRef(false);
   const settlementToggleAbortRef = useRef<AbortController | null>(null);
   const settlementToggleLoadVersionRef = useRef<number | null>(null);
+  const resetMapMessageScope = useCallback(() => {
+    mapMessagesLoadVersionRef.current += 1;
+    setMapOpenMessages([]);
+    setSettlementMessagesHasMore(false);
+  }, []);
   const settlementQueryKey = JSON.stringify([queryState, optionsFreqValues]);
   const settlementQueryKeyRef = useRef(settlementQueryKey);
   settlementQueryKeyRef.current = settlementQueryKey;
@@ -106,6 +121,7 @@ export function useAnalysisMapData({
       mapDateRangeLoadVersionRef.current = loadVersion;
       setMapLoading(true);
       setMapDateRange(range);
+      resetMapMessageScope();
       const requestedShowSettlements = canShowSettlements && showSettlementsRef.current;
       if (requestedShowSettlements) setMapSettlementsState([]);
 
@@ -140,6 +156,7 @@ export function useAnalysisMapData({
       optionsFreqValues,
       queryState,
       applyMapSettlements,
+      resetMapMessageScope,
     ],
   );
 
@@ -148,12 +165,14 @@ export function useAnalysisMapData({
       const enabled = canShowSettlements && show;
       showSettlementsRef.current = enabled;
       setShowSettlementsState(enabled);
+      resetMapMessageScope();
       if (!enabled) {
         const toggleLoadVersion = settlementToggleLoadVersionRef.current;
         settlementToggleAbortRef.current?.abort();
         settlementToggleAbortRef.current = null;
         settlementToggleLoadVersionRef.current = null;
         setMapSettlementsState([]);
+        setSettlementMessagesHasMore(false);
         if (mapDateRangeLoadVersionRef.current === toggleLoadVersion) setMapLoading(false);
         return;
       }
@@ -217,6 +236,7 @@ export function useAnalysisMapData({
       onUnauthorized,
       optionsFreqValues,
       queryState,
+      resetMapMessageScope,
       settlementQueryKey,
     ],
   );
@@ -225,7 +245,8 @@ export function useAnalysisMapData({
     settlementToggleAbortRef.current?.abort();
     mapDateRangeLoadVersionRef.current += 1;
     setMapSettlementsState([]);
-  }, [settlementQueryKey]);
+    resetMapMessageScope();
+  }, [resetMapMessageScope, settlementQueryKey]);
 
   useEffect(() => {
     return () => settlementToggleAbortRef.current?.abort();
@@ -238,7 +259,8 @@ export function useAnalysisMapData({
     settlementToggleAbortRef.current = null;
     setShowSettlementsState(false);
     setMapSettlementsState([]);
-  }, [canShowSettlements]);
+    resetMapMessageScope();
+  }, [canShowSettlements, resetMapMessageScope]);
 
   const loadMessagesForMap = useCallback(
     async (messageIds: number[]) => {
@@ -246,6 +268,7 @@ export function useAnalysisMapData({
       if (cleanMessageIds.length === 0) {
         mapMessagesLoadVersionRef.current += 1;
         setMapOpenMessages([]);
+        setSettlementMessagesHasMore(false);
         return false;
       }
 
@@ -260,6 +283,7 @@ export function useAnalysisMapData({
           setMapPoints((current) => removeMapPointsForMissingMessages(current, missingMessageIds));
         }
         setMapOpenMessages(nextMessages);
+        setSettlementMessagesHasMore(false);
         void loadMissingNetworksForMessages(nextMessages);
         return nextMessages.length > 0;
       } catch (loadError) {
@@ -269,6 +293,75 @@ export function useAnalysisMapData({
       }
     },
     [loadMissingNetworksForMessages, onError, onUnauthorized],
+  );
+
+  const loadSettlementMessagesForMap = useCallback(
+    async (settlementId: number, beforeIdNoninclusive: number | null = null) => {
+      if (!Number.isSafeInteger(settlementId) || settlementId <= 0) return false;
+      const inboxReq = buildInboxReq(queryState, optionsFreqValues);
+      if (isNullOrUndefined(inboxReq)) return false;
+      const loadVersion = mapMessagesLoadVersionRef.current + 1;
+      mapMessagesLoadVersionRef.current = loadVersion;
+      const queryKey = settlementQueryKey;
+      if (beforeIdNoninclusive === null) setSettlementMessagesHasMore(false);
+      const filter =
+        mapDateRange.startDate > 0 && mapDateRange.endDate > 0
+          ? {
+              ...inboxReq,
+              sinceDateInclusiveMs: mapDateRange.startDate,
+              tillDateInclusiveMs: mapDateRange.endDate,
+              newestFirst,
+            }
+          : inboxReq;
+
+      try {
+        const nextMessages = await fetchMapSettlementMessages({
+          settlementId,
+          inboxItemsFilter: filter,
+          beforeIdNoninclusive,
+        });
+        if (
+          mapMessagesLoadVersionRef.current !== loadVersion ||
+          settlementQueryKeyRef.current !== queryKey
+        )
+          return false;
+        const currentMessages = beforeIdNoninclusive === null ? [] : mapOpenMessages;
+        const currentMessageIds = new Set(currentMessages.map(([messageId]) => messageId));
+        const combinedMessages = [
+          ...currentMessages,
+          ...nextMessages.filter(([messageId]) => !currentMessageIds.has(messageId)),
+        ];
+        const totalCount =
+          mapSettlementsState.find((settlement) => settlement.settlementId === settlementId)
+            ?.inboxItemCount ?? combinedMessages.length;
+        setMapOpenMessages(combinedMessages);
+        setSettlementMessagesHasMore(
+          nextMessages.length > 0 && combinedMessages.length < totalCount,
+        );
+        void loadMissingNetworksForMessages(nextMessages);
+        return combinedMessages.length > 0;
+      } catch (loadError) {
+        if (
+          mapMessagesLoadVersionRef.current !== loadVersion ||
+          settlementQueryKeyRef.current !== queryKey
+        )
+          return false;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+        return false;
+      }
+    },
+    [
+      loadMissingNetworksForMessages,
+      mapDateRange,
+      mapOpenMessages,
+      mapSettlementsState,
+      newestFirst,
+      onError,
+      onUnauthorized,
+      optionsFreqValues,
+      queryState,
+      settlementQueryKey,
+    ],
   );
 
   const loadMapPalitras = useCallback(async () => {
@@ -306,6 +399,7 @@ export function useAnalysisMapData({
         canShowSettlements,
         showSettlements,
         messages: mapOpenMessages,
+        settlementMessagesHasMore,
         networkUnits: mapNetworkUnits,
         selectedUnits: queryState.unitsSelected,
         palitras: mapPalitras,
@@ -317,6 +411,7 @@ export function useAnalysisMapData({
       mapLoading,
       mapNetworkUnits,
       mapOpenMessages,
+      settlementMessagesHasMore,
       mapPalitras,
       mapPalitrasLoaded,
       mapPalitrasLoadState,
@@ -336,6 +431,7 @@ export function useAnalysisMapData({
     mapSettlements: mapSettlementsState,
     showSettlements,
     mapOpenMessages,
+    settlementMessagesHasMore,
     mapPalitras,
     mapPalitrasLoaded,
     mapPalitrasLoadState,
@@ -344,6 +440,7 @@ export function useAnalysisMapData({
     mapAttrs,
     refreshMapDateRange,
     loadMessagesForMap,
+    loadSettlementMessagesForMap,
     loadMapPalitras,
     setMapLoading,
     setMapDateRange,

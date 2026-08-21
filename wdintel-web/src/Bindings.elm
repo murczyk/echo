@@ -3080,6 +3080,22 @@ mapSettlementEncoder struct =
         ]
 
 
+type alias MapSettlementMessagesReq =
+    { settlementId : Int
+    , inboxItemsFilter : InboxMessagesReq
+    , beforeIdNoninclusive : Maybe (Int)
+    }
+
+
+mapSettlementMessagesReqEncoder : MapSettlementMessagesReq -> Json.Encode.Value
+mapSettlementMessagesReqEncoder struct =
+    Json.Encode.object
+        [ ( "settlement_id", (Json.Encode.int) struct.settlementId )
+        , ( "inbox_items_filter", (inboxMessagesReqEncoder) struct.inboxItemsFilter )
+        , ( "before_id_noninclusive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.beforeIdNoninclusive )
+        ]
+
+
 type alias MapPointsRsp =
     { networkUnits : List (NetworkUnit)
     , points : List (FreqDetailedPoint)
@@ -3211,6 +3227,7 @@ battleLineTestReqEncoder struct =
 type alias BattleLineSettlementCandidate =
     { settlementId : Int
     , name : String
+    , district : String
     , region : String
     , coordinate : BattleLineCoordinate
     }
@@ -3221,6 +3238,7 @@ battleLineSettlementCandidateEncoder struct =
     Json.Encode.object
         [ ( "settlement_id", (Json.Encode.int) struct.settlementId )
         , ( "name", (Json.Encode.string) struct.name )
+        , ( "district", (Json.Encode.string) struct.district )
         , ( "region", (Json.Encode.string) struct.region )
         , ( "coordinate", (battleLineCoordinateEncoder) struct.coordinate )
         ]
@@ -15538,6 +15556,14 @@ mapSettlementDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_count" (Json.Decode.int)))
 
 
+mapSettlementMessagesReqDecoder : Json.Decode.Decoder MapSettlementMessagesReq
+mapSettlementMessagesReqDecoder =
+    Json.Decode.succeed MapSettlementMessagesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_items_filter" (inboxMessagesReqDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "before_id_noninclusive" (Json.Decode.nullable (Json.Decode.int))))
+
+
 mapPointsRspDecoder : Json.Decode.Decoder MapPointsRsp
 mapPointsRspDecoder =
     Json.Decode.succeed MapPointsRsp
@@ -15607,6 +15633,7 @@ battleLineSettlementCandidateDecoder =
     Json.Decode.succeed BattleLineSettlementCandidate
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "district" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "region" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "coordinate" (battleLineCoordinateDecoder)))
 

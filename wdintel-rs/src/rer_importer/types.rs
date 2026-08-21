@@ -316,6 +316,15 @@ pub struct MapSettlement {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct MapSettlementMessagesReq {
+    pub settlement_id: i32,
+    pub inbox_items_filter: InboxMessagesReq,
+    pub before_id_noninclusive: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct MapPointsFilter {
     pub network_units: Vec<NetworkUnit>,
 }

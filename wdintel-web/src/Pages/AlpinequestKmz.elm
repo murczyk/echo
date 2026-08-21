@@ -347,7 +347,7 @@ conversionBlock config =
         , if config.showSupportedFormats then
             let
                 extensions =
-                    [ ".ldk", ".trk", ".are", ".rte", ".wpt", ".set", ".kml", ".kmz", ".geojson", ".gpx" ]
+                    [ ".ldk", ".trk", ".are", ".rte", ".wpt", ".set", ".kml", ".kmz", ".geojson", ".gpx", ".fit" ]
 
                 renderExtension ext =
                     code [ class "font-mono font-semibold" ] [ text ext ]

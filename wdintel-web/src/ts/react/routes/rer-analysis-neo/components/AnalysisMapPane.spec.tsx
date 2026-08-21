@@ -15,6 +15,7 @@ function buildProps(
       daterange: '',
       daterangeLoading: '',
       messages: '',
+      settlementMessagesHasMore: 'false',
       palitras: '',
       palitrasLoaded: '',
       palitrasLoadState: 'idle',
@@ -28,6 +29,7 @@ function buildProps(
     visible: true,
     onDateRangeChange: vi.fn(),
     onLoadMessages: vi.fn(async () => true),
+    onLoadSettlementMessages: vi.fn(async () => true),
     onUnitClick: vi.fn(),
     ...overrides,
   };
@@ -91,10 +93,10 @@ describe('AnalysisMapPane', () => {
 
   it('exposes a loading state while map messages are being fetched', async () => {
     const load = deferredPromise<boolean>();
-    const onLoadMessages = vi.fn(() => load.promise);
+    const onLoadSettlementMessages = vi.fn(() => load.promise);
 
     await act(async () => {
-      root.render(<AnalysisMapPane {...buildProps({ onLoadMessages })} />);
+      root.render(<AnalysisMapPane {...buildProps({ onLoadSettlementMessages })} />);
     });
 
     const map = container.querySelector('analysis-map');
@@ -102,13 +104,14 @@ describe('AnalysisMapPane', () => {
 
     await act(async () => {
       map?.dispatchEvent(
-        new CustomEvent('load-messages-description', {
-          detail: { messageIds: [1] },
+        new CustomEvent('load-settlement-messages', {
+          detail: { settlementId: 7 },
           bubbles: true,
         }),
       );
     });
 
+    expect(onLoadSettlementMessages).toHaveBeenCalledWith(7, null);
     expect(map?.getAttribute('messages-loading')).toBe('true');
 
     await act(async () => {
@@ -150,5 +153,24 @@ describe('AnalysisMapPane', () => {
 
     expect(map?.getAttribute('messages-loading')).toBe('false');
     expect(map?.getAttribute('messages-load-serial')).toBe('0');
+  });
+
+  it('passes a settlement cursor when the popup requests another page', async () => {
+    const onLoadSettlementMessages = vi.fn(async () => true);
+    await act(async () => {
+      root.render(<AnalysisMapPane {...buildProps({ onLoadSettlementMessages })} />);
+    });
+
+    const map = container.querySelector('analysis-map');
+    await act(async () => {
+      map?.dispatchEvent(
+        new CustomEvent('load-settlement-messages', {
+          detail: { settlementId: 7, beforeIdNoninclusive: 20 },
+          bubbles: true,
+        }),
+      );
+    });
+
+    expect(onLoadSettlementMessages).toHaveBeenCalledWith(7, 20);
   });
 });

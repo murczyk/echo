@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260821_080931_recalculate_battle_line_aor_sectors": {
+      "changes": []
+    },
+    "echo:m20260820_115208_battle_line_source_provenance": {
+      "changes": [
+        { "table": "public.battle_line_version", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260820_081114_messenger_queue_retry": {
       "changes": [
         { "table": "public.signal_message_queue", "strategy": "excluded" }

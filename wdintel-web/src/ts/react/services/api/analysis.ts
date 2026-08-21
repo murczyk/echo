@@ -31,6 +31,7 @@ import type {
   InboxMessage,
   MessageIdsReq,
   MessageIdsRsp,
+  MapSettlementMessagesReq,
   MapPointsRsp,
   MetadataStatsRsp,
   NetworkCallsignRelationsRsp,
@@ -401,6 +402,18 @@ export async function fetchMessagesByIds(
           transformCamelToSnake(req),
           options,
         );
+  return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
+}
+
+export async function fetchMapSettlementMessages(
+  req: MapSettlementMessagesReq,
+  options?: RequestOptions,
+): Promise<Array<[number, InboxMessage]>> {
+  const raw = await postJson<unknown>(
+    '/api/rer-importer/map-settlement-messages',
+    transformCamelToSnake(req),
+    options,
+  );
   return transformSnakeToCamel<MessageIdsRsp>(raw).messages ?? [];
 }
 

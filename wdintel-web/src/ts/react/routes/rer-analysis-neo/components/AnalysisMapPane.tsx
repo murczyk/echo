@@ -9,6 +9,10 @@ type Props = {
   visible: boolean;
   onDateRangeChange: (range: { startDate: number; endDate: number }) => void;
   onLoadMessages: (messageIds: number[]) => Promise<boolean>;
+  onLoadSettlementMessages: (
+    settlementId: number,
+    beforeIdNoninclusive?: number | null,
+  ) => Promise<boolean>;
   onUnitClick: (unitName: string | null) => void;
   onShowSettlementsChange?: (show: boolean) => Promise<void>;
 };
@@ -21,6 +25,7 @@ export function AnalysisMapPane({
   visible,
   onDateRangeChange,
   onLoadMessages,
+  onLoadSettlementMessages,
   onUnitClick,
   onShowSettlementsChange = async () => undefined,
 }: Props) {
@@ -67,18 +72,11 @@ export function AnalysisMapPane({
     const handleDateRangeChange = (event: Event) => {
       onDateRangeChange((event as CustomEvent<{ startDate: number; endDate: number }>).detail);
     };
-    const handleLoadMessages = (event: Event) => {
-      const messageIds =
-        (event as CustomEvent<{ messageIds: Array<number | null | undefined> }>).detail
-          .messageIds ?? [];
+    const loadMessages = (request: Promise<boolean>) => {
       const requestId = messagesLoadRequestRef.current + 1;
       messagesLoadRequestRef.current = requestId;
       setMessagesLoading(true);
-      void Promise.resolve(
-        onLoadMessages(
-          messageIds.filter((messageId): messageId is number => Number.isInteger(messageId)),
-        ),
-      )
+      void request
         .then((loaded) => {
           if (messagesLoadRequestRef.current !== requestId) {
             return;
@@ -93,6 +91,33 @@ export function AnalysisMapPane({
           }
         });
     };
+    const handleLoadMessages = (event: Event) => {
+      const messageIds =
+        (event as CustomEvent<{ messageIds: Array<number | null | undefined> }>).detail
+          .messageIds ?? [];
+      loadMessages(
+        onLoadMessages(
+          messageIds.filter((messageId): messageId is number => Number.isInteger(messageId)),
+        ),
+      );
+    };
+    const handleLoadSettlementMessages = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          settlementId: number;
+          beforeIdNoninclusive?: number | null;
+        }>
+      ).detail;
+      const settlementId = detail?.settlementId;
+      if (typeof settlementId !== 'number' || !Number.isSafeInteger(settlementId)) return;
+      const beforeIdNoninclusive = detail.beforeIdNoninclusive ?? null;
+      if (
+        beforeIdNoninclusive !== null &&
+        (typeof beforeIdNoninclusive !== 'number' || !Number.isSafeInteger(beforeIdNoninclusive))
+      )
+        return;
+      loadMessages(onLoadSettlementMessages(settlementId, beforeIdNoninclusive));
+    };
     const handleUnitClick = (event: Event) => {
       onUnitClick(
         (event as CustomEvent<{ networkUnitName: string | null }>).detail.networkUnitName ?? null,
@@ -105,19 +130,33 @@ export function AnalysisMapPane({
 
     host.addEventListener('date-range-changed', handleDateRangeChange as EventListener);
     host.addEventListener('load-messages-description', handleLoadMessages as EventListener);
+    host.addEventListener(
+      'load-settlement-messages',
+      handleLoadSettlementMessages as EventListener,
+    );
     host.addEventListener('message-unit-clicked', handleUnitClick as EventListener);
     host.addEventListener('show-settlements-change', handleShowSettlementsChange as EventListener);
 
     return () => {
       host.removeEventListener('date-range-changed', handleDateRangeChange as EventListener);
       host.removeEventListener('load-messages-description', handleLoadMessages as EventListener);
+      host.removeEventListener(
+        'load-settlement-messages',
+        handleLoadSettlementMessages as EventListener,
+      );
       host.removeEventListener('message-unit-clicked', handleUnitClick as EventListener);
       host.removeEventListener(
         'show-settlements-change',
         handleShowSettlementsChange as EventListener,
       );
     };
-  }, [onDateRangeChange, onLoadMessages, onShowSettlementsChange, onUnitClick]);
+  }, [
+    onDateRangeChange,
+    onLoadMessages,
+    onLoadSettlementMessages,
+    onShowSettlementsChange,
+    onUnitClick,
+  ]);
 
   return (
     <Box
@@ -145,6 +184,7 @@ export function AnalysisMapPane({
         'can-show-settlements': mapAttrs.canShowSettlements,
         'show-settlements': mapAttrs.showSettlements,
         messages: mapAttrs.messages,
+        'settlement-messages-has-more': mapAttrs.settlementMessagesHasMore,
         'selected-units': mapAttrs.selectedUnits,
         palitras: mapAttrs.palitras,
         'palitras-loaded': mapAttrs.palitrasLoaded,

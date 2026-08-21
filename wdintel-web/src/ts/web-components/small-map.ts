@@ -2,7 +2,6 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import * as L from 'leaflet';
 import {
-  loadKmzData,
   initializeMap,
   addPointsToLayer,
   toggleMapSize,
@@ -10,7 +9,6 @@ import {
   createFullScreenControl,
   clearSmallMapFullscreenBodyLock,
 } from '../maps/maps';
-import { kmzLayerFactory } from '../maps/leaflet-kmz';
 import { MapPointShort } from '../maps/types';
 
 @customElement('small-map')
@@ -57,8 +55,7 @@ export class SmallMap extends LitElement {
     return this;
   }
 
-  async setupMap() {
-    const kmzData = await loadKmzData();
+  setupMap() {
     const mapContainer = this.renderRoot.querySelector<HTMLDivElement>('#map-container-networks');
 
     if (mapContainer) {
@@ -87,36 +84,6 @@ export class SmallMap extends LitElement {
           new (createExitControl(this._closeMap.bind(this)))({ position: 'topright' }),
         );
       }
-
-      if (kmzData) {
-        const kmz = kmzLayerFactory(null, { bindTooltip: true, bindPopup: false });
-        kmz.addTo(map);
-        kmz.parse(kmzData, {});
-
-        fullScreenControl.on('fullscreen-toggled', () => {
-          const isMapOpened = map.getSize().x > 250;
-          kmz.eachLayer((layer: any) => {
-            layer.eachLayer((l: any) => {
-              if (l.feature.properties.name) {
-                l.unbindTooltip();
-                if (isMapOpened) {
-                  l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
-                    permanent: true,
-                    direction: 'center',
-                    opacity: 0,
-                  });
-                } else {
-                  l.bindTooltip('<b>' + l.feature.properties.name + '</b>', {
-                    permanent: false,
-                    direction: 'center',
-                    opacity: 0,
-                  });
-                }
-              }
-            });
-          });
-        });
-      }
     } else {
       throw new Error('Map container is not found');
     }
@@ -131,8 +98,6 @@ export class SmallMap extends LitElement {
     });
     this.dispatchEvent(event);
   }
-
-  // Define your methods like loadKmzData, initializeMap, addPointsToLayer, etc.
 
   render() {
     return html`<div id="map-container-networks" style="width: 100%; height: 100%"></div>`;

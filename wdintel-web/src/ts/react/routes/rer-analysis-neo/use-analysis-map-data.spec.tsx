@@ -12,12 +12,14 @@ import { useAnalysisMapData } from './use-analysis-map-data';
 
 const api = vi.hoisted(() => ({
   fetchAnalysisMapPoints: vi.fn(),
+  fetchMapSettlementMessages: vi.fn(),
   fetchMessagesByIds: vi.fn(),
   listMapPalitrasV2: vi.fn(),
 }));
 
 vi.mock('../../services/api/analysis', () => ({
   fetchAnalysisMapPoints: api.fetchAnalysisMapPoints,
+  fetchMapSettlementMessages: api.fetchMapSettlementMessages,
   fetchMessagesByIds: api.fetchMessagesByIds,
 }));
 
@@ -90,6 +92,7 @@ beforeEach(() => {
   latest = null;
   onError = vi.fn();
   api.fetchAnalysisMapPoints.mockReset();
+  api.fetchMapSettlementMessages.mockReset();
 });
 
 afterEach(() => {
@@ -101,6 +104,66 @@ afterEach(() => {
 });
 
 describe('useAnalysisMapData settlement overlays', () => {
+  it('appends subsequent settlement pages until the advertised count is loaded', async () => {
+    const firstPage = [
+      [30, { text: 'newest' }],
+      [20, { text: 'middle' }],
+    ];
+    const secondPage = [[10, { text: 'oldest' }]];
+    api.fetchAnalysisMapPoints.mockResolvedValueOnce(response());
+    api.fetchMapSettlementMessages
+      .mockResolvedValueOnce(firstPage)
+      .mockResolvedValueOnce(secondPage);
+    await renderHook();
+    await act(async () => latest!.setShowSettlements(true));
+
+    await act(async () => {
+      await latest!.loadSettlementMessagesForMap(7);
+    });
+    expect(api.fetchMapSettlementMessages).toHaveBeenNthCalledWith(1, {
+      settlementId: 7,
+      inboxItemsFilter: expect.any(Object),
+      beforeIdNoninclusive: null,
+    });
+    expect(latest?.settlementMessagesHasMore).toBe(true);
+
+    await act(async () => {
+      await latest!.loadSettlementMessagesForMap(7, 20);
+    });
+
+    expect(api.fetchMapSettlementMessages).toHaveBeenLastCalledWith({
+      settlementId: 7,
+      inboxItemsFilter: expect.any(Object),
+      beforeIdNoninclusive: 20,
+    });
+    expect(latest?.mapOpenMessages.map(([messageId]) => messageId)).toEqual([30, 20, 10]);
+    expect(latest?.settlementMessagesHasMore).toBe(false);
+  });
+
+  it('ignores a pending settlement page after the map date range changes', async () => {
+    const request = deferred<Array<[number, never]>>();
+    api.fetchMapSettlementMessages.mockReturnValueOnce(request.promise);
+    api.fetchAnalysisMapPoints.mockResolvedValueOnce({
+      networkUnits: [],
+      points: [],
+      settlements: [],
+    });
+    await renderHook();
+
+    let settlementPromise!: Promise<boolean>;
+    await act(async () => {
+      settlementPromise = latest!.loadSettlementMessagesForMap(7);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await latest!.refreshMapDateRange({ startDate: 30, endDate: 40 });
+    });
+    request.resolve([[99, { text: 'stale' } as never]]);
+    await act(async () => settlementPromise);
+
+    expect(latest?.mapOpenMessages).toEqual([]);
+  });
+
   it('propagates the toggle and ignores its response after an immediate toggle off', async () => {
     const request = deferred<MapPointsRsp>();
     api.fetchAnalysisMapPoints.mockReturnValueOnce(request.promise);

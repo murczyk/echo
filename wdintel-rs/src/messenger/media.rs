@@ -5,6 +5,7 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::messenger::dedupe;
 use crate::storage;
 use crate::types::{error, warn};
 use crate::types::{Env, ShortContext};
@@ -35,6 +36,181 @@ pub struct StoreMediaAttachmentsResult {
     pub uploaded_files_ready_for_deletion: Vec<MediaUploadInput>,
 }
 
+struct StagedMediaAttachment {
+    id: Uuid,
+    content_type: String,
+    file_ext: Option<String>,
+    file_name: Option<String>,
+    size_bytes: i64,
+    is_encrypted: bool,
+    storage_key: String,
+    upload_input: MediaUploadInput,
+    retains_thumbnail_source: bool,
+    thumbnail_source_lease:
+        Option<crate::messenger::media_thumbnail::ThumbnailSourceLease>,
+}
+
+pub struct StagedMediaAttachments {
+    attachments_hash: Option<String>,
+    attachments: Vec<StagedMediaAttachment>,
+    input_count: usize,
+    skipped_missing: bool,
+    deletion: UploadedAttachmentDeletion,
+}
+
+impl StagedMediaAttachments {
+    pub(crate) fn without_uploaded_objects(
+        input_count: usize,
+        attachments_hash: Option<String>,
+        deletion: UploadedAttachmentDeletion,
+    ) -> Self {
+        Self {
+            attachments_hash,
+            attachments: vec![],
+            input_count,
+            skipped_missing: false,
+            deletion,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.input_count
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.input_count == 0
+    }
+
+    pub fn attachments_hash(&self) -> Option<&str> {
+        self.attachments_hash.as_deref()
+    }
+
+    pub fn skipped_missing(&self) -> bool {
+        self.skipped_missing
+    }
+
+    pub(crate) fn uploaded_files_ready_after_discard(
+        &self,
+    ) -> Vec<MediaUploadInput> {
+        if !self.deletion.should_delete() {
+            return vec![];
+        }
+        self.attachments
+            .iter()
+            .map(|attachment| attachment.upload_input.clone())
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn uploaded_object_count(&self) -> usize {
+        self.attachments.len()
+    }
+
+    fn uploaded_files_ready_for_deletion(&self) -> Vec<MediaUploadInput> {
+        let retained_paths = self
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.retains_thumbnail_source)
+            .map(|attachment| attachment.upload_input.path.as_str())
+            .collect::<HashSet<_>>();
+        self.attachments
+            .iter()
+            .filter(|attachment| {
+                !retained_paths.contains(attachment.upload_input.path.as_str())
+            })
+            .map(|attachment| attachment.upload_input.clone())
+            .collect()
+    }
+
+    pub async fn cleanup_after_rollback(
+        &self,
+        config: &Config,
+        s3: &Option<Operator>,
+    ) {
+        for attachment in &self.attachments {
+            delete_staged_object_best_effort(config, s3, attachment).await;
+            if attachment.thumbnail_source_lease.is_some() {
+                crate::messenger::media_thumbnail::remove_uncommitted_media_thumbnail_files_best_effort(
+                    config,
+                    attachment.id,
+                )
+                .await;
+            }
+        }
+    }
+
+    pub async fn finalize_after_commit(
+        &self,
+        config: &Config,
+        s3: &Option<Operator>,
+        dbx: &DatabaseConnection,
+    ) {
+        if self.attachments.is_empty() {
+            return;
+        }
+        let media_ids = self
+            .attachments
+            .iter()
+            .map(|attachment| attachment.id)
+            .collect::<Vec<_>>();
+        let committed_media = signal_message_media::Entity::find()
+            .filter(signal_message_media::Column::Id.is_in(media_ids))
+            .all(dbx)
+            .await;
+        let committed_media = match committed_media {
+            Ok(committed_media) => committed_media
+                .into_iter()
+                .map(|media| media.id)
+                .collect::<HashSet<_>>(),
+            Err(err) => {
+                error!(
+                    "failed to check committed staged media references; preserving uploaded objects and local files: {:?}",
+                    err
+                );
+                return;
+            }
+        };
+        for attachment in self
+            .attachments
+            .iter()
+            .filter(|attachment| !committed_media.contains(&attachment.id))
+        {
+            delete_staged_object_best_effort(config, s3, attachment).await;
+            if attachment.thumbnail_source_lease.is_some() {
+                crate::messenger::media_thumbnail::remove_uncommitted_media_thumbnail_files_best_effort(
+                    config,
+                    attachment.id,
+                )
+                .await;
+            }
+        }
+        if !self.deletion.should_delete() {
+            return;
+        }
+        let retained_paths = self
+            .attachments
+            .iter()
+            .filter(|attachment| {
+                committed_media.contains(&attachment.id)
+                    && attachment.retains_thumbnail_source
+            })
+            .map(|attachment| attachment.upload_input.path.as_str())
+            .collect::<HashSet<_>>();
+        let uploaded_files_ready_for_deletion = self
+            .attachments
+            .iter()
+            .filter(|attachment| {
+                committed_media.contains(&attachment.id)
+                    && !retained_paths
+                        .contains(attachment.upload_input.path.as_str())
+            })
+            .map(|attachment| attachment.upload_input.clone())
+            .collect::<Vec<_>>();
+        delete_uploaded_attachment_files(&uploaded_files_ready_for_deletion)
+            .await;
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UploadedAttachmentDeletion {
     Preserve,
@@ -55,6 +231,16 @@ impl From<MessageAttachmentF1> for MediaUploadInput {
             name: value.name,
             content_type: None,
         }
+    }
+}
+
+impl dedupe::AttachmentForDedupe for MediaUploadInput {
+    fn attachment_path(&self) -> &str {
+        &self.path
+    }
+
+    fn attachment_name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 }
 
@@ -341,136 +527,229 @@ pub async fn store_media_attachments(
     txn: &impl ConnectionTrait,
     deletion: UploadedAttachmentDeletion,
 ) -> Result<StoreMediaAttachmentsResult, AppError> {
-    if attachments.is_empty() {
-        return Ok(StoreMediaAttachmentsResult {
-            media: vec![],
-            skipped_missing: false,
-            uploaded_files_ready_for_deletion: vec![],
-        });
-    }
-    let app_config = config;
-    let Some(config) = config.s3_config.as_ref() else {
-        warn!("S3 is not configured, cannot store attachment!");
-        return Ok(StoreMediaAttachmentsResult {
-            media: vec![],
-            skipped_missing: false,
-            uploaded_files_ready_for_deletion: vec![],
-        });
-    };
-    let s3_config = storage::S3Config::from(config);
-    let strongbox_key = &config.strongbox_key;
-    let mut stored = Vec::with_capacity(attachments.len());
-    let mut retained_thumbnail_source_paths = HashSet::new();
-    let mut skipped_missing = false;
-    for attachment in attachments {
-        let ext = guess_extension(
-            attachment.name.as_deref(),
-            Path::new(&attachment.path),
-        );
-        let force_plaintext =
-            media_upload_is_excluded_from_encryption(attachment, &ext);
-        let allow_probed_video_exclusion = !attachment
-            .content_type
-            .as_deref()
-            .is_some_and(content_type_is_explicit_non_video_media);
-        let Some(prepared) = prepare_attachment(
-            &attachment.path,
-            force_plaintext,
-            allow_probed_video_exclusion,
-        )
-        .await?
-        else {
-            skipped_missing = true;
-            continue;
-        };
-        let ct = resolve_attachment_content_type(
-            attachment,
-            prepared.probed_content_type,
-        );
-        let media_id = Uuid::now_v7();
-        let file_ext = (!ext.is_empty()).then_some(ext);
-        let file_name = fallback_file_name(
-            attachment.name.as_deref(),
-            Path::new(&attachment.path),
-        );
-        let object_key = if prepared.is_encrypted {
-            storage::nested_object_key(&media_id)
-        } else {
-            storage::plaintext_media_object_key(&media_id)
-        };
-        let is_video =
-            is_video_metadata(&ct, file_ext.as_deref(), file_name.as_deref());
-        let size_bytes = prepared.size_bytes;
-        let is_encrypted = prepared.is_encrypted;
-
-        upload_prepared_attachment(
-            s3,
-            &s3_config,
-            strongbox_key,
-            &object_key,
-            prepared.data,
-            size_bytes,
-        )
-        .await
-        .c(h!())?;
-
-        let media = signal_message_media::ActiveModel {
-            id: Set(media_id),
-            signal_message_id: Set(signal_message_id),
-            content_type: Set(ct),
-            file_ext: Set(file_ext),
-            file_name: Set(file_name),
-            size_bytes: Set(size_bytes),
-            is_encrypted: Set(is_encrypted),
-            storage_key: Set(Some(object_key)),
-            created_at: NotSet,
-        }
-        .insert(txn)
-        .await
-        .c(h!())?;
-        if is_video {
-            let _thumbnail_source_lease =
-                crate::messenger::media_thumbnail::ThumbnailSourceLease::new(
-                    media_id,
-                );
-            let staged = crate::messenger::media_thumbnail::stage_upload_thumbnail_source_file(
-                    app_config,
-                    media_id,
-                    Path::new(&attachment.path),
-                    size_bytes,
-                    deletion.should_delete(),
-                )
-                .await;
-            match staged {
-                Ok(crate::messenger::media_thumbnail::UploadThumbnailSourceStage::Independent) => {}
-                Ok(crate::messenger::media_thumbnail::UploadThumbnailSourceStage::Referenced) => {
-                    retained_thumbnail_source_paths.insert(attachment.path.clone());
-                }
-                Err(err) => {
-                    warn!(
-                        "failed to stage upload thumbnail source for media {media_id}: {err:#?}"
-                    );
-                }
+    let staged =
+        stage_media_attachments(attachments, config, s3, deletion, None)
+            .await
+            .c(h!())?;
+    let media =
+        match persist_staged_media(&staged, signal_message_id, txn).await {
+            Ok(media) => media,
+            Err(err) => {
+                staged.cleanup_after_rollback(config, s3).await;
+                return Err(err);
             }
-        }
-        stored.push(media);
-    }
-    let uploaded_files_ready_for_deletion = attachments
-        .iter()
-        .filter(|attachment| {
-            !retained_thumbnail_source_paths.contains(&attachment.path)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+        };
+    let uploaded_files_ready_for_deletion =
+        staged.uploaded_files_ready_for_deletion();
     if deletion == UploadedAttachmentDeletion::DeleteAfterStore {
         delete_uploaded_attachment_files(&uploaded_files_ready_for_deletion)
             .await;
     }
     Ok(StoreMediaAttachmentsResult {
-        media: stored,
-        skipped_missing,
+        media,
+        skipped_missing: staged.skipped_missing,
         uploaded_files_ready_for_deletion,
     })
+}
+
+pub async fn stage_media_attachments(
+    attachments: &[MediaUploadInput],
+    config: &Config,
+    s3: &Option<Operator>,
+    deletion: UploadedAttachmentDeletion,
+    attachments_hash: Option<String>,
+) -> Result<StagedMediaAttachments, AppError> {
+    let mut staged = StagedMediaAttachments {
+        attachments_hash,
+        attachments: Vec::with_capacity(attachments.len()),
+        input_count: attachments.len(),
+        skipped_missing: false,
+        deletion,
+    };
+    if attachments.is_empty() {
+        return Ok(staged);
+    }
+    let Some(s3_config) = config.s3_config.as_ref() else {
+        warn!("S3 is not configured, cannot store attachment!");
+        return Ok(staged);
+    };
+    let storage_config = storage::S3Config::from(s3_config);
+    for attachment in attachments {
+        match stage_media_attachment(
+            attachment,
+            config,
+            s3,
+            s3_config,
+            &storage_config,
+            deletion,
+        )
+        .await
+        {
+            Ok(Some(attachment)) => staged.attachments.push(attachment),
+            Ok(None) => staged.skipped_missing = true,
+            Err(err) => {
+                staged.cleanup_after_rollback(config, s3).await;
+                return Err(err);
+            }
+        }
+    }
+    Ok(staged)
+}
+
+async fn stage_media_attachment(
+    attachment: &MediaUploadInput,
+    config: &Config,
+    s3: &Option<Operator>,
+    s3_config: &crate::config::S3Config,
+    storage_config: &storage::S3Config,
+    deletion: UploadedAttachmentDeletion,
+) -> Result<Option<StagedMediaAttachment>, AppError> {
+    let ext = guess_extension(
+        attachment.name.as_deref(),
+        Path::new(&attachment.path),
+    );
+    let force_plaintext =
+        media_upload_is_excluded_from_encryption(attachment, &ext);
+    let allow_probed_video_exclusion = !attachment
+        .content_type
+        .as_deref()
+        .is_some_and(content_type_is_explicit_non_video_media);
+    let Some(prepared) = prepare_attachment(
+        &attachment.path,
+        force_plaintext,
+        allow_probed_video_exclusion,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
+    let content_type = resolve_attachment_content_type(
+        attachment,
+        prepared.probed_content_type,
+    );
+    let id = Uuid::now_v7();
+    let file_ext = (!ext.is_empty()).then_some(ext);
+    let file_name = fallback_file_name(
+        attachment.name.as_deref(),
+        Path::new(&attachment.path),
+    );
+    let storage_key = if prepared.is_encrypted {
+        storage::nested_object_key(&id)
+    } else {
+        storage::plaintext_media_object_key(&id)
+    };
+    let is_video = is_video_metadata(
+        &content_type,
+        file_ext.as_deref(),
+        file_name.as_deref(),
+    );
+    let size_bytes = prepared.size_bytes;
+    let is_encrypted = prepared.is_encrypted;
+    if let Err(err) = upload_prepared_attachment(
+        s3,
+        storage_config,
+        &s3_config.strongbox_key,
+        &storage_key,
+        prepared.data,
+        size_bytes,
+    )
+    .await
+    {
+        delete_staged_storage_key_best_effort(config, s3, &storage_key).await;
+        return Err(err);
+    }
+    let mut thumbnail_source_lease = None;
+    let mut retains_thumbnail_source = false;
+    if is_video {
+        thumbnail_source_lease = Some(
+            crate::messenger::media_thumbnail::ThumbnailSourceLease::new(id),
+        );
+        match crate::messenger::media_thumbnail::stage_upload_thumbnail_source_file(
+            config,
+            id,
+            Path::new(&attachment.path),
+            size_bytes,
+            deletion.should_delete(),
+        )
+        .await
+        {
+            Ok(crate::messenger::media_thumbnail::UploadThumbnailSourceStage::Independent) => {}
+            Ok(crate::messenger::media_thumbnail::UploadThumbnailSourceStage::Referenced) => {
+                retains_thumbnail_source = true;
+            }
+            Err(err) => {
+                warn!(
+                    "failed to stage upload thumbnail source for media {id}: {err:#?}"
+                );
+            }
+        }
+    }
+    Ok(Some(StagedMediaAttachment {
+        id,
+        content_type,
+        file_ext,
+        file_name,
+        size_bytes,
+        is_encrypted,
+        storage_key,
+        upload_input: attachment.clone(),
+        retains_thumbnail_source,
+        thumbnail_source_lease,
+    }))
+}
+
+pub async fn persist_staged_media(
+    staged: &StagedMediaAttachments,
+    signal_message_id: i64,
+    txn: &impl ConnectionTrait,
+) -> Result<Vec<signal_message_media::Model>, AppError> {
+    let mut media = Vec::with_capacity(staged.attachments.len());
+    for attachment in &staged.attachments {
+        media.push(
+            signal_message_media::ActiveModel {
+                id: Set(attachment.id),
+                signal_message_id: Set(signal_message_id),
+                content_type: Set(attachment.content_type.clone()),
+                file_ext: Set(attachment.file_ext.clone()),
+                file_name: Set(attachment.file_name.clone()),
+                size_bytes: Set(attachment.size_bytes),
+                is_encrypted: Set(attachment.is_encrypted),
+                storage_key: Set(Some(attachment.storage_key.clone())),
+                created_at: NotSet,
+            }
+            .insert(txn)
+            .await
+            .c(h!())?,
+        );
+    }
+    Ok(media)
+}
+
+async fn delete_staged_object_best_effort(
+    config: &Config,
+    s3: &Option<Operator>,
+    attachment: &StagedMediaAttachment,
+) {
+    delete_staged_storage_key_best_effort(config, s3, &attachment.storage_key)
+        .await;
+}
+
+async fn delete_staged_storage_key_best_effort(
+    config: &Config,
+    s3: &Option<Operator>,
+    storage_key: &str,
+) {
+    let (Some(s3_config), Some(s3)) = (config.s3_config.as_ref(), s3) else {
+        return;
+    };
+    let remote_key =
+        storage::S3Config::from(s3_config).prefixed_key(storage_key);
+    if let Err(err) = s3.delete(&remote_key).await {
+        error!(
+            "failed to delete uncommitted staged media object {}: {:?}",
+            remote_key, err
+        );
+    }
 }
 
 pub async fn delete_uploaded_attachment_files(
@@ -959,11 +1238,12 @@ mod tests {
     use crate::entities::*;
     use crate::error::AppError;
     use crate::functest::tests::{
-        cleanup, mk_aor, mk_datasource, mk_datasource_group, mk_login,
-        mk_organism, mk_organism_aor, mk_sigint_zone,
+        cleanup, cleanup_locked, mk_aor, mk_datasource, mk_datasource_group,
+        mk_login, mk_organism, mk_organism_aor, mk_sigint_zone,
         mk_sigint_zone_datasource, mk_signal_group, mk_signal_message,
     };
     use crate::types::Env;
+    use opendal::{services::Memory, Operator};
     use sea_orm::*;
     use serial_test::serial;
 
@@ -1258,6 +1538,96 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn rollback_cleanup_removes_staged_object_and_preserves_source() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("rollback.txt");
+        tokio::fs::write(&path, b"rollback media").await.unwrap();
+        let mut config = env.config.clone();
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let staged = stage_media_attachments(
+            &[MediaUploadInput {
+                path: path.display().to_string(),
+                name: Some("rollback.txt".into()),
+                content_type: Some("text/plain".into()),
+            }],
+            &config,
+            &s3,
+            UploadedAttachmentDeletion::DeleteAfterCommit,
+            None,
+        )
+        .await
+        .unwrap();
+        let remote_key =
+            crate::storage::S3Config::from(config.s3_config.as_ref().unwrap())
+                .prefixed_key(&staged.attachments[0].storage_key);
+        s3.as_ref().unwrap().stat(&remote_key).await.unwrap();
+
+        staged.cleanup_after_rollback(&config, &s3).await;
+
+        assert!(s3.as_ref().unwrap().stat(&remote_key).await.is_err());
+        assert!(path.exists());
+    }
+
+    #[tokio::test]
+    async fn partial_missing_discard_deletes_successfully_staged_sources() {
+        let (env, _guard) = cleanup_locked().await.unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let existing_path = temp.path().join("existing.txt");
+        let missing_path = temp.path().join("missing.txt");
+        tokio::fs::write(&existing_path, b"available media")
+            .await
+            .unwrap();
+        let mut config = env.config.clone();
+        config.s3_config = Some(crate::config::S3Config {
+            s3_access_key_id: "test".into(),
+            s3_secret_access_key: "test".into(),
+            s3_endpoint: String::new(),
+            s3_region: String::new(),
+            s3_bucket: "test".into(),
+            strongbox_key: crate::storage::generate_strongbox_key_b64(),
+        });
+        let s3 = Some(Operator::new(Memory::default()).unwrap().finish());
+        let staged = stage_media_attachments(
+            &[
+                MediaUploadInput {
+                    path: existing_path.display().to_string(),
+                    name: Some("existing.txt".into()),
+                    content_type: Some("text/plain".into()),
+                },
+                MediaUploadInput {
+                    path: missing_path.display().to_string(),
+                    name: Some("missing.txt".into()),
+                    content_type: Some("text/plain".into()),
+                },
+            ],
+            &config,
+            &s3,
+            UploadedAttachmentDeletion::DeleteAfterCommit,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert!(staged.skipped_missing());
+        let sources = staged.uploaded_files_ready_after_discard();
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].path, existing_path.display().to_string());
+
+        staged.cleanup_after_rollback(&config, &s3).await;
+        delete_uploaded_attachment_files(&sources).await;
+        assert!(!existing_path.exists());
     }
 
     #[test]

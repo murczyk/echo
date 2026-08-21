@@ -256,7 +256,8 @@ describe('AdminBattleLinePage', () => {
             {
               settlementId: 7,
               name: 'Харків',
-              region: 'Харківська',
+              district: 'Глушковскій район',
+              region: 'Курская область рф',
               coordinate: { lat: 49.99, lon: 36.23 },
             },
           ],
@@ -270,11 +271,15 @@ describe('AdminBattleLinePage', () => {
     if (!(idInput instanceof HTMLInputElement)) throw new Error('ID input not found');
     await setInputValue(idInput, '42');
     await act(async () => button('Перевірити').click());
-    await vi.waitFor(() => expect(container.textContent).toContain('ХАРКІВ: Харків'));
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        'ХАРКІВ: Харків #7 Глушковскій район Курская область рф',
+      ),
+    );
 
     api.testBattleLine.mockRejectedValueOnce(new Error('test failed'));
     await act(async () => button('Перевірити').click());
     await vi.waitFor(() => expect(container.textContent).toContain('test failed'));
-    expect(container.textContent).not.toContain('ХАРКІВ: Харків');
+    expect(container.textContent).not.toContain('ХАРКІВ: Харків #7');
   });
 });

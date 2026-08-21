@@ -4,6 +4,7 @@ use crate::entities::*;
 use crate::location::SettlementsDataConfig;
 use crate::messenger::types::{EchoAccountF1, Message};
 use crate::types::*;
+use anyhow::Context;
 use echo_im::types::{MessageAttachmentF1, MessageF1, MessageSource, SenderF1};
 use redis::aio::ConnectionManager;
 use reqwest::Client;
@@ -343,6 +344,13 @@ pub struct ItemProcessingResult {
     pub error: Option<anyhow::Error>,
 }
 
+struct PreparedItemMedia {
+    linked_message_ids: Vec<i64>,
+    source_attachments_hash: Option<Option<String>>,
+    attachments: Vec<MessageAttachmentF1>,
+    staged: crate::messenger::media::StagedMediaAttachments,
+}
+
 async fn process_item_nofail(
     item: Item,
     ctx: Arc<WorkerContext>,
@@ -358,7 +366,21 @@ async fn process_item_once(
     let m = item.message;
     let datasource_id = item.datasource_id;
     let client_name = item.client_name;
-    let txn = context.dbx.begin().await.c(h!())?;
+    let prepared_media = prepare_item_media(&context, datasource_id, &m)
+        .await
+        .context(h!())?;
+    let txn = match context.dbx.begin().await.c(h!()) {
+        Ok(txn) => txn,
+        Err(err) => {
+            if let Some(prepared_media) = &prepared_media {
+                prepared_media
+                    .staged
+                    .cleanup_after_rollback(&context.config, &context.s3)
+                    .await;
+            }
+            return Err(err);
+        }
+    };
     let mut changed_inbox_item_ids = vec![];
     let mut superseded_media_ids = vec![];
     let mut superseded_media_storage_keys = vec![];
@@ -374,24 +396,29 @@ async fn process_item_once(
     //     );
     //     return;
     // }
-    if m.deleted {
-        let result = crate::messenger::reconcile::reconcile_deleted_message(
-            &txn,
-            context.settlements.clone(),
-            &context.rq,
-            &context.config,
-            datasource_id,
-            &m,
-        )
-        .await
-        .c(h!())?;
-        changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
-        superseded_media_ids.extend(result.superseded_media_ids);
-        superseded_ocr_result_keys.extend(result.superseded_ocr_result_keys);
-        pending_dedupe_updates.extend(result.pending_dedupe_updates);
-        uploaded_files_ready_for_deletion
-            .extend(result.uploaded_files_ready_for_deletion);
-    } else {
+    let transaction_result: anyhow::Result<()> = async {
+        if m.deleted {
+            let result =
+                crate::messenger::reconcile::reconcile_deleted_message(
+                    &txn,
+                    context.settlements.clone(),
+                    &context.rq,
+                    &context.config,
+                    datasource_id,
+                    &m,
+                )
+                .await
+                .c(h!())?;
+            changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
+            superseded_media_ids.extend(result.superseded_media_ids);
+            superseded_ocr_result_keys
+                .extend(result.superseded_ocr_result_keys);
+            pending_dedupe_updates.extend(result.pending_dedupe_updates);
+            uploaded_files_ready_for_deletion
+                .extend(result.uploaded_files_ready_for_deletion);
+            return Ok(());
+        }
+        let prepared_media = prepared_media.as_ref().c(h!())?;
         let linked_messages =
             crate::messenger::reconcile::load_active_linked_messages(
                 &txn,
@@ -400,20 +427,63 @@ async fn process_item_once(
             )
             .await
             .c(h!())?;
-        if !linked_messages.is_empty() {
-            let result = crate::messenger::reconcile::reconcile_active_message(
-                &txn,
-                &mut redis,
-                context.settlements.clone(),
-                &context.rq,
-                &context.config,
-                &context.s3,
+        let linked_message_ids = linked_messages
+            .iter()
+            .map(|message| message.id)
+            .collect::<Vec<_>>();
+        if linked_message_ids != prepared_media.linked_message_ids {
+            anyhow::bail!(
+                "active inbox links changed while staging media: datasource_id={} echo_inbox_message_id={}",
                 datasource_id,
-                &m,
-                linked_messages,
-            )
-            .await
-            .c(h!())?;
+                m.internal_id
+            );
+        }
+        if let Some(source_message) = linked_messages.first() {
+            if prepared_media.source_attachments_hash.as_ref()
+                != Some(&source_message.attachments_hash)
+            {
+                anyhow::bail!(
+                    "active inbox attachment hash changed while staging media: datasource_id={} echo_inbox_message_id={}",
+                    datasource_id,
+                    m.internal_id
+                );
+            }
+            let current_attachments =
+                crate::messenger::reconcile::effective_snapshot_attachments(
+                    &txn,
+                    datasource_id,
+                    &m,
+                    source_message.id,
+                )
+                .await
+                .c(h!())?;
+            if !same_attachments(
+                &current_attachments,
+                &prepared_media.attachments,
+            ) {
+                anyhow::bail!(
+                    "active inbox attachments changed while staging media: datasource_id={} echo_inbox_message_id={}",
+                    datasource_id,
+                    m.internal_id
+                );
+            }
+        }
+        if !linked_messages.is_empty() {
+            let result =
+                crate::messenger::reconcile::reconcile_active_message_with_staged_media(
+                    &txn,
+                    &mut redis,
+                    context.settlements.clone(),
+                    &context.rq,
+                    &context.config,
+                    datasource_id,
+                    &m,
+                    linked_messages,
+                    prepared_media.attachments.clone(),
+                    &prepared_media.staged,
+                )
+                .await
+                .c(h!())?;
             changed_inbox_item_ids.extend(result.changed_inbox_item_ids);
             superseded_media_ids.extend(result.superseded_media_ids);
             superseded_media_storage_keys
@@ -432,15 +502,13 @@ async fn process_item_once(
                 datasource_id,
                 inbox_message_id: Some(m.internal_id as i64),
             };
-            let result =
-                crate::message_queue::process_signal_message_queue_item(
+            let result = crate::message_queue::process_signal_message_queue_item_with_staged_media(
                     message,
-                    m.attachments,
+                    &prepared_media.staged,
                     &mut redis,
                     context.settlements.clone(),
                     &context.rq,
                     &context.config,
-                    &context.s3,
                     &txn,
                     false,
                     &mut changed_inbox_item_ids,
@@ -455,8 +523,43 @@ async fn process_item_once(
                 m.id
             );
         }
+        Ok(())
     }
-    txn.commit().await.c(h!())?;
+    .await;
+    if let Err(err) = transaction_result {
+        if let Err(rollback_err) = txn.rollback().await {
+            error!(
+                "failed to rollback messenger queue transaction: {:?}",
+                rollback_err
+            );
+        }
+        if let Some(prepared_media) = &prepared_media {
+            prepared_media
+                .staged
+                .cleanup_after_rollback(&context.config, &context.s3)
+                .await;
+        }
+        return Err(err);
+    }
+    if let Err(err) = txn.commit().await.c(h!()) {
+        if let Some(prepared_media) = &prepared_media {
+            prepared_media
+                .staged
+                .finalize_after_commit(
+                    &context.config,
+                    &context.s3,
+                    &context.dbx,
+                )
+                .await;
+        }
+        return Err(err);
+    }
+    if let Some(prepared_media) = &prepared_media {
+        prepared_media
+            .staged
+            .finalize_after_commit(&context.config, &context.s3, &context.dbx)
+            .await;
+    }
     crate::messenger::media::delete_uploaded_attachment_files(
         &uploaded_files_ready_for_deletion,
     )
@@ -491,6 +594,78 @@ async fn process_item_once(
     )
     .await;
     Ok(())
+}
+
+fn same_attachments(
+    left: &[MessageAttachmentF1],
+    right: &[MessageAttachmentF1],
+) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(left, right)| {
+            left.path == right.path && left.name == right.name
+        })
+}
+
+async fn prepare_item_media(
+    context: &WorkerContext,
+    datasource_id: i64,
+    message: &MessageF1,
+) -> anyhow::Result<Option<PreparedItemMedia>> {
+    if message.deleted {
+        return Ok(None);
+    }
+    let linked_messages =
+        crate::messenger::reconcile::load_active_linked_messages(
+            &context.dbx,
+            datasource_id,
+            message,
+        )
+        .await
+        .c(h!())?;
+    let attachments = match linked_messages.first() {
+        Some(source_message) => {
+            crate::messenger::reconcile::effective_snapshot_attachments(
+                &context.dbx,
+                datasource_id,
+                message,
+                source_message.id,
+            )
+            .await
+            .c(h!())?
+        }
+        None if message.group_id.is_some() => message.attachments.clone(),
+        None => vec![],
+    };
+    let staged = match linked_messages.first() {
+        Some(source_message) => {
+            crate::message_queue::stage_queue_media_for_active_edit(
+                &attachments,
+                &source_message.attachments_hash,
+                &context.config,
+                &context.s3,
+            )
+            .await
+            .c(h!())?
+        }
+        None => crate::message_queue::stage_queue_media(
+            &attachments,
+            &context.config,
+            &context.s3,
+        )
+        .await
+        .c(h!())?,
+    };
+    Ok(Some(PreparedItemMedia {
+        linked_message_ids: linked_messages
+            .iter()
+            .map(|message| message.id)
+            .collect(),
+        source_attachments_hash: linked_messages
+            .first()
+            .map(|message| message.attachments_hash.clone()),
+        attachments,
+        staged,
+    }))
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use crate::entities::sea_orm_active_enums::AccountStatus;
 use crate::entities::*;
 use crate::location::SettlementsDataConfig;
 use crate::message_queue::{
-    process_signal_message_queue_item_with_options,
+    process_signal_message_queue_item_with_staged_media_and_options,
     ProcessSignalMessageQueueItemOptions, ProcessSignalMessageQueueItemResult,
 };
 use crate::messenger::bl::list_echo_accounts;
@@ -887,25 +887,44 @@ async fn process_recovery_message(
     attachments: Vec<MessageAttachmentF1>,
     created_at: NaiveDateTime,
 ) -> anyhow::Result<ProcessSignalMessageQueueItemResult> {
-    let txn = dbx.begin().await.c(h!())?;
+    let staged_media = crate::message_queue::stage_queue_media(
+        &attachments,
+        deps.config,
+        deps.s3,
+    )
+    .await
+    .c(h!())?;
+    let txn = match dbx.begin().await.c(h!()) {
+        Ok(txn) => txn,
+        Err(err) => {
+            staged_media
+                .cleanup_after_rollback(deps.config, deps.s3)
+                .await;
+            return Err(err);
+        }
+    };
     let result = process_recovery_message_in_txn(
         &txn,
         redis,
         deps,
         inbox_message,
         message,
-        attachments,
+        &staged_media,
         created_at,
     )
     .await;
 
     match result {
         Ok((result, changed_inbox_item_ids)) => {
-            txn.commit().await.c(h!())?;
-            crate::messenger::media::delete_uploaded_attachment_files(
-                &result.uploaded_files_ready_for_deletion,
-            )
-            .await;
+            if let Err(err) = txn.commit().await.c(h!()) {
+                staged_media
+                    .finalize_after_commit(deps.config, deps.s3, dbx)
+                    .await;
+                return Err(err);
+            }
+            staged_media
+                .finalize_after_commit(deps.config, deps.s3, dbx)
+                .await;
             if let Err(err) = crate::inbox::fanout_inbox_changes(
                 redis,
                 changed_inbox_item_ids,
@@ -923,6 +942,9 @@ async fn process_recovery_message(
                     rollback_err
                 );
             }
+            staged_media
+                .cleanup_after_rollback(deps.config, deps.s3)
+                .await;
             Err(err)
         }
     }
@@ -934,27 +956,27 @@ async fn process_recovery_message_in_txn(
     deps: &EchoImSyncRecoveryDeps<'_>,
     inbox_message: &echo_inbox_message::Model,
     message: Message,
-    attachments: Vec<MessageAttachmentF1>,
+    staged_media: &crate::messenger::media::StagedMediaAttachments,
     created_at: NaiveDateTime,
 ) -> anyhow::Result<(ProcessSignalMessageQueueItemResult, Vec<i64>)> {
     let mut changed_inbox_item_ids = vec![];
-    let result = process_signal_message_queue_item_with_options(
-        message,
-        attachments,
-        redis,
-        deps.settlements.clone(),
-        deps.rq,
-        deps.config,
-        deps.s3,
-        txn,
-        false,
-        &mut changed_inbox_item_ids,
-        ProcessSignalMessageQueueItemOptions {
-            created_at: Some(created_at),
-        },
-    )
-    .await
-    .c(h!())?;
+    let result =
+        process_signal_message_queue_item_with_staged_media_and_options(
+            message,
+            staged_media,
+            redis,
+            deps.settlements.clone(),
+            deps.rq,
+            deps.config,
+            txn,
+            false,
+            &mut changed_inbox_item_ids,
+            ProcessSignalMessageQueueItemOptions {
+                created_at: Some(created_at),
+            },
+        )
+        .await
+        .c(h!())?;
 
     mark_inbox_seen(txn, inbox_message).await.c(h!())?;
 

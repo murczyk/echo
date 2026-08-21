@@ -21,6 +21,12 @@ pub struct Model {
     pub uploaded_by_login_id: Uuid,
     pub uploaded_at: DateTime,
     pub retired_at: Option<DateTime>,
+    #[sea_orm(column_type = "Text")]
+    pub source_kind: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub source_identifier: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub source_sha256: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -12,7 +12,6 @@ class AnalysisMapLayerSwitchElement extends HTMLElement {
   private pendingUnmountHandle: number | null = null;
   private features: FeatureToggleState = {
     palitrasEnabled: true,
-    kmzEnabled: true,
     pelengsEnabled: true,
   };
 

@@ -115,7 +115,12 @@ function liTemplate(message_: Message, selectedUnits: string[]) {
     `;
 }
 
-export function getPointPopupTemplate(sortedMessages: Message[], selectedUnits: string[]) {
+export function getPointPopupTemplate(
+  sortedMessages: Message[],
+  selectedUnits: string[],
+  hasMoreMessages = false,
+  contextTitle?: string,
+) {
   const body = sortedMessages
     .map((message) => {
       return liTemplate(message, selectedUnits);
@@ -124,10 +129,15 @@ export function getPointPopupTemplate(sortedMessages: Message[], selectedUnits: 
 
   return `
     <div class="messages-popup" >
-      <p class="title" > ${messagesCountText(sortedMessages.length)} </p>
+      <p class="title" > ${contextTitle ? `${escapeHtml(contextTitle)} · ` : ''}${messagesCountText(sortedMessages.length)} </p>
         <ul>
             ${body}
-  </ul>
+        </ul>
+        ${
+          hasMoreMessages
+            ? '<button type="button" class="btn btn-outline-primary btn-sm" data-map-settlement-messages-load-more>Завантажити ще</button>'
+            : ''
+        }
     </div>
       `;
 }

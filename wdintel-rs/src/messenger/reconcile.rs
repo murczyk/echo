@@ -2,7 +2,7 @@ use crate::config::*;
 use crate::entities::*;
 use crate::location::SettlementsDataConfig;
 use crate::messenger::dedupe;
-use crate::messenger::media::MediaUploadInput;
+use crate::messenger::media::{MediaUploadInput, StagedMediaAttachments};
 use crate::types::*;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::NaiveDateTime;
@@ -56,7 +56,7 @@ impl DedupeRedisUpdate {
 }
 
 pub async fn load_linked_messages(
-    txn: &DatabaseTransaction,
+    txn: &impl ConnectionTrait,
     datasource_id: i64,
     echo_inbox_message_id: i64,
 ) -> anyhow::Result<Vec<signal_message::Model>> {
@@ -88,7 +88,7 @@ pub async fn load_linked_messages(
 }
 
 pub async fn load_active_linked_messages(
-    txn: &DatabaseTransaction,
+    txn: &impl ConnectionTrait,
     datasource_id: i64,
     snapshot: &MessageF1,
 ) -> anyhow::Result<Vec<signal_message::Model>> {
@@ -755,7 +755,7 @@ async fn load_legacy_deleted_match_fields(
 }
 
 async fn load_legacy_active_linked_messages(
-    txn: &DatabaseTransaction,
+    txn: &impl ConnectionTrait,
     datasource_id: i64,
     snapshot: &MessageF1,
 ) -> anyhow::Result<Vec<signal_message::Model>> {
@@ -839,6 +839,52 @@ pub async fn reconcile_active_message(
     snapshot: &MessageF1,
     linked_messages: Vec<signal_message::Model>,
 ) -> anyhow::Result<ReconcileResult> {
+    let Some(source_message) = linked_messages.first() else {
+        return Ok(ReconcileResult::default());
+    };
+    let snapshot_attachments = effective_snapshot_attachments(
+        txn,
+        datasource_id,
+        snapshot,
+        source_message.id,
+    )
+    .await
+    .c(h!())?;
+    let staged_media = crate::message_queue::stage_queue_media_for_active_edit(
+        &snapshot_attachments,
+        &source_message.attachments_hash,
+        config,
+        s3,
+    )
+    .await
+    .c(h!())?;
+    reconcile_active_message_with_staged_media(
+        txn,
+        redis,
+        settlements,
+        rq,
+        config,
+        datasource_id,
+        snapshot,
+        linked_messages,
+        snapshot_attachments,
+        &staged_media,
+    )
+    .await
+}
+
+pub async fn reconcile_active_message_with_staged_media(
+    txn: &DatabaseTransaction,
+    redis: &mut ConnectionManager,
+    settlements: Arc<RwLock<SettlementsDataConfig>>,
+    rq: &reqwest::Client,
+    config: &Config,
+    datasource_id: i64,
+    snapshot: &MessageF1,
+    linked_messages: Vec<signal_message::Model>,
+    snapshot_attachments: Vec<MessageAttachmentF1>,
+    staged_media: &StagedMediaAttachments,
+) -> anyhow::Result<ReconcileResult> {
     let Some(source_message) = linked_messages.first().cloned() else {
         return Ok(ReconcileResult::default());
     };
@@ -860,16 +906,8 @@ pub async fn reconcile_active_message(
     let previous_attachments_hash = source_message.attachments_hash.clone();
 
     let body = snapshot.text.replace("\r\n", "\n");
-    let snapshot_attachments = effective_snapshot_attachments(
-        txn,
-        datasource_id,
-        snapshot,
-        source_message_id,
-    )
-    .await
-    .c(h!())?;
     let snapshot_attachments_hash =
-        dedupe::attachments_hash(&snapshot_attachments).await;
+        staged_media.attachments_hash().map(str::to_string);
     let attachments_hash = effective_edit_attachments_hash(
         txn,
         source_message_id,
@@ -1020,12 +1058,11 @@ pub async fn reconcile_active_message(
         .c(h!())?;
         let media_replacement = replace_media_if_changed(
             txn,
-            config,
-            s3,
             &signal_message,
             previous_attachments_hash.clone(),
             attachments_hash.clone(),
             &snapshot_attachments,
+            staged_media,
         )
         .await
         .c(h!())?;
@@ -1261,8 +1298,8 @@ fn snapshot_sender_uuid(snapshot: &MessageF1) -> Option<String> {
     })
 }
 
-async fn effective_snapshot_attachments(
-    txn: &DatabaseTransaction,
+pub async fn effective_snapshot_attachments(
+    txn: &impl ConnectionTrait,
     datasource_id: i64,
     snapshot: &MessageF1,
     source_message_id: i64,
@@ -1783,12 +1820,11 @@ struct DeletedMedia {
 
 async fn replace_media_if_changed(
     txn: &DatabaseTransaction,
-    config: &Config,
-    s3: &Option<opendal::Operator>,
     signal_message: &signal_message::Model,
     previous_attachments_hash: Option<String>,
     attachments_hash: Option<String>,
     attachments: &[MessageAttachmentF1],
+    staged_media: &StagedMediaAttachments,
 ) -> anyhow::Result<MediaReplacementResult> {
     let old_media = signal_message_media::Entity::find()
         .filter(
@@ -1836,32 +1872,15 @@ async fn replace_media_if_changed(
         });
     }
 
-    let upload_inputs = attachments
-        .iter()
-        .cloned()
-        .map(MediaUploadInput::from)
-        .collect_vec();
-    let delete_uploaded = config
-        .feature_delete_uploaded_attachment
-        .unwrap_or(FEATURE_DELETE_UPLOADED_ATTACHMENT_DEFAULT);
-    let deletion = if delete_uploaded {
-        crate::messenger::media::UploadedAttachmentDeletion::DeleteAfterCommit
-    } else {
-        crate::messenger::media::UploadedAttachmentDeletion::Preserve
-    };
-    let upload_result = crate::messenger::media::store_media_attachments(
-        &upload_inputs,
+    let uploaded_media = crate::messenger::media::persist_staged_media(
+        staged_media,
         signal_message.id,
-        config,
-        s3,
         txn,
-        deletion,
     )
     .await
     .c(h!())?;
-    if upload_result.skipped_missing {
-        let uploaded_media_ids = upload_result
-            .media
+    if staged_media.skipped_missing() {
+        let uploaded_media_ids = uploaded_media
             .into_iter()
             .map(|media| media.id)
             .collect_vec();
@@ -1880,11 +1899,8 @@ async fn replace_media_if_changed(
             superseded_media_storage_keys: deleted_media.storage_keys,
             superseded_ocr_result_keys: deleted_media.ocr_result_keys,
             preserved_previous: true,
-            uploaded_files_ready_for_deletion: if delete_uploaded {
-                upload_result.uploaded_files_ready_for_deletion
-            } else {
-                vec![]
-            },
+            uploaded_files_ready_for_deletion: staged_media
+                .uploaded_files_ready_after_discard(),
         });
     }
     let deleted_media = delete_old_media(txn, old_media_ids).await.c(h!())?;
@@ -1893,11 +1909,7 @@ async fn replace_media_if_changed(
         superseded_media_storage_keys: deleted_media.storage_keys,
         superseded_ocr_result_keys: deleted_media.ocr_result_keys,
         preserved_previous: false,
-        uploaded_files_ready_for_deletion: if delete_uploaded {
-            upload_result.uploaded_files_ready_for_deletion
-        } else {
-            vec![]
-        },
+        uploaded_files_ready_for_deletion: vec![],
     })
 }
 

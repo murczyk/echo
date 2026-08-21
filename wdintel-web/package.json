@@ -48,7 +48,6 @@
     "@mui/material": "^6.1.2",
     "@mui/x-date-pickers": "^7.19.0",
     "@shoelace-style/shoelace": "^2.18.0",
-    "@tmcw/togeojson": "^5.8.1",
     "@uppy/core": "^4.0.0",
     "@uppy/dashboard": "^4.0.0",
     "@uppy/drag-drop": "^4.0.0",

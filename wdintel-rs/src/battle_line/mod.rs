@@ -1,8 +1,10 @@
 use crate::battle_line::types::*;
 use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
+    BATTLE_LINE_AOR_ANCHOR_LATITUDE, BATTLE_LINE_AOR_ANCHOR_LONGITUDE,
     BATTLE_LINE_CLIP_EXTENT_METERS,
     BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
+    BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD, BATTLE_LINE_SOURCE_KIND_DELTA_KML,
     BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
 };
 use crate::entities::*;
@@ -24,8 +26,65 @@ use sea_orm::*;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeSet;
 
+pub mod oneoff;
 pub mod settlement_queue;
 pub mod types;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BattleLineImportSource {
+    pub kind: String,
+    pub identifier: Option<String>,
+}
+
+impl BattleLineImportSource {
+    pub fn admin_upload() -> Self {
+        Self {
+            kind: BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD.to_string(),
+            identifier: None,
+        }
+    }
+
+    pub fn delta_kml(identifier: String) -> Self {
+        Self {
+            kind: BATTLE_LINE_SOURCE_KIND_DELTA_KML.to_string(),
+            identifier: Some(identifier),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BattleLineImportBounds {
+    pub min_lat: f64,
+    pub min_lon: f64,
+    pub max_lat: f64,
+    pub max_lon: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BattleLineImportSummary {
+    pub point_count: usize,
+    pub line_string_count: usize,
+    pub empty_point_count: usize,
+    pub empty_line_string_count: usize,
+    pub zero_length_line_string_count: usize,
+    pub coordinate_count: usize,
+    pub bounds: BattleLineImportBounds,
+}
+
+#[derive(Clone, Debug)]
+pub struct PreparedBattleLineImport {
+    geometry_wkt: String,
+    pub source_file_name: String,
+    pub source_sha256: String,
+    pub summary: BattleLineImportSummary,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BattleLineImportOutcome {
+    Imported(i64),
+    AlreadyImported(i64),
+    RequiresForce(i64),
+}
 
 #[derive(Clone, Debug)]
 pub struct BattleLineCandidatePoint {
@@ -80,6 +139,7 @@ struct MatchRow {
 struct CanonicalSettlementRow {
     settlement_id: i32,
     name: String,
+    district: String,
     region: String,
     lat: f64,
     lon: f64,
@@ -112,28 +172,15 @@ pub async fn upload_battle_line(
         .content_disposition()
         .and_then(|disposition| disposition.get_filename())
         .unwrap_or("battle-line.kml");
-    let source_file_name = sanitize_upload_filename(raw_file_name);
-    let extension = std::path::Path::new(&source_file_name)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if !BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS.contains(&extension.as_str()) {
-        return Err(AppError::BL {
-            msg: format!(
-                "Підтримуються лише файли .kml та .kmz: {source_file_name}"
-            ),
-        });
-    }
-    let features = parse_point_line_features(&source_file_name, &data)
+    let prepared = prepare_battle_line_import(raw_file_name, &data)
         .await
         .c(h!())?;
-    let geometry_wkt = features_to_wkt(&features).c(h!())?;
-    replace_active_battle_line(
+    activate_battle_line_import(
         &env.dbx,
-        &geometry_wkt,
-        &source_file_name,
+        &prepared,
         login_id,
+        &BattleLineImportSource::admin_upload(),
+        true,
     )
     .await
     .c(h!())?;
@@ -441,26 +488,117 @@ where
         .c(h!())
 }
 
-async fn replace_active_battle_line(
-    dbx: &DatabaseConnection,
-    geometry_wkt: &str,
+pub async fn prepare_battle_line_import(
+    file_name: &str,
+    data: &[u8],
+) -> anyhow::Result<PreparedBattleLineImport> {
+    if data.len() > BATTLE_LINE_UPLOAD_MAX_BYTES {
+        anyhow::bail!(
+            "Battle Line file exceeds the {BATTLE_LINE_UPLOAD_MAX_BYTES} byte limit"
+        );
+    }
+    let source_file_name = sanitize_upload_filename(file_name);
+    validate_battle_line_extension(&source_file_name).c(h!())?;
+    let parsed = parse_point_line_features(&source_file_name, data)
+        .await
+        .c(h!())?;
+    let mut summary = summarize_features(&parsed.features).c(h!())?;
+    summary.empty_point_count = parsed.empty_point_count;
+    summary.empty_line_string_count = parsed.empty_line_string_count;
+    let features = parsed
+        .features
+        .into_iter()
+        .filter(|feature| match feature {
+            ImportedGeometryFeature::Point(_) => true,
+            ImportedGeometryFeature::LineString(coordinates) => {
+                line_has_length(coordinates)
+            }
+        })
+        .collect::<Vec<_>>();
+    let geometry_wkt = features_to_wkt(&features).c(h!())?;
+    Ok(PreparedBattleLineImport {
+        geometry_wkt,
+        source_file_name,
+        source_sha256: sha256::digest(data),
+        summary,
+    })
+}
+
+fn validate_battle_line_extension(
     source_file_name: &str,
+) -> anyhow::Result<()> {
+    let extension = std::path::Path::new(source_file_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if !BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS.contains(&extension.as_str()) {
+        anyhow::bail!(
+            "Only .kml and .kmz files are supported: {source_file_name}"
+        );
+    }
+    Ok(())
+}
+
+pub async fn activate_battle_line_import(
+    dbx: &DatabaseConnection,
+    prepared: &PreparedBattleLineImport,
     uploaded_by_login_id: uuid::Uuid,
-) -> anyhow::Result<i64> {
+    source: &BattleLineImportSource,
+    replace_existing: bool,
+) -> anyhow::Result<BattleLineImportOutcome> {
     let txn = dbx.begin().await.c(h!())?;
-    lock_updates(&txn).await.c(h!())?;
+    let outcome = activate_battle_line_import_in_transaction(
+        &txn,
+        prepared,
+        uploaded_by_login_id,
+        source,
+        replace_existing,
+    )
+    .await
+    .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(outcome)
+}
+
+async fn activate_battle_line_import_in_transaction<C>(
+    dbx: &C,
+    prepared: &PreparedBattleLineImport,
+    uploaded_by_login_id: uuid::Uuid,
+    source: &BattleLineImportSource,
+    replace_existing: bool,
+) -> anyhow::Result<BattleLineImportOutcome>
+where
+    C: ConnectionTrait,
+{
+    lock_updates(dbx).await.c(h!())?;
     let previous_id = battle_line_version::Entity::find()
         .filter(battle_line_version::Column::RetiredAt.is_null())
         .select_only()
         .column(battle_line_version::Column::Id)
         .into_tuple::<i64>()
-        .one(&txn)
+        .one(dbx)
         .await
         .c(h!())?;
+    if !replace_existing {
+        if let Some(version_id) = find_existing_active_source_version(
+            dbx,
+            source,
+            &prepared.source_sha256,
+        )
+        .await
+        .c(h!())?
+        {
+            return Ok(BattleLineImportOutcome::AlreadyImported(version_id));
+        }
+        if let Some(previous_id) = previous_id {
+            return Ok(BattleLineImportOutcome::RequiresForce(previous_id));
+        }
+    }
     if let Some(previous_id) = previous_id {
         battle_line_aor_geometry::Entity::delete_many()
             .filter(battle_line_aor_geometry::Column::VersionId.eq(previous_id))
-            .exec(&txn)
+            .exec(dbx)
             .await
             .c(h!())?;
         battle_line_version::Entity::update_many()
@@ -469,23 +607,33 @@ async fn replace_active_battle_line(
                 Expr::cust("now() at time zone 'utc'"),
             )
             .filter(battle_line_version::Column::Id.eq(previous_id))
-            .exec(&txn)
+            .exec(dbx)
             .await
             .c(h!())?;
     }
-    let row = txn
+    let row = dbx
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
 insert into battle_line_version
-    (geometry, source_file_name, uploaded_by_login_id)
-values (ST_GeomFromText($1, 4326), $2, $3)
+    (
+        geometry,
+        source_file_name,
+        uploaded_by_login_id,
+        source_kind,
+        source_identifier,
+        source_sha256
+    )
+values (ST_GeomFromText($1, 4326), $2, $3, $4, $5, $6)
 returning id
             "#,
             [
-                geometry_wkt.into(),
-                source_file_name.into(),
+                prepared.geometry_wkt.clone().into(),
+                prepared.source_file_name.clone().into(),
                 uploaded_by_login_id.into(),
+                source.kind.clone().into(),
+                source.identifier.clone().into(),
+                prepared.source_sha256.clone().into(),
             ],
         ))
         .await
@@ -501,15 +649,39 @@ returning id
         .select_only()
         .column(area_of_responsibility::Column::Id)
         .into_tuple::<i64>()
-        .all(&txn)
+        .all(dbx)
         .await
         .c(h!())?;
     for aor_id in aor_ids {
-        refresh_aor_geometry(&txn, aor_id).await.c(h!())?;
+        refresh_aor_geometry(dbx, aor_id).await.c(h!())?;
     }
-    requeue_settlement_links(&txn).await.c(h!())?;
-    txn.commit().await.c(h!())?;
-    Ok(version_id)
+    Ok(BattleLineImportOutcome::Imported(version_id))
+}
+
+async fn find_existing_active_source_version<C>(
+    dbx: &C,
+    source: &BattleLineImportSource,
+    source_sha256: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    let Some(source_identifier) = source.identifier.as_ref() else {
+        return Ok(None);
+    };
+    battle_line_version::Entity::find()
+        .filter(battle_line_version::Column::SourceKind.eq(&source.kind))
+        .filter(
+            battle_line_version::Column::SourceIdentifier.eq(source_identifier),
+        )
+        .filter(battle_line_version::Column::SourceSha256.eq(source_sha256))
+        .filter(battle_line_version::Column::RetiredAt.is_null())
+        .select_only()
+        .column(battle_line_version::Column::Id)
+        .into_tuple::<i64>()
+        .one(dbx)
+        .await
+        .c(h!())
 }
 
 pub(crate) async fn requeue_settlement_links<C>(dbx: &C) -> anyhow::Result<()>
@@ -607,7 +779,12 @@ where aor_id = $1
     dbx.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         AOR_GEOMETRY_INSERT_SQL,
-        [aor_id.into(), BATTLE_LINE_CLIP_EXTENT_METERS.into()],
+        [
+            aor_id.into(),
+            BATTLE_LINE_CLIP_EXTENT_METERS.into(),
+            BATTLE_LINE_AOR_ANCHOR_LONGITUDE.into(),
+            BATTLE_LINE_AOR_ANCHOR_LATITUDE.into(),
+        ],
     ))
     .await
     .c(h!())?;
@@ -621,7 +798,8 @@ with input as (
         a.id as aor_id,
         ST_Transform(bl.geometry, 3857) as full_geometry,
         ST_Transform(ST_SetSRID(ST_MakePoint(a.left_lon, a.left_lat), 4326), 3857) as start_hint,
-        ST_Transform(ST_SetSRID(ST_MakePoint(a.right_lon, a.right_lat), 4326), 3857) as end_hint
+        ST_Transform(ST_SetSRID(ST_MakePoint(a.right_lon, a.right_lat), 4326), 3857) as end_hint,
+        ST_Transform(ST_SetSRID(ST_MakePoint($3, $4), 4326), 3857) as anchor
     from battle_line_version bl
     join area_of_responsibility a on a.id = $1
     where bl.retired_at is null
@@ -635,25 +813,39 @@ with input as (
         version_id,
         aor_id,
         full_geometry,
+        start_hint,
+        end_hint,
+        anchor,
         ST_ClosestPoint(full_geometry, start_hint) as snapped_start,
         ST_ClosestPoint(full_geometry, end_hint) as snapped_end
     from input
 ), directed as (
     select *,
-        ST_X(snapped_end) - ST_X(snapped_start) as dx,
-        ST_Y(snapped_end) - ST_Y(snapped_start) as dy,
+        ST_X(start_hint) - ST_X(anchor) as start_dx,
+        ST_Y(start_hint) - ST_Y(anchor) as start_dy,
+        ST_X(end_hint) - ST_X(anchor) as end_dx,
+        ST_Y(end_hint) - ST_Y(anchor) as end_dy,
+        ST_Distance(anchor, start_hint) as start_length,
+        ST_Distance(anchor, end_hint) as end_length,
         ST_Distance(snapped_start, snapped_end) as guide_length
     from snapped
 ), clipped as (
     select *, ST_SetSRID(ST_MakePolygon(ST_MakeLine(array[
-        ST_MakePoint(ST_X(snapped_start) - dy / guide_length * $2, ST_Y(snapped_start) + dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_end) - dy / guide_length * $2, ST_Y(snapped_end) + dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_end) + dy / guide_length * $2, ST_Y(snapped_end) - dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_start) + dy / guide_length * $2, ST_Y(snapped_start) - dx / guide_length * $2),
-        ST_MakePoint(ST_X(snapped_start) - dy / guide_length * $2, ST_Y(snapped_start) + dx / guide_length * $2)
+        ST_MakePoint(ST_X(anchor), ST_Y(anchor)),
+        ST_MakePoint(
+            ST_X(anchor) + start_dx / start_length * $2,
+            ST_Y(anchor) + start_dy / start_length * $2
+        ),
+        ST_MakePoint(
+            ST_X(anchor) + end_dx / end_length * $2,
+            ST_Y(anchor) + end_dy / end_length * $2
+        ),
+        ST_MakePoint(ST_X(anchor), ST_Y(anchor))
     ])), 3857) as span
     from directed
     where guide_length > 0.01
+      and start_length > 0.01
+      and end_length > 0.01
 ), geometry_parts as (
     select *,
         ST_Intersection(ST_CollectionExtract(full_geometry, 1), span) as clipped_points,
@@ -664,7 +856,10 @@ with input as (
     from clipped
 ), result as (
     select *, ST_ForceCollection(
-        ST_Transform(ST_Collect(clipped_points, clipped_lines), 4326)
+        ST_Transform(ST_Collect(
+            case when ST_IsEmpty(clipped_points) then null else clipped_points end,
+            case when ST_IsEmpty(clipped_lines) then null else clipped_lines end
+        ), 4326)
     ) as geometry
     from geometry_parts
 )
@@ -980,12 +1175,14 @@ with candidates as (
 select
     matched.id as settlement_id,
     matched.name,
+    coalesce(matched.district, '') as district,
     coalesce(matched.region, '') as region,
     matched.lat,
     matched.lon
 from candidates candidate
 cross join lateral (
-    select settlement.id, settlement.name, settlement.region,
+    select settlement.id, settlement.name, settlement.district,
+        settlement.region,
         settlement.lat, settlement.lon
     from settlement
     where settlement.lat is not null
@@ -1024,6 +1221,7 @@ order by candidate.candidate_index
                 BattleLineSettlementCandidate {
                     settlement_id: row.settlement_id,
                     name: row.name,
+                    district: row.district,
                     region: row.region,
                     coordinate: BattleLineCoordinate {
                         lat: row.lat,
@@ -1184,6 +1382,72 @@ fn features_to_wkt(
     Ok(format!("GEOMETRYCOLLECTION({})", features.join(",")))
 }
 
+fn summarize_features(
+    features: &[ImportedGeometryFeature],
+) -> anyhow::Result<BattleLineImportSummary> {
+    let mut point_count = 0;
+    let mut line_string_count = 0;
+    let mut zero_length_line_string_count = 0;
+    let mut coordinate_count = 0;
+    let mut bounds = None;
+    for feature in features {
+        match feature {
+            ImportedGeometryFeature::Point(coordinate) => {
+                validate_coordinate(coordinate).c(h!())?;
+                point_count += 1;
+                coordinate_count += 1;
+                extend_import_bounds(&mut bounds, coordinate);
+            }
+            ImportedGeometryFeature::LineString(coordinates) => {
+                for coordinate in coordinates {
+                    validate_coordinate(coordinate).c(h!())?;
+                }
+                line_string_count += 1;
+                if !line_has_length(coordinates) {
+                    zero_length_line_string_count += 1;
+                }
+                coordinate_count += coordinates.len();
+                for coordinate in coordinates {
+                    extend_import_bounds(&mut bounds, coordinate);
+                }
+            }
+        }
+    }
+    Ok(BattleLineImportSummary {
+        point_count,
+        line_string_count,
+        empty_point_count: 0,
+        empty_line_string_count: 0,
+        zero_length_line_string_count,
+        coordinate_count,
+        bounds: bounds
+            .context("Battle Line contains no coordinates")
+            .context(h!())?,
+    })
+}
+
+fn extend_import_bounds(
+    bounds: &mut Option<BattleLineImportBounds>,
+    coordinate: &ImportedCoordinate,
+) {
+    match bounds {
+        Some(bounds) => {
+            bounds.min_lat = bounds.min_lat.min(coordinate.lat);
+            bounds.min_lon = bounds.min_lon.min(coordinate.lon);
+            bounds.max_lat = bounds.max_lat.max(coordinate.lat);
+            bounds.max_lon = bounds.max_lon.max(coordinate.lon);
+        }
+        None => {
+            *bounds = Some(BattleLineImportBounds {
+                min_lat: coordinate.lat,
+                min_lon: coordinate.lon,
+                max_lat: coordinate.lat,
+                max_lon: coordinate.lon,
+            });
+        }
+    }
+}
+
 fn line_string_to_wkt(
     coordinates: &[ImportedCoordinate],
 ) -> anyhow::Result<String> {
@@ -1261,12 +1525,18 @@ fn append_geojson_features(
                 append_geojson_features(geometry, features).c(h!())?;
             }
         }
-        "Point" => features.push(BattleLineFeature {
-            kind: "Point".to_string(),
-            coordinates: vec![
-                coordinate_from_json(&geometry["coordinates"]).c(h!())?
-            ],
-        }),
+        "Point" => {
+            let coordinates = geometry["coordinates"].as_array().c(h!())?;
+            if !coordinates.is_empty() {
+                features.push(BattleLineFeature {
+                    kind: "Point".to_string(),
+                    coordinates: vec![coordinate_from_json(
+                        &geometry["coordinates"],
+                    )
+                    .c(h!())?],
+                });
+            }
+        }
         "LineString" => features.push(BattleLineFeature {
             kind: "LineString".to_string(),
             coordinates: coordinates_from_json(&geometry["coordinates"])
@@ -1355,6 +1625,58 @@ mod tests {
     }
 
     #[test]
+    fn summarizes_point_and_line_features() {
+        let features = vec![
+            ImportedGeometryFeature::Point(ImportedCoordinate {
+                lat: 49.0,
+                lon: 31.0,
+            }),
+            ImportedGeometryFeature::LineString(vec![
+                ImportedCoordinate {
+                    lat: 48.0,
+                    lon: 30.0,
+                },
+                ImportedCoordinate {
+                    lat: 50.0,
+                    lon: 33.0,
+                },
+            ]),
+        ];
+
+        assert_eq!(
+            summarize_features(&features).unwrap(),
+            BattleLineImportSummary {
+                point_count: 1,
+                line_string_count: 1,
+                empty_point_count: 0,
+                empty_line_string_count: 0,
+                zero_length_line_string_count: 0,
+                coordinate_count: 3,
+                bounds: BattleLineImportBounds {
+                    min_lat: 48.0,
+                    min_lon: 30.0,
+                    max_lat: 50.0,
+                    max_lon: 33.0,
+                },
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn excludes_zero_length_lines_from_stored_geometry() {
+        let kml = br#"<kml><Document><Placemark><MultiGeometry>
+<Point><coordinates>31,49,0</coordinates></Point>
+<LineString><coordinates>32,50,0 32,50,0</coordinates></LineString>
+</MultiGeometry></Placemark></Document></kml>"#;
+        let prepared =
+            prepare_battle_line_import("legacy.kml", kml).await.unwrap();
+
+        assert_eq!(prepared.summary.line_string_count, 1);
+        assert_eq!(prepared.summary.zero_length_line_string_count, 1);
+        assert_eq!(prepared.geometry_wkt, "GEOMETRYCOLLECTION(POINT(31 49))");
+    }
+
+    #[test]
     fn rejects_empty_geometry_and_replaces_degenerate_line_with_point() {
         assert!(features_to_wkt(&[]).is_err());
         assert_eq!(
@@ -1373,6 +1695,37 @@ mod tests {
             ])
             .unwrap(),
             "GEOMETRYCOLLECTION(POINT(32 50),POINT(31 49))"
+        );
+    }
+
+    #[test]
+    fn ignores_empty_point_geojson_2287() {
+        let geometry = serde_json::json!({
+            "type": "GeometryCollection",
+            "geometries": [
+                { "type": "Point", "coordinates": [] },
+                {
+                    "type": "LineString",
+                    "coordinates": [[31.0, 49.0], [32.0, 50.0]]
+                }
+            ]
+        });
+
+        assert_eq!(
+            features_from_geojson(&geometry).unwrap(),
+            vec![BattleLineFeature {
+                kind: "LineString".to_string(),
+                coordinates: vec![
+                    BattleLineCoordinate {
+                        lat: 49.0,
+                        lon: 31.0,
+                    },
+                    BattleLineCoordinate {
+                        lat: 50.0,
+                        lon: 32.0,
+                    },
+                ],
+            }]
         );
     }
 
@@ -1412,6 +1765,7 @@ mod tests {
             id: Set(canonical_id),
             kind: Set(SettlementKind::Village),
             name: Set("#2287 CANONICAL".to_string()),
+            district: Set(Some("#2287 DISTRICT".to_string())),
             region: Set(Some("#2287 REGION".to_string())),
             lat: Set(Some(10.0)),
             lon: Set(Some(10.0)),
@@ -1452,6 +1806,7 @@ mod tests {
             vec![BattleLineSettlementCandidate {
                 settlement_id: canonical_id,
                 name: "#2287 CANONICAL".to_string(),
+                district: "#2287 DISTRICT".to_string(),
                 region: "#2287 REGION".to_string(),
                 coordinate: BattleLineCoordinate {
                     lat: 10.0,
@@ -1464,7 +1819,7 @@ mod tests {
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn clips_aor_geometry_at_snapped_perpendicular_boundaries() {
+    async fn clips_aor_geometry_to_anchor_ray_sector() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -1489,7 +1844,7 @@ mod tests {
 insert into battle_line_version
     (geometry, source_file_name, uploaded_by_login_id)
 select
-    ST_GeomFromText('GEOMETRYCOLLECTION(POINT(31 49),POINT(34 49),LINESTRING(29 49,34 49,29 49.1,34 49.1),LINESTRING(29 48,30 49))', 4326),
+    ST_GeomFromText('GEOMETRYCOLLECTION(POINT(31 48),POINT(35 49),LINESTRING(29 49,38 49),LINESTRING(31 48,32 48))', 4326),
     'test.kml',
     id
 from login
@@ -1505,7 +1860,7 @@ limit 1
             DatabaseBackend::Postgres,
             r#"
 update area_of_responsibility
-set left_lat = 49, left_lon = 30, right_lat = 49, right_lon = 33
+set left_lat = 49, left_lon = 34, right_lat = 49, right_lon = 36
 where id = $1
             "#,
             [aor_id.into()],
@@ -1542,20 +1897,20 @@ where aor_id = $1
         let start_lon: f64 = row.try_get("", "start_lon").unwrap();
         let end_lon: f64 = row.try_get("", "end_lon").unwrap();
         assert_eq!(point_count, 1);
-        assert_eq!(line_count, 3);
-        assert!((min_lon - 30.0).abs() < 0.000_001);
-        assert!((max_lon - 33.0).abs() < 0.000_001);
-        assert!((start_lon - 30.0).abs() < 0.000_001);
-        assert!((end_lon - 33.0).abs() < 0.000_001);
+        assert_eq!(line_count, 1);
+        assert!((min_lon - 34.0).abs() < 0.000_001);
+        assert!((max_lon - 36.0).abs() < 0.000_001);
+        assert!((start_lon - 34.0).abs() < 0.000_001);
+        assert!((end_lon - 36.0).abs() < 0.000_001);
 
         let candidates = vec![
             BattleLineCandidatePoint {
-                lat: 49.0,
-                lon: 34.0,
+                lat: 48.0,
+                lon: 31.0,
             },
             BattleLineCandidatePoint {
-                lat: 49.0,
-                lon: 31.0,
+                lat: 49.1,
+                lon: 35.0,
             },
         ];
         let unrestricted =
@@ -1600,11 +1955,11 @@ where aor_id = $1
             &[
                 BattleLineCandidatePoint {
                     lat: 49.0,
-                    lon: 31.0,
+                    lon: 35.0,
                 },
                 BattleLineCandidatePoint {
                     lat: 49.0,
-                    lon: 31.0,
+                    lon: 35.0,
                 },
             ],
             Some(&[aor_id]),
@@ -1613,5 +1968,250 @@ where aor_id = $1
         .unwrap();
         assert_eq!(tie.matched.unwrap().candidate_index, 0);
         txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn delta_force_always_imports_new_version_and_keeps_settlement_results(
+    ) {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        battle_line_aor_geometry::Entity::delete_many()
+            .exec(&txn)
+            .await
+            .unwrap();
+        battle_line_version::Entity::update_many()
+            .col_expr(
+                battle_line_version::Column::RetiredAt,
+                Expr::cust("now() at time zone 'utc'"),
+            )
+            .filter(battle_line_version::Column::RetiredAt.is_null())
+            .exec(&txn)
+            .await
+            .unwrap();
+        let login_id = login::Entity::find()
+            .filter(login::Column::Deleted.eq(false))
+            .select_only()
+            .column(login::Column::Id)
+            .into_tuple::<uuid::Uuid>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .expect("test database must contain a login");
+        let prepared = test_prepared_import("a");
+        let initial = activate_battle_line_import_in_transaction(
+            &txn,
+            &prepared,
+            login_id,
+            &BattleLineImportSource::admin_upload(),
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(initial_version_id) = initial
+        else {
+            panic!("expected an initial Battle Line version");
+        };
+
+        let signal_message = signal_message::ActiveModel {
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let item_id = signal_message.id;
+        sigint_inbox_item::ActiveModel {
+            id: Set(item_id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let settlement_link = sigint_inbox_item_settlement::ActiveModel {
+            id: NotSet,
+            created_at: NotSet,
+            item_id: Set(item_id),
+            settlement_text: Set(format!("test-{}", uuid::Uuid::now_v7())),
+            settlement_id: Set(None),
+            is_undefined: Set(Some(true)),
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        let delta_source = BattleLineImportSource::delta_kml(
+            "enemy_units_geojson:test".to_string(),
+        );
+        let delta_prepared = test_prepared_import("b");
+        assert_eq!(
+            activate_battle_line_import_in_transaction(
+                &txn,
+                &delta_prepared,
+                login_id,
+                &delta_source,
+                false,
+            )
+            .await
+            .unwrap(),
+            BattleLineImportOutcome::RequiresForce(initial_version_id)
+        );
+        let imported = activate_battle_line_import_in_transaction(
+            &txn,
+            &delta_prepared,
+            login_id,
+            &delta_source,
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(version_id) = imported else {
+            panic!("expected a new Battle Line version");
+        };
+        assert_eq!(
+            active_battle_line_id(&txn).await.unwrap(),
+            Some(version_id)
+        );
+        assert!(battle_line_version::Entity::find_by_id(initial_version_id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap()
+            .retired_at
+            .is_some());
+        assert!(
+            battle_line_aor_geometry::Entity::find()
+                .filter(
+                    battle_line_aor_geometry::Column::VersionId.eq(version_id)
+                )
+                .count(&txn)
+                .await
+                .unwrap()
+                > 0
+        );
+        assert_eq!(
+            activate_battle_line_import_in_transaction(
+                &txn,
+                &delta_prepared,
+                login_id,
+                &delta_source,
+                false,
+            )
+            .await
+            .unwrap(),
+            BattleLineImportOutcome::AlreadyImported(version_id)
+        );
+
+        let forced_again = activate_battle_line_import_in_transaction(
+            &txn,
+            &delta_prepared,
+            login_id,
+            &delta_source,
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(forced_version_id) = forced_again
+        else {
+            panic!("expected --force to create a new Battle Line version");
+        };
+        assert_ne!(forced_version_id, version_id);
+
+        let admin = activate_battle_line_import_in_transaction(
+            &txn,
+            &test_prepared_import("c"),
+            login_id,
+            &BattleLineImportSource::admin_upload(),
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(admin_version_id) = admin else {
+            panic!("expected a new admin Battle Line version");
+        };
+        assert_eq!(
+            activate_battle_line_import_in_transaction(
+                &txn,
+                &delta_prepared,
+                login_id,
+                &delta_source,
+                false,
+            )
+            .await
+            .unwrap(),
+            BattleLineImportOutcome::RequiresForce(admin_version_id)
+        );
+
+        let restored = activate_battle_line_import_in_transaction(
+            &txn,
+            &delta_prepared,
+            login_id,
+            &delta_source,
+            true,
+        )
+        .await
+        .unwrap();
+        let BattleLineImportOutcome::Imported(restored_version_id) = restored
+        else {
+            panic!("expected --force to reimport the retired Delta source");
+        };
+        assert_ne!(restored_version_id, version_id);
+        assert_ne!(restored_version_id, forced_version_id);
+        assert_eq!(
+            active_battle_line_id(&txn).await.unwrap(),
+            Some(restored_version_id)
+        );
+        assert_eq!(
+            battle_line_version::Entity::find()
+                .filter(
+                    battle_line_version::Column::SourceIdentifier
+                        .eq(delta_source.identifier.as_deref().unwrap())
+                )
+                .filter(
+                    battle_line_version::Column::SourceSha256
+                        .eq(&delta_prepared.source_sha256)
+                )
+                .count(&txn)
+                .await
+                .unwrap(),
+            3
+        );
+
+        let settlement_link = sigint_inbox_item_settlement::Entity::find_by_id(
+            settlement_link.id,
+        )
+        .one(&txn)
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(settlement_link.is_undefined, Some(true));
+        txn.rollback().await.unwrap();
+    }
+
+    fn test_prepared_import(
+        digest_character: &str,
+    ) -> PreparedBattleLineImport {
+        PreparedBattleLineImport {
+            geometry_wkt:
+                "GEOMETRYCOLLECTION(POINT(34 51),LINESTRING(33 52,39 48))"
+                    .to_string(),
+            source_file_name: "test.kml".to_string(),
+            source_sha256: digest_character.repeat(64),
+            summary: BattleLineImportSummary {
+                point_count: 1,
+                line_string_count: 1,
+                empty_point_count: 0,
+                empty_line_string_count: 0,
+                zero_length_line_string_count: 0,
+                coordinate_count: 3,
+                bounds: BattleLineImportBounds {
+                    min_lat: 48.0,
+                    min_lon: 33.0,
+                    max_lat: 52.0,
+                    max_lon: 39.0,
+                },
+            },
+        }
     }
 }

@@ -684,12 +684,19 @@ pub const BATTLE_LINE_UPLOAD_MAX_BYTES: usize = 50 * 1024 * 1024;
 pub const BATTLE_LINE_KMZ_MAX_ENTRIES: usize = 1_000;
 pub const BATTLE_LINE_KMZ_MAX_EXTRACTED_BYTES: u64 = 200 * 1024 * 1024;
 pub const BATTLE_LINE_CLIP_EXTENT_METERS: f64 = 50_000_000.0;
+pub const BATTLE_LINE_AOR_ANCHOR_LATITUDE: f64 = 48.510_548_612_698_46;
+pub const BATTLE_LINE_AOR_ANCHOR_LONGITUDE: f64 = 32.225_445_087_959_685;
 pub const BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS: f64 =
     2_000.0;
 pub const BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY: i64 = 2_287;
+pub const BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD: &str = "admin_upload";
+pub const BATTLE_LINE_SOURCE_KIND_DELTA_KML: &str = "delta_kml";
+pub const BATTLE_LINE_DELTA_KML_SOURCE_PREFIX: &str = "enemy_units_geojson:";
+pub const BATTLE_LINE_INITIAL_DELTA_KML_ID: i32 = 5;
 pub const INBOX_SETTLEMENT_WORKER_BATCH_SIZE: usize = 25;
 pub const INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE: u64 = 1_000;
 pub const INBOX_SETTLEMENT_WORKER_SLEEP_SECS: u64 = 5;
+pub const INBOX_MAP_SETTLEMENT_MESSAGES_PAGE_SIZE: u64 = 20;
 pub const BATTLE_LINE_ADMIN_PAGE_SIZE: u64 = 10;
 pub const PALITRA_DOWNLOAD_MAX_FILES: usize = 50;
 pub const PALITRA_RESOLVE_NAMES_MAX_IDS: usize = 500;
@@ -1430,6 +1437,11 @@ pub fn get_assets_folder(config: &Config) -> String {
         .context(h!())
         .unwrap();
     path.into_os_string().into_string().unwrap()
+}
+
+pub fn get_enemy_units_kml_path(config: &Config, source_id: i32) -> PathBuf {
+    PathBuf::from(get_assets_folder(config))
+        .join(format!("enemy-units-{source_id}.kml"))
 }
 
 pub fn get_assets_url() -> &'static str {

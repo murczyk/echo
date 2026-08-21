@@ -267,8 +267,8 @@ pub async fn oneoff_link_inbox_settlements(
     ps: &OneoffLinkInboxSettlementsPs,
 ) -> Result<(), AppError> {
     info!("Starting inbox settlement linking one-off");
-    let env = crate::server::new_env(mode).await.c(h!())?;
     let (since_ts, till_ts) = oneoff_bounds(ps).c(h!())?;
+    let env = crate::server::new_env(mode).await.c(h!())?;
     let mut stats = OneoffLinkInboxSettlementsStats::default();
     let mut cursor = None;
     loop {
@@ -695,6 +695,37 @@ mod tests {
         assert_eq!(rows[0].inbox_item_count, 2);
         assert_eq!(rows[1].settlement_id, second_settlement_id);
         assert_eq!(rows[1].inbox_item_count, 2);
+
+        let filtered_ids = format!(
+            "select unnest(array[{}]::bigint[]) as id",
+            item_ids
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let mut expected_ids = item_ids.clone();
+        expected_ids.sort_unstable_by(|left, right| right.cmp(left));
+        let first_page = crate::rer_importer::inbox::bl::get_inbox_map_settlement_message_ids(
+            &txn,
+            &filtered_ids,
+            settlement_id,
+            None,
+            1,
+        )
+        .await
+        .unwrap();
+        assert_eq!(first_page, expected_ids[..1]);
+        let second_page = crate::rer_importer::inbox::bl::get_inbox_map_settlement_message_ids(
+            &txn,
+            &filtered_ids,
+            settlement_id,
+            first_page.last().copied(),
+            1,
+        )
+        .await
+        .unwrap();
+        assert_eq!(second_page, expected_ids[1..]);
         txn.rollback().await.unwrap();
     }
 
