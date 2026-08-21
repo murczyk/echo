@@ -1,29 +1,28 @@
 /**
  * @vitest-environment happy-dom
  */
-import { createElement, type ElementType, type ReactNode } from 'react';
+import { createElement, forwardRef, type ElementType, type ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getMediaOcrStatus, getMediaSummary, mapCoordinates } = vi.hoisted(() => ({
-  getMediaOcrStatus: vi.fn(),
-  getMediaSummary: vi.fn(),
-  mapCoordinates: vi.fn(),
-}));
+const { getMediaOcrStatus, getMediaSummary, mapCoordinates, useMediaQueryMock } = vi.hoisted(
+  () => ({
+    getMediaOcrStatus: vi.fn(),
+    getMediaSummary: vi.fn(),
+    mapCoordinates: vi.fn(),
+    useMediaQueryMock: vi.fn().mockReturnValue(false),
+  }),
+);
 
 vi.mock('@mui/material', () => ({
   alpha: () => 'transparent',
-  Box: ({
-    component = 'div',
-    children,
-    sx: _sx,
-    ...props
-  }: {
-    component?: ElementType;
-    children?: ReactNode;
-    sx?: unknown;
-  }) => createElement(component, props, children),
+  Box: forwardRef<
+    HTMLElement,
+    { component?: ElementType; children?: ReactNode; sx?: unknown } & Record<string, unknown>
+  >(function MockBox({ component = 'div', children, sx: _sx, ...props }, ref) {
+    return createElement(component, { ...props, ref }, children);
+  }),
   Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <button {...props}>{children}</button>
   ),
@@ -45,7 +44,7 @@ vi.mock('@mui/material', () => ({
   Typography: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <div {...props}>{children}</div>
   ),
-  useMediaQuery: () => false,
+  useMediaQuery: (query: string) => useMediaQueryMock(query),
 }));
 
 vi.mock('@mui/material/styles', () => ({
@@ -255,7 +254,8 @@ describe('OcrPreview', () => {
 
     const iframe = container.querySelector('iframe');
     expect(iframe?.getAttribute('src')).toBe('/api/messenger/media/media%2Fid/ocr?revision=0');
-    expect(iframe?.getAttribute('sandbox')).toBe('');
+    expect(iframe?.getAttribute('sandbox')).toBe('allow-same-origin');
+    expect(container.querySelector('[data-ocr-scroll-container]')).not.toBeNull();
     root.unmount();
   });
 
@@ -742,6 +742,74 @@ describe('OcrPreview', () => {
     });
 
     expect(container.querySelector('[data-media-summary-carousel="true"]')).toBeNull();
+    root.unmount();
+  });
+
+  it('keeps both panels open on desktop and closes summary on mobile (mutually exclusive)', async () => {
+    useMediaQueryMock.mockReturnValue(false);
+    const onSummaryVisibleChange = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <OcrSplitPreview
+          source={<div data-source />}
+          mediaId="media-id"
+          ocr={{
+            state: 'completed',
+            qualityStatus: 'accepted',
+            processedPages: 1,
+            totalPages: 1,
+            lastError: null,
+            queueSize: null,
+            attempts: 0,
+            statusLog: [],
+          }}
+          visible
+          fullPane={false}
+          onOcrChange={vi.fn()}
+          onFullPaneChange={vi.fn()}
+          summary={{ state: 'completed', lastError: null, hasCoordinates: false }}
+          summaryVisible
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={onSummaryVisibleChange}
+        />,
+      );
+    });
+
+    expect(onSummaryVisibleChange).not.toHaveBeenCalled();
+
+    useMediaQueryMock.mockReturnValue(true);
+    await act(async () => {
+      root.render(
+        <OcrSplitPreview
+          source={<div data-source />}
+          mediaId="media-id"
+          ocr={{
+            state: 'completed',
+            qualityStatus: 'accepted',
+            processedPages: 1,
+            totalPages: 1,
+            lastError: null,
+            queueSize: null,
+            attempts: 0,
+            statusLog: [],
+          }}
+          visible
+          fullPane={false}
+          onOcrChange={vi.fn()}
+          onFullPaneChange={vi.fn()}
+          summary={{ state: 'completed', lastError: null, hasCoordinates: false }}
+          summaryVisible
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={onSummaryVisibleChange}
+        />,
+      );
+    });
+
+    expect(onSummaryVisibleChange).toHaveBeenCalledWith(false);
     root.unmount();
   });
 });

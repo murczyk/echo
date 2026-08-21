@@ -1,7 +1,16 @@
 import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { Button, CircularProgress, IconButton, Skeleton, Tooltip, Typography } from '@mui/material';
+import {
+  Button,
+  CircularProgress,
+  IconButton,
+  Skeleton,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type {
@@ -351,7 +360,7 @@ function SummaryContent({
     return (
       <div
         data-media-summary-completed-layout="split"
-        className="grid grid-cols-1 sm:grid-cols-2 gap-4 min-w-0 flex-1 min-h-0"
+        className="grid grid-cols-1 sm:grid-cols-2 grid-rows-2 sm:grid-rows-1 gap-2 sm:gap-4 min-w-0 flex-1 min-h-0 h-full"
       >
         <div className="min-w-0 min-h-0 overflow-y-auto pr-1">
           <Typography variant="body2" className="whitespace-pre-wrap">
@@ -361,7 +370,7 @@ function SummaryContent({
 
         <div
           data-media-summary-coordinate-column="true"
-          className="min-w-0 min-h-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-white/12 sm:pt-0 sm:pl-4 pr-1"
+          className="min-w-0 min-h-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-white/12 pt-2 sm:pt-0 sm:pl-4 pr-1"
         >
           <MediaSummaryCoordinateList
             coordinates={result.coordinates}
@@ -712,6 +721,8 @@ export function MediaSummaryOverlay({
   onClose: () => void;
   summaryAccess?: MediaSummaryAccess;
 }) {
+  const theme = useTheme();
+  const mobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { result, refreshing, refreshError, refresh } = useMediaSummaryResult({
     mediaId,
     status,
@@ -724,12 +735,19 @@ export function MediaSummaryOverlay({
 
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-      <div className="flex-1 min-h-0 min-w-0 flex">{source}</div>
+      <div
+        className={`min-w-0 flex ${visible && mobile ? 'h-1/2 flex-none min-h-0' : 'flex-1 min-h-0'}`}
+      >
+        {source}
+      </div>
       {visible ? (
         <div
           role="region"
           aria-label="Стислий опис документа"
-          className="relative flex-none max-h-36 sm:max-h-44 flex flex-col px-4 pt-2.5 pb-1 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
+          data-attachment-preview-scroll
+          className={`relative flex-col overscroll-contain touch-pan-y px-4 pt-2.5 pb-1 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out ${
+            mobile ? 'flex-none h-1/2 min-h-0 overflow-hidden flex' : 'flex-none max-h-44 flex'
+          }`}
         >
           <SummaryContent
             result={result}
