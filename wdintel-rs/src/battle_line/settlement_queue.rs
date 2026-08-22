@@ -1,11 +1,14 @@
 use crate::battle_line::{
     active_battle_line_id, ensure_active_battle_line, lock_updates,
-    resolve_inbox_item_aors, resolve_locations_to_settlements,
+    resolve_inbox_item_aors, resolve_locations_to_settlements_with_db,
 };
 use crate::config::{
     get_tz, INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
     INBOX_SETTLEMENT_ONEOFF_TRANSACTION_BATCH_SIZE,
-    INBOX_SETTLEMENT_WORKER_BATCH_SIZE, INBOX_SETTLEMENT_WORKER_SLEEP_SECS,
+    INBOX_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE,
+    INBOX_SETTLEMENT_WORKER_BATCH_SIZE,
+    INBOX_SETTLEMENT_WORKER_CLAIM_CANDIDATE_SIZE,
+    INBOX_SETTLEMENT_WORKER_SLEEP_SECS,
 };
 use crate::entities::{
     sigint_inbox_item, sigint_inbox_item_settlement, signal_message,
@@ -25,6 +28,11 @@ use std::sync::Arc;
 struct PendingItemClaim {
     item_id: i64,
     first_row_id: i64,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct PendingItemLock {
+    acquired: bool,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -176,6 +184,12 @@ pub async fn run_inbox_settlement_worker_once(
         *cursor = None;
         return Ok(false);
     }
+    crate::location::aor_config::refresh_settlements_aor_map(
+        &catalog_txn,
+        env.settlements.clone(),
+    )
+    .await
+    .c(h!())?;
     let processed = process_pending_rows(env, cursor).await.c(h!())?;
     catalog_txn.commit().await.c(h!())?;
     Ok(processed)
@@ -208,7 +222,8 @@ async fn process_pending_rows(
             break;
         };
         *cursor = Some(claim.first_row_id);
-        if let Err(error) = resolve_claimed_item(&txn, claim.item_id).await {
+        if let Err(error) = resolve_claimed_item(env, &txn, claim.item_id).await
+        {
             txn.rollback().await.c(h!())?;
             warn!(
                 "Inbox settlement resolution error for item {}: {error:#?}",
@@ -229,33 +244,68 @@ async fn claim_pending_item<C>(
 where
     C: ConnectionTrait,
 {
-    PendingItemClaim::find_by_statement(Statement::from_sql_and_values(
-        DatabaseBackend::Postgres,
-        r#"
-with pending_items as (
-    select item_id, min(id) as first_row_id
+    let candidates =
+        PendingItemClaim::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+with pending_rows as materialized (
+    select id, item_id
     from sigint_inbox_item_settlement
     where settlement_id is null
       and is_undefined is null
       and ($1::bigint is null or id > $1)
-    group by item_id
-    order by min(id)
-    limit 64
+    order by id
+    limit $2
 )
-select item_id, first_row_id
-from pending_items
-where pg_try_advisory_xact_lock(item_id)
+select item_id, min(id) as first_row_id
+from pending_rows
+group by item_id
 order by first_row_id
-limit 1
+            "#,
+            [
+                after_id.into(),
+                (INBOX_SETTLEMENT_WORKER_CLAIM_CANDIDATE_SIZE as i64).into(),
+            ],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?;
+    for candidate in candidates {
+        if try_lock_pending_item(dbx, candidate.item_id)
+            .await
+            .c(h!())?
+        {
+            return Ok(Some(candidate));
+        }
+    }
+    Ok(None)
+}
+
+async fn try_lock_pending_item<C>(dbx: &C, item_id: i64) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    PendingItemLock::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+select pg_try_advisory_xact_lock(
+    hashtextextended($1::text || $2::text, 0)
+) as acquired
         "#,
-        [after_id.into()],
+        [
+            INBOX_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE.into(),
+            item_id.into(),
+        ],
     ))
     .one(dbx)
     .await
+    .c(h!())?
+    .map(|row| row.acquired)
     .c(h!())
 }
 
 async fn resolve_claimed_item(
+    env: &Env,
     txn: &DatabaseTransaction,
     item_id: i64,
 ) -> anyhow::Result<()> {
@@ -275,10 +325,14 @@ async fn resolve_claimed_item(
         .iter()
         .map(|row| row.settlement_text.clone())
         .collect::<Vec<_>>();
-    let results =
-        resolve_locations_to_settlements(txn, locations, &aor_context.aor_ids)
-            .await
-            .c(h!())?;
+    let results = resolve_locations_to_settlements_with_db(
+        txn,
+        env.settlements.clone(),
+        locations,
+        &aor_context.aor_ids,
+    )
+    .await
+    .c(h!())?;
     for (row, result) in rows.into_iter().zip(results) {
         if row.settlement_id.is_some() || row.is_undefined.is_some() {
             continue;
@@ -333,7 +387,7 @@ pub async fn oneoff_link_inbox_settlements(
             items.chunks(INBOX_SETTLEMENT_ONEOFF_TRANSACTION_BATCH_SIZE)
         {
             let batch_stats =
-                process_oneoff_batch(&env.dbx, items).await.c(h!())?;
+                process_oneoff_batch(&env, items).await.c(h!())?;
             stats.merge(batch_stats);
             print_oneoff_progress(&stats, total);
         }
@@ -350,10 +404,10 @@ pub async fn oneoff_link_inbox_settlements(
 }
 
 async fn process_oneoff_batch(
-    dbx: &DatabaseConnection,
+    env: &Env,
     items: &[(NaiveDateTime, i64)],
 ) -> anyhow::Result<OneoffLinkInboxSettlementsStats> {
-    let txn = dbx.begin().await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
     lock_updates(&txn).await.c(h!())?;
     ensure_active_battle_line(&txn).await.c(h!())?;
     let item_locations =
@@ -362,6 +416,7 @@ async fn process_oneoff_batch(
     for (_, item_id) in items {
         let location_v2 = item_locations.get(item_id).c(h!())?;
         process_oneoff_item_in_transaction(
+            env,
             &txn,
             *item_id,
             location_v2.as_deref(),
@@ -407,6 +462,7 @@ fn print_oneoff_progress(stats: &OneoffLinkInboxSettlementsStats, total: u64) {
 }
 
 async fn process_oneoff_item_in_transaction(
+    env: &Env,
     txn: &DatabaseTransaction,
     item_id: i64,
     location_v2: Option<&str>,
@@ -420,8 +476,9 @@ async fn process_oneoff_item_in_transaction(
     let aor_context =
         resolve_inbox_item_aors(txn, item_id, None).await.c(h!())?;
     let settlement_texts = settlement_texts.into_iter().collect::<Vec<_>>();
-    let resolutions = resolve_locations_to_settlements(
+    let resolutions = resolve_locations_to_settlements_with_db(
         txn,
+        env.settlements.clone(),
         settlement_texts,
         &aor_context.aor_ids,
     )
@@ -883,12 +940,30 @@ mod tests {
         }
         setup.commit().await.unwrap();
         let after_id = Some(row_ids[0] - 1);
+        let raw_key_holder = dbx.begin().await.unwrap();
+        raw_key_holder
+            .execute_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "select pg_advisory_xact_lock($1)",
+                [item_ids[0].into()],
+            ))
+            .await
+            .unwrap();
 
         let first_worker = dbx.begin().await.unwrap();
         let first = claim_pending_item(&first_worker, after_id)
             .await
             .unwrap()
             .expect("first pending item");
+        assert_eq!(first.item_id, item_ids[0]);
+        let lock_probe = dbx.begin().await.unwrap();
+        assert!(!try_lock_pending_item(&lock_probe, first.item_id)
+            .await
+            .unwrap());
+        assert!(try_lock_pending_item(&lock_probe, item_ids[1])
+            .await
+            .unwrap());
+        lock_probe.rollback().await.unwrap();
         let second_worker = dbx.begin().await.unwrap();
         let second = claim_pending_item(&second_worker, after_id)
             .await
@@ -901,6 +976,7 @@ mod tests {
         );
         second_worker.rollback().await.unwrap();
         first_worker.rollback().await.unwrap();
+        raw_key_holder.rollback().await.unwrap();
 
         sigint_inbox_item_settlement::Entity::delete_many()
             .filter(sigint_inbox_item_settlement::Column::Id.is_in(row_ids))
