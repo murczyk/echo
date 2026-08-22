@@ -1,6 +1,8 @@
 import { kml } from '@tmcw/togeojson';
 import * as L from 'leaflet';
 
+import { HttpRequestError, getJson } from '../../react/services/api/client';
+
 const DELTA_KML_URL = '/api/delta/kml/latest';
 const EMPTY_ICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
 const DELTA_KML_DETAILS_MIN_ZOOM = 11;
@@ -8,12 +10,14 @@ const DELTA_KML_DETAILS_SMALL_MAP_MIN_ZOOM = 10;
 const DELTA_KML_SMALL_MAP_MAX_WIDTH = 250;
 
 export async function loadDeltaKmlLayer(): Promise<L.GeoJSON | null> {
-  const response = await fetch(DELTA_KML_URL);
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error(`Failed to load Delta KML: HTTP ${response.status}`);
+  let kmlText: string;
+  try {
+    kmlText = await getJson<string>(DELTA_KML_URL);
+  } catch (error) {
+    if (error instanceof HttpRequestError && error.status === 404) return null;
+    throw error;
   }
-  const kmlDocument = new DOMParser().parseFromString(await response.text(), 'text/xml');
+  const kmlDocument = new DOMParser().parseFromString(kmlText, 'text/xml');
   if (kmlDocument.querySelector('parsererror')) {
     throw new Error('Failed to parse Delta KML');
   }
@@ -57,11 +61,18 @@ export function updateDeltaKmlLayerZoom(layer: L.GeoJSON, map: L.Map): void {
       : DELTA_KML_DETAILS_SMALL_MAP_MIN_ZOOM;
   const showDetails = map.getZoom() >= minZoom;
   layer.eachLayer((featureLayer) => {
-    if (featureLayer instanceof L.Marker) {
-      featureLayer.setOpacity(showDetails ? 1 : 0);
-    }
-    featureLayer.getTooltip()?.setOpacity(showDetails ? 0.9 : 0);
+    updateDeltaKmlFeatureDetails(featureLayer, showDetails);
   });
+}
+
+function updateDeltaKmlFeatureDetails(layer: L.Layer, showDetails: boolean): void {
+  if (layer instanceof L.Marker) {
+    layer.setOpacity(showDetails ? 1 : 0);
+  }
+  layer.getTooltip()?.setOpacity(showDetails ? 0.9 : 0);
+  if (layer instanceof L.LayerGroup) {
+    layer.eachLayer((childLayer) => updateDeltaKmlFeatureDetails(childLayer, showDetails));
+  }
 }
 
 function deltaKmlStyle(feature?: GeoJSON.Feature): L.PathOptions {
