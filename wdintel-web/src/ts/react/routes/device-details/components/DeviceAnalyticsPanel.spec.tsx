@@ -90,7 +90,7 @@ function bodyButtonContaining(text: string): HTMLButtonElement {
 }
 
 describe('DeviceAnalyticsPanel', () => {
-  it('renders every active tag and lazily paginates a generic tag widget', async () => {
+  it('renders only active tags with files and lazily paginates a generic tag widget', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({
       totalFileCount: 18,
       analyzedFileCount: 12,
@@ -133,9 +133,9 @@ describe('DeviceAnalyticsPanel', () => {
     expect(container.textContent).toContain('Усього файлів18');
     expect(container.textContent).toContain('Проаналізовано файлів12');
     expect(container.textContent).toContain('Звіти');
-    expect(container.textContent).toContain('Архіви');
+    expect(container.textContent).not.toContain('Архіви');
     expect(container.textContent).toContain('5 файлів');
-    expect(container.textContent).toContain('0 файлів');
+    expect(container.textContent).not.toContain('0 файлів');
 
     act(() => buttonContaining('Звіти').click());
     await flush();
@@ -161,11 +161,37 @@ describe('DeviceAnalyticsPanel', () => {
     expect(container.textContent).toContain('report-2.pdf');
   });
 
+  it('shows an empty state when active tags have no files', async () => {
+    mocks.getDeviceAnalyticsSummary.mockResolvedValue({
+      totalFileCount: 4,
+      analyzedFileCount: 4,
+      items: [
+        {
+          tag: { id: 'tag-1', name: 'Звіти' },
+          fileCount: 0,
+          latestFileEntryCreatedAt: null,
+        },
+      ],
+    });
+
+    renderPanel();
+    await flush();
+
+    expect(container.textContent).toContain('Файлів з активними аналітичними тегами ще немає.');
+    expect(container.textContent).not.toContain('0 файлів');
+  });
+
   it('keeps a failed widget retryable and exposes device reanalysis only to Admin', async () => {
     mocks.getDeviceAnalyticsSummary.mockResolvedValue({
-      totalFileCount: 0,
-      analyzedFileCount: 0,
-      items: [],
+      totalFileCount: 1,
+      analyzedFileCount: 1,
+      items: [
+        {
+          tag: { id: 'tag-1', name: 'Звіти' },
+          fileCount: 1,
+          latestFileEntryCreatedAt: '2026-08-06T12:00:00Z',
+        },
+      ],
     });
     mocks.listDeviceAnalyticsFiles
       .mockRejectedValueOnce(new Error('offline'))
