@@ -142,7 +142,7 @@ function formatDate(value: number): string {
   return date.toLocaleDateString('uk-UA');
 }
 
-export function formatOrganismName(value: string | null | undefined): string {
+function formatOrganismName(value: string | null | undefined): string {
   const name = value?.trim();
   return !name || name === '-' ? NO_DATA_LABEL : name;
 }
