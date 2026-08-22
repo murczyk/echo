@@ -1223,12 +1223,43 @@ pub(crate) async fn resolve_locations_to_settlements_with_db<C>(
 where
     C: ConnectionTrait,
 {
-    let mut drafts =
+    let mut results = resolve_location_groups_to_settlements_with_db(
+        dbx,
+        settlements,
+        vec![locations],
+        aor_ids,
+    )
+    .await
+    .c(h!())?;
+    results.pop().c(h!())
+}
+
+pub(crate) async fn resolve_location_groups_to_settlements_with_db<C>(
+    dbx: &C,
+    settlements: Arc<RwLock<crate::location::SettlementsDataConfig>>,
+    location_groups: Vec<Vec<String>>,
+    aor_ids: &[i64],
+) -> anyhow::Result<Vec<Vec<BattleLineLocationResult>>>
+where
+    C: ConnectionTrait,
+{
+    let group_lengths =
+        location_groups.iter().map(Vec::len).collect::<Vec<_>>();
+    let locations = location_groups.into_iter().flatten().collect();
+    let drafts =
         load_location_resolution_drafts(dbx, settlements, locations, aor_ids)
             .await
             .c(h!())?;
-    apply_anchor_resolution(&mut drafts);
-    Ok(drafts.into_iter().map(location_result_from_draft).collect())
+    let mut drafts = drafts.into_iter();
+    Ok(group_lengths
+        .into_iter()
+        .map(|group_length| {
+            let mut group =
+                drafts.by_ref().take(group_length).collect::<Vec<_>>();
+            apply_anchor_resolution(&mut group);
+            group.into_iter().map(location_result_from_draft).collect()
+        })
+        .collect())
 }
 
 async fn load_location_resolution_drafts<C>(
@@ -1272,9 +1303,12 @@ async fn load_settlement_candidates<C>(
 where
     C: ConnectionTrait,
 {
-    let mut candidates = load_database_settlement_candidates(dbx, locations)
-        .await
-        .c(h!())?;
+    let mut candidates = match aor_ids {
+        Some(_) => vec![vec![]; locations.len()],
+        None => load_database_settlement_candidates(dbx, locations)
+            .await
+            .c(h!())?,
+    };
     let alias_candidates = locations
         .iter()
         .enumerate()
@@ -2398,6 +2432,61 @@ values (
         .unwrap();
 
         assert_eq!(candidates[0][0].settlement_id, canonical_id);
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn restricts_database_matches_to_aor_settlement_catalog() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let suffix = uuid::Uuid::now_v7();
+        let settlement_name = format!("#2287 SCOPED {suffix}").to_uppercase();
+        insert_test_settlement(&txn, 2_287_204, &settlement_name, 10.0, 10.0)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_205, &settlement_name, 20.0, 20.0)
+            .await
+            .unwrap();
+        let scoped_settlement = crate::location::types::SettlementDetails {
+            id: Some(6_615_356),
+            name: settlement_name.clone(),
+            region: "#2287 SCOPED REGION".to_string(),
+            language: crate::location::types::Language::Ua,
+            coords: Some((20.0, 20.0)),
+        };
+        let mut settlements_by_id = BTreeMap::new();
+        settlements_by_id
+            .insert(scoped_settlement.id.unwrap(), scoped_settlement.clone());
+        let mut settlements_by_name = BTreeMap::new();
+        settlements_by_name
+            .insert(scoped_settlement.name.clone(), vec![scoped_settlement]);
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            crate::location::trie::Trie::new(),
+            settlements_by_id,
+            settlements_by_name,
+        ));
+        let mut settlements_config =
+            crate::location::SettlementsDataConfig::default();
+        settlements_config
+            .aor_id_to_settlements_data
+            .insert(2_287, settlements_data);
+
+        let candidates = load_settlement_candidates(
+            &txn,
+            Arc::new(RwLock::new(settlements_config)),
+            std::slice::from_ref(&settlement_name),
+            Some(&[2_287]),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(candidates[0].len(), 1);
+        assert_eq!(candidates[0][0].settlement_id, 2_287_205);
         txn.rollback().await.unwrap();
     }
 

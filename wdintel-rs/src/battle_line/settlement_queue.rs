@@ -1,6 +1,8 @@
+use crate::battle_line::types::BattleLineLocationResult;
 use crate::battle_line::{
     active_battle_line_id, ensure_active_battle_line, lock_updates,
-    resolve_inbox_item_aors, resolve_locations_to_settlements_with_db,
+    resolve_inbox_item_aors, resolve_location_groups_to_settlements_with_db,
+    resolve_locations_to_settlements_with_db,
 };
 use crate::config::{
     get_tz, INBOX_SETTLEMENT_ONEOFF_PAGE_SIZE,
@@ -33,6 +35,12 @@ struct PendingItemClaim {
 #[derive(Debug, FromQueryResult)]
 struct PendingItemLock {
     acquired: bool,
+}
+
+struct OneoffItemResolutionRequest {
+    item_id: i64,
+    location_v2: Option<String>,
+    settlement_texts: Vec<String>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -412,21 +420,85 @@ async fn process_oneoff_batch(
     ensure_active_battle_line(&txn).await.c(h!())?;
     let item_locations =
         lock_oneoff_item_locations(&txn, items).await.c(h!())?;
-    let mut stats = OneoffLinkInboxSettlementsStats::default();
+    let (request_groups, skipped) =
+        group_oneoff_resolution_requests(&txn, items, &item_locations)
+            .await
+            .c(h!())?;
+    let mut stats = OneoffLinkInboxSettlementsStats {
+        skipped,
+        ..Default::default()
+    };
+    process_oneoff_request_groups(env, &txn, request_groups, &mut stats)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
+    Ok(stats)
+}
+
+async fn group_oneoff_resolution_requests(
+    txn: &DatabaseTransaction,
+    items: &[(NaiveDateTime, i64)],
+    item_locations: &BTreeMap<i64, Option<String>>,
+) -> anyhow::Result<(BTreeMap<Vec<i64>, Vec<OneoffItemResolutionRequest>>, usize)>
+{
+    let mut request_groups = BTreeMap::new();
+    let mut skipped = 0;
     for (_, item_id) in items {
-        let location_v2 = item_locations.get(item_id).c(h!())?;
-        process_oneoff_item_in_transaction(
-            env,
-            &txn,
-            *item_id,
-            location_v2.as_deref(),
-            &mut stats,
+        let location_v2 = item_locations.get(item_id).c(h!())?.clone();
+        let settlement_texts = location_texts(location_v2.as_deref())
+            .into_iter()
+            .collect::<Vec<_>>();
+        if settlement_texts.is_empty() {
+            skipped += 1;
+            continue;
+        }
+        let aor_context =
+            resolve_inbox_item_aors(txn, *item_id, None).await.c(h!())?;
+        request_groups
+            .entry(aor_context.aor_ids)
+            .or_insert_with(Vec::new)
+            .push(OneoffItemResolutionRequest {
+                item_id: *item_id,
+                location_v2,
+                settlement_texts,
+            });
+    }
+    Ok((request_groups, skipped))
+}
+
+async fn process_oneoff_request_groups(
+    env: &Env,
+    txn: &DatabaseTransaction,
+    request_groups: BTreeMap<Vec<i64>, Vec<OneoffItemResolutionRequest>>,
+    stats: &mut OneoffLinkInboxSettlementsStats,
+) -> anyhow::Result<()> {
+    for (aor_ids, requests) in request_groups {
+        let location_groups = requests
+            .iter()
+            .map(|request| request.settlement_texts.clone())
+            .collect();
+        let resolution_groups = resolve_location_groups_to_settlements_with_db(
+            txn,
+            env.settlements.clone(),
+            location_groups,
+            &aor_ids,
         )
         .await
         .c(h!())?;
+        for (request, resolutions) in
+            requests.into_iter().zip(resolution_groups)
+        {
+            process_oneoff_item_in_transaction(
+                txn,
+                request,
+                resolutions,
+                stats,
+            )
+            .await
+            .c(h!())?;
+        }
     }
-    txn.commit().await.c(h!())?;
-    Ok(stats)
+    Ok(())
 }
 
 async fn lock_oneoff_item_locations(
@@ -462,31 +534,18 @@ fn print_oneoff_progress(stats: &OneoffLinkInboxSettlementsStats, total: u64) {
 }
 
 async fn process_oneoff_item_in_transaction(
-    env: &Env,
     txn: &DatabaseTransaction,
-    item_id: i64,
-    location_v2: Option<&str>,
+    request: OneoffItemResolutionRequest,
+    resolutions: Vec<BattleLineLocationResult>,
     stats: &mut OneoffLinkInboxSettlementsStats,
 ) -> anyhow::Result<()> {
-    let settlement_texts = location_texts(location_v2);
-    if settlement_texts.is_empty() {
-        stats.skipped += 1;
-        return Ok(());
-    }
-    let aor_context =
-        resolve_inbox_item_aors(txn, item_id, None).await.c(h!())?;
-    let settlement_texts = settlement_texts.into_iter().collect::<Vec<_>>();
-    let resolutions = resolve_locations_to_settlements_with_db(
+    reconcile_item_locations(
         txn,
-        env.settlements.clone(),
-        settlement_texts,
-        &aor_context.aor_ids,
+        request.item_id,
+        request.location_v2.as_deref(),
     )
     .await
     .c(h!())?;
-    reconcile_item_locations(txn, item_id, location_v2)
-        .await
-        .c(h!())?;
     sigint_inbox_item_settlement::Entity::update_many()
         .col_expr(
             sigint_inbox_item_settlement::Column::SettlementId,
@@ -496,7 +555,9 @@ async fn process_oneoff_item_in_transaction(
             sigint_inbox_item_settlement::Column::IsUndefined,
             Expr::value(Option::<bool>::None),
         )
-        .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+        .filter(
+            sigint_inbox_item_settlement::Column::ItemId.eq(request.item_id),
+        )
         .exec(txn)
         .await
         .c(h!())?;
@@ -512,7 +573,10 @@ async fn process_oneoff_item_in_transaction(
                 sigint_inbox_item_settlement::Column::IsUndefined,
                 Expr::value((!matched).then_some(true)),
             )
-            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId
+                    .eq(request.item_id),
+            )
             .filter(
                 sigint_inbox_item_settlement::Column::SettlementText
                     .eq(result.location),
