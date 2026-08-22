@@ -100,7 +100,7 @@ where
     if !groups.is_empty() {
         return Err(AppError::NotFound);
     }
-    let parent_ids = find_intel_product_parent_ids(dbx, signal_message_id)
+    let parent_ids = find_intel_product_ancestor_ids(dbx, &[signal_message_id])
         .await
         .c(h!())?;
     let has_parent_group_access = signal_message_group::Entity::find()
@@ -159,47 +159,56 @@ where
         .collect())
 }
 
-pub async fn normalize_copy_parent_signal_message_ids<C>(
+pub async fn find_intel_product_ancestor_ids<C>(
     dbx: &C,
     signal_message_ids: &[i64],
 ) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait,
 {
-    if signal_message_ids.is_empty() {
-        return Ok(vec![]);
+    let mut all_ancestors = Vec::new();
+    let mut visited = HashSet::new();
+    let mut current_ids = signal_message_ids.to_vec();
+
+    while !current_ids.is_empty() {
+        let parent_links = intel_product::Entity::find()
+            .filter(
+                intel_product::Column::IntelMessageId
+                    .is_in(current_ids),
+            )
+            .filter(intel_product::relation_kind_eq(
+                intel_product::RELATION_KIND_REPORT,
+            ))
+            .order_by_asc(intel_product::Column::CreatedAt)
+            .all(dbx)
+            .await
+            .c(h!())?;
+
+        let mut next_ids = Vec::new();
+        for link in parent_links {
+            if visited.insert(link.source_message_id) {
+                all_ancestors.push(link.source_message_id);
+                next_ids.push(link.source_message_id);
+            }
+        }
+        current_ids = next_ids;
     }
-    let links = intel_product::Entity::find()
-        .filter(
-            intel_product::Column::IntelMessageId
-                .is_in(signal_message_ids.to_vec()),
-        )
-        .filter(intel_product::relation_kind_eq(
-            intel_product::RELATION_KIND_REPORT,
-        ))
-        .order_by_asc(intel_product::Column::CreatedAt)
-        .order_by_asc(intel_product::Column::SourceMessageId)
-        .all(dbx)
-        .await
-        .c(h!())?;
-    let mut parents_by_message = HashMap::<i64, Vec<i64>>::new();
-    for link in links {
-        parents_by_message
-            .entry(link.intel_message_id)
-            .or_default()
-            .push(link.source_message_id);
-    }
+
+    Ok(all_ancestors)
+}
+
+pub async fn normalize_copy_parent_signal_message_ids<C>(
+    _dbx: &C,
+    signal_message_ids: &[i64],
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
     let mut normalized = Vec::new();
     let mut seen = HashSet::new();
     for signal_message_id in signal_message_ids {
-        let parent_ids = parents_by_message
-            .get(signal_message_id)
-            .map(Vec::as_slice)
-            .unwrap_or(std::slice::from_ref(signal_message_id));
-        for parent_id in parent_ids {
-            if seen.insert(*parent_id) {
-                normalized.push(*parent_id);
-            }
+        if seen.insert(*signal_message_id) {
+            normalized.push(*signal_message_id);
         }
     }
     Ok(normalized)
@@ -224,6 +233,62 @@ where
 }
 
 pub async fn resolve_parent_datasource_id_or_none<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+    allowed_groups: &[String],
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(id) = resolve_direct_parent_datasource_id(
+        dbx,
+        parent_signal_message_ids,
+        allowed_groups,
+    )
+    .await?
+    {
+        return Ok(Some(id));
+    }
+    let ancestor_ids =
+        find_intel_product_ancestor_ids(dbx, parent_signal_message_ids)
+            .await
+            .c(h!())?;
+    if !ancestor_ids.is_empty() {
+        if let Some(id) = resolve_direct_parent_datasource_id(
+            dbx,
+            &ancestor_ids,
+            allowed_groups,
+        )
+        .await?
+        {
+            return Ok(Some(id));
+        }
+    }
+    let check_ids = parent_signal_message_ids
+        .iter()
+        .chain(ancestor_ids.iter())
+        .copied()
+        .collect::<Vec<_>>();
+    let has_grouped_parent = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.is_in(check_ids.clone()))
+        .filter(signal_message::Column::DatasourceGroupId.is_not_null())
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some()
+        || signal_message_group::Entity::find()
+            .filter(signal_message_group::Column::SignalMessageId.is_in(check_ids))
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_some();
+    if has_grouped_parent {
+        return Err(AppError::NotFound);
+    }
+    Ok(None)
+}
+
+async fn resolve_direct_parent_datasource_id<C>(
     dbx: &C,
     parent_signal_message_ids: &[i64],
     allowed_groups: &[String],
@@ -264,32 +329,7 @@ where
             .one(dbx)
             .await
             .c(h!())?;
-        if parent_datasource_id.is_some() {
-            return Ok(parent_datasource_id);
-        }
-        let has_grouped_parent = signal_message::Entity::find()
-            .filter(
-                signal_message::Column::Id
-                    .is_in(parent_signal_message_ids.to_vec()),
-            )
-            .filter(signal_message::Column::DatasourceGroupId.is_not_null())
-            .one(dbx)
-            .await
-            .c(h!())?
-            .is_some()
-            || signal_message_group::Entity::find()
-                .filter(
-                    signal_message_group::Column::SignalMessageId
-                        .is_in(parent_signal_message_ids.to_vec()),
-                )
-                .one(dbx)
-                .await
-                .c(h!())?
-                .is_some();
-        if has_grouped_parent {
-            return Err(AppError::NotFound);
-        }
-        return Ok(None);
+        return Ok(parent_datasource_id);
     };
     if let Some(datasource_group_id) = parent_group.datasource_group_id {
         if let Some(datasource_group) =
@@ -486,7 +526,7 @@ where
         return Ok(true);
     }
 
-    let parent_ids = find_intel_product_parent_ids(dbx, message.id)
+    let parent_ids = find_intel_product_ancestor_ids(dbx, &[message.id])
         .await
         .c(h!())?;
     for parent_id in parent_ids {
