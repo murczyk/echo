@@ -24,6 +24,11 @@ pub enum AppError {
     },
     #[error("Service unavailable: {msg}")]
     ServiceUnavailable { msg: String, retry_after_secs: u64 },
+    #[error("Service unavailable: {code}")]
+    CodedServiceUnavailable {
+        code: &'static str,
+        retry_after_secs: u64,
+    },
     #[error("Form errors")]
     Form(BTreeMap<String, String>),
     #[error("Bad request")]
@@ -107,6 +112,15 @@ impl From<anyhow::Error> for AppError {
                     } => {
                         return AppError::ServiceUnavailable {
                             msg: msg.clone(),
+                            retry_after_secs: *retry_after_secs,
+                        };
+                    }
+                    AppError::CodedServiceUnavailable {
+                        code,
+                        retry_after_secs,
+                    } => {
+                        return AppError::CodedServiceUnavailable {
+                            code,
                             retry_after_secs: *retry_after_secs,
                         };
                     }
@@ -197,6 +211,20 @@ impl actix_web::error::ResponseError for AppError {
                 ))
                 .body(msg.clone())
             }
+            AppError::CodedServiceUnavailable {
+                code,
+                retry_after_secs,
+            } => {
+                warn!("Service unavailable: {code}");
+                actix_web::HttpResponseBuilder::new(
+                    actix_web::http::StatusCode::SERVICE_UNAVAILABLE,
+                )
+                .insert_header((
+                    actix_web::http::header::RETRY_AFTER,
+                    retry_after_secs.to_string(),
+                ))
+                .json(serde_json::json!({ "code": code }))
+            }
             AppError::Form(es) => {
                 error!(target: "form_error_details", "Form errors: {:?}", es);
                 actix_web::HttpResponseBuilder::new(
@@ -248,7 +276,8 @@ impl actix_web::error::ResponseError for AppError {
                     | AppError::Unauthenticated
                     | AppError::Forbidden(_)
                     | AppError::ForbiddenWithHeader { .. }
-                    | AppError::ServiceUnavailable { .. } => {}
+                    | AppError::ServiceUnavailable { .. }
+                    | AppError::CodedServiceUnavailable { .. } => {}
                 }
                 actix_web::HttpResponseBuilder::new(
                     actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -326,7 +355,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::ShortContext;
+    use crate::types::{ShortContext, ShortContextErr};
 
     #[test]
     fn service_unavailable_response_includes_retry_after() {
@@ -346,6 +375,77 @@ mod tests {
             response.headers().get(actix_web::http::header::RETRY_AFTER),
             Some(&actix_web::http::header::HeaderValue::from_static("2"))
         );
+    }
+
+    #[tokio::test]
+    async fn structured_service_unavailable_response_preserves_code_and_retry_after(
+    ) {
+        let error = AppError::CodedServiceUnavailable {
+            code: "file_registry_not_configured",
+            retry_after_secs: 2,
+        };
+
+        let response =
+            <AppError as actix_web::ResponseError>::error_response(&error);
+
+        assert_eq!(
+            response.status(),
+            actix_web::http::StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            response.headers().get(actix_web::http::header::RETRY_AFTER),
+            Some(&actix_web::http::header::HeaderValue::from_static("2"))
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(actix_web::http::header::CONTENT_TYPE),
+            Some(&actix_web::http::header::HeaderValue::from_static(
+                "application/json"
+            ))
+        );
+        let body = actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+            serde_json::json!({
+                "code": "file_registry_not_configured"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn coded_service_unavailable_survives_context_wrapping() {
+        for error in [
+            AppError::from(
+                Err::<(), _>(AppError::CodedServiceUnavailable {
+                    code: "file_registry_not_configured",
+                    retry_after_secs: 2,
+                })
+                .context("anyhow context")
+                .unwrap_err(),
+            ),
+            AppError::CodedServiceUnavailable {
+                code: "file_registry_not_configured",
+                retry_after_secs: 2,
+            }
+            .c("short context"),
+        ] {
+            let response =
+                <AppError as actix_web::ResponseError>::error_response(&error);
+            assert_eq!(
+                response.status(),
+                actix_web::http::StatusCode::SERVICE_UNAVAILABLE
+            );
+            let body = actix_web::body::to_bytes(response.into_body())
+                .await
+                .unwrap();
+            assert_eq!(
+                body.as_ref(),
+                br#"{"code":"file_registry_not_configured"}"#
+            );
+        }
     }
 
     #[test]

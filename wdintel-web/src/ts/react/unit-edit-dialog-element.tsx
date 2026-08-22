@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import type { CreateUnitReq, Unit } from '../../Bindings';
 import { transformCamelToSnake, transformSnakeToCamel } from '../snake-to-camel';
 import { NeoMuiThemeProvider } from './mui-theme';
-import { UnitFormDialog } from './routes/rer-units-neo/components/UnitFormDialog';
+import { UnitFormDrawer } from './routes/rer-units-neo/components/UnitFormDrawer';
 
 function UnitEditDialog({
   unit,
@@ -19,7 +19,7 @@ function UnitEditDialog({
   onSubmit: (unit: CreateUnitReq) => void;
 }) {
   return (
-    <UnitFormDialog
+    <UnitFormDrawer
       open
       unit={unit}
       devicesSectionEnabled={false}

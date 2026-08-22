@@ -55,6 +55,7 @@ vi.mock('./RuleTestPanel', () => ({
 }));
 
 import { AdminDeviceAnalyticsPage } from '.';
+import { HttpRequestError } from '../../services/api/client';
 
 const TAG_ID = '018f0000-0000-7000-8000-000000000101';
 const NOW = '2026-08-06T12:00:00Z';
@@ -159,6 +160,19 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(tagsPanel?.hidden).toBe(false);
     expect(container.textContent).toContain('Каталог порожній');
     expect(mocks.listTags).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a persistent registry configuration warning without an empty catalog', async () => {
+    mocks.listTags.mockRejectedValueOnce(
+      new HttpRequestError(503, 'HTTP 503', 'file_registry_not_configured'),
+    );
+    await openDeviceTagsTab();
+
+    expect(container.textContent).toContain('Сховище файлів пристроїв не налаштоване');
+    expect(container.textContent).not.toContain('HTTP 503');
+    expect(container.textContent).not.toContain('Каталог порожній');
+    expect(buttonWithText('Повторити')).toBeUndefined();
+    expect(buttonWithText('Створити тег')).toHaveProperty('disabled', true);
   });
 
   it('replaces the masked device webhook and clears it only through the explicit action', async () => {

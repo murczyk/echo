@@ -1,10 +1,11 @@
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { Box, Card, CardContent, IconButton, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, Card, CardContent, Stack, Tooltip, Typography } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import type { InconsistentUnit } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerIconButton } from '../../components/PowerIconButton';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import {
   type AppMrtColumnDef,
@@ -116,12 +117,17 @@ export function AdminUnitInconsistentPage({ embedded = false }: AdminUnitInconsi
         <TablePageToolbar
           title="Неконсистентні підрозділи"
           withGlobalTextFilter
-          trailingActionsAfterInternal={
+          additionalInternalActions={
             <Tooltip title="Оновити">
               <span>
-                <IconButton size="small" disabled={loading} onClick={() => void loadUnits()}>
+                <PowerIconButton
+                  aria-label="Оновити"
+                  size="small"
+                  disabled={loading}
+                  onClick={() => void loadUnits()}
+                >
                   <RefreshIcon fontSize="small" />
-                </IconButton>
+                </PowerIconButton>
               </span>
             </Tooltip>
           }

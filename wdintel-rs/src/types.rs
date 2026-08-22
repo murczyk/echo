@@ -84,7 +84,8 @@ impl ShortContextErr for AppError {
             | AppError::Forbidden(_)
             | AppError::ForbiddenWithHeader { .. }
             | AppError::Form(_)
-            | AppError::ServiceUnavailable { .. } => self,
+            | AppError::ServiceUnavailable { .. }
+            | AppError::CodedServiceUnavailable { .. } => self,
             AppError::AnyhowError { source } => AppError::AnyhowError {
                 source: source.context(context),
             },
@@ -187,13 +188,13 @@ impl std::fmt::Display for Mode {
 
 impl Env {
     pub fn file_registry_db(&self) -> Result<&FileRegistryDb, AppError> {
-        self.file_registry_db
-            .as_ref()
-            .ok_or_else(|| AppError::ServiceUnavailable {
-                msg: "Device file operations are unavailable because the [file_registry] configuration section is missing.".to_string(),
+        self.file_registry_db.as_ref().ok_or_else(|| {
+            AppError::CodedServiceUnavailable {
+                code: crate::config::FILE_REGISTRY_NOT_CONFIGURED_ERROR_CODE,
                 retry_after_secs:
                     crate::config::FILE_REGISTRY_UNAVAILABLE_RETRY_AFTER_SECS,
-            })
+            }
+        })
     }
 
     pub fn greptime(&self) -> Option<deadpool_postgres::Pool> {

@@ -31,7 +31,6 @@ import {
 import { EchoChip } from '../../components/EchoChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
-import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import { PowerButton } from '../../components/PowerButton';
 import {
   CUSTOM_CELL_STYLES,
@@ -66,6 +65,7 @@ import {
 } from '../../services/api/organisms';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
 import { PowerAlert } from '../../components/PowerAlert';
+import { NO_DATA_LABEL } from '../../utils/misc';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 type StatusMessage = { kind: 'error' | 'success'; message: string } | null;
@@ -140,6 +140,11 @@ function formatDate(value: number): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleDateString('uk-UA');
+}
+
+export function formatOrganismName(value: string | null | undefined): string {
+  const name = value?.trim();
+  return !name || name === '-' ? NO_DATA_LABEL : name;
 }
 
 function buildEditHref(organismId: number): string {
@@ -220,22 +225,28 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
       },
       {
         header: 'Назва',
-        accessorKey: 'name',
+        id: 'name',
+        accessorFn: (row) => formatOrganismName(row.name),
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => formatOrganismName(row.original.name),
+          fullValue: ({ row }) => formatOrganismName(row.original.name),
+        }),
         size: 240,
       },
       {
         header: 'Батьківський',
         id: 'parent',
         accessorFn: (row) =>
-          formatMrtCellTextValue(row.parentId ? lookup.parentById.get(row.parentId) : null),
+          formatOrganismName(row.parentId ? lookup.parentById.get(row.parentId) : null),
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({
           displayValue: ({ row }) =>
-            formatMrtCellTextValue(
+            formatOrganismName(
               row.original.parentId ? lookup.parentById.get(row.original.parentId) : null,
             ),
           fullValue: ({ row }) =>
-            formatMrtCellTextValue(
+            formatOrganismName(
               row.original.parentId ? lookup.parentById.get(row.original.parentId) : null,
             ),
         }),

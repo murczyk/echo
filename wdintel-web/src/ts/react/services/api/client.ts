@@ -13,11 +13,13 @@ export type RequestOptions = {
 
 export class HttpRequestError extends Error {
   status: number;
+  code?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.name = 'HttpRequestError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -48,13 +50,13 @@ export async function tryRunAndReturnNullExceptUnauthorized<T>(
   }
 }
 
-async function parseErrorMessage(response: Response): Promise<string> {
+async function parseError(response: Response): Promise<{ message: string; code?: string }> {
   const contentType = response.headers.get('content-type') || '';
 
   if (contentType.includes('application/json')) {
     try {
       const data = await response.json();
-      if (typeof data === 'string') return data;
+      if (typeof data === 'string') return { message: data };
       if (data && typeof data === 'object') {
         const knownMessage =
           typeof data === 'object' && data !== null
@@ -62,8 +64,12 @@ async function parseErrorMessage(response: Response): Promise<string> {
               (data as Record<string, unknown>).message ??
               (data as Record<string, unknown>).detail)
             : undefined;
-        if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) return knownMessage;
-        return JSON.stringify(data);
+        const errorCode = (data as Record<string, unknown>).code;
+        const code = typeof errorCode === 'string' ? errorCode : undefined;
+        if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) {
+          return { message: knownMessage, code };
+        }
+        return { message: response.statusText || `HTTP ${response.status}`, code };
       }
     } catch (_) {
       // fall through to text
@@ -71,9 +77,9 @@ async function parseErrorMessage(response: Response): Promise<string> {
   }
 
   const text = await response.text();
-  if (text.trim().length > 0) return text;
+  if (text.trim().length > 0) return { message: text };
 
-  return response.statusText || `HTTP ${response.status}`;
+  return { message: response.statusText || `HTTP ${response.status}` };
 }
 
 async function requestJson<T>(
@@ -110,8 +116,8 @@ async function requestJson<T>(
     if (response.status === 401) {
       emitUnauthorizedEvent();
     }
-    const message = await parseErrorMessage(response);
-    throw new HttpRequestError(response.status, message);
+    const error = await parseError(response);
+    throw new HttpRequestError(response.status, error.message, error.code);
   }
 
   if (response.status === 204) return undefined as T;
@@ -160,8 +166,8 @@ async function requestBytes(
     if (response.status === 401) {
       emitUnauthorizedEvent();
     }
-    const message = await parseErrorMessage(response);
-    throw new HttpRequestError(response.status, message);
+    const error = await parseError(response);
+    throw new HttpRequestError(response.status, error.message, error.code);
   }
 
   return response.blob();
@@ -199,7 +205,8 @@ export async function postFormData<T>(
   }
   if (!response.ok) {
     if (response.status === 401) emitUnauthorizedEvent();
-    throw new HttpRequestError(response.status, await parseErrorMessage(response));
+    const error = await parseError(response);
+    throw new HttpRequestError(response.status, error.message, error.code);
   }
   return (await response.json()) as T;
 }

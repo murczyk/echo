@@ -57,14 +57,30 @@ vi.mock('../../components/TablePageToolbar', () => ({
 }));
 
 vi.mock('./components/UnitsTable', () => ({ UnitsTable: () => <div data-testid="units-table" /> }));
-vi.mock('./components/UnitFormDialog', () => ({ UnitFormDialog: () => null }));
+vi.mock('./components/UnitFormDrawer', () => ({
+  UnitFormDrawer: ({ open, suspended, onLinkOrbitUnit }: Record<string, unknown>) => (
+    <div data-testid={`unit-drawer-${open ? 'open' : 'closed'}`} data-suspended={String(suspended)}>
+      {typeof onLinkOrbitUnit === 'function' ? (
+        <button type="button" onClick={onLinkOrbitUnit}>
+          Відкрити Orbit
+        </button>
+      ) : null}
+    </div>
+  ),
+}));
 vi.mock('./components/UnitActionDialogs', () => ({
   DeleteUnitDialog: () => null,
   MergeUnitDialog: () => null,
 }));
 vi.mock('./components/KmzTaskStatus', () => ({ KmzTaskStatus: () => null }));
 vi.mock('./components/KmzUploadDialog', () => ({ KmzUploadDialog: () => null }));
-vi.mock('../rer-unit-details/OrbitUnitLinkDialog', () => ({ OrbitUnitLinkDialog: () => null }));
+vi.mock('../rer-unit-details/OrbitUnitLinkDialog', () => ({
+  OrbitUnitLinkDialog: ({ onClose }: { onClose: () => void }) => (
+    <button type="button" onClick={onClose} data-testid="orbit-dialog">
+      Закрити Orbit
+    </button>
+  ),
+}));
 
 vi.mock('./use-rer-units-page', () => ({
   useRerUnitsPage: (_roles: string[], req: ListUnitsReq) => {
@@ -179,5 +195,29 @@ describe('RerUnitsNeoPage search and pagination controls', () => {
 
     expect(searchInput?.disabled).toBe(false);
     expect(document.activeElement).toBe(searchInput);
+  });
+
+  it('suspends the logical drawer session while Orbit linking is open and clears timers on unmount', () => {
+    vi.useFakeTimers();
+    pageMock.value = buildPageValue({ editUnit: { id: 7 } });
+    renderPage();
+
+    const drawer = container.querySelector('[data-testid="unit-drawer-open"]');
+    expect(drawer?.getAttribute('data-suspended')).toBe('false');
+    act(() => (drawer?.querySelector('button') as HTMLButtonElement).click());
+    expect(drawer?.getAttribute('data-suspended')).toBe('true');
+    act(() => vi.runOnlyPendingTimers());
+    expect(container.querySelector('[data-testid="orbit-dialog"]')).not.toBeNull();
+
+    act(() =>
+      (container.querySelector('[data-testid="orbit-dialog"]') as HTMLButtonElement).click(),
+    );
+    expect(drawer?.getAttribute('data-suspended')).toBe('true');
+    act(() => vi.runOnlyPendingTimers());
+    expect(drawer?.getAttribute('data-suspended')).toBe('false');
+
+    act(() => (drawer?.querySelector('button') as HTMLButtonElement).click());
+    act(() => root.unmount());
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

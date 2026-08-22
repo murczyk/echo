@@ -1,4 +1,5 @@
-import { Box, CircularProgress, Stack } from '@mui/material';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import { Box, CircularProgress, Stack, Tooltip } from '@mui/material';
 
 import { DateTimeRangeControl } from '../../components/DateTimeRangeControl';
 import { PowerButton } from '../../components/PowerButton';
@@ -46,14 +47,24 @@ function GoiAssociationsPageBody() {
             </Box>
           }
           actions={
-            <PowerButton
-              variant="contained"
-              disabled={page.reporting}
-              onClick={() => void page.onLaunchReport()}
-              startIcon={page.reporting ? <CircularProgress size={16} color="inherit" /> : null}
-            >
-              ЗВІТ
-            </PowerButton>
+            <Tooltip title="Поставити формування звіту в чергу">
+              <span>
+                <PowerButton
+                  variant="contained"
+                  disabled={page.reporting}
+                  onClick={() => void page.onLaunchReport()}
+                  startIcon={
+                    page.reporting ? (
+                      <CircularProgress size={16} color="inherit" />
+                    ) : (
+                      <DescriptionOutlinedIcon />
+                    )
+                  }
+                >
+                  Сформувати звіт
+                </PowerButton>
+              </span>
+            </Tooltip>
           }
         />
 

@@ -55,8 +55,7 @@ import {
 import { listLogins } from '../../services/api/logins';
 import { listOrganisms } from '../../services/api/organisms';
 import { PowerAlert } from '../../components/PowerAlert';
-import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
-import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
+import { TablePageToolbar } from '../../components/TablePageToolbar';
 import {
   GOI_INTEGRATION_TYPE_FULL,
   GOI_INTEGRATION_TYPE_SIMPLE,
@@ -615,66 +614,32 @@ function AdminGoiIntegrationsNeoPageBody() {
           <PowerAlert severity={status.kind}>{status.message}</PowerAlert>
         ) : null}
         {loadError ? <PowerAlert severity="error">{loadError}</PowerAlert> : null}
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          alignItems={{ xs: 'stretch', md: 'center' }}
-          justifyContent="space-between"
-          gap={2}
-        >
-          <Stack direction="row" alignItems="center" gap={2} sx={{ minWidth: 0 }}>
-            <Stack direction="row" alignItems="center" gap={0.75} sx={{ flexShrink: 0 }}>
-              <Typography
-                component="h1"
-                variant="h5"
-                sx={{ m: 0, fontWeight: 600, lineHeight: 1.2 }}
-              >
-                ГОІ
-              </Typography>
-              <Tooltip
-                title="Інтеграції ГОІ з власником, доступом для організмів і логінів та керуванням worker/SSH."
-                arrow
-                placement="right-start"
-              >
-                <Box component="span" aria-label="Інформація про сторінку" sx={{ lineHeight: 0 }}>
-                  <InfoOutlinedIcon fontSize="small" />
-                </Box>
-              </Tooltip>
-            </Stack>
-            {loading && integrations.length === 0 ? null : (
-              <Box sx={{ width: 360, maxWidth: '100%' }}>
-                <GlobalFilterTextField
-                  className="!min-w-0 !w-full"
-                  globalFilter={tableStateContext.globalFilter}
-                  setGlobalFilter={tableStateContext.onChangeGlobalFilter}
-                />
-              </Box>
-            )}
-          </Stack>
-          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+        <TablePageToolbar
+          title="ГОІ"
+          titleInfo="Інтеграції ГОІ з власником, доступом для організмів і логінів та керуванням worker/SSH."
+          withGlobalTextFilter
+          hideGlobalTextFilter={loading && integrations.length === 0}
+          internalActionsDisabled={loading && integrations.length === 0}
+          actions={
             <PowerButton variant="contained" size="small" onClick={openCreate} disabled={loading}>
               Додати інтеграцію
             </PowerButton>
-            <InternalTableActions
-              table={tableStateContext.tableInstance}
-              columnsVisibilityDisabled={loading && integrations.length === 0}
-              colOrderDisabled={loading && integrations.length === 0}
-              filtersDisabled={loading && integrations.length === 0}
-            >
-              <Tooltip title="Оновити">
-                <span>
-                  <PowerIconButton
-                    aria-label="Оновити"
-                    size="small"
-                    onClick={() => void load()}
-                    disabled={loading}
-                  >
-                    <RefreshIcon fontSize="small" />
-                  </PowerIconButton>
-                </span>
-              </Tooltip>
-            </InternalTableActions>
-          </Stack>
-        </Stack>
+          }
+          additionalInternalActions={
+            <Tooltip title="Оновити">
+              <span>
+                <PowerIconButton
+                  aria-label="Оновити"
+                  size="small"
+                  onClick={() => void load()}
+                  disabled={loading}
+                >
+                  <RefreshIcon fontSize="small" />
+                </PowerIconButton>
+              </span>
+            </Tooltip>
+          }
+        />
         <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
           <GoiIntegrationsTable
             integrations={integrations}

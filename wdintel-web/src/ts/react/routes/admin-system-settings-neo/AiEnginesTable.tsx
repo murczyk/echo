@@ -196,7 +196,6 @@ function AiEnginesTableBody({
     enableColumnFilterModes: true,
     enableFacetedValues: true,
     enableRowActions: true,
-    positionActionsColumn: 'first',
     renderRowActions: ({ row }) => (
       <Stack direction="row" spacing={0.5}>
         <MrtRowActionButton

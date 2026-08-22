@@ -196,7 +196,7 @@ viewSelectingNetwork freq selectedNetworkId model shared networks =
                     [ a
                         [ Attr.title "Додати новий підрозділ"
                         , class "outline-0! border-1! border-border rounded-sm! bg-transparent text-[21px]! transition-colors duration-350 hover:bg-action! hover:text-bw! py-[1px] px-[6px]"
-                        , Route.href { path = Route.Path.RerUnits, query = Dict.empty, hash = Nothing }
+                        , Route.href { path = Route.Path.RerUnitsNeo, query = Dict.empty, hash = Nothing }
                         , target "_blank"
                         ]
                         [ i [ class "bi bi-plus-lg" ] []

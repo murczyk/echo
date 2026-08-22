@@ -18,10 +18,10 @@ type alias Model =
     {}
 
 
-init : Auth.User -> () -> ( Model, Effect Msg )
-init user _ =
+init : Auth.User -> Route () -> ( Model, Effect Msg )
+init user route =
     if user.name == "anonymous" || Core.Auth.hasRole "Rer" user then
-        ( {}, E.none )
+        ( {}, E.replaceRoute { path = Route.Path.RerUnitsNeo, query = route.query, hash = route.hash } )
 
     else
         ( {}, E.replaceRoutePath Route.Path.Home_ )
@@ -32,9 +32,9 @@ type Msg
 
 
 page : Auth.User -> Shared.Model -> Route () -> Page Model Msg
-page user _ _ =
+page user _ route =
     Page.new
-        { init = init user
+        { init = \_ -> init user route
         , update = update
         , subscriptions = subscriptions
         , view = view user

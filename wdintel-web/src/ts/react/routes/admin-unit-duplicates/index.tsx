@@ -1,12 +1,13 @@
 import MergeIcon from '@mui/icons-material/Merge';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { Box, IconButton, Link, Stack, Tooltip } from '@mui/material';
+import { Box, Link, Stack, Tooltip } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import type { Unit, UnitDuplicate } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerIconButton } from '../../components/PowerIconButton';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import {
@@ -193,12 +194,17 @@ export function AdminUnitDuplicatesPage({
         <TablePageToolbar
           title="Дублікати підрозділів"
           withGlobalTextFilter
-          trailingActionsAfterInternal={
+          additionalInternalActions={
             <Tooltip title="Оновити">
               <span>
-                <IconButton size="small" disabled={loading} onClick={() => void loadUnits()}>
+                <PowerIconButton
+                  aria-label="Оновити"
+                  size="small"
+                  disabled={loading}
+                  onClick={() => void loadUnits()}
+                >
                   <RefreshIcon fontSize="small" />
-                </IconButton>
+                </PowerIconButton>
               </span>
             </Tooltip>
           }
