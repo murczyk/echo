@@ -26,7 +26,6 @@ import {
   fetchAnalysisUnits,
   fetchInboxMessages,
   fetchNetworksByIds,
-  getLatestSenders,
   getTagsForDisplay,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
@@ -455,15 +454,13 @@ export async function loadFilterSectionData(
       return;
     }
     case 'senders': {
-      const [sendersRsp, senderProfilesRsp] = await Promise.all([
-        fetchAnalysisSenders(context.analysisReq, requestOptions),
-        getLatestSenders(requestOptions),
-      ]);
+      const sendersRsp = await fetchAnalysisSenders(context.analysisReq, requestOptions);
       if (isStale() || isAborted()) return;
-      context.setProfiles((current) => mergeSignalProfiles(current, senderProfilesRsp.data ?? {}));
+      const senderProfiles = sendersRsp.senderNames ?? {};
+      context.setProfiles((current) => mergeSignalProfiles(current, senderProfiles));
       context.setOptions((current) => ({
         ...current,
-        senders: buildSenderFilterOptions(sendersRsp.senders, senderProfilesRsp.data ?? {}),
+        senders: buildSenderFilterOptions(sendersRsp.senders, senderProfiles),
       }));
       return;
     }

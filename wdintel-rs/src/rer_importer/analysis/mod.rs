@@ -9472,61 +9472,23 @@ async fn collect_sender_names(
     senders: &Vec<AnalysisStatsSender>,
     txn: &DatabaseConnection,
 ) -> anyhow::Result<BTreeMap<String, Option<SignalProfileRsp>>> {
-    let mut result = BTreeMap::new();
-    let mut sender_keys = vec![];
-    for sender in senders {
-        sender_keys.push(sender.uuid.clone());
-    }
-    let signal_profiles = signal_profile::Entity::find()
-        .select_only()
-        .columns([
-            signal_profile::Column::Uuid,
-            signal_profile::Column::FamilyName,
-            signal_profile::Column::GivenName,
-        ])
-        .filter(signal_profile::Column::Uuid.eq_any(sender_keys.clone()))
-        .into_tuple::<(String, Option<String>, Option<String>)>()
-        .all(txn)
+    let sender_keys =
+        senders.iter().map(|sender| sender.uuid.clone()).collect();
+    let profiles = crate::rer_importer::collect_profiles_data(txn, sender_keys)
         .await
         .context(h!())?;
-    let mut signal_profiles_map = BTreeMap::new();
-    for (key, family_name, given_name) in signal_profiles {
-        signal_profiles_map.insert(
-            key,
-            SignalProfileRsp {
-                given_name,
-                family_name,
-            },
-        );
-    }
-    let login_ids = sender_keys
-        .iter()
-        .filter_map(|sender| uuid::Uuid::parse_str(sender).ok())
-        .collect_vec();
-    let login_names = login::Entity::find()
-        .select_only()
-        .columns([login::Column::Id, login::Column::Login])
-        .filter(login::Column::Id.is_in(login_ids))
-        .into_tuple::<(uuid::Uuid, String)>()
-        .all(txn)
-        .await
-        .context(h!())?
+    Ok(profiles
         .into_iter()
-        .map(|(id, login)| (id.to_string(), login))
-        .collect::<BTreeMap<_, _>>();
-    for s in sender_keys {
-        let entry = login_names
-            .get(&s)
-            .cloned()
-            .map(|login| SignalProfileRsp {
-                given_name: Some(login),
-                family_name: None,
-            })
-            .or_else(|| signal_profiles_map.remove(&s));
-        result.insert(s, entry);
-    }
-
-    Ok(result)
+        .map(|(key, profile)| {
+            (
+                key,
+                profile.map(|profile| SignalProfileRsp {
+                    given_name: profile.given_name,
+                    family_name: profile.family_name,
+                }),
+            )
+        })
+        .collect())
 }
 async fn collect_group_names(
     groups: &Vec<AnalysisStatsGroup>,

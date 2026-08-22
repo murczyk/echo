@@ -309,6 +309,37 @@ describe('loadFilterSectionData', () => {
       { value: 'нугуш', label: 'НУГУШ', count: 5, values: ['нугуш'] },
     ]);
   });
+
+  it('uses sender names returned with the analysis sender statistics', async () => {
+    mocks.fetchAnalysisSenders.mockResolvedValue({
+      senders: [{ uuid: 'messenger-sender', count: 2, freqBreakdown: [], perDay: {} }],
+      senderNames: {
+        'messenger-sender': { givenName: 'Alpha', familyName: 'Team' },
+      },
+    });
+    let currentOptions = structuredClone(emptyOptions);
+
+    await loadFilterSectionData('senders', {
+      analysisReq: buildAnalysisReq(buildQueryState())!,
+      loadVersion: 0,
+      loadVersionRef: { current: 0 },
+      queryState: buildQueryState(),
+      setAorEntries: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setNetworks: vi.fn(),
+      setOptions: (update) => {
+        currentOptions = typeof update === 'function' ? update(currentOptions) : update;
+      },
+      setProfiles: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
+      unitsMap: {},
+    });
+
+    expect(currentOptions.senders).toEqual([
+      { value: 'messenger-sender', label: 'Alpha Team', count: 2 },
+    ]);
+  });
 });
 
 describe('reloadAnalysisData', () => {
