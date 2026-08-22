@@ -1,6 +1,7 @@
 use super::types::{
-    DeviceAnalyticsFileLink, DeviceAnalyticsProgress, DeviceAnalyticsSummary,
-    RuleExpression, TagRuleDefinition,
+    AnalysisRunSummary, AnalysisRunTagSummary, DeviceAnalyticsFileLink,
+    DeviceAnalyticsProgress, DeviceAnalyticsSummary, RuleExpression,
+    TagRuleDefinition,
 };
 use crate::file_registry::entities::{
     analytics_tag, analytics_tag_test_file, device_file_tag,
@@ -13,10 +14,10 @@ use crate::file_registry::entities::{
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{
     AccessMode, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait,
-    DatabaseConnection, DatabaseTransaction, DbErr, EntityTrait,
+    DatabaseConnection, DatabaseTransaction, DbBackend, DbErr, EntityTrait,
     FromQueryResult, IntoActiveModel, IsolationLevel, JoinType, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait, Set,
-    TransactionTrait,
+    Statement, TransactionTrait,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -293,6 +294,51 @@ struct SummaryRow {
     tag_name: String,
     file_count: i64,
     latest_file_entry_created_at: DateTime<FixedOffset>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct AnalysisRunTagSummaryRow {
+    tag_name: String,
+    file_count: i64,
+}
+
+pub(in crate::devices) async fn analysis_run_summary(
+    file_db: &DatabaseConnection,
+    run: &file_analysis_run::Model,
+) -> Result<AnalysisRunSummary, DbErr> {
+    let items = AnalysisRunTagSummaryRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+                select
+                    tag.name as tag_name,
+                    count(*) as file_count
+                from file_analysis_run_item as item
+                cross join lateral unnest(item.result_tag_ids)
+                    as result(tag_id)
+                join analytics_tag as tag
+                  on tag.id = result.tag_id
+                where item.id = $1
+                  and tag.archived_at is null
+                group by tag.id, tag.name
+                order by tag.id
+            "#,
+            [run.id.into()],
+        ),
+    )
+    .all(file_db)
+    .await?
+    .into_iter()
+    .map(|row| AnalysisRunTagSummary {
+        tag_name: row.tag_name,
+        file_count: row.file_count,
+    })
+    .collect();
+
+    Ok(AnalysisRunSummary {
+        file_count: run.item_count,
+        items,
+    })
 }
 
 pub(in crate::devices) async fn device_summary(

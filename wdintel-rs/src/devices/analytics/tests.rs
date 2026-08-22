@@ -818,6 +818,13 @@ async fn manual_run_is_bounded_and_publishes_write_once_history() {
     assert_eq!(summary.items.len(), 1);
     assert_eq!(summary.items[0].tag_name, "Bounded PDF");
     assert_eq!(summary.items[0].file_count, 2);
+    let run_summary = query::analysis_run_summary(file_db, &completed_run)
+        .await
+        .unwrap();
+    assert_eq!(run_summary.file_count, 3);
+    assert_eq!(run_summary.items.len(), 1);
+    assert_eq!(run_summary.items[0].tag_name, "Bounded PDF");
+    assert_eq!(run_summary.items[0].file_count, 2);
     let historical_item =
         file_analysis_run_item::Entity::find_by_id((run.id, file_ids[0]))
             .one(file_db)
@@ -1239,6 +1246,20 @@ async fn newer_run_wins_publication_while_older_history_still_commits() {
             .as_deref(),
         Some(&[tag_id][..]),
     );
+    let completed_older_run =
+        file_analysis_run::Entity::find_by_id(older_run.id)
+            .one(file_db)
+            .await
+            .unwrap()
+            .unwrap();
+    let run_summary =
+        query::analysis_run_summary(file_db, &completed_older_run)
+            .await
+            .unwrap();
+    assert_eq!(run_summary.file_count, 1);
+    assert_eq!(run_summary.items.len(), 1);
+    assert_eq!(run_summary.items[0].tag_name, "Publication precedence");
+    assert_eq!(run_summary.items[0].file_count, 1);
     let summary = query::device_summary(file_db, device_id).await.unwrap();
     assert_eq!(
         (summary.total_file_count, summary.analyzed_file_count),
