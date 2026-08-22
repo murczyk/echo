@@ -24,7 +24,7 @@ use log::warn;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub mod cleanup;
 pub mod oneoff;
@@ -198,6 +198,16 @@ pub async fn test_battle_line(
 ) -> Result<Json<BattleLineTestRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     ensure_active_battle_line(&env.dbx).await.c(h!())?;
+    let inbox_item_ids = resolve_test_inbox_item_ids(
+        &env.dbx,
+        req.inbox_item_id.as_deref(),
+        req.message_uid.as_deref(),
+    )
+    .await
+    .c(h!())?;
+    if inbox_item_ids.is_empty() {
+        return Err(AppError::NotFound);
+    }
     let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
     let organism_logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
@@ -206,19 +216,26 @@ pub async fn test_battle_line(
         highlight_points: Some(true),
         ..Default::default()
     };
-    let mut messages = crate::rer_importer::inbox::messages_by_id_bl(
+    let messages = crate::rer_importer::inbox::messages_by_id_bl(
         &login_id,
         &organism_logins,
         &env,
-        &[req.inbox_item_id],
+        &inbox_item_ids,
         &inbox_req,
     )
     .await
     .c(h!())?;
-    let Some((_, message)) = messages.pop() else {
+    let mut messages = messages.into_iter().collect::<BTreeMap<_, _>>();
+    let Some((inbox_item_id, message)) =
+        inbox_item_ids.into_iter().find_map(|inbox_item_id| {
+            messages
+                .remove(&inbox_item_id)
+                .map(|message| (inbox_item_id, message))
+        })
+    else {
         return Err(AppError::NotFound);
     };
-    let location_v2 = sigint_inbox_item::Entity::find_by_id(req.inbox_item_id)
+    let location_v2 = sigint_inbox_item::Entity::find_by_id(inbox_item_id)
         .select_only()
         .column(sigint_inbox_item::Column::LocationV2)
         .into_tuple::<Option<String>>()
@@ -233,13 +250,10 @@ pub async fn test_battle_line(
     .c(h!())?
     .into_iter()
     .collect::<BTreeSet<_>>();
-    let aor_context = resolve_inbox_item_aors(
-        &env.dbx,
-        req.inbox_item_id,
-        Some(&allowed_groups),
-    )
-    .await
-    .c(h!())?;
+    let aor_context =
+        resolve_inbox_item_aors(&env.dbx, inbox_item_id, Some(&allowed_groups))
+            .await
+            .c(h!())?;
     let mut locations = vec![];
     for location in location_v2
         .as_deref()
@@ -257,13 +271,52 @@ pub async fn test_battle_line(
         );
     }
     Ok(Json(BattleLineTestRsp {
-        inbox_item_id: req.inbox_item_id,
+        inbox_item_id,
         message,
         group_master_keys: aor_context.group_master_keys,
         aor_ids: aor_context.aor_ids,
         locations,
         battle_line: read_battle_line_state(&env.dbx).await.c(h!())?,
     }))
+}
+
+async fn resolve_test_inbox_item_ids<C>(
+    dbx: &C,
+    inbox_item_id: Option<&str>,
+    message_uid: Option<&str>,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    let message_uid = match (inbox_item_id, message_uid) {
+        (Some(inbox_item_id), None) => {
+            return Ok(inbox_item_id
+                .trim()
+                .parse::<i64>()
+                .ok()
+                .into_iter()
+                .collect());
+        }
+        (None, Some(message_uid)) => message_uid.trim(),
+        _ => return Ok(vec![]),
+    };
+    if message_uid.is_empty() {
+        return Ok(vec![]);
+    }
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::MessageUid.eq(message_uid))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .order_by_desc(sigint_inbox_item::Column::Id)
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
 #[post("/api/battle-line/unlinked-inbox")]
@@ -1823,6 +1876,108 @@ mod tests {
                     lon: 10.0,
                 },
             }]
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn resolves_battle_line_test_input_by_id_or_message_uid() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let message_uid = format!("battle-line-test-{}", uuid::Uuid::now_v7());
+        let message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let newer_message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(newer_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let deleted_message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(deleted_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let numeric_message_uid = i64::MAX.to_string();
+        let numeric_uid_message = signal_message::ActiveModel {
+            message_uid: Set(Some(numeric_message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(numeric_uid_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            resolve_test_inbox_item_ids(
+                &txn,
+                Some(&message.id.to_string()),
+                None
+            )
+            .await
+            .unwrap(),
+            vec![message.id]
+        );
+        assert_eq!(
+            resolve_test_inbox_item_ids(&txn, None, Some(&message_uid))
+                .await
+                .unwrap(),
+            vec![newer_message.id, message.id]
+        );
+        assert_eq!(
+            resolve_test_inbox_item_ids(&txn, None, Some(&numeric_message_uid))
+                .await
+                .unwrap(),
+            vec![numeric_uid_message.id]
+        );
+        assert_eq!(
+            resolve_test_inbox_item_ids(
+                &txn,
+                None,
+                Some("missing-battle-line-message-uid")
+            )
+            .await
+            .unwrap(),
+            Vec::<i64>::new()
         );
         txn.rollback().await.unwrap();
     }

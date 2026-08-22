@@ -1116,6 +1116,10 @@ view user model shared route =
                             Decode.at [ "detail" ] <|
                                 Decode.field "networkUnitName" Decode.string
 
+                        deltaKmlErrorDecoder =
+                            Decode.at [ "detail" ] <|
+                                Decode.field "message" Decode.string
+
                         encodedMessages =
                             Encode.list (\( a, b ) -> Encode.list identity [ Encode.int a, B.inboxMessageEncoder b ])
                                 (RD.withDefault [] model.mapOpenMessages)
@@ -1240,6 +1244,7 @@ view user model shared route =
                             , Events.on "date-range-changed" (Decode.map MapPeriodChanged dateRangeDecoder)
                             , Events.on "load-messages-description" (Decode.map LoadMessagesForMap messagesIdsDecoder)
                             , Events.on "message-unit-clicked" (Decode.map SetUnitFilterFromMap unitNameDecoder)
+                            , Events.on "delta-kml-load-error" (Decode.map DeltaKmlLoadFailed deltaKmlErrorDecoder)
                             ]
                             []
                             :: (if model.mapPoints == Loading || model.mapOpenMessages == Loading then
