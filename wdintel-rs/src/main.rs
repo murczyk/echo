@@ -850,6 +850,32 @@ pub struct OneoffMigrateLargeMediaToPlaintextPs {
     pub dry_run: bool,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OneoffAuditMediaStoragePs {
+    /// Inclusive RFC3339 creation timestamp.
+    #[arg(long)]
+    pub since_ts: String,
+    /// Exclusive RFC3339 creation timestamp.
+    #[arg(long)]
+    pub till_ts: Option<String>,
+    /// Resume after this media UUID.
+    #[arg(long)]
+    pub after_media_id: Option<Uuid>,
+    #[arg(long, default_value_t = 10_000)]
+    pub limit: u64,
+    #[arg(long, default_value_t = 8)]
+    pub concurrency: usize,
+    /// JSONL audit and recovery report.
+    #[arg(long)]
+    pub output: std::path::PathBuf,
+    /// JSONL entries with `media_id` and `source_path` fields.
+    #[arg(long)]
+    pub repair_manifest: Option<std::path::PathBuf>,
+    /// Upload replacements and update media rows.
+    #[arg(long, action)]
+    pub apply: bool,
+}
+
 #[derive(clap::Args, Debug)]
 pub struct OneoffExportLocalAiAgentProfilePs {
     #[arg(long)]
@@ -1060,6 +1086,7 @@ enum Cmd {
     OneoffDiscardCopiedAiAgentRuntime(OneoffDiscardCopiedAiAgentRuntimePs),
     OneoffMigrateModulationToEncryption(OneoffMigrateModulationToEncryptionPs),
     OneoffMigrateLargeMediaToPlaintext(OneoffMigrateLargeMediaToPlaintextPs),
+    OneoffAuditMediaStorage(OneoffAuditMediaStoragePs),
     OneoffBackfillAudioTranscriber(OneoffBackfillAudioTranscriberPs),
     OneoffRequeueAudioTranscriber(OneoffReprocessAudioTranscriberPs),
     OneoffRetranscribeAudioTranscriber(OneoffReprocessAudioTranscriberPs),
@@ -1909,6 +1936,9 @@ async fn async_main(
                 mode, ps.dry_run,
             )
             .await
+        },
+        Cmd::OneoffAuditMediaStorage(ps) => {
+            messenger::oneoff::oneoff_audit_media_storage(mode, &ps).await
         },
         Cmd::OneoffBackfillAudioTranscriber(ps) => {
             transcriber::backfill::run(mode, ps).await
