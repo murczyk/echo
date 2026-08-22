@@ -27,9 +27,11 @@ export async function loadDeltaKmlLayer(): Promise<L.GeoJSON | null> {
 
 function createDeltaKmlLayer(geojson: GeoJSON.GeoJsonObject): L.GeoJSON {
   return L.geoJSON(geojson, {
+    interactive: false,
     pointToLayer: (feature, latlng) => {
       const icon = feature.properties?.icon;
       return L.marker(latlng, {
+        interactive: false,
         opacity: 0,
         icon: L.icon({
           iconUrl: typeof icon === 'string' && icon ? icon : EMPTY_ICON,

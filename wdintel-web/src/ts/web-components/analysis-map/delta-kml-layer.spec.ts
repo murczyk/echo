@@ -35,6 +35,7 @@ describe('Delta KML layer', () => {
     const line = layer?.getLayers()[0] as L.Polyline;
     expect(line.options).toMatchObject({
       color: '#3388ff',
+      interactive: false,
       opacity: 0.3,
       weight: 3,
     });
