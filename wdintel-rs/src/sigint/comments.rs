@@ -127,10 +127,12 @@ where
         .into_iter()
         .filter_map(|link| {
             let message = messages.get(&link.intel_message_id)?;
-            let login_id = message
-                .sender
-                .as_deref()
-                .and_then(|sender| uuid::Uuid::parse_str(sender).ok());
+            let login_id = message.login_id.or_else(|| {
+                message
+                    .sender
+                    .as_deref()
+                    .and_then(|sender| uuid::Uuid::parse_str(sender).ok())
+            });
             Some(LinkedMessageComment {
                 source_message_id: link.source_message_id,
                 intel_message_id: message.id,

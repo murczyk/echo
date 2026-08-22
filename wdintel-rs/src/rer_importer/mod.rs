@@ -1634,6 +1634,17 @@ pub async fn senders(
         .column(signal_message_group::Column::Sender)
         .column(signal_message_group::Column::LoginId)
         .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            Condition::any()
+                .add(
+                    signal_message_group::Column::Sender
+                        .is_not_null()
+                        .and(signal_message_group::Column::Sender.ne("")),
+                )
+                .add(signal_message_group::Column::LoginId.is_not_null()),
+        )
+        .group_by(signal_message_group::Column::Sender)
+        .group_by(signal_message_group::Column::LoginId)
         .into_tuple::<(Option<String>, Option<Uuid>)>()
         .all(&env.dbx)
         .await

@@ -7213,7 +7213,7 @@ mod tests {
         assert!(!sql.contains(r#"JOIN (SELECT "signal_message_group""#));
         assert!(
             sql.contains(
-                r#""analytics_message_access"."sender" IN ('sender')"#
+                r#"(coalesce("analytics_message_access".sender, "analytics_message_access".login_id::text)) IN ('sender')"#
             ),
             "{name}: {sql}"
         );

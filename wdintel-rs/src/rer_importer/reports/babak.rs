@@ -8,7 +8,9 @@ use crate::rer_importer::report_chunking::{
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
-use crate::sigint::sender::preferred_group_sender_expr;
+use crate::sigint::sender::{
+    preferred_group_sender_expr, preferred_message_author_expr,
+};
 use crate::types::*;
 use crate::utils::*;
 use chrono::prelude::*;
@@ -1558,7 +1560,7 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
                     )
                     .and_where(signal_message::Column::Deleted.eq(false))
                     .and_where(
-                        signal_message::Column::Sender.is_in(
+                        preferred_message_author_expr(None).is_in(
                             login_ids
                                 .iter()
                                 .map(ToString::to_string)
