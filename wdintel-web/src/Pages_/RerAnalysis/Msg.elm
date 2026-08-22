@@ -161,6 +161,7 @@ type Msg
     | GotStatsGroups (Result ApiError B.GroupStatsRsp)
     | GotMapPoints (Result ApiError B.MapPointsRsp)
     | MapClosed
+    | DeltaKmlLoadFailed String
     | MapPeriodChanged { startDate : Int, endDate : Int }
     | LoadMessagesForMap (List Int)
     | GotMessagesForMap Int (List Int) (Result ApiError B.MessageIdsRsp)

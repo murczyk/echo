@@ -240,6 +240,12 @@ pub struct OneoffFixKmzPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffCleanBattleLineKmzPs {
+    pub input: std::path::PathBuf,
+    pub output: std::path::PathBuf,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct RestreamerPs {
     #[arg(long, value_enum)]
     pub noauto: bool,
@@ -846,6 +852,8 @@ pub struct OneoffMigrateLargeMediaToPlaintextPs {
 pub struct OneoffExportLocalAiAgentProfilePs {
     #[arg(long)]
     pub output: std::path::PathBuf,
+    #[arg(long)]
+    pub skip_invalid: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -858,6 +866,8 @@ pub struct OneoffImportLocalAiAgentProfilePs {
 pub struct OneoffDiscardCopiedAiAgentRuntimePs {
     #[arg(long)]
     pub clear_control_plane: bool,
+    #[arg(long)]
+    pub disable_engines: bool,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -966,6 +976,7 @@ enum Cmd {
     OneoffRadioByFreq,
     OneoffRadioPerDayPerAbonent(OneoffRadioPerDayPerAbonentPs),
     OneoffFixKmz(OneoffFixKmzPs),
+    OneoffCleanBattleLineKmz(OneoffCleanBattleLineKmzPs),
     OneoffDeltaCsvToKmz(OneoffDeltaCsvToKmzPs),
     OneoffReprocessCallsigns(OneoffReprocessCallsignsPs),
     /// Reprocess inbox callsigns in a table TUI with before/after columns.
@@ -1562,6 +1573,9 @@ async fn async_main(
                 .map(|_| ())
         }
         Cmd::OneoffFixKmz(ps) => kml::oneoff_fix_kml_main(mode, &ps).await,
+        Cmd::OneoffCleanBattleLineKmz(ps) => {
+            battle_line::cleanup::oneoff_clean_kmz(&ps).await
+        }
         Cmd::Migrate => migration::run_migration_1(mode).await,
         Cmd::OneoffCreateFileRegistryDatabase => {
             file_registry::provisioning::oneoff_create_database(mode).await
@@ -1873,13 +1887,18 @@ async fn async_main(
         }
         Cmd::OneoffRefreshAiModels => tags::worker::oneoff_refresh_models(mode).await,
         Cmd::OneoffExportLocalAiAgentProfile(ps) => {
-            ai_agent::profile::export(mode, &ps.output).await
+            ai_agent::profile::export(mode, &ps.output, ps.skip_invalid).await
         }
         Cmd::OneoffImportLocalAiAgentProfile(ps) => {
             ai_agent::profile::import(mode, &ps.input).await
         }
         Cmd::OneoffDiscardCopiedAiAgentRuntime(ps) => {
-            ai_agent::profile::discard_runtime(mode, ps.clear_control_plane).await
+            ai_agent::profile::discard_runtime(
+                mode,
+                ps.clear_control_plane,
+                ps.disable_engines,
+            )
+            .await
         }
         Cmd::OneoffMigrateModulationToEncryption(ps) => {
             sigint::network::oneoff::oneoff_migrate_modulation_to_encryption(

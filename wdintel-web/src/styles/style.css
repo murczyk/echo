@@ -478,6 +478,17 @@
   }
 }
 
+@keyframes media-summary-carousel-in {
+  from {
+    opacity: 0.55;
+    transform: translateX(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 /* https://stackoverflow.com/questions/15907079/css3-transition-fade-out-effect */
 
 .badge-selected {

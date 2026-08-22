@@ -91,13 +91,26 @@ fn default_true() -> bool {
     true
 }
 
-pub async fn export(mode: Mode, output: &Path) -> Result<(), AppError> {
+pub async fn export(
+    mode: Mode,
+    output: &Path,
+    skip_invalid: bool,
+) -> Result<(), AppError> {
     let (config, dbx) = config_and_db(mode).await?;
     let Some(profile) = load_profile(&dbx, &config.public_host).await? else {
         println!("No local AI agent profile is configured; nothing to export");
         return Ok(());
     };
-    validate_profile(&profile, &config.public_host).c(h!())?;
+    let validation = validate_profile(&profile, &config.public_host);
+    match validation {
+        Err(error) if skip_invalid => {
+            println!(
+                "Local AI agent profile is invalid; nothing to export: {error}"
+            );
+            return Ok(());
+        }
+        validation => validation.c(h!())?,
+    }
     validate_profile_webhook_target(&profile).await.c(h!())?;
     write_profile(output, &profile).c(h!())?;
     println!("Exported local AI agent profile");
@@ -118,12 +131,13 @@ pub async fn import(mode: Mode, input: &Path) -> Result<(), AppError> {
 pub async fn discard_runtime(
     mode: Mode,
     clear_control_plane: bool,
+    disable_engines: bool,
 ) -> Result<(), AppError> {
     let (_, dbx) = config_and_db(mode).await?;
     let txn = dbx.begin().await.c(h!())?;
     discard_copied_runtime(&txn).await?;
     if clear_control_plane {
-        clear_copied_control_plane(&txn).await?;
+        clear_copied_control_plane(&txn, disable_engines).await?;
     }
     txn.commit().await.c(h!())?;
     println!("Discarded copied AI agent runtime and control plane={clear_control_plane}");
@@ -462,10 +476,23 @@ where
     Ok(())
 }
 
-async fn clear_copied_control_plane<C>(dbx: &C) -> Result<(), AppError>
+async fn clear_copied_control_plane<C>(
+    dbx: &C,
+    disable_engines: bool,
+) -> Result<(), AppError>
 where
     C: sea_orm::ConnectionTrait,
 {
+    if disable_engines {
+        ai_engine::Entity::update_many()
+            .col_expr(
+                ai_engine::Column::Enabled,
+                sea_orm::sea_query::Expr::value(false),
+            )
+            .exec(dbx)
+            .await
+            .c(h!())?;
+    }
     ai_agent_allowed_engine::Entity::delete_many()
         .exec(dbx)
         .await
@@ -935,7 +962,7 @@ mod tests {
     async fn profile_import_creates_missing_template_login() {
         let (env, _cleanup_guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
-        clear_copied_control_plane(&env.dbx).await.unwrap();
+        clear_copied_control_plane(&env.dbx, false).await.unwrap();
         let template_login_id =
             Uuid::parse_str(AI_AGENT_TEMPLATE_LOGIN_ID).unwrap();
         login::Entity::delete_by_id(template_login_id)
@@ -961,7 +988,7 @@ mod tests {
         assert_eq!(template.login, AI_AGENT_TEMPLATE_LOGIN_NAME);
         assert_eq!(settings.template_login_id, Some(template_login_id));
 
-        clear_copied_control_plane(&env.dbx).await.unwrap();
+        clear_copied_control_plane(&env.dbx, false).await.unwrap();
         ai_engine::Entity::delete_by_id(profile.engines[0].id)
             .exec(&env.dbx)
             .await

@@ -24,8 +24,9 @@ use log::warn;
 use sea_orm::sea_query::{Expr, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
+pub mod cleanup;
 pub mod oneoff;
 pub mod settlement_queue;
 pub mod types;
@@ -76,6 +77,8 @@ pub struct PreparedBattleLineImport {
     geometry_wkt: String,
     pub source_file_name: String,
     pub source_sha256: String,
+    pub source_summary: BattleLineImportSummary,
+    pub cleanup_stats: cleanup::BattleLineCleanupStats,
     pub summary: BattleLineImportSummary,
 }
 
@@ -195,6 +198,16 @@ pub async fn test_battle_line(
 ) -> Result<Json<BattleLineTestRsp>, AppError> {
     crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
     ensure_active_battle_line(&env.dbx).await.c(h!())?;
+    let inbox_item_ids = resolve_test_inbox_item_ids(
+        &env.dbx,
+        req.inbox_item_id.as_deref(),
+        req.message_uid.as_deref(),
+    )
+    .await
+    .c(h!())?;
+    if inbox_item_ids.is_empty() {
+        return Err(AppError::NotFound);
+    }
     let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
     let organism_logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
@@ -203,19 +216,26 @@ pub async fn test_battle_line(
         highlight_points: Some(true),
         ..Default::default()
     };
-    let mut messages = crate::rer_importer::inbox::messages_by_id_bl(
+    let messages = crate::rer_importer::inbox::messages_by_id_bl(
         &login_id,
         &organism_logins,
         &env,
-        &[req.inbox_item_id],
+        &inbox_item_ids,
         &inbox_req,
     )
     .await
     .c(h!())?;
-    let Some((_, message)) = messages.pop() else {
+    let mut messages = messages.into_iter().collect::<BTreeMap<_, _>>();
+    let Some((inbox_item_id, message)) =
+        inbox_item_ids.into_iter().find_map(|inbox_item_id| {
+            messages
+                .remove(&inbox_item_id)
+                .map(|message| (inbox_item_id, message))
+        })
+    else {
         return Err(AppError::NotFound);
     };
-    let location_v2 = sigint_inbox_item::Entity::find_by_id(req.inbox_item_id)
+    let location_v2 = sigint_inbox_item::Entity::find_by_id(inbox_item_id)
         .select_only()
         .column(sigint_inbox_item::Column::LocationV2)
         .into_tuple::<Option<String>>()
@@ -230,13 +250,10 @@ pub async fn test_battle_line(
     .c(h!())?
     .into_iter()
     .collect::<BTreeSet<_>>();
-    let aor_context = resolve_inbox_item_aors(
-        &env.dbx,
-        req.inbox_item_id,
-        Some(&allowed_groups),
-    )
-    .await
-    .c(h!())?;
+    let aor_context =
+        resolve_inbox_item_aors(&env.dbx, inbox_item_id, Some(&allowed_groups))
+            .await
+            .c(h!())?;
     let mut locations = vec![];
     for location in location_v2
         .as_deref()
@@ -254,13 +271,52 @@ pub async fn test_battle_line(
         );
     }
     Ok(Json(BattleLineTestRsp {
-        inbox_item_id: req.inbox_item_id,
+        inbox_item_id,
         message,
         group_master_keys: aor_context.group_master_keys,
         aor_ids: aor_context.aor_ids,
         locations,
         battle_line: read_battle_line_state(&env.dbx).await.c(h!())?,
     }))
+}
+
+async fn resolve_test_inbox_item_ids<C>(
+    dbx: &C,
+    inbox_item_id: Option<&str>,
+    message_uid: Option<&str>,
+) -> anyhow::Result<Vec<i64>>
+where
+    C: ConnectionTrait,
+{
+    let message_uid = match (inbox_item_id, message_uid) {
+        (Some(inbox_item_id), None) => {
+            return Ok(inbox_item_id
+                .trim()
+                .parse::<i64>()
+                .ok()
+                .into_iter()
+                .collect());
+        }
+        (None, Some(message_uid)) => message_uid.trim(),
+        _ => return Ok(vec![]),
+    };
+    if message_uid.is_empty() {
+        return Ok(vec![]);
+    }
+    sigint_inbox_item::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(signal_message::Column::MessageUid.eq(message_uid))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .order_by_desc(sigint_inbox_item::Column::Id)
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .into_tuple::<i64>()
+        .all(dbx)
+        .await
+        .c(h!())
 }
 
 #[post("/api/battle-line/unlinked-inbox")]
@@ -502,24 +558,19 @@ pub async fn prepare_battle_line_import(
     let parsed = parse_point_line_features(&source_file_name, data)
         .await
         .c(h!())?;
-    let mut summary = summarize_features(&parsed.features).c(h!())?;
-    summary.empty_point_count = parsed.empty_point_count;
-    summary.empty_line_string_count = parsed.empty_line_string_count;
-    let features = parsed
-        .features
-        .into_iter()
-        .filter(|feature| match feature {
-            ImportedGeometryFeature::Point(_) => true,
-            ImportedGeometryFeature::LineString(coordinates) => {
-                line_has_length(coordinates)
-            }
-        })
-        .collect::<Vec<_>>();
+    let mut source_summary = summarize_features(&parsed.features).c(h!())?;
+    source_summary.empty_point_count = parsed.empty_point_count;
+    source_summary.empty_line_string_count = parsed.empty_line_string_count;
+    let cleanup = cleanup::clean_features(parsed.features).c(h!())?;
+    let summary = summarize_features(&cleanup.features).c(h!())?;
+    let features = cleanup.features;
     let geometry_wkt = features_to_wkt(&features).c(h!())?;
     Ok(PreparedBattleLineImport {
         geometry_wkt,
         source_file_name,
         source_sha256: sha256::digest(data),
+        source_summary,
+        cleanup_stats: cleanup.stats,
         summary,
     })
 }
@@ -1663,17 +1714,29 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn excludes_zero_length_lines_from_stored_geometry() {
+    async fn cleans_features_before_storing_geometry() {
         let kml = br#"<kml><Document><Placemark><MultiGeometry>
 <Point><coordinates>31,49,0</coordinates></Point>
 <LineString><coordinates>32,50,0 32,50,0</coordinates></LineString>
+<LineString><coordinates>31,49,0 32,50,0</coordinates></LineString>
 </MultiGeometry></Placemark></Document></kml>"#;
         let prepared =
             prepare_battle_line_import("legacy.kml", kml).await.unwrap();
 
+        assert_eq!(prepared.summary.point_count, 0);
         assert_eq!(prepared.summary.line_string_count, 1);
-        assert_eq!(prepared.summary.zero_length_line_string_count, 1);
-        assert_eq!(prepared.geometry_wkt, "GEOMETRYCOLLECTION(POINT(31 49))");
+        assert_eq!(prepared.summary.zero_length_line_string_count, 0);
+        assert_eq!(prepared.summary.coordinate_count, 2);
+        assert_eq!(prepared.source_summary.point_count, 1);
+        assert_eq!(prepared.source_summary.line_string_count, 2);
+        assert_eq!(prepared.source_summary.zero_length_line_string_count, 1);
+        assert_eq!(prepared.cleanup_stats.removed_point_count, 1);
+        assert_eq!(prepared.cleanup_stats.removed_short_line_string_count, 1);
+        assert_eq!(prepared.cleanup_stats.removed_duplicate_segment_count, 0);
+        assert_eq!(
+            prepared.geometry_wkt,
+            "GEOMETRYCOLLECTION(LINESTRING(31 49,32 50))"
+        );
     }
 
     #[test]
@@ -1813,6 +1876,108 @@ mod tests {
                     lon: 10.0,
                 },
             }]
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn resolves_battle_line_test_input_by_id_or_message_uid() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let message_uid = format!("battle-line-test-{}", uuid::Uuid::now_v7());
+        let message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let newer_message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(newer_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let deleted_message = signal_message::ActiveModel {
+            message_uid: Set(Some(message_uid.clone())),
+            deleted: Set(true),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(deleted_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let numeric_message_uid = i64::MAX.to_string();
+        let numeric_uid_message = signal_message::ActiveModel {
+            message_uid: Set(Some(numeric_message_uid.clone())),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(numeric_uid_message.id),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            resolve_test_inbox_item_ids(
+                &txn,
+                Some(&message.id.to_string()),
+                None
+            )
+            .await
+            .unwrap(),
+            vec![message.id]
+        );
+        assert_eq!(
+            resolve_test_inbox_item_ids(&txn, None, Some(&message_uid))
+                .await
+                .unwrap(),
+            vec![newer_message.id, message.id]
+        );
+        assert_eq!(
+            resolve_test_inbox_item_ids(&txn, None, Some(&numeric_message_uid))
+                .await
+                .unwrap(),
+            vec![numeric_uid_message.id]
+        );
+        assert_eq!(
+            resolve_test_inbox_item_ids(
+                &txn,
+                None,
+                Some("missing-battle-line-message-uid")
+            )
+            .await
+            .unwrap(),
+            Vec::<i64>::new()
         );
         txn.rollback().await.unwrap();
     }
@@ -2000,6 +2165,26 @@ where aor_id = $1
             .await
             .unwrap()
             .expect("test database must contain a login");
+        let aor_id = area_of_responsibility::Entity::find()
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .select_only()
+            .column(area_of_responsibility::Column::Id)
+            .into_tuple::<i64>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .expect("test database must contain an AOR");
+        txn.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+update area_of_responsibility
+set left_lat = 52, left_lon = 33, right_lat = 48, right_lon = 39
+where id = $1
+            "#,
+            [aor_id.into()],
+        ))
+        .await
+        .unwrap();
         let prepared = test_prepared_import("a");
         let initial = activate_battle_line_import_in_transaction(
             &txn,
@@ -2085,6 +2270,7 @@ where aor_id = $1
                 .filter(
                     battle_line_aor_geometry::Column::VersionId.eq(version_id)
                 )
+                .filter(battle_line_aor_geometry::Column::AorId.eq(aor_id))
                 .count(&txn)
                 .await
                 .unwrap()
@@ -2198,6 +2384,26 @@ where aor_id = $1
                     .to_string(),
             source_file_name: "test.kml".to_string(),
             source_sha256: digest_character.repeat(64),
+            source_summary: BattleLineImportSummary {
+                point_count: 1,
+                line_string_count: 1,
+                empty_point_count: 0,
+                empty_line_string_count: 0,
+                zero_length_line_string_count: 0,
+                coordinate_count: 3,
+                bounds: BattleLineImportBounds {
+                    min_lat: 48.0,
+                    min_lon: 33.0,
+                    max_lat: 52.0,
+                    max_lon: 39.0,
+                },
+            },
+            cleanup_stats: cleanup::BattleLineCleanupStats {
+                minimum_line_length_m: 0.0,
+                removed_point_count: 0,
+                removed_short_line_string_count: 0,
+                removed_duplicate_segment_count: 0,
+            },
             summary: BattleLineImportSummary {
                 point_count: 1,
                 line_string_count: 1,

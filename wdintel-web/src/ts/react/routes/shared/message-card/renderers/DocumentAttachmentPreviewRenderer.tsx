@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Box } from '@mui/material';
+import { Box, useMediaQuery } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import type { MouseEvent } from 'react';
 
 import type { MessageCardDocument } from '../document-preview.types';
@@ -104,6 +105,8 @@ export function DocumentAttachmentPreviewRenderer({
   const [summaryVisible, setSummaryVisible] = useState(currentDocument.summary != null);
   const [summaryStatus, setSummaryStatus] = useState(currentDocument.summary ?? null);
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
   const previewConfig = getMessageCardAttachmentPreviewConfig(currentDocumentKind);
@@ -324,15 +327,27 @@ export function DocumentAttachmentPreviewRenderer({
       infoSeverity={getOcrInfoSeverity(ocrStatus)}
       additionalActions={
         <>
-          <OcrPreviewAction
-            ocr={ocrStatus}
-            active={ocrVisible}
-            onClick={() => setOcrVisible((visible) => !visible)}
-          />
           <MediaSummaryAction
             status={summaryStatus}
             active={summaryVisible}
-            onClick={() => setSummaryVisible((visible) => !visible)}
+            onClick={() =>
+              setSummaryVisible((visible) => {
+                const next = !visible;
+                if (next && isMobile) setOcrVisible(false);
+                return next;
+              })
+            }
+          />
+          <OcrPreviewAction
+            ocr={ocrStatus}
+            active={ocrVisible}
+            onClick={() =>
+              setOcrVisible((visible) => {
+                const next = !visible;
+                if (next && isMobile) setSummaryVisible(false);
+                return next;
+              })
+            }
           />
         </>
       }

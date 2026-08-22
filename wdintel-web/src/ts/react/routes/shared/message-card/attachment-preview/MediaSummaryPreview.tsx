@@ -1,16 +1,20 @@
-import CloseIcon from '@mui/icons-material/Close';
+import ArrowLeftIcon from '@mui/icons-material/ArrowLeft';
+import ArrowRightIcon from '@mui/icons-material/ArrowRight';
 import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import {
-  Box,
   Button,
   CircularProgress,
   IconButton,
-  Stack,
+  Skeleton,
   Tooltip,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import type {
@@ -19,6 +23,10 @@ import type {
   MediaSummaryStatus,
 } from '../../../../../../Bindings';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
+import {
+  BottomPanelActiveIcon,
+  BottomPanelIcon,
+} from '../../../../components/SidePanelToggleButton';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { isAbortError } from '../../../../services/api/client';
 import { mapCoordinates, type CoordinateLocality } from '../../../../services/api/location';
@@ -48,43 +56,150 @@ const EMPTY_COORDINATES: MediaSummaryCoordinate[] = [];
 const SUMMARY_LOAD_ERROR = 'Не вдалося завантажити стислий опис';
 const SUMMARY_RETRY_ERROR = 'Не вдалося повторно запустити створення опису';
 
-function useCoordinateLocalities(
-  coordinates: MediaSummaryCoordinate[],
-): Array<CoordinateLocality | null> {
+export const MEDIA_SUMMARY_CACHE_LIMIT = 50;
+export const MEDIA_SUMMARY_LOCALITY_CACHE_LIMIT = 500;
+const summaryCache = new Map<string, MediaSummaryResult>();
+const localityCache = new Map<string, CoordinateLocality | null>();
+
+function getLruCacheValue<Value>(cache: Map<string, Value>, key: string): Value | undefined {
+  const cached = cache.get(key);
+  if (cached === undefined) return undefined;
+
+  cache.delete(key);
+  cache.set(key, cached);
+  return cached;
+}
+
+function setLruCacheValue<Value>(
+  cache: Map<string, Value>,
+  key: string,
+  value: Value,
+  limit: number,
+): void {
+  cache.delete(key);
+  while (cache.size >= limit) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+  cache.set(key, value);
+}
+
+function summaryResultMatchesStatus(
+  result: MediaSummaryResult,
+  status: MediaSummaryStatus | null | undefined,
+): boolean {
+  const hasCoordinates = result.state === 'completed' && result.coordinates.length > 0;
+  return (
+    status != null &&
+    result.state === status.state &&
+    result.lastError === status.lastError &&
+    hasCoordinates === status.hasCoordinates
+  );
+}
+
+function getCompatibleCachedSummary(
+  cacheKey: string | null,
+  status: MediaSummaryStatus | null | undefined,
+): MediaSummaryResult | null {
+  if (cacheKey == null) return null;
+  const cached = getLruCacheValue(summaryCache, cacheKey) ?? null;
+  if (cached == null) return null;
+
+  if (summaryResultMatchesStatus(cached, status)) return cached;
+
+  summaryCache.delete(cacheKey);
+  return null;
+}
+
+export function clearMediaSummaryCache(
+  mediaId?: string,
+  summaryAccess: MediaSummaryAccess = 'messenger',
+): void {
+  if (mediaId != null) {
+    summaryCache.delete(`${summaryAccess}:${mediaId}`);
+  } else {
+    summaryCache.clear();
+    localityCache.clear();
+  }
+}
+
+function getLocalityCacheKey(lat: number, lon: number): string {
+  return `${lat.toFixed(5)},${lon.toFixed(5)}`;
+}
+
+function useCoordinateLocalities(coordinates: MediaSummaryCoordinate[]): {
+  localities: Array<CoordinateLocality | null>;
+  loading: boolean;
+} {
   const resolvedPoints = useMemo(
     () => coordinates.map(resolveMediaSummaryCoordinatePoint),
     [coordinates],
   );
-  const [localities, setLocalities] = useState<Array<CoordinateLocality | null>>([]);
+  const pointsKey = useMemo(
+    () =>
+      resolvedPoints
+        .flatMap((p) => (p == null ? [] : [`${p.lat.toFixed(5)},${p.lng.toFixed(5)}`]))
+        .join(';'),
+    [resolvedPoints],
+  );
+
+  const [localities, setLocalities] = useState<Array<CoordinateLocality | null>>(() =>
+    resolvedPoints.map((point) => {
+      if (point == null) return null;
+      return getLruCacheValue(localityCache, getLocalityCacheKey(point.lat, point.lng)) ?? null;
+    }),
+  );
+  const [loading, setLoading] = useState<boolean>(false);
   const { notify } = useOptionalPowerSnackbar();
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
 
   useEffect(() => {
-    const nextLocalities = Array.from<CoordinateLocality | null>({
-      length: coordinates.length,
-    }).fill(null);
-    const lookupPoints = resolvedPoints.flatMap((point, index) =>
-      point == null ? [] : [{ index, lat: point.lat, lon: point.lng }],
-    );
-    setLocalities(nextLocalities);
-    if (lookupPoints.length === 0) return;
+    const nextLocalities = resolvedPoints.map((point) => {
+      if (point == null) return null;
+      return getLruCacheValue(localityCache, getLocalityCacheKey(point.lat, point.lng)) ?? null;
+    });
 
+    const missingPoints: Array<{ index: number; lat: number; lon: number }> = [];
+    resolvedPoints.forEach((point, index) => {
+      if (point != null) {
+        const key = getLocalityCacheKey(point.lat, point.lng);
+        if (!localityCache.has(key)) {
+          missingPoints.push({ index, lat: point.lat, lon: point.lng });
+        }
+      }
+    });
+
+    setLocalities(nextLocalities);
+
+    if (missingPoints.length === 0) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
     const controller = new AbortController();
     void mapCoordinates(
-      lookupPoints.map(({ lat, lon }) => ({ lat, lon })),
+      missingPoints.map(({ lat, lon }) => ({ lat, lon })),
       { signal: controller.signal },
     )
       .then((mapped) => {
         if (controller.signal.aborted) return;
-        mapped.forEach((item, index) => {
-          const sourceIndex = lookupPoints[index]?.index;
-          if (sourceIndex != null) nextLocalities[sourceIndex] = item.locality;
+        mapped.forEach((item, idx) => {
+          const source = missingPoints[idx];
+          if (source != null) {
+            const key = getLocalityCacheKey(source.lat, source.lon);
+            setLruCacheValue(localityCache, key, item.locality, MEDIA_SUMMARY_LOCALITY_CACHE_LIMIT);
+            nextLocalities[source.index] = item.locality;
+          }
         });
         setLocalities([...nextLocalities]);
+        setLoading(false);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
+        setLoading(false);
         notifyRef.current({
           severity: 'error',
           message: `Не вдалося визначити найближчі населені пункти: ${
@@ -94,65 +209,44 @@ function useCoordinateLocalities(
       });
 
     return () => controller.abort();
-  }, [coordinates.length, resolvedPoints]);
+  }, [coordinates.length, pointsKey, resolvedPoints]);
 
-  return localities;
+  return { localities, loading };
 }
 
 function MediaSummaryCoordinateList({
   coordinates,
   localities,
+  loadingLocalities,
 }: {
   coordinates: MediaSummaryCoordinate[];
   localities: Array<CoordinateLocality | null>;
+  loadingLocalities: boolean;
 }) {
   return (
-    <Box component="ul" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+    <ul className="m-0 p-0 list-none">
       {coordinates.map((coordinate, index) => {
+        const point = resolveMediaSummaryCoordinatePoint(coordinate);
         const localityText = formatCoordinateLocality(localities[index] ?? null);
         const description = coordinate.description?.trim() ?? '';
         const plannedMeans = coordinate.plannedMeans?.trim() ?? '';
+        const isLocalityLoading = loadingLocalities && point != null && localityText == null;
+
         return (
-          <Box
-            component="li"
+          <li
             key={`${coordinate.coordinateSystem}:${coordinate.value}:${index}`}
             data-media-summary-coordinate-item="true"
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) auto',
-              alignItems: 'center',
-              gap: 0.5,
-              py: 0.5,
-              minHeight: 32,
-              borderBottom: 1,
-              borderColor: 'divider',
-            }}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1 py-1 min-h-8 border-b last:border-b-0 border-white/12"
           >
-            <Box
-              sx={{
-                minWidth: 0,
-                display: 'flex',
-                alignItems: 'baseline',
-                columnGap: 1,
-                rowGap: 0.25,
-                flexWrap: 'wrap',
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ overflowWrap: 'anywhere' }}>
+            <div className="min-w-0 flex items-baseline gap-x-2 flex-wrap">
+              <Typography variant="subtitle2" className="wrap-break-word">
                 {coordinate.title}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+              <Typography variant="caption" color="text.secondary" className="font-bold">
                 {COORDINATE_SYSTEM_LABELS[coordinate.coordinateSystem] ??
                   coordinate.coordinateSystem}
               </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  fontWeight: 600,
-                  fontVariantNumeric: 'tabular-nums',
-                  overflowWrap: 'anywhere',
-                }}
-              >
+              <Typography variant="body2" className="font-semibold tabular-nums wrap-break-word">
                 {coordinate.value}
               </Typography>
               {localityText ? (
@@ -160,12 +254,21 @@ function MediaSummaryCoordinateList({
                   variant="caption"
                   color="text.secondary"
                   data-media-summary-coordinate-locality="true"
-                  sx={{ overflowWrap: 'anywhere' }}
+                  className="basis-full w-full wrap-break-word"
                 >
                   {localityText}
                 </Typography>
+              ) : isLocalityLoading ? (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  data-media-summary-coordinate-locality="true"
+                  className="basis-full w-full wrap-break-word"
+                >
+                  <Skeleton width={180} />
+                </Typography>
               ) : null}
-            </Box>
+            </div>
             {description !== '' || plannedMeans !== '' ? (
               <Tooltip
                 placement="left"
@@ -173,49 +276,49 @@ function MediaSummaryCoordinateList({
                 enterDelay={200}
                 slotProps={{ tooltip: { sx: { maxWidth: 420 } } }}
                 title={
-                  <Stack spacing={0.75} sx={{ maxWidth: 400 }}>
+                  <div className="flex flex-col gap-1.5 max-w-100">
                     {description !== '' ? (
                       <Typography
                         variant="body2"
                         color="inherit"
                         data-media-summary-coordinate-description="true"
-                        sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                        className="whitespace-pre-wrap wrap-break-word"
                       >
                         {coordinate.description}
                       </Typography>
                     ) : null}
                     {plannedMeans !== '' ? (
-                      <Box>
-                        <Typography variant="caption" color="inherit" sx={{ fontWeight: 700 }}>
+                      <div>
+                        <Typography variant="caption" color="inherit" className="font-bold">
                           Сплановані засоби
                         </Typography>
                         <Typography
                           variant="body2"
                           color="inherit"
                           data-media-summary-coordinate-planned-means="true"
-                          sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                          className="whitespace-pre-wrap wrap-break-word"
                         >
                           {coordinate.plannedMeans}
                         </Typography>
-                      </Box>
+                      </div>
                     ) : null}
-                  </Stack>
+                  </div>
                 }
               >
                 <IconButton
                   size="small"
                   aria-label={`Деталі координати: ${coordinate.title}`}
                   data-media-summary-coordinate-info="true"
-                  sx={{ width: 28, height: 28, color: 'text.secondary' }}
+                  className="w-7! h-7! text-(--color-text-muted)!"
                 >
-                  <InfoOutlinedIcon sx={{ fontSize: 17 }} />
+                  <InfoOutlinedIcon className="text-[17px]!" />
                 </IconButton>
               </Tooltip>
             ) : null}
-          </Box>
+          </li>
         );
       })}
-    </Box>
+    </ul>
   );
 }
 
@@ -235,32 +338,36 @@ export function MediaSummaryAction({
   if (status == null) return null;
   const processing = isMediaSummaryProcessing(status.state);
   const title = active ? 'Закрити стислий опис' : 'Показати стислий опис';
+  const Icon = active ? BottomPanelActiveIcon : BottomPanelIcon;
 
   return (
     <Tooltip title={title} enterDelay={300}>
-      <Box component="span" sx={{ display: 'inline-flex', position: 'relative' }}>
+      <span className="inline-flex relative">
         <IconButton
           size="small"
           aria-label={title}
           aria-pressed={active}
           color={active ? 'primary' : 'default'}
           onClick={onClick}
-          sx={{
-            color: active ? 'primary.main' : processing ? 'info.main' : 'text.secondary',
-            '&:hover': { color: active ? 'primary.dark' : 'text.primary' },
-          }}
+          className={
+            active
+              ? 'text-(--color-primary)!'
+              : processing
+                ? 'text-blue-500!'
+                : 'text-(--color-text-muted)! hover:text-(--color-text)!'
+          }
         >
-          <DescriptionIcon fontSize="small" />
+          <Icon fontSize="small" />
         </IconButton>
         {processing ? (
           <CircularProgress
             size={26}
             thickness={2.5}
             color="info"
-            sx={{ position: 'absolute', inset: 3, pointerEvents: 'none' }}
+            className="absolute! inset-0.75! pointer-events-none"
           />
         ) : null}
-      </Box>
+      </span>
     </Tooltip>
   );
 }
@@ -285,77 +392,94 @@ function SummaryContent({
   const state = result?.state ?? status.state;
   const lastError = showErrorDetails ? (result?.lastError ?? status.lastError) : null;
   const coordinates = result?.coordinates ?? EMPTY_COORDINATES;
-  const coordinateLocalities = useCoordinateLocalities(coordinates);
-  if (state === 'completed' && result?.summary) {
-    if (result.coordinates.length === 0) {
+  const { localities: coordinateLocalities, loading: loadingLocalities } =
+    useCoordinateLocalities(coordinates);
+
+  const hasSummaryText = result?.summary != null && result.summary.trim() !== '';
+  const hasCoordinates = result?.coordinates != null && result.coordinates.length > 0;
+
+  if (state === 'completed' && (hasSummaryText || hasCoordinates)) {
+    if (!hasCoordinates) {
       return (
-        <Typography variant="body1" sx={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
-          {result.summary}
-        </Typography>
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 max-w-6xl mx-auto w-full">
+          <Typography variant="body2" className="whitespace-pre-wrap">
+            {result?.summary}
+          </Typography>
+        </div>
+      );
+    }
+
+    if (!hasSummaryText) {
+      return (
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 max-w-6xl mx-auto w-full">
+          <MediaSummaryCoordinateList
+            coordinates={result.coordinates}
+            localities={coordinateLocalities}
+            loadingLocalities={loadingLocalities}
+          />
+        </div>
       );
     }
 
     return (
-      <Box
+      <div
         data-media-summary-completed-layout="split"
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-          gap: 2,
-          minWidth: 0,
-        }}
+        className="grid grid-cols-1 sm:grid-cols-2 grid-rows-2 sm:grid-rows-1 gap-2 sm:gap-4 min-w-0 flex-1 min-h-0 h-full"
       >
-        <Typography variant="body1" sx={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
-          {result.summary}
-        </Typography>
-        <Box
+        <div className="min-w-0 min-h-0 overflow-y-auto pr-1">
+          <Typography variant="body2" className="whitespace-pre-wrap">
+            {result.summary}
+          </Typography>
+        </div>
+
+        <div
           data-media-summary-coordinate-column="true"
-          sx={{
-            minWidth: 0,
-            borderTop: { xs: 1, sm: 0 },
-            borderLeft: { xs: 0, sm: 1 },
-            borderColor: 'divider',
-            pt: { xs: 1.5, sm: 0 },
-            pl: { xs: 0, sm: 2 },
-          }}
+          className="min-w-0 min-h-0 overflow-y-auto border-t sm:border-t-0 sm:border-l border-white/12 pt-2 sm:pt-0 sm:pl-4 pr-1"
         >
           <MediaSummaryCoordinateList
             coordinates={result.coordinates}
             localities={coordinateLocalities}
+            loadingLocalities={loadingLocalities}
           />
-        </Box>
-      </Box>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Stack spacing={1} alignItems="flex-start">
-      <Stack direction="row" spacing={1} alignItems="center">
-        {isMediaSummaryProcessing(state) ? <CircularProgress size={18} /> : null}
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
-          {STATE_LABELS[state] ?? state}
-        </Typography>
-      </Stack>
+    <div className="flex flex-col gap-2 py-0.5 min-h-10 justify-center">
+      <div className="flex flex-row items-center gap-3 flex-wrap">
+        <div className="flex flex-row gap-2 items-center">
+          {isMediaSummaryProcessing(state) ? <CircularProgress size={18} /> : null}
+
+          <Typography variant="body2" className="font-semibold">
+            {STATE_LABELS[state] ?? state}
+          </Typography>
+        </div>
+
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={refreshing ? <CircularProgress size={14} /> : <RefreshIcon />}
+          disabled={refreshing}
+          onClick={state === 'failed' ? onRetry : onRefresh}
+        >
+          {state === 'failed' ? 'Повторити' : 'Оновити'}
+        </Button>
+      </div>
+
       {lastError ? (
         <Typography variant="body2" color={state === 'failed' ? 'error.main' : 'warning.main'}>
           {lastError}
         </Typography>
       ) : null}
+
       {refreshError ? (
         <Typography variant="body2" color="error.main" role="alert">
           {refreshError}
         </Typography>
       ) : null}
-      <Button
-        size="small"
-        variant="outlined"
-        startIcon={refreshing ? <CircularProgress size={14} /> : <RefreshIcon />}
-        disabled={refreshing}
-        onClick={state === 'failed' ? onRetry : onRefresh}
-      >
-        {state === 'failed' ? 'Повторити' : 'Оновити'}
-      </Button>
-    </Stack>
+    </div>
   );
 }
 
@@ -372,7 +496,10 @@ function useMediaSummaryResult({
   summaryAccess: MediaSummaryAccess;
   onStatusChange?: (status: MediaSummaryStatus) => void;
 }) {
-  const [result, setResult] = useState<MediaSummaryResult | null>(null);
+  const cacheKey = mediaId != null ? `${summaryAccess}:${mediaId}` : null;
+  const [result, setResult] = useState<MediaSummaryResult | null>(() =>
+    getCompatibleCachedSummary(cacheKey, status),
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const refreshControllerRef = useRef<AbortController | null>(null);
@@ -385,18 +512,27 @@ function useMediaSummaryResult({
   useEffect(() => {
     refreshControllerRef.current?.abort();
     refreshControllerRef.current = null;
-    setResult(null);
+    const cached = getCompatibleCachedSummary(cacheKey, status);
+    setResult(cached);
     setRefreshing(false);
     setRefreshError(null);
     return () => {
       refreshControllerRef.current?.abort();
       refreshControllerRef.current = null;
     };
-  }, [mediaId, summaryAccess]);
+  }, [cacheKey, mediaId, summaryAccess]);
+
+  useEffect(() => {
+    const cached = getCompatibleCachedSummary(cacheKey, status);
+    setResult((current) =>
+      current != null && summaryResultMatchesStatus(current, status) ? current : cached,
+    );
+  }, [cacheKey, status?.hasCoordinates, status?.lastError, status?.state]);
 
   const request = useCallback(
     async (quiet: boolean, requeue: boolean) => {
       if (mediaId == null || refreshControllerRef.current != null) return;
+      const key = `${summaryAccess}:${mediaId}`;
       const controller = new AbortController();
       refreshControllerRef.current = controller;
       setRefreshing(true);
@@ -405,6 +541,11 @@ function useMediaSummaryResult({
           ? await retryMediaSummary(mediaId, { signal: controller.signal }, summaryAccess)
           : await getMediaSummary(mediaId, { signal: controller.signal }, summaryAccess);
         if (controller.signal.aborted) return;
+        if (nextResult.state === 'completed' || nextResult.state === 'failed') {
+          setLruCacheValue(summaryCache, key, nextResult, MEDIA_SUMMARY_CACHE_LIMIT);
+        } else {
+          summaryCache.delete(key);
+        }
         setResult(nextResult);
         setRefreshError(null);
         onStatusChangeRef.current?.({
@@ -435,8 +576,30 @@ function useMediaSummaryResult({
 
   const hasStatus = status != null;
   useEffect(() => {
-    if (enabled && hasStatus) void refresh(false);
-  }, [enabled, hasStatus, mediaId, refresh]);
+    if (!enabled || !hasStatus) return;
+    const key = mediaId != null ? `${summaryAccess}:${mediaId}` : null;
+    const cached = getCompatibleCachedSummary(key, status);
+    if (cached != null) {
+      setResult(cached);
+      onStatusChangeRef.current?.({
+        state: cached.state,
+        lastError: cached.lastError,
+        hasCoordinates: cached.state === 'completed' && cached.coordinates.length > 0,
+      });
+    } else if (result == null) {
+      void refresh(false);
+    }
+  }, [
+    enabled,
+    hasStatus,
+    mediaId,
+    refresh,
+    result,
+    status?.hasCoordinates,
+    status?.lastError,
+    status?.state,
+    summaryAccess,
+  ]);
 
   const state = result?.state ?? status?.state;
   useEffect(() => {
@@ -451,11 +614,16 @@ function useMediaSummaryResult({
 export function MessageCardMediaSummary({
   mediaId,
   status,
-  navigationOverlay = false,
+  pagination,
 }: {
   mediaId?: string | null;
   status?: MediaSummaryStatus | null;
-  navigationOverlay?: boolean;
+  pagination?: {
+    index: number;
+    total: number;
+    onPrev: () => void;
+    onNext: () => void;
+  } | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { result, refreshing, refreshError, refresh, retry } = useMediaSummaryResult({
@@ -464,95 +632,139 @@ export function MessageCardMediaSummary({
     enabled: mediaId != null && status != null,
     summaryAccess: 'messenger',
   });
+
   const state = result?.state ?? status?.state;
   const summary = result?.summary?.trim() ?? '';
+  const isFailed = state === 'failed' || refreshError != null;
+  const isProcessing = (state != null && isMediaSummaryProcessing(state)) || refreshing;
+  const isNoResult = mediaId == null || status == null || (state === 'completed' && summary === '');
+  const hasSummary = !isNoResult && !isFailed && !isProcessing && summary !== '';
   const expandable = summary.length > 280 || summary.split(/\r?\n/).length > 3;
 
   useEffect(() => setExpanded(false), [mediaId, summary]);
 
-  if (mediaId == null || status == null || state == null) return null;
+  if (mediaId == null && pagination == null) return null;
+
+  const borderColorClass = isFailed
+    ? 'border-l-red-500'
+    : isNoResult
+      ? 'border-l-(--color-text-muted)'
+      : 'border-l-(--color-primary)';
+
+  const iconColorClass = isFailed
+    ? 'text-red-500'
+    : isNoResult
+      ? 'text-(--color-text-muted)'
+      : 'text-(--color-primary)';
 
   return (
-    <Box
+    <div
       data-media-summary-inline="true"
-      sx={{ mt: navigationOverlay ? 0 : 0.5, width: 'min(460px, 100%)', minWidth: 0 }}
+      className={`min-w-0 w-[min(580px,100%)] p-1 rounded bg-black/5 dark:bg-white/5 border-l-[3px] ${borderColorClass} flex flex-row items-start gap-1`}
     >
-      {state === 'completed' && summary !== '' ? (
-        <Box
-          component="blockquote"
-          onClick={expandable ? () => setExpanded((current) => !current) : undefined}
-          role={expandable ? 'button' : undefined}
-          tabIndex={expandable ? 0 : undefined}
-          aria-expanded={expandable ? expanded : undefined}
-          onKeyDown={(event) => {
-            if (!expandable || (event.key !== 'Enter' && event.key !== ' ')) return;
-            event.preventDefault();
-            setExpanded((current) => !current);
-          }}
-          sx={{
-            m: 0,
-            pl: 1,
-            pr: navigationOverlay ? 10 : 1,
-            py: 0.75,
-            borderLeft: 3,
-            borderColor: 'primary.main',
-            borderRadius: 0.5,
-            bgcolor: 'action.hover',
-            color: 'text.primary',
-            cursor: expandable ? 'pointer' : 'default',
-          }}
-        >
-          <Stack direction="row" spacing={0.75} alignItems="flex-start">
-            <DescriptionIcon sx={{ mt: 0.15, fontSize: 17, color: 'text.secondary' }} />
+      <DescriptionIcon className={`text-[20px]! shrink-0 mt-0.5 ${iconColorClass}`} />
+
+      <div className="flex-1 min-w-0 px-1 py-0.5">
+        {isFailed ? (
+          <div className="flex flex-row items-center gap-1.5 flex-wrap">
             <Typography
               variant="body2"
-              sx={{
-                minWidth: 0,
-                whiteSpace: 'pre-wrap',
-                overflowWrap: 'anywhere',
-                ...(!expanded
-                  ? {
-                      display: '-webkit-box',
-                      WebkitBoxOrient: 'vertical',
-                      WebkitLineClamp: 3,
-                      overflow: 'hidden',
-                    }
-                  : {}),
-              }}
+              className="text-red-500 font-normal text-sm leading-5 wrap-break-word"
             >
-              {summary}
+              {refreshError || 'Не вдалося створити опис'}
             </Typography>
-          </Stack>
-        </Box>
-      ) : (
-        <Stack
-          direction="row"
-          spacing={0.75}
-          alignItems="center"
-          sx={{
-            pl: 1,
-            pr: navigationOverlay ? 10 : 1,
-            py: 0.5,
-            color: state === 'failed' ? 'error.main' : 'text.secondary',
-          }}
-        >
-          {isMediaSummaryProcessing(state) || refreshing ? <CircularProgress size={14} /> : null}
-          <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
-            {refreshError || STATE_LABELS[state] || state}
-          </Typography>
-          {state === 'failed' || refreshError != null ? (
             <IconButton
               size="small"
               aria-label={state === 'failed' ? 'Повторити стислий опис' : 'Оновити стислий опис'}
               disabled={refreshing}
               onClick={() => void (state === 'failed' ? retry() : refresh(false))}
+              className="p-1! text-white! hover:bg-black/10 dark:hover:bg-white/10"
             >
-              <RefreshIcon sx={{ fontSize: 16 }} />
+              <RefreshIcon className="text-lg!" />
             </IconButton>
-          ) : null}
-        </Stack>
-      )}
-    </Box>
+          </div>
+        ) : isNoResult ? (
+          <Typography
+            variant="body2"
+            className="text-(--color-text-muted) font-normal text-sm leading-5"
+          >
+            Не розпізнаний контент
+          </Typography>
+        ) : isProcessing ? (
+          <div className="flex flex-row items-center gap-1.5">
+            <CircularProgress size={14} className="text-(--color-primary)!" />
+            <Typography
+              variant="body2"
+              className="text-(--color-text-muted) font-normal text-sm leading-5"
+            >
+              {STATE_LABELS[state ?? ''] ?? state ?? 'Опис створюється'}
+            </Typography>
+          </div>
+        ) : (
+          <Typography
+            variant="body2"
+            className={`min-w-0 text-(--color-text) font-normal text-sm leading-5 whitespace-pre-wrap wrap-break-word ${
+              !expanded ? 'line-clamp-3 overflow-hidden' : ''
+            }`}
+          >
+            {summary}
+          </Typography>
+        )}
+      </div>
+
+      <div className="flex flex-col items-end justify-between self-stretch shrink-0 gap-1 pl-1">
+        {pagination != null && pagination.total > 1 ? (
+          <div
+            data-media-summary-navigation="true"
+            className="flex flex-row items-center gap-0.5 bg-black/10 dark:bg-white/10 rounded px-0.5"
+          >
+            <IconButton
+              size="small"
+              aria-label="Попередній стислий опис"
+              disabled={pagination.index === 0}
+              onClick={pagination.onPrev}
+              className="w-6! h-6! p-0.5! text-xl! text-(--color-text-muted) disabled:opacity-50"
+            >
+              <ArrowLeftIcon className="text-xl!" />
+            </IconButton>
+            <Typography
+              variant="caption"
+              aria-live="polite"
+              className="min-w-6 text-center tabular-nums font-semibold text-xs text-(--color-primary)"
+            >
+              {`${pagination.index + 1}/${pagination.total}`}
+            </Typography>
+            <IconButton
+              size="small"
+              aria-label="Наступний стислий опис"
+              disabled={pagination.index === pagination.total - 1}
+              onClick={pagination.onNext}
+              className="w-6! h-6! p-0.5! text-xl! text-(--color-text-muted) disabled:opacity-50"
+            >
+              <ArrowRightIcon className="text-xl!" />
+            </IconButton>
+          </div>
+        ) : (
+          <div />
+        )}
+
+        {hasSummary ? (
+          <IconButton
+            size="small"
+            aria-label={expanded ? 'Згорнути опис' : 'Розгорнути опис'}
+            disabled={!expandable && !expanded}
+            onClick={expandable ? () => setExpanded((curr) => !curr) : undefined}
+            className="w-7! h-7! p-1! text-(--color-text-muted) hover:bg-black/10 dark:hover:bg-white/10 disabled:opacity-50 disabled:pointer-events-none self-end mt-auto"
+          >
+            {expanded ? (
+              <KeyboardArrowUpIcon className="text-xl!" />
+            ) : (
+              <KeyboardArrowDownIcon className="text-xl!" />
+            )}
+          </IconButton>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -579,108 +791,39 @@ export function MessageCardMediaSummaryCarousel({
   const resolvedIndex = Math.min(index, media.length - 1);
   const current = media[resolvedIndex];
   if (firstSummaryIndex < 0 || current == null) return null;
-  const hasCurrentSummary = current.id != null && current.summary != null;
 
   const selectIndex = (nextIndex: number) => {
     setIndex(nextIndex);
     onIndexChange?.(nextIndex);
   };
 
+  const pagination =
+    media.length > 1
+      ? {
+          index: resolvedIndex,
+          total: media.length,
+          onPrev: () => selectIndex(Math.max(0, resolvedIndex - 1)),
+          onNext: () => selectIndex(Math.min(media.length - 1, resolvedIndex + 1)),
+        }
+      : null;
+
   return (
-    <Box
+    <div
       data-media-summary-carousel="true"
-      sx={{
-        position: 'relative',
-        mt: 1,
-        width: hasCurrentSummary ? 'min(460px, 100%)' : 'fit-content',
-        maxWidth: '100%',
-        minWidth: 0,
-      }}
+      className="relative mt-2 max-w-full min-w-0 w-[min(580px,100%)]"
     >
-      <Box
+      <div
         key={`${current.id ?? resolvedIndex}:${resolvedIndex}`}
         data-media-summary-carousel-content="true"
-        sx={{
-          minHeight: hasCurrentSummary ? 72 : undefined,
-          animation: 'media-summary-carousel-in 160ms ease-out',
-          '@keyframes media-summary-carousel-in': {
-            from: { opacity: 0.55, transform: 'translateX(2px)' },
-            to: { opacity: 1, transform: 'translateX(0)' },
-          },
-        }}
+        className="animate-[media-summary-carousel-in_160ms_ease-out]"
       >
-        {hasCurrentSummary ? (
-          <MessageCardMediaSummary
-            mediaId={current.id}
-            status={current.summary}
-            navigationOverlay={media.length > 1}
-          />
-        ) : (
-          <Box
-            data-media-summary-inline="true"
-            sx={{
-              width: 'fit-content',
-              maxWidth: '100%',
-              minWidth: 0,
-              pl: 1,
-              pr: 10,
-              py: 0.75,
-              borderLeft: 3,
-              borderColor: 'divider',
-              borderRadius: 0.5,
-              bgcolor: 'action.hover',
-            }}
-          >
-            <Typography variant="caption" color="text.secondary">
-              Стислий опис відсутній
-            </Typography>
-          </Box>
-        )}
-      </Box>
-      {media.length > 1 ? (
-        <Stack
-          data-media-summary-navigation="true"
-          direction="row"
-          spacing={0.25}
-          alignItems="center"
-          sx={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            zIndex: 1,
-            bgcolor: 'background.paper',
-            borderRadius: 1,
-            boxShadow: 1,
-          }}
-        >
-          <IconButton
-            size="small"
-            aria-label="Попередній стислий опис"
-            disabled={resolvedIndex === 0}
-            onClick={() => selectIndex(Math.max(0, resolvedIndex - 1))}
-            sx={{ width: 24, height: 24, p: 0, fontSize: 14 }}
-          >
-            {'<'}
-          </IconButton>
-          <Typography
-            variant="caption"
-            aria-live="polite"
-            sx={{ minWidth: 30, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}
-          >
-            {`${resolvedIndex + 1}/${media.length}`}
-          </Typography>
-          <IconButton
-            size="small"
-            aria-label="Наступний стислий опис"
-            disabled={resolvedIndex === media.length - 1}
-            onClick={() => selectIndex(Math.min(media.length - 1, resolvedIndex + 1))}
-            sx={{ width: 24, height: 24, p: 0, fontSize: 14 }}
-          >
-            {'>'}
-          </IconButton>
-        </Stack>
-      ) : null}
-    </Box>
+        <MessageCardMediaSummary
+          mediaId={current.id}
+          status={current.summary}
+          pagination={pagination}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -701,6 +844,8 @@ export function MediaSummaryOverlay({
   onClose: () => void;
   summaryAccess?: MediaSummaryAccess;
 }) {
+  const theme = useTheme();
+  const mobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { result, refreshing, refreshError, refresh, retry } = useMediaSummaryResult({
     mediaId,
     status,
@@ -712,43 +857,21 @@ export function MediaSummaryOverlay({
   if (mediaId == null || status == null) return source;
 
   return (
-    <Box
-      sx={{
-        flex: '1 1 auto',
-        minHeight: 0,
-        minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <Box sx={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, display: 'flex' }}>{source}</Box>
+    <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+      <div
+        className={`min-w-0 flex ${visible && mobile ? 'h-1/2 flex-none min-h-0' : 'flex-1 min-h-0'}`}
+      >
+        {source}
+      </div>
       {visible ? (
-        <Box
+        <div
           role="region"
           aria-label="Стислий опис документа"
-          sx={{
-            position: 'relative',
-            flex: '0 0 auto',
-            maxHeight: '35%',
-            minHeight: 96,
-            overflow: 'auto',
-            px: 2,
-            py: 1.5,
-            pr: 6,
-            borderTop: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            color: 'text.primary',
-          }}
+          data-attachment-preview-scroll
+          className={`relative flex-col overscroll-contain touch-pan-y px-4 pt-2.5 pb-1 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out ${
+            mobile ? 'flex-none h-1/2 min-h-0 overflow-hidden flex' : 'flex-none max-h-44 flex'
+          }`}
         >
-          <IconButton
-            size="small"
-            aria-label="Закрити стислий опис"
-            onClick={onClose}
-            sx={{ position: 'absolute', top: 6, right: 8 }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
           <SummaryContent
             result={result}
             status={status}
@@ -758,8 +881,8 @@ export function MediaSummaryOverlay({
             onRefresh={() => void refresh(false)}
             onRetry={() => void retry()}
           />
-        </Box>
+        </div>
       ) : null}
-    </Box>
+    </div>
   );
 }

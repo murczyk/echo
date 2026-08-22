@@ -68,7 +68,59 @@ function LeftPanelActiveIcon(props: SvgIconProps) {
   );
 }
 
-function RightPanelIcon(props: SvgIconProps) {
+const DIVIDER_BOTTOM_Y = 14;
+
+export function BottomPanelIcon(props: SvgIconProps) {
+  return (
+    <SvgIcon viewBox="0 0 24 24" {...props}>
+      <rect
+        x={INNER_X}
+        y={INNER_Y}
+        width={INNER_SIZE}
+        height={INNER_SIZE}
+        rx={INNER_RX}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d={`M${INNER_X} ${DIVIDER_BOTTOM_Y}H${INNER_X + INNER_SIZE}`}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+    </SvgIcon>
+  );
+}
+
+export function BottomPanelActiveIcon(props: SvgIconProps) {
+  return (
+    <SvgIcon viewBox="0 0 24 24" {...props}>
+      <rect
+        x={INNER_X}
+        y={INNER_Y}
+        width={INNER_SIZE}
+        height={INNER_SIZE}
+        rx={INNER_RX}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      <path
+        d={`M${INNER_X} ${DIVIDER_BOTTOM_Y}H${INNER_X + INNER_SIZE}V${
+          INNER_Y + INNER_SIZE - INNER_RX
+        }A${INNER_RX} ${INNER_RX} 0 0 1 ${INNER_X + INNER_SIZE - INNER_RX} ${
+          INNER_Y + INNER_SIZE
+        }H${INNER_X + INNER_RX}A${INNER_RX} ${INNER_RX} 0 0 1 ${INNER_X} ${
+          INNER_Y + INNER_SIZE - INNER_RX
+        }Z`}
+        fill="currentColor"
+      />
+    </SvgIcon>
+  );
+}
+
+export function RightPanelIcon(props: SvgIconProps) {
   return (
     <SvgIcon viewBox="0 0 24 24" {...props}>
       <rect
@@ -91,7 +143,7 @@ function RightPanelIcon(props: SvgIconProps) {
   );
 }
 
-function RightPanelActiveIcon(props: SvgIconProps) {
+export function RightPanelActiveIcon(props: SvgIconProps) {
   return (
     <SvgIcon viewBox="0 0 24 24" {...props}>
       <rect
