@@ -17,7 +17,15 @@ use std::io::{Cursor, Write};
 #[derive(Debug)]
 pub struct BattleLineCleanup {
     pub features: Vec<ImportedGeometryFeature>,
+    pub stats: BattleLineCleanupStats,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BattleLineCleanupStats {
     pub minimum_line_length_m: f64,
+    pub removed_point_count: usize,
+    pub removed_short_line_string_count: usize,
+    pub removed_duplicate_segment_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
@@ -49,25 +57,39 @@ pub fn clean_features(
     }
     let minimum_line_length_m =
         maximum_line_length_m * BATTLE_LINE_CLEANUP_MIN_LINE_LENGTH_RATIO;
+    let mut removed_point_count = 0;
+    let mut removed_short_line_string_count = 0;
     let lines = features
         .into_iter()
         .filter_map(|feature| match feature {
-            ImportedGeometryFeature::Point(_) => None,
+            ImportedGeometryFeature::Point(_) => {
+                removed_point_count += 1;
+                None
+            }
             ImportedGeometryFeature::LineString(coordinates)
                 if line_length_m(&coordinates) >= minimum_line_length_m =>
             {
                 Some(coordinates)
             }
-            ImportedGeometryFeature::LineString(_) => None,
+            ImportedGeometryFeature::LineString(_) => {
+                removed_short_line_string_count += 1;
+                None
+            }
         })
         .collect();
-    let features = remove_duplicate_segments(lines);
+    let (features, removed_duplicate_segment_count) =
+        remove_duplicate_segments(lines);
     if features.is_empty() {
         anyhow::bail!("Battle Line cleanup removed all geometry");
     }
     Ok(BattleLineCleanup {
         features,
-        minimum_line_length_m,
+        stats: BattleLineCleanupStats {
+            minimum_line_length_m,
+            removed_point_count,
+            removed_short_line_string_count,
+            removed_duplicate_segment_count,
+        },
     })
 }
 
@@ -91,7 +113,7 @@ pub async fn oneoff_clean_kmz(
         "Cleaned {} features to {} line strings with a {:.1} m minimum length: {}",
         input_feature_count,
         cleanup.features.len(),
-        cleanup.minimum_line_length_m,
+        cleanup.stats.minimum_line_length_m,
         ps.output.display()
     );
     Ok(())
@@ -155,19 +177,26 @@ fn coordinate_distance_m(
 
 fn remove_duplicate_segments(
     lines: Vec<Vec<ImportedCoordinate>>,
-) -> Vec<ImportedGeometryFeature> {
+) -> (Vec<ImportedGeometryFeature>, usize) {
     let mut seen = HashSet::new();
     let mut features = vec![];
+    let mut removed_duplicate_segment_count = 0;
     for coordinates in lines {
-        append_unique_line_parts(&coordinates, &mut seen, &mut features);
+        append_unique_line_parts(
+            &coordinates,
+            &mut seen,
+            &mut features,
+            &mut removed_duplicate_segment_count,
+        );
     }
-    features
+    (features, removed_duplicate_segment_count)
 }
 
 fn append_unique_line_parts(
     coordinates: &[ImportedCoordinate],
     seen: &mut HashSet<SegmentKey>,
     features: &mut Vec<ImportedGeometryFeature>,
+    removed_duplicate_segment_count: &mut usize,
 ) {
     let mut current = vec![];
     for pair in coordinates.windows(2) {
@@ -181,6 +210,7 @@ fn append_unique_line_parts(
             }
             current.push(pair[1].clone());
         } else {
+            *removed_duplicate_segment_count += 1;
             append_line_part(&mut current, features);
         }
     }
@@ -340,6 +370,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(cleanup.features, vec![line(13.0), line(0.7), line(0.36)]);
+        assert_eq!(cleanup.stats.removed_point_count, 1);
+        assert_eq!(cleanup.stats.removed_short_line_string_count, 1);
+        assert_eq!(cleanup.stats.removed_duplicate_segment_count, 0);
     }
 
     #[test]
@@ -372,6 +405,7 @@ mod tests {
         let cleanup = clean_features(vec![first.clone(), second]).unwrap();
 
         assert_eq!(cleanup.features, vec![first, line(-1.0)]);
+        assert_eq!(cleanup.stats.removed_duplicate_segment_count, 1);
     }
 
     #[test]
@@ -399,5 +433,6 @@ mod tests {
             clean_features(vec![repeated, independent.clone()]).unwrap();
 
         assert_eq!(cleanup.features, vec![line(1.0), independent]);
+        assert_eq!(cleanup.stats.removed_duplicate_segment_count, 99);
     }
 }

@@ -77,6 +77,8 @@ pub struct PreparedBattleLineImport {
     geometry_wkt: String,
     pub source_file_name: String,
     pub source_sha256: String,
+    pub source_summary: BattleLineImportSummary,
+    pub cleanup_stats: cleanup::BattleLineCleanupStats,
     pub summary: BattleLineImportSummary,
 }
 
@@ -503,18 +505,19 @@ pub async fn prepare_battle_line_import(
     let parsed = parse_point_line_features(&source_file_name, data)
         .await
         .c(h!())?;
-    let source_summary = summarize_features(&parsed.features).c(h!())?;
-    let features = cleanup::clean_features(parsed.features).c(h!())?.features;
-    let mut summary = summarize_features(&features).c(h!())?;
-    summary.empty_point_count = parsed.empty_point_count;
-    summary.empty_line_string_count = parsed.empty_line_string_count;
-    summary.zero_length_line_string_count =
-        source_summary.zero_length_line_string_count;
+    let mut source_summary = summarize_features(&parsed.features).c(h!())?;
+    source_summary.empty_point_count = parsed.empty_point_count;
+    source_summary.empty_line_string_count = parsed.empty_line_string_count;
+    let cleanup = cleanup::clean_features(parsed.features).c(h!())?;
+    let summary = summarize_features(&cleanup.features).c(h!())?;
+    let features = cleanup.features;
     let geometry_wkt = features_to_wkt(&features).c(h!())?;
     Ok(PreparedBattleLineImport {
         geometry_wkt,
         source_file_name,
         source_sha256: sha256::digest(data),
+        source_summary,
+        cleanup_stats: cleanup.stats,
         summary,
     })
 }
@@ -1669,8 +1672,14 @@ mod tests {
 
         assert_eq!(prepared.summary.point_count, 0);
         assert_eq!(prepared.summary.line_string_count, 1);
-        assert_eq!(prepared.summary.zero_length_line_string_count, 1);
+        assert_eq!(prepared.summary.zero_length_line_string_count, 0);
         assert_eq!(prepared.summary.coordinate_count, 2);
+        assert_eq!(prepared.source_summary.point_count, 1);
+        assert_eq!(prepared.source_summary.line_string_count, 2);
+        assert_eq!(prepared.source_summary.zero_length_line_string_count, 1);
+        assert_eq!(prepared.cleanup_stats.removed_point_count, 1);
+        assert_eq!(prepared.cleanup_stats.removed_short_line_string_count, 1);
+        assert_eq!(prepared.cleanup_stats.removed_duplicate_segment_count, 0);
         assert_eq!(
             prepared.geometry_wkt,
             "GEOMETRYCOLLECTION(LINESTRING(31 49,32 50))"
@@ -2220,6 +2229,26 @@ where id = $1
                     .to_string(),
             source_file_name: "test.kml".to_string(),
             source_sha256: digest_character.repeat(64),
+            source_summary: BattleLineImportSummary {
+                point_count: 1,
+                line_string_count: 1,
+                empty_point_count: 0,
+                empty_line_string_count: 0,
+                zero_length_line_string_count: 0,
+                coordinate_count: 3,
+                bounds: BattleLineImportBounds {
+                    min_lat: 48.0,
+                    min_lon: 33.0,
+                    max_lat: 52.0,
+                    max_lon: 39.0,
+                },
+            },
+            cleanup_stats: cleanup::BattleLineCleanupStats {
+                minimum_line_length_m: 0.0,
+                removed_point_count: 0,
+                removed_short_line_string_count: 0,
+                removed_duplicate_segment_count: 0,
+            },
             summary: BattleLineImportSummary {
                 point_count: 1,
                 line_string_count: 1,
