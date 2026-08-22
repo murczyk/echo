@@ -16,6 +16,7 @@ use crate::rer_importer::analysis::{
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
+use crate::sigint::sender::preferred_message_author_expr;
 use crate::types::*;
 use crate::utils::dt_from_millis;
 use actix_identity::Identity;
@@ -495,7 +496,7 @@ pub(crate) async fn messages_by_id_bl(
         )
         .and_where(signal_message::Column::DatasourceGroupId.is_null())
         .and_where(
-            signal_message::Column::Sender.is_in(owner_sender_ids.clone()),
+            preferred_message_author_expr(None).is_in(owner_sender_ids.clone()),
         )
         .and_where(
             Expr::exists(
@@ -553,7 +554,7 @@ pub(crate) async fn messages_by_id_bl(
     let owner_access = Condition::all()
         .add(datasource_group::Column::GroupMasterKey.is_null())
         .add(Expr::exists(owner_access_query).not())
-        .add(signal_message::Column::Sender.is_in(owner_sender_ids));
+        .add(preferred_message_author_expr(None).is_in(owner_sender_ids));
     let signal_message_group_access_query =
         signal_message_group::Entity::find()
             .filter(
@@ -2688,7 +2689,7 @@ async fn ensure_comment_save_access(
     let owner_access = Condition::all()
         .add(datasource_group::Column::GroupMasterKey.is_null())
         .add(Expr::exists(owner_access_query).not())
-        .add(signal_message::Column::Sender.is_in(owner_sender_ids));
+        .add(preferred_message_author_expr(None).is_in(owner_sender_ids));
     let message = SignalMessage::find_by_id(message_id)
         .join(
             JoinType::LeftJoin,

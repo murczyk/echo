@@ -9,6 +9,7 @@ use crate::rer_importer::report_chunking::{
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::rer_importer::types::InboxMessagesReq;
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::types::*;
 use anyhow::Context;
 use chrono::prelude::*;
@@ -412,8 +413,8 @@ async fn load_reo_group_master_keys(
         if let Some(selected_senders) = req.selected_senders.as_ref() {
             if !selected_senders.is_empty() {
                 query = query.filter(
-                    signal_message_group::Column::Sender
-                        .eq_any(selected_senders.clone()),
+                    preferred_group_sender_expr(None)
+                        .is_in(selected_senders.clone()),
                 );
             }
         }

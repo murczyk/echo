@@ -343,12 +343,16 @@ async fn load_intelligence_report_summaries(
     let owner_message_ids = messages
         .values()
         .filter(|message| {
+            let is_owner = message
+                .sender
+                .as_ref()
+                .is_some_and(|sender| owner_sender_ids.contains(sender))
+                || message.login_id.is_some_and(|login_id| {
+                    owner_sender_ids.contains(&login_id.to_string())
+                });
             message.datasource_group_id.is_none()
                 && !grouped_message_ids.contains(&message.id)
-                && message
-                    .sender
-                    .as_ref()
-                    .is_some_and(|sender| owner_sender_ids.contains(sender))
+                && is_owner
         })
         .map(|message| message.id)
         .collect::<HashSet<_>>();

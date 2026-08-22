@@ -29,6 +29,13 @@ fn preferred_group_sender_sql(table_alias: Option<&str>) -> String {
     format!("coalesce({table}.sender, {table}.login_id::text)")
 }
 
+fn preferred_message_author_sql(table_alias: Option<&str>) -> String {
+    let table = table_alias
+        .map(quote_identifier)
+        .unwrap_or_else(|| "\"signal_message\"".to_string());
+    format!("coalesce({table}.sender, {table}.login_id::text)")
+}
+
 /// Returns an expression that selects the preferred sender from signal_message_group
 /// for the given signal_message table alias (or the base table if None).
 pub fn preferred_sender_expr(table_alias: Option<&str>) -> SimpleExpr {
@@ -37,6 +44,10 @@ pub fn preferred_sender_expr(table_alias: Option<&str>) -> SimpleExpr {
 
 pub fn preferred_group_sender_expr(table_alias: Option<&str>) -> SimpleExpr {
     Expr::cust(preferred_group_sender_sql(table_alias))
+}
+
+pub fn preferred_message_author_expr(table_alias: Option<&str>) -> SimpleExpr {
+    Expr::cust(preferred_message_author_sql(table_alias))
 }
 
 /// Builds a subquery that returns message ids which have any sender from the provided list.

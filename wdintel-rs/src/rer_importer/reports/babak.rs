@@ -8,6 +8,7 @@ use crate::rer_importer::report_chunking::{
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::types::*;
 use crate::utils::*;
 use chrono::prelude::*;
@@ -1499,7 +1500,7 @@ fn apply_babak_analytics_access_filter(
         )));
     if let Some(selected_senders) = selected_senders {
         query = query.filter(
-            Expr::col((access_alias, signal_message_group::Column::Sender))
+            preferred_group_sender_expr(Some("babak_message_access"))
                 .is_in(selected_senders.clone()),
         );
     }

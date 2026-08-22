@@ -13,7 +13,9 @@ use crate::rer_importer::report_chunking::{
     report_period_chunks, ReportPeriodEnd,
 };
 use crate::sigint::aor::bl::collect_group_aors;
-use crate::sigint::sender::preferred_group_sender_expr;
+use crate::sigint::sender::{
+    preferred_group_sender_expr, preferred_message_author_expr,
+};
 use crate::types::*;
 use crate::users::{
     ensure_rer_role, ensure_rer_role_by_id, has_any_role, has_role,
@@ -6409,7 +6411,7 @@ async fn accessible_message_ids(
     let owner_access = Condition::all()
         .add(signal_message::Column::DatasourceGroupId.is_null())
         .add(Expr::exists(has_group).not())
-        .add(signal_message::Column::Sender.is_in(owner_logins));
+        .add(preferred_message_author_expr(None).is_in(owner_logins));
 
     let parent_group_access = Query::select()
         .expr(Expr::value(1))
@@ -9497,8 +9499,30 @@ async fn collect_sender_names(
             },
         );
     }
+    let login_ids = sender_keys
+        .iter()
+        .filter_map(|sender| uuid::Uuid::parse_str(sender).ok())
+        .collect_vec();
+    let login_names = login::Entity::find()
+        .select_only()
+        .columns([login::Column::Id, login::Column::Login])
+        .filter(login::Column::Id.is_in(login_ids))
+        .into_tuple::<(uuid::Uuid, String)>()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|(id, login)| (id.to_string(), login))
+        .collect::<BTreeMap<_, _>>();
     for s in sender_keys {
-        let entry = signal_profiles_map.remove(&s);
+        let entry = login_names
+            .get(&s)
+            .cloned()
+            .map(|login| SignalProfileRsp {
+                given_name: Some(login),
+                family_name: None,
+            })
+            .or_else(|| signal_profiles_map.remove(&s));
         result.insert(s, entry);
     }
 
