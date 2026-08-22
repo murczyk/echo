@@ -190,7 +190,11 @@ export function syncAudioPlayerTheme(player: HTMLElement, paletteMode: 'light' |
   player.setAttribute('theme', paletteMode);
 }
 
-export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMediaInfo }) {
+export function MessageMediaAudioPlayer({
+  attachment,
+  isDownloadStarting,
+  onDownloadStart,
+}: { attachment: MessageMediaInfo } & MessageCardDownloadGuardProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<HTMLElement | null>(null);
   const paletteMode = useMuiPaletteMode();
@@ -246,32 +250,96 @@ export function MessageMediaAudioPlayer({ attachment }: { attachment: MessageMed
 
   if (href === '') return null;
 
+  const downloadKey = messageCardMediaDownloadKey(String(attachment.id));
+  const downloading = isDownloadStarting(downloadKey);
+  const downloadAttr =
+    displayName === '<файл без назви>' ? 'attachment' : displayName.replace(/[/\\]/g, '_');
+  const downloadLabel = `Завантажити аудіо: ${displayName}`;
+  const downloadAriaLabel = downloading ? 'Завантаження…' : downloadLabel;
+
   return (
-    <Box
-      className={showTranscription ? 'audio-transcription-layout' : undefined}
-      sx={{ mb: 0.5, width: '100%', maxWidth: 460, minWidth: 0 }}
-    >
-      <Box
-        ref={hostRef}
-        data-audio-player-host
-        data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
-        data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
-        data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
-        sx={{
-          position: 'relative',
-          zIndex: AUDIO_PLAYER_Z_INDEX,
-          width: '100%',
-          minWidth: 0,
-          minHeight: AUDIO_PLAYER_MIN_HEIGHT_PX,
-          pt: `${AUDIO_PLAYER_TOP_PADDING_PX}px`,
-          pb: 0.5,
-          display: 'flex',
-          alignItems: 'stretch',
-          overflow: 'hidden',
-        }}
-      />
+    <div className={`w-full min-w-0${showTranscription ? ' audio-transcription-layout' : ''}`}>
+      <div className="audio-player-row flex w-full min-w-0 items-stretch gap-2">
+        <Box
+          ref={hostRef}
+          className="min-w-0 flex-1"
+          data-audio-player-host
+          data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
+          data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
+          data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
+          sx={{
+            position: 'relative',
+            zIndex: AUDIO_PLAYER_Z_INDEX,
+            width: '100%',
+            maxWidth: 460,
+            minWidth: 0,
+            minHeight: AUDIO_PLAYER_MIN_HEIGHT_PX,
+            pt: `${AUDIO_PLAYER_TOP_PADDING_PX}px`,
+            pb: 0.5,
+            display: 'flex',
+            alignItems: 'stretch',
+            overflow: 'hidden',
+          }}
+        />
+        <Tooltip title={downloadLabel} enterDelay={400}>
+          <MessageCardDisabledControlCursorWrapper
+            className="self-stretch items-center"
+            disabled={downloading}
+          >
+            <Button
+              component="a"
+              size="small"
+              variant="outlined"
+              href={href}
+              download={downloadAttr}
+              target="_blank"
+              rel="noopener noreferrer"
+              disabled={downloading}
+              aria-busy={downloading}
+              aria-label={downloadAriaLabel}
+              onClick={(event) =>
+                guardMessageCardDownloadClick(event, downloadKey, {
+                  isDownloadStarting,
+                  onDownloadStart,
+                })
+              }
+              sx={{
+                minWidth: 0,
+                maxWidth: '100%',
+                minHeight: 26,
+                py: 0.25,
+                px: 0.75,
+                fontSize: 11,
+                lineHeight: 1.25,
+                textTransform: 'none',
+                fontWeight: 500,
+                color: 'text.primary',
+                borderColor: 'divider',
+                '&:hover': {
+                  backgroundColor: 'action.hover',
+                  borderColor: 'text.primary',
+                },
+                alignSelf: 'center',
+                flexShrink: 0,
+                '& .MuiButton-startIcon': {
+                  mr: 0,
+                  ml: 0,
+                  '& svg': { fontSize: 14 },
+                },
+              }}
+              startIcon={
+                downloading ? (
+                  <CircularProgress size={14} aria-label="Завантаження…" />
+                ) : (
+                  <DownloadIcon aria-hidden />
+                )
+              }
+            />
+          </MessageCardDisabledControlCursorWrapper>
+        </Tooltip>
+      </div>
       {showTranscription ? <MessageCardAudioTranscription transcription={transcription} /> : null}
-    </Box>
+    </div>
   );
 }
 
