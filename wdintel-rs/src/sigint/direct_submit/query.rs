@@ -62,7 +62,7 @@ where
         .c(h!())?
         .ok_or(AppError::NotFound)
         .c(h!())?;
-    let login = login.to_string();
+    let login_str = login.to_string();
     if message.datasource_group_id.is_none()
         && signal_message_group::Entity::find()
             .filter(
@@ -73,7 +73,7 @@ where
             .await
             .c(h!())?
             .is_none()
-        && (message.sender.as_deref() == Some(login.as_str())
+        && (message.sender.as_deref() == Some(login_str.as_str())
             || message.sender.as_deref().is_some_and(|sender| {
                 Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
                     organism_logins.contains(&sender_id)
@@ -103,39 +103,26 @@ where
     let parent_ids = find_intel_product_ancestor_ids(dbx, &[signal_message_id])
         .await
         .c(h!())?;
-    let has_parent_group_access = signal_message_group::Entity::find()
-        .filter(
-            signal_message_group::Column::SignalMessageId
-                .is_in(parent_ids.clone()),
+    if !parent_ids.is_empty()
+        && has_any_copy_access_for_ids(
+            dbx,
+            &parent_ids,
+            allowed_groups,
+            login,
+            organism_logins,
         )
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .is_in(allowed_groups.to_vec()),
-        )
-        .one(dbx)
         .await
         .c(h!())?
-        .is_some();
-    let has_parent_datasource_access = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .filter(signal_message::Column::Id.is_in(parent_ids))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .is_in(allowed_groups.to_vec()),
-        )
-        .one(dbx)
-        .await
-        .c(h!())?
-        .is_some();
-    if has_parent_group_access || has_parent_datasource_access {
-        Ok(message)
-    } else {
-        Err(AppError::NotFound)
+    {
+        return Ok(message);
     }
+
+    Err(AppError::NotFound)
+}
+
+#[derive(Debug, sea_orm::FromQueryResult)]
+struct AncestorIdRow {
+    source_message_id: i64,
 }
 
 pub async fn find_intel_product_parent_ids<C>(
@@ -166,35 +153,47 @@ pub async fn find_intel_product_ancestor_ids<C>(
 where
     C: ConnectionTrait,
 {
-    let mut all_ancestors = Vec::new();
-    let mut visited = HashSet::new();
-    let mut current_ids = signal_message_ids.to_vec();
-
-    while !current_ids.is_empty() {
-        let parent_links = intel_product::Entity::find()
-            .filter(
-                intel_product::Column::IntelMessageId
-                    .is_in(current_ids),
-            )
-            .filter(intel_product::relation_kind_eq(
-                intel_product::RELATION_KIND_REPORT,
-            ))
-            .order_by_asc(intel_product::Column::CreatedAt)
-            .all(dbx)
-            .await
-            .c(h!())?;
-
-        let mut next_ids = Vec::new();
-        for link in parent_links {
-            if visited.insert(link.source_message_id) {
-                all_ancestors.push(link.source_message_id);
-                next_ids.push(link.source_message_id);
-            }
-        }
-        current_ids = next_ids;
+    if signal_message_ids.is_empty() {
+        return Ok(vec![]);
     }
 
-    Ok(all_ancestors)
+    let sql = r#"
+        with recursive ancestors as (
+            select
+                ip.source_message_id,
+                1 as depth,
+                array[ip.intel_message_id, ip.source_message_id] as path
+            from intel_product ip
+            where ip.intel_message_id = any($1)
+              and ip.relation_kind = 'report'::intel_product_relation_kind
+            union all
+            select
+                ip.source_message_id,
+                a.depth + 1,
+                a.path || ip.source_message_id
+            from intel_product ip
+            join ancestors a on ip.intel_message_id = a.source_message_id
+            where ip.relation_kind = 'report'::intel_product_relation_kind
+              and a.depth < 100
+              and not (ip.source_message_id = any(a.path))
+        )
+        select source_message_id
+        from ancestors
+        group by source_message_id
+        order by min(depth) asc, source_message_id asc
+    "#;
+
+    let rows =
+        AncestorIdRow::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [signal_message_ids.to_vec().into()],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?;
+
+    Ok(rows.into_iter().map(|row| row.source_message_id).collect())
 }
 
 pub async fn normalize_copy_parent_signal_message_ids<C>(
@@ -245,7 +244,8 @@ where
         parent_signal_message_ids,
         allowed_groups,
     )
-    .await?
+    .await
+    .c(h!())?
     {
         return Ok(Some(id));
     }
@@ -259,7 +259,8 @@ where
             &ancestor_ids,
             allowed_groups,
         )
-        .await?
+        .await
+        .c(h!())?
         {
             return Ok(Some(id));
         }
@@ -277,7 +278,9 @@ where
         .c(h!())?
         .is_some()
         || signal_message_group::Entity::find()
-            .filter(signal_message_group::Column::SignalMessageId.is_in(check_ids))
+            .filter(
+                signal_message_group::Column::SignalMessageId.is_in(check_ids),
+            )
             .one(dbx)
             .await
             .c(h!())?
@@ -529,29 +532,82 @@ where
     let parent_ids = find_intel_product_ancestor_ids(dbx, &[message.id])
         .await
         .c(h!())?;
-    for parent_id in parent_ids {
-        let Some(parent) = signal_message::Entity::find_by_id(parent_id)
-            .filter(signal_message::Column::Deleted.eq(false))
-            .one(dbx)
-            .await
-            .c(h!())?
-        else {
-            continue;
-        };
-        if message_has_direct_copy_access(
-            dbx,
-            &parent,
-            allowed_groups,
-            login_id,
-            organism_logins,
+    if parent_ids.is_empty() {
+        return Ok(false);
+    }
+
+    has_any_copy_access_for_ids(
+        dbx,
+        &parent_ids,
+        allowed_groups,
+        login_id,
+        organism_logins,
+    )
+    .await
+}
+
+async fn has_any_copy_access_for_ids<C>(
+    dbx: &C,
+    message_ids: &[i64],
+    allowed_groups: &[String],
+    login_id: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    if message_ids.is_empty() {
+        return Ok(false);
+    }
+    let has_group_access = signal_message_group::Entity::find()
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .is_in(message_ids.to_vec()),
         )
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .is_in(allowed_groups.to_vec()),
+        )
+        .one(dbx)
         .await
         .c(h!())?
-        {
-            return Ok(true);
-        }
+        .is_some();
+    if has_group_access {
+        return Ok(true);
     }
-    Ok(false)
+
+    let has_datasource_access = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Id.is_in(message_ids.to_vec()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .is_in(allowed_groups.to_vec()),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if has_datasource_access {
+        return Ok(true);
+    }
+
+    let mut owner_senders = vec![login_id.to_string()];
+    owner_senders.extend(organism_logins.iter().map(ToString::to_string));
+    let has_owner_access = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.is_in(message_ids.to_vec()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::DatasourceGroupId.is_null())
+        .filter(signal_message::Column::Sender.is_in(owner_senders))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+
+    Ok(has_owner_access)
 }
 
 async fn message_has_direct_copy_access<C>(

@@ -1852,15 +1852,17 @@ mod tests {
         report_b_payload.signal_group_master_key = None;
         report_b_payload.parent_signal_message_ids =
             vec![original_a.signal_message_id];
-        let report_b =
-            submit_signal_message(&login_id, &env, report_b_payload)
-                .await
-                .unwrap();
+        let report_b = submit_signal_message(&login_id, &env, report_b_payload)
+            .await
+            .unwrap();
 
-        let copy_from_b =
-            copy_message_bl(&login_id, &env, &[report_b.signal_message_id])
-                .await
-                .unwrap();
+        let copy_from_b = copy_signal_messages(
+            &login_id,
+            &env,
+            vec![report_b.signal_message_id],
+        )
+        .await
+        .unwrap();
         assert_eq!(
             copy_from_b.payloads[0].parent_signal_message_ids,
             vec![report_b.signal_message_id]
@@ -1870,10 +1872,9 @@ mod tests {
         report_c_payload.signal_group_master_key = None;
         report_c_payload.parent_signal_message_ids =
             vec![report_b.signal_message_id];
-        let report_c =
-            submit_signal_message(&login_id, &env, report_c_payload)
-                .await
-                .unwrap();
+        let report_c = submit_signal_message(&login_id, &env, report_c_payload)
+            .await
+            .unwrap();
 
         let logins =
             crate::users::get_organism_login_ids_by_id(&env.dbx, &login_id)
@@ -1894,7 +1895,6 @@ mod tests {
         .unwrap();
         let message_map = messages
             .into_iter()
-            .map(|(id, msg)| (id, msg))
             .collect::<std::collections::HashMap<_, _>>();
 
         let msg_a = message_map.get(&original_a.signal_message_id).unwrap();
@@ -1907,10 +1907,7 @@ mod tests {
 
         let msg_b = message_map.get(&report_b.signal_message_id).unwrap();
         assert_eq!(msg_b.parent_messages.len(), 1);
-        assert_eq!(
-            msg_b.parent_messages[0].id,
-            original_a.signal_message_id
-        );
+        assert_eq!(msg_b.parent_messages[0].id, original_a.signal_message_id);
         assert_eq!(msg_b.intelligence_reports.len(), 1);
         assert_eq!(
             msg_b.intelligence_reports[0].id,
@@ -1919,14 +1916,10 @@ mod tests {
 
         let msg_c = message_map.get(&report_c.signal_message_id).unwrap();
         assert_eq!(msg_c.parent_messages.len(), 1);
-        assert_eq!(
-            msg_c.parent_messages[0].id,
-            report_b.signal_message_id
-        );
+        assert_eq!(msg_c.parent_messages[0].id, report_b.signal_message_id);
         assert_eq!(msg_c.intelligence_reports.len(), 0);
 
-        let mut edit_c_payload =
-            direct_submit_payload("updated report C body");
+        let mut edit_c_payload = direct_submit_payload("updated report C body");
         edit_c_payload.signal_group_master_key = None;
         let edited_c = edit_signal_message(
             &login_id,
@@ -1936,9 +1929,6 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(
-            edited_c.message.unwrap().text,
-            "updated report C body"
-        );
+        assert_eq!(edited_c.message.unwrap().text, "updated report C body");
     }
 }
