@@ -18,11 +18,12 @@ import { useTheme } from '@mui/material/styles';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { MediaSummaryStatus, OcrMediaSummary } from '../../../../../../Bindings';
+import { RightPanelActiveIcon, RightPanelIcon } from '../../../../components/SidePanelToggleButton';
 import { useOptionalPowerSnackbar } from '../../../../components/PowerSnackbar';
 import { isAbortError } from '../../../../services/api/client';
 import { getMediaOcrStatus } from '../../../../services/api/ocr';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
-import { MediaSummaryAction, MediaSummaryOverlay } from './MediaSummaryPreview';
+import { MediaSummaryOverlay } from './MediaSummaryPreview';
 import type { AttachmentPreviewDownloadItem } from './message-card-preview.types';
 
 const OCR_STATE_LABELS: Record<string, string> = {
@@ -180,6 +181,8 @@ export function OcrPreviewAction({
         ? `OCR у черзі${queueLabel(ocr)}`
         : `OCR обробляється${progress}${queueLabel(ocr)}`;
 
+  const Icon = active ? RightPanelActiveIcon : RightPanelIcon;
+
   return (
     <Tooltip title={title} enterDelay={300}>
       <Box component="span" sx={{ display: 'inline-flex', position: 'relative' }}>
@@ -194,7 +197,7 @@ export function OcrPreviewAction({
             '&:hover': { color: active ? 'primary.dark' : 'text.primary' },
           }}
         >
-          <VisibilityIcon fontSize="small" />
+          <Icon fontSize="small" />
         </IconButton>
         {processing ? (
           <CircularProgress
@@ -225,10 +228,23 @@ function OcrStatusPane({
 
   return (
     <Stack
+      data-attachment-preview-scroll
       spacing={2}
       alignItems="center"
       justifyContent="center"
-      sx={{ flex: 1, minWidth: 0, p: 3, textAlign: 'center' }}
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
+        width: '100%',
+        height: '100%',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
+        touchAction: 'pan-y',
+        WebkitOverflowScrolling: 'touch',
+        p: 3,
+        textAlign: 'center',
+      }}
     >
       <Chip
         size="small"
@@ -302,6 +318,88 @@ function OcrStatusPane({
   );
 }
 
+function ScrollableOcrFrame({ mediaId, revision }: { mediaId: string; revision: number }) {
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
+  const src = `/api/messenger/media/${encodeURIComponent(mediaId)}/ocr?revision=${revision}`;
+
+  useEffect(() => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
+    setContentHeight(null);
+
+    return () => {
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
+    };
+  }, [src]);
+
+  const handleLoad = useCallback(() => {
+    const iframe = iframeRef.current;
+    const frameDocument = iframe?.contentDocument;
+    if (iframe == null || frameDocument == null) return;
+
+    const updateContentHeight = () => {
+      const nextHeight = Math.max(
+        frameDocument.documentElement.scrollHeight,
+        frameDocument.body?.scrollHeight ?? 0,
+      );
+      if (nextHeight > 0) {
+        setContentHeight((height) => (height === nextHeight ? height : nextHeight));
+      }
+    };
+
+    updateContentHeight();
+    resizeObserverRef.current?.disconnect();
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(updateContentHeight);
+    observer.observe(frameDocument.documentElement);
+    if (frameDocument.body != null) observer.observe(frameDocument.body);
+    resizeObserverRef.current = observer;
+  }, []);
+
+  const usesOuterScroll = contentHeight != null;
+
+  return (
+    <Box
+      data-attachment-preview-scroll
+      data-ocr-scroll-container
+      sx={{
+        flex: '1 1 0',
+        width: '100%',
+        height: 0,
+        minWidth: 0,
+        minHeight: 0,
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
+        touchAction: 'pan-y',
+        WebkitOverflowScrolling: 'touch',
+      }}
+    >
+      <Box
+        ref={iframeRef}
+        component="iframe"
+        title="OCR"
+        src={src}
+        sandbox="allow-same-origin"
+        referrerPolicy="no-referrer"
+        scrolling={usesOuterScroll ? 'no' : 'yes'}
+        onLoad={handleLoad}
+        sx={{
+          display: 'block',
+          width: '100%',
+          height: usesOuterScroll ? `${contentHeight}px` : '100%',
+          minHeight: '100%',
+          border: 0,
+          bgcolor: 'background.paper',
+        }}
+      />
+    </Box>
+  );
+}
+
 export function OcrSplitPreview({
   source,
   mediaId,
@@ -329,7 +427,6 @@ export function OcrSplitPreview({
 }) {
   const theme = useTheme();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [mobilePane, setMobilePane] = useState<'source' | 'ocr'>('ocr');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [iframeRevision, setIframeRevision] = useState(0);
@@ -379,9 +476,14 @@ export function OcrSplitPreview({
   );
 
   useEffect(() => {
-    if (visible) setMobilePane('ocr');
     if (!visible) onFullPaneChange(false);
   }, [onFullPaneChange, visible]);
+
+  useEffect(() => {
+    if (mobile && visible && summaryVisible) {
+      onSummaryVisibleChange(false);
+    }
+  }, [mobile, onSummaryVisibleChange, summaryVisible, visible]);
 
   useEffect(() => {
     if (!visible || ocr == null || !isProcessing(ocr)) return;
@@ -393,7 +495,6 @@ export function OcrSplitPreview({
   useEffect(() => {
     if (!summaryVisible) return;
     onFullPaneChange(false);
-    setMobilePane('source');
   }, [onFullPaneChange, summaryVisible]);
 
   const sourceWithSummary = (
@@ -407,114 +508,91 @@ export function OcrSplitPreview({
     />
   );
 
-  if (!visible || mediaId == null) {
-    if (summary == null || mediaId == null) return source;
-    return (
-      <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', position: 'relative' }}>
-        {sourceWithSummary}
-        <Stack
-          direction="row"
-          spacing={0.5}
-          sx={{ position: 'absolute', top: 8, right: 8, zIndex: 4 }}
-        >
-          <MediaSummaryAction
-            status={summary}
-            active={summaryVisible}
-            onClick={() => onSummaryVisibleChange(!summaryVisible)}
-          />
-        </Stack>
-      </Box>
-    );
-  }
-  const showSource = mobile ? mobilePane === 'source' : !fullPane;
-  const showOcr = mobile ? mobilePane === 'ocr' : true;
+  if (mediaId == null) return source;
+  if (!visible && summary == null) return source;
+
+  const showSource = visible ? (mobile ? true : !fullPane) : true;
+  const showOcr = visible;
 
   return (
-    <Box sx={{ flex: '1 1 auto', minHeight: 0, display: 'flex', position: 'relative' }}>
+    <Box
+      sx={{
+        flex: '1 1 0',
+        height: 0,
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: mobile ? 'column' : 'row',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
       <Box
         sx={{
           display: showSource ? 'flex' : 'none',
-          flex: mobile ? '1 1 100%' : '1 1 50%',
+          flex: !visible || fullPane ? '1 1 100%' : mobile ? '0 0 50%' : '1 1 50%',
+          height: visible && mobile ? '50%' : 'auto',
           minWidth: 0,
           minHeight: 0,
-          borderRight: mobile ? 0 : 1,
+          overflow: 'hidden',
+          borderBottom: visible && mobile ? 1 : 0,
+          borderRight: visible && !mobile && showSource && showOcr ? 1 : 0,
           borderColor: 'divider',
         }}
       >
         {sourceWithSummary}
       </Box>
-      <Box
-        sx={{
-          display: showOcr ? 'flex' : 'none',
-          flex: fullPane || mobile ? '1 1 100%' : '1 1 50%',
-          minWidth: 0,
-          minHeight: 0,
-          position: 'relative',
-          bgcolor: 'background.paper',
-        }}
-      >
-        {ocr != null && isOcrReady(ocr) ? (
-          <Box
-            component="iframe"
-            title="OCR"
-            src={`/api/messenger/media/${encodeURIComponent(mediaId)}/ocr?revision=${iframeRevision}`}
-            sandbox=""
-            referrerPolicy="no-referrer"
-            sx={{ flex: 1, minWidth: 0, border: 0, bgcolor: 'background.paper' }}
-          />
-        ) : ocr != null ? (
-          <OcrStatusPane
-            ocr={ocr}
-            refreshing={refreshing}
-            refreshError={refreshError}
-            onRefresh={() => void refresh(false)}
-          />
-        ) : null}
-      </Box>
-      <Stack
-        direction="row"
-        spacing={0.5}
-        sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}
-      >
-        <MediaSummaryAction
-          status={summary}
-          active={summaryVisible}
-          onClick={() => onSummaryVisibleChange(!summaryVisible)}
-        />
-        {mobile ? (
-          <>
-            <Button
-              size="small"
-              variant={mobilePane === 'source' ? 'contained' : 'outlined'}
-              onClick={() => setMobilePane('source')}
+      {visible ? (
+        <Box
+          data-attachment-preview-scroll
+          sx={{
+            display: showOcr ? 'flex' : 'none',
+            flexDirection: 'column',
+            flex: fullPane ? '1 1 100%' : mobile ? '0 0 50%' : '1 1 50%',
+            height: mobile ? '50%' : '100%',
+            minWidth: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+            overscrollBehavior: 'contain',
+            touchAction: 'pan-y',
+            position: 'relative',
+            bgcolor: 'background.paper',
+          }}
+        >
+          {ocr != null && isOcrReady(ocr) ? (
+            <ScrollableOcrFrame mediaId={mediaId} revision={iframeRevision} />
+          ) : ocr != null ? (
+            <OcrStatusPane
+              ocr={ocr}
+              refreshing={refreshing}
+              refreshError={refreshError}
+              onRefresh={() => void refresh(false)}
+            />
+          ) : null}
+          {!mobile ? (
+            <Stack
+              direction="row"
+              spacing={0.5}
+              sx={{ position: 'absolute', top: 8, right: 8, zIndex: 2 }}
             >
-              Оригінал
-            </Button>
-            <Button
-              size="small"
-              variant={mobilePane === 'ocr' ? 'contained' : 'outlined'}
-              onClick={() => setMobilePane('ocr')}
-            >
-              OCR
-            </Button>
-          </>
-        ) : (
-          <Tooltip title={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}>
-            <IconButton
-              size="small"
-              aria-label={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}
-              onClick={() => onFullPaneChange(!fullPane)}
-              sx={{ bgcolor: 'background.paper', boxShadow: 1 }}
-            >
-              {fullPane ? (
-                <FullscreenExitIcon fontSize="small" />
-              ) : (
-                <FullscreenIcon fontSize="small" />
-              )}
-            </IconButton>
-          </Tooltip>
-        )}
-      </Stack>
+              <Tooltip title={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}>
+                <IconButton
+                  size="small"
+                  aria-label={fullPane ? 'Повернути розділений перегляд' : 'Розгорнути OCR'}
+                  onClick={() => onFullPaneChange(!fullPane)}
+                  sx={{ bgcolor: 'background.paper', boxShadow: 1 }}
+                >
+                  {fullPane ? (
+                    <FullscreenExitIcon fontSize="small" />
+                  ) : (
+                    <FullscreenIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          ) : null}
+        </Box>
+      ) : null}
     </Box>
   );
 }
