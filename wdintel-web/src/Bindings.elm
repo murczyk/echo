@@ -10617,6 +10617,7 @@ encryptionRecEncoder struct =
 type alias SingleNetworkFreqsReq =
     { networkId : Int
     , includeCallsigns : Maybe (Bool)
+    , includeLastDatetimeInAor : Maybe (Bool)
     }
 
 
@@ -10625,6 +10626,7 @@ singleNetworkFreqsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "include_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeCallsigns )
+        , ( "include_last_datetime_in_aor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeLastDatetimeInAor )
         ]
 
 
@@ -20648,6 +20650,7 @@ singleNetworkFreqsReqDecoder =
     Json.Decode.succeed SingleNetworkFreqsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_callsigns" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_last_datetime_in_aor" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 singleNetworkFreqsListRspDecoder : Json.Decode.Decoder SingleNetworkFreqsListRsp

@@ -1146,49 +1146,13 @@ pub async fn load_callsigns(
     let active_callsigns = get_active_callsigns(db, groups, filter, network_id)
         .await
         .context(h!())?;
-
-    let callsigns = active_callsigns
-        .iter()
-        .map(|row| row.callsign.clone())
-        .collect::<Vec<_>>();
-    let known_callsigns_buf;
-    let known_callsigns = if let Some(known_callsigns) = known_callsigns {
-        known_callsigns
-    } else {
-        known_callsigns_buf = find_known_callsigns(db, Some(&callsigns))
-            .await
-            .context(h!())?;
-        &known_callsigns_buf
-    };
-
-    let mut res: Vec<CallsignRes> = active_callsigns
-        .iter()
-        .map(|row| {
-            let callsign = row.callsign.clone();
-
-            let short_known_callsigns =
-                crate::sigint::callsign::bl::match_known_callsigns(
-                    known_callsigns.get(&callsign),
-                    &callsign,
-                    row.unit_id,
-                    &row.unit_name.clone(),
-                );
-
-            CallsignRes {
-                callsign: callsign.clone(),
-                known_callsigns: short_known_callsigns,
-                message_count: 0,
-                last_datetime: None,
-                freqs: None,
-                network_names: None,
-                is_old: false,
-            }
-        })
-        .collect();
-
-    res = filter_callsigns(res);
-    res = filter_callsigns_for_section(res, section);
-    sort_callsigns(&mut res);
+    let mut res = render_active_callsigns(
+        db,
+        &active_callsigns,
+        known_callsigns,
+        section,
+    )
+    .await?;
 
     if !include_activity_info {
         let duration = start.elapsed();
@@ -1238,6 +1202,83 @@ pub async fn load_callsigns(
         network_id
     );
 
+    Ok(res)
+}
+
+pub(crate) async fn load_callsigns_from_activity_info(
+    db: &DatabaseConnection,
+    network_id: i64,
+    known_callsigns: Option<&BTreeMap<String, Vec<KnownCallsignRes>>>,
+    include_activity_info: bool,
+    section: Option<
+        crate::sigint::network::types::SingleNetworkCallsignsSection,
+    >,
+    activity_info: &HashMap<String, CallsignActivityInfo>,
+) -> Result<Vec<CallsignRes>, AppError> {
+    let mut callsigns = activity_info.keys().cloned().collect::<Vec<_>>();
+    callsigns.sort();
+    let active_callsigns =
+        build_callsign_query_results(db, network_id, callsigns, true).await?;
+    let mut res = render_active_callsigns(
+        db,
+        &active_callsigns,
+        known_callsigns,
+        section,
+    )
+    .await?;
+    if include_activity_info {
+        apply_activity_info(&mut res, activity_info);
+    }
+    Ok(res)
+}
+
+async fn render_active_callsigns(
+    db: &DatabaseConnection,
+    active_callsigns: &[CallsignQueryResult],
+    known_callsigns: Option<&BTreeMap<String, Vec<KnownCallsignRes>>>,
+    section: Option<
+        crate::sigint::network::types::SingleNetworkCallsignsSection,
+    >,
+) -> Result<Vec<CallsignRes>, AppError> {
+    let callsigns = active_callsigns
+        .iter()
+        .map(|row| row.callsign.clone())
+        .collect::<Vec<_>>();
+    let known_callsigns_buf;
+    let known_callsigns = if let Some(known_callsigns) = known_callsigns {
+        known_callsigns
+    } else {
+        known_callsigns_buf = find_known_callsigns(db, Some(&callsigns))
+            .await
+            .context(h!())?;
+        &known_callsigns_buf
+    };
+
+    let mut res = active_callsigns
+        .iter()
+        .map(|row| {
+            let callsign = row.callsign.clone();
+            let known_callsigns =
+                crate::sigint::callsign::bl::match_known_callsigns(
+                    known_callsigns.get(&callsign),
+                    &callsign,
+                    row.unit_id,
+                    &row.unit_name,
+                );
+            CallsignRes {
+                callsign,
+                known_callsigns,
+                message_count: 0,
+                last_datetime: None,
+                freqs: None,
+                network_names: None,
+                is_old: false,
+            }
+        })
+        .collect();
+    res = filter_callsigns(res);
+    res = filter_callsigns_for_section(res, section);
+    sort_callsigns(&mut res);
     Ok(res)
 }
 
@@ -1472,17 +1513,6 @@ pub async fn get_active_callsigns(
     filter: Option<&NetworkFreqFilter>,
     network_id: i64,
 ) -> Result<Vec<CallsignQueryResult>, AppError> {
-    let units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .join(
-            JoinType::InnerJoin,
-            sigint_unit::Relation::SigintNetworkUnit.def(),
-        )
-        .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
-        .all(db)
-        .await
-        .context(h!())?;
-
     let datasource_group_ids: Vec<i64> = datasource_group::Entity::find()
         .select_only()
         .column(datasource_group::Column::Id)
@@ -1493,22 +1523,6 @@ pub async fn get_active_callsigns(
         .all(db)
         .await
         .context(h!())?;
-
-    let sigint_network_callsigns: HashSet<String> =
-        sigint_network_callsign::Entity::find()
-            .select_only()
-            .distinct()
-            .column(sigint_network_callsign::Column::SigintCallsign)
-            .filter(
-                sigint_network_callsign::Column::SigintNetworkId.eq(network_id),
-            )
-            .filter(sigint_network_callsign::Column::Deleted.eq(false))
-            .into_tuple()
-            .all(db)
-            .await
-            .context(h!())?
-            .into_iter()
-            .collect();
 
     let query = sigint_inbox_item_network::Entity::find()
         .select_only()
@@ -1551,19 +1565,59 @@ pub async fn get_active_callsigns(
         query.into_tuple::<i64>().all(db).await.context(h!())?;
     let callsigns =
         crate::inbox::callsigns::load_by_item_ids(db, &inbox_item_ids).await?;
-    let mut distinct_callsigns = inbox_item_ids
+    let distinct_callsigns = inbox_item_ids
         .iter()
         .filter_map(|inbox_item_id| callsigns.get(inbox_item_id))
         .flat_map(|callsigns| callsigns.effective())
-        .filter(|callsign| {
-            filter.is_some() || !sigint_network_callsigns.contains(callsign)
-        })
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    distinct_callsigns.sort();
+    build_callsign_query_results(
+        db,
+        network_id,
+        distinct_callsigns,
+        filter.is_none(),
+    )
+    .await
+}
+
+async fn build_callsign_query_results(
+    db: &DatabaseConnection,
+    network_id: i64,
+    mut callsigns: Vec<String>,
+    exclude_network_callsigns: bool,
+) -> Result<Vec<CallsignQueryResult>, AppError> {
+    if exclude_network_callsigns {
+        let network_callsigns = sigint_network_callsign::Entity::find()
+            .select_only()
+            .distinct()
+            .column(sigint_network_callsign::Column::SigintCallsign)
+            .filter(
+                sigint_network_callsign::Column::SigintNetworkId.eq(network_id),
+            )
+            .filter(sigint_network_callsign::Column::Deleted.eq(false))
+            .into_tuple::<String>()
+            .all(db)
+            .await
+            .context(h!())?
+            .into_iter()
+            .collect::<HashSet<_>>();
+        callsigns.retain(|callsign| !network_callsigns.contains(callsign));
+    }
+    callsigns.sort();
+
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Relation::SigintNetworkUnit.def(),
+        )
+        .filter(sigint_network_unit::Column::NetworkId.eq(network_id))
+        .all(db)
+        .await
+        .context(h!())?;
     let mut records = Vec::new();
-    for callsign in distinct_callsigns {
+    for callsign in callsigns {
         if units.is_empty() {
             let item = CallsignQueryResult {
                 callsign,

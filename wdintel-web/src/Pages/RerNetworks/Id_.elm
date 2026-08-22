@@ -450,15 +450,15 @@ update shared msg model =
                     case ( keysMsg, m2.network ) of
                         ( Msgs.KeyCreated (Ok _), Success network ) ->
                             E.map Frequencies <|
-                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False, includeLastDatetimeInAor = Just True }
 
                         ( Msgs.KeyUpdated (Ok _), Success network ) ->
                             E.map Frequencies <|
-                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False, includeLastDatetimeInAor = Just True }
 
                         ( Msgs.DeleteKeyReturnedByApi (Ok _), Success network ) ->
                             E.map Frequencies <|
-                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
+                                E.getSingleNetworkFreqs Msgs.FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False, includeLastDatetimeInAor = Just True }
 
                         _ ->
                             E.none

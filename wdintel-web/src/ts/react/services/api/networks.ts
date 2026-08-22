@@ -112,12 +112,14 @@ export async function getNetworkCallsignsList(
 export async function getSingleNetworkFreqs(
   networkId: number,
   includeCallsigns = true,
+  includeLastDatetimeInAor = true,
 ): Promise<SingleNetworkFreqsListRsp> {
   const data = await postJson<SingleNetworkFreqsListRsp>(
     '/api/sigint/network-freqs-list',
     transformCamelToSnake({
       networkId,
       includeCallsigns,
+      includeLastDatetimeInAor,
     } satisfies SingleNetworkFreqsReq),
   );
   return transformSnakeToCamel<SingleNetworkFreqsListRsp>(data);

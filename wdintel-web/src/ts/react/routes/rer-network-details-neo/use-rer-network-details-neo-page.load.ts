@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
-import type { NetworkCallsignRelationsRsp, NetworkCallsignRes } from '../../../../Bindings';
+import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
 
 import { listAors } from '../../services/api/aor';
 import {
@@ -13,7 +13,6 @@ import { getEncryptions } from '../../services/api/encryptions';
 import {
   listNetworkCallsigns,
   getNetworkCallsigns,
-  getNetworkCallsignsActivity,
   listSources,
 } from '../../services/api/callsigns';
 import { getUnitsByIds, getUnitsList, mergeUnitsById } from '../../services/api/units';
@@ -196,7 +195,6 @@ export function useRerNetworkDetailsNeoPageLoad(
   const networkCallsignsLoadRequestIdRef = useRef(0);
   const catalogCallsignsLoadRequestIdRef = useRef(0);
   const interceptedCallsignsLoadRequestIdRef = useRef(0);
-  const callsignActivityLoadRequestIdRef = useRef(0);
   const relationsLoadRequestIdRef = useRef(0);
   const networkActivityLoadRequestIdRef = useRef(0);
   const pelengPointsLoadRequestIdRef = useRef(0);
@@ -336,7 +334,7 @@ export function useRerNetworkDetailsNeoPageLoad(
       try {
         callsignsRes = await getNetworkCallsigns({
           networkId: targetNetworkId,
-          includeActivityInfo: false,
+          includeActivityInfo: true,
           section: 'Everything',
         });
       } catch (error) {
@@ -363,13 +361,25 @@ export function useRerNetworkDetailsNeoPageLoad(
       }
 
       if (!isCurrent()) return null;
+      const activityMap = createNetworkCallsignActivityMap(
+        callsignsRes.callsigns.map((item) => ({
+          callsign: item.callsign,
+          activity: {
+            messageCount: item.messageCount,
+            lastDatetime: item.lastDatetime,
+            freqs: item.freqs,
+          },
+        })),
+      );
       setState((current) => {
         const derived = recomputeCallsignDerivedData(current, {
           networkCallsignGroups: callsignsRes.callsigns,
+          callsignActivityMap: activityMap,
         });
         return {
           ...current,
           networkCallsignGroups: callsignsRes.callsigns,
+          callsignActivityMap: activityMap,
           catalogCallsignGroups: derived.catalogCallsignGroups,
           unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
           catalogCallsignsLoaded: true,
@@ -394,74 +404,14 @@ export function useRerNetworkDetailsNeoPageLoad(
     [reloadGeneration, setState],
   );
 
-  const loadCallsignActivity = useCallback(
-    async (targetNetworkId: number, callsigns: NetworkCallsignRes[]) => {
-      const callsignsForActivity = [
-        ...new Set(
-          callsigns.map((item) => item.callsign).filter((callsign) => callsign.trim() !== ''),
-        ),
-      ];
-      if (callsignsForActivity.length === 0) return;
-
-      const generation = reloadGeneration.current;
-      const requestId = ++callsignActivityLoadRequestIdRef.current;
-
-      try {
-        const activityRes = await getNetworkCallsignsActivity({
-          networkId: targetNetworkId,
-          callsigns: callsignsForActivity,
-        });
-        const isCurrent = () =>
-          reloadGeneration.current === generation &&
-          callsignActivityLoadRequestIdRef.current === requestId;
-        if (!isCurrent()) return;
-
-        const activityMap = createNetworkCallsignActivityMap(
-          (activityRes.callsignsActivity ?? []).map((item) => ({
-            callsign: item.callsign,
-            activity: item.activity,
-          })),
-        );
-
-        setState((current) => {
-          const derived = recomputeCallsignDerivedData(current, {
-            callsignActivityMap: activityMap,
-          });
-          return {
-            ...current,
-            callsignActivityMap: activityMap,
-            catalogCallsignGroups: derived.catalogCallsignGroups,
-            unknownInterceptedCallsigns: derived.unknownInterceptedCallsigns,
-          };
-        });
-      } catch (error) {
-        if (
-          reloadGeneration.current !== generation ||
-          callsignActivityLoadRequestIdRef.current !== requestId
-        ) {
-          return;
-        }
-
-        setState((current) => ({
-          ...current,
-          callsignsError: formatErrorMessage(error),
-        }));
-      }
-    },
-    [reloadGeneration, setState],
-  );
-
   const loadCallsigns = useCallback(
     async (targetNetworkId: number) => {
-      const networkCallsignsTask = loadNetworkCallsigns(targetNetworkId);
-      const candidateCallsigns = await loadCandidateCallsigns(targetNetworkId);
-      const activityTask =
-        candidateCallsigns !== null && candidateCallsigns.length > 0
-          ? loadCallsignActivity(targetNetworkId, candidateCallsigns)
-          : Promise.resolve();
-      await Promise.all([networkCallsignsTask, activityTask]);
+      await Promise.all([
+        loadNetworkCallsigns(targetNetworkId),
+        loadCandidateCallsigns(targetNetworkId),
+      ]);
     },
-    [loadCallsignActivity, loadCandidateCallsigns, loadNetworkCallsigns],
+    [loadCandidateCallsigns, loadNetworkCallsigns],
   );
 
   const loadRelations = useCallback(

@@ -11,6 +11,7 @@ import {
   getNetworkCallsignRelationMessages,
   getNetworkFreqCallsigns,
   getNetworkFreqCallsignsBatch,
+  getSingleNetworkFreqs,
   getNetworksGroupsActivity,
   listNetworks,
   launchNetworkEtalonkaBatchReportTask,
@@ -316,6 +317,18 @@ describe('networks API etalonka report download', () => {
     );
     expect(callsignsById.get(7)).toEqual(['ALPHA']);
     expect(callsignsById.get(9)).toEqual([]);
+  });
+
+  it('can skip callsigns and AOR activity in the frequency list request', async () => {
+    postJsonMock.mockResolvedValueOnce({ freqs: [] });
+
+    await getSingleNetworkFreqs(42, false, false);
+
+    expect(postJsonMock).toHaveBeenCalledWith('/api/sigint/network-freqs-list', {
+      network_id: 42,
+      include_callsigns: false,
+      include_last_datetime_in_aor: false,
+    });
   });
 });
 

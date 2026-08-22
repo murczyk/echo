@@ -486,6 +486,7 @@ pub struct NetworkCallsignRes {
 pub struct SingleNetworkFreqsReq {
     pub network_id: i64,
     pub include_callsigns: Option<bool>,
+    pub include_last_datetime_in_aor: Option<bool>,
 }
 
 #[derive(
@@ -757,4 +758,21 @@ pub struct FindLiveNetwork {
     pub live_freqs: Vec<String>,
     pub callsigns: Vec<String>,
     pub locations: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_network_freqs_request_keeps_aor_activity_backward_compatible() {
+        let req: SingleNetworkFreqsReq =
+            serde_json::from_value(serde_json::json!({
+                "network_id": 42,
+                "include_callsigns": false
+            }))
+            .unwrap();
+
+        assert_eq!(req.include_last_datetime_in_aor, None);
+    }
 }

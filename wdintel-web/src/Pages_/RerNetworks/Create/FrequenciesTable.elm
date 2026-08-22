@@ -42,7 +42,7 @@ import Utils.Time
 loadFreqsInit : Int -> List (Effect FrequenciesMsg)
 loadFreqsInit networkId =
     [ E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = networkId }
-    , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = networkId, includeCallsigns = Just False }
+    , E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = networkId, includeCallsigns = Just False, includeLastDatetimeInAor = Just True }
     ]
 
 
@@ -203,7 +203,7 @@ update _ msg model =
                 , freqEditSidebar = Nothing
               }
             , E.batch
-                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False, includeLastDatetimeInAor = Just True }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )
@@ -617,7 +617,7 @@ update _ msg model =
                     }
               }
             , E.batch
-                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False }
+                [ E.getSingleNetworkFreqs FreqsReturnedByApi { networkId = network.id, includeCallsigns = Just False, includeLastDatetimeInAor = Just True }
                 , E.getNetworkFreqsActivity NetworkFreqsActivityReturnedByApi { networkId = network.id }
                 ]
             )

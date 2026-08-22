@@ -771,7 +771,23 @@ pub async fn bl_get_network_callsigns_list(
     user_id: &uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
-    bl_get_network_callsigns_list_impl(req, user_id, dbx, None).await
+    bl_get_network_callsigns_list_impl(req, user_id, dbx, None, None).await
+}
+
+pub async fn bl_get_network_callsigns_list_with_activity_info(
+    req: &ListNetworkCallsignsReq,
+    user_id: &uuid::Uuid,
+    dbx: &DatabaseConnection,
+    activity_info: HashMap<String, CallsignActivityInfo>,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    bl_get_network_callsigns_list_impl(
+        req,
+        user_id,
+        dbx,
+        None,
+        Some(activity_info),
+    )
+    .await
 }
 
 pub async fn bl_get_network_callsigns_list_for_period(
@@ -780,7 +796,8 @@ pub async fn bl_get_network_callsigns_list_for_period(
     dbx: &DatabaseConnection,
     filter: &NetworkFreqFilter,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
-    bl_get_network_callsigns_list_impl(req, user_id, dbx, Some(filter)).await
+    bl_get_network_callsigns_list_impl(req, user_id, dbx, Some(filter), None)
+        .await
 }
 
 async fn bl_get_network_callsigns_list_impl(
@@ -788,6 +805,7 @@ async fn bl_get_network_callsigns_list_impl(
     user_id: &uuid::Uuid,
     dbx: &DatabaseConnection,
     filter: Option<&NetworkFreqFilter>,
+    activity_info: Option<HashMap<String, CallsignActivityInfo>>,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
     let network_callsign_ids = if filter.is_some() {
         Some(
@@ -874,12 +892,11 @@ async fn bl_get_network_callsigns_list_impl(
         .await
         .context(h!())?;
 
-    let groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, user_id)
-            .await
-            .context(h!())?;
-
     if let Some(filter) = filter {
+        let groups =
+            crate::messenger::group::get_identity_sigint_groups(dbx, user_id)
+                .await
+                .context(h!())?;
         return render_network_callsigns_for_period(
             dbx,
             groups,
@@ -890,17 +907,25 @@ async fn bl_get_network_callsigns_list_impl(
         .await;
     }
 
-    let activity_callsigns =
-        network_callsigns_activity_targets(&network_callsigns);
-    let activity_info = get_callsigns_activity_info(
-        dbx,
-        groups,
-        req.network_id,
-        &activity_callsigns,
-        None,
-    )
-    .await
-    .context(h!())?;
+    let activity_info = if let Some(activity_info) = activity_info {
+        activity_info
+    } else {
+        let groups =
+            crate::messenger::group::get_identity_sigint_groups(dbx, user_id)
+                .await
+                .context(h!())?;
+        let activity_callsigns =
+            network_callsigns_activity_targets(&network_callsigns);
+        get_callsigns_activity_info(
+            dbx,
+            groups,
+            req.network_id,
+            &activity_callsigns,
+            None,
+        )
+        .await
+        .context(h!())?
+    };
     let activity_info = network_callsigns
         .iter()
         .filter_map(|network_callsign| {
@@ -1854,7 +1879,7 @@ pub async fn bl_get_network_callsigns_activity(
     groups: Vec<String>,
     dbx: &DatabaseConnection,
 ) -> Result<Vec<CallsignActivityRecord>, AppError> {
-    let res = get_callsigns_activity_info(
+    let activity_info = get_callsigns_activity_info(
         dbx,
         groups,
         req.network_id,
@@ -1862,19 +1887,31 @@ pub async fn bl_get_network_callsigns_activity(
         None,
     )
     .await
-    .context(h!())?
-    .into_iter()
-    .map(|(callsign, info)| CallsignActivityRecord {
-        callsign,
-        activity: CallsignActivityItem {
-            message_count: info.message_count,
-            last_datetime: info.last_datetime,
-            freqs: info.freqs,
-        },
-    })
-    .collect();
+    .context(h!())?;
 
-    Ok(res)
+    Ok(render_network_callsigns_activity(req, &activity_info))
+}
+
+pub fn render_network_callsigns_activity(
+    req: &NetworkCallsignsActivityReq,
+    activity_info: &HashMap<String, CallsignActivityInfo>,
+) -> Vec<CallsignActivityRecord> {
+    let mut seen = HashSet::new();
+    req.callsigns
+        .iter()
+        .filter(|callsign| seen.insert((*callsign).clone()))
+        .filter_map(|callsign| {
+            let info = activity_info.get(callsign)?;
+            Some(CallsignActivityRecord {
+                callsign: callsign.clone(),
+                activity: CallsignActivityItem {
+                    message_count: info.message_count,
+                    last_datetime: info.last_datetime,
+                    freqs: info.freqs.clone(),
+                },
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1882,6 +1919,50 @@ mod tests {
     use super::*;
     use crate::functest::tests::*;
     use serial_test::serial;
+
+    #[test]
+    fn activity_records_follow_requested_callsigns_and_deduplicate() {
+        let req = NetworkCallsignsActivityReq {
+            network_id: 1,
+            callsigns: vec![
+                "BRAVO".to_string(),
+                "MISSING".to_string(),
+                "ALPHA".to_string(),
+                "BRAVO".to_string(),
+            ],
+        };
+        let activity_info = HashMap::from([
+            (
+                "ALPHA".to_string(),
+                CallsignActivityInfo {
+                    message_count: 1,
+                    last_datetime: Some(2),
+                    freqs: Some(vec!["100".to_string()]),
+                    network_names: None,
+                },
+            ),
+            (
+                "BRAVO".to_string(),
+                CallsignActivityInfo {
+                    message_count: 3,
+                    last_datetime: Some(4),
+                    freqs: Some(vec!["200".to_string()]),
+                    network_names: None,
+                },
+            ),
+        ]);
+
+        let records = render_network_callsigns_activity(&req, &activity_info);
+
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.callsign.as_str())
+                .collect::<Vec<_>>(),
+            vec!["BRAVO", "ALPHA"]
+        );
+        assert_eq!(records[0].activity.message_count, 3);
+    }
 
     fn network_callsign_for_link_check(
         sigint_callsign_id: Option<i64>,
