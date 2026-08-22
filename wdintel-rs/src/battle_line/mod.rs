@@ -2033,6 +2033,35 @@ mod tests {
         Ok(())
     }
 
+    fn test_settlements_for_aor(
+        aor_id: i64,
+        settlements: Vec<crate::location::types::SettlementDetails>,
+    ) -> Arc<RwLock<crate::location::SettlementsDataConfig>> {
+        let settlements_by_id = settlements
+            .iter()
+            .map(|settlement| (settlement.id.unwrap(), settlement.clone()))
+            .collect();
+        let mut settlements_by_name = BTreeMap::new();
+        for settlement in settlements {
+            settlements_by_name
+                .entry(settlement.name.clone())
+                .or_insert_with(Vec::new)
+                .push(settlement);
+        }
+        let settlements_data = Arc::new((
+            vec![],
+            vec![],
+            crate::location::trie::Trie::new(),
+            settlements_by_id,
+            settlements_by_name,
+        ));
+        let mut config = crate::location::SettlementsDataConfig::default();
+        config
+            .aor_id_to_settlements_data
+            .insert(aor_id, settlements_data);
+        Arc::new(RwLock::new(config))
+    }
+
     async fn insert_test_battle_line_segment(
         txn: &DatabaseTransaction,
     ) -> anyhow::Result<i64> {
@@ -2421,10 +2450,33 @@ values (
         insert_test_settlement(&txn, 2_287_213, &repeated_name, 0.11, 1.02)
             .await
             .unwrap();
+        let settlements = test_settlements_for_aor(
+            aor_id,
+            vec![
+                crate::location::types::SettlementDetails {
+                    id: Some(2_287_211),
+                    name: anchor_name.to_uppercase(),
+                    coords: Some((0.10, 1.0)),
+                    ..Default::default()
+                },
+                crate::location::types::SettlementDetails {
+                    id: Some(2_287_212),
+                    name: repeated_name.to_uppercase(),
+                    coords: Some((0.01, 9.0)),
+                    ..Default::default()
+                },
+                crate::location::types::SettlementDetails {
+                    id: Some(2_287_213),
+                    name: repeated_name.to_uppercase(),
+                    coords: Some((0.11, 1.02)),
+                    ..Default::default()
+                },
+            ],
+        );
 
         let results = resolve_locations_to_settlements_with_db(
             &txn,
-            Arc::new(RwLock::new(Default::default())),
+            settlements,
             vec![anchor_name, repeated_name],
             &[aor_id],
         )
