@@ -546,9 +546,9 @@ a {
   max-width: none;
 }
 
-.audio-transcription-beside-player .audio-transcription-layout > [data-audio-player-host] {
+.audio-transcription-beside-player .audio-transcription-layout > .audio-player-row {
   flex: 1 1 460px;
-  max-width: 460px;
+  min-width: 0;
 }
 
 .audio-transcription-beside-player
@@ -571,7 +571,7 @@ a {
     flex-direction: column;
   }
 
-  .audio-transcription-beside-player .audio-transcription-layout > [data-audio-player-host],
+  .audio-transcription-beside-player .audio-transcription-layout > .audio-player-row,
   .audio-transcription-beside-player
     .audio-transcription-layout
     > [data-audio-transcription-control] {

@@ -3885,12 +3885,14 @@ fn build_summary_table_filtered_messages_query_with_access(
     .context(h!())?;
     let q = filter_selected_freqs(q, &req.selected_freqs).context(h!())?;
     let q = filter_selected_posts(q, &req.selected_posts).context(h!())?;
-    let q = filter_selected_units_for_period(
+    let q = crate::rer_importer::analysis::analytics_unit::apply_analysis_unit_filters(
         q,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        None,
     )
     .context(h!())?;
     let q = filter_selected_locations(
@@ -6891,6 +6893,7 @@ async fn group_stats(
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
     let include_missing_groups = should_include_missing_secret_groups(&req);
+    let analytics_source_db = env.dbx.clone();
     let (groups, analytics_group_stats) = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats groups",
@@ -6906,8 +6909,10 @@ async fn group_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys.clone(),
                 Some(&message_id_scope),
+                None,
             )
             .await?;
             let group_activity_keys = if include_missing_groups {
@@ -7092,6 +7097,7 @@ async fn post_stats(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_source_db = env.dbx.clone();
     let analytics_freshness_max_age_ms = env
         .config
         .analytics
@@ -7113,6 +7119,7 @@ async fn post_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 &message_id_scope,
             )
@@ -7455,6 +7462,7 @@ async fn location_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let locations = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats locations",
@@ -7470,6 +7478,7 @@ async fn location_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 &message_id_scope,
             )
@@ -7816,7 +7825,6 @@ fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
     req.search
         .as_ref()
         .is_none_or(|search| search.trim().is_empty())
-        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -7830,6 +7838,7 @@ fn analytics_stats_request_supported(
     env: &Env,
 ) -> bool {
     analytics_count_request_supported(req)
+        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
         && !crate::stats::should_prefer_redis_stats(req, &env.config)
 }
 
@@ -8335,20 +8344,38 @@ async fn query_count_stats_raw(
         freshness_max_age_ms,
     )
     .await?;
+    let (exact_resolved_units, combined_resolved_units) =
+        analytics_unit::resolve_analysis_unit_filter_variants_for_analytics(
+            &env.dbx,
+            &req.selected_units,
+            Some(&message_id_scope),
+        )
+        .await
+        .context(h!())?;
+    let (resolved_units, alternate_resolved_units) =
+        if req.units_exact_match_only.unwrap_or(false) {
+            (exact_resolved_units, combined_resolved_units)
+        } else {
+            (combined_resolved_units, exact_resolved_units)
+        };
     let groups_count = query_count_stats_groups(
         req,
         user,
+        env,
         db,
         access.master_keys_noimport.clone(),
         Some(&message_id_scope),
+        resolved_units.as_ref(),
     )
     .await?;
     let message_dimensions = query_count_stats_message_dimensions(
         req,
         user,
+        env,
         db,
         access.master_keys.clone(),
         &message_id_scope,
+        resolved_units.as_ref(),
     )
     .await?;
     let (count_overall, count_selected) = stats::fetch_counts_raw_with_db(
@@ -8358,6 +8385,7 @@ async fn query_count_stats_raw(
         db,
         access.master_keys.clone(),
         Some(&message_id_scope),
+        resolved_units.as_ref(),
     )
     .await
     .context(h!())?;
@@ -8370,6 +8398,8 @@ async fn query_count_stats_raw(
         &analytics_tag_access,
         &message_id_scope,
         count_selected,
+        resolved_units.as_ref(),
+        alternate_resolved_units.as_ref(),
     )
     .await?;
 
@@ -8427,16 +8457,20 @@ WHERE singleton
 async fn query_count_stats_groups(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
+    env: &actix_web::web::Data<Env>,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     message_id_scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&analytics_unit::ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     let groups = stats::fetch_groups_raw_with_db(
         req,
         user,
         db,
+        &env.dbx,
         master_keys.clone(),
         message_id_scope,
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8479,16 +8513,20 @@ struct CountStatsMessageDimensions {
 async fn query_count_stats_message_dimensions(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
+    env: &actix_web::web::Data<Env>,
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     message_id_scope: &AnalyticsMessageIdScope,
+    resolved_units: Option<&analytics_unit::ResolvedAnalyticsUnitFilters>,
 ) -> Result<CountStatsMessageDimensions, AppError> {
     let senders = stats::count_senders_with_db(
         req,
         user,
         db,
+        &env.dbx,
         master_keys.clone(),
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8496,8 +8534,10 @@ async fn query_count_stats_message_dimensions(
         req,
         user,
         db,
+        &env.dbx,
         master_keys.clone(),
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8505,8 +8545,10 @@ async fn query_count_stats_message_dimensions(
         req,
         user,
         db,
+        &env.dbx,
         master_keys.clone(),
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8514,8 +8556,10 @@ async fn query_count_stats_message_dimensions(
         req,
         user,
         db,
+        &env.dbx,
         master_keys,
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8574,6 +8618,10 @@ async fn query_count_stats_catalog_dimensions(
     analytics_tag_access: &stats::AnalyticsTagAccess,
     message_id_scope: &AnalyticsMessageIdScope,
     count_selected: i64,
+    resolved_units: Option<&analytics_unit::ResolvedAnalyticsUnitFilters>,
+    alternate_resolved_units: Option<
+        &analytics_unit::ResolvedAnalyticsUnitFilters,
+    >,
 ) -> Result<CountStatsCatalogDimensions, AppError> {
     let units = stats::count_units_with_db(
         req,
@@ -8599,6 +8647,8 @@ async fn query_count_stats_catalog_dimensions(
                 db,
                 master_keys.clone(),
                 Some(message_id_scope),
+                count_selected,
+                alternate_resolved_units,
             )
             .await
             .context(h!())?
@@ -8607,8 +8657,10 @@ async fn query_count_stats_catalog_dimensions(
         req,
         user,
         db,
+        &env.dbx,
         master_keys.clone(),
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8626,8 +8678,10 @@ async fn query_count_stats_catalog_dimensions(
         req,
         user,
         db,
+        &env.dbx,
         master_keys.clone(),
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8635,9 +8689,11 @@ async fn query_count_stats_catalog_dimensions(
         req,
         user,
         db,
+        &env.dbx,
         master_keys,
         analytics_tag_access,
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -8734,9 +8790,11 @@ async fn group_stats_count(
             query_count_stats_groups(
                 analytics_req,
                 analytics_user,
+                postgres_env,
                 &db,
                 analytics_master_keys,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -8772,6 +8830,7 @@ async fn sender_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_source_db = env.dbx.clone();
     let analytics_freshness_max_age_ms = env
         .config
         .analytics
@@ -8793,8 +8852,10 @@ async fn sender_stats_count(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -8831,6 +8892,7 @@ async fn post_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_source_db = env.dbx.clone();
     let analytics_freshness_max_age_ms = env
         .config
         .analytics
@@ -8852,8 +8914,10 @@ async fn post_stats_count(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -8896,6 +8960,7 @@ async fn freq_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_source_db = env.dbx.clone();
     let analytics_freshness_max_age_ms = env
         .config
         .analytics
@@ -8917,8 +8982,10 @@ async fn freq_stats_count(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -8955,6 +9022,7 @@ async fn callsign_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_source_db = env.dbx.clone();
     let analytics_freshness_max_age_ms = env
         .config
         .analytics
@@ -8976,8 +9044,10 @@ async fn callsign_stats_count(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -9141,6 +9211,7 @@ async fn location_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let locations_count = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats locations count",
@@ -9156,8 +9227,10 @@ async fn location_stats_count(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -9214,6 +9287,7 @@ async fn aor_stats_count(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let aors_count = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats aors count",
@@ -9229,8 +9303,10 @@ async fn aor_stats_count(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -9282,6 +9358,7 @@ async fn network_stats_count(
     let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
+    let analytics_source_db = env.dbx.clone();
     let analytics_freshness_max_age_ms = env
         .config
         .analytics
@@ -9303,9 +9380,11 @@ async fn network_stats_count(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },

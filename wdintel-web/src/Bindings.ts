@@ -4107,6 +4107,7 @@ export type EncryptionRec = {
 export type SingleNetworkFreqsReq = {
   networkId: number;
   includeCallsigns: boolean | null;
+  includeLastDatetimeInAor: boolean | null;
 };
 
 export type SingleNetworkFreqsListRsp = {

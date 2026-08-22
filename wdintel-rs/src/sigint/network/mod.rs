@@ -34,6 +34,7 @@ use sqlx::FromRow;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use time::{Duration as TimeDuration, PrimitiveDateTime};
 
+pub(crate) mod analytics;
 pub mod bl;
 pub mod etalon_calc;
 pub mod filter;
@@ -3608,18 +3609,14 @@ pub async fn network_callsigns_list(
     .context(h!())?;
 
     let include_activity_info = req.include_activity_info.unwrap_or(true);
-    let callsigns_raw = load_callsigns(
-        &env.dbx,
-        &groups,
+    let callsigns_raw = load_current_network_callsigns(
+        &env,
+        groups,
         req.network_id,
-        None,
         include_activity_info,
-        req.section,
-        None,
-        false,
+        req.section.clone(),
     )
-    .await
-    .context(h!())?;
+    .await?;
 
     let callsigns = callsigns_raw
         .into_iter()
@@ -3638,6 +3635,55 @@ pub async fn network_callsigns_list(
         .collect();
 
     Ok(Json(SingleNetworkCallsignsListRsp { callsigns }))
+}
+
+async fn load_current_network_callsigns(
+    env: &Env,
+    groups: Vec<String>,
+    network_id: i64,
+    include_activity_info: bool,
+    section: Option<SingleNetworkCallsignsSection>,
+) -> Result<Vec<CallsignRes>, AppError> {
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let analytics_section = section.clone();
+    crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "network callsigns list",
+        true,
+        move |analytics_db| async move {
+            let activity_info = analytics::load_network_callsign_activity(
+                &source_db,
+                &analytics_db,
+                &analytics_groups,
+                network_id,
+            )
+            .await?;
+            load_callsigns_from_activity_info(
+                &source_db,
+                network_id,
+                None,
+                include_activity_info,
+                analytics_section,
+                &activity_info,
+            )
+            .await
+        },
+        move |postgres_db| async move {
+            load_callsigns(
+                &postgres_db,
+                &groups,
+                network_id,
+                None,
+                include_activity_info,
+                section,
+                None,
+                false,
+            )
+            .await
+        },
+    )
+    .await
 }
 
 #[post("/api/sigint/network-freqs-list")]
@@ -3699,18 +3745,20 @@ pub async fn network_freqs_list(
         .context(h!())?
     };
 
-    let last_datetime_in_aor = load_network_freq_last_datetime_in_aor(
-        &env.dbx,
-        req.network_id,
-        &groups,
-    )
-    .await
-    .context(h!())?;
-    for freq in &mut freqs {
-        freq.last_datetime_in_aor = last_datetime_in_aor
-            .get(&freq.network_freq_id)
-            .copied()
-            .flatten();
+    if req.include_last_datetime_in_aor.unwrap_or(true) {
+        let last_datetime_in_aor = load_network_freq_last_datetime_in_aor(
+            &env.dbx,
+            req.network_id,
+            &groups,
+        )
+        .await
+        .context(h!())?;
+        for freq in &mut freqs {
+            freq.last_datetime_in_aor = last_datetime_in_aor
+                .get(&freq.network_freq_id)
+                .copied()
+                .flatten();
+        }
     }
 
     let res = SingleNetworkFreqsListRsp { freqs };
@@ -3869,13 +3917,34 @@ pub async fn network_freq_callsigns_batch(
     .await
     .context(h!())?;
 
-    let callsigns_by_network_freq_id = get_callsigns_for_network_freq_batch(
-        &env.dbx,
-        &groups,
-        &req.network_freq_ids,
-    )
-    .await
-    .context(h!())?;
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let analytics_network_freq_ids = req.network_freq_ids.clone();
+    let postgres_network_freq_ids = req.network_freq_ids.clone();
+    let callsigns_by_network_freq_id =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            &env,
+            "network frequency callsigns batch",
+            true,
+            move |analytics_db| async move {
+                analytics::load_network_freq_callsigns(
+                    &source_db,
+                    &analytics_db,
+                    &analytics_groups,
+                    &analytics_network_freq_ids,
+                )
+                .await
+            },
+            move |postgres_db| async move {
+                get_callsigns_for_network_freq_batch(
+                    &postgres_db,
+                    &groups,
+                    &postgres_network_freq_ids,
+                )
+                .await
+            },
+        )
+        .await?;
 
     let callsigns_by_network_freq_id = callsigns_by_network_freq_id
         .into_iter()

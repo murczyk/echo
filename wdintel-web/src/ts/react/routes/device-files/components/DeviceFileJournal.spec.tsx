@@ -1,9 +1,8 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, type ComponentProps, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DeviceFileJournalEntry } from '../../../../../Bindings';
@@ -22,54 +21,60 @@ vi.mock('material-react-table', () => ({
       }) => ReactNode;
     }>;
     const data = table.data as DeviceFileJournalEntry[];
-    if (data.length === 0) {
-      const renderEmptyRowsFallback = table.renderEmptyRowsFallback as (props: {
-        table: Record<string, unknown>;
-      }) => ReactNode;
-      return renderEmptyRowsFallback({
-        table: {
-          getState: () => ({ globalFilter: '', columnFilters: [] }),
-          setColumnFilters: vi.fn(),
-          setGlobalFilter: vi.fn(),
-        },
-      });
-    }
-    return (
-      <table aria-label="Журнал синхронізації файлів">
-        <thead>
-          <tr>
-            {columns.map((column) => (
-              <th key={column.accessorKey}>{column.header}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.map((row) => (
-            <tr key={row.fileId}>
-              {columns.map((column) => {
-                const value = row[column.accessorKey];
-                return (
-                  <td key={column.accessorKey}>
-                    {column.Cell
-                      ? column.Cell({
-                          cell: { getValue: <T,>() => value as T },
-                          row: { original: row },
-                        })
-                      : String(value)}
-                  </td>
-                );
-              })}
+    const tableContainerProps = table.muiTableContainerProps as ComponentProps<'div'>;
+    const content =
+      data.length === 0 ? (
+        (table.renderEmptyRowsFallback as (props: { table: Record<string, unknown> }) => ReactNode)(
+          {
+            table: {
+              getState: () => ({ globalFilter: '', columnFilters: [] }),
+              setColumnFilters: vi.fn(),
+              setGlobalFilter: vi.fn(),
+            },
+          },
+        )
+      ) : (
+        <table aria-label="Журнал синхронізації файлів">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column.accessorKey}>{column.header}</th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.map((row) => (
+              <tr key={row.fileId}>
+                {columns.map((column) => {
+                  const value = row[column.accessorKey];
+                  return (
+                    <td key={column.accessorKey}>
+                      {column.Cell
+                        ? column.Cell({
+                            cell: { getValue: <T,>() => value as T },
+                            row: { original: row },
+                          })
+                        : String(value)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+
+    return (
+      <div {...tableContainerProps} data-testid="journal-table-container">
+        {content}
+      </div>
     );
   },
 }));
 
 vi.mock('../../../components/mui-customized/table/custom-styles', () => ({
   getDefaultMrtPaperProps: () => ({ sx: {} }),
-  getDefaultMrtContainerProps: () => ({ sx: {} }),
+  getDefaultMrtContainerProps: () => ({}),
 }));
 
 vi.mock('../../../components/mui-customized/table/get-default-table-options', () => ({
@@ -217,13 +222,34 @@ describe('DeviceFileJournal', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it('loads the next journal page on demand', () => {
+  it('shows the load-more action only at the end of the journal scroll', () => {
     const loadMore = vi.fn().mockResolvedValue(undefined);
     renderJournal(journalState({ totalCount: 2, nextCursor: 'next', loadMore }));
 
+    const tableContainer = container?.querySelector('[data-testid="journal-table-container"]');
+    if (!(tableContainer instanceof HTMLDivElement)) {
+      throw new Error('Journal table container not found');
+    }
+    Object.defineProperties(tableContainer, {
+      scrollHeight: { configurable: true, value: 600 },
+      clientHeight: { configurable: true, value: 200 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+
+    act(() => tableContainer.dispatchEvent(new Event('scroll', { bubbles: true })));
     const loadMoreButton = Array.from(container?.querySelectorAll('button') ?? []).find(
       (button) => button.textContent === 'Завантажити ще',
     );
+    expect(loadMoreButton?.style.visibility).toBe('hidden');
+    expect(loadMoreButton?.getAttribute('aria-hidden')).toBe('true');
+
+    act(() => {
+      tableContainer.scrollTop = 400;
+      tableContainer.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    expect(loadMoreButton?.style.visibility).toBe('visible');
+    expect(loadMoreButton?.getAttribute('aria-hidden')).toBeNull();
+
     act(() => loadMoreButton?.click());
     expect(loadMore).toHaveBeenCalledTimes(1);
   });

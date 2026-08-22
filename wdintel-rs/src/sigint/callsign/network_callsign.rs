@@ -40,10 +40,45 @@ pub async fn list_network_callsigns(
 
     trace!("network_callsigns; login: {user_id}; req: {:?}", req);
     let req = req.into_inner();
-
-    let res = bl_get_network_callsigns_list(&req, &user_id, &env.dbx)
-        .await
-        .context(h!())?;
+    let groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, &user_id)
+            .await
+            .context(h!())?;
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let analytics_req = req.clone();
+    let postgres_req = req.clone();
+    let res = crate::rer_importer::analysis::with_analytics_read_fallback(
+        &env,
+        "network callsigns assigned list",
+        true,
+        move |analytics_db| async move {
+            let activity_info =
+                crate::sigint::network::analytics::load_network_callsign_activity(
+                    &source_db,
+                    &analytics_db,
+                    &analytics_groups,
+                    analytics_req.network_id,
+                )
+                .await?;
+            bl_get_network_callsigns_list_with_activity_info(
+                &analytics_req,
+                &user_id,
+                &source_db,
+                activity_info,
+            )
+            .await
+        },
+        move |postgres_db| async move {
+            bl_get_network_callsigns_list(
+                &postgres_req,
+                &user_id,
+                &postgres_db,
+            )
+            .await
+        },
+    )
+    .await?;
 
     Ok(Json(ListNetworkCallsignsRes {
         network_callsigns: res,
@@ -315,9 +350,38 @@ pub async fn network_callsigns_activity(
             .await
             .context(h!())?;
 
-    let res = bl_get_network_callsigns_activity(&req, groups, &env.dbx)
-        .await
-        .context(h!())?;
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let analytics_req = req.clone();
+    let postgres_req = req.clone();
+    let res = crate::rer_importer::analysis::with_analytics_read_fallback(
+        &env,
+        "network callsigns activity",
+        true,
+        move |analytics_db| async move {
+            let activity_info =
+                crate::sigint::network::analytics::load_network_callsign_activity(
+                    &source_db,
+                    &analytics_db,
+                    &analytics_groups,
+                    analytics_req.network_id,
+                )
+                .await?;
+            Ok(render_network_callsigns_activity(
+                &analytics_req,
+                &activity_info,
+            ))
+        },
+        move |postgres_db| async move {
+            bl_get_network_callsigns_activity(
+                &postgres_req,
+                groups,
+                &postgres_db,
+            )
+            .await
+        },
+    )
+    .await?;
 
     Ok(Json(NetworkCallsignsActivityRsp {
         callsigns_activity: res,

@@ -650,7 +650,12 @@ export function MessageCardMessageBody({
         revealedAudioMedia ? (
           <div className="mt-1 flex flex-col items-start w-full">
             {audioAttachments.map((attachment) => (
-              <MessageMediaAudioPlayer key={attachment.id} attachment={attachment} />
+              <MessageMediaAudioPlayer
+                key={attachment.id}
+                attachment={attachment}
+                isDownloadStarting={isDownloadStarting}
+                onDownloadStart={onDownloadStart}
+              />
             ))}
           </div>
         ) : (

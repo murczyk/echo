@@ -27,6 +27,7 @@ import {
   canDownloadAllMessageAttachments,
   isAudioMediaAttachment,
   isVideoMediaAttachment,
+  MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES,
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
 } from '../../MessageCardMedia';
@@ -2623,21 +2624,14 @@ describe('MessageCard', () => {
 
     const players = view.container.querySelectorAll('custom-audio-player');
     expect(players).toHaveLength(2);
-    expect(
-      view.container
-        .querySelector('[data-audio-player-host]')
-        ?.getAttribute('data-audio-player-min-height-px'),
-    ).toBe('48');
-    expect(
-      view.container
-        .querySelector('[data-audio-player-host]')
-        ?.getAttribute('data-audio-player-top-padding-px'),
-    ).toBe('0');
-    expect(
-      view.container
-        .querySelector('[data-audio-player-host]')
-        ?.getAttribute('data-audio-player-z-index'),
-    ).toBe('0');
+    const audioHost = view.container.querySelector('[data-audio-player-host]');
+    expect(audioHost?.tagName).toBe('DIV');
+    expect(audioHost?.className).toBe(
+      'relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1',
+    );
+    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('48');
+    expect(audioHost?.getAttribute('data-audio-player-top-padding-px')).toBe('0');
+    expect(audioHost?.getAttribute('data-audio-player-z-index')).toBe('0');
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {
@@ -2757,7 +2751,7 @@ describe('MessageCard', () => {
     expect(isAudioMediaAttachment(applicationMp4)).toBe(false);
   });
 
-  it('renders audio attachments with the custom audio player instead of a download button', async () => {
+  it('renders audio attachments with the custom audio player and download link', async () => {
     const view = await renderCard({
       msg: {
         ...buildMessage(),
@@ -2783,11 +2777,75 @@ describe('MessageCard', () => {
     expect(player?.getAttribute('spectrum-src')).toBe('/api/messenger/media/audio-1/spectrogram');
     expect(player?.getAttribute('file-name')).toBe('recording.mp3');
     expect(view.container.querySelector('audio')).toBeNull();
-    expect(
-      Array.from(view.container.querySelectorAll('button')).some((button) =>
-        button.textContent?.includes('recording.mp3'),
-      ),
-    ).toBe(false);
+    const downloadLink = view.container.querySelector(
+      'a[aria-label="Завантажити аудіо: recording.mp3"]',
+    );
+    expect(downloadLink?.getAttribute('href')).toBe('https://example.test/files/recording.mp3');
+    expect(downloadLink?.getAttribute('download')).toBe('recording.mp3');
+    expect(downloadLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
+    expect(downloadLink?.getAttribute('data-mui-size')).toBe('small');
+    expect(downloadLink?.getAttribute('data-mui-variant')).toBe('outlined');
+    expect(downloadLink?.getAttribute('data-mui-sx')).toContain('minHeight');
+    expect(downloadLink?.getAttribute('data-mui-sx')).toContain('text.primary');
+    expect(downloadLink?.getAttribute('data-mui-sx')).toContain('divider');
+    expect(downloadLink?.getAttribute('data-mui-sx')).toContain('action.hover');
+    expect(downloadLink?.getAttribute('data-mui-sx')).toContain('"fontSize":14');
+    expect(downloadLink?.textContent).toBe('');
+    const audioRow = downloadLink?.closest('.audio-player-row');
+    expect(audioRow?.classList).toContain('items-stretch');
+    expect(downloadLink?.parentElement?.classList).toContain('self-stretch');
+    expect(downloadLink?.parentElement?.classList).toContain('items-center');
+  });
+
+  it('gives each audio attachment an independent download cooldown', async () => {
+    vi.useFakeTimers();
+    try {
+      const view = await renderCard({
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: 'audio-first',
+              href: 'javascript:void(1)',
+              contentType: 'audio/mpeg',
+              fileName: 'first.mp3',
+            },
+            {
+              id: 'audio-second',
+              href: 'javascript:void(0)',
+              contentType: 'audio/mpeg',
+              fileName: 'second.mp3',
+            },
+          ] as InboxMessage['media'],
+        },
+      });
+      rendered.push(view);
+      const first = view.container.querySelector(
+        'a[aria-label="Завантажити аудіо: first.mp3"]',
+      ) as HTMLElement;
+      const second = view.container.querySelector(
+        'a[aria-label="Завантажити аудіо: second.mp3"]',
+      ) as HTMLElement;
+      const firstClick = await dispatchCancelableClick(first);
+      const duplicateClick = await dispatchCancelableClick(first);
+      const secondClick = await dispatchCancelableClick(second);
+
+      expect(firstClick.defaultPrevented).toBe(false);
+      expect(duplicateClick.defaultPrevented).toBe(true);
+      expect(secondClick.defaultPrevented).toBe(false);
+      expect(first.getAttribute('aria-busy')).toBe('true');
+      expect(second.getAttribute('aria-busy')).toBe('true');
+      expect(first.getAttribute('aria-label')).toBe('Завантаження…');
+      expect(second.getAttribute('aria-label')).toBe('Завантаження…');
+
+      await act(async () => {
+        vi.advanceTimersByTime(MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS);
+      });
+      expect(first.getAttribute('aria-label')).toBe('Завантажити аудіо: first.mp3');
+      expect(second.getAttribute('aria-label')).toBe('Завантажити аудіо: second.mp3');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('renders a non-empty transcription with its audio player', async () => {
@@ -2816,16 +2874,23 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
+    const layout = view.container.querySelector('.audio-transcription-layout');
+    expect(layout).not.toBeNull();
+    expect(view.container.querySelector('.audio-transcription-beside-player')).toBeNull();
+    expect(layout?.children).toHaveLength(2);
+    const audioRow = layout?.children[0];
+    expect(audioRow?.classList).toContain('audio-player-row');
+    expect(audioRow?.querySelector('[data-audio-player-host]')).not.toBeNull();
+    expect(
+      audioRow?.querySelector('a[aria-label="Завантажити аудіо: transcribed.mp3"]'),
+    ).not.toBeNull();
+    expect(layout?.children[1]?.hasAttribute('data-audio-transcription-control')).toBe(true);
+
     const transcriptions = view.container.querySelectorAll('[data-audio-transcription]');
     expect(transcriptions).toHaveLength(1);
     expect(transcriptions[0]?.tagName).toBe('BLOCKQUOTE');
     expect(transcriptions[0]?.classList).toContain('audio-transcription');
     expect(transcriptions[0]?.textContent).toBe('Перший рядок.\nДругий рядок.');
-    expect(
-      transcriptions[0]?.parentElement?.previousElementSibling?.hasAttribute(
-        'data-audio-player-host',
-      ),
-    ).toBe(true);
     expect(view.container.querySelector('button[aria-label="Транскрибувати аудіо"]')).toBeNull();
   });
 

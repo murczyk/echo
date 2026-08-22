@@ -1,4 +1,4 @@
-use super::analytics::{query, types::DeviceAnalyticsProgress};
+use super::analytics::{query, types::AnalysisRunSummary};
 use super::devices::types::DeviceCurrentState;
 use crate::config::DEVICE_MATTERMOST_TIMEOUT_SEC;
 use crate::entities::device;
@@ -60,9 +60,8 @@ pub(crate) async fn analysis_run_completed_nofail(env: &Env, run_id: Uuid) {
             anyhow::bail!("analysis run {run_id} is not complete");
         }
         let device = load_device(env, run.device_id).await.context(h!())?;
-        let summary = query::device_summary(file_db, run.device_id)
-            .await
-            .c(h!())?;
+        let summary =
+            query::analysis_run_summary(file_db, &run).await.c(h!())?;
         let text = render_analysis_run_completed(
             &env.config.public_host,
             device.id,
@@ -141,7 +140,7 @@ fn render_analysis_run_completed(
     device_id: Uuid,
     name: Option<&str>,
     external_url: Option<&str>,
-    summary: &DeviceAnalyticsProgress,
+    summary: &AnalysisRunSummary,
 ) -> Result<String> {
     let mut heading = format!(
         "Завершено аналіз пристрою {}",
@@ -155,7 +154,7 @@ fn render_analysis_run_completed(
     let visible_tag_count = summary.items.len().min(ANALYSIS_TAG_MAX_COUNT);
     heading.reserve(32 + visible_tag_count.saturating_mul(32));
     heading.push('\n');
-    write!(heading, "Файли: {}", summary.total_file_count)
+    write!(heading, "Файли: {}", summary.file_count)
         .expect("writing to a String cannot fail");
     for item in summary.items.iter().take(ANALYSIS_TAG_MAX_COUNT) {
         heading.push_str(", ");
@@ -234,7 +233,7 @@ fn device_link(public_host: &str, device_id: Uuid) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::devices::analytics::types::DeviceAnalyticsSummary;
+    use crate::devices::analytics::types::AnalysisRunTagSummary;
     use crate::types::BTreeMap;
     use chrono::Utc;
 
@@ -287,25 +286,19 @@ mod tests {
     }
 
     #[test]
-    fn completed_analysis_payload_matches_current_summary_format() {
+    fn completed_analysis_payload_matches_existing_format() {
         let device_id = Uuid::from_u128(0x01a01df4_7cc6_7110_bcf6_6c72132387f8);
         let device = device_fixture(device_id);
-        let now = Utc::now().fixed_offset();
-        let summary = DeviceAnalyticsProgress {
-            total_file_count: 12_573,
-            analyzed_file_count: 12_573,
+        let summary = AnalysisRunSummary {
+            file_count: 12_573,
             items: vec![
-                DeviceAnalyticsSummary {
-                    tag_id: Uuid::now_v7(),
+                AnalysisRunTagSummary {
                     tag_name: "Тег 1".to_string(),
                     file_count: 123,
-                    latest_file_entry_created_at: now,
                 },
-                DeviceAnalyticsSummary {
-                    tag_id: Uuid::now_v7(),
+                AnalysisRunTagSummary {
                     tag_name: "Тег 2".to_string(),
                     file_count: 321,
-                    latest_file_entry_created_at: now,
                 },
             ],
         };

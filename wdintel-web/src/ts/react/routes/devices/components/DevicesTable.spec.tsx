@@ -125,6 +125,7 @@ describe('DevicesTable', () => {
       'updatedAt',
       'lifecycle',
     ]);
+    expect(columns.find((column) => column.id === 'aors')?.header).toBe('Смуги');
     expect(columns.find((column) => column.id === 'createdBy')).toMatchObject({
       accessorKey: 'createdBy',
       header: 'Створив',

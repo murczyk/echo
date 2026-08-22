@@ -1005,6 +1005,61 @@ pub(crate) async fn build_analytics_inbox_candidates_query(
     )))
 }
 
+pub(crate) async fn scan_analytics_inbox_candidate_ids(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    analytics_db: &DatabaseConnection,
+    freshness_max_age_ms: u64,
+    exclusive_till: Option<NaiveDateTime>,
+    max_ids: Option<u64>,
+    extra: impl FnOnce(
+        Select<signal_message::Entity>,
+    ) -> Select<signal_message::Entity>,
+) -> Result<Option<Vec<i64>>, AppError> {
+    let Some((mut query, _)) = build_analytics_filtered_inbox_query(
+        login,
+        env,
+        req,
+        analytics_db,
+        freshness_max_age_ms,
+    )
+    .await
+    .context(h!())?
+    else {
+        return Ok(None);
+    };
+    if let Some(till) = exclusive_till {
+        query = match req.sort_by.unwrap_or(InboxMessagesSortBy::IMSDatetime) {
+            InboxMessagesSortBy::IMSDatetime => {
+                query.filter(sigint_inbox_item::Column::Datetime.lt(till))
+            }
+            InboxMessagesSortBy::IMSTimestamp => {
+                query.filter(signal_message::Column::Timestamp.lt(till))
+            }
+        };
+    }
+    query = extra(query);
+    // Analytics unit/group LEFT JOINs can duplicate rows; GROUP BY id, not DISTINCT.
+    let mut query = query
+        .select_only()
+        .column_as(signal_message::Column::Id, "id")
+        .group_by(signal_message::Column::Id);
+    if let Some(max_ids) = max_ids {
+        query = query.limit(max_ids);
+    }
+    #[derive(FromQueryResult)]
+    struct AnalyticsInboxIdRow {
+        id: i64,
+    }
+    let rows = query
+        .into_model::<AnalyticsInboxIdRow>()
+        .all(analytics_db)
+        .await
+        .context(h!())?;
+    Ok(Some(rows.into_iter().map(|row| row.id).collect()))
+}
+
 fn finish_inbox_candidates_query(
     query: Select<signal_message::Entity>,
     req: &InboxMessagesReq,
