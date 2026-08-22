@@ -2,8 +2,7 @@ use crate::battle_line::types::*;
 use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
     BATTLE_LINE_AOR_ANCHOR_LATITUDE, BATTLE_LINE_AOR_ANCHOR_LONGITUDE,
-    BATTLE_LINE_CLIP_EXTENT_METERS,
-    BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
+    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_EARTH_RADIUS_METERS,
     BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD, BATTLE_LINE_SOURCE_KIND_DELTA_KML,
     BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
 };
@@ -139,13 +138,35 @@ struct MatchRow {
 }
 
 #[derive(Debug, FromQueryResult)]
-struct CanonicalSettlementRow {
+struct SettlementCandidateRow {
     settlement_id: i32,
     name: String,
     district: String,
     region: String,
     lat: f64,
     lon: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct BattleLineCandidateDistance {
+    candidate_index: usize,
+    distance_m: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct BattleLineRankOutcome {
+    ranked: Vec<BattleLineCandidateDistance>,
+    invalid_aor_ids: Vec<i64>,
+}
+
+#[derive(Clone, Debug)]
+struct LocationResolutionDraft {
+    location: String,
+    candidates: Vec<BattleLineSettlementCandidate>,
+    battle_line_distances: BTreeMap<usize, f64>,
+    battle_line_match: Option<BattleLineMatch>,
+    chosen_candidate_index: Option<usize>,
+    invalid_aor_ids: Vec<i64>,
 }
 
 #[get("/api/battle-line")]
@@ -254,22 +275,19 @@ pub async fn test_battle_line(
         resolve_inbox_item_aors(&env.dbx, inbox_item_id, Some(&allowed_groups))
             .await
             .c(h!())?;
-    let mut locations = vec![];
-    for location in location_v2
+    let locations = location_v2
         .as_deref()
         .map(crate::location::utils::to_location_list)
         .unwrap_or_default()
-    {
-        locations.push(
-            resolve_location_to_settlement(
-                &env,
-                location,
-                &aor_context.aor_ids,
-            )
-            .await
-            .c(h!())?,
-        );
-    }
+        .into_iter()
+        .collect::<Vec<_>>();
+    let locations = resolve_locations_to_settlements(
+        &env.dbx,
+        locations,
+        &aor_context.aor_ids,
+    )
+    .await
+    .c(h!())?;
     Ok(Json(BattleLineTestRsp {
         inbox_item_id,
         message,
@@ -961,7 +979,7 @@ where
             invalid_aor_ids,
         });
     }
-    let matched = rank_candidates(
+    let ranked = rank_candidate_distances(
         dbx,
         candidates,
         requested_aor_ids.as_ref().map(|_| &valid_aor_ids),
@@ -969,7 +987,58 @@ where
     .await
     .c(h!())?;
     Ok(BattleLineMatchOutcome {
-        matched,
+        matched: ranked.first().map(|ranked| BattleLineMatch {
+            candidate_index: ranked.candidate_index,
+            distance_m: ranked.distance_m,
+        }),
+        invalid_aor_ids,
+    })
+}
+
+async fn rank_battle_line_candidates<C>(
+    dbx: &C,
+    candidates: &[BattleLineCandidatePoint],
+    aor_ids: Option<&[i64]>,
+) -> anyhow::Result<BattleLineRankOutcome>
+where
+    C: ConnectionTrait,
+{
+    ensure_active_battle_line(dbx).await.c(h!())?;
+    validate_candidate_points(candidates).c(h!())?;
+    let requested_aor_ids = aor_ids
+        .filter(|aor_ids| !aor_ids.is_empty())
+        .map(|aor_ids| aor_ids.iter().copied().collect::<BTreeSet<_>>());
+    let valid_aor_ids = match requested_aor_ids.as_ref() {
+        Some(aor_ids) => load_valid_aor_ids(dbx, aor_ids).await.c(h!())?,
+        None => BTreeSet::new(),
+    };
+    let invalid_aor_ids = requested_aor_ids
+        .as_ref()
+        .map(|requested| {
+            requested.difference(&valid_aor_ids).copied().collect()
+        })
+        .unwrap_or_default();
+    if requested_aor_ids.is_some() && valid_aor_ids.is_empty() {
+        return Ok(BattleLineRankOutcome {
+            ranked: vec![],
+            invalid_aor_ids,
+        });
+    }
+    if candidates.is_empty() {
+        return Ok(BattleLineRankOutcome {
+            ranked: vec![],
+            invalid_aor_ids,
+        });
+    }
+    let ranked = rank_candidate_distances(
+        dbx,
+        candidates,
+        requested_aor_ids.as_ref().map(|_| &valid_aor_ids),
+    )
+    .await
+    .c(h!())?;
+    Ok(BattleLineRankOutcome {
+        ranked,
         invalid_aor_ids,
     })
 }
@@ -1006,11 +1075,11 @@ where
         .collect())
 }
 
-async fn rank_candidates<C>(
+async fn rank_candidate_distances<C>(
     dbx: &C,
     candidates: &[BattleLineCandidatePoint],
     aor_ids: Option<&BTreeSet<i64>>,
-) -> anyhow::Result<Option<BattleLineMatch>>
+) -> anyhow::Result<Vec<BattleLineCandidateDistance>>
 where
     C: ConnectionTrait,
 {
@@ -1066,21 +1135,23 @@ from candidates
 cross join components
 group by candidates.candidate_index
 order by distance_m, candidates.candidate_index
-limit 1
         "#
     );
-    let row = MatchRow::find_by_statement(Statement::from_sql_and_values(
+    let rows = MatchRow::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         sql,
         values,
     ))
-    .one(dbx)
+    .all(dbx)
     .await
     .c(h!())?;
-    Ok(row.map(|row| BattleLineMatch {
-        candidate_index: row.candidate_index as usize,
-        distance_m: row.distance_m,
-    }))
+    Ok(rows
+        .into_iter()
+        .map(|row| BattleLineCandidateDistance {
+            candidate_index: row.candidate_index as usize,
+            distance_m: row.distance_m,
+        })
+        .collect())
 }
 
 pub async fn resolve_inbox_item_aors<C>(
@@ -1133,169 +1204,246 @@ where
     })
 }
 
-pub async fn resolve_location_to_settlement(
-    env: &Env,
-    location: String,
-    aor_ids: &[i64],
-) -> anyhow::Result<BattleLineLocationResult> {
-    resolve_location_to_settlement_with_db(&env.dbx, env, location, aor_ids)
-        .await
-        .c(h!())
-}
-
-pub(crate) async fn resolve_location_to_settlement_with_db<C>(
+pub async fn resolve_location_to_settlement<C>(
     dbx: &C,
-    env: &Env,
     location: String,
     aor_ids: &[i64],
 ) -> anyhow::Result<BattleLineLocationResult>
 where
     C: ConnectionTrait,
 {
-    let aor_scope = (!aor_ids.is_empty()).then_some(aor_ids);
-    let settlements = crate::location::find_settlements_by_name_scope(
-        env.settlements.clone(),
-        location.clone(),
-        None,
-        None,
-        aor_scope,
-    )
-    .c(h!())?;
-    let settlements = prefer_exact_settlement_names(&location, settlements);
-    let candidates = canonicalize_settlement_candidates(dbx, settlements)
-        .await
-        .c(h!())?;
-    let points = candidates
-        .iter()
-        .map(|candidate| BattleLineCandidatePoint {
-            lat: candidate.coordinate.lat,
-            lon: candidate.coordinate.lon,
-        })
-        .collect::<Vec<_>>();
-    let matched = match_battle_line_candidates(dbx, &points, aor_scope)
-        .await
-        .c(h!())?;
-    let (chosen_settlement_id, distance_m) = matched
-        .matched
-        .as_ref()
-        .map(|matched| {
-            (
-                Some(candidates[matched.candidate_index].settlement_id),
-                Some(matched.distance_m),
-            )
-        })
-        .unwrap_or((None, None));
-    Ok(BattleLineLocationResult {
-        location,
-        candidates,
-        chosen_settlement_id,
-        distance_m,
-        invalid_aor_ids: matched.invalid_aor_ids,
-    })
+    let mut results =
+        resolve_locations_to_settlements(dbx, vec![location], aor_ids)
+            .await
+            .c(h!())?;
+    results.pop().c(h!())
 }
 
-async fn canonicalize_settlement_candidates<C>(
+pub async fn resolve_locations_to_settlements<C>(
     dbx: &C,
-    settlements: Vec<crate::location::types::SettlementDetails>,
+    locations: Vec<String>,
+    aor_ids: &[i64],
+) -> anyhow::Result<Vec<BattleLineLocationResult>>
+where
+    C: ConnectionTrait,
+{
+    let mut drafts = load_location_resolution_drafts(dbx, locations, aor_ids)
+        .await
+        .c(h!())?;
+    apply_anchor_resolution(&mut drafts);
+    Ok(drafts.into_iter().map(location_result_from_draft).collect())
+}
+
+async fn load_location_resolution_drafts<C>(
+    dbx: &C,
+    locations: Vec<String>,
+    aor_ids: &[i64],
+) -> anyhow::Result<Vec<LocationResolutionDraft>>
+where
+    C: ConnectionTrait,
+{
+    let aor_scope = (!aor_ids.is_empty()).then_some(aor_ids);
+    let mut drafts = vec![];
+    for location in locations {
+        let candidates = load_settlement_candidates_by_name(dbx, &location)
+            .await
+            .c(h!())?;
+        let points = candidates
+            .iter()
+            .map(|candidate| BattleLineCandidatePoint {
+                lat: candidate.coordinate.lat,
+                lon: candidate.coordinate.lon,
+            })
+            .collect::<Vec<_>>();
+        let ranked = rank_battle_line_candidates(dbx, &points, aor_scope)
+            .await
+            .c(h!())?;
+        let battle_line_match =
+            ranked.ranked.first().map(|ranked| BattleLineMatch {
+                candidate_index: ranked.candidate_index,
+                distance_m: ranked.distance_m,
+            });
+        let battle_line_distances = ranked
+            .ranked
+            .into_iter()
+            .map(|ranked| (ranked.candidate_index, ranked.distance_m))
+            .collect();
+        drafts.push(LocationResolutionDraft {
+            location,
+            candidates,
+            battle_line_distances,
+            chosen_candidate_index: battle_line_match
+                .as_ref()
+                .map(|matched| matched.candidate_index),
+            battle_line_match,
+            invalid_aor_ids: ranked.invalid_aor_ids,
+        });
+    }
+    Ok(drafts)
+}
+
+async fn load_settlement_candidates_by_name<C>(
+    dbx: &C,
+    location: &str,
 ) -> anyhow::Result<Vec<BattleLineSettlementCandidate>>
 where
     C: ConnectionTrait,
 {
-    let coordinates = settlements
-        .into_iter()
-        .filter_map(|settlement| settlement.coords)
-        .collect::<Vec<_>>();
-    if coordinates.is_empty() {
+    let query = normalize_settlement_name(location);
+    if query.is_empty() {
         return Ok(vec![]);
     }
-    let latitudes = coordinates.iter().map(|(lat, _)| *lat).collect::<Vec<_>>();
-    let longitudes =
-        coordinates.iter().map(|(_, lon)| *lon).collect::<Vec<_>>();
-    let rows = CanonicalSettlementRow::find_by_statement(
+    let rows = SettlementCandidateRow::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
 with candidates as (
     select
-        ordinality - 1 as candidate_index,
-        latitude,
-        longitude
-    from unnest($1::double precision[], $2::double precision[])
-        with ordinality as candidate(latitude, longitude, ordinality)
-)
-select
-    matched.id as settlement_id,
-    matched.name,
-    coalesce(matched.district, '') as district,
-    coalesce(matched.region, '') as region,
-    matched.lat,
-    matched.lon
-from candidates candidate
-cross join lateral (
-    select settlement.id, settlement.name, settlement.district,
-        settlement.region,
-        settlement.lat, settlement.lon
+        settlement.id as settlement_id,
+        settlement.name,
+        coalesce(settlement.district, '') as district,
+        coalesce(settlement.region, '') as region,
+        settlement.lat,
+        settlement.lon,
+        replace(replace(replace(upper(settlement.name), '''', '’'), 'ʼ', '’'), '`', '’')
+            as normalized_name
     from settlement
     where settlement.lat is not null
       and settlement.lon is not null
-      and ST_DWithin(
-          ST_SetSRID(ST_MakePoint(settlement.lon, settlement.lat), 4326)::geography,
-          ST_SetSRID(ST_MakePoint(candidate.longitude, candidate.latitude), 4326)::geography,
-          $3
-      )
-    order by
-        ST_DistanceSphere(
-            ST_SetSRID(ST_MakePoint(settlement.lon, settlement.lat), 4326),
-            ST_SetSRID(ST_MakePoint(candidate.longitude, candidate.latitude), 4326)
-        ),
-        settlement.id
-    limit 1
-) matched
-order by candidate.candidate_index
+), matches as (
+select
+    *,
+    normalized_name = $1 as exact_match
+from candidates
+where normalized_name = $1
+   or strpos(normalized_name, $1) > 0
+), exact as (
+    select exists(select 1 from matches where exact_match) as has_exact
+)
+select
+    settlement_id,
+    name,
+    district,
+    region,
+    lat,
+    lon
+from matches, exact
+where exact_match or not exact.has_exact
+order by name, region, settlement_id
             "#,
-            [
-                latitudes.into(),
-                longitudes.into(),
-                BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS
-                    .into(),
-            ],
+            [query.into()],
         ),
     )
     .all(dbx)
     .await
     .c(h!())?;
-    let mut seen = BTreeSet::new();
     Ok(rows
         .into_iter()
-        .filter_map(|row| {
-            seen.insert(row.settlement_id).then_some(
-                BattleLineSettlementCandidate {
-                    settlement_id: row.settlement_id,
-                    name: row.name,
-                    district: row.district,
-                    region: row.region,
-                    coordinate: BattleLineCoordinate {
-                        lat: row.lat,
-                        lon: row.lon,
-                    },
-                },
-            )
+        .map(|row| BattleLineSettlementCandidate {
+            settlement_id: row.settlement_id,
+            name: row.name,
+            district: row.district,
+            region: row.region,
+            coordinate: BattleLineCoordinate {
+                lat: row.lat,
+                lon: row.lon,
+            },
         })
         .collect())
 }
 
-fn prefer_exact_settlement_names(
-    location: &str,
-    mut settlements: Vec<crate::location::types::SettlementDetails>,
-) -> Vec<crate::location::types::SettlementDetails> {
-    let location = location.to_uppercase();
-    if settlements
+fn apply_anchor_resolution(drafts: &mut [LocationResolutionDraft]) {
+    let Some((anchor_index, anchor_match)) = drafts
         .iter()
-        .any(|settlement| settlement.name == location)
-    {
-        settlements.retain(|settlement| settlement.name == location);
+        .enumerate()
+        .filter_map(|(index, draft)| {
+            draft
+                .battle_line_match
+                .as_ref()
+                .map(|matched| (index, matched))
+        })
+        .max_by(|(_, left), (_, right)| {
+            left.distance_m
+                .partial_cmp(&right.distance_m)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+    else {
+        return;
+    };
+    let anchor_candidate_index = anchor_match.candidate_index;
+    let Some(anchor_coordinate) = drafts
+        .get(anchor_index)
+        .and_then(|draft| draft.candidates.get(anchor_candidate_index))
+        .map(|candidate| candidate.coordinate.clone())
+    else {
+        return;
+    };
+    for (index, draft) in drafts.iter_mut().enumerate() {
+        if index == anchor_index {
+            draft.chosen_candidate_index = Some(anchor_candidate_index);
+            continue;
+        }
+        draft.chosen_candidate_index =
+            closest_candidate_to_anchor(&draft.candidates, &anchor_coordinate);
     }
-    settlements
+}
+
+fn closest_candidate_to_anchor(
+    candidates: &[BattleLineSettlementCandidate],
+    anchor_coordinate: &BattleLineCoordinate,
+) -> Option<usize> {
+    candidates
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| {
+            distance_between_coordinates_m(&left.coordinate, anchor_coordinate)
+                .partial_cmp(&distance_between_coordinates_m(
+                    &right.coordinate,
+                    anchor_coordinate,
+                ))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(index, _)| index)
+}
+
+fn location_result_from_draft(
+    draft: LocationResolutionDraft,
+) -> BattleLineLocationResult {
+    let (chosen_settlement_id, distance_m) = draft
+        .chosen_candidate_index
+        .and_then(|candidate_index| {
+            draft.candidates.get(candidate_index).map(|candidate| {
+                (
+                    Some(candidate.settlement_id),
+                    draft.battle_line_distances.get(&candidate_index).copied(),
+                )
+            })
+        })
+        .unwrap_or((None, None));
+    BattleLineLocationResult {
+        location: draft.location,
+        candidates: draft.candidates,
+        chosen_settlement_id,
+        distance_m,
+        invalid_aor_ids: draft.invalid_aor_ids,
+    }
+}
+
+fn normalize_settlement_name(name: &str) -> String {
+    name.trim().to_uppercase().replace(['\'', 'ʼ', '`'], "’")
+}
+
+fn distance_between_coordinates_m(
+    left: &BattleLineCoordinate,
+    right: &BattleLineCoordinate,
+) -> f64 {
+    let left_lat = left.lat.to_radians();
+    let right_lat = right.lat.to_radians();
+    let lat_delta = (right.lat - left.lat).to_radians();
+    let lon_delta = (right.lon - left.lon).to_radians();
+    let a = (lat_delta / 2.0).sin().powi(2)
+        + left_lat.cos() * right_lat.cos() * (lon_delta / 2.0).sin().powi(2);
+    2.0 * BATTLE_LINE_EARTH_RADIUS_METERS * a.sqrt().atan2((1.0 - a).sqrt())
 }
 
 async fn read_battle_line_state<C>(dbx: &C) -> anyhow::Result<BattleLineState>
@@ -1651,6 +1799,98 @@ fn point_from_geojson(
 mod tests {
     use super::*;
 
+    async fn insert_test_settlement(
+        txn: &DatabaseTransaction,
+        id: i32,
+        name: &str,
+        lat: f64,
+        lon: f64,
+    ) -> anyhow::Result<()> {
+        use crate::entities::sea_orm_active_enums::SettlementKind;
+
+        settlement::ActiveModel {
+            id: Set(id),
+            kind: Set(SettlementKind::Village),
+            name: Set(name.to_string()),
+            district: Set(Some("#2287 DISTRICT".to_string())),
+            region: Set(Some("#2287 REGION".to_string())),
+            lat: Set(Some(lat)),
+            lon: Set(Some(lon)),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+
+    async fn insert_test_battle_line_segment(
+        txn: &DatabaseTransaction,
+    ) -> anyhow::Result<i64> {
+        txn.execute_unprepared(
+            "update battle_line_version set retired_at = now() at time zone 'utc' where retired_at is null",
+        )
+        .await
+        .c(h!())?;
+        let aor_id = area_of_responsibility::Entity::find()
+            .filter(area_of_responsibility::Column::Deleted.eq(false))
+            .select_only()
+            .column(area_of_responsibility::Column::Id)
+            .into_tuple::<i64>()
+            .one(txn)
+            .await
+            .c(h!())?
+            .context("test database must contain an AOR")
+            .context(h!())?;
+        let row = txn
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                r#"
+insert into battle_line_version
+    (geometry, source_file_name, uploaded_by_login_id, source_kind, source_sha256)
+select
+    ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(0 0,10 0))', 4326),
+    'anchor-test.kml',
+    id,
+    'admin_upload',
+    $1
+from login
+where not deleted
+order by created_at
+limit 1
+returning id
+                "#,
+                [uuid::Uuid::now_v7()
+                    .to_string()
+                    .replace('-', "")
+                    .repeat(2)
+                    .into()],
+            ))
+            .await
+            .c(h!())?
+            .context("test database must contain a login")
+            .context(h!())?;
+        let version_id: i64 = row.try_get("", "id").c(h!())?;
+        txn.execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+insert into battle_line_aor_geometry
+    (version_id, aor_id, geometry, snapped_start, snapped_end)
+values (
+    $1,
+    $2,
+    ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(0 0,10 0))', 4326),
+    ST_SetSRID(ST_MakePoint(0, 0), 4326),
+    ST_SetSRID(ST_MakePoint(10, 0), 4326)
+)
+            "#,
+            [version_id.into(), aor_id.into()],
+        ))
+        .await
+        .c(h!())?;
+        Ok(aor_id)
+    }
+
     #[test]
     fn keeps_disconnected_features_in_wkt_order() {
         let features = vec![
@@ -1792,90 +2032,73 @@ mod tests {
         );
     }
 
-    #[test]
-    fn prefers_exact_settlement_names_over_containing_names() {
-        let settlements = vec![
-            crate::location::types::SettlementDetails {
-                id: Some(1),
-                name: "НОВОІВАНІВКА".to_string(),
-                ..Default::default()
-            },
-            crate::location::types::SettlementDetails {
-                id: Some(2),
-                name: "ІВАНІВКА".to_string(),
-                ..Default::default()
-            },
-        ];
-
-        let settlements =
-            prefer_exact_settlement_names("Іванівка", settlements);
-
-        assert_eq!(settlements.len(), 1);
-        assert_eq!(settlements[0].id, Some(2));
-    }
-
     #[tokio::test]
     #[serial_test::serial]
-    async fn maps_external_settlement_ids_to_canonical_database_ids() {
-        use crate::entities::sea_orm_active_enums::SettlementKind;
-
+    async fn loads_database_settlement_candidates_and_prefers_exact_names() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
-        let canonical_id = 2_287_101;
-        settlement::ActiveModel {
-            id: Set(canonical_id),
-            kind: Set(SettlementKind::Village),
-            name: Set("#2287 CANONICAL".to_string()),
-            district: Set(Some("#2287 DISTRICT".to_string())),
-            region: Set(Some("#2287 REGION".to_string())),
-            lat: Set(Some(10.0)),
-            lon: Set(Some(10.0)),
-            ..Default::default()
-        }
-        .insert(&txn)
-        .await
-        .unwrap();
+        let suffix = uuid::Uuid::now_v7();
+        let exact_name = format!("#2287 КАМ’ЯНСЬКЕ {suffix}");
+        let containing_name = format!("#2287 НОВЕ КАМ’ЯНСЬКЕ {suffix}");
+        insert_test_settlement(&txn, 2_287_201, &exact_name, 10.0, 10.0)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_202, &containing_name, 10.1, 10.1)
+            .await
+            .unwrap();
 
-        let candidates = canonicalize_settlement_candidates(
+        let candidates = load_settlement_candidates_by_name(
             &txn,
-            vec![
-                crate::location::types::SettlementDetails {
-                    id: Some(6_615_355),
-                    name: "EXTERNAL".to_string(),
-                    coords: Some((10.005, 10.005)),
-                    ..Default::default()
-                },
-                crate::location::types::SettlementDetails {
-                    id: Some(6_615_356),
-                    name: "DUPLICATE".to_string(),
-                    coords: Some((10.006, 10.006)),
-                    ..Default::default()
-                },
-                crate::location::types::SettlementDetails {
-                    id: Some(6_615_357),
-                    name: "TOO FAR".to_string(),
-                    coords: Some((20.0, 20.0)),
-                    ..Default::default()
-                },
-            ],
+            &exact_name.replace('’', "'"),
         )
         .await
         .unwrap();
 
         assert_eq!(
-            candidates,
-            vec![BattleLineSettlementCandidate {
-                settlement_id: canonical_id,
-                name: "#2287 CANONICAL".to_string(),
-                district: "#2287 DISTRICT".to_string(),
-                region: "#2287 REGION".to_string(),
-                coordinate: BattleLineCoordinate {
-                    lat: 10.0,
-                    lon: 10.0,
-                },
-            }]
+            candidates
+                .iter()
+                .map(|candidate| candidate.settlement_id)
+                .collect::<Vec<_>>(),
+            vec![2_287_201]
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn resolves_multiple_locations_with_remote_battle_line_anchor() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
+        let suffix = uuid::Uuid::now_v7();
+        let anchor_name = format!("#2287 ANCHOR {suffix}");
+        let repeated_name = format!("#2287 SAME {suffix}");
+        insert_test_settlement(&txn, 2_287_211, &anchor_name, 0.10, 1.0)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_212, &repeated_name, 0.01, 9.0)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_213, &repeated_name, 0.11, 1.02)
+            .await
+            .unwrap();
+
+        let results = resolve_locations_to_settlements(
+            &txn,
+            vec![anchor_name, repeated_name],
+            &[aor_id],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(results[0].chosen_settlement_id, Some(2_287_211));
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_213));
+        assert!(
+            results[1].distance_m.unwrap() > results[0].distance_m.unwrap()
         );
         txn.rollback().await.unwrap();
     }
