@@ -52,21 +52,21 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
         path: "/api/rer-importer/get-freq-pelengs-summary",
         skill: "direction_findings",
         label: "Аналіз пеленгів",
-        request_kind: "json",
+        request_kind: "directionFindings",
     },
     ReadOnlyRoute {
         method: "POST",
         path: "/api/rer/analysis/summary-table-freq",
         skill: "frequency_summary",
         label: "Аналіз активності частот",
-        request_kind: "json",
+        request_kind: "analysisPeriod",
     },
     ReadOnlyRoute {
         method: "POST",
         path: "/api/rer/analysis/new-callsigns",
         skill: "new_callsigns",
         label: "Пошук нових позивних",
-        request_kind: "json",
+        request_kind: "analysisPeriod",
     },
     ReadOnlyRoute {
         method: "POST",
@@ -80,35 +80,35 @@ pub const ROUTES: &[ReadOnlyRoute] = &[
         path: "/api/rer/analysis/activity-daily",
         skill: "daily_activity",
         label: "Аналіз щоденної активності",
-        request_kind: "dailyActivity",
+        request_kind: "analysisPeriod",
     },
     ReadOnlyRoute {
         method: "POST",
         path: "/api/rer/analysis/callsign-relations",
         skill: "callsign_relations",
         label: "Аналіз зв’язків позивних",
-        request_kind: "json",
+        request_kind: "analysisPeriod",
     },
     ReadOnlyRoute {
         method: "POST",
         path: "/api/rer/analysis/callsign-frequency-matches",
         skill: "callsign_frequency_matches",
         label: "Зіставлення позивних і частот",
-        request_kind: "json",
+        request_kind: "callsignFrequencyMatches",
     },
     ReadOnlyRoute {
         method: "POST",
         path: "/api/rer/analysis/stats/metadata",
         skill: "metadata_statistics",
         label: "Аналіз метаданих",
-        request_kind: "json",
+        request_kind: "analysisPeriod",
     },
     ReadOnlyRoute {
         method: "POST",
         path: "/api/rer/analysis/stats/networks",
         skill: "network_statistics",
         label: "Аналіз радіомереж",
-        request_kind: "json",
+        request_kind: "analysisPeriod",
     },
 ];
 
@@ -146,6 +146,9 @@ mod tests {
                 route.request_kind,
                 "none"
                     | "json"
+                    | "analysisPeriod"
+                    | "directionFindings"
+                    | "callsignFrequencyMatches"
                     | "dailyActivity"
                     | "inboxMessages"
                     | "interceptionContext"
@@ -156,7 +159,32 @@ mod tests {
             .iter()
             .find(|route| route.skill == "daily_activity")
             .unwrap();
-        assert_eq!(daily_activity.request_kind, "dailyActivity");
+        assert_eq!(daily_activity.request_kind, "analysisPeriod");
+        for skill in [
+            "frequency_summary",
+            "new_callsigns",
+            "daily_activity",
+            "callsign_relations",
+            "metadata_statistics",
+            "network_statistics",
+        ] {
+            let route =
+                ROUTES.iter().find(|route| route.skill == skill).unwrap();
+            assert_eq!(route.request_kind, "analysisPeriod");
+        }
+        let direction_findings = ROUTES
+            .iter()
+            .find(|route| route.skill == "direction_findings")
+            .unwrap();
+        assert_eq!(direction_findings.request_kind, "directionFindings");
+        let callsign_frequency_matches = ROUTES
+            .iter()
+            .find(|route| route.skill == "callsign_frequency_matches")
+            .unwrap();
+        assert_eq!(
+            callsign_frequency_matches.request_kind,
+            "callsignFrequencyMatches"
+        );
         let interception_context = ROUTES
             .iter()
             .find(|route| route.skill == "interception_context")

@@ -116,11 +116,36 @@ Regular Echo packages target the Ubuntu 22.04 runtime and are built on
 `echo-build-deb13-main` for `wdintel-rs`; that builder is reserved for Debian
 13 workloads such as ClickHouse and PeerDB.
 
-For the staging rollout of `HARNESS_RELEASE=2026.08.05.2`, deploy the
-dispatcher and template first, recreate only the AI-agent container in the
-`echo-cbr-staging` namespace, and then run
-`just deploy-from-local --server=echo-cbr-staging`. Do not modify production as
-part of this rollout.
+### Roll out `HARNESS_RELEASE=2026.08.22.1`
+
+This shared-host rollout is staged by namespace. The new dispatcher accepts
+existing `2026.08.05.2` runners during the transition, but creates new
+containers only from the `2026.08.22.1` template. The new runner still accepts
+the old backend's `json` request kinds; the new typed request kinds require the
+new runner.
+
+1. Run `just check`, then use the read-only preflight, status, and list
+   operations to inventory every namespace and confirm there are no active
+   requests.
+2. Deploy the host release. Replacing the stopped, protected fixed template is
+   a separate destructive operation: verify its exact name and old release,
+   obtain explicit approval, and preserve the previous release for rollback.
+3. With the AI feature disabled on `echo-cbr-staging`, recreate only that
+   namespace's dispatcher-managed containers from the new template. Chat
+   history remains canonical in Echo.
+4. Deploy Echo to `echo-cbr-staging`, re-enable the feature, and repeat the
+   rolling-24-hour all-data summary. Require a completed response and successful
+   source events without consecutive tool failures.
+5. Roll out one production namespace at a time only after staging succeeds and
+   that production deployment is explicitly approved. Recreate its containers
+   before deploying the backend with typed request kinds.
+6. Keep the previous runner allowance until status/list reports
+   `harness_release=2026.08.22.1` for every managed instance. A later host
+   release may then remove the allowance.
+
+Rolling back only Echo is safe because the new runner accepts the old request
+kinds. Do not roll the shared dispatcher back after new containers exist
+without a coordinated container/template rollback.
 
 ## 5. Configure Echo
 

@@ -109,6 +109,13 @@ class DispatcherValidationTests(unittest.TestCase):
                 "harnessRelease": DISPATCHER.HARNESS_RELEASE,
             }
         )
+        DISPATCHER.validate_runner_hello(
+            {
+                "type": "runner_hello",
+                "protocolVersion": DISPATCHER.RUNNER_PROTOCOL_VERSION,
+                "harnessRelease": "2026.08.05.2",
+            }
+        )
         with self.assertRaisesRegex(DISPATCHER.DispatchError, "protocol version"):
             DISPATCHER.validate_runner_hello(
                 {
@@ -125,6 +132,22 @@ class DispatcherValidationTests(unittest.TestCase):
                     "harnessRelease": "2026.08.04.3",
                 }
             )
+
+    def test_agent_summary_exposes_harness_release(self):
+        summary = DISPATCHER.agent_summary(
+            {
+                "name": "echo-ai-agent-019fc7f7-9770-7f83-9c1a-211af29b02e7",
+                "status": "STOPPED",
+                "profiles": [DISPATCHER.PROFILE_NAME],
+                "config": {
+                    "user.echo.ai.agent_id": "019fc7f7-9770-7f83-9c1a-211af29b02e7",
+                    "user.echo.ai.namespace": "echo-cbr",
+                    "user.echo.ai.harness_release": "2026.08.05.2",
+                },
+            }
+        )
+
+        self.assertEqual(summary["harness_release"], "2026.08.05.2")
 
     def test_runner_failure_records_request_and_exit_status(self):
         failure = DISPATCHER.runner_failure("request-42", 1, "failed", "stack")

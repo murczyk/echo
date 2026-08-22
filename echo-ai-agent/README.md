@@ -263,10 +263,12 @@ Echo public hostname and the fixed `/api/ai-agent/provider/v1` path.
 
 Each registry item becomes `echo_<skill>`. Only fixed GET and read-only POST
 paths are accepted. Registry entries carry a localized activity label and a
-typed request kind. The daily-activity tool accepts either recent Kyiv calendar
-days or an explicit inclusive Kyiv date range plus optional selected groups;
-the runner converts it to the endpoint's epoch-millisecond bounds. Other POST
-tools accept a bounded JSON body. Harness routes,
+typed request kind. Date-scoped analysis tools accept rolling hours, recent
+Kyiv calendar days, or an explicit inclusive Kyiv date range plus optional
+selected groups; the runner converts them to each endpoint's required
+epoch-millisecond bounds. Callsign-frequency matching additionally requires
+callsigns returned by another tool. Non-analysis POST tools may accept a
+bounded JSON body. Harness routes,
 redirects, arbitrary URLs, path traversal, other methods, built-in Pi shell,
 read, write, and edit tools are unavailable. The only additional tool is
 `report_progress`.
@@ -314,6 +316,13 @@ release symlink or services, rollback runs the previous dispatcher's read-only
 preflight against the current fixed template. A release/template mismatch
 fails closed and leaves the current release active; replacing a protected
 template remains a separate, explicitly audited operation.
+
+Release `2026.08.22.1` temporarily accepts runner handshakes from both
+`2026.08.22.1` and `2026.08.05.2` so namespaces can rotate independently on
+the shared host. New templates and clones must use `2026.08.22.1`, and
+dispatcher status/list output exposes each instance's `harness_release` for
+the rollout audit. Remove the previous-release allowance only after every
+managed instance has been recreated and verified.
 
 Production Echo servers can be added without another VM or host rebuild; each
 onboarding remains a separate authorized deployment action.

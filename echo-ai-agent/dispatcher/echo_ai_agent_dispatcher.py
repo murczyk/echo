@@ -18,7 +18,8 @@ from typing import Any, NoReturn
 INSTANCE_PREFIX = "echo-ai-agent-"
 TEMPLATE_NAME = "echo-ai-agent-019fc7f7-9770-7f83-9c1a-211af29b02e6"
 PROFILE_NAME = "echo-ai-agent"
-HARNESS_RELEASE = "2026.08.05.2"
+HARNESS_RELEASE = "2026.08.22.1"
+COMPATIBLE_RUNNER_RELEASES = frozenset({HARNESS_RELEASE, "2026.08.05.2"})
 RUNNER_PROTOCOL_VERSION = 1
 NODE_VERSION = "24.19.0"
 PI_VERSION = "0.83.0"
@@ -191,6 +192,7 @@ def agent_summary(record: dict[str, Any]) -> dict[str, Any]:
         "namespace": config.get("user.echo.ai.namespace"),
         "echo_hostname": config.get("user.echo.ai.echo_hostname"),
         "provider_transport": config.get("user.echo.ai.provider_transport"),
+        "harness_release": config.get("user.echo.ai.harness_release"),
         "profiles": record.get("profiles") or [],
     }
 
@@ -557,7 +559,7 @@ def validate_runner_hello(event: Any) -> None:
         fail("runner did not provide a compatibility handshake")
     if event.get("protocolVersion") != RUNNER_PROTOCOL_VERSION:
         fail("runner protocol version is incompatible")
-    if event.get("harnessRelease") != HARNESS_RELEASE:
+    if event.get("harnessRelease") not in COMPATIBLE_RUNNER_RELEASES:
         fail("runner harness release is incompatible")
 
 
