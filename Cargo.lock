@@ -2872,7 +2872,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202608221028"
+version = "0.1.1-rc.202608221204"
 
 [[package]]
 name = "echo-gpu-client"
@@ -3010,7 +3010,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=396a8c636ddb73c48ce47c
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202608221028"
+version = "0.1.1-rc.202608221204"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "echo-swapp"
-version = "0.1.1-rc.202608221028"
+version = "0.1.1-rc.202608221204"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3798,7 +3798,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202608221028"
+version = "0.1.1-rc.202608221204"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -9895,7 +9895,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202608221028"
+version = "0.1.1-rc.202608221204"
 dependencies = [
  "actix-files",
  "actix-identity",
