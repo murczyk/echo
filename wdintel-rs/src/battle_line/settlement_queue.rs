@@ -83,6 +83,9 @@ where
         .filter(|row| !desired.contains(&row.settlement_text))
         .map(|row| row.id)
         .collect::<Vec<_>>();
+    let removes_linked_settlement = existing.iter().any(|row| {
+        !desired.contains(&row.settlement_text) && row.settlement_id.is_some()
+    });
     if !obsolete_ids.is_empty() {
         sigint_inbox_item_settlement::Entity::delete_many()
             .filter(
@@ -116,6 +119,15 @@ where
             .to_owned(),
         )
         .exec_without_returning(dbx)
+        .await
+        .c(h!())?;
+    }
+    if removes_linked_settlement {
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            dbx,
+            item_id,
+            format!("removed settlements from inbox message {item_id}"),
+        )
         .await
         .c(h!())?;
     }
@@ -345,23 +357,34 @@ async fn resolve_claimed_item(
         if row.settlement_id.is_some() || row.is_undefined.is_some() {
             continue;
         }
-        update_settlement_row(txn, row, result.chosen_settlement_id)
+        persist_settlement_resolution(txn, row, result.chosen_settlement_id)
             .await
             .c(h!())?;
     }
     Ok(())
 }
 
-async fn update_settlement_row(
-    txn: &DatabaseTransaction,
+async fn persist_settlement_resolution<C>(
+    dbx: &C,
     row: sigint_inbox_item_settlement::Model,
     settlement_id: Option<i32>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let item_id = row.item_id;
     let matched = settlement_id.is_some();
     let mut row = row.into_active_model();
     row.settlement_id = Set(settlement_id);
     row.is_undefined = Set((!matched).then_some(true));
-    row.update(txn).await.c(h!())?;
+    row.update(dbx).await.c(h!())?;
+    crate::stats::enqueue_group_stats_recalculation_for_message(
+        dbx,
+        item_id,
+        format!("resolved settlement for inbox message {item_id}"),
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -590,6 +613,13 @@ async fn process_oneoff_item_in_transaction(
             stats.unmatched += 1;
         }
     }
+    crate::stats::enqueue_group_stats_recalculation_for_message(
+        txn,
+        request.item_id,
+        format!("linked settlements for inbox message {}", request.item_id),
+    )
+    .await
+    .c(h!())?;
     stats.processed += 1;
     Ok(())
 }
@@ -830,6 +860,101 @@ mod tests {
                 .unwrap(),
             0
         );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn settlement_resolution_enqueues_stats_recalculation() {
+        use crate::entities::sea_orm_active_enums::SettlementKind;
+        use crate::entities::{
+            group_stats_recalculation_task, settlement, signal_group,
+            signal_message_group,
+        };
+
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let message_ts = Utc::now().naive_utc() - Duration::days(1);
+        let group_master_key = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
+            .select_only()
+            .column(signal_group::Column::MasterKey)
+            .into_tuple::<String>()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        let message = signal_message::ActiveModel {
+            body: Set(Some("#2287 settlement stats invalidation".to_string())),
+            created_at: Set(message_ts),
+            timestamp: Set(Some(message_ts)),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(group_master_key.clone())),
+            created_at: Set(message_ts),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let settlement_id = 2_287_004;
+        settlement::ActiveModel {
+            id: Set(settlement_id),
+            kind: Set(SettlementKind::Village),
+            name: Set("#2287 STATS INVALIDATION".to_string()),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+        let row = sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(message.id),
+            settlement_text: Set("STATS INVALIDATION".to_string()),
+            settlement_id: Set(None),
+            is_undefined: Set(None),
+            ..Default::default()
+        }
+        .insert(&txn)
+        .await
+        .unwrap();
+
+        persist_settlement_resolution(&txn, row, Some(settlement_id))
+            .await
+            .unwrap();
+
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.group_master_key, group_master_key);
+
+        group_stats_recalculation_task::Entity::delete_many()
+            .exec(&txn)
+            .await
+            .unwrap();
+        reconcile_item_locations(&txn, message.id, None)
+            .await
+            .unwrap();
+        assert!(group_stats_recalculation_task::Entity::find()
+            .one(&txn)
+            .await
+            .unwrap()
+            .is_some());
         txn.rollback().await.unwrap();
     }
 

@@ -1380,20 +1380,22 @@ impl GroupStatsRedis {
                     group_5min_key(*timestamp),
                     detail_5min_key(*timestamp),
                     unit_5min_key(*timestamp),
+                    settlement_5min_key(*timestamp),
                 ]
             })
             .collect_vec();
         let values = self.read_optional(keys).await.context(h!())?;
         Ok(timestamps
             .into_iter()
-            .zip(values.chunks_exact(3))
+            .zip(values.chunks_exact(4))
             .filter_map(|(timestamp, values)| {
                 let valid = matches!(
                     values,
-                    [Some(groups), Some(details), Some(units)]
+                    [Some(groups), Some(details), Some(units), Some(settlements)]
                         if decode::<GroupBucket>(groups).is_ok()
                             && decode::<DetailBucket>(details).is_ok()
                             && decode::<UnitBucket>(units).is_ok()
+                            && decode::<SettlementBucket>(settlements).is_ok()
                 );
                 (!valid).then_some(timestamp)
             })
@@ -1407,18 +1409,25 @@ impl GroupStatsRedis {
         let dates = dates.iter().copied().unique().collect_vec();
         let keys = dates
             .iter()
-            .flat_map(|date| [general_day_key(*date), unit_day_key(*date)])
+            .flat_map(|date| {
+                [
+                    general_day_key(*date),
+                    unit_day_key(*date),
+                    settlement_day_key(*date),
+                ]
+            })
             .collect_vec();
         let values = self.read_optional(keys).await.context(h!())?;
         Ok(dates
             .into_iter()
-            .zip(values.chunks_exact(2))
+            .zip(values.chunks_exact(3))
             .filter_map(|(date, values)| {
                 let valid = matches!(
                     values,
-                    [Some(general), Some(units)]
+                    [Some(general), Some(units), Some(settlements)]
                         if decode::<GeneralDayBucket>(general).is_ok()
                             && decode::<UnitBucket>(units).is_ok()
+                            && decode::<SettlementBucket>(settlements).is_ok()
                 );
                 (!valid).then_some(date)
             })
