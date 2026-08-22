@@ -2032,6 +2032,7 @@ struct StatsRow {
     pub location_v2: Option<String>,
     pub unit_v2: Option<String>,
     pub linked_unit_ids: Vec<i64>,
+    pub settlement_ids: Vec<i64>,
 }
 
 #[derive(FromQueryResult, Clone)]
@@ -2084,6 +2085,7 @@ fn is_5min_stats_bucket_boundary(ts: NaiveDateTime) -> bool {
 struct StatsSelection {
     general: bool,
     unit_id: bool,
+    settlement: bool,
     network: bool,
 }
 
@@ -2091,6 +2093,7 @@ impl StatsSelection {
     const ALL: Self = Self {
         general: true,
         unit_id: true,
+        settlement: true,
         network: true,
     };
 
@@ -2101,12 +2104,13 @@ impl StatsSelection {
         Self {
             general: only.contains(&HistoricStatsKind::General),
             unit_id: only.contains(&HistoricStatsKind::UnitId),
+            settlement: only.contains(&HistoricStatsKind::Settlement),
             network: only.contains(&HistoricStatsKind::Network),
         }
     }
 
     fn has_five_minute_stats(self) -> bool {
-        self.general || self.unit_id
+        self.general || self.unit_id || self.settlement
     }
 }
 
@@ -2231,6 +2235,7 @@ async fn calculate_redis_5min_range(
         till_ts,
         selection.general,
         selection.unit_id,
+        selection.settlement,
     )
     .await
     .c(h!())?;
@@ -2280,6 +2285,12 @@ async fn write_redis_5min_buckets(
                 .await
                 .c(h!())?;
         }
+        if selection.settlement {
+            stats_redis
+                .write_settlement_5min(*timestamp, &bucket.settlements)
+                .await
+                .c(h!())?;
+        }
     }
     Ok(())
 }
@@ -2302,17 +2313,18 @@ async fn write_redis_general_days(
     let till_date = till_date_inclusive_for_exclusive_till(till_ts).c(h!())?;
     let mut date = since_date;
     while date <= till_date {
-        let (groups, details, units) = load_or_recalculate_day_sources(
-            dbx,
-            stats_redis,
-            date,
-            till_ts,
-            calculated_buckets,
-            batches_map,
-            selection,
-        )
-        .await
-        .c(h!())?;
+        let (groups, details, units, settlements) =
+            load_or_recalculate_day_sources(
+                dbx,
+                stats_redis,
+                date,
+                till_ts,
+                calculated_buckets,
+                batches_map,
+                selection,
+            )
+            .await
+            .c(h!())?;
         if selection.general {
             let bucket = redis::aggregate_general_day(groups, details);
             stats_redis.write_general_day(date, &bucket).await.c(h!())?;
@@ -2320,6 +2332,13 @@ async fn write_redis_general_days(
         if selection.unit_id {
             let units = redis::aggregate_unit_day(units);
             stats_redis.write_unit_day(date, &units).await.c(h!())?;
+        }
+        if selection.settlement {
+            let settlements = redis::aggregate_settlement_day(settlements);
+            stats_redis
+                .write_settlement_day(date, &settlements)
+                .await
+                .c(h!())?;
         }
         date += Duration::days(1);
     }
@@ -2330,6 +2349,7 @@ type GeneralDaySources = (
     Vec<redis::GroupBucket>,
     Vec<redis::DetailBucket>,
     Vec<redis::UnitBucket>,
+    Vec<redis::SettlementBucket>,
 );
 
 async fn load_or_recalculate_day_sources(
@@ -2372,16 +2392,22 @@ async fn load_or_recalculate_day_sources(
     } else {
         Ok(Vec::new())
     };
-    match (groups, details, units) {
-        (Ok(groups), Ok(details), Ok(units)) => {
-            return Ok((groups, details, units));
+    let settlements = if selection.settlement {
+        stats_redis.read_settlement_5min(&timestamps).await
+    } else {
+        Ok(Vec::new())
+    };
+    match (groups, details, units, settlements) {
+        (Ok(groups), Ok(details), Ok(units), Ok(settlements)) => {
+            return Ok((groups, details, units, settlements));
         }
-        (groups, details, units) => {
+        (groups, details, units, settlements) => {
             warn!(
-                "rebuilding missing Redis 5-minute stats for {date}: groups={:?}, details={:?}, units={:?}",
+                "rebuilding missing Redis 5-minute stats for {date}: groups={:?}, details={:?}, units={:?}, settlements={:?}",
                 groups.err(),
                 details.err(),
                 units.err(),
+                settlements.err(),
             );
         }
     }
@@ -2409,7 +2435,11 @@ fn split_five_minute_buckets(
             .iter()
             .map(|bucket| bucket.details.clone())
             .collect(),
-        buckets.into_iter().map(|bucket| bucket.units).collect(),
+        buckets.iter().map(|bucket| bucket.units.clone()).collect(),
+        buckets
+            .into_iter()
+            .map(|bucket| bucket.settlements)
+            .collect(),
     )
 }
 
@@ -2689,7 +2719,7 @@ async fn load_generic_stats(
     till_ts: NaiveDateTime,
 ) -> Result<Vec<StatsRow>, AppError> {
     Ok(
-        load_generic_stats_selected(dbx, since_ts, till_ts, true, true)
+        load_generic_stats_selected(dbx, since_ts, till_ts, true, true, true)
             .await
             .context(h!())?,
     )
@@ -2701,6 +2731,7 @@ async fn load_generic_stats_selected(
     till_ts: NaiveDateTime,
     include_callsigns: bool,
     include_linked_units: bool,
+    include_settlements: bool,
 ) -> Result<Vec<StatsRow>, AppError> {
     let stats_by_datetime = generic_stats_by_datetime(dbx, since_ts, till_ts)
         .await
@@ -2720,6 +2751,11 @@ async fn load_generic_stats_selected(
     }
     if include_linked_units {
         enrich_stats_linked_units(dbx, &mut stats)
+            .await
+            .context(h!())?;
+    }
+    if include_settlements {
+        enrich_stats_settlements(dbx, &mut stats)
             .await
             .context(h!())?;
     }
@@ -2800,6 +2836,7 @@ fn generic_stats_base_select() -> Select<signal_message::Entity> {
         .column(sigint_inbox_item::Column::LocationV2)
         .column(sigint_inbox_item::Column::UnitV2)
         .column_as(Expr::cust("'{}'::bigint[]"), "linked_unit_ids")
+        .column_as(Expr::cust("'{}'::bigint[]"), "settlement_ids")
         .column(sigint_inbox_item::Column::PostId)
         .column(signal_message::Column::Sender)
         .column(signal_group_aor::Column::AorId)
@@ -3005,6 +3042,62 @@ async fn load_stats_linked_unit_ids(
     Ok(result)
 }
 
+async fn enrich_stats_settlements(
+    dbx: &DatabaseConnection,
+    stats: &mut [StatsRow],
+) -> Result<(), AppError> {
+    let settlement_ids = load_stats_settlement_ids(
+        dbx,
+        &stats.iter().map(|row| row.id).unique().collect_vec(),
+    )
+    .await
+    .context(h!())?;
+    for row in stats {
+        row.settlement_ids =
+            settlement_ids.get(&row.id).cloned().unwrap_or_default();
+    }
+    Ok(())
+}
+
+async fn load_stats_settlement_ids(
+    dbx: &DatabaseConnection,
+    inbox_item_ids: &[i64],
+) -> Result<HashMap<i64, Vec<i64>>, AppError> {
+    if inbox_item_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let inbox_item_ids = inbox_item_ids.iter().copied().unique().collect_vec();
+    let mut result = HashMap::<i64, Vec<i64>>::new();
+    for inbox_item_ids in
+        inbox_item_ids.chunks(GROUP_STATS_SETTLEMENT_LOAD_BATCH_SIZE)
+    {
+        let rows = sigint_inbox_item_settlement::Entity::find()
+            .filter(
+                sigint_inbox_item_settlement::Column::ItemId
+                    .is_in(inbox_item_ids.to_vec()),
+            )
+            .filter(
+                sigint_inbox_item_settlement::Column::SettlementId
+                    .is_not_null(),
+            )
+            .select_only()
+            .column(sigint_inbox_item_settlement::Column::ItemId)
+            .column(sigint_inbox_item_settlement::Column::SettlementId)
+            .distinct()
+            .into_tuple::<(i64, i32)>()
+            .all(dbx)
+            .await
+            .c(h!())?;
+        for (inbox_item_id, settlement_id) in rows {
+            result
+                .entry(inbox_item_id)
+                .or_default()
+                .push(i64::from(settlement_id));
+        }
+    }
+    Ok(result)
+}
+
 async fn enrich_network_stats_callsigns(
     dbx: &DatabaseConnection,
     stats: &mut [NetworkStatsRow],
@@ -3173,6 +3266,7 @@ mod tests {
 
         assert!(help.contains("general"));
         assert!(help.contains("unit-id"));
+        assert!(help.contains("settlement"));
         assert!(help.contains("network"));
 
         let args = crate::Arg::try_parse_from([
@@ -3181,7 +3275,7 @@ mod tests {
             "debug",
             "oneoff-calculate-historic-stats",
             "--only",
-            "general,unit-id",
+            "general,unit-id,settlement",
         ])
         .unwrap();
         let crate::Cmd::OneoffCalculateHistoricStats(params) = args.action
@@ -3190,7 +3284,11 @@ mod tests {
         };
         assert_eq!(
             params.only,
-            vec![HistoricStatsKind::General, HistoricStatsKind::UnitId]
+            vec![
+                HistoricStatsKind::General,
+                HistoricStatsKind::UnitId,
+                HistoricStatsKind::Settlement,
+            ]
         );
     }
 
@@ -3516,6 +3614,145 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn settlement_stats_use_distinct_links_and_keep_legacy_locations() {
+        use crate::entities::sea_orm_active_enums::SettlementKind;
+
+        let env = cleanup().await.unwrap();
+        let message_ts =
+            round_to_5min(Utc::now().naive_utc()).unwrap() - Duration::days(1);
+        let group = mk_group_with_stats_message(
+            &env.dbx,
+            "stats-linked-settlements",
+            message_ts,
+        )
+        .await;
+        add_group_stats_aor(&env.dbx, &group.master_key).await;
+        let inbox_item_id = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(group.master_key),
+            )
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut inbox_item =
+            sigint_inbox_item::Entity::find_by_id(inbox_item_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .into_active_model();
+        inbox_item.location_v2 = Set(Some("|LEGACY LOCATION|".to_string()));
+        inbox_item.update(&env.dbx).await.unwrap();
+
+        let settlement_ids = [2_287_101, 2_287_102];
+        settlement::Entity::delete_many()
+            .filter(settlement::Column::Id.is_in(settlement_ids))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        settlement::Entity::insert_many(settlement_ids.map(|id| {
+            settlement::ActiveModel {
+                id: Set(id),
+                kind: Set(SettlementKind::Village),
+                name: Set(format!("stats settlement {id}")),
+                ..Default::default()
+            }
+        }))
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        sigint_inbox_item_settlement::Entity::insert_many([
+            sigint_inbox_item_settlement::ActiveModel {
+                item_id: Set(inbox_item_id),
+                settlement_text: Set("FIRST".to_string()),
+                settlement_id: Set(Some(settlement_ids[0])),
+                ..Default::default()
+            },
+            sigint_inbox_item_settlement::ActiveModel {
+                item_id: Set(inbox_item_id),
+                settlement_text: Set("FIRST ALIAS".to_string()),
+                settlement_id: Set(Some(settlement_ids[0])),
+                ..Default::default()
+            },
+            sigint_inbox_item_settlement::ActiveModel {
+                item_id: Set(inbox_item_id),
+                settlement_text: Set("SECOND".to_string()),
+                settlement_id: Set(Some(settlement_ids[1])),
+                ..Default::default()
+            },
+            sigint_inbox_item_settlement::ActiveModel {
+                item_id: Set(inbox_item_id),
+                settlement_text: Set("UNRESOLVED".to_string()),
+                settlement_id: Set(None),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+
+        let rows = load_generic_stats(
+            &env.dbx,
+            message_ts,
+            message_ts + Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+        let row = rows.iter().find(|row| row.id == inbox_item_id).unwrap();
+        let mut loaded_settlement_ids = row.settlement_ids.clone();
+        loaded_settlement_ids.sort_unstable();
+        assert_eq!(loaded_settlement_ids, settlement_ids.map(i64::from));
+
+        let mut batches = HashMap::new();
+        let buckets = redis::build_5min_buckets(
+            &env.dbx,
+            &rows,
+            &[],
+            &HashMap::new(),
+            message_ts,
+            message_ts + Duration::minutes(5),
+            &mut batches,
+        )
+        .await
+        .unwrap();
+        let bucket = &buckets[&message_ts];
+        let mut settlement_counts = bucket
+            .settlements
+            .settlements
+            .iter()
+            .map(|settlement| (settlement.value, settlement.quantity))
+            .collect_vec();
+        settlement_counts.sort_unstable();
+        assert_eq!(
+            settlement_counts,
+            settlement_ids.map(|id| (i64::from(id), 1))
+        );
+        assert!(bucket
+            .details
+            .locations
+            .iter()
+            .any(|location| location.value == "LEGACY LOCATION"));
+        let day = redis::aggregate_settlement_day([bucket.settlements.clone()]);
+        assert!(day
+            .settlement_hlls
+            .iter()
+            .all(|settlement| settlement.sketch.estimate() == 1));
+
+        cleanup().await.unwrap();
+        settlement::Entity::delete_many()
+            .filter(settlement::Column::Id.is_in(settlement_ids))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
     }
 
     #[test]

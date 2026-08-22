@@ -746,6 +746,8 @@ pub enum HistoricStatsKind {
     General,
     /// Linked-unit ID counts.
     UnitId,
+    /// Linked-settlement ID counts.
+    Settlement,
     /// Network, network-frequency, and network-callsign counts.
     Network,
 }

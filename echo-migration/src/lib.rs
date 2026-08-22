@@ -387,6 +387,7 @@ mod m20260820_081114_messenger_queue_retry;
 mod m20260820_115208_battle_line_source_provenance;
 mod m20260820_121919_ai_intel_report_attempt;
 mod m20260821_080931_recalculate_battle_line_aor_sectors;
+mod m20260822_105557_add_settlement_stats_index;
 
 pub struct Migrator;
 
@@ -897,6 +898,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260821_080931_recalculate_battle_line_aor_sectors::Migration,
             ),
+            Box::new(m20260822_105557_add_settlement_stats_index::Migration),
         ]
     }
 }

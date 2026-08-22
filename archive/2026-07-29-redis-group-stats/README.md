@@ -40,10 +40,12 @@ requested networks.
 | Key family | Resolution | Contents | Retention |
 |---|---:|---|---:|
 | `5m:group` | 5 minutes | group-batch counts for timelines and totals | 91 days |
-| `5m:detail` | 5 minutes | AOR, post, tag, sender, frequency, callsign, legacy unit-text, and location HLL sketches | 16 days |
+| `5m:detail` | 5 minutes | AOR, post, tag, sender, frequency, callsign, legacy unit-text, and legacy location-text HLL sketches | 16 days |
 | `5m:unit-id` | 5 minutes | linked-unit ID counts and message-ID HLL sketches | 16 days |
+| `5m:settlement-id` | 5 minutes | linked-settlement ID counts and message-ID HLL sketches | 16 days |
 | `day:general` | local day | group counts and merged detailed-facet HLL sketches | 367 days |
 | `day:unit-id` | local day | linked-unit ID counts and merged message-ID HLL sketches | 367 days |
+| `day:settlement-id` | local day | linked-settlement ID counts and merged message-ID HLL sketches | 367 days |
 | `day:network` | local day | network, network-frequency, and network-callsign counts | 367 days |
 
 Every write atomically sets the value and an absolute native Redis expiry.
