@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import type { DeviceFileJournalEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
+import { EchoChip } from '../../../components/EchoChip';
 import { PowerChip } from '../../../components/PowerChip';
 import {
   getDefaultMrtContainerProps,
@@ -68,7 +69,8 @@ function useJournalColumns(): AppMrtColumnDef<DeviceFileJournalEntry>[] {
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<DeviceFileJournalEntry, DeviceFileJournalEntry['tags'][number]>({
           items: ({ row }) => row.original.tags,
-          renderItem: (tag) => <PowerChip label={tag.name} color="primary" interactive={false} />,
+          renderItem: (tag) => <EchoChip label={tag.name} tone="primary" />,
+          measurementScope: 'device-file-journal:tags',
           getItemKey: (tag) => tag.id,
           getItemText: (tag) => tag.name,
         }),
@@ -233,7 +235,6 @@ export function DeviceFileJournal({
             label={countLabel}
             color="default"
             interactive={false}
-            fontSize="0.75rem"
             sx={{ fontVariantNumeric: 'tabular-nums' }}
           />
         </Box>

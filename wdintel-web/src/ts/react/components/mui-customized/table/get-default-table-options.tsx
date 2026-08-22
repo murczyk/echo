@@ -410,21 +410,27 @@ export function mrtCustomCell<TData extends MRT_RowData>(
 export function mrtItemsCell<TData extends MRT_RowData, TItem>({
   items,
   renderItem,
+  renderDisclosureItem,
   renderCompactItem,
   renderMeasurementItem,
   getItemKey,
   getItemText,
   getItemMeasurementKey,
+  measurementScope,
+  disclosureLayout,
   emptyValue,
   containerProps,
 }: {
   items: (props: any) => readonly TItem[];
   renderItem: (item: TItem, index: number) => ReactNode;
+  renderDisclosureItem?: (item: TItem, index: number) => ReactNode;
   renderCompactItem?: (item: TItem, index: number) => ReactNode;
   renderMeasurementItem?: (item: TItem, index: number) => ReactNode;
   getItemKey?: (item: TItem, index: number) => string | number;
   getItemText?: (item: TItem, index: number) => string;
   getItemMeasurementKey?: (item: TItem, index: number) => string | number;
+  measurementScope: string | ((props: any) => string);
+  disclosureLayout?: 'wrap' | 'list';
   emptyValue?: ReactNode;
   containerProps?: (props: any) => Record<string, unknown>;
 }): MrtItemsCellRenderer<TData> {
@@ -432,11 +438,16 @@ export function mrtItemsCell<TData extends MRT_RowData, TItem>({
     <MrtOverflowItems
       items={items(props)}
       renderItem={renderItem}
+      renderDisclosureItem={renderDisclosureItem}
       renderCompactItem={renderCompactItem}
       renderMeasurementItem={renderMeasurementItem}
       getItemKey={getItemKey}
       getItemText={getItemText}
       getItemMeasurementKey={getItemMeasurementKey}
+      disclosureLayout={disclosureLayout}
+      measurementScope={
+        typeof measurementScope === 'function' ? measurementScope(props) : measurementScope
+      }
       emptyValue={emptyValue}
       containerProps={containerProps?.(props)}
     />

@@ -38,6 +38,22 @@ describe('user-settings api', () => {
     });
   });
 
+  it.each([
+    ['null', null, true],
+    ['explicit false', false, false],
+    ['explicit true', true, true],
+  ])('normalizes %s media-preview preferences', async (_, dutyCollapseMediaPreviews, expected) => {
+    mocks.getJson.mockResolvedValueOnce({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      dutyCollapseMediaPreviews,
+    });
+
+    await expect(fetchUserSettings()).resolves.toMatchObject({
+      dutyCollapseMediaPreviews: expected,
+    });
+  });
+
   it('serializes duty settings when saving', async () => {
     mocks.putJson.mockResolvedValueOnce({
       tagsLayout: 'compact',
@@ -76,6 +92,32 @@ describe('user-settings api', () => {
         showClassicAnalysis: false,
         dutyCollapseMediaPreviews: false,
       },
+      { signal: undefined },
+    );
+  });
+
+  it('serializes an enabled media-preview preference', async () => {
+    mocks.putJson.mockResolvedValueOnce({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      dutyCollapseMediaPreviews: true,
+    });
+
+    await saveUserSettings({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
+    });
+
+    expect(mocks.putJson).toHaveBeenCalledWith(
+      '/api/user/settings',
+      expect.objectContaining({ dutyCollapseMediaPreviews: true }),
       { signal: undefined },
     );
   });

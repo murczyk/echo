@@ -170,7 +170,7 @@ export function MediaReprocessAction({
             </MenuItem>
           );
         })}
-        {canReprocess ? (
+        {canReprocess && (
           <>
             {engines == null && <MenuItem disabled>Завантаження OCR-движків…</MenuItem>}
             {engines != null && engines.length === 0 && (
@@ -188,7 +188,7 @@ export function MediaReprocessAction({
               </MenuItem>
             ))}
           </>
-        ) : null}
+        )}
       </Menu>
     </>
   );

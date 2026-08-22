@@ -11,7 +11,7 @@ mod worker;
 use crate::error::ShortContext;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use anyhow::Result;
-use config::Config;
+use config::{Config, ECHO_SWAPP_JSON_PAYLOAD_MAX_BYTES};
 use sea_orm::DatabaseConnection;
 
 #[derive(Clone)]
@@ -42,6 +42,10 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
+            .app_data(
+                web::JsonConfig::default()
+                    .limit(ECHO_SWAPP_JSON_PAYLOAD_MAX_BYTES),
+            )
             .wrap(Logger::default())
             .service(ui::index)
             .service(ui::echo_logo)

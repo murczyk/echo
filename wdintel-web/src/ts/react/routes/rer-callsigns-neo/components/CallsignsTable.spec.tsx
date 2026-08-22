@@ -85,11 +85,28 @@ vi.mock('../../../components/mui-customized/table/get-default-table-options', ()
     ({
       items,
       renderItem,
+      renderDisclosureItem,
+      getItemText,
     }: {
       items: (props: any) => unknown[];
       renderItem: (item: any) => ReactNode;
+      renderDisclosureItem?: (item: any, index: number) => ReactNode;
+      getItemText?: (item: any, index: number) => string;
     }) =>
-    (props: any) => <>{items(props).map(renderItem)}</>,
+    (props: any) => {
+      const values = items(props);
+      return (
+        <>
+          {values.map(renderItem)}
+          <div data-testid="source-disclosure">
+            {values.map(renderDisclosureItem ?? renderItem)}
+          </div>
+          <span data-testid="source-copy-text">
+            {values.map((item, index) => getItemText?.(item, index) ?? '').join('\n')}
+          </span>
+        </>
+      );
+    },
   useAppMaterialReactTable: (options: Record<string, unknown>) => ({
     ...options,
     options,
@@ -221,6 +238,14 @@ describe('CallsignsTable', () => {
     expect(confirmedSources?.textContent).toContain('Підтвердження 2');
     expect(primaryOnlySource?.textContent).toContain('Основне:');
     expect(primaryOnlySource?.textContent).not.toContain('Підтверджено:');
+
+    const disclosure = confirmedSources?.querySelector('[data-testid="source-disclosure"]');
+    expect(disclosure?.textContent).toContain('Основне джерело: РО');
+    expect(disclosure?.textContent).toContain('Підтверджено: Підтвердження 1');
+    expect(disclosure?.textContent).toContain('Підтверджено: Підтвердження 2');
+    expect(confirmedSources?.querySelector('[data-testid="source-copy-text"]')?.textContent).toBe(
+      'Основне джерело: РО\nПідтверджено: Підтвердження 1\nПідтверджено: Підтвердження 2',
+    );
 
     root.unmount();
     container.remove();

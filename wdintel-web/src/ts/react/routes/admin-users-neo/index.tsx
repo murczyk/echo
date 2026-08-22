@@ -33,7 +33,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
 import { PowerButton } from '../../components/PowerButton';
-import { PowerChip } from '../../components/PowerChip';
+import { EchoChip } from '../../components/EchoChip';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -492,7 +492,8 @@ function useUsersColumns(): AppMrtColumnDef<Login>[] {
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<Login, string>({
           items: ({ row }) => row.original.roles,
-          renderItem: (role) => <PowerChip label={role} size="small" interactive={false} />,
+          renderItem: (role) => <EchoChip label={role} tone="neutral" />,
+          measurementScope: 'admin-users:roles',
           getItemText: (role) => role,
         }),
         filterVariant: 'multi-select',

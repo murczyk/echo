@@ -9,6 +9,7 @@ const textCell = mrtTextCell<Row>({ displayValue: ({ row }) => row.original.name
 const itemsCell = mrtItemsCell<Row, string>({
   items: ({ row }) => row.original.values,
   renderItem: (value) => value,
+  measurementScope: 'mrt-column-contract:values',
 });
 
 const columns: AppMrtColumnDef<Row>[] = [

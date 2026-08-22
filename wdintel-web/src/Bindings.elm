@@ -3213,14 +3213,16 @@ battleLineStateEncoder struct =
 
 
 type alias BattleLineTestReq =
-    { inboxItemId : Int
+    { inboxItemId : Maybe (String)
+    , messageUid : Maybe (String)
     }
 
 
 battleLineTestReqEncoder : BattleLineTestReq -> Json.Encode.Value
 battleLineTestReqEncoder struct =
     Json.Encode.object
-        [ ( "inbox_item_id", (Json.Encode.int) struct.inboxItemId )
+        [ ( "inbox_item_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.inboxItemId )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUid )
         ]
 
 
@@ -15625,7 +15627,8 @@ battleLineStateDecoder =
 battleLineTestReqDecoder : Json.Decode.Decoder BattleLineTestReq
 battleLineTestReqDecoder =
     Json.Decode.succeed BattleLineTestReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable (Json.Decode.string))))
 
 
 battleLineSettlementCandidateDecoder : Json.Decode.Decoder BattleLineSettlementCandidate
