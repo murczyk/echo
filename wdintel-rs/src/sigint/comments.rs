@@ -392,7 +392,7 @@ where
         nominatimres_id: Set(None),
         location: Set(None),
         tags: Set(None),
-        datetime: NotSet,
+        datetime_old: NotSet,
         signal_tokens: Set(None),
         body_noheader: Set(Some(serde_json::to_value(body_noheader).c(h!())?)),
         location_v2: Set(None),
@@ -401,7 +401,7 @@ where
         post_id: Set(post_id),
         device_name_id: Set(None),
         network: Set(None),
-        datetime_neo: Set(None),
+        datetime: Set(None),
     }
     .insert(dbx)
     .await
@@ -595,7 +595,7 @@ async fn migrate_comment_batch(
             nominatimres_id: Set(None),
             location: Set(None),
             tags: Set(None),
-            datetime: NotSet,
+            datetime_old: NotSet,
             signal_tokens: Set(None),
             body_noheader: Set(Some(
                 serde_json::to_value(body_noheader).c(h!())?,
@@ -606,7 +606,7 @@ async fn migrate_comment_batch(
             post_id: Set(comment.sigint_post_id),
             device_name_id: Set(None),
             network: Set(None),
-            datetime_neo: Set(None),
+            datetime: Set(None),
         });
         migrated_comments.push((
             comment.id,
