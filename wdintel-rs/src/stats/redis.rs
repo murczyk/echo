@@ -2165,6 +2165,13 @@ mod tests {
             .write_unit_5min(timestamp, &units)
             .await
             .unwrap();
+        assert_eq!(
+            stats_redis
+                .missing_five_minute_buckets(&[timestamp])
+                .await
+                .unwrap(),
+            vec![timestamp]
+        );
         stats_redis
             .write_settlement_5min(timestamp, &settlements)
             .await
@@ -2211,6 +2218,23 @@ mod tests {
             .write_5min(timestamp, &groups, &details)
             .await
             .unwrap();
+        redis::cmd("SET")
+            .arg(settlement_5min_key(timestamp))
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis
+                .missing_five_minute_buckets(&[timestamp])
+                .await
+                .unwrap(),
+            vec![timestamp]
+        );
+        stats_redis
+            .write_settlement_5min(timestamp, &settlements)
+            .await
+            .unwrap();
 
         let general = GeneralDayBucket {
             groups: groups.groups.clone(),
@@ -2222,6 +2246,14 @@ mod tests {
             vec![date]
         );
         stats_redis.write_unit_day(date, &units).await.unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis
+            .write_settlement_day(date, &settlements)
+            .await
+            .unwrap();
         assert!(stats_redis
             .missing_general_days(&[date])
             .await
@@ -2251,6 +2283,20 @@ mod tests {
                 .unwrap(),
             vec![settlements.clone()]
         );
+        redis::cmd("SET")
+            .arg(settlement_day_key(date))
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis
+            .write_settlement_day(date, &settlements)
+            .await
+            .unwrap();
 
         let network_bucket = NetworkDayBucket {
             networks: vec![
