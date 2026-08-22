@@ -164,12 +164,15 @@ describe('AdminDeviceAnalyticsPage', () => {
 
   it('shows a persistent registry configuration warning without an empty catalog', async () => {
     mocks.listTags.mockRejectedValueOnce(
-      new HttpRequestError(503, 'HTTP 503', 'file_registry_not_configured'),
+      new HttpRequestError(
+        503,
+        'Device file operations are unavailable because the [file_registry] configuration section is missing.',
+      ),
     );
     await openDeviceTagsTab();
 
     expect(container.textContent).toContain('Сховище файлів пристроїв не налаштоване');
-    expect(container.textContent).not.toContain('HTTP 503');
+    expect(container.textContent).not.toContain('Device file operations are unavailable');
     expect(container.textContent).not.toContain('Каталог порожній');
     expect(buttonWithText('Повторити')).toBeUndefined();
     expect(buttonWithText('Створити тег')).toHaveProperty('disabled', true);

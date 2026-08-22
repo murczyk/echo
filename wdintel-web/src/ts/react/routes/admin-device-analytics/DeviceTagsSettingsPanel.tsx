@@ -32,7 +32,7 @@ import {
   updateAnalyticsTag,
 } from '../../services/api/device-analytics';
 import { reanalyzeAll } from '../../services/api/devices';
-import { HttpRequestError } from '../../services/api/client';
+import { formatDeviceErrorMessage, isFileRegistryNotConfiguredError } from '../devices/helpers';
 import { TagEditorDialog, type TagDraft } from './TagEditorDialog';
 
 const dateTimeFormatter = new Intl.DateTimeFormat('uk-UA', {
@@ -91,10 +91,8 @@ export function DeviceTagsSettingsPanel() {
       const rsp = await listAdminAnalyticsTags();
       setTags(rsp.tags);
     } catch (error) {
-      setLoadError(errorMessage(error));
-      setFileRegistryUnavailable(
-        error instanceof HttpRequestError && error.code === 'file_registry_not_configured',
-      );
+      setLoadError(formatDeviceErrorMessage(error));
+      setFileRegistryUnavailable(isFileRegistryNotConfiguredError(error));
     } finally {
       setLoading(false);
     }

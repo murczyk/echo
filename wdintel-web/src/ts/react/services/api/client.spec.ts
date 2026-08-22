@@ -54,24 +54,6 @@ describe('api client 401 handling', () => {
 
     expect(window.location.href).toBe(`${window.location.origin}/reports?page=2#summary`);
   });
-
-  it('retains a structured service-unavailable error code', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify({ code: 'file_registry_not_configured' }), {
-          status: 503,
-          headers: { 'content-type': 'application/json' },
-        }),
-      ),
-    );
-
-    await expect(getJson('/api/device-analytics/tags')).rejects.toMatchObject({
-      status: 503,
-      code: 'file_registry_not_configured',
-      message: 'HTTP 503',
-    });
-  });
 });
 
 describe('tryRunAndReturnNullExceptUnauthorized', () => {
