@@ -1197,6 +1197,11 @@ mod tests {
             ("earlier", "03:00:00"),
             ("same-time", "04:00:00"),
         ] {
+            let datetime = NaiveDateTime::parse_from_str(
+                &format!("2099-01-01 {time}"),
+                "%Y-%m-%d %H:%M:%S",
+            )
+            .unwrap();
             let message = signal_message::ActiveModel {
                 body: Set(Some(format!("#2287 oneoff order {suffix}"))),
                 deleted: Set(false),
@@ -1205,18 +1210,19 @@ mod tests {
             .insert(&setup)
             .await
             .unwrap();
-            let item = sigint_inbox_item::ActiveModel {
+            sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
                 date: Set(Some("2099-01-01".to_string())),
                 time: Set(Some(time.to_string())),
                 location_v2: Set(Some("|ORDER|".to_string())),
                 parsed_unit_v2: Set(false),
+                datetime: Set(Some(datetime)),
                 ..Default::default()
             }
             .insert(&setup)
             .await
             .unwrap();
-            expected.push((item.datetime.unwrap(), message.id));
+            expected.push((datetime, message.id));
         }
         setup.commit().await.unwrap();
         expected.sort();

@@ -1044,7 +1044,6 @@ enum Cmd {
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
-    OneoffBackfillSigintInboxItemDatetimeNeo,
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
@@ -1807,9 +1806,6 @@ async fn async_main(
                 mode, &ps,
             )
             .await
-        }
-        Cmd::OneoffBackfillSigintInboxItemDatetimeNeo => {
-            inbox::datetime::oneoff_backfill(mode).await
         }
         Cmd::OneoffBackfillInboxUnitLinks(ps) => {
             sigint::oneoff::oneoff_backfill_inbox_unit_links(mode, &ps).await

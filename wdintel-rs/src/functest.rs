@@ -2130,6 +2130,21 @@ pub mod tests {
         if out.tags == NotSet {
             out.tags = Set(None);
         }
+        if out.datetime == NotSet {
+            let date = match &out.date {
+                ActiveValue::Set(Some(date))
+                | ActiveValue::Unchanged(Some(date)) => Some(date.as_str()),
+                _ => None,
+            };
+            let time = match &out.time {
+                ActiveValue::Set(Some(time))
+                | ActiveValue::Unchanged(Some(time)) => Some(time.as_str()),
+                _ => None,
+            };
+            out.datetime =
+                Set(crate::inbox::datetime::from_date_time_text(date, time)
+                    .c(h!())?);
+        }
         if out.parsed_unit_v2 == NotSet {
             out.parsed_unit_v2 = Set(false);
         }

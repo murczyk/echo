@@ -565,7 +565,7 @@ where
 {
     let body = build_replay_body(source.message.body.as_deref(), replay_ts);
     let (date, time) = format_date_time_fields(replay_ts);
-    let datetime_neo =
+    let datetime =
         crate::inbox::datetime::from_date_time_text(Some(&date), Some(&time))
             .c(h!())?;
 
@@ -624,8 +624,8 @@ where
         nominatimres_id: Set(source.inbox_item.nominatimres_id),
         location: Set(source.inbox_item.location.clone()),
         tags: Set(source.inbox_item.tags.clone()),
-        datetime: NotSet,
-        datetime_neo: Set(datetime_neo),
+        datetime_old: NotSet,
+        datetime: Set(datetime),
         signal_tokens: Set(source.inbox_item.signal_tokens.clone()),
         body_noheader: Set(source.inbox_item.body_noheader.clone()),
         location_v2: Set(source.inbox_item.location_v2.clone()),
