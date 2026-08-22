@@ -10,7 +10,7 @@ describe('message-card-preview-config', () => {
         layout: 'media',
         disableRestoreFocus: true,
         supportsFullscreen: true,
-        disableEscapeKeyDownInFullscreen: true,
+        disableEscapeKeyDownInFullscreen: false,
       },
     ],
     [
@@ -19,7 +19,7 @@ describe('message-card-preview-config', () => {
         layout: 'media',
         disableRestoreFocus: false,
         supportsFullscreen: true,
-        disableEscapeKeyDownInFullscreen: true,
+        disableEscapeKeyDownInFullscreen: false,
       },
     ],
     [
@@ -72,7 +72,7 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: false,
+        supportsFullscreen: true,
         disableEscapeKeyDownInFullscreen: false,
       },
     ],
@@ -81,7 +81,7 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: false,
+        supportsFullscreen: true,
         disableEscapeKeyDownInFullscreen: false,
       },
     ],
@@ -90,7 +90,7 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: false,
+        supportsFullscreen: true,
         disableEscapeKeyDownInFullscreen: false,
       },
     ],

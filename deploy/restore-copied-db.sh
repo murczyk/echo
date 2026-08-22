@@ -171,6 +171,7 @@ snapshot_local_ai_agent_profile() {
     cd "$REPO_DIR"
     cargo run -p wdintel-rs -- --mode=debug \
       oneoff-export-local-ai-agent-profile \
+      --skip-invalid \
       --output "$local_ai_agent_profile_file"
   )
   if [[ ! -s "$local_ai_agent_profile_file" ]]; then
@@ -208,7 +209,8 @@ restore_local_ai_agent_profile() {
     (
       cd "$REPO_DIR"
       cargo run -p wdintel-rs -- --mode=debug \
-        oneoff-discard-copied-ai-agent-runtime --clear-control-plane
+        oneoff-discard-copied-ai-agent-runtime \
+        --clear-control-plane --disable-engines
     )
     return
   fi

@@ -38,20 +38,14 @@ export function MessageCardAttachmentPreviewDialog({
   onClose: () => void;
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
-  const [fullscreenPreviewKind, setFullscreenPreviewKind] = useState<ReturnType<
-    typeof getPreviewKind
-  > | null>(null);
-  const isFullscreen = fullscreenPreviewKind === previewKind;
-  const setIsFullscreen = (value: boolean) => {
-    setFullscreenPreviewKind(value ? previewKind : null);
-  };
+  const [isFullscreen, setIsFullscreen] = useState(true);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (isFullscreen && event.key === 'Escape') {
+      if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        setFullscreenPreviewKind(null);
+        closeDialog();
         return;
       }
       if (navigation.count <= 1 || shouldIgnoreArrowNavigation(event.target)) return;
@@ -69,11 +63,11 @@ export function MessageCardAttachmentPreviewDialog({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isFullscreen, navigation]);
+  }, [navigation]);
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
-    setFullscreenPreviewKind(null);
+    setIsFullscreen(true);
     onClose();
   };
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
@@ -100,16 +94,10 @@ export function MessageCardAttachmentPreviewDialog({
   return (
     <Dialog
       open
-      onClose={(_event, reason) => {
-        if (reason === 'escapeKeyDown' && dialogIsFullscreen) {
-          setFullscreenPreviewKind(null);
-          return;
-        }
-        closeDialog();
-      }}
+      onClose={closeDialog}
       maxWidth={false}
       fullScreen={dialogIsFullscreen}
-      disableEscapeKeyDown={dialogIsFullscreen && previewConfig.disableEscapeKeyDownInFullscreen}
+      disableEscapeKeyDown={false}
       disableRestoreFocus={previewConfig.disableRestoreFocus}
       PaperProps={{
         'aria-label': 'Перегляд вкладення',

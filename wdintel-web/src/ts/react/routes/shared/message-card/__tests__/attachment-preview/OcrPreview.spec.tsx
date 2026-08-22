@@ -1,32 +1,28 @@
 /**
  * @vitest-environment happy-dom
  */
-import { createElement, type ElementType, type ReactNode } from 'react';
+import { createElement, forwardRef, type ElementType, type ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getMediaOcrStatus, getMediaSummary, retryMediaSummary, mapCoordinates } = vi.hoisted(
-  () => ({
+const { getMediaOcrStatus, getMediaSummary, retryMediaSummary, mapCoordinates, useMediaQueryMock } =
+  vi.hoisted(() => ({
     getMediaOcrStatus: vi.fn(),
     getMediaSummary: vi.fn(),
     retryMediaSummary: vi.fn(),
     mapCoordinates: vi.fn(),
-  }),
-);
+    useMediaQueryMock: vi.fn().mockReturnValue(false),
+  }));
 
 vi.mock('@mui/material', () => ({
   alpha: () => 'transparent',
-  Box: ({
-    component = 'div',
-    children,
-    sx: _sx,
-    ...props
-  }: {
-    component?: ElementType;
-    children?: ReactNode;
-    sx?: unknown;
-  }) => createElement(component, props, children),
+  Box: forwardRef<
+    HTMLElement,
+    { component?: ElementType; children?: ReactNode; sx?: unknown } & Record<string, unknown>
+  >(function MockBox({ component = 'div', children, sx: _sx, ...props }, ref) {
+    return createElement(component, { ...props, ref }, children);
+  }),
   Button: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <button {...props}>{children}</button>
   ),
@@ -36,7 +32,9 @@ vi.mock('@mui/material', () => ({
     <button {...props}>{children}</button>
   ),
   LinearProgress: () => <span data-linear-progress />,
+  Skeleton: () => <span data-skeleton />,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  SvgIcon: ({ children }: { children?: ReactNode }) => <svg>{children}</svg>,
   Tooltip: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
     <span>
       {children}
@@ -46,7 +44,7 @@ vi.mock('@mui/material', () => ({
   Typography: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <div {...props}>{children}</div>
   ),
-  useMediaQuery: () => false,
+  useMediaQuery: (query: string) => useMediaQueryMock(query),
 }));
 
 vi.mock('@mui/material/styles', () => ({
@@ -76,6 +74,8 @@ import {
   OcrSplitPreview,
 } from '../../attachment-preview/OcrPreview';
 import {
+  clearMediaSummaryCache,
+  MEDIA_SUMMARY_CACHE_LIMIT,
   MediaSummaryOverlay,
   MessageCardMediaSummary,
   MessageCardMediaSummaryCarousel,
@@ -92,6 +92,7 @@ function deferred<T>() {
 describe('OcrPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';
+    clearMediaSummaryCache();
   });
 
   it('exposes exports and quality details only for a completed usable result', () => {
@@ -257,7 +258,8 @@ describe('OcrPreview', () => {
 
     const iframe = container.querySelector('iframe');
     expect(iframe?.getAttribute('src')).toBe('/api/messenger/media/media%2Fid/ocr?revision=0');
-    expect(iframe?.getAttribute('sandbox')).toBe('');
+    expect(iframe?.getAttribute('sandbox')).toBe('allow-same-origin');
+    expect(container.querySelector('[data-ocr-scroll-container]')).not.toBeNull();
     root.unmount();
   });
 
@@ -589,6 +591,103 @@ describe('OcrPreview', () => {
     root.unmount();
   });
 
+  it('invalidates a cached terminal summary when its status becomes processing', async () => {
+    const requestCount = getMediaSummary.mock.calls.length;
+    getMediaSummary
+      .mockResolvedValueOnce({
+        state: 'completed',
+        summary: 'Старий опис',
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 10,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      })
+      .mockResolvedValueOnce({
+        state: 'queued',
+        summary: null,
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 0,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummary
+          mediaId="media-id"
+          status={{ state: 'completed', lastError: null, hasCoordinates: false }}
+        />,
+      );
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('Старий опис');
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummary
+          mediaId="media-id"
+          status={{ state: 'queued', lastError: null, hasCoordinates: false }}
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getMediaSummary).toHaveBeenCalledTimes(requestCount + 2);
+    expect(container.textContent).toContain('Опис у черзі');
+    expect(container.textContent).not.toContain('Старий опис');
+    root.unmount();
+  });
+
+  it('evicts the least recently used summary when the cache limit is reached', async () => {
+    const requestCount = getMediaSummary.mock.calls.length;
+    for (let index = 0; index < MEDIA_SUMMARY_CACHE_LIMIT + 2; index += 1) {
+      getMediaSummary.mockImplementationOnce(async (mediaId: string) => ({
+        state: 'completed',
+        summary: `Опис ${mediaId}`,
+        coordinates: [],
+        lastError: null,
+        sourceKind: 'ocr_text',
+        sourceCharCount: 10,
+        aiEngineName: 'Gemma',
+        modelName: 'gemma',
+      }));
+    }
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const status = { state: 'completed', lastError: null, hasCoordinates: false };
+    const renderSummary = async (mediaId: string) => {
+      await act(async () => {
+        root.render(<MessageCardMediaSummary mediaId={mediaId} status={status} />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    };
+
+    for (let index = 0; index < MEDIA_SUMMARY_CACHE_LIMIT; index += 1) {
+      await renderSummary(`media-${index}`);
+    }
+    await renderSummary('media-0');
+    await renderSummary('media-overflow');
+    await renderSummary('media-1');
+
+    expect(getMediaSummary).toHaveBeenCalledTimes(requestCount + MEDIA_SUMMARY_CACHE_LIMIT + 2);
+    expect(getMediaSummary).toHaveBeenLastCalledWith(
+      'media-1',
+      { signal: expect.any(AbortSignal) },
+      'messenger',
+    );
+    root.unmount();
+  });
+
   it('hides technical summary errors from messenger users', async () => {
     const internalError = 'at wdintel-rs/src/media_summary/worker.rs line 166 column 55';
     getMediaSummary.mockRejectedValueOnce(new Error(internalError));
@@ -796,6 +895,218 @@ describe('OcrPreview', () => {
     });
 
     expect(container.querySelector('[data-media-summary-carousel="true"]')).toBeNull();
+    root.unmount();
+  });
+
+  it('supports expand and collapse of summary text in carousel', async () => {
+    const longSummary = 'Перший рядок опису.\n'.repeat(5) + 'Останній рядок опису.';
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'completed',
+      summary: longSummary,
+      coordinates: [],
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 100,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={[
+            {
+              id: 'image-1',
+              summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            },
+          ]}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const expandBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Розгорнути опис"]',
+    );
+    expect(expandBtn).not.toBeNull();
+    expect(expandBtn?.disabled).toBe(false);
+
+    await act(async () => {
+      expandBtn?.click();
+      await Promise.resolve();
+    });
+
+    const collapseBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Згорнути опис"]',
+    );
+    expect(collapseBtn).not.toBeNull();
+
+    await act(async () => {
+      collapseBtn?.click();
+      await Promise.resolve();
+    });
+
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="Розгорнути опис"]'),
+    ).not.toBeNull();
+    root.unmount();
+  });
+
+  it('renders no result state when summary is empty', async () => {
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'completed',
+      summary: '',
+      coordinates: [],
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 0,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={[
+            {
+              id: 'image-1',
+              summary: { state: 'completed', lastError: null, hasCoordinates: false },
+            },
+          ]}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не розпізнаний контент');
+    root.unmount();
+  });
+
+  it('renders error state and retries on retry button click', async () => {
+    getMediaSummary.mockResolvedValueOnce({
+      state: 'failed',
+      summary: '',
+      coordinates: [],
+      lastError: 'Помилка розпізнавання',
+      sourceKind: 'ocr_text',
+      sourceCharCount: 0,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    retryMediaSummary.mockResolvedValueOnce({
+      state: 'completed',
+      summary: 'Успішний опис після повтору',
+      coordinates: [],
+      lastError: null,
+      sourceKind: 'ocr_text',
+      sourceCharCount: 20,
+      aiEngineName: 'Gemma',
+      modelName: 'gemma',
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <MessageCardMediaSummaryCarousel
+          media={[
+            {
+              id: 'image-1',
+              summary: { state: 'failed', lastError: null, hasCoordinates: false },
+            },
+          ]}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Не вдалося створити опис');
+    const retryBtn = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Повторити стислий опис"]',
+    );
+    expect(retryBtn).not.toBeNull();
+
+    await act(async () => {
+      retryBtn?.click();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Успішний опис після повтору');
+    root.unmount();
+  });
+
+  it('keeps both panels open on desktop and closes summary on mobile (mutually exclusive)', async () => {
+    useMediaQueryMock.mockReturnValue(false);
+    const onSummaryVisibleChange = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <OcrSplitPreview
+          source={<div data-source />}
+          mediaId="media-id"
+          ocr={{
+            state: 'completed',
+            qualityStatus: 'accepted',
+            processedPages: 1,
+            totalPages: 1,
+            lastError: null,
+            queueSize: null,
+            attempts: 0,
+            statusLog: [],
+          }}
+          visible
+          fullPane={false}
+          onOcrChange={vi.fn()}
+          onFullPaneChange={vi.fn()}
+          summary={{ state: 'completed', lastError: null, hasCoordinates: false }}
+          summaryVisible
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={onSummaryVisibleChange}
+        />,
+      );
+    });
+
+    expect(onSummaryVisibleChange).not.toHaveBeenCalled();
+
+    useMediaQueryMock.mockReturnValue(true);
+    await act(async () => {
+      root.render(
+        <OcrSplitPreview
+          source={<div data-source />}
+          mediaId="media-id"
+          ocr={{
+            state: 'completed',
+            qualityStatus: 'accepted',
+            processedPages: 1,
+            totalPages: 1,
+            lastError: null,
+            queueSize: null,
+            attempts: 0,
+            statusLog: [],
+          }}
+          visible
+          fullPane={false}
+          onOcrChange={vi.fn()}
+          onFullPaneChange={vi.fn()}
+          summary={{ state: 'completed', lastError: null, hasCoordinates: false }}
+          summaryVisible
+          onSummaryChange={vi.fn()}
+          onSummaryVisibleChange={onSummaryVisibleChange}
+        />,
+      );
+    });
+
+    expect(onSummaryVisibleChange).toHaveBeenCalledWith(false);
     root.unmount();
   });
 });
