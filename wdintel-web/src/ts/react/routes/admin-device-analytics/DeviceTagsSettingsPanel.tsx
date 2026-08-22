@@ -1,8 +1,8 @@
 import AddIcon from '@mui/icons-material/Add';
-import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import ArchiveIcon from '@mui/icons-material/Archive';
+import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import RestoreOutlinedIcon from '@mui/icons-material/RestoreOutlined';
+import RestoreIcon from '@mui/icons-material/Restore';
 import {
   Box,
   CircularProgress,
@@ -23,6 +23,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerChip } from '../../components/PowerChip';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import {
   archiveAnalyticsTag,
   createAnalyticsTag,
@@ -269,24 +270,27 @@ export function DeviceTagsSettingsPanel() {
             <Table aria-label="Теги пристроїв" sx={{ minWidth: 840 }}>
               <TableHead>
                 <TableRow>
+                  <TableCell align="center" sx={{ width: 56 }}>
+                    №
+                  </TableCell>
+                  <TableCell sx={{ width: 76 }}>Дії</TableCell>
                   <TableCell>Назва</TableCell>
                   <TableCell>Стан</TableCell>
                   <TableCell>Правило</TableCell>
                   <TableCell>Оновлено</TableCell>
-                  <TableCell align="right">Дії</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                    <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
                       <CircularProgress aria-label="Завантаження тегів пристроїв" />
                     </TableCell>
                   </TableRow>
                 ) : null}
                 {!loading && sortedTags.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
+                    <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
                       <Typography color="text.secondary">
                         Каталог порожній. Створіть перший динамічний тег.
                       </Typography>
@@ -294,11 +298,44 @@ export function DeviceTagsSettingsPanel() {
                   </TableRow>
                 ) : null}
                 {!loading
-                  ? sortedTags.map((tag) => {
+                  ? sortedTags.map((tag, index) => {
                       const archived = tag.archivedAt !== null;
                       const mutating = mutatingId === tag.id;
                       return (
                         <TableRow key={tag.id} hover>
+                          <TableCell align="center">{index + 1}</TableCell>
+                          <TableCell>
+                            <MrtRowActions forceMenu>
+                              <MrtRowActionButton
+                                label="Редагувати"
+                                icon={<EditIcon fontSize="small" />}
+                                disabled={mutating}
+                                opensModal
+                                onClick={() => {
+                                  setSaveError(null);
+                                  setDraft({
+                                    persisted: tag,
+                                    name: tag.name,
+                                    ruleExpression: tag.ruleExpression,
+                                  });
+                                }}
+                              />
+                              <MrtRowActionButton
+                                label={archived ? 'Відновити' : 'Архівувати'}
+                                icon={
+                                  archived ? (
+                                    <RestoreIcon fontSize="small" />
+                                  ) : (
+                                    <ArchiveIcon fontSize="small" />
+                                  )
+                                }
+                                disabled={mutating}
+                                tone={archived ? 'default' : 'warning'}
+                                opensModal
+                                onClick={() => void toggleArchived(tag)}
+                              />
+                            </MrtRowActions>
+                          </TableCell>
                           <TableCell component="th" scope="row">
                             {tag.name}
                           </TableCell>
@@ -314,45 +351,6 @@ export function DeviceTagsSettingsPanel() {
                             {tag.ruleExpression === null ? 'Немає' : 'Налаштоване'}
                           </TableCell>
                           <TableCell>{formatDateTime(tag.updatedAt)}</TableCell>
-                          <TableCell align="right">
-                            <Stack direction="row" spacing={1} justifyContent="flex-end">
-                              <PowerButton
-                                size="small"
-                                variant="outlined"
-                                startIcon={<EditOutlinedIcon />}
-                                disabled={mutating}
-                                onClick={() => {
-                                  setSaveError(null);
-                                  setDraft({
-                                    persisted: tag,
-                                    name: tag.name,
-                                    ruleExpression: tag.ruleExpression,
-                                  });
-                                }}
-                              >
-                                Редагувати
-                              </PowerButton>
-                              <PowerButton
-                                key={archived ? 'restore' : 'archive'}
-                                size="small"
-                                color={archived ? 'primary' : 'warning'}
-                                variant="outlined"
-                                startIcon={
-                                  mutating ? (
-                                    <CircularProgress size={16} color="inherit" />
-                                  ) : archived ? (
-                                    <RestoreOutlinedIcon />
-                                  ) : (
-                                    <ArchiveOutlinedIcon />
-                                  )
-                                }
-                                disabled={mutating}
-                                onClick={() => void toggleArchived(tag)}
-                              >
-                                {archived ? 'Відновити' : 'Архівувати'}
-                              </PowerButton>
-                            </Stack>
-                          </TableCell>
                         </TableRow>
                       );
                     })

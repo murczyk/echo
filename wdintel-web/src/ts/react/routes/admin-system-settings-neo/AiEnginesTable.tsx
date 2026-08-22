@@ -29,10 +29,10 @@ import {
 } from '../../components/mui-customized/table/table-state-provider';
 import { AI_AGENT_TOKEN_WARNING } from '../admin-ai-agent/engine-eligibility';
 
-const ROW_ACTIONS_COLUMN_SIZE = 76;
+const ACTIONS_COLUMN_SIZE = 76;
 const DEFAULT_COLUMN_ORDER = [
   'mrt-row-numbers',
-  'mrt-row-actions',
+  'actions',
   'name',
   'modelName',
   'url',
@@ -44,7 +44,7 @@ const DEFAULT_COLUMN_ORDER = [
 ];
 const AI_AGENT_COLUMN_ORDER = [
   'mrt-row-numbers',
-  'mrt-row-actions',
+  'actions',
   'name',
   'aiAgentCompatibility',
   'modelName',
@@ -54,6 +54,7 @@ const AI_AGENT_COLUMN_ORDER = [
   'updatedAt',
 ];
 const DEFAULT_COLUMN_VISIBILITY = {
+  actions: true,
   name: true,
   modelName: true,
   url: true,
@@ -132,6 +133,41 @@ function AiEnginesTableBody({
   const tableStateContext = useTableStateContext();
   const columns = useMemo<AppMrtColumnDef<AiEngineItem>[]>(
     () => [
+      {
+        id: 'actions',
+        header: 'Дії',
+        size: ACTIONS_COLUMN_SIZE,
+        minSize: ACTIONS_COLUMN_SIZE,
+        maxSize: ACTIONS_COLUMN_SIZE,
+        enableSorting: false,
+        enableColumnFilter: false,
+        enableHiding: false,
+        enableResizing: false,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }: { row: { original: AiEngineItem } }) => (
+          <Stack direction="row" spacing={0.5}>
+            <MrtRowActionButton
+              label="Переглянути"
+              icon={<VisibilityIcon fontSize="small" />}
+              onClick={() => onView(row.original)}
+            />
+            <MrtRowActions forceMenu>
+              <MrtRowActionButton
+                label="Редагувати"
+                icon={<EditIcon fontSize="small" />}
+                onClick={() => onEdit(row.original)}
+              />
+              <MrtRowActionButton
+                label="Видалити"
+                icon={<DeleteIcon fontSize="small" />}
+                onClick={() => onDelete(row.original)}
+                tone="danger"
+                opensModal
+              />
+            </MrtRowActions>
+          </Stack>
+        ),
+      },
       { accessorKey: 'name', header: 'Назва', size: 180 },
       ...(getCompatibility
         ? [
@@ -184,7 +220,7 @@ function AiEnginesTableBody({
         size: 180,
       },
     ],
-    [getCompatibility],
+    [getCompatibility, onDelete, onEdit, onView],
   );
   const table = useAppMaterialReactTable({
     columns,
@@ -195,30 +231,6 @@ function AiEnginesTableBody({
     enableColumnFilters: true,
     enableColumnFilterModes: true,
     enableFacetedValues: true,
-    enableRowActions: true,
-    renderRowActions: ({ row }) => (
-      <Stack direction="row" spacing={0.5}>
-        <MrtRowActionButton
-          label="Переглянути"
-          icon={<VisibilityIcon fontSize="small" />}
-          onClick={() => onView(row.original)}
-        />
-        <MrtRowActions forceMenu>
-          <MrtRowActionButton
-            label="Редагувати"
-            icon={<EditIcon fontSize="small" />}
-            onClick={() => onEdit(row.original)}
-          />
-          <MrtRowActionButton
-            label="Видалити"
-            icon={<DeleteIcon fontSize="small" />}
-            onClick={() => onDelete(row.original)}
-            tone="danger"
-            opensModal
-          />
-        </MrtRowActions>
-      </Stack>
-    ),
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     columnFilterDisplayMode: 'popover',
@@ -233,13 +245,6 @@ function AiEnginesTableBody({
     defaultColumn: { size: 200, renderColumnActionsMenuItems },
     displayColumnDefOptions: {
       ...CUSTOM_STYLES.displayColumnDefOptions,
-      'mrt-row-actions': {
-        ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: ROW_ACTIONS_COLUMN_SIZE,
-        minSize: ROW_ACTIONS_COLUMN_SIZE,
-        maxSize: ROW_ACTIONS_COLUMN_SIZE,
-        enableResizing: false,
-      },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
         muiTableBodyCellProps: () => ({
@@ -266,7 +271,6 @@ function AiEnginesTableBody({
       columnOrder: tableStateContext.columnOrder,
       columnSizing: {
         ...tableStateContext.columnSizing,
-        'mrt-row-actions': ROW_ACTIONS_COLUMN_SIZE,
       },
     },
   });

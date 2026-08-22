@@ -27,6 +27,7 @@ import { PageErrorState } from '../../components/PageErrorState';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerIconButton } from '../../components/PowerIconButton';
+import { GoiIntegrationDrawer } from './GoiIntegrationDrawer';
 import {
   CUSTOM_CELL_STYLES,
   CUSTOM_STYLES,
@@ -404,6 +405,7 @@ function AdminGoiIntegrationsNeoPageBody() {
   const [settingUpWorker, setSettingUpWorker] = React.useState(false);
   const [status, setStatus] = React.useState<StatusMessage>(null);
   const [form, setForm] = React.useState<GoiForm>(emptyForm);
+  const initialFormRef = React.useRef<GoiForm>(emptyForm);
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<GoiAdminIntegration | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
@@ -433,12 +435,15 @@ function AdminGoiIntegrationsNeoPageBody() {
 
   function openCreate() {
     setForm(emptyForm);
+    initialFormRef.current = emptyForm;
     setStatus(null);
     setEditorOpen(true);
   }
 
   function openEdit(integration: GoiAdminIntegration) {
-    setForm(toForm(integration));
+    const nextForm = toForm(integration);
+    setForm(nextForm);
+    initialFormRef.current = nextForm;
     setStatus(null);
     setEditorOpen(true);
   }
@@ -589,6 +594,16 @@ function AdminGoiIntegrationsNeoPageBody() {
   const ownerOptions = organisms;
   const selectedOwner = ownerOptions.find((item) => item.id === form.ownerOrganismId) ?? null;
   const isGoiToEchoPalitraSyncToggleDisabled = !hasMaintainerLogin(form);
+  const editorBusy = saving || checking || settingUpWorker;
+  const closeEditor = () => {
+    if (editorBusy) return;
+    if (
+      JSON.stringify(form) !== JSON.stringify(initialFormRef.current) &&
+      !window.confirm('Є незбережені зміни. Закрити форму?')
+    )
+      return;
+    setEditorOpen(false);
+  };
 
   return (
     <Box
@@ -621,7 +636,7 @@ function AdminGoiIntegrationsNeoPageBody() {
           hideGlobalTextFilter={loading && integrations.length === 0}
           internalActionsDisabled={loading && integrations.length === 0}
           actions={
-            <PowerButton variant="contained" size="small" onClick={openCreate} disabled={loading}>
+            <PowerButton variant="contained" onClick={openCreate} disabled={loading}>
               Додати інтеграцію
             </PowerButton>
           }
@@ -649,292 +664,271 @@ function AdminGoiIntegrationsNeoPageBody() {
           />
         </Box>
 
-        <Dialog
+        <GoiIntegrationDrawer
           open={editorOpen}
-          onClose={() => !saving && !checking && !settingUpWorker && setEditorOpen(false)}
-          fullWidth
-          maxWidth="lg"
+          title={form.id ? 'Редагувати інтеграцію ГОІ' : 'Створити інтеграцію ГОІ'}
+          busy={editorBusy}
+          onClose={closeEditor}
+          footer={
+            <Stack direction="row" spacing={1} justifyContent="flex-end">
+              <PowerButton variant="outlined" onClick={closeEditor} disabled={editorBusy}>
+                Скасувати
+              </PowerButton>
+              {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+                <PowerButton
+                  variant="outlined"
+                  onClick={handleCheckConnection}
+                  disabled={editorBusy}
+                >
+                  Перевірити з'єднання
+                </PowerButton>
+              ) : null}
+              {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
+                <PowerButton variant="outlined" onClick={handleSetupWorker} disabled={editorBusy}>
+                  Налаштувати воркер
+                </PowerButton>
+              ) : null}
+              <PowerButton variant="contained" onClick={handleSave} disabled={editorBusy}>
+                {form.id ? 'Зберегти' : 'Створити'}
+              </PowerButton>
+            </Stack>
+          }
         >
-          <DialogTitle>
-            {form.id ? 'Редагувати інтеграцію ГОІ' : 'Створити інтеграцію ГОІ'}
-          </DialogTitle>
-          <DialogContent>
-            <Stack spacing={3}>
-              {status ? <PowerAlert severity={status.kind}>{status.message}</PowerAlert> : null}
+          <Stack spacing={3}>
+            {status ? <PowerAlert severity={status.kind}>{status.message}</PowerAlert> : null}
 
-              <Autocomplete
-                options={ownerOptions}
-                value={selectedOwner}
-                onChange={(_, option) =>
-                  setForm((prev) => ({ ...prev, ownerOrganismId: option?.id ?? null }))
-                }
-                getOptionLabel={(option) => option.name || `ID ${option.id}`}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                renderOption={(props, option) => (
-                  <li {...props} key={option.id}>
-                    {option.name || `ID ${option.id}`}
+            <Autocomplete
+              options={ownerOptions}
+              value={selectedOwner}
+              onChange={(_, option) =>
+                setForm((prev) => ({ ...prev, ownerOrganismId: option?.id ?? null }))
+              }
+              getOptionLabel={(option) => option.name || `ID ${option.id}`}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              renderOption={(props, option) => (
+                <li {...props} key={option.id}>
+                  {option.name || `ID ${option.id}`}
+                </li>
+              )}
+              renderInput={(params) => <TextField {...params} label="Організм-власник" fullWidth />}
+            />
+
+            <TextField
+              select
+              label="Тип інтеграції"
+              value={form.integrationType}
+              onChange={(event) =>
+                handleIntegrationTypeChange(event.target.value as GoiIntegrationType)
+              }
+              fullWidth
+            >
+              <MenuItem value={GOI_INTEGRATION_TYPE_SIMPLE}>Проста</MenuItem>
+              <MenuItem value={GOI_INTEGRATION_TYPE_FULL}>Повна</MenuItem>
+            </TextField>
+
+            <Autocomplete
+              options={logins}
+              value={
+                form.maintainerLoginId
+                  ? selectLoginOptions([form.maintainerLoginId], logins)[0]
+                  : null
+              }
+              onChange={(_, value) =>
+                setForm((prev) => ({
+                  ...prev,
+                  maintainerLoginId: value?.id ?? '',
+                  disableGoiToEchoPalitraSync: value ? prev.disableGoiToEchoPalitraSync : true,
+                }))
+              }
+              getOptionLabel={(option) => option.login}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={option.id}>
+                    {option.login}
                   </li>
-                )}
-                renderInput={(params) => (
-                  <TextField {...params} label="Організм-власник" fullWidth />
-                )}
-              />
+                );
+              }}
+              renderInput={(params) => (
+                <TextField {...params} label="Відповідальний логін" fullWidth />
+              )}
+            />
 
-              <TextField
-                select
-                label="Тип інтеграції"
-                value={form.integrationType}
-                onChange={(event) =>
-                  handleIntegrationTypeChange(event.target.value as GoiIntegrationType)
-                }
-                fullWidth
-              >
-                <MenuItem value={GOI_INTEGRATION_TYPE_SIMPLE}>Проста</MenuItem>
-                <MenuItem value={GOI_INTEGRATION_TYPE_FULL}>Повна</MenuItem>
-              </TextField>
-
-              <Autocomplete
-                options={logins}
-                value={
-                  form.maintainerLoginId
-                    ? selectLoginOptions([form.maintainerLoginId], logins)[0]
-                    : null
-                }
-                onChange={(_, value) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    maintainerLoginId: value?.id ?? '',
-                    disableGoiToEchoPalitraSync: value ? prev.disableGoiToEchoPalitraSync : true,
-                  }))
-                }
-                getOptionLabel={(option) => option.login}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                renderOption={(props, option) => {
-                  const { key: _unusedKey, ...optionProps } = props;
-                  return (
-                    <li {...optionProps} key={option.id}>
-                      {option.login}
-                    </li>
-                  );
-                }}
-                renderInput={(params) => (
-                  <TextField {...params} label="Відповідальний логін" fullWidth />
-                )}
-              />
-
-              <Stack spacing={1}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={
-                        isGoiToEchoPalitraSyncToggleDisabled
-                          ? true
-                          : form.disableGoiToEchoPalitraSync
-                      }
-                      disabled={isGoiToEchoPalitraSyncToggleDisabled}
-                      onChange={(event) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          disableGoiToEchoPalitraSync: event.target.checked,
-                        }))
-                      }
-                    />
-                  }
-                  label="Вимкнути перенесення палітр з ГОІ в Echo"
-                />
-                {isGoiToEchoPalitraSyncToggleDisabled ? (
-                  <PowerAlert severity="warning">
-                    Щоб увімкнути перенесення палітр з ГОІ в Echo, спочатку призначте окремий
-                    відповідальний логін для цієї інтеграції. Зверніться до адміністратора, щоб
-                    увімкнути цю можливість.
-                  </PowerAlert>
-                ) : null}
-              </Stack>
-
+            <Stack spacing={1}>
               <FormControlLabel
                 control={
                   <Checkbox
-                    checked={form.pauseWorker}
+                    checked={
+                      isGoiToEchoPalitraSyncToggleDisabled ? true : form.disableGoiToEchoPalitraSync
+                    }
+                    disabled={isGoiToEchoPalitraSyncToggleDisabled}
                     onChange={(event) =>
                       setForm((prev) => ({
                         ...prev,
-                        pauseWorker: event.target.checked,
+                        disableGoiToEchoPalitraSync: event.target.checked,
                       }))
                     }
                   />
                 }
-                label="Призупинити воркер"
+                label="Вимкнути перенесення палітр з ГОІ в Echo"
               />
+              {isGoiToEchoPalitraSyncToggleDisabled ? (
+                <PowerAlert severity="warning">
+                  Щоб увімкнути перенесення палітр з ГОІ в Echo, спочатку призначте окремий
+                  відповідальний логін для цієї інтеграції. Зверніться до адміністратора, щоб
+                  увімкнути цю можливість.
+                </PowerAlert>
+              ) : null}
+            </Stack>
 
-              {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={form.pauseWorker}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      pauseWorker: event.target.checked,
+                    }))
+                  }
+                />
+              }
+              label="Призупинити воркер"
+            />
+
+            {form.integrationType === GOI_INTEGRATION_TYPE_SIMPLE ? (
+              <TextField
+                label="GOI URL"
+                value={form.apiHost}
+                onChange={(event) => setForm((prev) => ({ ...prev, apiHost: event.target.value }))}
+                fullWidth
+              />
+            ) : (
+              <>
                 <TextField
-                  label="GOI URL"
+                  label="SSH host"
+                  value={form.sshHost}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, sshHost: event.target.value }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="SSH user"
+                  value={form.sshUser}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, sshUser: event.target.value }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="SSH порт"
+                  type="number"
+                  value={form.sshPort}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      sshPort: Number(event.target.value) || GOI_SSH_PORT_DEFAULT,
+                    }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="Шлях до палітр"
+                  value={form.path}
+                  onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
+                  fullWidth
+                />
+                <TextField
+                  label="API host"
                   value={form.apiHost}
                   onChange={(event) =>
                     setForm((prev) => ({ ...prev, apiHost: event.target.value }))
                   }
                   fullWidth
                 />
-              ) : (
-                <>
-                  <TextField
-                    label="SSH host"
-                    value={form.sshHost}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, sshHost: event.target.value }))
-                    }
-                    fullWidth
-                  />
-                  <TextField
-                    label="SSH user"
-                    value={form.sshUser}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, sshUser: event.target.value }))
-                    }
-                    fullWidth
-                  />
-                  <TextField
-                    label="SSH порт"
-                    type="number"
-                    value={form.sshPort}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        sshPort: Number(event.target.value) || GOI_SSH_PORT_DEFAULT,
-                      }))
-                    }
-                    fullWidth
-                  />
-                  <TextField
-                    label="Шлях до палітр"
-                    value={form.path}
-                    onChange={(event) => setForm((prev) => ({ ...prev, path: event.target.value }))}
-                    fullWidth
-                  />
-                  <TextField
-                    label="API host"
-                    value={form.apiHost}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, apiHost: event.target.value }))
-                    }
-                    fullWidth
-                  />
-                  <TextField
-                    label="API порт"
-                    type="number"
-                    value={form.apiPort}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        apiPort: Number(event.target.value) || GOI_API_PORT_DEFAULT,
-                      }))
-                    }
-                    fullWidth
-                  />
-                  <TextField
-                    label="API логін"
-                    value={form.apiLogin}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, apiLogin: event.target.value }))
-                    }
-                    fullWidth
-                  />
-                  <TextField
-                    label="API пароль"
-                    type="password"
-                    value={form.apiPassword}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, apiPassword: event.target.value }))
-                    }
-                    fullWidth
-                  />
-                </>
+                <TextField
+                  label="API порт"
+                  type="number"
+                  value={form.apiPort}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      apiPort: Number(event.target.value) || GOI_API_PORT_DEFAULT,
+                    }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="API логін"
+                  value={form.apiLogin}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, apiLogin: event.target.value }))
+                  }
+                  fullWidth
+                />
+                <TextField
+                  label="API пароль"
+                  type="password"
+                  value={form.apiPassword}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, apiPassword: event.target.value }))
+                  }
+                  fullWidth
+                />
+              </>
+            )}
+
+            <TextField
+              select
+              label="Доступ для організмів"
+              value={form.accessOrganismIds}
+              onChange={(event) =>
+                setForm((prev) => ({
+                  ...prev,
+                  accessOrganismIds: asNumberArray(event.target.value),
+                }))
+              }
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) =>
+                  (selected as number[])
+                    .map((id) => organisms.find((item) => item.id === id)?.name || String(id))
+                    .join(', ') || '—',
+              }}
+              fullWidth
+            >
+              {organisms.map((organism) => (
+                <MenuItem key={organism.id} value={organism.id}>
+                  {organism.name}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <Autocomplete
+              multiple
+              options={logins}
+              value={selectLoginOptions(form.accessLogins, logins)}
+              onChange={(_, values) =>
+                setForm((prev) => ({ ...prev, accessLogins: selectedLoginIds(values) }))
+              }
+              getOptionLabel={(option) => option.login}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              renderOption={(props, option) => {
+                const { key: _unusedKey, ...optionProps } = props;
+                return (
+                  <li {...optionProps} key={option.id}>
+                    {option.login}
+                  </li>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField {...params} label="Доступ для логінів" fullWidth />
               )}
-
-              <TextField
-                select
-                label="Доступ для організмів"
-                value={form.accessOrganismIds}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    accessOrganismIds: asNumberArray(event.target.value),
-                  }))
-                }
-                SelectProps={{
-                  multiple: true,
-                  renderValue: (selected) =>
-                    (selected as number[])
-                      .map((id) => organisms.find((item) => item.id === id)?.name || String(id))
-                      .join(', ') || '—',
-                }}
-                fullWidth
-              >
-                {organisms.map((organism) => (
-                  <MenuItem key={organism.id} value={organism.id}>
-                    {organism.name}
-                  </MenuItem>
-                ))}
-              </TextField>
-
-              <Autocomplete
-                multiple
-                options={logins}
-                value={selectLoginOptions(form.accessLogins, logins)}
-                onChange={(_, values) =>
-                  setForm((prev) => ({ ...prev, accessLogins: selectedLoginIds(values) }))
-                }
-                getOptionLabel={(option) => option.login}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                renderOption={(props, option) => {
-                  const { key: _unusedKey, ...optionProps } = props;
-                  return (
-                    <li {...optionProps} key={option.id}>
-                      {option.login}
-                    </li>
-                  );
-                }}
-                renderInput={(params) => (
-                  <TextField {...params} label="Доступ для логінів" fullWidth />
-                )}
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <PowerButton
-              variant="outlined"
-              onClick={() => setEditorOpen(false)}
-              disabled={saving || checking || settingUpWorker}
-            >
-              Скасувати
-            </PowerButton>
-            {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
-              <PowerButton
-                variant="outlined"
-                onClick={handleCheckConnection}
-                disabled={saving || checking || settingUpWorker}
-              >
-                Перевірити з'єднання
-              </PowerButton>
-            ) : null}
-            {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
-              <PowerButton
-                variant="outlined"
-                onClick={handleSetupWorker}
-                disabled={saving || checking || settingUpWorker}
-              >
-                Налаштувати воркер
-              </PowerButton>
-            ) : null}
-            <PowerButton
-              variant="contained"
-              onClick={handleSave}
-              disabled={saving || checking || settingUpWorker}
-            >
-              {form.id ? 'Зберегти' : 'Створити'}
-            </PowerButton>
-          </DialogActions>
-        </Dialog>
+            />
+          </Stack>
+        </GoiIntegrationDrawer>
         <Dialog open={deleteTarget !== null} onClose={() => !saving && setDeleteTarget(null)}>
           <DialogTitle>Видалити інтеграцію ГОІ?</DialogTitle>
           <DialogContent>

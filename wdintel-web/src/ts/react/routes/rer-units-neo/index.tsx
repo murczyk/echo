@@ -343,13 +343,8 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           title="Підрозділи противника"
           withGlobalTextFilter={false}
           filter={
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-              <Stack
-                direction="row"
-                spacing={0}
-                alignItems="center"
-                sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%', minWidth: 0 }}
-              >
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 w-full sm:w-[360px] sm:max-w-full">
                 <GlobalFilterTextField
                   globalFilter={tableState.globalFilter}
                   setGlobalFilter={tableState.onChangeGlobalFilter}
@@ -360,13 +355,13 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
                   searchMode={searchMode}
                   onSearchModeChange={setSearchMode}
                 />
-              </Stack>
+              </div>
               <UnitStatusFilters
                 status={statusFilter}
                 counts={page.statusCounts}
                 onChange={changeStatusFilter}
               />
-            </Stack>
+            </div>
           }
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}

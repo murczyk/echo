@@ -78,6 +78,12 @@ function buttonWithText(text: string) {
   );
 }
 
+function menuItemWithText(text: string) {
+  return Array.from(document.querySelectorAll('[role="menuitem"]')).find(
+    (item) => item.textContent?.trim() === text,
+  );
+}
+
 function setInputValue(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
   setter?.call(input, value);
@@ -100,7 +106,17 @@ async function openDeviceTagsTab() {
   await flush();
 }
 
+async function openTagActions() {
+  const trigger = Array.from(document.querySelectorAll('button'))
+    .filter((button) => button.getAttribute('aria-label') === 'Дії')
+    .at(-1);
+  if (!trigger) throw new Error('Tag actions trigger was not rendered');
+  await act(async () => trigger.click());
+  await flush();
+}
+
 beforeEach(async () => {
+  window.history.replaceState(null, '', '/admin/device-analytics?tab=general');
   Object.defineProperty(window, 'confirm', {
     configurable: true,
     value: vi.fn(() => true),
@@ -127,6 +143,36 @@ afterEach(() => {
 });
 
 describe('AdminDeviceAnalyticsPage', () => {
+  it('loads tabs from the URL, canonicalizes invalid values, and preserves query/hash', async () => {
+    act(() => root.unmount());
+    window.history.replaceState(null, '', '/admin/device-analytics?owner=1&tab=tags#settings');
+    root = createRoot(container);
+    await act(async () => root.render(<AdminDeviceAnalyticsPage />));
+    await flush();
+
+    expect(buttonWithText('Теги пристроїв')?.getAttribute('aria-selected')).toBe('true');
+    expect(window.location.href).toContain('?owner=1&tab=tags#settings');
+
+    window.history.replaceState(null, '', '/admin/device-analytics?owner=1&tab=invalid#settings');
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
+    expect(window.location.href).toContain('?owner=1&tab=general#settings');
+  });
+
+  it('pushes a new URL only for a changed tab and restores it on popstate', async () => {
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const tagsTab = buttonWithText('Теги пристроїв');
+    await act(async () => tagsTab?.click());
+    expect(pushState).toHaveBeenCalledOnce();
+    expect(window.location.search).toBe('?tab=tags');
+    await act(async () => tagsTab?.click());
+    expect(pushState).toHaveBeenCalledOnce();
+
+    window.history.replaceState(null, '', '/admin/device-analytics?tab=general');
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
+  });
+
   it('loads general settings first and opens device tags in the second tab', async () => {
     expect(container.textContent).toContain('Аналіз пристроїв');
 
@@ -260,7 +306,11 @@ describe('AdminDeviceAnalyticsPage', () => {
     mocks.updateTag.mockResolvedValue(renamedTag);
     await openDeviceTagsTab();
 
-    await act(async () => buttonWithText('Редагувати')?.click());
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Редагувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
     const nameInput = document.querySelector<HTMLInputElement>('input');
     expect(nameInput).not.toBeNull();
     act(() => setInputValue(nameInput!, renamedTag.name));
@@ -270,7 +320,11 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.updateTag).toHaveBeenCalledWith({ id: TAG_ID, name: renamedTag.name });
     expect(mocks.saveRule).not.toHaveBeenCalled();
 
-    await act(async () => buttonWithText('Редагувати')?.click());
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Редагувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
     await act(async () => buttonWithText('Зберегти')?.click());
     await flush();
 
@@ -278,7 +332,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.saveRule).not.toHaveBeenCalled();
   });
 
-  it('archives and restores an existing tag from the edit dialog', async () => {
+  it('archives and restores an existing tag from its action menu', async () => {
     await openDeviceTagsTab();
 
     await act(async () => buttonWithText('Створити тег')?.click());
@@ -287,25 +341,30 @@ describe('AdminDeviceAnalyticsPage', () => {
     await act(async () => buttonWithText('Зберегти')?.click());
     await flush();
 
-    await act(async () => buttonWithText('Редагувати')?.click());
-    await act(async () => buttonWithText('Архівувати тег')?.click());
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Архівувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
     await flush();
 
     expect(mocks.archiveTag).toHaveBeenCalledWith({ id: TAG_ID });
-    expect(document.body.textContent).toContain(
-      'Архівний тег спочатку потрібно відновити, щоб змінити назву або правило.',
-    );
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Архівний'));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
 
-    const restoreButton = buttonWithText('Відновити тег');
-    expect(restoreButton).not.toBeUndefined();
-    expect(restoreButton?.disabled).toBe(false);
-    await act(async () => restoreButton?.click());
+    await openTagActions();
+    expect(menuItemWithText('Відновити')).toBeDefined();
+    await act(async () =>
+      menuItemWithText('Відновити')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
     await flush();
-    expect(window.confirm).toHaveBeenCalledTimes(2);
-    expect(mocks.archiveTag).toHaveBeenCalledTimes(1);
+    await flush();
 
     expect(mocks.restoreTag).toHaveBeenCalledWith({ id: TAG_ID });
-    expect(buttonWithText('Встановити тестове правило')).not.toBeUndefined();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Активний'));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
   it('requires confirmation before scheduling global reanalysis', async () => {
