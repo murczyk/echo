@@ -812,7 +812,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(video.currentTime).toBe(0);
   });
 
-  it('closes dialog on Escape while pausing', async () => {
+  it('closes the fullscreen dialog on Escape', async () => {
     const onClose = vi.fn();
     const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     renderDialog({
@@ -829,7 +829,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(pauseSpy).toHaveBeenCalled();
+    expect(pauseSpy).not.toHaveBeenCalled();
   });
 
   it('does not enter fullscreen when the config disables it', async () => {

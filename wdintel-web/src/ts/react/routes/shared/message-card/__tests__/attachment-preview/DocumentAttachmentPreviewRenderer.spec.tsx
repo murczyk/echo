@@ -182,7 +182,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     latestSwipeEnabled = null;
   });
 
-  it('exits fullscreen on Escape before closing the dialog', async () => {
+  it('closes the fullscreen dialog on Escape', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -211,29 +211,11 @@ describe('DocumentAttachmentPreviewRenderer', () => {
 
     expect(dialogProps.at(-1)?.disableRestoreFocus).toBe(true);
 
-    const fullscreenButton = document.body.querySelector(
-      'button[aria-label="Повноекранний режим"]',
-    );
-    expect(fullscreenButton).not.toBeNull();
-
-    await act(async () => {
-      fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    const fullscreenExitButton = document.body.querySelector(
-      'button[aria-label="Вийти з повноекранного режиму"]',
-    ) as HTMLButtonElement | null;
-    expect(fullscreenExitButton).not.toBeNull();
-    fullscreenExitButton?.focus();
-    expect(document.activeElement).toBe(fullscreenExitButton);
-
-    await act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-
-    expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
-    expect(document.activeElement).toBe(fullscreenExitButton);
-    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      document.body
+        .querySelector('[data-preview-stage="document"]')
+        ?.getAttribute('data-fullscreen'),
+    ).toBe('true');
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -346,7 +328,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('leaves fullscreen when switching from pdf to txt previews', async () => {
+  it('keeps fullscreen when switching from pdf to txt previews', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -380,18 +362,11 @@ describe('DocumentAttachmentPreviewRenderer', () => {
       );
     });
 
-    const fullscreenButton = document.body.querySelector(
-      'button[aria-label="Повноекранний режим"]',
-    );
-    expect(fullscreenButton).not.toBeNull();
-
-    await act(async () => {
-      fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
     expect(
-      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).not.toBeNull();
+      document.body
+        .querySelector('[data-preview-stage="document"]')
+        ?.getAttribute('data-fullscreen'),
+    ).toBe('true');
 
     await act(async () => {
       root.render(
@@ -426,6 +401,11 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
     ).toBeNull();
+    expect(
+      document.body
+        .querySelector('[data-preview-stage="document"]')
+        ?.getAttribute('data-fullscreen'),
+    ).toBe('true');
     root.unmount();
   });
 

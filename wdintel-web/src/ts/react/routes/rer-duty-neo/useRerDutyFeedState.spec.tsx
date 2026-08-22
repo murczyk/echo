@@ -11,8 +11,16 @@ import {
   emptyFilter,
   feedIndicatorUnreadCount,
   feedLoadedUnreadCount,
+  feedPendingNewerUnreadCount,
 } from './utils';
 import { useRerDutyFeedState } from './useRerDutyFeedState';
+
+vi.mock('./feedWindowCommit', () => ({
+  commitFeedWindowUpdate: (setMessageFeeds: (update: unknown) => void, update: unknown) =>
+    setMessageFeeds(update),
+  commitFeedWindowUpdateUrgent: (setMessageFeeds: (update: unknown) => void, update: unknown) =>
+    setMessageFeeds(update),
+}));
 
 const hoisted = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
@@ -856,8 +864,9 @@ describe('useRerDutyFeedState — loading', () => {
       newer.resolve(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
       await flushMicrotasks();
     });
-    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1, 2]);
-    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('unknown');
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1]);
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.map(([id]) => id)).toEqual([2]);
+    expect(apiRef.current!.tailAvailabilityByFeedId['mf-0']).toBe('exhausted');
   });
 
   it('marks an available tail exhausted when retry returns no messages', async () => {
@@ -1440,9 +1449,9 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
 
-    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
-    const ids = apiRef.current!.messageFeeds[0].items.map(([id]) => id).sort((a, b) => a - b);
-    expect(ids).toEqual([1, 2]);
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1]);
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.map(([id]) => id)).toEqual([2]);
   });
 
   it('calls get-inbox for newer mail when the feed is near bottom', async () => {
@@ -1472,11 +1481,12 @@ describe('useRerDutyFeedState — loading', () => {
       await flushMicrotasks();
     });
 
-    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
-    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id).sort()).toEqual([1, 3]);
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(3);
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1]);
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems?.map(([id]) => id)).toEqual([3]);
   });
 
-  it('near-bottom catch-up pages until at least 10 loaded unread after last-seen', async () => {
+  it('near-bottom catch-up buffers at least 10 unread after last-seen', async () => {
     const { apiRef } = await mountLoadedFeed();
     await act(async () => {
       apiRef.current!.setMessageFeeds((feeds) =>
@@ -1515,8 +1525,9 @@ describe('useRerDutyFeedState — loading', () => {
     });
 
     const feed = apiRef.current!.messageFeeds[0];
-    expect(feedLoadedUnreadCount(feed)).toBeGreaterThanOrEqual(10);
-    expect(feedLoadedUnreadCount(feed)).toBeLessThan(25);
+    const prefetchedUnread = feedLoadedUnreadCount(feed) + feedPendingNewerUnreadCount(feed);
+    expect(prefetchedUnread).toBeGreaterThanOrEqual(10);
+    expect(prefetchedUnread).toBeLessThan(25);
     const newerLoads = hoisted.fetchInboxMessages.mock.calls.filter(
       ([request]) => request?.sinceIdNoninclusive != null,
     );
@@ -3590,7 +3601,8 @@ describe('useRerDutyFeedState — loading', () => {
       });
 
       const feed = apiRef.current!.messageFeeds[0];
-      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.items.map(([id]) => id)).toEqual([1]);
+      expect(feed.pendingNewerItems?.map(([id]) => id)).toEqual([2]);
       expect(feed.readIds.has(2)).toBe(false);
       expect(feed.unreadCount).toBeGreaterThan(0);
     });
@@ -3659,7 +3671,8 @@ describe('useRerDutyFeedState — loading', () => {
       });
 
       const feed = apiRef.current!.messageFeeds[0];
-      expect(feed.items.map(([id]) => id).sort()).toEqual([1, 2]);
+      expect(feed.items.map(([id]) => id)).toEqual([1]);
+      expect(feed.pendingNewerItems?.map(([id]) => id)).toEqual([2]);
       expect(feed.readIds.has(2)).toBe(false);
       expect(feed.unreadCount).toBeGreaterThan(0);
     });
@@ -3988,7 +4001,7 @@ describe('useRerDutyFeedState — loading', () => {
       };
       hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 1));
       hoisted.fetchInboxMessages.mockResolvedValueOnce(inboxRsp([]));
-      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(2, 2));
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(2, 11));
       await act(async () => root.render(<TestHarness apiRef={apiRef} />));
       await act(async () => flushMicrotasks());
       await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));

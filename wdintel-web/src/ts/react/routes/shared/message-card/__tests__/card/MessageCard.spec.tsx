@@ -344,6 +344,7 @@ vi.mock('@mui/material', () => ({
   DialogContent: ({ children, ...props }: PrimitiveProps) => (
     <div {...omitMuiLayoutProps(props)}>{children}</div>
   ),
+  Divider: (props: Record<string, unknown>) => <hr {...omitMuiLayoutProps(props)} />,
   DialogTitle: ({ children, ...props }: PrimitiveProps) => (
     <div {...omitMuiLayoutProps(props)}>{children}</div>
   ),
@@ -4070,7 +4071,7 @@ describe('MessageCard', () => {
     );
   });
 
-  it('shows image metadata, fullscreen controls, and updates zoom in the preview dialog', async () => {
+  it('shows image metadata and updates zoom in the preview dialog', async () => {
     const view = await renderCard({
       msg: {
         ...buildMessage(),
@@ -4115,7 +4116,7 @@ describe('MessageCard', () => {
     expect(dialog?.textContent).toContain('1920 × 1080');
     expect(dialog?.textContent).toContain('1.5 KB');
     expect(dialog?.textContent).toContain('Тип');
-    expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).not.toBeNull();
+    expect(dialog?.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
     expect(dialog?.querySelector('button[aria-label="Закрити"]')).not.toBeNull();
 
     expect(dialog?.querySelector('input[type="range"]')).toBeNull();

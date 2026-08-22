@@ -131,7 +131,7 @@ export function MediaReprocessAction({
           size="small"
           onClick={(event: MouseEvent<HTMLButtonElement>) => {
             setAnchorEl(event.currentTarget);
-            void loadEngines();
+            if (canReprocess) void loadEngines();
           }}
           sx={{
             color: 'text.secondary',
@@ -170,17 +170,25 @@ export function MediaReprocessAction({
             </MenuItem>
           );
         })}
-        {engines == null && <MenuItem disabled>Завантаження OCR-движків…</MenuItem>}
-        {engines != null && engines.length === 0 && (
-          <MenuItem disabled={disabled} onClick={() => void reprocess()}>
-            Обробити повторно
-          </MenuItem>
-        )}
-        {engines?.map((engine) => (
-          <MenuItem key={engine.id} disabled={disabled} onClick={() => void reprocess(engine.id)}>
-            Обробити повторно через {engine.name}
-          </MenuItem>
-        ))}
+        {canReprocess ? (
+          <>
+            {engines == null && <MenuItem disabled>Завантаження OCR-движків…</MenuItem>}
+            {engines != null && engines.length === 0 && (
+              <MenuItem disabled={disabled} onClick={() => void reprocess()}>
+                Обробити повторно
+              </MenuItem>
+            )}
+            {engines?.map((engine) => (
+              <MenuItem
+                key={engine.id}
+                disabled={disabled}
+                onClick={() => void reprocess(engine.id)}
+              >
+                Обробити повторно через {engine.name}
+              </MenuItem>
+            ))}
+          </>
+        ) : null}
       </Menu>
     </>
   );
