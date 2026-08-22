@@ -260,26 +260,13 @@ export function MessageMediaAudioPlayer({
   return (
     <div className={`w-full min-w-0${showTranscription ? ' audio-transcription-layout' : ''}`}>
       <div className="audio-player-row flex w-full min-w-0 items-stretch gap-2">
-        <Box
+        <div
           ref={hostRef}
-          className="min-w-0 flex-1"
+          className="relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1"
           data-audio-player-host
           data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
           data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
           data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
-          sx={{
-            position: 'relative',
-            zIndex: AUDIO_PLAYER_Z_INDEX,
-            width: '100%',
-            maxWidth: 460,
-            minWidth: 0,
-            minHeight: AUDIO_PLAYER_MIN_HEIGHT_PX,
-            pt: `${AUDIO_PLAYER_TOP_PADDING_PX}px`,
-            pb: 0.5,
-            display: 'flex',
-            alignItems: 'stretch',
-            overflow: 'hidden',
-          }}
         />
         <Tooltip title={downloadLabel} enterDelay={400}>
           <MessageCardDisabledControlCursorWrapper

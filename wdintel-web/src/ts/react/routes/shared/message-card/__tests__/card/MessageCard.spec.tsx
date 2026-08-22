@@ -2624,21 +2624,14 @@ describe('MessageCard', () => {
 
     const players = view.container.querySelectorAll('custom-audio-player');
     expect(players).toHaveLength(2);
-    expect(
-      view.container
-        .querySelector('[data-audio-player-host]')
-        ?.getAttribute('data-audio-player-min-height-px'),
-    ).toBe('48');
-    expect(
-      view.container
-        .querySelector('[data-audio-player-host]')
-        ?.getAttribute('data-audio-player-top-padding-px'),
-    ).toBe('0');
-    expect(
-      view.container
-        .querySelector('[data-audio-player-host]')
-        ?.getAttribute('data-audio-player-z-index'),
-    ).toBe('0');
+    const audioHost = view.container.querySelector('[data-audio-player-host]');
+    expect(audioHost?.tagName).toBe('DIV');
+    expect(audioHost?.className).toBe(
+      'relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1',
+    );
+    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('48');
+    expect(audioHost?.getAttribute('data-audio-player-top-padding-px')).toBe('0');
+    expect(audioHost?.getAttribute('data-audio-player-z-index')).toBe('0');
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {
