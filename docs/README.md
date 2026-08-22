@@ -77,6 +77,15 @@ apply only to newly queued data, while AOR changes retain their existing
 behavior of requeueing affected links. Attempted misses remain available for
 administrator review.
 
+## Statistics storage
+
+`wdintel-rs-bgworker` derives recent and daily group statistics from
+PostgreSQL into Redis. Legacy location facets remain text values split from
+`sigint_inbox_item.location_v2`; settlement facets are stored separately as
+canonical IDs from `sigint_inbox_item_settlement.settlement_id`. The
+`oneoff-calculate-historic-stats` command can rebuild only settlement buckets
+with `--only settlement`.
+
 ### Initial Battle Line import from Delta KML
 
 The stored Delta KML and Battle Line are independent modules. The latest Delta

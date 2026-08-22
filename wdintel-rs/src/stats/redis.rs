@@ -184,6 +184,12 @@ pub struct UnitBucket {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct SettlementBucket {
+    pub settlements: Vec<IdCount>,
+    pub settlement_hlls: Vec<IdHll>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct GeneralDayBucket {
     pub groups: Vec<GroupCount>,
     pub details: DetailBucket,
@@ -194,6 +200,7 @@ pub(super) struct FiveMinuteBucket {
     pub groups: GroupBucket,
     pub details: DetailBucket,
     pub units: UnitBucket,
+    pub settlements: SettlementBucket,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -260,6 +267,7 @@ pub(super) async fn build_5min_buckets(
         )
     }));
     let linked_unit_counts = count_group_values(linked_unit_values(rows));
+    let settlement_counts = count_group_values(settlement_values(rows));
     let post_counts = count_group_values(rows.iter().filter_map(|row| {
         row.post_id.map(|post_id| {
             (
@@ -356,6 +364,7 @@ pub(super) async fn build_5min_buckets(
         )
     }));
     let linked_unit_hlls = hll_group_values(linked_unit_values(rows));
+    let settlement_hlls = hll_group_values(settlement_values(rows));
     let post_hlls = hll_group_values(rows.iter().filter_map(|row| {
         row.post_id.map(|post_id| {
             (
@@ -435,6 +444,7 @@ pub(super) async fn build_5min_buckets(
         .chain(sender_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(unit_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(linked_unit_counts.keys().map(|(_, batch_key, _)| batch_key))
+        .chain(settlement_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(post_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(tag_counts.keys().map(|(_, batch_key, _)| batch_key))
         .chain(callsign_counts.keys().map(|(_, batch_key, _)| batch_key))
@@ -457,6 +467,10 @@ pub(super) async fn build_5min_buckets(
     })?;
     append_id_counts(&mut result, linked_unit_counts, batches, |bucket| {
         &mut bucket.units.units
+    })
+    .context(h!())?;
+    append_id_counts(&mut result, settlement_counts, batches, |bucket| {
+        &mut bucket.settlements.settlements
     })
     .context(h!())?;
     append_string_counts(&mut result, callsign_counts, batches, |details| {
@@ -485,6 +499,10 @@ pub(super) async fn build_5min_buckets(
     })?;
     append_id_hlls(&mut result, linked_unit_hlls, batches, |bucket| {
         &mut bucket.units.unit_hlls
+    })
+    .context(h!())?;
+    append_id_hlls(&mut result, settlement_hlls, batches, |bucket| {
+        &mut bucket.settlements.settlement_hlls
     })
     .context(h!())?;
     append_id_hlls(&mut result, post_hlls, batches, |bucket| {
@@ -517,6 +535,24 @@ fn linked_unit_values(
                 row.group_master_key.clone(),
             )
         })
+    })
+}
+
+fn settlement_values(
+    rows: &[super::StatsRow],
+) -> impl Iterator<Item = (NaiveDateTime, i64, i64, String)> + '_ {
+    rows.iter().flat_map(|row| {
+        row.settlement_ids
+            .iter()
+            .copied()
+            .map(move |settlement_id| {
+                (
+                    bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                    row.id,
+                    settlement_id,
+                    row.group_master_key.clone(),
+                )
+            })
     })
 }
 
@@ -567,6 +603,22 @@ pub(super) fn aggregate_unit_day(
         ),
         unit_hlls: aggregate_id_hlls(
             buckets.iter().flat_map(|bucket| bucket.unit_hlls.clone()),
+        ),
+    }
+}
+
+pub(super) fn aggregate_settlement_day(
+    buckets: impl IntoIterator<Item = SettlementBucket>,
+) -> SettlementBucket {
+    let buckets = buckets.into_iter().collect::<Vec<_>>();
+    SettlementBucket {
+        settlements: aggregate_id_counts(
+            buckets.iter().flat_map(|bucket| bucket.settlements.clone()),
+        ),
+        settlement_hlls: aggregate_id_hlls(
+            buckets
+                .iter()
+                .flat_map(|bucket| bucket.settlement_hlls.clone()),
         ),
     }
 }
@@ -1118,6 +1170,21 @@ impl GroupStatsRedis {
         .await
     }
 
+    pub async fn write_settlement_5min(
+        &self,
+        timestamp: NaiveDateTime,
+        settlements: &SettlementBucket,
+    ) -> anyhow::Result<()> {
+        let mut redis = self.redis.clone();
+        write_expiring(
+            &mut redis,
+            settlement_5min_key(timestamp),
+            settlements,
+            timestamp + Duration::days(GROUP_STATS_REDIS_DETAIL_5MIN_TTL_DAYS),
+        )
+        .await
+    }
+
     pub async fn write_general_day(
         &self,
         date: NaiveDate,
@@ -1145,6 +1212,22 @@ impl GroupStatsRedis {
             &mut redis,
             unit_day_key(date),
             units,
+            timestamp + Duration::days(GROUP_STATS_REDIS_DAY_TTL_DAYS),
+        )
+        .await
+    }
+
+    pub async fn write_settlement_day(
+        &self,
+        date: NaiveDate,
+        settlements: &SettlementBucket,
+    ) -> anyhow::Result<()> {
+        let timestamp = super::start_of_day(date).context(h!())?;
+        let mut redis = self.redis.clone();
+        write_expiring(
+            &mut redis,
+            settlement_day_key(date),
+            settlements,
             timestamp + Duration::days(GROUP_STATS_REDIS_DAY_TTL_DAYS),
         )
         .await
@@ -1208,6 +1291,20 @@ impl GroupStatsRedis {
     ) -> anyhow::Result<Vec<UnitBucket>> {
         self.read_required(
             timestamps.iter().copied().map(unit_5min_key).collect(),
+        )
+        .await
+    }
+
+    pub async fn read_settlement_5min(
+        &self,
+        timestamps: &[NaiveDateTime],
+    ) -> anyhow::Result<Vec<SettlementBucket>> {
+        self.read_required(
+            timestamps
+                .iter()
+                .copied()
+                .map(settlement_5min_key)
+                .collect(),
         )
         .await
     }
@@ -1283,20 +1380,22 @@ impl GroupStatsRedis {
                     group_5min_key(*timestamp),
                     detail_5min_key(*timestamp),
                     unit_5min_key(*timestamp),
+                    settlement_5min_key(*timestamp),
                 ]
             })
             .collect_vec();
         let values = self.read_optional(keys).await.context(h!())?;
         Ok(timestamps
             .into_iter()
-            .zip(values.chunks_exact(3))
+            .zip(values.chunks_exact(4))
             .filter_map(|(timestamp, values)| {
                 let valid = matches!(
                     values,
-                    [Some(groups), Some(details), Some(units)]
+                    [Some(groups), Some(details), Some(units), Some(settlements)]
                         if decode::<GroupBucket>(groups).is_ok()
                             && decode::<DetailBucket>(details).is_ok()
                             && decode::<UnitBucket>(units).is_ok()
+                            && decode::<SettlementBucket>(settlements).is_ok()
                 );
                 (!valid).then_some(timestamp)
             })
@@ -1310,18 +1409,25 @@ impl GroupStatsRedis {
         let dates = dates.iter().copied().unique().collect_vec();
         let keys = dates
             .iter()
-            .flat_map(|date| [general_day_key(*date), unit_day_key(*date)])
+            .flat_map(|date| {
+                [
+                    general_day_key(*date),
+                    unit_day_key(*date),
+                    settlement_day_key(*date),
+                ]
+            })
             .collect_vec();
         let values = self.read_optional(keys).await.context(h!())?;
         Ok(dates
             .into_iter()
-            .zip(values.chunks_exact(2))
+            .zip(values.chunks_exact(3))
             .filter_map(|(date, values)| {
                 let valid = matches!(
                     values,
-                    [Some(general), Some(units)]
+                    [Some(general), Some(units), Some(settlements)]
                         if decode::<GeneralDayBucket>(general).is_ok()
                             && decode::<UnitBucket>(units).is_ok()
+                            && decode::<SettlementBucket>(settlements).is_ok()
                 );
                 (!valid).then_some(date)
             })
@@ -1719,12 +1825,23 @@ fn unit_5min_key(timestamp: NaiveDateTime) -> String {
     )
 }
 
+fn settlement_5min_key(timestamp: NaiveDateTime) -> String {
+    format!(
+        "{GROUP_STATS_REDIS_KEY_PREFIX}:5m:settlement-id:{}",
+        timestamp.and_utc().timestamp()
+    )
+}
+
 fn general_day_key(date: NaiveDate) -> String {
     format!("{GROUP_STATS_REDIS_KEY_PREFIX}:day:general:{date}")
 }
 
 fn unit_day_key(date: NaiveDate) -> String {
     format!("{GROUP_STATS_REDIS_KEY_PREFIX}:day:unit-id:{date}")
+}
+
+fn settlement_day_key(date: NaiveDate) -> String {
+    format!("{GROUP_STATS_REDIS_KEY_PREFIX}:day:settlement-id:{date}")
 }
 
 fn network_day_key(date: NaiveDate) -> String {
@@ -1792,6 +1909,19 @@ mod tests {
         let decoded: UnitBucket = decode(&encoded).unwrap();
 
         assert_eq!(decoded, units);
+
+        let settlements = SettlementBucket {
+            settlements: vec![IdCount {
+                signal_group_batch_id: 42,
+                value: 8,
+                quantity: 2,
+            }],
+            ..Default::default()
+        };
+        let encoded = encode(&settlements).unwrap();
+        let decoded: SettlementBucket = decode(&encoded).unwrap();
+
+        assert_eq!(decoded, settlements);
     }
 
     #[test]
@@ -2012,6 +2142,14 @@ mod tests {
             }],
             unit_hlls: Vec::new(),
         };
+        let settlements = SettlementBucket {
+            settlements: vec![IdCount {
+                signal_group_batch_id: 1,
+                value: 43,
+                quantity: 1,
+            }],
+            settlement_hlls: Vec::new(),
+        };
         stats_redis
             .write_5min(timestamp, &groups, &details)
             .await
@@ -2028,6 +2166,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
+            stats_redis
+                .missing_five_minute_buckets(&[timestamp])
+                .await
+                .unwrap(),
+            vec![timestamp]
+        );
+        stats_redis
+            .write_settlement_5min(timestamp, &settlements)
+            .await
+            .unwrap();
+        assert_eq!(
             stats_redis.read_group_5min(&[timestamp]).await.unwrap(),
             vec![groups.clone()]
         );
@@ -2038,6 +2187,13 @@ mod tests {
         assert_eq!(
             stats_redis.read_unit_5min(&[timestamp]).await.unwrap(),
             vec![units.clone()]
+        );
+        assert_eq!(
+            stats_redis
+                .read_settlement_5min(&[timestamp])
+                .await
+                .unwrap(),
+            vec![settlements.clone()]
         );
         assert!(stats_redis
             .missing_five_minute_buckets(&[timestamp])
@@ -2062,6 +2218,23 @@ mod tests {
             .write_5min(timestamp, &groups, &details)
             .await
             .unwrap();
+        redis::cmd("SET")
+            .arg(settlement_5min_key(timestamp))
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis
+                .missing_five_minute_buckets(&[timestamp])
+                .await
+                .unwrap(),
+            vec![timestamp]
+        );
+        stats_redis
+            .write_settlement_5min(timestamp, &settlements)
+            .await
+            .unwrap();
 
         let general = GeneralDayBucket {
             groups: groups.groups.clone(),
@@ -2073,6 +2246,14 @@ mod tests {
             vec![date]
         );
         stats_redis.write_unit_day(date, &units).await.unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis
+            .write_settlement_day(date, &settlements)
+            .await
+            .unwrap();
         assert!(stats_redis
             .missing_general_days(&[date])
             .await
@@ -2089,6 +2270,33 @@ mod tests {
             vec![date]
         );
         stats_redis.write_unit_day(date, &units).await.unwrap();
+        stats_redis
+            .write_settlement_day(date, &settlements)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis
+                .read_required::<SettlementBucket>(vec![settlement_day_key(
+                    date
+                ),])
+                .await
+                .unwrap(),
+            vec![settlements.clone()]
+        );
+        redis::cmd("SET")
+            .arg(settlement_day_key(date))
+            .arg("invalid")
+            .query_async::<()>(&mut redis)
+            .await
+            .unwrap();
+        assert_eq!(
+            stats_redis.missing_general_days(&[date]).await.unwrap(),
+            vec![date]
+        );
+        stats_redis
+            .write_settlement_day(date, &settlements)
+            .await
+            .unwrap();
 
         let network_bucket = NetworkDayBucket {
             networks: vec![
@@ -2154,8 +2362,10 @@ mod tests {
                 group_5min_key(timestamp),
                 detail_5min_key(timestamp),
                 unit_5min_key(timestamp),
+                settlement_5min_key(timestamp),
                 general_day_key(date),
                 unit_day_key(date),
+                settlement_day_key(date),
                 network_day_key(date),
             ])
             .query_async::<()>(&mut redis)
