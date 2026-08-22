@@ -1,13 +1,25 @@
 use super::super::types::*;
+use crate::config::{
+    AnalyticsConfig, ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT,
+    RER_REPORT_ENRICHMENT_ID_BATCH_SIZE,
+};
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::location::peleng::{
     collect_inbox_pelengs, inbox_item_has_active_peleng_exists,
 };
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::analysis::{
+    analytics_inbox_request_supported, map_postgres_runtime_timeout,
+    with_analytics_read_fallback,
+};
+use crate::rer_importer::inbox::query::scan_analytics_inbox_candidate_ids;
 use crate::rer_importer::report_chunking::{
-    compare_inbox_report_message_oldest_first, inbox_report_chunk_req,
-    inbox_report_period_chunks, oldest_first_inbox_report_req, ReportPeriodEnd,
+    compare_inbox_report_message_oldest_first,
+    exclude_inbox_report_linked_intel_products, inbox_report_chunk_req,
+    inbox_report_period_chunks, oldest_first_inbox_report_req,
+    report_chunk_exclusive_till, restrict_inbox_report_to_message_ids,
+    ReportPeriodEnd,
 };
 use crate::sigint::sender::preferred_sender_sql_snippet;
 use crate::types::*;
@@ -101,6 +113,13 @@ pub async fn get_inbox_messages_report(
         .collect())
 }
 
+fn pelengs_analytics_scan_filters(
+    query: Select<signal_message::Entity>,
+) -> Select<signal_message::Entity> {
+    exclude_inbox_report_linked_intel_products(query)
+        .filter(inbox_item_has_active_peleng_exists())
+}
+
 fn sort_collected_peleng_report_messages(
     messages: &mut [CollectedPelengReportMessage],
     req: &InboxMessagesReq,
@@ -124,6 +143,124 @@ async fn get_inbox_messages_report_chunk(
     req: &InboxMessagesReq,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<CollectedPelengReportMessage>, AppError> {
+    let analytics_supported = analytics_inbox_request_supported(req);
+    let login = *user_login;
+    let req = req.clone();
+    let env_analytics = env.clone();
+    let candidate_ids = with_analytics_read_fallback(
+        env,
+        "pelengs report message scan",
+        analytics_supported,
+        {
+            let req = req.clone();
+            let env_analytics = env_analytics.clone();
+            move |analytics_db| async move {
+                scan_peleng_report_message_ids(
+                    analytics_db,
+                    login,
+                    env_analytics,
+                    req,
+                    period_end,
+                )
+                .await
+            }
+        },
+        |_postgres_db| async move { Ok(None) },
+    )
+    .await
+    .context(h!())?;
+    match candidate_ids {
+        Some(ids) => {
+            log::info!("Pelengs report using analytics ({} ids)", ids.len());
+            Ok(hydrate_peleng_report_messages(
+                &login, env, &req, period_end, &ids,
+            )
+            .await
+            .context(h!())?)
+        }
+        None => {
+            log::debug!(
+                "Pelengs report analytics scan unavailable; using PostgreSQL scan"
+            );
+            get_inbox_messages_report_chunk_postgres(
+                &login, env, &req, period_end, None,
+            )
+            .await
+            .map_err(|error| {
+                map_postgres_runtime_timeout(
+                    error,
+                    "pelengs report message scan",
+                )
+            })
+        }
+    }
+}
+
+async fn scan_peleng_report_message_ids(
+    analytics_db: DatabaseConnection,
+    login: uuid::Uuid,
+    env: Env,
+    req: InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+) -> Result<Option<Vec<i64>>, AppError> {
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let exclusive_till =
+        report_chunk_exclusive_till(&req, period_end).context(h!())?;
+    Ok(scan_analytics_inbox_candidate_ids(
+        &login,
+        &env,
+        &req,
+        &analytics_db,
+        freshness_max_age_ms,
+        exclusive_till,
+        None,
+        pelengs_analytics_scan_filters,
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn hydrate_peleng_report_messages(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+    candidate_ids: &[i64],
+) -> Result<Vec<CollectedPelengReportMessage>, AppError> {
+    let mut messages = Vec::new();
+    for candidate_ids in
+        candidate_ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE)
+    {
+        messages.extend(
+            get_inbox_messages_report_chunk_postgres(
+                user_login,
+                env,
+                req,
+                period_end,
+                Some(candidate_ids),
+            )
+            .await
+            .context(h!())?,
+        );
+    }
+    Ok(messages)
+}
+
+async fn get_inbox_messages_report_chunk_postgres(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+    candidate_ids: Option<&[i64]>,
+) -> Result<Vec<CollectedPelengReportMessage>, AppError> {
+    if candidate_ids.is_some_and(<[i64]>::is_empty) {
+        return Ok(Vec::new());
+    }
     let login = *user_login;
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -345,6 +482,10 @@ async fn get_inbox_messages_report_chunk(
     )
     .context(h!())?;
     let q = filter_selected_metadata_for_inbox_messages(q, req)?;
+    let q = match candidate_ids {
+        Some(ids) => restrict_inbox_report_to_message_ids(q, ids),
+        None => q,
+    };
 
     info!(
         "[get_inbox_messages_report] query: {}",
@@ -788,6 +929,42 @@ mod tests {
         assert_eq!(actual.len(), 2);
         assert_eq!(actual[0].id, 1);
         assert_eq!(actual[1].id, 2);
+    }
+
+    #[test]
+    fn pelengs_analytics_scan_filters_use_mirrored_exists_and_not_in() {
+        use sea_orm::{DbBackend, QueryTrait};
+
+        let sql = pelengs_analytics_scan_filters(SignalMessage::find())
+            .build(DbBackend::Postgres)
+            .to_string();
+        assert!(sql.contains("EXISTS"), "{sql}");
+        assert!(sql.contains("sigint_peleng"), "{sql}");
+        assert!(
+            sql.contains("intel_product") && sql.contains("NOT IN"),
+            "{sql}"
+        );
+        assert!(!sql.contains("matching_unit_network_ids"), "{sql}");
+        assert!(!sql.contains("ANY($1::text[])"), "{sql}");
+        assert!(!sql.contains("array_agg"), "{sql}");
+    }
+
+    #[test]
+    fn pelengs_id_restriction_avoids_full_inbox_unit_cte() {
+        use sea_orm::{DbBackend, EntityTrait, QueryTrait};
+
+        let sql = restrict_inbox_report_to_message_ids(
+            SignalMessage::find(),
+            &[7, 8],
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert!(
+            sql.contains(r#""signal_message"."id""#)
+                && (sql.contains(" IN (") || sql.contains(" = ANY(")),
+            "{sql}"
+        );
+        assert!(!sql.contains("matching_unit_network_ids"), "{sql}");
     }
 
     #[test]

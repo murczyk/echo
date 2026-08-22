@@ -1518,6 +1518,7 @@ fn analytics_groups_selected_networks_use_scoped_flat_joins() {
         test_dt(2026, 1, 2, 0, 0),
         vec!["group".to_string()],
         Some(&scope),
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -1547,6 +1548,41 @@ fn analytics_groups_selected_networks_use_scoped_flat_joins() {
 }
 
 #[test]
+fn analytics_groups_selected_units_use_network_link_join() {
+    let mut req = mk_analysis_stats_req(0, 1);
+    req.selected_units = Some(vec!["5 ЗВА".to_string()]);
+    let scope = AnalyticsMessageIdScope::Inclusive {
+        min_id: 10,
+        max_id: 20,
+    };
+    let resolved = crate::rer_importer::analysis::analytics_unit::ResolvedAnalyticsUnitFilters {
+        selected: crate::rer_importer::analysis::analytics_unit::ResolvedAnalyticsUnitFilter {
+            ordinary_names: vec!["5 ЗВА".to_string()],
+            includes_undefined: false,
+            linked_network_ids: vec![7, 8],
+            present: true,
+        },
+        ..Default::default()
+    };
+    let query = stats::build_groups_query(
+        &req,
+        &uuid::Uuid::nil(),
+        test_dt(2026, 1, 1, 0, 0),
+        test_dt(2026, 1, 2, 0, 0),
+        vec!["group".to_string()],
+        Some(&scope),
+        Some(&resolved),
+    )
+    .unwrap();
+    let sql = query.build(DbBackend::Postgres).to_string();
+
+    assert!(str::contains(&sql, "message_network_link"), "{sql}");
+    assert!(str::contains(&sql, "analytics_selected_unit_link"), "{sql}");
+    assert!(!str::contains(&sql, "matching_unit_network_ids"), "{sql}");
+    assert!(!str::contains(&sql, "ANY($1::text[])"), "{sql}");
+}
+
+#[test]
 fn postgres_groups_selected_networks_keep_correlated_filter() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_networks = Some(vec![1, 2]);
@@ -1556,6 +1592,7 @@ fn postgres_groups_selected_networks_keep_correlated_filter() {
         test_dt(2026, 1, 1, 0, 0),
         test_dt(2026, 1, 2, 0, 0),
         vec!["group".to_string()],
+        None,
         None,
     )
     .unwrap();
@@ -1585,6 +1622,7 @@ fn analytics_networks_query_scopes_both_union_arms() {
         vec!["group".to_string()],
         false,
         Some(&scope),
+        None,
     )
     .unwrap();
     let sql = statement.sql;
@@ -1688,6 +1726,7 @@ fn analytics_senders_selected_networks_use_scoped_flat_joins() {
         test_dt(2026, 1, 2, 0, 0),
         vec!["group".to_string()],
         Some(&scope),
+        None,
     )
     .unwrap();
     let sql = query.build(DbBackend::Postgres).to_string();
@@ -1730,6 +1769,7 @@ fn postgres_senders_selected_networks_keep_correlated_filter() {
         test_dt(2026, 1, 1, 0, 0),
         test_dt(2026, 1, 2, 0, 0),
         vec!["group".to_string()],
+        None,
         None,
     )
     .unwrap();
@@ -7112,11 +7152,11 @@ fn count_stats_analytics_supports_callsign_filters_but_rejects_search() {
 }
 
 #[test]
-fn count_stats_analytics_rejects_unit_filters() {
+fn count_stats_analytics_supports_unit_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
 
-    assert!(!analytics_count_request_supported(&req));
+    assert!(analytics_count_request_supported(&req));
 }
 
 #[test]
@@ -7125,7 +7165,7 @@ fn summary_table_analytics_supports_unit_filters_but_rejects_search() {
     req.selected_units = Some(vec!["unit".to_string()]);
 
     assert!(analytics_summary_table_request_supported(&req));
-    assert!(!analytics_count_request_supported(&req));
+    assert!(analytics_count_request_supported(&req));
 
     req.search = Some("message".to_string());
     assert!(!analytics_summary_table_request_supported(&req));

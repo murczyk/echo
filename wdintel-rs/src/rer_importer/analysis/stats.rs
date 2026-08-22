@@ -15,6 +15,7 @@ use sea_orm::sea_query::{
 };
 use sea_orm::FromQueryResult;
 use sea_orm::*;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::error::Error as StdError;
 use std::future::Future;
@@ -28,6 +29,10 @@ use crate::entities::{
 };
 use crate::error::AppError;
 use crate::h;
+use crate::rer_importer::analysis::analytics_unit::{
+    apply_analysis_unit_filters, resolve_analysis_unit_filters_for_analytics,
+    ResolvedAnalyticsUnitFilters,
+};
 use crate::rer_importer::analysis::*;
 use crate::stats::*;
 use crate::types::Env;
@@ -382,14 +387,16 @@ async fn resolve_analytics_frequency_scopes(
         db,
         freshness_max_age_ms,
     )
-    .await?;
+    .await
+    .context(h!())?;
     let comparison = resolve_analytics_message_id_scope_for_range(
         comparison_period_start,
         dt_since,
         db,
         freshness_max_age_ms,
     )
-    .await?;
+    .await
+    .context(h!())?;
     Ok(AnalyticsFrequencyScopes {
         current,
         comparison,
@@ -587,6 +594,7 @@ pub async fn fetch_groups_for_login(
         dt_since,
         dt_till,
         None,
+        None,
     )
     .await
 }
@@ -595,8 +603,10 @@ pub(super) async fn fetch_groups_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(Vec::new());
@@ -604,6 +614,14 @@ pub(super) async fn fetch_groups_raw_with_db(
     let login_value = login_id_from_identity(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).c(h!())?;
     let dt_till = dt_from_millis(req.till_date_noninclusive_ms).c(h!())?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
     fetch_groups_for_login_with_db(
         &req.0,
         &login_value,
@@ -612,6 +630,7 @@ pub(super) async fn fetch_groups_raw_with_db(
         dt_since,
         dt_till,
         scope,
+        units.as_deref(),
     )
     .await
 }
@@ -719,6 +738,7 @@ async fn fetch_groups_for_login_with_db(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Vec<AnalysisStatsGroup>, AppError> {
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -736,6 +756,7 @@ async fn fetch_groups_for_login_with_db(
         dt_till,
         master_keys,
         scope,
+        units,
     )?;
 
     let groups_res: Vec<GroupsRes> =
@@ -765,6 +786,26 @@ where
         filter_selected_metadata_for_analysis_stats(query, req)
             .context(h!())?,
     )
+}
+
+async fn resolve_or_borrow_analysis_unit_filters<'a>(
+    source_db: &DatabaseConnection,
+    req: &AnalysisStatsReq,
+    scope: Option<&AnalyticsMessageIdScope>,
+    resolved: Option<&'a ResolvedAnalyticsUnitFilters>,
+) -> Result<Option<Cow<'a, ResolvedAnalyticsUnitFilters>>, AppError> {
+    if let Some(resolved) = resolved {
+        return Ok(Some(Cow::Borrowed(resolved)));
+    }
+    Ok(resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        scope,
+    )
+    .await
+    .context(h!())?
+    .map(Cow::Owned))
 }
 
 fn effective_groups_with_access(
@@ -898,6 +939,7 @@ pub async fn count_groups(
         dt_till,
         master_keys,
         None,
+        None,
     )?;
     let count = groups_res.count(&read_db).await.c(h!())?;
     Ok(count as i64)
@@ -910,6 +952,7 @@ pub(super) fn build_groups_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Groups);
     let accessible_groups = master_keys.clone();
@@ -957,6 +1000,7 @@ pub(super) fn build_groups_query(
         dt_since,
         dt_till,
         scope,
+        units,
     )
 }
 
@@ -970,6 +1014,7 @@ fn apply_group_stats_filters(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -985,12 +1030,14 @@ fn apply_group_stats_filters(
         filter_selected_freqs(query, &req.selected_freqs).context(h!())?;
     let query =
         filter_selected_posts(query, &req.selected_posts).context(h!())?;
-    let query = filter_selected_units_for_period(
+    let query = apply_analysis_unit_filters(
         query,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let query = filter_selected_locations(
@@ -1106,6 +1153,7 @@ pub(super) async fn fetch_daily_group_activity_with_db(
         dt_since,
         dt_till,
         scope,
+        None,
     )?;
     Ok(query
         .into_model::<AnalysisDailyGroupActivity>()
@@ -1198,6 +1246,7 @@ fn callsign_relation_messages_query(
         dt_since,
         dt_till,
         scope,
+        None,
     )
 }
 
@@ -1438,6 +1487,14 @@ async fn fetch_senders_for_login_with_db(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisStatsSender>, AppError> {
+    let units = resolve_analysis_unit_filters_for_analytics(
+        &env.dbx,
+        &req.selected_units,
+        req.units_exact_match_only,
+        scope,
+    )
+    .await
+    .context(h!())?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
@@ -1459,6 +1516,7 @@ async fn fetch_senders_for_login_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_ref(),
     )?;
     let breakdown_rows: Vec<SenderBreakdownRes> = breakdown_query
         .into_model::<SenderBreakdownRes>()
@@ -1539,6 +1597,7 @@ pub(super) fn build_sender_breakdown_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req =
         Json(request_without_facet_filter(&req.0, AnalysisFacet::Senders));
@@ -1573,6 +1632,7 @@ pub(super) fn build_sender_breakdown_query(
         login_str,
         master_keys,
         scope,
+        units,
         true,
     )?;
     Ok(breakdown_query)
@@ -1585,15 +1645,26 @@ pub async fn count_senders(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_senders_with_db(req, user, &read_db, master_keys, None).await
+    count_senders_with_db(
+        req,
+        user,
+        &read_db,
+        &read_db,
+        master_keys,
+        None,
+        None,
+    )
+    .await
 }
 
 pub(super) async fn count_senders_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
@@ -1602,6 +1673,14 @@ pub(super) async fn count_senders_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let login_value = login_id_from_identity(user)?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -1612,6 +1691,7 @@ pub(super) async fn count_senders_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_deref(),
     )?;
     count_distinct_with_db(
         senders_res,
@@ -1631,6 +1711,7 @@ fn build_senders_filtered_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req =
         Json(request_without_facet_filter(&req.0, AnalysisFacet::Senders));
@@ -1657,12 +1738,14 @@ fn build_senders_filtered_query(
         .context(h!())?;
     let senders_res = filter_selected_posts(senders_res, &req.selected_posts)
         .context(h!())?;
-    let senders_res = filter_selected_units_for_period(
+    let senders_res = apply_analysis_unit_filters(
         senders_res,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let senders_res = filter_selected_locations(
@@ -1761,6 +1844,7 @@ fn apply_sender_filters_for_login<E>(
     login_str: &uuid::Uuid,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
     group_access_already_filtered: bool,
 ) -> Result<Select<E>, AppError>
 where
@@ -1793,12 +1877,14 @@ where
         filter_selected_freqs(query, &req.selected_freqs).context(h!())?;
     let query =
         filter_selected_posts(query, &req.selected_posts).context(h!())?;
-    let query = filter_selected_units_for_period(
+    let query = apply_analysis_unit_filters(
         query,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let query = filter_selected_locations(
@@ -1874,26 +1960,29 @@ pub async fn fetch_posts(
         return Ok(result);
     }
 
-    fetch_posts_with_db(req, user, &env.dbx, master_keys, None).await
+    fetch_posts_with_db(req, user, &env.dbx, &env.dbx, master_keys, None).await
 }
 
 pub(super) async fn fetch_posts_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: &AnalyticsMessageIdScope,
 ) -> Result<Vec<AnalysisStatsPost>, AppError> {
     if scope.is_empty() {
         return Ok(Vec::new());
     }
-    fetch_posts_with_db(req, user, db, master_keys, Some(scope)).await
+    fetch_posts_with_db(req, user, db, source_db, master_keys, Some(scope))
+        .await
 }
 
 async fn fetch_posts_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisStatsPost>, AppError> {
@@ -1901,6 +1990,14 @@ async fn fetch_posts_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let login_value = login_id_from_identity(user)?;
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        scope,
+    )
+    .await
+    .context(h!())?;
     let instant = std::time::Instant::now();
     let post_res = if scope.is_none() && req_allows_stats_aggregated(&req.0) {
         read_unfiltered_post_stats(db, master_keys, dt_since, dt_till).await?
@@ -1912,6 +2009,7 @@ async fn fetch_posts_with_db(
             dt_since,
             dt_till,
             scope,
+            units.as_ref(),
         )?
         .into_model::<PostsRes>()
         .all(db)
@@ -1980,15 +2078,18 @@ pub async fn count_posts(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_posts_with_db(req, user, &read_db, master_keys, None).await
+    count_posts_with_db(req, user, &read_db, &read_db, master_keys, None, None)
+        .await
 }
 
 pub(super) async fn count_posts_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
@@ -1997,6 +2098,14 @@ pub(super) async fn count_posts_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let login_value = login_id_from_identity(user)?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
@@ -2007,6 +2116,7 @@ pub(super) async fn count_posts_with_db(
         dt_since,
         dt_till,
         scope,
+        units.as_deref(),
     )?;
     count_distinct_with_db(
         posts_res,
@@ -2023,6 +2133,7 @@ fn build_posts_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     Ok(build_posts_filtered_query(
         req,
@@ -2031,6 +2142,7 @@ fn build_posts_query(
         dt_since,
         dt_till,
         scope,
+        units,
     )?
     .select_only()
     .column_as(
@@ -2051,6 +2163,7 @@ fn build_posts_filtered_query(
     dt_since: NaiveDateTime,
     dt_till: NaiveDateTime,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = Json(request_without_facet_filter(&req.0, AnalysisFacet::Posts));
     let include_peleng_locations =
@@ -2077,12 +2190,14 @@ fn build_posts_filtered_query(
         scope,
     )
     .context(h!())?;
-    let post_res = filter_selected_units_for_period(
+    let post_res = apply_analysis_unit_filters(
         post_res,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let post_res =
@@ -2369,15 +2484,18 @@ pub async fn count_freqs(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_freqs_with_db(req, user, &read_db, master_keys, None).await
+    count_freqs_with_db(req, user, &read_db, &read_db, master_keys, None, None)
+        .await
 }
 
 pub(super) async fn count_freqs_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
@@ -2389,6 +2507,14 @@ pub(super) async fn count_freqs_with_db(
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let login_value = login_id_from_identity(user)?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
     let freqs_res = build_freqs_filtered_query(
         &req.0,
         &login_value,
@@ -2396,6 +2522,7 @@ pub(super) async fn count_freqs_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_deref(),
     )?;
     count_distinct_with_db(
         freqs_res,
@@ -2420,6 +2547,7 @@ pub(super) fn build_freqs_query(
         dt_till,
         master_keys,
         scope,
+        None,
     )?
     .select_only()
     .column_as(
@@ -2440,6 +2568,7 @@ fn build_freqs_filtered_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Frequencies);
     let include_peleng_locations =
@@ -2466,12 +2595,14 @@ fn build_freqs_filtered_query(
         scope,
     )
     .context(h!())?;
-    let freqs_res = filter_selected_units_for_period(
+    let freqs_res = apply_analysis_unit_filters(
         freqs_res,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let freqs_res = filter_selected_posts(freqs_res, &req.selected_posts)?;
@@ -2606,6 +2737,7 @@ pub(super) async fn fetch_callsigns_raw_with_db(
         dt_till,
         master_keys,
         Some(scope),
+        None,
     )?;
     let (mut callsigns_res, callsign_alias) =
         join_analytics_callsign_relation(callsigns_res, Some(scope));
@@ -2680,8 +2812,10 @@ pub(super) async fn count_callsigns_analytics_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
@@ -2690,6 +2824,14 @@ pub(super) async fn count_callsigns_analytics_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
     let callsigns_res = build_callsigns_filtered_query(
         &req.0,
         &login_value,
@@ -2697,6 +2839,7 @@ pub(super) async fn count_callsigns_analytics_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_deref(),
     )?;
     let (mut callsigns_res, callsign_alias) =
         join_analytics_callsign_relation(callsigns_res, scope);
@@ -2878,6 +3021,7 @@ fn build_metadata_messages_query(
         login_str,
         master_keys,
         scope,
+        None,
         false,
     )
 }
@@ -3106,6 +3250,7 @@ fn build_callsign_inbox_item_ids_query(
         dt_till,
         master_keys,
         None,
+        None,
     )?
     .select_only()
     .column(sigint_inbox_item::Column::Id)
@@ -3157,6 +3302,7 @@ fn build_callsigns_filtered_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Callsigns);
     let include_peleng_locations =
@@ -3186,12 +3332,14 @@ fn build_callsigns_filtered_query(
         filter_selected_freqs(callsigns_res, &req.selected_freqs)?;
     let callsigns_res =
         filter_selected_posts(callsigns_res, &req.selected_posts)?;
-    let callsigns_res = filter_selected_units_for_period(
+    let callsigns_res = apply_analysis_unit_filters(
         callsigns_res,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )?;
     let callsigns_res = filter_selected_locations(
         callsigns_res,
@@ -4022,33 +4170,30 @@ pub(super) async fn count_unit_exact_match_breakdown_raw_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    count_selected: i64,
+    alternate_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<(i64, i64), AppError> {
     let login_value = login_id_from_identity(user)?;
-    let mut exact_req = req.0.clone();
-    exact_req.units_exact_match_only = Some(true);
-    let (_, exact_matches_count) = fetch_counts_for_login_with_conn(
-        &Json(exact_req),
-        &login_value,
-        master_keys.clone(),
-        env,
-        db,
-        false,
-        scope,
-    )
-    .await?;
-
-    let mut combined_req = req.0.clone();
-    combined_req.units_exact_match_only = Some(false);
-    let (_, total_matches_count) = fetch_counts_for_login_with_conn(
-        &Json(combined_req),
+    let requested_exact_match = req.units_exact_match_only.unwrap_or(false);
+    let mut alternate_req = req.0.clone();
+    alternate_req.units_exact_match_only = Some(!requested_exact_match);
+    let (_, alternate_count) = fetch_counts_for_login_with_conn(
+        &Json(alternate_req),
         &login_value,
         master_keys,
         env,
         db,
         false,
         scope,
+        alternate_units,
     )
-    .await?;
+    .await
+    .context(h!())?;
+    let (exact_matches_count, total_matches_count) = if requested_exact_match {
+        (count_selected, alternate_count)
+    } else {
+        (alternate_count, count_selected)
+    };
 
     Ok((
         exact_matches_count,
@@ -4204,6 +4349,7 @@ pub async fn fetch_locations_for_login(
         &req.0,
         login_str,
         &env.dbx,
+        &env.dbx,
         master_keys,
         None,
     )
@@ -4214,6 +4360,7 @@ pub(super) async fn fetch_locations_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: &AnalyticsMessageIdScope,
 ) -> Result<Vec<AnalysisStatsLocation>, AppError> {
@@ -4225,6 +4372,7 @@ pub(super) async fn fetch_locations_raw_with_db(
         &req.0,
         &login_value,
         db,
+        source_db,
         master_keys,
         Some(scope),
     )
@@ -4235,12 +4383,21 @@ async fn fetch_locations_for_login_with_db(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Vec<AnalysisStatsLocation>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        scope,
+    )
+    .await
+    .context(h!())?;
     let instant = std::time::Instant::now();
     let locations_res = build_locations_query_for_login(
         req,
@@ -4249,6 +4406,7 @@ async fn fetch_locations_for_login_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_ref(),
     )?;
     // println!(
     //     "> locations_res: {}",
@@ -4283,15 +4441,26 @@ pub async fn count_locations(
     master_keys: Vec<String>,
 ) -> Result<i64, AppError> {
     let read_db = env.replica();
-    count_locations_with_db(req, user, &read_db, master_keys, None).await
+    count_locations_with_db(
+        req,
+        user,
+        &read_db,
+        &read_db,
+        master_keys,
+        None,
+        None,
+    )
+    .await
 }
 
 pub(super) async fn count_locations_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
@@ -4300,6 +4469,14 @@ pub(super) async fn count_locations_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
     let locations_res = build_locations_filtered_query(
@@ -4309,6 +4486,7 @@ pub(super) async fn count_locations_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_deref(),
     )?;
     count_distinct_with_db(
         locations_res,
@@ -4325,6 +4503,7 @@ fn build_locations_query_for_login(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     Ok(build_locations_filtered_query_for_login(
         req,
@@ -4333,6 +4512,7 @@ fn build_locations_query_for_login(
         dt_till,
         master_keys,
         scope,
+        units,
     )?
     .select_only()
     .column_as(
@@ -4353,6 +4533,7 @@ fn build_locations_filtered_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let login_value = login_id_from_identity(user)?;
     build_locations_filtered_query_for_login(
@@ -4362,6 +4543,7 @@ fn build_locations_filtered_query(
         dt_till,
         master_keys,
         scope,
+        units,
     )
 }
 
@@ -4372,6 +4554,7 @@ fn build_locations_filtered_query_for_login(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Locations);
     let locations_res = sigint_inbox_item::Entity::find()
@@ -4396,12 +4579,14 @@ fn build_locations_filtered_query_for_login(
         scope,
     )
     .context(h!())?;
-    let locations_res = filter_selected_units_for_period(
+    let locations_res = apply_analysis_unit_filters(
         locations_res,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let locations_res =
@@ -4512,6 +4697,7 @@ async fn fetch_aors_for_login_with_db(
             dt_till,
             master_keys,
             scope,
+            None,
         )?
     } else {
         build_aors_query(req, login_str, dt_since, dt_till, master_keys)?
@@ -4587,8 +4773,10 @@ pub(super) async fn count_aors_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
@@ -4597,6 +4785,14 @@ pub(super) async fn count_aors_raw_with_db(
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
     let login_value = login_id_from_identity(user)?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
     let stmt = build_aors_analytics_query_with_scope(
         &req.0,
         &login_value,
@@ -4604,6 +4800,7 @@ pub(super) async fn count_aors_raw_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_deref(),
     )?;
     let count = AorsRes::find_by_statement(stmt)
         .all(db)
@@ -4646,6 +4843,7 @@ fn build_aors_query(
         dt_since,
         dt_till,
         &master_keys,
+        None,
         None,
     )?
     .select_only()
@@ -4850,6 +5048,7 @@ pub(super) fn build_aors_analytics_query(
         dt_till,
         master_keys,
         None,
+        None,
     )
 }
 
@@ -4860,6 +5059,7 @@ fn build_aors_analytics_query_with_scope(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Statement, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Aors);
     let link_alias = Alias::new("analytics_aor_message_link");
@@ -4871,6 +5071,7 @@ fn build_aors_analytics_query_with_scope(
         dt_till,
         &master_keys,
         scope,
+        units,
     )?
     .select_only()
     .column_as(signal_message::Column::Id, "message_id");
@@ -4936,6 +5137,7 @@ fn build_aor_messages_query(
     dt_till: NaiveDateTime,
     master_keys: &[String],
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let messages = sigint_inbox_item::Entity::find()
         .join(
@@ -4970,6 +5172,16 @@ fn build_aor_messages_query(
         filter_selected_freqs(messages, &req.selected_freqs).context(h!())?;
     let messages =
         filter_selected_posts(messages, &req.selected_posts).context(h!())?;
+    let messages = apply_analysis_unit_filters(
+        messages,
+        &req.selected_units,
+        &req.units_exact_match_only,
+        dt_since,
+        dt_till,
+        scope,
+        units,
+    )
+    .context(h!())?;
     let messages = filter_selected_locations(
         messages,
         &req.selected_locations,
@@ -5105,9 +5317,11 @@ pub(super) async fn count_networks_analytics_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
@@ -5116,6 +5330,14 @@ pub(super) async fn count_networks_analytics_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
     let statement = build_networks_analytics_count_query_with_scope(
         &req.0,
         &login_value,
@@ -5125,6 +5347,7 @@ pub(super) async fn count_networks_analytics_with_db(
         dt_till,
         master_keys,
         scope,
+        units.as_deref(),
     )?;
     let result = DistinctCountRes::find_by_statement(statement)
         .one(db)
@@ -5159,6 +5382,7 @@ pub(super) async fn fetch_networks_analytics_with_db(
         master_keys,
         false,
         Some(scope),
+        None,
     )?;
     Ok(NetworksRes::find_by_statement(statement)
         .all(db)
@@ -5193,6 +5417,7 @@ pub(super) fn build_networks_analytics_count_query(
         dt_till,
         master_keys,
         None,
+        None,
     )
 }
 
@@ -5205,6 +5430,7 @@ fn build_networks_analytics_count_query_with_scope(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Statement, AppError> {
     build_networks_analytics_query_with_scope(
         req,
@@ -5216,6 +5442,7 @@ fn build_networks_analytics_count_query_with_scope(
         master_keys,
         true,
         scope,
+        units,
     )
 }
 
@@ -5240,6 +5467,7 @@ pub(super) fn build_networks_analytics_query(
         master_keys,
         count_only,
         None,
+        None,
     )
 }
 
@@ -5254,6 +5482,7 @@ pub(super) fn build_networks_analytics_query_with_scope(
     master_keys: Vec<String>,
     count_only: bool,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Statement, AppError> {
     let req = request_without_facet_filter(req, AnalysisFacet::Networks);
     let messages = build_network_analytics_messages_query(
@@ -5265,6 +5494,7 @@ pub(super) fn build_networks_analytics_query_with_scope(
         dt_till,
         &master_keys,
         scope,
+        units,
     )?;
     let effective_groups =
         effective_groups_with_access(&req.selected_groups, &master_keys);
@@ -5306,6 +5536,7 @@ fn build_network_analytics_messages_query(
     dt_till: NaiveDateTime,
     master_keys: &[String],
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let messages = sigint_inbox_item::Entity::find()
         .join(
@@ -5340,12 +5571,14 @@ fn build_network_analytics_messages_query(
         filter_selected_freqs(messages, &req.selected_freqs).context(h!())?;
     let messages =
         filter_selected_posts(messages, &req.selected_posts).context(h!())?;
-    let messages = filter_selected_units_for_period(
+    let messages = apply_analysis_unit_filters(
         messages,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let messages = filter_selected_locations(
@@ -6042,12 +6275,14 @@ fn build_networks_query_for_login(
         filter_selected_freqs(messages_q, &req.selected_freqs).context(h!())?;
     let messages_q =
         filter_selected_posts(messages_q, &req.selected_posts).context(h!())?;
-    let messages_q = filter_selected_units_for_period(
+    let messages_q = apply_analysis_unit_filters(
         messages_q,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        None,
+        None,
     )
     .context(h!())?;
     let messages_q = filter_selected_locations(
@@ -6297,6 +6532,7 @@ pub async fn fetch_counts_for_login(
         &replica_conn,
         true,
         None,
+        None,
     )
     .await
     {
@@ -6316,6 +6552,7 @@ pub async fn fetch_counts_for_login(
                 &env.dbx,
                 true,
                 None,
+                None,
             )
             .await
         }
@@ -6331,10 +6568,20 @@ async fn fetch_counts_for_login_with_conn(
     db: &DatabaseConnection,
     allow_stats_aggregated: bool,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<(i64, i64), AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        &env.dbx,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
+    let units = units.as_deref();
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
     let read_stats_aggregated = allow_stats_aggregated
@@ -6408,12 +6655,14 @@ async fn fetch_counts_for_login_with_conn(
     let selected_count_res =
         filter_selected_posts(selected_count_res, &req.selected_posts)
             .context(h!())?;
-    let selected_count_res = filter_selected_units_for_period(
+    let selected_count_res = apply_analysis_unit_filters(
         selected_count_res,
         &req.selected_units,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
+        scope,
+        units,
     )
     .context(h!())?;
     let selected_count_res = filter_selected_locations(
@@ -6491,6 +6740,7 @@ pub(super) async fn fetch_counts_raw_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<(i64, i64), AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok((0, 0));
@@ -6504,6 +6754,7 @@ pub(super) async fn fetch_counts_raw_with_db(
         db,
         false,
         scope,
+        resolved_units,
     )
     .await
 }
@@ -7021,6 +7272,7 @@ mod tests {
                     dt_since,
                     dt_till,
                     Some(&scope),
+                    None,
                 )
                 .unwrap()
                 .build(DbBackend::Postgres)
@@ -7048,6 +7300,7 @@ mod tests {
                     dt_till,
                     master_keys.clone(),
                     Some(&scope),
+                    None,
                 )
                 .unwrap();
                 join_analytics_callsign_relation(query, Some(&scope))
@@ -7108,6 +7361,7 @@ mod tests {
                     dt_till,
                     master_keys,
                     Some(&scope),
+                    None,
                 )
                 .unwrap()
                 .build(DbBackend::Postgres)
@@ -7159,7 +7413,8 @@ mod tests {
 
     #[test]
     fn analytics_aor_facet_uses_bounded_message_ordered_bridge() {
-        let req = populated_analysis_stats_req();
+        let mut req = populated_analysis_stats_req();
+        req.selected_units = None;
         let scope = AnalyticsMessageIdScope::Inclusive {
             min_id: 10,
             max_id: 20,
@@ -7177,6 +7432,7 @@ mod tests {
                 .unwrap(),
             vec!["group".to_string()],
             Some(&scope),
+            None,
         )
         .unwrap()
         .sql;
