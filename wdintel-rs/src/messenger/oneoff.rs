@@ -11,6 +11,10 @@ use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
 use opendal::{ErrorKind, Operator};
 use sea_orm::sea_query::Expr;
 use sea_orm::*;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::io::{BufRead, BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 struct LargeMediaMigration<'a> {
     config: &'a crate::config::Config,
@@ -806,6 +810,529 @@ async fn remove_local_cache_best_effort(
         config, media_id,
     )
     .await;
+}
+
+#[derive(Clone)]
+struct MediaStorageAudit<'a> {
+    dbx: &'a DatabaseConnection,
+    s3: &'a Operator,
+    s3_config: &'a storage::S3Config,
+    strongbox_key: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct MediaStorageAuditRecord {
+    record_type: &'static str,
+    media_id: uuid::Uuid,
+    signal_message_id: i64,
+    storage_key: String,
+    created_at: chrono::NaiveDateTime,
+    status: &'static str,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MediaStorageRepairEntry {
+    media_id: uuid::Uuid,
+    source_path: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+struct MediaStorageRepairRecord {
+    record_type: &'static str,
+    media_id: uuid::Uuid,
+    old_storage_key: String,
+    new_storage_key: Option<String>,
+    status: &'static str,
+    error: Option<String>,
+}
+
+pub async fn oneoff_audit_media_storage(
+    mode: Mode,
+    ps: &crate::OneoffAuditMediaStoragePs,
+) -> Result<(), AppError> {
+    if ps.concurrency == 0 {
+        return Err(AppError::BL {
+            msg: "--concurrency must be at least 1".to_string(),
+        });
+    }
+    let since_ts = parse_media_storage_timestamp(&ps.since_ts)?;
+    let till_ts = ps
+        .till_ts
+        .as_deref()
+        .map(parse_media_storage_timestamp)
+        .transpose()?;
+    if till_ts.is_some_and(|till_ts| till_ts <= since_ts) {
+        return Err(AppError::BL {
+            msg: "--till-ts must be later than --since-ts".to_string(),
+        });
+    }
+    let app_config = crate::config::read_config(mode).c(h!())?;
+    let dbx = crate::new_pg_pool_from_config(&app_config).await.c(h!())?;
+    let config = app_config.s3_config.as_ref().ok_or(AppError::BL {
+        msg: "S3 is not configured".to_string(),
+    })?;
+    let s3_config = storage::S3Config::from(config);
+    let s3 = storage::build_s3_operator(&s3_config).c(h!())?;
+    let audit = MediaStorageAudit {
+        dbx: &dbx,
+        s3: &s3,
+        s3_config: &s3_config,
+        strongbox_key: &config.strongbox_key,
+    };
+    let media = load_media_storage_audit_rows(
+        &dbx,
+        since_ts,
+        till_ts,
+        ps.after_media_id,
+        ps.limit,
+    )
+    .await
+    .c(h!())?;
+    let records =
+        audit_media_storage_rows(&audit, &media, ps.concurrency).await;
+    let repair_entries = ps
+        .repair_manifest
+        .as_deref()
+        .map(read_media_storage_repair_manifest)
+        .transpose()
+        .c(h!())?
+        .unwrap_or_default();
+    let repair_records =
+        repair_media_storage_rows(&audit, &media, &repair_entries, ps.apply)
+            .await;
+    write_media_storage_report(&ps.output, &records, &repair_records)
+        .c(h!())?;
+    print_media_storage_summary(
+        &ps.output,
+        &records,
+        &repair_records,
+        media.last(),
+    );
+    let failed_repairs = repair_records
+        .iter()
+        .filter(|record| record.status == "failed")
+        .count();
+    if failed_repairs > 0 {
+        return Err(AppError::BL {
+            msg: format!(
+                "{failed_repairs} media storage repairs failed; see {}",
+                ps.output.display()
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn parse_media_storage_timestamp(
+    value: &str,
+) -> Result<chrono::NaiveDateTime, AppError> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|value| value.naive_utc())
+        .map_err(|error| AppError::BL {
+            msg: format!("invalid RFC3339 timestamp '{value}': {error}"),
+        })
+}
+
+async fn load_media_storage_audit_rows(
+    dbx: &DatabaseConnection,
+    since_ts: chrono::NaiveDateTime,
+    till_ts: Option<chrono::NaiveDateTime>,
+    after_media_id: Option<uuid::Uuid>,
+    limit: u64,
+) -> Result<Vec<signal_message_media::Model>, AppError> {
+    let mut query = signal_message_media::Entity::find()
+        .filter(signal_message_media::Column::CreatedAt.gte(since_ts));
+    if let Some(till_ts) = till_ts {
+        query =
+            query.filter(signal_message_media::Column::CreatedAt.lt(till_ts));
+    }
+    if let Some(after_media_id) = after_media_id {
+        query =
+            query.filter(signal_message_media::Column::Id.gt(after_media_id));
+    }
+    query
+        .order_by_asc(signal_message_media::Column::Id)
+        .limit(limit)
+        .all(dbx)
+        .await
+        .c(h!())
+        .map_err(Into::into)
+}
+
+async fn audit_media_storage_rows(
+    audit: &MediaStorageAudit<'_>,
+    media: &[signal_message_media::Model],
+    concurrency: usize,
+) -> Vec<MediaStorageAuditRecord> {
+    use futures_util::StreamExt;
+
+    let mut records: Vec<MediaStorageAuditRecord> =
+        futures_util::stream::iter(media.iter().cloned().map(
+            |media| async move { audit_media_storage_row(audit, media).await },
+        ))
+        .buffer_unordered(concurrency)
+        .collect()
+        .await;
+    records.sort_unstable_by_key(|record: &MediaStorageAuditRecord| {
+        record.media_id
+    });
+    records
+}
+
+async fn audit_media_storage_row(
+    audit: &MediaStorageAudit<'_>,
+    media: signal_message_media::Model,
+) -> MediaStorageAuditRecord {
+    let object_key = crate::messenger::media::media_object_key(&media);
+    let remote_key = audit.s3_config.prefixed_key(&object_key);
+    let result =
+        probe_media_storage_object(audit.s3, &remote_key, &media).await;
+    match result {
+        Ok(status) => MediaStorageAuditRecord {
+            record_type: "audit",
+            media_id: media.id,
+            signal_message_id: media.signal_message_id,
+            storage_key: object_key,
+            created_at: media.created_at,
+            status,
+            error: None,
+        },
+        Err((status, error)) => MediaStorageAuditRecord {
+            record_type: "audit",
+            media_id: media.id,
+            signal_message_id: media.signal_message_id,
+            storage_key: object_key,
+            created_at: media.created_at,
+            status,
+            error: Some(error),
+        },
+    }
+}
+
+async fn probe_media_storage_object(
+    s3: &Operator,
+    remote_key: &str,
+    media: &signal_message_media::Model,
+) -> Result<&'static str, (&'static str, String)> {
+    let metadata = match s3.stat(remote_key).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(("missing", error.to_string()));
+        }
+        Err(error) => return Err(("unreadable", error.to_string())),
+    };
+    let stored_size = metadata.content_length();
+    let expected_size = u64::try_from(media.size_bytes)
+        .map_err(|error| ("stat_mismatch", error.to_string()))?;
+    if (!media.is_encrypted && stored_size != expected_size)
+        || (expected_size > 0 && stored_size == 0)
+    {
+        return Err((
+            "stat_mismatch",
+            format!(
+                "expected plaintext size {expected_size}, stored {stored_size}"
+            ),
+        ));
+    }
+    if stored_size == 0 {
+        return Ok("available");
+    }
+    let probe = s3
+        .read_with(remote_key)
+        .range(0..crate::config::MESSENGER_MEDIA_UPLOAD_VERIFICATION_PROBE_SIZE_BYTES)
+        .await
+        .map_err(|error| {
+            let status = if error.kind() == ErrorKind::NotFound {
+                "missing"
+            } else {
+                "unreadable"
+            };
+            (status, error.to_string())
+        })?;
+    if probe.len()
+        != usize::try_from(
+            crate::config::MESSENGER_MEDIA_UPLOAD_VERIFICATION_PROBE_SIZE_BYTES,
+        )
+        .expect("media upload verification probe size fits usize")
+    {
+        return Err((
+            "unreadable",
+            format!("read probe returned {} bytes", probe.len()),
+        ));
+    }
+    Ok("available")
+}
+
+fn read_media_storage_repair_manifest(
+    path: &Path,
+) -> Result<Vec<MediaStorageRepairEntry>, AppError> {
+    let file = std::fs::File::open(path).c(h!())?;
+    std::io::BufReader::new(file)
+        .lines()
+        .enumerate()
+        .filter_map(|(index, line)| match line {
+            Ok(line) if line.trim().is_empty() => None,
+            line => Some((index, line)),
+        })
+        .map(|(index, line)| {
+            let line = line.c(h!())?;
+            serde_json::from_str(&line).map_err(|error| AppError::BL {
+                msg: format!(
+                    "invalid repair manifest {} line {}: {error}",
+                    path.display(),
+                    index + 1
+                ),
+            })
+        })
+        .collect()
+}
+
+async fn repair_media_storage_rows(
+    audit: &MediaStorageAudit<'_>,
+    media: &[signal_message_media::Model],
+    entries: &[MediaStorageRepairEntry],
+    apply: bool,
+) -> Vec<MediaStorageRepairRecord> {
+    let media = media
+        .iter()
+        .map(|media| (media.id, media))
+        .collect::<HashMap<_, _>>();
+    let mut records = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let Some(media) = media.get(&entry.media_id) else {
+            records.push(MediaStorageRepairRecord {
+                record_type: "repair",
+                media_id: entry.media_id,
+                old_storage_key: String::new(),
+                new_storage_key: None,
+                status: "failed",
+                error: Some(
+                    "media is outside the selected audit page".to_string(),
+                ),
+            });
+            continue;
+        };
+        records
+            .push(repair_media_storage_row(audit, media, entry, apply).await);
+    }
+    records
+}
+
+async fn repair_media_storage_row(
+    audit: &MediaStorageAudit<'_>,
+    media: &signal_message_media::Model,
+    entry: &MediaStorageRepairEntry,
+    apply: bool,
+) -> MediaStorageRepairRecord {
+    let old_storage_key = crate::messenger::media::media_object_key(media);
+    if !entry.source_path.is_file() {
+        return MediaStorageRepairRecord {
+            record_type: "repair",
+            media_id: media.id,
+            old_storage_key,
+            new_storage_key: None,
+            status: "unrecoverable",
+            error: Some(format!(
+                "source file does not exist: {}",
+                entry.source_path.display()
+            )),
+        };
+    }
+    let result =
+        repair_media_storage_row_inner(audit, media, entry, apply).await;
+    match result {
+        Ok(new_storage_key) => MediaStorageRepairRecord {
+            record_type: "repair",
+            media_id: media.id,
+            old_storage_key,
+            new_storage_key,
+            status: if apply { "recovered" } else { "repair_ready" },
+            error: None,
+        },
+        Err(error) => MediaStorageRepairRecord {
+            record_type: "repair",
+            media_id: media.id,
+            old_storage_key,
+            new_storage_key: None,
+            status: "failed",
+            error: Some(error.to_string()),
+        },
+    }
+}
+
+async fn repair_media_storage_row_inner(
+    audit: &MediaStorageAudit<'_>,
+    media: &signal_message_media::Model,
+    entry: &MediaStorageRepairEntry,
+    apply: bool,
+) -> Result<Option<String>, AppError> {
+    let source = tokio::fs::read(&entry.source_path).await.c(h!())?;
+    let expected_size = usize::try_from(media.size_bytes).c(h!())?;
+    if source.len() != expected_size {
+        return Err(AppError::BL {
+            msg: format!(
+                "source {} has {} bytes, expected {expected_size}",
+                entry.source_path.display(),
+                source.len()
+            ),
+        });
+    }
+    if !apply {
+        return Ok(None);
+    }
+    let old_storage_key = crate::messenger::media::media_object_key(media);
+    let new_storage_key =
+        format!("{old_storage_key}.recovered-{}", uuid::Uuid::now_v7());
+    let upload_result = if media.is_encrypted {
+        storage::upload_encrypted_to_s3_with_operator(
+            &Some(audit.s3.clone()),
+            audit.s3_config,
+            audit.strongbox_key,
+            &new_storage_key,
+            &source,
+        )
+        .await
+    } else {
+        storage::upload_plaintext_to_s3_with_operator(
+            &Some(audit.s3.clone()),
+            audit.s3_config,
+            &new_storage_key,
+            source.clone(),
+        )
+        .await
+    };
+    if let Err(error) = upload_result {
+        delete_recovery_object_best_effort(audit, &new_storage_key).await;
+        return Err(error);
+    }
+    let validation =
+        validate_recovered_media(audit, media, &new_storage_key, &source).await;
+    if let Err(error) = validation {
+        delete_recovery_object_best_effort(audit, &new_storage_key).await;
+        return Err(error);
+    }
+    let update = signal_message_media::Entity::update_many()
+        .col_expr(
+            signal_message_media::Column::StorageKey,
+            Expr::value(new_storage_key.clone()),
+        )
+        .filter(signal_message_media::Column::Id.eq(media.id))
+        .filter(
+            signal_message_media::Column::IsEncrypted.eq(media.is_encrypted),
+        )
+        .filter(
+            signal_message_media::Column::StorageKey
+                .eq(media.storage_key.clone()),
+        )
+        .exec(audit.dbx)
+        .await;
+    let updated = match update {
+        Ok(updated) => updated,
+        Err(error) => {
+            delete_recovery_object_best_effort(audit, &new_storage_key).await;
+            return Err(anyhow::Error::from(error).context(h!()).into());
+        }
+    };
+    if updated.rows_affected != 1 {
+        delete_recovery_object_best_effort(audit, &new_storage_key).await;
+        return Err(AppError::BL {
+            msg: format!(
+                "media {} changed during recovery; replacement was not attached",
+                media.id
+            ),
+        });
+    }
+    Ok(Some(new_storage_key))
+}
+
+async fn validate_recovered_media(
+    audit: &MediaStorageAudit<'_>,
+    media: &signal_message_media::Model,
+    storage_key: &str,
+    source: &[u8],
+) -> Result<(), AppError> {
+    let downloaded = if media.is_encrypted {
+        storage::download_and_decrypt_from_s3_with_operator(
+            &Some(audit.s3.clone()),
+            &Some(audit.s3_config.clone()),
+            audit.strongbox_key,
+            storage_key,
+        )
+        .await
+        .c(h!())?
+    } else {
+        let remote_key = audit.s3_config.prefixed_key(storage_key);
+        audit.s3.read(&remote_key).await.c(h!())?.to_vec()
+    };
+    if downloaded != source {
+        return Err(AppError::BL {
+            msg: format!(
+                "recovered object for media {} differs from its source",
+                media.id
+            ),
+        });
+    }
+    Ok(())
+}
+
+async fn delete_recovery_object_best_effort(
+    audit: &MediaStorageAudit<'_>,
+    storage_key: &str,
+) {
+    let remote_key = audit.s3_config.prefixed_key(storage_key);
+    if let Err(error) = audit.s3.delete(&remote_key).await {
+        warn!("failed to delete rejected recovery object {remote_key}: {error:#?}");
+    }
+}
+
+fn write_media_storage_report(
+    path: &Path,
+    audit_records: &[MediaStorageAuditRecord],
+    repair_records: &[MediaStorageRepairRecord],
+) -> Result<(), AppError> {
+    let file = std::fs::File::create(path).c(h!())?;
+    let mut writer = BufWriter::new(file);
+    for record in audit_records {
+        serde_json::to_writer(&mut writer, record).c(h!())?;
+        writer.write_all(b"\n").c(h!())?;
+    }
+    for record in repair_records {
+        serde_json::to_writer(&mut writer, record).c(h!())?;
+        writer.write_all(b"\n").c(h!())?;
+    }
+    writer.flush().c(h!())?;
+    Ok(())
+}
+
+fn print_media_storage_summary(
+    output: &Path,
+    audit_records: &[MediaStorageAuditRecord],
+    repair_records: &[MediaStorageRepairRecord],
+    last_media: Option<&signal_message_media::Model>,
+) {
+    let unavailable = audit_records
+        .iter()
+        .filter(|record| record.status != "available")
+        .count();
+    println!(
+        "> audited {} media objects, {unavailable} unavailable; report: {}",
+        audit_records.len(),
+        output.display()
+    );
+    if let Some(last_media) = last_media {
+        println!("> resume after media id: {}", last_media.id);
+    }
+    if !repair_records.is_empty() {
+        let recovered = repair_records
+            .iter()
+            .filter(|record| record.status == "recovered")
+            .count();
+        println!(
+            "> processed {} repair entries, {recovered} recovered",
+            repair_records.len()
+        );
+    }
 }
 
 pub async fn oneoff_fix_whatsapp_senders(mode: Mode) -> Result<(), AppError> {

@@ -12,7 +12,7 @@ import {
 import { useId } from 'react';
 
 import type { CorrelatedFreq } from '../../../../../Bindings';
-import { CompactPowerChip } from '../../../components/CompactPowerChip';
+import { PowerChip } from '../../../components/PowerChip';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
 import { ELLIPSIS } from '../../../utils/misc';
 
@@ -81,7 +81,7 @@ export function AnalysisCorrelatedFreqsCard({
                       : item.commonCallsigns
                           .slice(0, 6)
                           .map((callsign) => (
-                            <CompactPowerChip
+                            <PowerChip
                               key={`${item.freq}-${callsign}`}
                               label={callsign}
                               size="small"

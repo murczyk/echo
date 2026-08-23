@@ -111,25 +111,40 @@ fn print_import_summary(
     source_id: i32,
     prepared: &crate::battle_line::PreparedBattleLineImport,
 ) {
+    let source_summary = &prepared.source_summary;
     let summary = &prepared.summary;
     println!("Delta KML source row: {source_id}");
     println!("Source SHA-256: {}", prepared.source_sha256);
     println!(
-        "Features: {} points, {} line strings, {} coordinates",
+        "Source features: {} points, {} line strings, {} coordinates",
+        source_summary.point_count,
+        source_summary.line_string_count,
+        source_summary.coordinate_count
+    );
+    println!(
+        "Cleaned features: {} points, {} line strings, {} coordinates",
         summary.point_count,
         summary.line_string_count,
         summary.coordinate_count
     );
     println!(
-        "Zero-length line strings excluded from stored geometry: {}",
-        summary.zero_length_line_string_count
+        "Cleanup removed {} points, {} short line strings (including zero-length), and {} duplicate segments; minimum retained line length: {:.1} m",
+        prepared.cleanup_stats.removed_point_count,
+        prepared.cleanup_stats.removed_short_line_string_count,
+        prepared.cleanup_stats.removed_duplicate_segment_count,
+        prepared.cleanup_stats.minimum_line_length_m
+    );
+    println!(
+        "Zero-length line strings in source geometry: {}",
+        source_summary.zero_length_line_string_count
     );
     println!(
         "Empty geometry placeholders excluded: {} points, {} line strings",
-        summary.empty_point_count, summary.empty_line_string_count
+        source_summary.empty_point_count,
+        source_summary.empty_line_string_count
     );
     println!(
-        "Bounds: lat {}..{}, lon {}..{}",
+        "Cleaned bounds: lat {}..{}, lon {}..{}",
         summary.bounds.min_lat,
         summary.bounds.max_lat,
         summary.bounds.min_lon,

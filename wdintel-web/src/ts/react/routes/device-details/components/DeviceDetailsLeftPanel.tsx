@@ -1,3 +1,4 @@
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { Box, Chip, Divider, Link, Paper, Skeleton, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
@@ -148,6 +149,10 @@ function DeviceNameValue({ device }: { device: DeviceDetails }) {
       sx={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
     >
       {device.name}
+      <OpenInNewIcon
+        aria-hidden="true"
+        sx={{ ml: 0.5, fontSize: 16, verticalAlign: 'text-bottom' }}
+      />
     </Link>
   );
 }

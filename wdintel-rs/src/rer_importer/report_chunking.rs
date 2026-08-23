@@ -5,10 +5,14 @@ use crate::types::Env;
 use crate::utils::dt_from_millis;
 use anyhow::Context;
 use chrono::NaiveDateTime;
-use sea_orm::{ColumnTrait, ConnectionTrait, QueryFilter, Select};
+use sea_orm::prelude::Expr;
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+    QueryTrait, Select,
+};
 use std::cmp::Ordering;
 
-use crate::entities::{sigint_inbox_item, signal_message};
+use crate::entities::{intel_product, sigint_inbox_item, signal_message};
 
 const MILLIS_PER_HOUR: i64 = 60 * 60 * 1_000;
 
@@ -115,6 +119,49 @@ pub fn inbox_report_chunk_req(
     chunk_req.since_date_inclusive_ms = Some(chunk.since_ms);
     chunk_req.till_date_inclusive_ms = Some(chunk.till_ms);
     chunk_req
+}
+
+pub fn restrict_inbox_report_to_message_ids<Q>(query: Q, ids: &[i64]) -> Q
+where
+    Q: QueryFilter,
+{
+    if ids.is_empty() {
+        return query.filter(Expr::cust("FALSE"));
+    }
+    query.filter(signal_message::Column::Id.eq_any(ids.to_vec()))
+}
+
+pub fn exclude_inbox_report_linked_intel_products<Q>(query: Q) -> Q
+where
+    Q: QueryFilter,
+{
+    let linked_message_ids = intel_product::Entity::find()
+        .select_only()
+        .column(intel_product::Column::IntelMessageId)
+        .filter(intel_product::relation_kind_is_in([
+            intel_product::RELATION_KIND_COMMENT,
+            intel_product::RELATION_KIND_REPORT,
+        ]))
+        .into_query();
+    query.filter(signal_message::Column::Id.not_in_subquery(linked_message_ids))
+}
+
+pub fn report_chunk_exclusive_till(
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+) -> Result<Option<NaiveDateTime>, AppError> {
+    match period_end {
+        ReportPeriodEnd::Inclusive => Ok(None),
+        ReportPeriodEnd::NonInclusive => {
+            let till_ms = req
+                .till_date_inclusive_ms
+                .ok_or_else(|| AppError::BL {
+                    msg: "Until date must be specified".to_string(),
+                })
+                .context(h!())?;
+            Ok(Some(dt_from_millis(till_ms).context(h!())?))
+        }
+    }
 }
 
 pub fn oldest_first_inbox_report_req(
@@ -378,5 +425,50 @@ mod tests {
 
         assert_eq!(req.load_latest, Some(false));
         assert_eq!(req.newest_first, Some(false));
+    }
+
+    #[test]
+    fn restrict_inbox_report_to_message_ids_uses_id_list() {
+        use sea_orm::{DbBackend, EntityTrait, QueryTrait};
+
+        let sql = restrict_inbox_report_to_message_ids(
+            signal_message::Entity::find(),
+            &[10, 20, 30],
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert!(
+            sql.contains(r#""signal_message"."id""#)
+                && (sql.contains(" IN (") || sql.contains(" = ANY(")),
+            "{sql}"
+        );
+        assert!(!sql.contains("matching_unit_network_ids"), "{sql}");
+    }
+
+    #[test]
+    fn restrict_inbox_report_to_message_ids_empty_is_false() {
+        use sea_orm::{DbBackend, EntityTrait, QueryTrait};
+
+        let sql = restrict_inbox_report_to_message_ids(
+            signal_message::Entity::find(),
+            &[],
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert!(sql.contains("FALSE"), "{sql}");
+    }
+
+    #[test]
+    fn exclude_linked_intel_products_uses_not_in_subquery() {
+        use sea_orm::{DbBackend, EntityTrait, QueryTrait};
+
+        let sql = exclude_inbox_report_linked_intel_products(
+            signal_message::Entity::find(),
+        )
+        .build(DbBackend::Postgres)
+        .to_string();
+        assert!(sql.contains("intel_product"), "{sql}");
+        assert!(sql.contains("NOT IN"), "{sql}");
+        assert!(!sql.contains("ANY($1::text[])"), "{sql}");
     }
 }

@@ -290,7 +290,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
       await latestActions?.saveFreqCreateWizard();
     });
 
-    expect(apiMock.getSingleNetworkFreqs).toHaveBeenCalledWith(1, false);
+    expect(apiMock.getSingleNetworkFreqs).toHaveBeenCalledWith(1, false, false);
     expect(apiMock.getNetworkFreqsActivity).toHaveBeenCalledWith(1);
     expect(apiMock.getNetworkFreqCallsignsBatch).toHaveBeenCalledWith([7, 9]);
     expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([7, 9]);

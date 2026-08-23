@@ -28,7 +28,7 @@ import {
   MrtRowActions,
   mrtRowActionsColumnSize,
 } from '../../components/MrtRowActionButton';
-import { PowerChip } from '../../components/PowerChip';
+import { EchoChip } from '../../components/EchoChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
@@ -250,7 +250,8 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         Cell: mrtItemsCell<Organism, string>({
           items: ({ row }) =>
             row.original.aorIds.map((id) => formatAorLabel(lookup.aorById.get(id), id)),
-          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          renderItem: (label) => <EchoChip label={label} tone="neutral" />,
+          measurementScope: 'admin-organisms:aors',
           getItemText: (label) => label,
         }),
         filterVariant: 'multi-select',
@@ -275,7 +276,8 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
             const computedGroups = lookup.computedGroupsById.get(row.original.id) ?? [];
             return computedGroups.map((group) => formatGroupLabel(group, group.masterKey));
           },
-          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          renderItem: (label) => <EchoChip label={label} tone="neutral" />,
+          measurementScope: 'admin-organisms:groups',
           getItemText: (label) => label,
           emptyValue: computedGroupsStatus === 'loading' ? <CircularProgress size={16} /> : '—',
         }),
@@ -292,7 +294,8 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<Organism, string>({
           items: ({ row }) => row.original.roles,
-          renderItem: (role) => <PowerChip label={role} size="small" interactive={false} />,
+          renderItem: (role) => <EchoChip label={role} tone="neutral" />,
+          measurementScope: 'admin-organisms:roles',
           getItemText: (role) => role,
         }),
         filterVariant: 'multi-select',
@@ -347,7 +350,8 @@ function useOrganismColumns(lookup: OrganismLookup, computedGroupsStatus: Loadin
               ? ['без обмежень']
               : buildGroupLabels(groupKeys, lookup).map((item) => item.label);
           },
-          renderItem: (label) => <PowerChip label={label} size="small" interactive={false} />,
+          renderItem: (label) => <EchoChip label={label} tone="neutral" />,
+          measurementScope: 'admin-organisms:limit-groups',
           getItemText: (label) => label,
         }),
         filterVariant: 'multi-select',

@@ -169,7 +169,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
 
       try {
         const [freqsResponse, activityResponse] = await Promise.all([
-          getSingleNetworkFreqs(networkId, false),
+          getSingleNetworkFreqs(networkId, false, false),
           getNetworkFreqsActivity(networkId),
         ]);
 

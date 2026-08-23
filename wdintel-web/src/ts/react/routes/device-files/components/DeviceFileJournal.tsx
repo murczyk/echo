@@ -1,10 +1,11 @@
 import { Box, CircularProgress, Stack, Typography } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
-import { useMemo } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { DeviceFileJournalEntry } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
+import { EchoChip } from '../../../components/EchoChip';
 import { PowerChip } from '../../../components/PowerChip';
 import {
   getDefaultMrtContainerProps,
@@ -68,7 +69,8 @@ function useJournalColumns(): AppMrtColumnDef<DeviceFileJournalEntry>[] {
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<DeviceFileJournalEntry, DeviceFileJournalEntry['tags'][number]>({
           items: ({ row }) => row.original.tags,
-          renderItem: (tag) => <PowerChip label={tag.name} color="primary" interactive={false} />,
+          renderItem: (tag) => <EchoChip label={tag.name} tone="primary" />,
+          measurementScope: 'device-file-journal:tags',
           getItemKey: (tag) => tag.id,
           getItemText: (tag) => tag.name,
         }),
@@ -113,6 +115,15 @@ export function DeviceFileJournal({
   onTagFilterChange: (filter: DeviceAnalyticsTagFilter) => void;
 }) {
   const columns = useJournalColumns();
+  const tableContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isAtJournalEnd, setIsAtJournalEnd] = useState(false);
+  const syncIsAtJournalEnd = useCallback(() => {
+    const element = tableContainerRef.current;
+    if (!element) return;
+
+    const nextIsAtEnd = element.scrollHeight - element.scrollTop - element.clientHeight <= 1;
+    setIsAtJournalEnd((current) => (current === nextIsAtEnd ? current : nextIsAtEnd));
+  }, []);
   const isInitialLoading = journal.loading && journal.entries.length === 0;
   const countLabel =
     journal.totalCount === null
@@ -120,6 +131,19 @@ export function DeviceFileJournal({
       : `${fileCountFormatter.format(journal.entries.length)} з ${fileCountFormatter.format(
           journal.totalCount,
         )} файлів`;
+  useLayoutEffect(() => {
+    syncIsAtJournalEnd();
+
+    const element = tableContainerRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(syncIsAtJournalEnd);
+    observer.observe(element);
+    const tableElement = element.querySelector('table');
+    if (tableElement) observer.observe(tableElement);
+
+    return () => observer.disconnect();
+  }, [journal.entries, syncIsAtJournalEnd]);
   const table = useAppMaterialReactTable({
     columns,
     data: journal.entries,
@@ -155,11 +179,15 @@ export function DeviceFileJournal({
         borderRadius: 0,
       },
     }),
-    muiTableContainerProps: getDefaultMrtContainerProps({
-      loading: isInitialLoading,
-      layout: 'workspace',
-      hasRows: journal.entries.length > 0,
-    }),
+    muiTableContainerProps: {
+      ...getDefaultMrtContainerProps({
+        loading: isInitialLoading,
+        layout: 'workspace',
+        hasRows: journal.entries.length > 0,
+      }),
+      ref: tableContainerRef,
+      onScroll: syncIsAtJournalEnd,
+    },
     muiTableProps: {
       'aria-label': 'Журнал синхронізації файлів',
     },
@@ -233,7 +261,6 @@ export function DeviceFileJournal({
             label={countLabel}
             color="default"
             interactive={false}
-            fontSize="0.75rem"
             sx={{ fontVariantNumeric: 'tabular-nums' }}
           />
         </Box>
@@ -272,6 +299,9 @@ export function DeviceFileJournal({
           }}
         >
           <PowerButton
+            aria-hidden={isAtJournalEnd ? undefined : true}
+            tabIndex={isAtJournalEnd ? undefined : -1}
+            style={{ visibility: isAtJournalEnd ? 'visible' : 'hidden' }}
             variant="outlined"
             disabled={journal.loading || journal.loadingMore}
             onClick={() => void journal.loadMore()}

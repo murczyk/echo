@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, forwardRef } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,7 +20,9 @@ vi.mock('@mui/icons-material/MapOutlined', () => ({ default: () => <span>map</sp
 
 vi.mock('@mui/material', () => ({
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: ({ children, ...props }: { children: ReactNode; [key: string]: unknown }) => (
+    <div {...props}>{children}</div>
+  ),
   Button: (props: {
     children: ReactNode;
     onClick?: () => void;
@@ -39,6 +41,7 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   CircularProgress: () => <div>loading</div>,
+  ClickAwayListener: ({ children }: { children: ReactNode }) => <>{children}</>,
   Dialog: (props: { children: ReactNode; open: boolean; disableRestoreFocus?: boolean }) =>
     props.open ? (
       <div
@@ -53,10 +56,25 @@ vi.mock('@mui/material', () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
   FormControl: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   InputLabel: ({ children }: { children: ReactNode }) => <label>{children}</label>,
+  IconButton: forwardRef<HTMLButtonElement, { children: ReactNode; onClick?: () => void }>(
+    ({ children, onClick }, ref) => (
+      <button ref={ref} type="button" onClick={onClick}>
+        {children}
+      </button>
+    ),
+  ),
   MenuItem: ({ children, value }: { children: ReactNode; value: string }) => (
     <option value={value}>{children}</option>
   ),
-  Paper: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  Paper: forwardRef<HTMLElement, { children: ReactNode; [key: string]: unknown }>(
+    ({ children, ...props }, ref) => (
+      <section ref={ref} {...props}>
+        {children}
+      </section>
+    ),
+  ),
+  Popper: ({ children, open }: { children: ReactNode; open: boolean }) =>
+    open ? <>{children}</> : null,
   Select: (props: {
     children: ReactNode;
     value: string;
@@ -99,7 +117,11 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('@mui/material/styles', () => ({
-  useTheme: () => ({ breakpoints: { down: vi.fn(() => 'down-sm') } }),
+  ThemeProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useTheme: () => ({
+    breakpoints: { down: vi.fn(() => 'down-sm') },
+    zIndex: { tooltip: 1500 },
+  }),
 }));
 
 vi.mock('material-react-table', () => ({
@@ -612,7 +634,7 @@ describe('AnalysisSummaryTableCard', () => {
 
     expect(view.container.textContent).toContain('ALPHA');
     expect(view.container.textContent).toContain('CHARLIE');
-    expect(view.container.textContent).toContain('DELTA');
+    expect(view.container.textContent).toContain('BRAVO');
     expect(view.container.textContent).toContain('FOXTROT');
     expect(view.container.textContent).toContain('GOLF');
   });
@@ -652,7 +674,34 @@ describe('AnalysisSummaryTableCard', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('DELTA');
+    expect(view.container.textContent).toContain('ALPHA');
+    expect(view.container.textContent).toContain('Ще 4');
+  });
+
+  it('mounts genuinely hidden distinct callsigns only while disclosure is open', async () => {
+    const view = await renderStandalone(
+      <CallsignChipsCell
+        callsigns={[
+          { callsign: 'alpha', tooltip: null, iconClass: '', isHighlighted: false },
+          { callsign: 'bravo', tooltip: null, iconClass: '', isHighlighted: false },
+          { callsign: 'charlie', tooltip: null, iconClass: '', isHighlighted: false },
+          { callsign: 'delta', tooltip: null, iconClass: '', isHighlighted: false },
+        ]}
+      />,
+    );
+    rendered.push(view);
+
+    const trigger = [...view.container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.startsWith('Ще'),
+    );
+    expect(trigger?.textContent).toBe('Ще 3');
+    expect(view.container.textContent).not.toContain('BRAVO');
+    act(() => trigger?.click());
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('BRAVO');
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('CHARLIE');
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('DELTA');
+    act(() => trigger?.click());
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('renders standalone compact list overflow controls', async () => {
@@ -664,7 +713,9 @@ describe('AnalysisSummaryTableCard', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('unit-d');
-    expect(view.container.textContent).toContain('loc-e');
+    expect(view.container.textContent).toContain('unit-a');
+    expect(view.container.textContent).toContain('loc-a');
+    expect(view.container.textContent).toContain('Ще 3');
+    expect(view.container.textContent).toContain('Ще 4');
   });
 });

@@ -529,7 +529,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     expect(shellProps.at(-1)).toMatchObject({
       open: true,
       ariaLabel: 'Перегляд вкладення',
-      isFullscreen: false,
+      isFullscreen: true,
     });
     expect(document.body.textContent).toContain('Завантаження мапи…');
     expect(leafletMock.map).not.toHaveBeenCalled();
@@ -716,23 +716,11 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       invalidateCallsBeforeLayerSwitch + 2,
     );
 
-    const fullscreenButton = document.body.querySelector(
-      'button[aria-label="Повноекранний режим"]',
-    ) as HTMLButtonElement | null;
-    expect(fullscreenButton).not.toBeNull();
-
-    await act(async () => {
-      fullscreenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      await Promise.resolve();
-    });
-
     expect(shellProps.at(-1)).toMatchObject({
       open: true,
       isFullscreen: true,
     });
-    expect(leaflet.map().invalidateSize).toHaveBeenCalledTimes(
-      invalidateCallsBeforeLayerSwitch + 3,
-    );
+    expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
   });
 
   it('wraps internal point navigation without inflating the attachment carousel', async () => {

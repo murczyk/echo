@@ -17,6 +17,7 @@ import {
 } from './utils';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { USER_SETTINGS_UPDATED_EVENT, fetchUserSettings } from '../../services/api/user-settings';
+import { DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS } from '../../hooks/duty-settings-defaults';
 import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
@@ -83,7 +84,9 @@ export function RerDutyNeoPage({
   const [tagsLayout, setTagsLayout] = useState<TagsLayoutVariant>(DEFAULT_DUTY_TAGS_LAYOUT);
   const [audioTranscriptionCollapsed, setAudioTranscriptionCollapsed] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
-  const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(false);
+  const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
+    DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+  );
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
@@ -92,7 +95,9 @@ export function RerDutyNeoPage({
         if (cancelled) return;
         setTagsLayout(prefs.tagsLayout);
         setAudioTranscriptionCollapsed(prefs.dutyAudioTranscriptionCollapsed ?? false);
-        setCollapseMediaPreviews(prefs.dutyCollapseMediaPreviews ?? false);
+        setCollapseMediaPreviews(
+          prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+        );
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);

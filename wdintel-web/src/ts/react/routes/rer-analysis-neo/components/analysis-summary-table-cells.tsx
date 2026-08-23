@@ -2,7 +2,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { Box, Skeleton, Stack, Tooltip } from '@mui/material';
 
-import { PowerChip } from '../../../components/PowerChip';
+import { EchoChip } from '../../../components/EchoChip';
 import { MrtOverflowItems } from '../../../components/mui-customized/table/mrt-overflow';
 import type { AnalysisSummaryTableRowView } from './analysis-summary-table-rows';
 
@@ -10,6 +10,8 @@ export function CompactListCell({ items }: { items: string[] }) {
   return (
     <MrtOverflowItems
       items={items}
+      disclosureLayout="list"
+      measurementScope="analysis-summary:compact-list"
       getItemText={(item) => item}
       renderItem={(item) => <Box component="span">{item}</Box>}
     />
@@ -21,6 +23,7 @@ export function CallsignChip({
 }: {
   entry: AnalysisSummaryTableRowView['callsignChips'][number];
 }) {
+  const tooltipText = entry.tooltip ?? entry.callsign.toUpperCase();
   const hintIcon =
     entry.iconClass === 'info-circle-fill' ? (
       <InfoIcon fontSize="inherit" />
@@ -28,7 +31,7 @@ export function CallsignChip({
       <InfoOutlinedIcon fontSize="inherit" />
     ) : null;
   const chip = (
-    <PowerChip
+    <EchoChip
       label={
         <span
           style={{
@@ -52,16 +55,14 @@ export function CallsignChip({
           </span>
         </span>
       }
-      size="small"
-      color={entry.tooltip ? 'primary' : 'default'}
+      tone={entry.tooltip ? 'primary' : 'neutral'}
       selected={entry.isHighlighted}
-      title={entry.tooltip ?? entry.callsign.toUpperCase()}
-      sx={{ maxWidth: '100%', minWidth: 0, cursor: 'default' }}
+      className="max-w-full min-w-0 cursor-default"
     />
   );
 
   return (
-    <Tooltip describeChild title={entry.tooltip ?? entry.callsign.toUpperCase()} placement="top">
+    <Tooltip describeChild title={<span>{tooltipText}</span>} placement="top">
       <span
         tabIndex={0}
         style={{ display: 'inline-flex', minWidth: 0, maxWidth: '100%', overflow: 'hidden' }}
@@ -92,6 +93,21 @@ export const callsignOverflowRenderer = {
   renderCompactItem: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) => (
     <CallsignChip entry={entry} />
   ),
+  renderMeasurementItem: (entry: AnalysisSummaryTableRowView['callsignChips'][number]) => (
+    <EchoChip
+      label={
+        <span className="inline-flex min-w-0 items-center gap-1.5">
+          {entry.tooltip && entry.iconClass ? (
+            <span data-callsign-measure-icon="" className="size-[1em] shrink-0" />
+          ) : null}
+          <span>{entry.callsign.toUpperCase()}</span>
+        </span>
+      }
+      tone={entry.tooltip ? 'primary' : 'neutral'}
+      selected={entry.isHighlighted}
+    />
+  ),
+  measurementScope: 'analysis-callsign-chip',
 };
 
 export function SummaryTableLoadingState() {

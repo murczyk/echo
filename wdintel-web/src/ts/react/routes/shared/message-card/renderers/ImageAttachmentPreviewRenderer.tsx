@@ -1,7 +1,16 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { Box, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material';
+import {
+  Box,
+  CircularProgress,
+  Divider,
+  IconButton,
+  Tooltip,
+  Typography,
+  useMediaQuery,
+} from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { MessageCardDisabledControlCursorWrapper } from '../MessageCardDisabledControlCursorWrapper';
 
 import {
@@ -238,6 +247,8 @@ export function ImageAttachmentPreviewRenderer({
   const [summaryVisible, setSummaryVisible] = useState(currentImage.summary != null);
   const [summaryStatus, setSummaryStatus] = useState(currentImage.summary ?? null);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const stageRef = useRef<HTMLDivElement | null>(null);
   const copyRequestKeyRef = useRef<string | null>(null);
   const currentHrefRef = useRef(currentHref);
@@ -647,15 +658,32 @@ export function ImageAttachmentPreviewRenderer({
       navigation={navigation}
       additionalActions={
         <>
-          <OcrPreviewAction
-            ocr={ocrStatus}
-            active={ocrVisible}
-            onClick={() => setOcrVisible((visible) => !visible)}
-          />
           <MediaSummaryAction
             status={summaryStatus}
             active={summaryVisible}
-            onClick={() => setSummaryVisible((visible) => !visible)}
+            onClick={() =>
+              setSummaryVisible((visible) => {
+                const next = !visible;
+                if (next && isMobile) setOcrVisible(false);
+                return next;
+              })
+            }
+          />
+          <OcrPreviewAction
+            ocr={ocrStatus}
+            active={ocrVisible}
+            onClick={() =>
+              setOcrVisible((visible) => {
+                const next = !visible;
+                if (next && isMobile) setSummaryVisible(false);
+                return next;
+              })
+            }
+          />
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{ mx: 0.25, my: 0.75, borderColor: 'divider' }}
           />
           <ImageCopyAction
             status={copyStatus}

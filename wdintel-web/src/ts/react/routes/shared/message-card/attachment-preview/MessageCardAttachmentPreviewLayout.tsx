@@ -36,8 +36,6 @@ export function MessageCardAttachmentPreviewLayout({
     enabled: swipeEnabled,
   });
 
-  const hasMobileFooter = (navigation != null && navigation.count > 1) || controls != null;
-
   return (
     <>
       <DialogContent
@@ -47,7 +45,8 @@ export function MessageCardAttachmentPreviewLayout({
           p: 0,
           gap: 0,
           minHeight: 0,
-          flex: '1 1 auto',
+          height: 0,
+          flex: '1 1 0',
           overflow: 'hidden',
           backgroundColor: (theme) => getAttachmentPreviewStageBg(theme, isMediaLayout),
         }}
@@ -56,7 +55,8 @@ export function MessageCardAttachmentPreviewLayout({
         <Box
           ref={setStageContainerEl}
           sx={{
-            flex: 1,
+            flex: '1 1 0',
+            height: 0,
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',

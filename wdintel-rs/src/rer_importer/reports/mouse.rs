@@ -2,8 +2,15 @@ use super::super::types::*;
 use crate::config::*;
 use crate::entities::*;
 use crate::error::AppError;
+use crate::rer_importer::analysis::{
+    analytics_inbox_request_supported, map_postgres_runtime_timeout,
+    with_analytics_read_fallback,
+};
+use crate::rer_importer::inbox::query::scan_analytics_inbox_candidate_ids;
 use crate::rer_importer::report_chunking::{
-    build_filtered_inbox_report_chunk_query, report_period_chunks,
+    build_filtered_inbox_report_chunk_query,
+    exclude_inbox_report_linked_intel_products, report_chunk_exclusive_till,
+    report_period_chunks, restrict_inbox_report_to_message_ids,
     ReportPeriodChunk, ReportPeriodEnd,
 };
 use crate::rer_importer::reports::inbox_light::blank_inbox_message;
@@ -83,8 +90,8 @@ async fn collect_mouse_report_data(
 ) -> Result<MouseReportData, AppError> {
     let (read_db, replica_label) = env.replica_with_label();
     match replica_label {
-        Some(label) => info!("Mouse report using replica {label}"),
-        None => info!("Mouse report using primary database"),
+        Some(label) => info!("Mouse report hydrating from replica {label}"),
+        None => info!("Mouse report hydrating from primary database"),
     }
     let login = *user_login;
     let login_ids =
@@ -1260,29 +1267,112 @@ async fn load_mouse_report_messages_chunk(
     max_messages: Option<usize>,
     period_end: ReportPeriodEnd,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let analytics_supported = analytics_inbox_request_supported(req);
+    let login_value = *login;
+    let req = req.clone();
+    let env_analytics = env.clone();
+    let candidate_ids = with_analytics_read_fallback(
+        env,
+        "mouse report message scan",
+        analytics_supported,
+        {
+            let req = req.clone();
+            let env_analytics = env_analytics.clone();
+            move |analytics_db| async move {
+                scan_mouse_report_message_ids(
+                    analytics_db,
+                    login_value,
+                    env_analytics,
+                    req,
+                    max_messages,
+                    period_end,
+                )
+                .await
+            }
+        },
+        |_postgres_db| async move { Ok(None) },
+    )
+    .await
+    .context(h!())?;
+    match candidate_ids {
+        Some(ids) => {
+            info!("Mouse report using analytics ({} ids)", ids.len());
+            Ok(hydrate_mouse_report_messages(
+                dbx,
+                login,
+                &req,
+                include_tags,
+                &ids,
+            )
+            .await
+            .context(h!())?)
+        }
+        None => {
+            debug!(
+                "Mouse report analytics scan unavailable; using PostgreSQL scan"
+            );
+            load_mouse_report_messages_chunk_postgres(
+                dbx,
+                login,
+                env,
+                &req,
+                include_tags,
+                max_messages,
+                period_end,
+            )
+            .await
+            .map_err(|error| {
+                map_postgres_runtime_timeout(error, "mouse report message scan")
+            })
+        }
+    }
+}
+
+async fn scan_mouse_report_message_ids(
+    analytics_db: DatabaseConnection,
+    login: uuid::Uuid,
+    env: Env,
+    req: InboxMessagesReq,
+    max_messages: Option<usize>,
+    period_end: ReportPeriodEnd,
+) -> Result<Option<Vec<i64>>, AppError> {
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let exclusive_till =
+        report_chunk_exclusive_till(&req, period_end).context(h!())?;
+    Ok(scan_analytics_inbox_candidate_ids(
+        &login,
+        &env,
+        &req,
+        &analytics_db,
+        freshness_max_age_ms,
+        exclusive_till,
+        max_messages.map(|max_messages| max_messages as u64),
+        exclude_inbox_report_linked_intel_products,
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn load_mouse_report_messages_chunk_postgres(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    include_tags: bool,
+    max_messages: Option<usize>,
+    period_end: ReportPeriodEnd,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let query = build_filtered_inbox_report_chunk_query(
         dbx, login, env, req, period_end,
     )
     .await
     .c(h!())?;
-    let linked_message_ids = intel_product::Entity::find()
-        .select_only()
-        .column(intel_product::Column::IntelMessageId)
-        .filter(intel_product::relation_kind_is_in([
-            intel_product::RELATION_KIND_COMMENT,
-            intel_product::RELATION_KIND_REPORT,
-        ]))
-        .into_query();
-    let query = query
-        .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids))
-        .select_only()
-        .column_as(signal_message::Column::Id, "id")
-        .column_as(signal_message::Column::Timestamp, "timestamp")
-        .column_as(sigint_inbox_item::Column::Freq, "freq")
-        .column_as(sigint_inbox_item::Column::Coords, "coords")
-        .column_as(sigint_inbox_item::Column::Date, "date")
-        .column_as(sigint_inbox_item::Column::Time, "time")
-        .column_as(sigint_inbox_item::Column::UnitV2, "unit");
+    let query = mouse_report_message_projection(query);
     let query = match max_messages {
         Some(max_messages) => query.limit(max_messages as u64),
         None => query,
@@ -1292,14 +1382,79 @@ async fn load_mouse_report_messages_chunk(
         .all(dbx)
         .await
         .context(h!())?;
+    assemble_mouse_report_messages(dbx, login, req, include_tags, rows).await
+}
+
+fn mouse_report_hydrate_query(ids: &[i64]) -> Select<signal_message::Entity> {
+    mouse_report_message_projection(restrict_inbox_report_to_message_ids(
+        signal_message::Entity::find().join(
+            JoinType::InnerJoin,
+            signal_message::Relation::SigintInboxItem.def(),
+        ),
+        ids,
+    ))
+}
+
+fn mouse_report_message_projection(
+    query: Select<signal_message::Entity>,
+) -> Select<signal_message::Entity> {
+    exclude_inbox_report_linked_intel_products(query)
+        .select_only()
+        .column_as(signal_message::Column::Id, "id")
+        .column_as(signal_message::Column::Timestamp, "timestamp")
+        .column_as(sigint_inbox_item::Column::Freq, "freq")
+        .column_as(sigint_inbox_item::Column::Coords, "coords")
+        .column_as(sigint_inbox_item::Column::Date, "date")
+        .column_as(sigint_inbox_item::Column::Time, "time")
+        .column_as(sigint_inbox_item::Column::UnitV2, "unit")
+}
+
+async fn hydrate_mouse_report_messages(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    include_tags: bool,
+    ids: &[i64],
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut rows = Vec::with_capacity(ids.len());
+    for ids in ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE) {
+        rows.extend(
+            mouse_report_hydrate_query(ids)
+                .into_model::<MouseReportMessageRow>()
+                .all(dbx)
+                .await
+                .context(h!())?,
+        );
+    }
+    Ok(
+        assemble_mouse_report_messages(dbx, login, req, include_tags, rows)
+            .await
+            .context(h!())?,
+    )
+}
+
+async fn assemble_mouse_report_messages(
+    dbx: &DatabaseConnection,
+    login: &uuid::Uuid,
+    req: &InboxMessagesReq,
+    include_tags: bool,
+    rows: Vec<MouseReportMessageRow>,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
     let message_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
     let mut tags_by_message = if include_tags {
-        load_mouse_inbox_tags(dbx, login, req, &message_ids).await?
+        load_mouse_inbox_tags(dbx, login, req, &message_ids)
+            .await
+            .context(h!())?
     } else {
         BTreeMap::new()
     };
     let mut normalized_callsigns =
-        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids).await?;
+        crate::inbox::callsigns::load_by_item_ids(dbx, &message_ids)
+            .await
+            .context(h!())?;
 
     rows.into_iter()
         .map(|row| {
@@ -1629,6 +1784,26 @@ mod tests {
     use sea_orm::prelude::Expr;
     use sea_orm::ActiveValue::Set;
     use serial_test::serial;
+
+    #[test]
+    fn mouse_hydrate_query_restricts_to_ids() {
+        use sea_orm::{DbBackend, QueryTrait};
+
+        let sql = mouse_report_hydrate_query(&[11, 12])
+            .build(DbBackend::Postgres)
+            .to_string();
+        assert!(
+            sql.contains(r#""signal_message"."id""#)
+                && (sql.contains(" IN (") || sql.contains(" = ANY(")),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("intel_product") && sql.contains("NOT IN"),
+            "{sql}"
+        );
+        assert!(!sql.contains("matching_unit_network_ids"), "{sql}");
+        assert!(!sql.contains("sigint_peleng"), "{sql}");
+    }
 
     #[test]
     fn mouse_report_message_limit_allows_maximum() {

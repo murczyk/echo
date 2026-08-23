@@ -295,7 +295,6 @@ export function NetworkDetailsCallsignsPanel({
               selected={sectionMode === 'network'}
               onClick={() => handleNavigateToSection('network')}
               interactive
-              fontSize="0.75rem"
               fontWeight={600}
               labelPaddingX={0.9}
               labelPaddingY={0.1}
@@ -306,7 +305,6 @@ export function NetworkDetailsCallsignsPanel({
               selected={sectionMode === 'catalog'}
               onClick={() => handleNavigateToSection('catalog')}
               interactive
-              fontSize="0.75rem"
               fontWeight={600}
               labelPaddingX={0.9}
               labelPaddingY={0.1}
@@ -317,7 +315,6 @@ export function NetworkDetailsCallsignsPanel({
               selected={sectionMode === 'intercepted'}
               onClick={() => handleNavigateToSection('intercepted')}
               interactive
-              fontSize="0.75rem"
               fontWeight={600}
               labelPaddingX={0.9}
               labelPaddingY={0.1}

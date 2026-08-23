@@ -318,14 +318,19 @@ export function DeviceAnalyticsPanel({
 
   const summaries = useMemo(() => {
     const summaryByTagId = new Map((summary?.items ?? []).map((item) => [item.tag.id, item]));
-    return tagsState.tags.map<AnalyticsWidgetSummary>((tag) => {
+    const visibleSummaries: AnalyticsWidgetSummary[] = [];
+
+    for (const tag of tagsState.tags) {
       const item = summaryByTagId.get(tag.id);
-      return {
+      if (item === undefined || item.fileCount <= 0) continue;
+      visibleSummaries.push({
         tag,
-        fileCount: item?.fileCount ?? 0,
-        latestFileEntryCreatedAt: item?.latestFileEntryCreatedAt ?? null,
-      };
-    });
+        fileCount: item.fileCount,
+        latestFileEntryCreatedAt: item.latestFileEntryCreatedAt,
+      });
+    }
+
+    return visibleSummaries;
   }, [summary, tagsState.tags]);
 
   const scheduleReanalysis = async () => {
@@ -451,7 +456,9 @@ export function DeviceAnalyticsPanel({
           </Box>
         ) : summaries.length === 0 ? (
           <PowerAlert severity="info" autoHideDuration={null}>
-            Активних аналітичних тегів ще немає.
+            {tagsState.tags.length === 0
+              ? 'Активних аналітичних тегів ще немає.'
+              : 'Файлів з активними аналітичними тегами ще немає.'}
           </PowerAlert>
         ) : (
           <Stack spacing={1}>

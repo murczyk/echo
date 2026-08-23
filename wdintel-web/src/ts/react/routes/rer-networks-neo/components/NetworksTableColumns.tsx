@@ -90,6 +90,8 @@ export function useNetworksTableColumns({
         Cell: mrtItemsCell<NetworkRowView, string>({
           items: ({ row }) => row.original.aorLabels,
           renderItem: (label) => <Box component="span">{label}</Box>,
+          measurementScope: 'networks:aors',
+          disclosureLayout: 'list',
           getItemKey: (label) => label,
           getItemText: (label) => label,
         }),

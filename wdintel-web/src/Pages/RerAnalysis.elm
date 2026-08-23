@@ -4103,6 +4103,9 @@ update user shared route msg model =
         MapClosed ->
             ( { model | unfoldMapBlock = False }, E.none )
 
+        DeltaKmlLoadFailed error ->
+            ( model, E.showError ("Не вдалося завантажити шар Delta KML: " ++ error) )
+
         MapPeriodChanged { startDate, endDate } ->
             let
                 m2 =

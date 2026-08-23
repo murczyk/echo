@@ -175,6 +175,7 @@ describe('DeviceDetailsPage layout', () => {
     expect(deviceNameLink?.getAttribute('href')).toBe(activeDevice.externalUrl);
     expect(deviceNameLink?.getAttribute('target')).toBe('_blank');
     expect(deviceNameLink?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(deviceNameLink?.querySelector('[data-testid="OpenInNewIcon"]')).not.toBeNull();
     expect(leftPanelText.indexOf('Основне')).toBeLessThan(leftPanelText.indexOf('Кастомні поля'));
     expect(leftPanelText.indexOf('Кастомні поля')).toBeLessThan(leftPanelText.indexOf('Додатково'));
     const tabs = Array.from(container?.querySelectorAll('[role="tab"]') ?? []);
@@ -253,6 +254,7 @@ describe('DeviceDetailsPage layout', () => {
     expect(leftPanel?.textContent).toContain(activeDevice.name);
     expect(leftPanel?.textContent).not.toContain('javascript:');
     expect(deviceNameLink).toBeUndefined();
+    expect(leftPanel?.querySelector('[data-testid="OpenInNewIcon"]')).toBeNull();
   });
 
   it('keeps archived devices read-only', () => {

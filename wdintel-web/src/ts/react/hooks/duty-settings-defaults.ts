@@ -1,0 +1,1 @@
+export const DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS = true;

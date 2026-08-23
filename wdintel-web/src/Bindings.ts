@@ -1241,7 +1241,8 @@ export type BattleLineState = {
 };
 
 export type BattleLineTestReq = {
-  inboxItemId: number;
+  inboxItemId: string | null;
+  messageUid: string | null;
 };
 
 export type BattleLineSettlementCandidate = {
@@ -4106,6 +4107,7 @@ export type EncryptionRec = {
 export type SingleNetworkFreqsReq = {
   networkId: number;
   includeCallsigns: boolean | null;
+  includeLastDatetimeInAor: boolean | null;
 };
 
 export type SingleNetworkFreqsListRsp = {

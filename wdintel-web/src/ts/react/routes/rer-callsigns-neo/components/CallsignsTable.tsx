@@ -14,6 +14,7 @@ import {
 import type { DevelopingFilter } from '../../../../../Bindings';
 import { ELLIPSIS } from '../../../utils/misc';
 import { formatMrtCellTextValue } from '../../../components/formatMrtCellTextValue';
+import { EchoChip } from '../../../components/EchoChip';
 import { PowerChip } from '../../../components/PowerChip';
 import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import {
@@ -297,15 +298,7 @@ function CallsignsTableComponent({
                 sx={{ alignItems: 'center', display: 'inline-flex', gap: 0.5, minWidth: 0 }}
               >
                 {item.isFirstConfirming && 'Підтверджено:'}
-                <PowerChip
-                  label={item.label}
-                  size="small"
-                  interactive={false}
-                  unselectedBackgroundColor="transparent"
-                  unselectedOpacity={1}
-                  unselectedTextColor="text.primary"
-                  unselectedBorderColor="divider"
-                />
+                <EchoChip label={item.label} tone="neutral" />
               </Box>
             ),
           renderCompactItem: (item) =>
@@ -315,6 +308,12 @@ function CallsignsTableComponent({
                 fullValue={`Основне: ${item.label}`}
               />
             ) : null,
+          renderDisclosureItem: (item) =>
+            item.kind === 'primary'
+              ? `Основне джерело: ${item.label}`
+              : `Підтверджено: ${item.label}`,
+          measurementScope: 'callsigns:sources',
+          disclosureLayout: 'list',
           getItemKey: (item) => item.key,
           getItemText: (item) =>
             item.kind === 'primary'

@@ -97,7 +97,6 @@ function renderCategoryChip(label: string) {
       size="small"
       color="default"
       label={text}
-      fontSize="0.75rem"
       fontWeight={600}
       labelPaddingX={0.85}
       labelPaddingY={0.1}
@@ -387,7 +386,6 @@ function NetworkDetailsFrequenciesTableContent({
         selected={statusFilterValue === 'Усі'}
         onClick={() => onStatusFilterChange('Усі')}
         interactive
-        fontSize="0.75rem"
         fontWeight={600}
         labelPaddingX={0.85}
         labelPaddingY={0.1}
@@ -398,7 +396,6 @@ function NetworkDetailsFrequenciesTableContent({
         selected={statusFilterValue === 'active'}
         onClick={() => onStatusFilterChange('active')}
         interactive
-        fontSize="0.75rem"
         fontWeight={600}
         labelPaddingX={0.85}
         labelPaddingY={0.1}
@@ -409,7 +406,6 @@ function NetworkDetailsFrequenciesTableContent({
         selected={statusFilterValue === 'inactive'}
         onClick={() => onStatusFilterChange('inactive')}
         interactive
-        fontSize="0.75rem"
         fontWeight={600}
         labelPaddingX={0.85}
         labelPaddingY={0.1}

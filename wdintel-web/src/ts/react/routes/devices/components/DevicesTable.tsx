@@ -82,7 +82,7 @@ function useDevicesTableColumns(): AppMrtColumnDef<DeviceRowView>[] {
       {
         id: 'aors',
         accessorKey: 'aorLabel',
-        header: 'AOR',
+        header: 'Смуги',
         size: 240,
         enableSorting: false,
         meta: { overflowMode: 'text' },

@@ -706,6 +706,18 @@ pub(in crate::devices) struct DeviceAnalyticsProgress {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::devices) struct AnalysisRunSummary {
+    pub file_count: i64,
+    pub items: Vec<AnalysisRunTagSummary>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::devices) struct AnalysisRunTagSummary {
+    pub tag_name: String,
+    pub file_count: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::devices) struct DeviceAnalyticsFileLink {
     pub file_entry_id: Uuid,
     pub file_entry_created_at: DateTime<FixedOffset>,

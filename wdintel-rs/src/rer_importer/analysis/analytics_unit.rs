@@ -7,9 +7,11 @@ use crate::error::AppError;
 use crate::h;
 use anyhow::Context;
 use sea_orm::*;
-use sea_query::{Alias, Condition, Expr, SimpleExpr};
+use sea_query::{
+    Alias, Condition, Expr, SelectStatement, SimpleExpr, UnionType,
+};
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(in crate::rer_importer) struct ResolvedAnalyticsUnitFilter {
     pub ordinary_names: Vec<String>,
     pub includes_undefined: bool,
@@ -17,7 +19,7 @@ pub(in crate::rer_importer) struct ResolvedAnalyticsUnitFilter {
     pub present: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(in crate::rer_importer) struct ResolvedAnalyticsUnitFilters {
     pub selected: ResolvedAnalyticsUnitFilter,
     pub denied: ResolvedAnalyticsUnitFilter,
@@ -118,12 +120,184 @@ async fn resolve_unit_network_ids(
     )
 }
 
-pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters(
-    mut query: Select<signal_message::Entity>,
+pub(in crate::rer_importer) async fn resolve_analysis_unit_filters_for_analytics(
+    source_db: &DatabaseConnection,
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: Option<bool>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Option<ResolvedAnalyticsUnitFilters>, AppError> {
+    if scope.is_none() || selected_units.as_ref().is_none_or(Vec::is_empty) {
+        return Ok(None);
+    }
+    Ok(Some(
+        resolve_analytics_unit_filters(
+            source_db,
+            selected_units,
+            &None,
+            units_exact_match_only,
+        )
+        .await
+        .context(h!())?,
+    ))
+}
+
+pub(in crate::rer_importer) async fn resolve_analysis_unit_filter_variants_for_analytics(
+    source_db: &DatabaseConnection,
+    selected_units: &Option<Vec<String>>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<
+    (
+        Option<ResolvedAnalyticsUnitFilters>,
+        Option<ResolvedAnalyticsUnitFilters>,
+    ),
+    AppError,
+> {
+    if scope.is_none() || selected_units.as_ref().is_none_or(Vec::is_empty) {
+        return Ok((None, None));
+    }
+
+    let split = split_analytics_unit_filter(selected_units);
+    let mut queries = Vec::new();
+    if !split.ordinary_names.is_empty() {
+        let exact = selected_unit_network_ids_query(
+            &Some(split.ordinary_names.clone()),
+            &Some(true),
+        )
+        .context(h!())?;
+        queries.push(unit_network_variant_query(exact, "exact"));
+        let combined = selected_unit_network_ids_query(
+            &Some(split.ordinary_names.clone()),
+            &Some(false),
+        )
+        .context(h!())?;
+        queries.push(unit_network_variant_query(combined, "combined"));
+    }
+    if split.includes_undefined {
+        queries.push(unit_network_variant_query(
+            SigintNetworkUnit::find()
+                .join(
+                    JoinType::InnerJoin,
+                    sigint_network_unit::Relation::SigintUnit.def(),
+                )
+                .select_only()
+                .column(sigint_network_unit::Column::NetworkId)
+                .filter(sigint_unit::Column::Deleted.eq(false))
+                .distinct()
+                .into_query(),
+            "all",
+        ));
+    }
+
+    let mut queries = queries.into_iter();
+    let mut query = queries.next().context(h!())?;
+    for variant in queries {
+        query.union(UnionType::All, variant);
+    }
+    #[derive(FromQueryResult)]
+    struct NetworkIdVariantRow {
+        network_id: i64,
+        resolution_kind: String,
+    }
+    let rows = NetworkIdVariantRow::find_by_statement(
+        DbBackend::Postgres.build(&query),
+    )
+    .all(source_db)
+    .await
+    .context(h!())?;
+    let exact_network_ids = rows
+        .iter()
+        .filter(|row| row.resolution_kind == "exact")
+        .map(|row| row.network_id)
+        .collect();
+    let combined_network_ids = rows
+        .iter()
+        .filter(|row| row.resolution_kind == "combined")
+        .map(|row| row.network_id)
+        .collect();
+    let all_unit_network_ids = rows
+        .iter()
+        .filter(|row| row.resolution_kind == "all")
+        .map(|row| row.network_id)
+        .collect::<Vec<_>>();
+    Ok((
+        Some(resolved_analysis_unit_filters(
+            split.clone(),
+            exact_network_ids,
+            all_unit_network_ids.clone(),
+        )),
+        Some(resolved_analysis_unit_filters(
+            split,
+            combined_network_ids,
+            all_unit_network_ids,
+        )),
+    ))
+}
+
+fn unit_network_variant_query(
+    mut query: SelectStatement,
+    resolution_kind: &str,
+) -> SelectStatement {
+    query.expr_as(Expr::value(resolution_kind), Alias::new("resolution_kind"));
+    query
+}
+
+fn resolved_analysis_unit_filters(
+    mut selected: ResolvedAnalyticsUnitFilter,
+    linked_network_ids: Vec<i64>,
+    all_unit_network_ids: Vec<i64>,
+) -> ResolvedAnalyticsUnitFilters {
+    selected.linked_network_ids = linked_network_ids;
+    ResolvedAnalyticsUnitFilters {
+        selected,
+        denied: ResolvedAnalyticsUnitFilter::default(),
+        all_unit_network_ids,
+    }
+}
+
+pub(in crate::rer_importer) fn apply_analysis_unit_filters<E>(
+    query: Select<E>,
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    dt_since: chrono::NaiveDateTime,
+    dt_till: chrono::NaiveDateTime,
+    scope: Option<&AnalyticsMessageIdScope>,
+    resolved: Option<&ResolvedAnalyticsUnitFilters>,
+) -> Result<Select<E>, AppError>
+where
+    E: EntityTrait,
+{
+    if let Some(scope) = scope {
+        if selected_units.as_ref().is_none_or(Vec::is_empty) {
+            return Ok(query);
+        }
+        let resolved = resolved.ok_or_else(|| {
+            anyhow::anyhow!("analytics unit filters were not resolved")
+        })?;
+        return Ok(apply_resolved_analytics_unit_filters(
+            query,
+            resolved,
+            scope,
+            units_exact_match_only.unwrap_or(false),
+        ));
+    }
+    super::filter_selected_units_for_period(
+        query,
+        selected_units,
+        units_exact_match_only,
+        dt_since,
+        dt_till,
+    )
+}
+
+pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters<E>(
+    mut query: Select<E>,
     resolved: &ResolvedAnalyticsUnitFilters,
     scope: &AnalyticsMessageIdScope,
     exact_match_only: bool,
-) -> Select<signal_message::Entity> {
+) -> Select<E>
+where
+    E: EntityTrait,
+{
     let selected_link = join_analytics_unit_link_if_needed(
         &mut query,
         "analytics_selected_unit",
@@ -223,12 +397,15 @@ fn analytics_header_unit_is_undefined() -> SimpleExpr {
     header.clone().is_null().or(header.eq(""))
 }
 
-fn join_analytics_unit_link_if_needed(
-    query: &mut Select<signal_message::Entity>,
+fn join_analytics_unit_link_if_needed<E>(
+    query: &mut Select<E>,
     prefix: &str,
     network_ids: &[i64],
     scope: &AnalyticsMessageIdScope,
-) -> Option<Alias> {
+) -> Option<Alias>
+where
+    E: EntityTrait,
+{
     if network_ids.is_empty() {
         return None;
     }

@@ -1,4 +1,4 @@
-use super::analytics::{query, types::DeviceAnalyticsProgress};
+use super::analytics::{query, types::AnalysisRunSummary};
 use super::devices::types::DeviceCurrentState;
 use crate::config::DEVICE_MATTERMOST_TIMEOUT_SEC;
 use crate::entities::device;
@@ -60,17 +60,19 @@ pub(crate) async fn analysis_run_completed_nofail(env: &Env, run_id: Uuid) {
             anyhow::bail!("analysis run {run_id} is not complete");
         }
         let device = load_device(env, run.device_id).await.context(h!())?;
-        let summary = query::device_summary(file_db, run.device_id)
-            .await
-            .c(h!())?;
-        let text = render_analysis_run_completed(
+        let summary =
+            query::analysis_run_summary(file_db, &run).await.c(h!())?;
+        let Some(text) = render_analysis_run_completed(
             &env.config.public_host,
             device.id,
             device.name.as_deref(),
             device.external_url.as_deref(),
             &summary,
         )
-        .context(h!())?;
+        .context(h!())?
+        else {
+            return Ok(());
+        };
         post_text(&target, &text).await
     }
     .await;
@@ -141,8 +143,11 @@ fn render_analysis_run_completed(
     device_id: Uuid,
     name: Option<&str>,
     external_url: Option<&str>,
-    summary: &DeviceAnalyticsProgress,
-) -> Result<String> {
+    summary: &AnalysisRunSummary,
+) -> Result<Option<String>> {
+    if summary.items.is_empty() {
+        return Ok(None);
+    }
     let mut heading = format!(
         "Завершено аналіз пристрою {}",
         device_markdown_link(public_host, device_id, name).context(h!())?
@@ -155,7 +160,7 @@ fn render_analysis_run_completed(
     let visible_tag_count = summary.items.len().min(ANALYSIS_TAG_MAX_COUNT);
     heading.reserve(32 + visible_tag_count.saturating_mul(32));
     heading.push('\n');
-    write!(heading, "Файли: {}", summary.total_file_count)
+    write!(heading, "Файли: {}", summary.file_count)
         .expect("writing to a String cannot fail");
     for item in summary.items.iter().take(ANALYSIS_TAG_MAX_COUNT) {
         heading.push_str(", ");
@@ -172,7 +177,7 @@ fn render_analysis_run_completed(
         write!(heading, ", Інші теги: {omitted_tag_count}")
             .expect("writing to a String cannot fail");
     }
-    Ok(heading)
+    Ok(Some(heading))
 }
 
 fn device_name(device_id: Uuid, name: Option<&str>) -> String {
@@ -234,7 +239,7 @@ fn device_link(public_host: &str, device_id: Uuid) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::devices::analytics::types::DeviceAnalyticsSummary;
+    use crate::devices::analytics::types::AnalysisRunTagSummary;
     use crate::types::BTreeMap;
     use chrono::Utc;
 
@@ -287,25 +292,19 @@ mod tests {
     }
 
     #[test]
-    fn completed_analysis_payload_matches_current_summary_format() {
+    fn completed_analysis_payload_matches_existing_format() {
         let device_id = Uuid::from_u128(0x01a01df4_7cc6_7110_bcf6_6c72132387f8);
         let device = device_fixture(device_id);
-        let now = Utc::now().fixed_offset();
-        let summary = DeviceAnalyticsProgress {
-            total_file_count: 12_573,
-            analyzed_file_count: 12_573,
+        let summary = AnalysisRunSummary {
+            file_count: 12_573,
             items: vec![
-                DeviceAnalyticsSummary {
-                    tag_id: Uuid::now_v7(),
+                AnalysisRunTagSummary {
                     tag_name: "Тег 1".to_string(),
                     file_count: 123,
-                    latest_file_entry_created_at: now,
                 },
-                DeviceAnalyticsSummary {
-                    tag_id: Uuid::now_v7(),
+                AnalysisRunTagSummary {
                     tag_name: "Тег 2".to_string(),
                     file_count: 321,
-                    latest_file_entry_created_at: now,
                 },
             ],
         };
@@ -317,7 +316,8 @@ mod tests {
             device.external_url.as_deref(),
             &summary,
         )
-        .unwrap();
+        .unwrap()
+        .expect("a run with tagged files should render a notification");
 
         assert_eq!(
             text,
@@ -328,6 +328,28 @@ mod tests {
                  ([Джерело](https://secret.example/device))\n\
                  Файли: 12573, Тег 1: 123, Тег 2: 321"
             )
+        );
+    }
+
+    #[test]
+    fn completed_analysis_payload_is_omitted_without_tagged_files() {
+        let device_id = Uuid::now_v7();
+        let device = device_fixture(device_id);
+        let summary = AnalysisRunSummary {
+            file_count: 12_573,
+            items: Vec::new(),
+        };
+
+        assert_eq!(
+            render_analysis_run_completed(
+                "localhost",
+                device.id,
+                device.name.as_deref(),
+                device.external_url.as_deref(),
+                &summary,
+            )
+            .unwrap(),
+            None
         );
     }
 

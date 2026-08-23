@@ -2,6 +2,7 @@ import { PalitraDetails } from './palitra-types';
 
 export type AnalysisMapFeaturesState = {
   palitras: boolean;
+  deltaKml: boolean;
   pelengs: boolean;
 };
 
@@ -15,6 +16,7 @@ type VisiblePalitraIdsNamespace = 'legacy_palitra_id' | 'geometry_id';
 
 const DEFAULT_FEATURES_STATE: AnalysisMapFeaturesState = {
   palitras: true,
+  deltaKml: true,
   pelengs: true,
 };
 
@@ -185,6 +187,11 @@ function parseFeaturesState(input: unknown): AnalysisMapFeaturesState {
   const record = isRecord(input) ? input : {};
   return {
     palitras: readBool(record, 'palitras', DEFAULT_FEATURES_STATE.palitras),
+    deltaKml: readBool(
+      record,
+      'deltaKml',
+      readBool(record, 'kmz', DEFAULT_FEATURES_STATE.deltaKml),
+    ),
     pelengs: readBool(record, 'pelengs', DEFAULT_FEATURES_STATE.pelengs),
   };
 }
@@ -232,7 +239,7 @@ function arraysEqual(a: number[], b: number[]): boolean {
 }
 
 function featuresEqual(a: AnalysisMapFeaturesState, b: AnalysisMapFeaturesState): boolean {
-  return a.palitras === b.palitras && a.pelengs === b.pelengs;
+  return a.palitras === b.palitras && a.deltaKml === b.deltaKml && a.pelengs === b.pelengs;
 }
 
 function stateEquals(a: AnalysisMapStoredState, b: AnalysisMapStoredState): boolean {

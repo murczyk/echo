@@ -3213,14 +3213,16 @@ battleLineStateEncoder struct =
 
 
 type alias BattleLineTestReq =
-    { inboxItemId : Int
+    { inboxItemId : Maybe (String)
+    , messageUid : Maybe (String)
     }
 
 
 battleLineTestReqEncoder : BattleLineTestReq -> Json.Encode.Value
 battleLineTestReqEncoder struct =
     Json.Encode.object
-        [ ( "inbox_item_id", (Json.Encode.int) struct.inboxItemId )
+        [ ( "inbox_item_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.inboxItemId )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUid )
         ]
 
 
@@ -10615,6 +10617,7 @@ encryptionRecEncoder struct =
 type alias SingleNetworkFreqsReq =
     { networkId : Int
     , includeCallsigns : Maybe (Bool)
+    , includeLastDatetimeInAor : Maybe (Bool)
     }
 
 
@@ -10623,6 +10626,7 @@ singleNetworkFreqsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "include_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeCallsigns )
+        , ( "include_last_datetime_in_aor", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeLastDatetimeInAor )
         ]
 
 
@@ -15625,7 +15629,8 @@ battleLineStateDecoder =
 battleLineTestReqDecoder : Json.Decode.Decoder BattleLineTestReq
 battleLineTestReqDecoder =
     Json.Decode.succeed BattleLineTestReq
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox_item_id" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable (Json.Decode.string))))
 
 
 battleLineSettlementCandidateDecoder : Json.Decode.Decoder BattleLineSettlementCandidate
@@ -20645,6 +20650,7 @@ singleNetworkFreqsReqDecoder =
     Json.Decode.succeed SingleNetworkFreqsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_callsigns" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_last_datetime_in_aor" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 singleNetworkFreqsListRspDecoder : Json.Decode.Decoder SingleNetworkFreqsListRsp
