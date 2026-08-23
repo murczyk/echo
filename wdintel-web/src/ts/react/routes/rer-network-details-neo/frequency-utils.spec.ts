@@ -81,7 +81,7 @@ describe('frequency utils', () => {
       kind: 'group',
       displayFreq: '652.1111, 652.1200',
       messageCount: 5,
-      callsignLabel: 'Alpha, Bravo',
+      callsignLabel: 'ALPHA, BRAVO',
       typeLabel: 'NFM',
     });
     expect(rows[1]).toMatchObject({
@@ -89,6 +89,17 @@ describe('frequency utils', () => {
       displayFreq: '652.1500',
       typeLabel: 'DMR',
     });
+  });
+
+  it('renders callsigns in upper case and deduplicates case variants', () => {
+    const rows = buildNetworkFreqRows(
+      [createFreq({ networkFreqId: 10 })],
+      new Map(),
+      new Map([[10, ['Alpha', 'ALPHA', 'bravo']]]),
+      [],
+    );
+
+    expect(rows[0]).toMatchObject({ callsignLabel: 'ALPHA, BRAVO' });
   });
 
   it('sorts active frequencies before inactive frequencies, then by frequency and id', () => {

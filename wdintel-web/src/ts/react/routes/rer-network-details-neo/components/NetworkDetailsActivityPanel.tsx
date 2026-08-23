@@ -1,6 +1,7 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { useId, useMemo, useState } from 'react';
 
+import type { NetworkGroupActivityPeriod } from '../../../../../Bindings';
 import { NetworkDetailsActivityChart } from './NetworkDetailsActivityChart';
 import {
   NetworkDetailsActivityEmptyState,
@@ -16,24 +17,96 @@ import {
 
 type Props = {
   networkActivity: NetworkActivity;
+  networkActivityPeriod: NetworkGroupActivityPeriod;
   networkActivityLoading: boolean;
   networkActivityLoaded: boolean;
   networkActivityError: string | null;
+  onNetworkActivityPeriodChange: (period: NetworkGroupActivityPeriod) => void;
   onReloadNetworkActivity: () => void;
 };
 
+const ACTIVITY_PERIODS: Array<{ value: NetworkGroupActivityPeriod; days: number }> = [
+  { value: 'Last10Days', days: 10 },
+  { value: 'Last30Days', days: 30 },
+  { value: 'Last60Days', days: 60 },
+];
+
+function activityPeriodDays(period: NetworkGroupActivityPeriod): number {
+  return ACTIVITY_PERIODS.find((option) => option.value === period)?.days ?? 10;
+}
+
+function ActivityHeading({
+  headingId,
+  period,
+  loading,
+  onChange,
+}: {
+  headingId: string;
+  period: NetworkGroupActivityPeriod;
+  loading: boolean;
+  onChange: (period: NetworkGroupActivityPeriod) => void;
+}) {
+  return (
+    <Stack
+      direction="row"
+      spacing={2}
+      alignItems="center"
+      justifyContent="space-between"
+      useFlexGap
+    >
+      <Typography id={headingId} component="h2" variant="h6">
+        Активність мережі
+      </Typography>
+      <ToggleButtonGroup
+        exclusive
+        size="small"
+        value={period}
+        disabled={loading}
+        aria-label="Період активності мережі в днях"
+        onChange={(_, nextPeriod: NetworkGroupActivityPeriod | null) => {
+          if (nextPeriod !== null) onChange(nextPeriod);
+        }}
+        sx={{
+          gap: 0.75,
+          '& .MuiToggleButtonGroup-grouped': {
+            minWidth: 40,
+            px: 1.25,
+            py: 0.25,
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: '999px !important',
+          },
+        }}
+      >
+        {ACTIVITY_PERIODS.map((option) => (
+          <ToggleButton key={option.value} value={option.value} aria-label={`${option.days} днів`}>
+            {option.days}
+          </ToggleButton>
+        ))}
+      </ToggleButtonGroup>
+    </Stack>
+  );
+}
+
 export function NetworkDetailsActivityPanel({
   networkActivity,
+  networkActivityPeriod,
   networkActivityLoading,
   networkActivityLoaded,
   networkActivityError,
+  onNetworkActivityPeriodChange,
   onReloadNetworkActivity,
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
   const [hoveredBar, setHoveredBar] = useState<HoveredBar | null>(null);
   const chartData = useMemo(
-    () => buildActivityChartData(networkActivity, Date.now()),
-    [networkActivity],
+    () =>
+      buildActivityChartData(
+        networkActivity,
+        Date.now(),
+        activityPeriodDays(networkActivityPeriod),
+      ),
+    [networkActivity, networkActivityPeriod],
   );
   const isLoading =
     networkActivityLoading || (!networkActivityLoaded && networkActivityError === null);
@@ -44,9 +117,12 @@ export function NetworkDetailsActivityPanel({
         sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}
       >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
-          <Typography id={headingId} component="h2" variant="h6">
-            Активність мережі
-          </Typography>
+          <ActivityHeading
+            headingId={headingId}
+            period={networkActivityPeriod}
+            loading={networkActivityLoading}
+            onChange={onNetworkActivityPeriodChange}
+          />
           <NetworkDetailsActivityErrorState
             error={networkActivityError}
             onReload={onReloadNetworkActivity}
@@ -62,9 +138,12 @@ export function NetworkDetailsActivityPanel({
         sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}
       >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
-          <Typography id={headingId} component="h2" variant="h6">
-            Активність мережі
-          </Typography>
+          <ActivityHeading
+            headingId={headingId}
+            period={networkActivityPeriod}
+            loading={networkActivityLoading}
+            onChange={onNetworkActivityPeriodChange}
+          />
           <NetworkDetailsActivityLoadingState />
         </Stack>
       </Box>
@@ -77,9 +156,12 @@ export function NetworkDetailsActivityPanel({
         sx={{ minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}
       >
         <Stack spacing={2} sx={{ minHeight: 0, minWidth: 0, width: '100%' }}>
-          <Typography id={headingId} component="h2" variant="h6">
-            Активність мережі
-          </Typography>
+          <ActivityHeading
+            headingId={headingId}
+            period={networkActivityPeriod}
+            loading={networkActivityLoading}
+            onChange={onNetworkActivityPeriodChange}
+          />
           <NetworkDetailsActivityEmptyState />
         </Stack>
       </Box>
@@ -95,9 +177,12 @@ export function NetworkDetailsActivityPanel({
         sx={{ minHeight: 0, minWidth: 0, width: '100%' }}
         onMouseLeave={() => setHoveredBar(null)}
       >
-        <Typography id={headingId} component="h2" variant="h6">
-          Активність мережі
-        </Typography>
+        <ActivityHeading
+          headingId={headingId}
+          period={networkActivityPeriod}
+          loading={networkActivityLoading}
+          onChange={onNetworkActivityPeriodChange}
+        />
 
         <NetworkDetailsActivityChart
           headingId={headingId}

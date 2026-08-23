@@ -7,6 +7,8 @@ import type {
   NetworkPoint,
   NetworkStatus,
   NetworkFreqsRes,
+  NetworkFreqCallsignsPeriod,
+  NetworkGroupActivityPeriod,
   Post,
   NetworkCallsign,
   NetworkCallsignRes,
@@ -115,7 +117,9 @@ export type NetworkDetailsNeoPageState = {
   freqActivityByFreq: NetworkFreqActivityByFreq;
   freqCallsignsById: Map<number, string[]>;
   freqCallsignsStatus: NetworkFreqCallsignsStatus;
+  freqCallsignsPeriod: NetworkFreqCallsignsPeriod;
   networkActivity: Record<string, Record<string, number>>;
+  networkActivityPeriod: NetworkGroupActivityPeriod;
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
   networkActivityError: string | null;
@@ -257,7 +261,9 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   freqActivityByFreq: {},
   freqCallsignsById: new Map(),
   freqCallsignsStatus: 'idle',
+  freqCallsignsPeriod: 'Last21Days',
   networkActivity: {},
+  networkActivityPeriod: 'Last10Days',
   networkActivityLoaded: false,
   networkActivityLoading: false,
   networkActivityError: null,

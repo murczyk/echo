@@ -81,12 +81,22 @@ networkStatusFromValue value =
 
 activityBlock : Shared.Model -> Model -> List (Html Msg)
 activityBlock shared model =
-    [ div [ class "flex justify-between items-center" ]
+    [ div [ class "flex flex-wrap justify-between items-center gap-2" ]
         [ h5 [] [ text "Активність мережі" ]
+        , div [ class "flex items-center gap-2" ]
+            [ span [ class "text-xs opacity-70" ] [ text "Днів:" ]
+            , div
+                [ class "inline-flex gap-1"
+                , attribute "role" "radiogroup"
+                , attribute "aria-label" "Період активності мережі"
+                ]
+                (List.map (activityPeriodPill model.groupsActivityPeriod) activityPeriods)
+            ]
         ]
     , div [ class "space-y-4" ]
         [ div [ class "mb-2" ]
-            [ span [ class "opacity-70 text-sm" ] [ text "Графік активності мережі за місяць" ]
+            [ span [ class "opacity-70 text-sm" ]
+                [ text ("Графік активності мережі за " ++ String.fromInt (activityPeriodDays model.groupsActivityPeriod) ++ " днів") ]
             ]
         , div [ class "h-[200px]" ]
             [ case model.groupsActivity of
@@ -98,6 +108,7 @@ activityBlock shared model =
                     Html.node "bar-chart"
                         [ property "data" <| groupsMessageCountByDayJson
                         , property "last-day" <| Encode.int shared.now
+                        , property "days" <| Encode.int (activityPeriodDays model.groupsActivityPeriod)
                         , class "block"
                         ]
                         []
@@ -107,6 +118,61 @@ activityBlock shared model =
             ]
         ]
     ]
+
+
+activityPeriods : List B.NetworkGroupActivityPeriod
+activityPeriods =
+    [ B.Last10Days, B.Last30Days, B.Last60Days ]
+
+
+activityPeriodPill : B.NetworkGroupActivityPeriod -> B.NetworkGroupActivityPeriod -> Html Msg
+activityPeriodPill selectedPeriod period =
+    let
+        isSelected =
+            selectedPeriod == period
+
+        colors =
+            if isSelected then
+                [ style "background-color" "var(--action-color)"
+                , style "border-color" "var(--action-color)"
+                , style "color" "var(--button-text-color)"
+                ]
+
+            else
+                [ style "background-color" "transparent"
+                , style "border-color" "var(--border-color)"
+                , style "color" "var(--text-color)"
+                ]
+    in
+    button
+        ([ type_ "button"
+         , class "min-w-8 px-2 py-1 rounded-full border text-xs font-medium transition-colors"
+         , attribute "role" "radio"
+         , attribute "aria-checked"
+            (if isSelected then
+                "true"
+
+             else
+                "false"
+            )
+         , onClick (GroupsActivityPeriodChangedByUser period)
+         ]
+            ++ colors
+        )
+        [ text (String.fromInt (activityPeriodDays period)) ]
+
+
+activityPeriodDays : B.NetworkGroupActivityPeriod -> Int
+activityPeriodDays period =
+    case period of
+        B.Last10Days ->
+            10
+
+        B.Last30Days ->
+            30
+
+        B.Last60Days ->
+            60
 
 
 createActivityStr : Maybe Int -> Maybe Int -> Time.Zone -> String

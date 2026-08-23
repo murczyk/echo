@@ -175,6 +175,7 @@ pub struct NetworkCallsignsReq {
 pub struct NetworkGroupsActivityOneReq {
     pub network_id: i64,
     pub till_date_noninclusive_ms: Option<i64>,
+    pub period: Option<NetworkGroupActivityPeriod>,
 }
 
 #[derive(
@@ -183,6 +184,42 @@ pub struct NetworkGroupsActivityOneReq {
 pub struct NetworkGroupsActivityReq {
     pub network_ids: Vec<i64>,
     pub till_date_noninclusive_ms: Option<i64>,
+    pub period: Option<NetworkGroupActivityPeriod>,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Clone,
+    Copy,
+    Default,
+)]
+pub enum NetworkGroupActivityPeriod {
+    #[default]
+    Last10Days,
+    Last30Days,
+    Last60Days,
+}
+
+impl NetworkGroupActivityPeriod {
+    pub(crate) fn lookback_days(self) -> i64 {
+        match self {
+            Self::Last10Days => {
+                crate::config::SIGINT_NETWORK_GROUP_ACTIVITY_PERIOD_LAST_10_DAYS
+            }
+            Self::Last30Days => {
+                crate::config::SIGINT_NETWORK_GROUP_ACTIVITY_PERIOD_LAST_30_DAYS
+            }
+            Self::Last60Days => {
+                crate::config::SIGINT_NETWORK_GROUP_ACTIVITY_PERIOD_LAST_60_DAYS
+            }
+        }
+    }
 }
 
 #[derive(
@@ -501,6 +538,7 @@ pub struct SingleNetworkFreqsListRsp {
 )]
 pub struct NetworkFreqCallsignsReq {
     pub network_freq_id: i64,
+    pub period: Option<NetworkFreqCallsignsPeriod>,
 }
 
 #[derive(
@@ -516,6 +554,30 @@ pub struct NetworkFreqCallsignsRsp {
 )]
 pub struct NetworkFreqCallsignsBatchReq {
     pub network_freq_ids: Vec<i64>,
+    pub period: Option<NetworkFreqCallsignsPeriod>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub enum NetworkFreqCallsignsPeriod {
+    Last7Days,
+    Last21Days,
+    Unlimited,
+}
+
+impl NetworkFreqCallsignsPeriod {
+    pub(crate) fn lookback_days(&self) -> Option<i64> {
+        match self {
+            Self::Last7Days => Some(
+                crate::config::SIGINT_NETWORK_FREQ_CALLSIGN_PERIOD_LAST_7_DAYS,
+            ),
+            Self::Last21Days => Some(
+                crate::config::SIGINT_NETWORK_FREQ_CALLSIGN_PERIOD_LAST_21_DAYS,
+            ),
+            Self::Unlimited => None,
+        }
+    }
 }
 
 #[derive(

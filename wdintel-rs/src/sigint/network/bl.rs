@@ -394,10 +394,68 @@ pub async fn network_group_activity_bl(
 ) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.context(h!())?;
     let dt_till = if let Some(till) = req.till_date_noninclusive_ms {
-        dt_from_millis(till)?
+        dt_from_millis(till).context(h!())?
     } else {
         Utc::now().naive_utc()
     };
+    let dt_since = dt_till
+        .checked_sub_signed(TimeDelta::days(
+            req.period.unwrap_or_default().lookback_days(),
+        ))
+        .context(h!())?;
+
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let postgres_groups = groups;
+    let analytics_network_ids = req.network_ids.clone();
+    let postgres_network_ids = req.network_ids.clone();
+
+    crate::rer_importer::analysis::with_analytics_read_fallback(
+        &env,
+        "network group activity",
+        true,
+        move |analytics_db| async move {
+            crate::sigint::network::analytics::load_network_group_activity(
+                &source_db,
+                &analytics_db,
+                &analytics_groups,
+                &analytics_network_ids,
+                dt_since,
+                dt_till,
+            )
+            .await
+        },
+        move |postgres_db| async move {
+            load_network_group_activity_postgres(
+                &postgres_db,
+                &postgres_groups,
+                &postgres_network_ids,
+                dt_since,
+                dt_till,
+            )
+            .await
+        },
+    )
+    .await
+}
+
+async fn load_network_group_activity_postgres(
+    db: &DatabaseConnection,
+    groups: &[String],
+    network_ids: &[i64],
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<HashMap<String, HashMap<String, HashMap<String, i64>>>, AppError> {
+    if groups.is_empty() || network_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
 
     let networks_group_stat = signal_message::Entity::find()
         .join_as(
@@ -439,21 +497,14 @@ pub async fn network_group_activity_bl(
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
         .filter(
-            datasource_group::Column::GroupMasterKey.eq_any(
-                crate::messenger::group::get_identity_sigint_groups_noimport(
-                    &env.dbx,
-                    &user,
-                    &env.config,
-                )
-                    .await.context(h!())?,
-            ),
+            datasource_group::Column::GroupMasterKey.eq_any(groups.to_vec()),
         )
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.lte(dt_till))
-        .filter(Expr::cust_with_values("sigint_inbox_item.datetime >= $1 - INTERVAL '10 days'", vec![dt_till]))
+        .filter(sigint_inbox_item::Column::Datetime.gte(dt_since))
         .filter(
             sigint_inbox_item_network::Column::SigintNetworkId
-                .eq_any(req.network_ids.clone()),
+                .eq_any(network_ids.to_vec()),
         );
 
     let networks_group_stat = networks_group_stat
@@ -475,7 +526,7 @@ pub async fn network_group_activity_bl(
     let mut res = HashMap::new();
     for row in networks_group_stat
         .into_model::<NetworkGroupsMessageCountByDay>()
-        .all(&env.dbx)
+        .all(db)
         .await
         .context(h!())?
     {

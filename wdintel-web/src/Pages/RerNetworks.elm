@@ -525,6 +525,7 @@ update shared msg model =
                         [ E.getNetworksGroupsActivity NetworksGroupsActivityReturnedByApi
                             { networkIds = mergedNetworks |> List.map .id
                             , tillDateNoninclusiveMs = Just <| Time.posixToMillis dtToPosix
+                            , period = Nothing
                             }
                         ]
 

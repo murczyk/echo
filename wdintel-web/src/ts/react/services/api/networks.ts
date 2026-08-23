@@ -18,6 +18,8 @@ import type {
   NetworkFreqCallsignsReq,
   NetworkFreqCallsignsBatchReq,
   NetworkFreqCallsignsBatchRsp,
+  NetworkFreqCallsignsPeriod,
+  NetworkGroupActivityPeriod,
   NetworkFreqsActivityReq,
   NetworkFreqsRes,
   ReactivateNetworkFreqReq,
@@ -139,12 +141,14 @@ export async function getNetworkFreqsActivity(
 
 export async function getNetworkGroupsActivityOne(
   networkId: number,
+  period: NetworkGroupActivityPeriod = 'Last10Days',
 ): Promise<Record<string, Record<string, number>>> {
   const data = await postJson<Record<string, Record<string, number>>>(
     '/api/sigint/network-group-activity-one',
     transformCamelToSnake({
       networkId,
       tillDateNoninclusiveMs: null,
+      period,
     } satisfies NetworkGroupsActivityOneReq),
   );
   return data;
@@ -180,11 +184,15 @@ export async function listNetworkPoints(req: ListNetworkPointsReq): Promise<List
   return transformSnakeToCamel<ListNetworkPointsRsp>(data);
 }
 
-export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<string[]> {
+export async function getNetworkFreqCallsigns(
+  networkFreqId: number,
+  period: NetworkFreqCallsignsPeriod,
+): Promise<string[]> {
   const data = await postJson<{ networkFreqId: number; callsigns: string[] }>(
     '/api/sigint/network-freq-callsigns',
     transformCamelToSnake({
       networkFreqId,
+      period,
     } satisfies NetworkFreqCallsignsReq),
   );
   const normalized = transformSnakeToCamel<{ networkFreqId: number; callsigns: string[] }>(data);
@@ -193,6 +201,7 @@ export async function getNetworkFreqCallsigns(networkFreqId: number): Promise<st
 
 export async function getNetworkFreqCallsignsBatch(
   networkFreqIds: number[],
+  period: NetworkFreqCallsignsPeriod,
 ): Promise<Map<number, string[]>> {
   if (networkFreqIds.length === 0) {
     return new Map();
@@ -202,6 +211,7 @@ export async function getNetworkFreqCallsignsBatch(
     '/api/sigint/network-freq-callsigns-batch',
     transformCamelToSnake({
       networkFreqIds,
+      period,
     } satisfies NetworkFreqCallsignsBatchReq),
   );
   const normalized = transformSnakeToCamel<NetworkFreqCallsignsBatchRsp>(data);

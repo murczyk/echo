@@ -170,7 +170,7 @@ export function encryptionLabelFromKeys(
 
 function joinCallsigns(callsigns: Array<string> | null | undefined): string {
   const normalized = (callsigns ?? [])
-    .map((callsign) => normalizeText(callsign))
+    .map((callsign) => normalizeText(callsign).toLocaleUpperCase('uk-UA'))
     .filter((callsign) => callsign !== '' && callsign !== 'НВ');
   const uniqueValues = [...new Set(normalized)];
   if (uniqueValues.length === 0) return NO_DATA_LABEL;

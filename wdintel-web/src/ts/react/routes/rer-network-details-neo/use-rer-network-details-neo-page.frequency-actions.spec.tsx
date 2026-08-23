@@ -193,7 +193,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
     expect(apiMock.getNetworkFreqsActivity).not.toHaveBeenCalled();
     expect(apiMock.getNetworkFreqCallsignsBatch).not.toHaveBeenCalled();
-    expect(apiMock.getNetworkFreqCallsigns).toHaveBeenCalledWith(9);
+    expect(apiMock.getNetworkFreqCallsigns).toHaveBeenCalledWith(9, 'Last21Days');
     expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([9, 7]);
     expect(latestState?.freqActivityByFreq[9]).toEqual([]);
     expect(latestState?.freqCallsignsById.get(9)).toEqual(['BRAVO']);
@@ -292,7 +292,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
 
     expect(apiMock.getSingleNetworkFreqs).toHaveBeenCalledWith(1, false, false);
     expect(apiMock.getNetworkFreqsActivity).toHaveBeenCalledWith(1);
-    expect(apiMock.getNetworkFreqCallsignsBatch).toHaveBeenCalledWith([7, 9]);
+    expect(apiMock.getNetworkFreqCallsignsBatch).toHaveBeenCalledWith([7, 9], 'Last21Days');
     expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([7, 9]);
     expect(latestState?.freqsLoaded).toBe(true);
     expect(latestState?.freqCallsignsStatus).toBe('success');
@@ -344,6 +344,44 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     expect(latestState?.freqs.map((freq) => freq.networkFreqId)).toEqual([8]);
     expect(latestState?.freqCallsignsById.get(8)).toEqual(['BRAVO']);
     expect(latestState?.freqCallsignsById.get(7)).toBeUndefined();
+  });
+
+  it('reloads only callsigns when their period changes', async () => {
+    apiMock.getNetworkFreqCallsignsBatch.mockResolvedValueOnce(
+      new Map([
+        [7, ['ALPHA']],
+        [8, ['BRAVO']],
+      ]),
+    );
+
+    renderHarness({
+      ...EMPTY_STATE,
+      network: buildNetwork(),
+      freqsLoaded: true,
+      freqs: [
+        buildFreq({ networkFreqId: 7, freq: '30.0000' }),
+        buildFreq({ networkFreqId: 8, freq: '40.0000' }),
+      ],
+      freqCallsignsById: new Map([[7, ['OLD']]]),
+      freqCallsignsStatus: 'success',
+    });
+
+    await act(async () => {
+      latestActions?.setFreqCallsignsPeriod('Last7Days');
+      await Promise.resolve();
+    });
+
+    expect(apiMock.getNetworkFreqCallsignsBatch).toHaveBeenCalledWith([7, 8], 'Last7Days');
+    expect(apiMock.getSingleNetworkFreqs).not.toHaveBeenCalled();
+    expect(apiMock.getNetworkFreqsActivity).not.toHaveBeenCalled();
+    expect(latestState?.freqCallsignsPeriod).toBe('Last7Days');
+    expect(latestState?.freqCallsignsById).toEqual(
+      new Map([
+        [7, ['ALPHA']],
+        [8, ['BRAVO']],
+      ]),
+    );
+    expect(latestState?.freqCallsignsStatus).toBe('success');
   });
 
   it('replaces a frequency row in place when editing metadata', async () => {
@@ -416,7 +454,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     });
 
     expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
-    expect(apiMock.getNetworkFreqCallsigns).toHaveBeenCalledWith(7);
+    expect(apiMock.getNetworkFreqCallsigns).toHaveBeenCalledWith(7, 'Last21Days');
     expect(latestState?.freqCallsignsById.get(7)).toEqual(['CHARLIE']);
     expect(latestState?.freqs[0]?.modulationId).toBe(12);
   });
@@ -452,7 +490,7 @@ describe('useRerNetworkDetailsNeoPageFrequencyActions', () => {
     });
 
     expect(apiMock.updateNetworkFreqV2).toHaveBeenCalled();
-    expect(apiMock.getNetworkFreqCallsigns).toHaveBeenCalledWith(7);
+    expect(apiMock.getNetworkFreqCallsigns).toHaveBeenCalledWith(7, 'Last21Days');
     expect(latestState?.freqCallsignsById.get(7)).toEqual(['ALPHA']);
     expect(latestState?.freqs[0]?.modulationId).toBe(12);
   });

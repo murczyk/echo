@@ -98,7 +98,9 @@ vi.mock('../../../components/mui-customized/table/mrt-cell-text', () => ({
 vi.mock(
   '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
   () => ({
-    InternalTableActions: () => null,
+    InternalTableActions: ({ leadingInternalActions }: { leadingInternalActions?: ReactNode }) => (
+      <>{leadingInternalActions}</>
+    ),
   }),
 );
 
@@ -176,6 +178,8 @@ function renderTable(
         freqsError: null,
         freqCallsignsById,
         freqCallsignsStatus,
+        freqCallsignsPeriod: 'Last21Days',
+        onFreqCallsignsPeriodChange: vi.fn(),
         encryptions: [],
         expandedFrequencyGroupIds: [],
         onToggleFrequencyGroupExpanded: vi.fn(),
@@ -206,6 +210,12 @@ afterEach(() => {
 });
 
 describe('NetworkDetailsFrequenciesTable', () => {
+  it('shows callsign period settings near the table filters', () => {
+    const view = renderTable(new Map(), 'success');
+
+    expect(view.container.querySelector('[aria-label="Налаштування позивних"]')).not.toBeNull();
+  });
+
   it('shows a callsign load error when the row is not hydrated and status is error', () => {
     const view = renderTable(new Map(), 'error');
 

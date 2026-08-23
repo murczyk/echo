@@ -97,6 +97,7 @@ init route shared () =
       , callsigns = NotAsked
       , mapPoints = NotAsked
       , groupsActivity = NotAsked
+      , groupsActivityPeriod = B.Last10Days
       , networkFreqsActivity = NotAsked
       , freqs = NotAsked
       , networkKeys = initialKeys
@@ -524,7 +525,11 @@ update shared msg model =
 
                     Nothing ->
                         E.none
-                 , E.getSingleNetworkGroupsActivity GroupsActivityReturnedByApi { networkId = res.id, tillDateNoninclusiveMs = Nothing }
+                 , E.getSingleNetworkGroupsActivity (GroupsActivityReturnedByApi model.groupsActivityPeriod)
+                    { networkId = res.id
+                    , tillDateNoninclusiveMs = Nothing
+                    , period = Just model.groupsActivityPeriod
+                    }
 
                  --TODO: do not load if loaded already
                  , E.loadPostsFromShared { sortBy = Nothing }
@@ -543,13 +548,40 @@ update shared msg model =
         MapPointsReturnedByApi (Ok res) ->
             ( { model | mapPoints = Success res.points }, E.none )
 
-        GroupsActivityReturnedByApi (Err e) ->
-            ( { model | groupsActivity = Failure e }
-            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мережі" e
-            )
+        GroupsActivityReturnedByApi period result ->
+            if period /= model.groupsActivityPeriod then
+                ( model, E.none )
 
-        GroupsActivityReturnedByApi (Ok res) ->
-            ( { model | groupsActivity = Success res }, E.none )
+            else
+                case result of
+                    Err e ->
+                        ( { model | groupsActivity = Failure e }
+                        , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження активності мережі" e
+                        )
+
+                    Ok res ->
+                        ( { model | groupsActivity = Success res }, E.none )
+
+        GroupsActivityPeriodChangedByUser period ->
+            if period == model.groupsActivityPeriod then
+                ( model, E.none )
+
+            else
+                case model.network of
+                    Success network ->
+                        ( { model
+                            | groupsActivity = Loading
+                            , groupsActivityPeriod = period
+                          }
+                        , E.getSingleNetworkGroupsActivity (GroupsActivityReturnedByApi period)
+                            { networkId = network.id
+                            , tillDateNoninclusiveMs = Nothing
+                            , period = Just period
+                            }
+                        )
+
+                    _ ->
+                        ( { model | groupsActivityPeriod = period }, E.none )
 
         AorListReturnedByApi (Ok aors) ->
             let
