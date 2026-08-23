@@ -161,7 +161,7 @@ describe('useRerDutyFeedState — follow tail and scheduled scrolling', () => {
     runNextRaf();
     runNextRaf();
     expect(scrollToEnd).toHaveBeenCalledTimes(1);
-    expect(scrollToEnd).toHaveBeenCalledWith('auto');
+    expect(scrollToEnd).toHaveBeenCalledWith('smooth');
   });
 
   it('runs an explicit follow pin with continuous auto-scroll disabled', async () => {

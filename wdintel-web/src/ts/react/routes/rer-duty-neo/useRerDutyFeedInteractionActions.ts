@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
 import { compareMessageTuple, type MessageFeedState } from './utils';
+import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
 
 type Params = {
   messageFeeds: MessageFeedState[];
@@ -70,8 +71,7 @@ export function useRerDutyFeedInteractionActions(params: Params) {
       const followGeneration = beginFollowTail?.(feedId) ?? -1;
       flushPendingNewerMessages(feedId, { urgent: true });
       if (feed.items.length > 0) {
-        const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-        columnRefsRef.current[feedId]?.scrollToEnd(reducedMotion ? 'auto' : 'smooth', {
+        columnRefsRef.current[feedId]?.scrollToEnd(getDutyFollowScrollBehavior(), {
           wakeIdleOffload: true,
         });
       }

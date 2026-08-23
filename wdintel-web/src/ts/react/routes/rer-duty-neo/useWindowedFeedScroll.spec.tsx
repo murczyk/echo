@@ -120,6 +120,15 @@ async function waitForAnimationFrame(): Promise<void> {
   });
 }
 
+async function waitForFollowEase(): Promise<void> {
+  // ~450ms ease; happy-dom rAF timestamps advance ~16ms per frame.
+  await act(async () => {
+    for (let i = 0; i < 40; i++) {
+      await waitForAnimationFrame();
+    }
+  });
+}
+
 async function flushLoadNewerIdle(): Promise<void> {
   await act(async () => {
     await waitForAnimationFrame();
@@ -1427,6 +1436,136 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(130);
   });
 
+  it('appends follow-tail items below the fold then eases with rAF after layout stabilizes', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    expect(scroller.scrollTop).toBe(100);
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    const nextIds = [1, 2, 3, 4, 5];
+    metrics.scrollHeight = 250;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} />);
+    });
+
+    // First paint keeps the prior scrollTop so the new row stays under the viewport.
+    expect(scroller.scrollTop).toBe(100);
+
+    // Height still growing — must not scroll yet (the 4× CPU clamp failure mode).
+    await act(async () => {
+      metrics.scrollHeight = 280;
+      await waitForAnimationFrame();
+      metrics.scrollHeight = 300;
+      await waitForAnimationFrame();
+    });
+    expect(scroller.scrollTop).toBe(100);
+
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+
+    // Ease still in progress after layout-stable; must not have teleported yet.
+    expect(scroller.scrollTop).toBeGreaterThan(100);
+    expect(scroller.scrollTop).toBeLessThan(200);
+
+    await waitForFollowEase();
+
+    expect(scroller.scrollTop).toBe(200);
+  });
+
+  it('eases watch-off catch-up appends instead of instant stick + settle', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+    expect(scroller.scrollTop).toBe(100);
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    const nextIds = [1, 2, 3, 4, 5];
+    metrics.scrollHeight = 250;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} />);
+    });
+
+    // Must not instant-pin (the teleport from the debug log).
+    expect(scroller.scrollTop).toBe(100);
+
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+    expect(scroller.scrollTop).toBeGreaterThan(100);
+    expect(scroller.scrollTop).toBeLessThan(150);
+
+    await waitForFollowEase();
+    expect(scroller.scrollTop).toBe(150);
+  });
+
+  it('pins follow-tail appends after layout stabilizes when reduced motion is preferred', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: true }) as MediaQueryList);
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    const nextIds = [1, 2, 3, 4, 5];
+    metrics.scrollHeight = 250;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} />);
+    });
+
+    expect(scroller.scrollTop).toBe(100);
+
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+
+    expect(scroller.scrollTop).toBe(150);
+  });
+
   it('reports leaving the bottom when a non-watch list grows without moving its anchor', async () => {
     const triggerResize = installResizeObserverMock();
     const onAtBottomChange = vi.fn();
@@ -1477,6 +1616,60 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(100);
     expect(onAtBottomChange).toHaveBeenCalledWith(false);
     expect(onPhysicalBottomChange).toHaveBeenCalledWith(false);
+  });
+
+  it('compensates start-trim while following so only new rows stay below the fold', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);
+    // Append 20 newer and trim 20 oldest (fixed 40-item window).
+    const nextIds = Array.from({ length: 40 }, (_, index) => index + 21);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 2000 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(initialIds) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={initialIds} />);
+    });
+    // Live edge before trim (item 40 sits 50px below the viewport top).
+    scroller.scrollTop = 1900;
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      await waitForAnimationFrame();
+    });
+
+    // Same total height after trim+append (20 removed, 20 added).
+    metrics.scrollHeight = 2000;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} />);
+    });
+
+    // Trimmed 20×50px from the start; id 40 must keep its screen offset (not jump with the trim).
+    expect(scroller.scrollTop).toBe(900);
+    expect(
+      (container.querySelector('[data-testid="item-40"]') as HTMLElement).getBoundingClientRect()
+        .top,
+    ).toBe(50);
+
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+
+    expect(scroller.scrollTop).toBeGreaterThan(900);
+    expect(scroller.scrollTop).toBeLessThan(1900);
+
+    await waitForFollowEase();
+
+    // New rows 41-60 were below the fold; rAF ease lands on the live edge.
+    expect(scroller.scrollTop).toBe(1900);
   });
 
   it('keeps near-bottom non-watch position when a newer window start-trims', async () => {

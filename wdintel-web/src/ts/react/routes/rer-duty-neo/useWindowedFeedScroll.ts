@@ -6,6 +6,13 @@ import {
   recordDutyScrollDebugMetrics,
   useDutyScrollDebugEnabled,
 } from './duty-scroll-debug';
+import {
+  getDutyFollowScrollBehavior,
+  DUTY_SMOOTH_FOLLOW_MS,
+  DUTY_FOLLOW_LAYOUT_STABLE_FRAMES,
+  DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS,
+  dutyFollowScrollFrame,
+} from './duty-follow-scroll';
 
 export type WindowedFeedScrollItem = { id: number };
 
@@ -178,6 +185,19 @@ export function useWindowedFeedScroll({
   const bottomSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomSettleResizeObserverRef = useRef<ResizeObserver | null>(null);
   const liveBottomFollowRef = useRef(false);
+  const smoothFollowUntilMsRef = useRef(0);
+  const followScrollRafRef = useRef<number | null>(null);
+  const followAnimatingRef = useRef(false);
+  const followScrollWaitRef = useRef<{
+    debugReason: string;
+    startedAtMs: number;
+    lastHeight: number;
+    stableFrames: number;
+    enableFollow: boolean;
+  } | null>(null);
+  const scheduleFollowScrollWhenStableRef = useRef<
+    ((debugReason: string, options?: { enableFollow?: boolean }) => void) | null
+  >(null);
   const isRestoringAnchorRef = useRef(false);
   const previousItemIdsRef = useRef<readonly number[]>([]);
   const previousResetKeyRef = useRef<string | number | null>(resetKey);
@@ -494,7 +514,18 @@ export function useWindowedFeedScroll({
     if (wasActive) recordDutyScrollDebugEvent(debugFeedId, 'settle:stop');
   }, [debugFeedId]);
 
+  const clearFollowScroll = useCallback(() => {
+    smoothFollowUntilMsRef.current = 0;
+    followAnimatingRef.current = false;
+    if (followScrollRafRef.current !== null) {
+      cancelAnimationFrame(followScrollRafRef.current);
+      followScrollRafRef.current = null;
+    }
+    followScrollWaitRef.current = null;
+  }, []);
+
   useEffect(() => stopBottomSettle, [stopBottomSettle]);
+  useEffect(() => () => clearFollowScroll(), [clearFollowScroll]);
 
   const cancelPendingScrollProcessing = useCallback(() => {
     if (handleScrollRafRef.current !== null) {
@@ -585,6 +616,7 @@ export function useWindowedFeedScroll({
       );
       cancelPendingScrollProcessing();
       stopBottomSettle();
+      clearFollowScroll();
       const { onAtBottomChange, onNearBottomChange, onPhysicalBottomChange } = callbacksRef.current;
       if (atBottomRef.current !== false) onAtBottomChange?.(false);
       if (nearBottomRef.current !== false) onNearBottomChange?.(false);
@@ -596,7 +628,7 @@ export function useWindowedFeedScroll({
       loadOlderTriggeredRef.current = false;
       loadNewerTriggeredRef.current = false;
     },
-    [cancelPendingScrollProcessing, debugFeedId, stopBottomSettle],
+    [cancelPendingScrollProcessing, clearFollowScroll, debugFeedId, stopBottomSettle],
   );
   const clearReportedScrollTrackingStateRef = useRef(clearReportedScrollTrackingState);
   clearReportedScrollTrackingStateRef.current = clearReportedScrollTrackingState;
@@ -832,13 +864,121 @@ export function useWindowedFeedScroll({
     (
       behavior: ScrollBehavior = 'auto',
       debugReason = 'imperative',
-      options?: { enableFollow?: boolean },
+      options?: { enableFollow?: boolean; skipLayoutWait?: boolean },
     ) => {
       if (!enabledRef.current) return;
       const scroller = scrollerRef.current;
       if (!scroller) return;
-      if (behavior === 'smooth' && typeof scroller.scrollTo === 'function') {
-        scroller.scrollTo({ top: scroller.scrollHeight, behavior });
+      // Pending poll scrollToEnd('smooth') races layout; wait until height is stable first.
+      if (behavior === 'smooth' && options?.skipLayoutWait !== true) {
+        scheduleFollowScrollWhenStableRef.current?.(debugReason);
+        return;
+      }
+
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+
+      if (behavior === 'smooth') {
+        // Chrome does not animate scrollTop / CSS scroll-behavior for this case — lerp on rAF.
+        if (followScrollRafRef.current !== null) {
+          cancelAnimationFrame(followScrollRafRef.current);
+          followScrollRafRef.current = null;
+        }
+        const fromScrollTop = scroller.scrollTop;
+        const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        const enableFollow = options?.enableFollow !== false;
+        if (Math.abs(maxScrollTop - fromScrollTop) < 0.5) {
+          followAnimatingRef.current = false;
+          smoothFollowUntilMsRef.current = 0;
+          if (enableFollow) liveBottomFollowRef.current = true;
+          physicallyAtBottomRef.current = true;
+          captureAnchorSnapshot();
+          return;
+        }
+
+        smoothFollowUntilMsRef.current = now + DUTY_SMOOTH_FOLLOW_MS;
+        followAnimatingRef.current = true;
+        if (enableFollow) liveBottomFollowRef.current = true;
+        physicallyAtBottomRef.current = true;
+        // Frame-count clock: rAF timestamps barely advance in jsdom/happy-dom, and under
+        // CPU throttle wall-clock ease would finish in too few painted frames.
+        const frameDtMs = 1000 / 60;
+        let frameIndex = 0;
+        const startedAtMs = now;
+
+        const tick = () => {
+          followScrollRafRef.current = null;
+          if (!enabledRef.current) {
+            followAnimatingRef.current = false;
+            smoothFollowUntilMsRef.current = 0;
+            return;
+          }
+          if (enableFollow && liveBottomFollowRef.current !== true) {
+            followAnimatingRef.current = false;
+            smoothFollowUntilMsRef.current = 0;
+            return;
+          }
+          const active = scrollerRef.current;
+          if (!active) {
+            followAnimatingRef.current = false;
+            smoothFollowUntilMsRef.current = 0;
+            return;
+          }
+          frameIndex += 1;
+          const frameNowMs = startedAtMs + frameIndex * frameDtMs;
+          const frame = dutyFollowScrollFrame({
+            startedAtMs,
+            nowMs: frameNowMs,
+            fromScrollTop,
+            scrollHeight: active.scrollHeight,
+            clientHeight: active.clientHeight,
+          });
+          followAnimatingRef.current = true;
+          active.scrollTop = frame.scrollTop;
+          previousScrollTopRef.current = active.scrollTop;
+          if (!frame.done) {
+            smoothFollowUntilMsRef.current = frameNowMs + DUTY_SMOOTH_FOLLOW_MS;
+            followScrollRafRef.current = requestAnimationFrame(tick);
+            return;
+          }
+          followAnimatingRef.current = false;
+          smoothFollowUntilMsRef.current = 0;
+          physicallyAtBottomRef.current = true;
+          updateScrollState({
+            allowLoadOlder: false,
+            allowLoadNewer: false,
+            allowTopReached: false,
+          });
+          captureAnchorSnapshot();
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            'scroll-to-bottom',
+            `${debugReason}; behavior=raf-ease; top=${active.scrollTop.toFixed(1)}; height=${active.scrollHeight.toFixed(1)}`,
+          );
+        };
+
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'scroll-to-bottom',
+          `${debugReason}; behavior=raf-ease:start; from=${fromScrollTop.toFixed(1)}; to=${maxScrollTop.toFixed(1)}`,
+        );
+        followScrollRafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      // Instant path (initial / settle / catch-up / reduced-motion).
+      followAnimatingRef.current = false;
+      if (followScrollRafRef.current !== null && followScrollWaitRef.current == null) {
+        cancelAnimationFrame(followScrollRafRef.current);
+        followScrollRafRef.current = null;
+      }
+      if (followScrollWaitRef.current == null) {
+        smoothFollowUntilMsRef.current = 0;
+      }
+      if (typeof scroller.scrollTo === 'function') {
+        scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'instant' });
       } else {
         scroller.scrollTop = scroller.scrollHeight;
       }
@@ -858,7 +998,7 @@ export function useWindowedFeedScroll({
         recordDutyScrollDebugEvent(
           debugFeedId,
           'scroll-to-bottom',
-          `${debugReason}; behavior=${behavior}; top=${scroller.scrollTop.toFixed(1)}; height=${scroller.scrollHeight.toFixed(1)}`,
+          `${debugReason}; behavior=instant; top=${scroller.scrollTop.toFixed(1)}; height=${scroller.scrollHeight.toFixed(1)}`,
         );
       }
     },
@@ -905,6 +1045,104 @@ export function useWindowedFeedScroll({
     bottomSettleRafRef.current = requestAnimationFrame(settleFrame);
   }, [debugFeedId, scrollToBottom, stopBottomSettle]);
 
+  /**
+   * Keep the first paint stable (new rows stay below the fold) until card layout
+   * stops growing, then ease to the tail. Used for watch-follow and watch-off
+   * catch-up at the physical bottom (the latter used to instant-pin + settle).
+   */
+  const scheduleFollowScrollWhenStable = useCallback(
+    (debugReason: string, options?: { enableFollow?: boolean }) => {
+      const enableFollow = options?.enableFollow !== false;
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      const scroller = scrollerRef.current;
+      const height = scroller?.scrollHeight ?? 0;
+
+      // Arm suppress before paint/resize can instant-pin the new height into view.
+      smoothFollowUntilMsRef.current =
+        now + DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS + DUTY_SMOOTH_FOLLOW_MS;
+      if (enableFollow) {
+        liveBottomFollowRef.current = true;
+      }
+      // Sticky until the deferred scroll lands; measuring the below-fold append would
+      // clear physical-bottom and skip the next catch-up load.
+      physicallyAtBottomRef.current = true;
+      // Drop any in-flight settle snaps — they would pin instantly and defeat below-fold.
+      stopBottomSettle();
+
+      followScrollWaitRef.current = {
+        debugReason,
+        startedAtMs: now,
+        lastHeight: height,
+        stableFrames: 0,
+        enableFollow,
+      };
+
+      if (followScrollRafRef.current !== null) {
+        cancelAnimationFrame(followScrollRafRef.current);
+        followScrollRafRef.current = null;
+      }
+      followAnimatingRef.current = false;
+
+      const tick = () => {
+        followScrollRafRef.current = null;
+        const wait = followScrollWaitRef.current;
+        if (!wait) return;
+        if (!enabledRef.current) {
+          followScrollWaitRef.current = null;
+          return;
+        }
+        if (wait.enableFollow && liveBottomFollowRef.current !== true) {
+          followScrollWaitRef.current = null;
+          return;
+        }
+        const activeScroller = scrollerRef.current;
+        if (!activeScroller) {
+          followScrollWaitRef.current = null;
+          return;
+        }
+
+        const tickNow =
+          typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now();
+        const nextHeight = activeScroller.scrollHeight;
+        if (Math.abs(nextHeight - wait.lastHeight) <= 0.5) {
+          wait.stableFrames += 1;
+        } else {
+          wait.lastHeight = nextHeight;
+          wait.stableFrames = 0;
+          // Layout still growing — keep resize snaps suppressed.
+          smoothFollowUntilMsRef.current =
+            tickNow + DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS + DUTY_SMOOTH_FOLLOW_MS;
+        }
+
+        const timedOut = tickNow - wait.startedAtMs >= DUTY_FOLLOW_LAYOUT_STABLE_MAX_MS;
+        if (wait.stableFrames < DUTY_FOLLOW_LAYOUT_STABLE_FRAMES && !timedOut) {
+          followScrollRafRef.current = requestAnimationFrame(tick);
+          return;
+        }
+
+        followScrollWaitRef.current = null;
+        const behavior = getDutyFollowScrollBehavior();
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'follow:layout-stable',
+          `reason=${wait.debugReason}; height=${nextHeight.toFixed(1)}; frames=${wait.stableFrames}; timedOut=${timedOut}; behavior=${behavior}; enableFollow=${wait.enableFollow}`,
+        );
+        scrollToBottom(behavior, wait.debugReason, {
+          skipLayoutWait: true,
+          enableFollow: wait.enableFollow,
+        });
+      };
+
+      followScrollRafRef.current = requestAnimationFrame(tick);
+    },
+    [debugFeedId, scrollToBottom, stopBottomSettle],
+  );
+  scheduleFollowScrollWhenStableRef.current = scheduleFollowScrollWhenStable;
   const restoreAnchorPosition = useCallback(() => {
     const scroller = scrollerRef.current;
     const snapshot = anchorSnapshotRef.current;
@@ -1029,21 +1267,28 @@ export function useWindowedFeedScroll({
           'items:follow-bottom',
           `${previousItemIdsRef.current.length}→${currentItemIds.length}; watch=${isWatchModeRef.current}`,
         );
-        scrollToBottom('auto', 'items changed while following');
-        startBottomSettle();
+        // Window start-trim would yank the viewport if scrollTop stayed put; restore first so
+        // only the newly appended height stays below the fold for the deferred follow scroll.
+        restoreAnchorPosition();
+        scheduleFollowScrollWhenStable('items changed while following');
+        previousItemIdsRef.current = currentItemIds;
+        captureAnchorSnapshot();
+        return;
       } else if (physicallyAtBottomRef.current === true && isWatchModeRef.current === false) {
-        // Pending catch-up (watch off): stay on the live edge so newer pages keep loading.
-        // Do not re-enable liveBottomFollow — scroll jitter during mount would immediately
-        // fire follow:disable / onLeftBottom and abort catch-up.
+        // Watch off / disableAutoScroll: still append at the live edge so catch-up can
+        // continue, but ease like Elm instead of instant pin + settle (teleport).
         recordDutyScrollDebugEvent(
           debugFeedId,
           'items:stick-bottom',
           `${previousItemIdsRef.current.length}→${currentItemIds.length}; watch=false`,
         );
-        scrollToBottom('auto', 'items changed while catching up at bottom', {
+        restoreAnchorPosition();
+        scheduleFollowScrollWhenStable('items changed while catching up at bottom', {
           enableFollow: false,
         });
-        startBottomSettle();
+        previousItemIdsRef.current = currentItemIds;
+        captureAnchorSnapshot();
+        return;
       } else {
         recordDutyScrollDebugEvent(
           debugFeedId,
@@ -1075,6 +1320,7 @@ export function useWindowedFeedScroll({
     enabled,
     resetKey,
     restoreAnchorPosition,
+    scheduleFollowScrollWhenStable,
     scrollToBottom,
     startBottomSettle,
     stopBottomSettle,
@@ -1092,6 +1338,15 @@ export function useWindowedFeedScroll({
       if (!enabledRef.current || bottomSettleActiveRef.current) return;
       // Newer appends reflow cards for a while; restoring on every resize freezes scroll.
       if (loadingNewerRef.current) return;
+      const now =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now();
+      // Instant snaps cancel in-flight smooth follow; wait for the trailing pin instead.
+      if (now < smoothFollowUntilMsRef.current) {
+        recordDutyScrollDebugEvent(debugFeedId, 'resize:follow-bottom-deferred');
+        return;
+      }
       if (
         liveBottomFollowRef.current &&
         physicallyAtBottomRef.current === true &&
@@ -1129,6 +1384,11 @@ export function useWindowedFeedScroll({
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!enabledRef.current) return;
     if (isRestoringAnchorRef.current) return;
+    if (followAnimatingRef.current) {
+      const animScroller = scrollerRef.current;
+      if (animScroller) previousScrollTopRef.current = animScroller.scrollTop;
+      return;
+    }
     const scroller = scrollerRef.current;
     if (scroller && scroller.scrollTop < previousScrollTopRef.current - 1) {
       previousScrollTopRef.current = scroller.scrollTop;
