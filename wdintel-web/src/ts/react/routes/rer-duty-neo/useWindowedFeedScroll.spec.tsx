@@ -8,6 +8,8 @@ import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 
 const renderedItemRefs = new Map<number, (node: HTMLDivElement | null) => void>();
 let latestScrollHandle: ReturnType<typeof useWindowedFeedScroll> | null = null;
+/** Controllable clock for follow ease / layout-wait (production uses performance.now). */
+let performanceNowMs = 0;
 
 function TestScroller(props: {
   ids: number[];
@@ -114,17 +116,18 @@ function setClampedScrollMetrics(
   });
 }
 
-async function waitForAnimationFrame(): Promise<void> {
+async function waitForAnimationFrame(advanceMs = 16): Promise<void> {
+  performanceNowMs += advanceMs;
   await new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
   });
 }
 
 async function waitForFollowEase(): Promise<void> {
-  // ~450ms ease; happy-dom rAF timestamps advance ~16ms per frame.
+  // ~450ms wall-clock ease; advance the shared performance.now mock per frame.
   await act(async () => {
     for (let i = 0; i < 40; i++) {
-      await waitForAnimationFrame();
+      await waitForAnimationFrame(16);
     }
   });
 }
@@ -221,6 +224,8 @@ describe('useWindowedFeedScroll', () => {
   beforeEach(() => {
     renderedItemRefs.clear();
     latestScrollHandle = null;
+    performanceNowMs = 1_000;
+    vi.spyOn(performance, 'now').mockImplementation(() => performanceNowMs);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -1489,11 +1494,9 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(200);
   });
 
-  it('keeps resize suppression on wall clock while the follow ease uses a synthetic timeline', async () => {
+  it('keeps resize suppression armed while a throttled follow ease is in progress', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const triggerResize = installResizeObserverMock();
-    let nowMs = 1_000;
-    vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
 
     const ids = [1, 2, 3, 4];
     await act(async () => {
@@ -1519,26 +1522,62 @@ describe('useWindowedFeedScroll', () => {
       root.render(<TestScroller ids={nextIds} />);
     });
 
-    // Layout wait + a few ease frames on a throttled wall clock (100ms/frame).
+    // Layout wait, then mid-ease (~160ms into 450ms) on a throttled clock.
     await act(async () => {
-      for (let i = 0; i < 8; i++) {
-        nowMs += 100;
-        await waitForAnimationFrame();
-      }
+      await waitForAnimationFrame(16);
+      await waitForAnimationFrame(16);
+      await waitForAnimationFrame(16);
+      await waitForAnimationFrame(80);
+      await waitForAnimationFrame(80);
     });
     const midEaseTop = scroller.scrollTop;
     expect(midEaseTop).toBeGreaterThan(100);
     expect(midEaseTop).toBeLessThan(150);
 
-    // Real time is ahead of the synthetic ease clock; a synthetic-based deadline would
-    // already have expired here and let resize instant-pin to the tail.
-    nowMs += 100;
+    performanceNowMs += 50;
     metrics.scrollHeight = 280;
     layout.items = createItemLayouts(nextIds, 0, 56);
     act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
 
     expect(scroller.scrollTop).toBe(midEaseTop);
     expect(scroller.scrollTop).toBeLessThan(180);
+  });
+
+  it('finishes the follow ease in wall-clock duration under a throttled frame rate', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    const nextIds = [1, 2, 3, 4, 5];
+    metrics.scrollHeight = 250;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} />);
+    });
+
+    // Layout-stable (~3 frames), then ~450ms wall with sparse frames — not ~27 frames.
+    await act(async () => {
+      await waitForAnimationFrame(16);
+      await waitForAnimationFrame(16);
+      await waitForAnimationFrame(16);
+      await waitForAnimationFrame(200);
+      await waitForAnimationFrame(200);
+      await waitForAnimationFrame(100);
+    });
+    expect(scroller.scrollTop).toBe(150);
   });
 
   it('eases watch-off catch-up appends instead of instant stick + settle', async () => {

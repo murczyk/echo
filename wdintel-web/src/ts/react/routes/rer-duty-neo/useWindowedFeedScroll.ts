@@ -949,10 +949,8 @@ export function useWindowedFeedScroll({
         if (enableFollow) liveBottomFollowRef.current = true;
         // Local sticky only — parent is notified in finishFollowEaseLanding.
         physicallyAtBottomRef.current = true;
-        // Frame-count clock: rAF timestamps barely advance in jsdom/happy-dom, and under
-        // CPU throttle wall-clock ease would finish in too few painted frames.
-        const frameDtMs = 1000 / 60;
-        let frameIndex = 0;
+        // Wall-clock progress: under CPU throttle a synthetic 60 Hz clock stretched the
+        // ease across many real seconds. Tests advance performance.now per rAF.
         const startedAtMs = now;
 
         const tick = () => {
@@ -973,8 +971,10 @@ export function useWindowedFeedScroll({
             smoothFollowUntilMsRef.current = 0;
             return;
           }
-          frameIndex += 1;
-          const frameNowMs = startedAtMs + frameIndex * frameDtMs;
+          const frameNowMs =
+            typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : Date.now();
           const frame = dutyFollowScrollFrame({
             startedAtMs,
             nowMs: frameNowMs,
@@ -986,14 +986,8 @@ export function useWindowedFeedScroll({
           active.scrollTop = frame.scrollTop;
           previousScrollTopRef.current = active.scrollTop;
           if (!frame.done) {
-            // ResizeObserver compares against wall clock. Ease progress stays on the synthetic
-            // per-frame timeline so throttle/jsdom still paint enough frames; keep the
-            // suppression deadline on the same clock the resize path reads.
-            const realNowMs =
-              typeof performance !== 'undefined' && typeof performance.now === 'function'
-                ? performance.now()
-                : Date.now();
-            smoothFollowUntilMsRef.current = realNowMs + DUTY_SMOOTH_FOLLOW_MS;
+            // Same wall clock as ResizeObserver suppression checks.
+            smoothFollowUntilMsRef.current = frameNowMs + DUTY_SMOOTH_FOLLOW_MS;
             followScrollRafRef.current = requestAnimationFrame(tick);
             return;
           }
