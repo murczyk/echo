@@ -544,6 +544,7 @@ where
         organism_logins,
     )
     .await
+    .c(h!())
 }
 
 async fn has_any_copy_access_for_ids<C>(
@@ -560,10 +561,15 @@ where
         return Ok(false);
     }
     let has_group_access = signal_message_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalMessage.def(),
+        )
         .filter(
             signal_message_group::Column::SignalMessageId
                 .is_in(message_ids.to_vec()),
         )
+        .filter(signal_message::Column::Deleted.eq(false))
         .filter(
             signal_message_group::Column::GroupMasterKey
                 .is_in(allowed_groups.to_vec()),
@@ -597,11 +603,23 @@ where
 
     let mut owner_senders = vec![login_id.to_string()];
     owner_senders.extend(organism_logins.iter().map(ToString::to_string));
+    let has_any_signal_group = signal_message_group::Entity::find()
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .select_only()
+        .column(signal_message_group::Column::Id)
+        .into_query();
     let has_owner_access = signal_message::Entity::find()
         .filter(signal_message::Column::Id.is_in(message_ids.to_vec()))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::DatasourceGroupId.is_null())
         .filter(signal_message::Column::Sender.is_in(owner_senders))
+        .filter(Expr::exists(has_any_signal_group).not())
         .one(dbx)
         .await
         .c(h!())?
