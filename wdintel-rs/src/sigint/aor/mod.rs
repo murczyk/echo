@@ -145,6 +145,7 @@ async fn resolve_battle_line_boundaries(
 async fn save_battle_line_boundaries(
     txn: &DatabaseTransaction,
     resolved: Vec<ResolvedBattleLineBoundaries>,
+    refresh_battle_line: bool,
 ) -> anyhow::Result<Vec<area_of_responsibility::Model>> {
     let aor_ids = resolved.iter().map(|item| item.id).collect::<Vec<_>>();
     let mut aors = area_of_responsibility::Entity::find()
@@ -167,9 +168,11 @@ async fn save_battle_line_boundaries(
         aor.right_lon = Set(Some(resolved.right.longitude));
         aor.right_settlement = Set(resolved.right_settlement);
         let aor = aor.update(txn).await.c(h!())?;
-        crate::battle_line::refresh_aor_geometry(txn, aor.id)
-            .await
-            .c(h!())?;
+        if refresh_battle_line {
+            crate::battle_line::refresh_aor_geometry(txn, aor.id)
+                .await
+                .c(h!())?;
+        }
         updated.push(aor);
     }
     Ok(updated)
@@ -185,21 +188,30 @@ pub async fn update_aor_battle_line_boundaries(
     let resolved = resolve_battle_line_boundaries(&env, &req).await.c(h!())?;
     let txn = env.dbx.begin().await.c(h!())?;
     crate::battle_line::lock_updates(&txn).await.c(h!())?;
-    let updated = save_battle_line_boundaries(&txn, resolved).await.c(h!())?;
-    if !updated.is_empty() {
+    let battle_line_active = crate::battle_line::active_battle_line_id(&txn)
+        .await
+        .c(h!())?
+        .is_some();
+    let updated =
+        save_battle_line_boundaries(&txn, resolved, battle_line_active)
+            .await
+            .c(h!())?;
+    if battle_line_active && !updated.is_empty() {
         crate::battle_line::requeue_settlement_links(&txn)
             .await
             .c(h!())?;
     }
     txn.commit().await.c(h!())?;
-    for aor in &updated {
-        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
-            &env.dbx,
-            aor,
-            format!("edit AOR BattleLine boundaries from web UI: {}", aor.name),
-        )
-        .await
-        .c(h!())?;
+    if battle_line_active {
+        for aor in &updated {
+            crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
+                &env.dbx,
+                aor,
+                format!("edit AOR BattleLine boundaries from web UI: {}", aor.name),
+            )
+            .await
+            .c(h!())?;
+        }
     }
     Ok(Json(updated.into_iter().map(render_aor).collect()))
 }

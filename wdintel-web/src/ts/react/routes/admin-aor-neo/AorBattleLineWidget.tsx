@@ -190,11 +190,25 @@ function AorLegend(props: LegendProps) {
 }
 
 type SegmentMapProps = {
+  aors: AreaOfResponsibility[];
   state: BattleLineState;
   visibleAorIds: ReadonlySet<number>;
 };
 
-function SegmentMap({ state, visibleAorIds }: SegmentMapProps) {
+function addReadOnlyBoundaryMarkers(layer: L.LayerGroup, aors: AreaOfResponsibility[]) {
+  for (const aor of aors) {
+    const pair = boundaryPair(aor);
+    if (!pair) continue;
+    for (const side of ['left', 'right'] as const) {
+      const coordinate = pair[side];
+      L.marker([coordinate.lat, coordinate.lon], {
+        icon: boundaryIcon(aorColor(aor.id), side === 'left' ? 'L' : 'R'),
+      }).addTo(layer);
+    }
+  }
+}
+
+function SegmentMap({ aors, state, visibleAorIds }: SegmentMapProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -218,15 +232,22 @@ function SegmentMap({ state, visibleAorIds }: SegmentMapProps) {
     const layer = layerRef.current;
     if (!map || !layer) return;
     layer.clearLayers();
-    for (const feature of state.activeFeatures) addFeature(layer, feature, '#455a64', 2);
-    for (const geometry of state.aorGeometries) {
-      if (!visibleAorIds.has(geometry.aorId)) continue;
-      for (const feature of geometry.features) {
-        addFeature(layer, feature, aorColor(geometry.aorId), 5);
+    if (state.activeVersion) {
+      for (const feature of state.activeFeatures) addFeature(layer, feature, '#455a64', 2);
+      for (const geometry of state.aorGeometries) {
+        if (!visibleAorIds.has(geometry.aorId)) continue;
+        for (const feature of geometry.features) {
+          addFeature(layer, feature, aorColor(geometry.aorId), 5);
+        }
       }
+    } else {
+      addReadOnlyBoundaryMarkers(
+        layer,
+        aors.filter((aor) => visibleAorIds.has(aor.id)),
+      );
     }
     fitMapToLayer(map, layer);
-  }, [state.activeFeatures, state.aorGeometries, visibleAorIds]);
+  }, [aors, state.activeFeatures, state.activeVersion, state.aorGeometries, visibleAorIds]);
 
   return <Box ref={hostRef} sx={{ height: 300, borderRadius: 1, overflow: 'hidden' }} />;
 }
@@ -252,6 +273,7 @@ function BoundaryEditorMap(props: BoundaryEditorMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const lineLayerRef = useRef<L.LayerGroup | null>(null);
   const markerLayerRef = useRef<L.LayerGroup | null>(null);
+  const fittedBoundaryMarkersRef = useRef(false);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -279,8 +301,9 @@ function BoundaryEditorMap(props: BoundaryEditorMapProps) {
   }, [props.state.activeFeatures]);
 
   useEffect(() => {
+    const map = mapRef.current;
     const layer = markerLayerRef.current;
-    if (!layer) return;
+    if (!map || !layer) return;
     layer.clearLayers();
     for (const [aorId, pair] of props.drafts) {
       const color = aorColor(aorId);
@@ -296,7 +319,15 @@ function BoundaryEditorMap(props: BoundaryEditorMapProps) {
         });
       }
     }
-  }, [props.drafts, props.onMove]);
+    if (
+      !props.state.activeVersion &&
+      !fittedBoundaryMarkersRef.current &&
+      layer.getLayers().length > 0
+    ) {
+      fitMapToLayer(map, layer);
+      fittedBoundaryMarkersRef.current = true;
+    }
+  }, [props.drafts, props.onMove, props.state.activeVersion]);
 
   return <Box ref={hostRef} sx={{ width: '100%', height: '100%', minHeight: 0 }} />;
 }
@@ -344,11 +375,7 @@ function AorBattleLinePreview(props: PreviewProps) {
             onToggle={props.onToggle}
           />
         </Stack>
-        {props.state.activeVersion ? (
-          <SegmentMap state={props.state} visibleAorIds={props.visibleAorIds} />
-        ) : (
-          <Alert severity="info">ЛБЗ ще не завантажено</Alert>
-        )}
+        <SegmentMap aors={props.aors} state={props.state} visibleAorIds={props.visibleAorIds} />
       </Stack>
     </Paper>
   );
@@ -382,7 +409,9 @@ function BoundaryEditorDialog(props: EditorDialogProps) {
         {props.saving ? (
           <Box>
             <Typography variant="body2" sx={{ mb: 0.5 }}>
-              Збереження меж і перерахунок сегментів ЛБЗ…
+              {props.state.activeVersion
+                ? 'Збереження меж і перерахунок сегментів ЛБЗ…'
+                : 'Збереження меж…'}
             </Typography>
             <LinearProgress />
           </Box>
@@ -526,7 +555,7 @@ export function AorBattleLineWidget({ aors, state, reload }: Props) {
 
       <Snackbar open={saved} autoHideDuration={5000} onClose={() => setSaved(false)}>
         <Alert severity="success" onClose={() => setSaved(false)}>
-          Межі збережено, сегменти ЛБЗ перераховано
+          {state.activeVersion ? 'Межі збережено, сегменти ЛБЗ перераховано' : 'Межі збережено'}
         </Alert>
       </Snackbar>
     </>
