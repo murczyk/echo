@@ -3348,6 +3348,54 @@ battleLineUnresolvedLocationsRspEncoder struct =
         ]
 
 
+type alias BattleLineNetworkMapPoint =
+    { lat : Float
+    , lon : Float
+    }
+
+
+battleLineNetworkMapPointEncoder : BattleLineNetworkMapPoint -> Json.Encode.Value
+battleLineNetworkMapPointEncoder struct =
+    Json.Encode.object
+        [ ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lon", (Json.Encode.float) struct.lon )
+        ]
+
+
+type alias BattleLineNetworkUnitMap =
+    { unitId : Int
+    , unitName : String
+    , settlementPoints : List (BattleLineNetworkMapPoint)
+    , pelengPoints : List (BattleLineNetworkMapPoint)
+    }
+
+
+battleLineNetworkUnitMapEncoder : BattleLineNetworkUnitMap -> Json.Encode.Value
+battleLineNetworkUnitMapEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "unit_name", (Json.Encode.string) struct.unitName )
+        , ( "settlement_points", (Json.Encode.list (battleLineNetworkMapPointEncoder)) struct.settlementPoints )
+        , ( "peleng_points", (Json.Encode.list (battleLineNetworkMapPointEncoder)) struct.pelengPoints )
+        ]
+
+
+type alias BattleLineNetworksRsp =
+    { items : List (BattleLineNetworkUnitMap)
+    , total : Int
+    , pageSize : Int
+    }
+
+
+battleLineNetworksRspEncoder : BattleLineNetworksRsp -> Json.Encode.Value
+battleLineNetworksRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (battleLineNetworkUnitMapEncoder)) struct.items )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
 type alias MessageIdsReq =
     { messageIds : List (Int)
     , inboxReq : Maybe (InboxMessagesReq)
@@ -15763,6 +15811,30 @@ battleLineUnresolvedLocationsRspDecoder : Json.Decode.Decoder BattleLineUnresolv
 battleLineUnresolvedLocationsRspDecoder =
     Json.Decode.succeed BattleLineUnresolvedLocationsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (battleLineUnresolvedLocationDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+battleLineNetworkMapPointDecoder : Json.Decode.Decoder BattleLineNetworkMapPoint
+battleLineNetworkMapPointDecoder =
+    Json.Decode.succeed BattleLineNetworkMapPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
+
+
+battleLineNetworkUnitMapDecoder : Json.Decode.Decoder BattleLineNetworkUnitMap
+battleLineNetworkUnitMapDecoder =
+    Json.Decode.succeed BattleLineNetworkUnitMap
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_points" (Json.Decode.list (battleLineNetworkMapPointDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_points" (Json.Decode.list (battleLineNetworkMapPointDecoder))))
+
+
+battleLineNetworksRspDecoder : Json.Decode.Decoder BattleLineNetworksRsp
+battleLineNetworksRspDecoder =
+    Json.Decode.succeed BattleLineNetworksRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (battleLineNetworkUnitMapDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
 

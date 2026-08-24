@@ -124,3 +124,30 @@ pub struct BattleLineUnresolvedLocationsRsp {
     pub total: u64,
     pub page_size: u64,
 }
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct BattleLineNetworkMapPoint {
+    pub lat: f64,
+    pub lon: f64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct BattleLineNetworkUnitMap {
+    pub unit_id: i64,
+    pub unit_name: String,
+    pub settlement_points: Vec<BattleLineNetworkMapPoint>,
+    pub peleng_points: Vec<BattleLineNetworkMapPoint>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct BattleLineNetworksRsp {
+    pub items: Vec<BattleLineNetworkUnitMap>,
+    pub total: u64,
+    pub page_size: u64,
+}
