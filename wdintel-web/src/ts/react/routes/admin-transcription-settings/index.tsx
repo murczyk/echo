@@ -10,6 +10,8 @@ import {
   FormControlLabel,
   Stack,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -51,6 +53,7 @@ import {
   updateTranscriberInstance,
 } from '../../services/api/transcriber';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { TranscriptionResultsTab } from './TranscriptionResultsTab';
 
 const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
@@ -673,6 +676,7 @@ type AccessStatus = 'loading' | 'enabled' | 'error';
 export function AdminTranscriptionSettingsPage() {
   const [accessStatus, setAccessStatus] = useState<AccessStatus>('loading');
   const [accessError, setAccessError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'instances' | 'results'>('instances');
 
   const checkAccess = useCallback(async () => {
     setAccessStatus('loading');
@@ -713,13 +717,32 @@ export function AdminTranscriptionSettingsPage() {
   }
 
   return (
-    <TableStateProvider
-      tableId="admin-transcriber-instances"
-      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
-      defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
-      defaultEnableColumnOrdering={false}
-    >
-      <AdminTranscriptionSettingsPageBody />
-    </TableStateProvider>
+    <Stack spacing={2} sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+      <Tabs
+        value={activeTab}
+        onChange={(_, value: 'instances' | 'results') => setActiveTab(value)}
+        variant="scrollable"
+        allowScrollButtonsMobile
+        aria-label="Розділи транскрибації"
+        sx={{ borderBottom: 1, borderColor: 'divider', flex: 'none' }}
+      >
+        <Tab value="instances" label="Echo GPU сервери" />
+        <Tab value="results" label="Результати транскрибації" />
+      </Tabs>
+      <Box sx={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+        {activeTab === 'instances' ? (
+          <TableStateProvider
+            tableId="admin-transcriber-instances"
+            defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+            defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+            defaultEnableColumnOrdering={false}
+          >
+            <AdminTranscriptionSettingsPageBody />
+          </TableStateProvider>
+        ) : (
+          <TranscriptionResultsTab />
+        )}
+      </Box>
+    </Stack>
   );
 }

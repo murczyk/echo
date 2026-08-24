@@ -979,6 +979,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::transcriber::delete_instance)
             .service(crate::transcriber::check_instance)
             .service(crate::transcriber::queue_status)
+            .service(crate::transcriber::list_results)
+            .service(crate::transcriber::result_media)
             .service(crate::transcriber::message_transcriptions)
             .service(crate::messenger::missing_message::echo_missing_message_list)
             .service(crate::messenger::missing_message::echo_missing_message_counts)

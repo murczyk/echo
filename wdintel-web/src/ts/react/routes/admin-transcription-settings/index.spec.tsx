@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   check: vi.fn(),
+  listResults: vi.fn(),
   notify: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('../../services/api/transcriber', () => ({
   updateTranscriberInstance: mocks.update,
   deleteTranscriberInstance: mocks.remove,
   checkTranscriberInstance: mocks.check,
+  listTranscriptionResults: mocks.listResults,
 }));
 vi.mock('../../services/api/system-settings', () => ({
   currentSystemSettings: mocks.currentSettings,
@@ -126,6 +128,7 @@ describe('AdminTranscriptionSettingsPage', () => {
     mocks.update.mockReset();
     mocks.remove.mockReset();
     mocks.check.mockReset();
+    mocks.listResults.mockReset().mockResolvedValue({ rows: [], total: 0, has_more: false });
     mocks.notify.mockReset();
   });
 
@@ -174,6 +177,43 @@ describe('AdminTranscriptionSettingsPage', () => {
       ordering: 1,
     });
     expect(container.textContent).toContain('systemd unavailable');
+    await act(async () => root.unmount());
+  });
+
+  it('shows paginated transcription results with the processing instance', async () => {
+    mocks.listResults.mockResolvedValue({
+      rows: [
+        {
+          id: '01900000-0000-7000-8000-000000000002',
+          source_id: '01900000-0000-7000-8000-000000000003',
+          file_name: 'recording.mp3',
+          content_type: 'audio/mpeg',
+          created_at: 1_700_000_000_000,
+          started_transcription_at: 1_700_000_001_000,
+          completion_time_seconds: 5,
+          status: 'completed',
+          transcribed_value: 'Розпізнаний текст',
+          error: null,
+          instance_id: instance.id,
+          instance_name: instance.name,
+        },
+      ],
+      total: 1,
+      has_more: false,
+    });
+    const { container, root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+
+    expect(mocks.listResults).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(container.textContent).toContain('recording.mp3');
+    expect(container.textContent).toContain('00:00:05');
+    expect(container.textContent).toContain('Завершено');
+    expect(container.textContent).toContain('Розпізнаний текст');
+    expect(container.textContent).toContain(instance.name);
     await act(async () => root.unmount());
   });
 

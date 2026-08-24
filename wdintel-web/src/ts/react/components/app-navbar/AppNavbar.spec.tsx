@@ -248,7 +248,7 @@ describe('AppNavbar', () => {
     expect(importTrigger?.nextElementSibling?.textContent).toContain('Імпорт Delta');
   });
 
-  it('shows Echo GPU servers only when transcription is enabled', () => {
+  it('shows transcription only when transcription is enabled', () => {
     const disabled = renderComponent({
       ...defaultProps,
       user: { ...defaultProps.user, roles: ['Admin'] },
@@ -264,7 +264,7 @@ describe('AppNavbar', () => {
         },
       },
     });
-    expect(disabled.container.textContent).not.toContain('Echo GPU сервери');
+    expect(disabled.container.textContent).not.toContain('Транскрибація');
 
     currentSettingsMock.mockResolvedValue({
       defaultNeoAnalysis: false,
@@ -290,11 +290,11 @@ describe('AppNavbar', () => {
       },
     });
     const content = enabled.container.textContent ?? '';
-    expect(content).toContain('Echo GPU сервери');
-    expect(content.indexOf('Echo GPU сервери')).toBeLessThan(content.indexOf('Інтеграції API'));
+    expect(content).toContain('Транскрибація');
+    expect(content.indexOf('Транскрибація')).toBeLessThan(content.indexOf('Інтеграції API'));
   });
 
-  it('updates Echo GPU servers when shared transcription settings change', () => {
+  it('updates transcription when shared transcription settings change', () => {
     currentSettingsMock.mockReturnValue(Promise.withResolvers<never>().promise);
     const props = {
       ...defaultProps,
@@ -312,7 +312,7 @@ describe('AppNavbar', () => {
       },
     };
     const { container, root } = renderComponent(props);
-    expect(container.textContent).not.toContain('Echo GPU сервери');
+    expect(container.textContent).not.toContain('Транскрибація');
 
     act(() => {
       root.render(
@@ -328,12 +328,12 @@ describe('AppNavbar', () => {
         />,
       );
     });
-    expect(container.textContent).toContain('Echo GPU сервери');
+    expect(container.textContent).toContain('Транскрибація');
 
     act(() => {
       root.render(<AppNavbar {...props} />);
     });
-    expect(container.textContent).not.toContain('Echo GPU сервери');
+    expect(container.textContent).not.toContain('Транскрибація');
   });
 
   it('renders Devices in the database menu when the Devices section is enabled', () => {

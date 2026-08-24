@@ -3,17 +3,20 @@ pub mod media_queue;
 pub mod types;
 pub mod worker;
 
-use crate::entities::{signal_message, signal_message_media};
+use crate::entities::{
+    echo_gpu_transcription_queue, signal_message, signal_message_media,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::transcriber::types::*;
 use crate::types::{Env, ShortContext, Uuid};
 use actix_identity::Identity;
-use actix_web::{post, web::Json};
+use actix_web::{get, post, web::Json, HttpRequest, HttpResponse};
 use anyhow::Context;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
-    RelationTrait, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
+    FromQueryResult, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait,
+    Statement, TransactionTrait,
 };
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -237,6 +240,132 @@ pub async fn queue_status(
             .context(h!())?
             .into(),
     ))
+}
+
+#[derive(Debug, FromQueryResult)]
+struct TranscriptionResultRow {
+    id: Uuid,
+    source_id: Uuid,
+    file_name: Option<String>,
+    content_type: Option<String>,
+    created_at: chrono::NaiveDateTime,
+    started_transcription_at: Option<chrono::NaiveDateTime>,
+    finished_at: Option<chrono::NaiveDateTime>,
+    status: String,
+    transcribed_value: Option<String>,
+    error: Option<String>,
+    instance_id: Option<Uuid>,
+    instance_name: Option<String>,
+}
+
+impl From<TranscriptionResultRow> for TranscriptionResultRsp {
+    fn from(row: TranscriptionResultRow) -> Self {
+        let completion_time_seconds = row
+            .finished_at
+            .zip(row.started_transcription_at)
+            .map(|(finished_at, started_at)| {
+                (finished_at - started_at).num_seconds().max(0)
+            });
+        Self {
+            id: row.id,
+            source_id: row.source_id,
+            file_name: row.file_name,
+            content_type: row.content_type,
+            created_at: row.created_at.and_utc().timestamp_millis(),
+            started_transcription_at: row
+                .started_transcription_at
+                .map(|value| value.and_utc().timestamp_millis()),
+            completion_time_seconds,
+            status: row.status,
+            transcribed_value: row.transcribed_value,
+            error: row.error,
+            instance_id: row.instance_id,
+            instance_name: row.instance_name,
+        }
+    }
+}
+
+#[post("/api/admin/transcriber/results/list")]
+pub async fn list_results(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<TranscriptionResultListReq>,
+) -> Result<Json<TranscriptionResultListRsp>, AppError> {
+    ensure_admin_enabled(env.as_ref(), &user).await?;
+    let offset = req.offset.unwrap_or(0);
+    let limit = req
+        .limit
+        .unwrap_or(crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_LIST_LIMIT)
+        .clamp(
+            1,
+            crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_LIST_LIMIT,
+        );
+    let total = echo_gpu_transcription_queue::Entity::find()
+        .count(&env.dbx)
+        .await
+        .c(h!())?;
+    let rows = TranscriptionResultRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+select
+    queue.id,
+    queue.source_id,
+    media.file_name,
+    media.content_type,
+    queue.created_at,
+    queue.started_transcription_at,
+    queue.finished_at,
+    queue.state as status,
+    queue.transcribed_value,
+    queue.last_error as error,
+    coalesce(queue.actual_instance_id, queue.selected_instance_id) as instance_id,
+    coalesce(actual_instance.name, selected_instance.name) as instance_name
+from echo_gpu_transcription_queue queue
+left join signal_message_media media on media.id = queue.source_id
+left join gpu_config actual_instance on actual_instance.id = queue.actual_instance_id
+left join gpu_config selected_instance on selected_instance.id = queue.selected_instance_id
+order by queue.created_at desc, queue.id desc
+limit $1 offset $2
+            "#,
+            [
+                i64::try_from(limit).c(h!())?.into(),
+                i64::try_from(offset).c(h!())?.into(),
+            ],
+        ),
+    )
+    .all(&env.dbx)
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(Into::into)
+    .collect::<Vec<_>>();
+    Ok(Json(TranscriptionResultListRsp {
+        has_more: offset + (rows.len() as u64) < total,
+        rows,
+        total,
+    }))
+}
+
+#[get("/api/admin/transcriber/results/{source_id}/media")]
+pub async fn result_media(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: HttpRequest,
+    path: actix_web::web::Path<(Uuid,)>,
+) -> Result<HttpResponse, AppError> {
+    ensure_admin_enabled(env.as_ref(), &user).await?;
+    let media = signal_message_media::Entity::find_by_id(path.0)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    Ok(
+        crate::rer_importer::serve_messenger_media(&req, env.as_ref(), &media)
+            .await
+            .c(h!())?,
+    )
 }
 
 #[post("/api/transcriber/messages/{message_id}")]

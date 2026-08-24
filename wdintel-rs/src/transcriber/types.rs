@@ -109,6 +109,35 @@ pub struct QueueStatusRsp {
     pub oldest_due_age_seconds: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TranscriptionResultListReq {
+    pub offset: Option<u64>,
+    pub limit: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TranscriptionResultRsp {
+    pub id: Uuid,
+    pub source_id: Uuid,
+    pub file_name: Option<String>,
+    pub content_type: Option<String>,
+    pub created_at: i64,
+    pub started_transcription_at: Option<i64>,
+    pub completion_time_seconds: Option<i64>,
+    pub status: String,
+    pub transcribed_value: Option<String>,
+    pub error: Option<String>,
+    pub instance_id: Option<Uuid>,
+    pub instance_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TranscriptionResultListRsp {
+    pub rows: Vec<TranscriptionResultRsp>,
+    pub total: u64,
+    pub has_more: bool,
+}
+
 impl From<echo_gpu_client::QueueStatus> for QueueStatusRsp {
     fn from(status: echo_gpu_client::QueueStatus) -> Self {
         Self {
