@@ -1,9 +1,10 @@
 import { Box, Chip, Stack } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import {
   CUSTOM_STYLES,
@@ -23,7 +24,11 @@ import {
   TableStateProvider,
   useTableStateContext,
 } from '../../components/mui-customized/table/table-state-provider';
-import { listTranscriptionResults, type TranscriptionResult } from '../../services/api/transcriber';
+import {
+  listTranscriptionResults,
+  type TranscriptionResult,
+  type TranscriptionResultQueryState,
+} from '../../services/api/transcriber';
 import { AnalysisPaginationControl } from '../rer-analysis-neo/components/AnalysisPaginationControl';
 
 const PAGE_SIZE = 100;
@@ -62,12 +67,14 @@ const STATUS_LABELS: Record<string, string> = {
 function formatTimestamp(value: number | null): string {
   if (value === null) return '—';
   return new Date(value).toLocaleString('uk-UA', {
+    timeZone: 'Europe/Kyiv',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
+    hourCycle: 'h23',
   });
 }
 
@@ -121,7 +128,7 @@ function buildColumns(): AppMrtColumnDef<TranscriptionResult>[] {
     },
     {
       accessorKey: 'started_transcription_at',
-      header: 'Почато транскрибування',
+      header: 'Початок транскрибування',
       meta: { overflowMode: 'text' },
       Cell: mrtTextCell({
         displayValue: ({ row }) => formatTimestamp(row.original.started_transcription_at),
@@ -182,20 +189,30 @@ function buildColumns(): AppMrtColumnDef<TranscriptionResult>[] {
   ];
 }
 
-function ResultsTable({ rows, loading }: { rows: TranscriptionResult[]; loading: boolean }) {
+function ResultsTable({
+  rows,
+  loading,
+  onQueryStateChange,
+}: {
+  rows: TranscriptionResult[];
+  loading: boolean;
+  onQueryStateChange: (queryState: TranscriptionResultQueryState) => void;
+}) {
   const tableStateContext = useTableStateContext();
   const columns = useMemo(buildColumns, []);
   const table = useAppMaterialReactTable({
     ...getDefaultMRTOptions<TranscriptionResult>(),
     columns,
     data: rows,
-    enableSorting: true,
+    getRowId: (row) => row.id,
+    enableSorting: false,
     enableColumnActions: true,
     enableRowNumbers: true,
     enableColumnFilters: true,
-    enableColumnFilterModes: true,
-    enableFacetedValues: true,
+    enableColumnFilterModes: false,
+    enableFacetedValues: false,
     enableRowVirtualization: false,
+    manualFiltering: true,
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     columnFilterDisplayMode: 'popover',
@@ -204,9 +221,7 @@ function ResultsTable({ rows, loading }: { rows: TranscriptionResult[]; loading:
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,
     onColumnSizingChange: tableStateContext.onColumnSizingChange,
-    onSortingChange: tableStateContext.onSortingChange,
     onGlobalFilterChange: tableStateContext.onChangeGlobalFilter,
-    getColumnCanGlobalFilter: (column) => column.getIsVisible(),
     defaultColumn: { size: 200, renderColumnActionsMenuItems },
     displayColumnDefOptions: CUSTOM_STYLES.displayColumnDefOptions,
     muiTablePaperProps: ({ table }) =>
@@ -226,7 +241,6 @@ function ResultsTable({ rows, loading }: { rows: TranscriptionResult[]; loading:
       columnVisibility: tableStateContext.columnVisibility,
       columnFilters: tableStateContext.columnFilters,
       density: tableStateContext.density,
-      sorting: tableStateContext.sorting,
       columnOrder: tableStateContext.columnOrder,
       columnSizing: tableStateContext.columnSizing,
     },
@@ -236,6 +250,13 @@ function ResultsTable({ rows, loading }: { rows: TranscriptionResult[]; loading:
     tableStateContext.onTableInitialized(table);
   }, [table]);
 
+  useEffect(() => {
+    onQueryStateChange({
+      globalFilter: tableStateContext.globalFilter,
+      columnFilters: tableStateContext.columnFilters as Array<{ id: string; value: unknown }>,
+    });
+  }, [onQueryStateChange, tableStateContext.columnFilters, tableStateContext.globalFilter]);
+
   return <MaterialReactTable table={table} />;
 }
 
@@ -243,40 +264,83 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+type PageRequest = {
+  after?: string;
+  before?: string;
+  lastPage?: boolean;
+};
+
 function ResultsPageBody() {
+  const { notify } = usePowerSnackbar();
   const [rows, setRows] = useState<TranscriptionResult[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [previousCursor, setPreviousCursor] = useState<string | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
+  const [pageRequest, setPageRequest] = useState<PageRequest>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [queryState, setQueryState] = useState<TranscriptionResultQueryState>({
+    globalFilter: '',
+    columnFilters: [],
+  });
+  const activeRequestRef = useRef<AbortController | null>(null);
 
-  const loadPage = useCallback(async (nextPageIndex: number, signal?: AbortSignal) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await listTranscriptionResults(
-        nextPageIndex * PAGE_SIZE,
-        signal ? { signal } : undefined,
-      );
-      setRows(result.rows);
-      setTotal(result.total);
-      setHasMore(result.has_more);
-      setPageIndex(nextPageIndex);
-    } catch (nextError) {
-      if (!signal?.aborted) {
-        setError(`Помилка завантаження результатів транскрибації: ${errorMessage(nextError)}`);
+  const loadPage = useCallback(
+    async (nextPageIndex: number, nextPageRequest: PageRequest = {}) => {
+      if (nextPageIndex < 0) return;
+      activeRequestRef.current?.abort();
+      const abortController = new AbortController();
+      activeRequestRef.current = abortController;
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await listTranscriptionResults(
+          {
+            ...queryState,
+            ...nextPageRequest,
+            limit: PAGE_SIZE,
+          },
+          { signal: abortController.signal },
+        );
+        if (abortController.signal.aborted) return;
+        setRows(result.rows);
+        setTotal(result.total);
+        setHasMore(result.has_more);
+        setNextCursor(result.next_cursor);
+        setPreviousCursor(result.previous_cursor);
+        setPageIndex(nextPageIndex);
+        setPageRequest(nextPageRequest);
+      } catch (nextError) {
+        if (!abortController.signal.aborted) {
+          const message = `Помилка завантаження результатів транскрибації: ${errorMessage(nextError)}`;
+          setError(message);
+          notify({ severity: 'error', message });
+        }
+      } finally {
+        if (activeRequestRef.current === abortController) {
+          activeRequestRef.current = null;
+          setLoading(false);
+        }
       }
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
+    },
+    [notify, queryState],
+  );
 
   useEffect(() => {
-    const abortController = new AbortController();
-    void loadPage(0, abortController.signal);
-    return () => abortController.abort();
+    void loadPage(0);
+    return () => {
+      activeRequestRef.current?.abort();
+      activeRequestRef.current = null;
+    };
   }, [loadPage]);
+
+  const handleQueryStateChange = useCallback((nextQueryState: TranscriptionResultQueryState) => {
+    setQueryState((current) =>
+      JSON.stringify(current) === JSON.stringify(nextQueryState) ? current : nextQueryState,
+    );
+  }, []);
 
   const lastPageIndex = Math.max(0, Math.ceil((total ?? 0) / PAGE_SIZE) - 1);
   return (
@@ -300,15 +364,19 @@ function ResultsPageBody() {
               noMoreToLoad={!hasMore}
               busy={loading}
               onFirstPage={() => void loadPage(0)}
-              onLastPage={() => void loadPage(lastPageIndex)}
-              onPrevPage={() => void loadPage(pageIndex - 1)}
-              onNextPage={() => void loadPage(pageIndex + 1)}
+              onLastPage={() => void loadPage(lastPageIndex, { lastPage: true })}
+              onPrevPage={() => {
+                if (previousCursor) void loadPage(pageIndex - 1, { before: previousCursor });
+              }}
+              onNextPage={() => {
+                if (nextCursor) void loadPage(pageIndex + 1, { after: nextCursor });
+              }}
             />
             <PowerButton
               type="button"
               variant="outlined"
               disabled={loading}
-              onClick={() => void loadPage(pageIndex)}
+              onClick={() => void loadPage(pageIndex, pageRequest)}
             >
               Оновити
             </PowerButton>
@@ -316,7 +384,7 @@ function ResultsPageBody() {
         }
       />
       <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
-        <ResultsTable rows={rows} loading={loading} />
+        <ResultsTable rows={rows} loading={loading} onQueryStateChange={handleQueryStateChange} />
       </Box>
     </Stack>
   );

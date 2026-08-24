@@ -726,10 +726,26 @@ export function AdminTranscriptionSettingsPage() {
         aria-label="Розділи транскрибації"
         sx={{ borderBottom: 1, borderColor: 'divider', flex: 'none' }}
       >
-        <Tab value="instances" label="Echo GPU сервери" />
-        <Tab value="results" label="Результати транскрибації" />
+        <Tab
+          id="transcription-instances-tab"
+          aria-controls="transcription-instances-panel"
+          value="instances"
+          label="Echo GPU сервери"
+        />
+        <Tab
+          id="transcription-results-tab"
+          aria-controls="transcription-results-panel"
+          value="results"
+          label="Результати транскрибації"
+        />
       </Tabs>
-      <Box sx={{ flex: 1, minHeight: 0, minWidth: 0 }}>
+      <Box
+        id="transcription-instances-panel"
+        role="tabpanel"
+        aria-labelledby="transcription-instances-tab"
+        hidden={activeTab !== 'instances'}
+        sx={{ flex: 1, minHeight: 0, minWidth: 0 }}
+      >
         {activeTab === 'instances' ? (
           <TableStateProvider
             tableId="admin-transcriber-instances"
@@ -739,9 +755,16 @@ export function AdminTranscriptionSettingsPage() {
           >
             <AdminTranscriptionSettingsPageBody />
           </TableStateProvider>
-        ) : (
-          <TranscriptionResultsTab />
-        )}
+        ) : null}
+      </Box>
+      <Box
+        id="transcription-results-panel"
+        role="tabpanel"
+        aria-labelledby="transcription-results-tab"
+        hidden={activeTab !== 'results'}
+        sx={{ flex: 1, minHeight: 0, minWidth: 0 }}
+      >
+        {activeTab === 'results' ? <TranscriptionResultsTab /> : null}
       </Box>
     </Stack>
   );

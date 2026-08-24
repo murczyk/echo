@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -13,16 +19,21 @@ impl MigrationTrait for Migration {
 alter table echo_gpu_transcription_queue
     add column started_transcription_at timestamp without time zone;
 
+-- Historical starts cannot be reconstructed reliably, so existing rows stay null.
 create function set_echo_gpu_transcription_started_at()
 returns trigger
 language plpgsql
 as $$
 begin
     if new.state = 'processing' and old.state <> 'processing' then
-        new.started_transcription_at = coalesce(
-            new.started_transcription_at,
-            new.updated_at
-        );
+        if old.state in ('completed', 'terminal') then
+            new.started_transcription_at = new.updated_at;
+        else
+            new.started_transcription_at = coalesce(
+                new.started_transcription_at,
+                new.updated_at
+            );
+        end if;
     elsif old.state in ('completed', 'terminal')
         and new.state in ('queued', 'retrying') then
         new.started_transcription_at = null;
@@ -40,7 +51,8 @@ create index echo_gpu_transcription_queue_created_at_idx
     on echo_gpu_transcription_queue (created_at desc, id desc);
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -57,7 +69,8 @@ alter table echo_gpu_transcription_queue
     drop column if exists started_transcription_at;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }

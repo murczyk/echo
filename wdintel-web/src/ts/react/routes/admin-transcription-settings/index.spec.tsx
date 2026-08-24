@@ -128,7 +128,13 @@ describe('AdminTranscriptionSettingsPage', () => {
     mocks.update.mockReset();
     mocks.remove.mockReset();
     mocks.check.mockReset();
-    mocks.listResults.mockReset().mockResolvedValue({ rows: [], total: 0, has_more: false });
+    mocks.listResults.mockReset().mockResolvedValue({
+      rows: [],
+      total: 0,
+      has_more: false,
+      next_cursor: null,
+      previous_cursor: null,
+    });
     mocks.notify.mockReset();
   });
 
@@ -155,6 +161,12 @@ describe('AdminTranscriptionSettingsPage', () => {
     const { container, root } = await renderPage();
     expect(container.querySelector('table')).not.toBeNull();
     expect(button('Додати інстанс')).toBeDefined();
+    expect(
+      document.getElementById('transcription-instances-tab')?.getAttribute('aria-controls'),
+    ).toBe('transcription-instances-panel');
+    expect(
+      document.getElementById('transcription-results-tab')?.getAttribute('aria-controls'),
+    ).toBe('transcription-results-panel');
 
     await clickButton('Додати інстанс');
     await clickButton('Додати');
@@ -187,7 +199,6 @@ describe('AdminTranscriptionSettingsPage', () => {
           id: '01900000-0000-7000-8000-000000000002',
           source_id: '01900000-0000-7000-8000-000000000003',
           file_name: 'recording.mp3',
-          content_type: 'audio/mpeg',
           created_at: 1_700_000_000_000,
           started_transcription_at: 1_700_000_001_000,
           completion_time_seconds: 5,
@@ -200,13 +211,19 @@ describe('AdminTranscriptionSettingsPage', () => {
       ],
       total: 1,
       has_more: false,
+      next_cursor: null,
+      previous_cursor: null,
     });
     const { container, root } = await renderPage();
 
     await clickButton('Результати транскрибації');
 
     expect(mocks.listResults).toHaveBeenCalledWith(
-      0,
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+      },
       expect.objectContaining({ signal: expect.anything() }),
     );
     expect(container.textContent).toContain('recording.mp3');
@@ -214,6 +231,52 @@ describe('AdminTranscriptionSettingsPage', () => {
     expect(container.textContent).toContain('Завершено');
     expect(container.textContent).toContain('Розпізнаний текст');
     expect(container.textContent).toContain(instance.name);
+    await act(async () => root.unmount());
+  });
+
+  it('shows transcription-result load failures in a toast', async () => {
+    mocks.listResults.mockRejectedValue(new Error('results unavailable'));
+    const { root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: expect.stringContaining('results unavailable'),
+    });
+    await act(async () => root.unmount());
+  });
+
+  it('uses the server cursor for the next transcription-results page', async () => {
+    mocks.listResults
+      .mockResolvedValueOnce({
+        rows: [],
+        total: 101,
+        has_more: true,
+        next_cursor: 'cursor-100',
+        previous_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+        total: 101,
+        has_more: false,
+        next_cursor: null,
+        previous_cursor: 'cursor-previous',
+      });
+    const { root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+    await clickButton('Наступна сторінка');
+
+    expect(mocks.listResults).toHaveBeenLastCalledWith(
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+        after: 'cursor-100',
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
     await act(async () => root.unmount());
   });
 

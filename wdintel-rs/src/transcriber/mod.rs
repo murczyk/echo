@@ -14,9 +14,9 @@ use actix_identity::Identity;
 use actix_web::{get, post, web::Json, HttpRequest, HttpResponse};
 use anyhow::Context;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
-    FromQueryResult, PaginatorTrait, QueryFilter, QuerySelect, RelationTrait,
-    Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
+    EntityTrait, FromQueryResult, QueryFilter, QuerySelect, RelationTrait,
+    Statement, TransactionTrait, Value,
 };
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -247,7 +247,6 @@ struct TranscriptionResultRow {
     id: Uuid,
     source_id: Uuid,
     file_name: Option<String>,
-    content_type: Option<String>,
     created_at: chrono::NaiveDateTime,
     started_transcription_at: Option<chrono::NaiveDateTime>,
     finished_at: Option<chrono::NaiveDateTime>,
@@ -256,6 +255,279 @@ struct TranscriptionResultRow {
     error: Option<String>,
     instance_id: Option<Uuid>,
     instance_name: Option<String>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct TranscriptionResultCount {
+    total: i64,
+}
+
+const TRANSCRIPTION_RESULTS_FROM_SQL: &str = r#"
+from echo_gpu_transcription_queue queue
+left join signal_message_media media on media.id = queue.source_id
+left join gpu_config actual_instance on actual_instance.id = queue.actual_instance_id
+left join gpu_config selected_instance on selected_instance.id = queue.selected_instance_id
+"#;
+
+const TRANSCRIPTION_RESULT_CREATED_AT_FILTER: &str = "to_char(queue.created_at at time zone 'UTC' at time zone 'Europe/Kyiv', 'DD.MM.YYYY, HH24:MI:SS')";
+const TRANSCRIPTION_RESULT_STARTED_AT_FILTER: &str = "coalesce(to_char(queue.started_transcription_at at time zone 'UTC' at time zone 'Europe/Kyiv', 'DD.MM.YYYY, HH24:MI:SS'), '—')";
+const TRANSCRIPTION_RESULT_COMPLETION_TIME_FILTER: &str = r#"
+case
+    when queue.finished_at is null or queue.started_transcription_at is null then '—'
+    else
+        lpad((greatest(extract(epoch from queue.finished_at - queue.started_transcription_at)::bigint, 0) / 3600)::text, 2, '0')
+        || ':'
+        || lpad(((greatest(extract(epoch from queue.finished_at - queue.started_transcription_at)::bigint, 0) % 3600) / 60)::text, 2, '0')
+        || ':'
+        || lpad((greatest(extract(epoch from queue.finished_at - queue.started_transcription_at)::bigint, 0) % 60)::text, 2, '0')
+end
+"#;
+const TRANSCRIPTION_RESULT_STATUS_FILTER: &str = r#"
+case queue.state
+    when 'queued' then 'У черзі'
+    when 'processing' then 'Транскрибується'
+    when 'retrying' then 'Повторна спроба'
+    when 'completed' then 'Завершено'
+    when 'terminal' then 'Помилка'
+    else queue.state
+end
+"#;
+const TRANSCRIPTION_RESULT_INSTANCE_FILTER: &str = "coalesce(actual_instance.name, selected_instance.name, queue.actual_instance_id::text, queue.selected_instance_id::text, '—')";
+
+const TRANSCRIPTION_RESULT_GLOBAL_FILTER_EXPRESSIONS: &[&str] = &[
+    "coalesce(media.file_name, queue.source_id::text)",
+    TRANSCRIPTION_RESULT_CREATED_AT_FILTER,
+    TRANSCRIPTION_RESULT_STARTED_AT_FILTER,
+    TRANSCRIPTION_RESULT_COMPLETION_TIME_FILTER,
+    TRANSCRIPTION_RESULT_STATUS_FILTER,
+    "queue.state",
+    TRANSCRIPTION_RESULT_INSTANCE_FILTER,
+    "coalesce(queue.transcribed_value, '—')",
+    "coalesce(queue.last_error, '—')",
+];
+
+fn transcription_result_filter_expressions(
+    id: &str,
+) -> Option<&'static [&'static str]> {
+    match id {
+        "attachment" => {
+            Some(&["coalesce(media.file_name, queue.source_id::text)"])
+        }
+        "created_at" => Some(&[TRANSCRIPTION_RESULT_CREATED_AT_FILTER]),
+        "started_transcription_at" => {
+            Some(&[TRANSCRIPTION_RESULT_STARTED_AT_FILTER])
+        }
+        "completion_time_seconds" => {
+            Some(&[TRANSCRIPTION_RESULT_COMPLETION_TIME_FILTER])
+        }
+        "status" => Some(&[TRANSCRIPTION_RESULT_STATUS_FILTER, "queue.state"]),
+        "instance" => Some(&[TRANSCRIPTION_RESULT_INSTANCE_FILTER]),
+        "transcribed_value" => {
+            Some(&["coalesce(queue.transcribed_value, '—')"])
+        }
+        "error" => Some(&["coalesce(queue.last_error, '—')"]),
+        _ => None,
+    }
+}
+
+fn transcription_result_filter_strings(
+    value: &serde_json::Value,
+) -> Result<Vec<String>, AppError> {
+    let values = match value {
+        serde_json::Value::String(value) => vec![value.clone()],
+        serde_json::Value::Number(value) => vec![value.to_string()],
+        serde_json::Value::Bool(value) => vec![value.to_string()],
+        serde_json::Value::Array(values) => {
+            let mut strings = Vec::new();
+            for value in values {
+                strings.extend(
+                    transcription_result_filter_strings(value).context(h!())?,
+                );
+            }
+            strings
+        }
+        serde_json::Value::Null => Vec::new(),
+        _ => return Err(invalid_transcription_result_filter()),
+    };
+    Ok(values
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect())
+}
+
+fn transcription_result_like_value(value: &str) -> String {
+    let value = value
+        .trim()
+        .to_lowercase()
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{value}%")
+}
+
+fn push_transcription_result_filter(
+    conditions: &mut Vec<String>,
+    values: &mut Vec<Value>,
+    expressions: &[&str],
+    filter_values: Vec<String>,
+) {
+    let mut alternatives = Vec::new();
+    for filter_value in filter_values {
+        values.push(transcription_result_like_value(&filter_value).into());
+        let placeholder = values.len();
+        alternatives.push(format!(
+            "({})",
+            expressions
+                .iter()
+                .map(|expression| format!(
+                    "lower({expression}) like ${placeholder}"
+                ))
+                .collect::<Vec<_>>()
+                .join(" or ")
+        ));
+    }
+    if !alternatives.is_empty() {
+        conditions.push(format!("({})", alternatives.join(" or ")));
+    }
+}
+
+fn transcription_result_filters_sql(
+    req: &TranscriptionResultListReq,
+) -> Result<(String, Vec<Value>), AppError> {
+    if req.column_filters.len()
+        > crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_COLUMN_FILTER_MAX_COUNT
+    {
+        return Err(invalid_transcription_result_filter());
+    }
+    let mut conditions = Vec::new();
+    let mut values = Vec::new();
+    if let Some(global_filter) = req
+        .global_filter
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let global_filter = global_filter.to_string();
+        validate_transcription_result_filter_values(std::slice::from_ref(
+            &global_filter,
+        ))
+        .context(h!())?;
+        push_transcription_result_filter(
+            &mut conditions,
+            &mut values,
+            TRANSCRIPTION_RESULT_GLOBAL_FILTER_EXPRESSIONS,
+            vec![global_filter],
+        );
+    }
+    for filter in &req.column_filters {
+        let Some(expressions) =
+            transcription_result_filter_expressions(&filter.id)
+        else {
+            return Err(invalid_transcription_result_filter());
+        };
+        let filter_values =
+            transcription_result_filter_strings(&filter.value).context(h!())?;
+        validate_transcription_result_filter_values(&filter_values)
+            .context(h!())?;
+        push_transcription_result_filter(
+            &mut conditions,
+            &mut values,
+            expressions,
+            filter_values,
+        );
+    }
+    if conditions.is_empty() {
+        Ok((String::new(), values))
+    } else {
+        Ok((format!("where {}", conditions.join(" and ")), values))
+    }
+}
+
+fn invalid_transcription_result_filter() -> AppError {
+    AppError::BL {
+        msg: "invalid transcription-result filter".to_string(),
+    }
+}
+
+fn validate_transcription_result_filter_values(
+    values: &[String],
+) -> Result<(), AppError> {
+    if values.len()
+        > crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_VALUE_MAX_COUNT
+        || values.iter().any(|value| {
+            value.chars().count()
+                > crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_MAX_CHARS
+        })
+    {
+        return Err(invalid_transcription_result_filter());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct TranscriptionResultCursor {
+    created_at: chrono::NaiveDateTime,
+    id: Uuid,
+}
+
+#[derive(Clone, Copy)]
+enum TranscriptionResultPage {
+    First,
+    After(TranscriptionResultCursor),
+    Before(TranscriptionResultCursor),
+    Last,
+}
+
+fn invalid_transcription_result_cursor() -> AppError {
+    AppError::BL {
+        msg: "invalid transcription-result cursor".to_string(),
+    }
+}
+
+fn parse_transcription_result_cursor(
+    value: &str,
+) -> Result<TranscriptionResultCursor, AppError> {
+    let Some((created_at, id)) = value.split_once(':') else {
+        return Err(invalid_transcription_result_cursor());
+    };
+    let Ok(created_at) = created_at.parse::<i64>() else {
+        return Err(invalid_transcription_result_cursor());
+    };
+    let Some(created_at) = chrono::DateTime::from_timestamp_micros(created_at)
+        .map(|created_at| created_at.naive_utc())
+    else {
+        return Err(invalid_transcription_result_cursor());
+    };
+    let Ok(id) = Uuid::parse_str(id) else {
+        return Err(invalid_transcription_result_cursor());
+    };
+    Ok(TranscriptionResultCursor { created_at, id })
+}
+
+fn transcription_result_page(
+    req: &TranscriptionResultListReq,
+) -> Result<TranscriptionResultPage, AppError> {
+    if req.last_page.unwrap_or(false) {
+        if req.after.is_some() || req.before.is_some() {
+            return Err(invalid_transcription_result_cursor());
+        }
+        return Ok(TranscriptionResultPage::Last);
+    }
+    match (req.after.as_deref(), req.before.as_deref()) {
+        (None, None) => Ok(TranscriptionResultPage::First),
+        (Some(after), None) => Ok(TranscriptionResultPage::After(
+            parse_transcription_result_cursor(after).context(h!())?,
+        )),
+        (None, Some(before)) => Ok(TranscriptionResultPage::Before(
+            parse_transcription_result_cursor(before).context(h!())?,
+        )),
+        (Some(_), Some(_)) => Err(invalid_transcription_result_cursor()),
+    }
+}
+
+fn encode_transcription_result_cursor(row: &TranscriptionResultRow) -> String {
+    format!("{}:{}", row.created_at.and_utc().timestamp_micros(), row.id)
 }
 
 impl From<TranscriptionResultRow> for TranscriptionResultRsp {
@@ -270,7 +542,6 @@ impl From<TranscriptionResultRow> for TranscriptionResultRsp {
             id: row.id,
             source_id: row.source_id,
             file_name: row.file_name,
-            content_type: row.content_type,
             created_at: row.created_at.and_utc().timestamp_millis(),
             started_transcription_at: row
                 .started_transcription_at
@@ -285,34 +556,128 @@ impl From<TranscriptionResultRow> for TranscriptionResultRsp {
     }
 }
 
-#[post("/api/admin/transcriber/results/list")]
-pub async fn list_results(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<TranscriptionResultListReq>,
-) -> Result<Json<TranscriptionResultListRsp>, AppError> {
-    ensure_admin_enabled(env.as_ref(), &user).await?;
-    let offset = req.offset.unwrap_or(0);
-    let limit = req
-        .limit
+fn transcription_result_limit(req: &TranscriptionResultListReq) -> u64 {
+    req.limit
         .unwrap_or(crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_LIST_LIMIT)
         .clamp(
             1,
             crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_LIST_LIMIT,
-        );
-    let total = echo_gpu_transcription_queue::Entity::find()
-        .count(&env.dbx)
-        .await
-        .c(h!())?;
-    let rows = TranscriptionResultRow::find_by_statement(
+        )
+}
+
+async fn query_transcription_result_total(
+    dbx: &DatabaseConnection,
+    filters_sql: &str,
+    values: &[Value],
+) -> Result<u64, AppError> {
+    let total = TranscriptionResultCount::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            r#"
+            format!(
+                "select count(*) as total {TRANSCRIPTION_RESULTS_FROM_SQL} {filters_sql}"
+            ),
+            values.to_vec(),
+        ),
+    )
+    .one(dbx)
+    .await
+    .c(h!())?
+    .context(h!())?;
+    Ok(u64::try_from(total.total).c(h!())?)
+}
+
+fn transcription_result_page_sql(
+    page: TranscriptionResultPage,
+    values: &mut Vec<Value>,
+) -> (String, &'static str, bool) {
+    match page {
+        TranscriptionResultPage::First => {
+            (String::new(), "queue.created_at desc, queue.id desc", false)
+        }
+        TranscriptionResultPage::After(cursor) => {
+            values.push(cursor.created_at.into());
+            let created_at_placeholder = values.len();
+            values.push(cursor.id.into());
+            let id_placeholder = values.len();
+            (
+                format!(
+                    "(queue.created_at, queue.id) < (${created_at_placeholder}, ${id_placeholder})"
+                ),
+                "queue.created_at desc, queue.id desc",
+                false,
+            )
+        }
+        TranscriptionResultPage::Before(cursor) => {
+            values.push(cursor.created_at.into());
+            let created_at_placeholder = values.len();
+            values.push(cursor.id.into());
+            let id_placeholder = values.len();
+            (
+                format!(
+                    "(queue.created_at, queue.id) > (${created_at_placeholder}, ${id_placeholder})"
+                ),
+                "queue.created_at asc, queue.id asc",
+                true,
+            )
+        }
+        TranscriptionResultPage::Last => {
+            (String::new(), "queue.created_at asc, queue.id asc", true)
+        }
+    }
+}
+
+fn transcription_result_page_filters_sql(
+    filters_sql: &str,
+    boundary_sql: &str,
+) -> String {
+    if boundary_sql.is_empty() {
+        filters_sql.to_string()
+    } else if filters_sql.is_empty() {
+        format!("where {boundary_sql}")
+    } else {
+        format!("{filters_sql} and {boundary_sql}")
+    }
+}
+
+fn transcription_result_fetch_limit(
+    page: TranscriptionResultPage,
+    total: u64,
+    limit: u64,
+) -> u64 {
+    if !matches!(page, TranscriptionResultPage::Last) {
+        return limit + 1;
+    }
+    if total == 0 {
+        limit
+    } else {
+        (total - 1) % limit + 1
+    }
+}
+
+async fn query_transcription_result_rows(
+    dbx: &DatabaseConnection,
+    filters_sql: &str,
+    mut values: Vec<Value>,
+    page: TranscriptionResultPage,
+    total: u64,
+    limit: u64,
+) -> Result<(Vec<TranscriptionResultRow>, bool), AppError> {
+    let (boundary_sql, order_sql, reverse_rows) =
+        transcription_result_page_sql(page, &mut values);
+    let page_filters_sql =
+        transcription_result_page_filters_sql(filters_sql, &boundary_sql);
+    let fetch_limit = transcription_result_fetch_limit(page, total, limit);
+    values.push(i64::try_from(fetch_limit).c(h!())?.into());
+    let limit_placeholder = values.len();
+    let mut rows = TranscriptionResultRow::find_by_statement(
+        Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            format!(
+                r#"
 select
     queue.id,
     queue.source_id,
     media.file_name,
-    media.content_type,
     queue.created_at,
     queue.started_transcription_at,
     queue.finished_at,
@@ -321,30 +686,89 @@ select
     queue.last_error as error,
     coalesce(queue.actual_instance_id, queue.selected_instance_id) as instance_id,
     coalesce(actual_instance.name, selected_instance.name) as instance_name
-from echo_gpu_transcription_queue queue
-left join signal_message_media media on media.id = queue.source_id
-left join gpu_config actual_instance on actual_instance.id = queue.actual_instance_id
-left join gpu_config selected_instance on selected_instance.id = queue.selected_instance_id
-order by queue.created_at desc, queue.id desc
-limit $1 offset $2
-            "#,
-            [
-                i64::try_from(limit).c(h!())?.into(),
-                i64::try_from(offset).c(h!())?.into(),
-            ],
+{TRANSCRIPTION_RESULTS_FROM_SQL}
+{page_filters_sql}
+order by {order_sql}
+limit ${limit_placeholder}
+                "#,
+            ),
+            values,
         ),
     )
-    .all(&env.dbx)
+    .all(dbx)
     .await
-    .c(h!())?
-    .into_iter()
-    .map(Into::into)
-    .collect::<Vec<_>>();
-    Ok(Json(TranscriptionResultListRsp {
-        has_more: offset + (rows.len() as u64) < total,
-        rows,
+    .c(h!())?;
+    let had_extra = rows.len() as u64 > limit;
+    rows.truncate(limit as usize);
+    if reverse_rows {
+        rows.reverse();
+    }
+    Ok((rows, had_extra))
+}
+
+fn transcription_result_list_response(
+    rows: Vec<TranscriptionResultRow>,
+    total: u64,
+    page: TranscriptionResultPage,
+    had_extra: bool,
+) -> TranscriptionResultListRsp {
+    let (has_more, has_previous) = match page {
+        TranscriptionResultPage::First => (had_extra, false),
+        TranscriptionResultPage::After(_) => (had_extra, !rows.is_empty()),
+        TranscriptionResultPage::Before(_) => (!rows.is_empty(), had_extra),
+        TranscriptionResultPage::Last => (false, total > rows.len() as u64),
+    };
+    let next_cursor = has_more
+        .then(|| rows.last().map(encode_transcription_result_cursor))
+        .flatten();
+    let previous_cursor = has_previous
+        .then(|| rows.first().map(encode_transcription_result_cursor))
+        .flatten();
+    TranscriptionResultListRsp {
+        has_more,
+        rows: rows.into_iter().map(Into::into).collect(),
         total,
-    }))
+        next_cursor,
+        previous_cursor,
+    }
+}
+
+async fn query_transcription_results(
+    dbx: &DatabaseConnection,
+    req: &TranscriptionResultListReq,
+) -> Result<TranscriptionResultListRsp, AppError> {
+    let limit = transcription_result_limit(req);
+    let (filters_sql, values) =
+        transcription_result_filters_sql(req).context(h!())?;
+    let total = query_transcription_result_total(dbx, &filters_sql, &values)
+        .await
+        .c(h!())?;
+    let page = transcription_result_page(req).context(h!())?;
+    let (rows, had_extra) = query_transcription_result_rows(
+        dbx,
+        &filters_sql,
+        values,
+        page,
+        total,
+        limit,
+    )
+    .await
+    .c(h!())?;
+    Ok(transcription_result_list_response(
+        rows, total, page, had_extra,
+    ))
+}
+
+#[post("/api/admin/transcriber/results/list")]
+pub async fn list_results(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<TranscriptionResultListReq>,
+) -> Result<Json<TranscriptionResultListRsp>, AppError> {
+    ensure_admin_enabled(env.as_ref(), &user).await.c(h!())?;
+    Ok(Json(
+        query_transcription_results(&env.dbx, &req).await.c(h!())?,
+    ))
 }
 
 #[get("/api/admin/transcriber/results/{source_id}/media")]
@@ -354,13 +778,22 @@ pub async fn result_media(
     req: HttpRequest,
     path: actix_web::web::Path<(Uuid,)>,
 ) -> Result<HttpResponse, AppError> {
-    ensure_admin_enabled(env.as_ref(), &user).await?;
-    let media = signal_message_media::Entity::find_by_id(path.0)
+    ensure_admin_enabled(env.as_ref(), &user).await.c(h!())?;
+    let source_id = path.0;
+    echo_gpu_transcription_queue::Entity::find()
+        .select_only()
+        .column(echo_gpu_transcription_queue::Column::Id)
+        .filter(echo_gpu_transcription_queue::Column::SourceId.eq(source_id))
+        .into_tuple::<Uuid>()
         .one(&env.dbx)
         .await
         .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())?;
+        .ok_or(AppError::NotFound)?;
+    let media = signal_message_media::Entity::find_by_id(source_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)?;
     Ok(
         crate::rer_importer::serve_messenger_media(&req, env.as_ref(), &media)
             .await
@@ -417,13 +850,97 @@ pub async fn message_transcriptions(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::{login, system_settings};
+    use crate::entities::{
+        echo_gpu_transcription_queue, login, signal_message_media,
+        system_settings,
+    };
     use actix_identity::IdentityMiddleware;
     use actix_session::{storage::RedisSessionStore, SessionMiddleware};
     use actix_web::{cookie::Key, http::StatusCode, test, web, App};
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
     };
+
+    async fn insert_test_media(
+        env: &Env,
+        file_name: Option<&str>,
+    ) -> signal_message_media::Model {
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        signal_message_media::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            signal_message_id: Set(message.id),
+            content_type: Set("audio/ogg".to_string()),
+            file_ext: Set(Some("ogg".to_string())),
+            file_name: Set(file_name.map(str::to_string)),
+            size_bytes: Set(0),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+            is_encrypted: Set(false),
+            storage_key: Set(None),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+
+    struct TranscriptionResultSeed<'a> {
+        source_id: Uuid,
+        state: &'a str,
+        created_at: chrono::NaiveDateTime,
+        started_at: Option<chrono::NaiveDateTime>,
+        finished_at: Option<chrono::NaiveDateTime>,
+        selected_instance_id: Option<Uuid>,
+        actual_instance_id: Option<Uuid>,
+        value: Option<&'a str>,
+        error: Option<&'a str>,
+    }
+
+    async fn insert_transcription_result(
+        env: &Env,
+        seed: TranscriptionResultSeed<'_>,
+    ) -> echo_gpu_transcription_queue::Model {
+        echo_gpu_transcription_queue::ActiveModel {
+            id: Set(Uuid::now_v7()),
+            source_id: Set(seed.source_id),
+            state: Set(seed.state.to_string()),
+            transcribed_value: Set(seed.value.map(str::to_string)),
+            selected_instance_id: Set(seed.selected_instance_id),
+            actual_instance_id: Set(seed.actual_instance_id),
+            last_error: Set(seed.error.map(str::to_string)),
+            finished_at: Set(seed.finished_at),
+            created_at: Set(seed.created_at),
+            updated_at: Set(seed.finished_at.unwrap_or(seed.created_at)),
+            started_transcription_at: Set(seed.started_at),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn transition_transcription_result(
+        env: &Env,
+        source_id: Uuid,
+        state: &str,
+        updated_at: chrono::NaiveDateTime,
+    ) -> echo_gpu_transcription_queue::Model {
+        let queue = echo_gpu_transcription_queue::Entity::find()
+            .filter(
+                echo_gpu_transcription_queue::Column::SourceId.eq(source_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut queue = queue.into_active_model();
+        queue.state = Set(state.to_string());
+        queue.updated_at = Set(updated_at);
+        queue.update(&env.dbx).await.unwrap()
+    }
 
     struct FailedRestarter;
 
@@ -493,6 +1010,10 @@ mod tests {
         login.password_auth_enabled = Set(true);
         login.roles = Set(serde_json::json!(["Admin", "Api"]));
         login.update(&env.dbx).await.unwrap();
+        let media = insert_test_media(&env, Some("authorized.ogg")).await;
+        let unqueued_media =
+            insert_test_media(&env, Some("not-queued.ogg")).await;
+        echo_gpu_client::enqueue(&env.dbx, media.id).await.unwrap();
 
         let session_store = RedisSessionStore::new(
             crate::redis_conn_string(&env.config).unwrap(),
@@ -506,6 +1027,8 @@ mod tests {
                 .app_data(web::Data::from(env.clone()))
                 .service(crate::users::user_test_api_login)
                 .service(queue_status)
+                .service(list_results)
+                .service(result_media)
                 .service(message_transcriptions),
         )
         .await;
@@ -514,6 +1037,28 @@ mod tests {
             &app,
             test::TestRequest::post()
                 .uri("/api/admin/transcriber/status")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/results/list")
+                .set_json(serde_json::json!({}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!(
+                    "/api/admin/transcriber/results/{}/media",
+                    media.id
+                ))
                 .to_request(),
         )
         .await;
@@ -543,6 +1088,30 @@ mod tests {
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/results/list")
+                .cookie(cookie.clone())
+                .set_json(serde_json::json!({}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!(
+                    "/api/admin/transcriber/results/{}/media",
+                    media.id
+                ))
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
         system_settings::ActiveModel {
             enable_audio_transcription: Set(true),
             ..Default::default()
@@ -560,6 +1129,43 @@ mod tests {
         .await;
         assert_eq!(response.status(), StatusCode::OK);
 
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/results/list")
+                .cookie(cookie.clone())
+                .set_json(serde_json::json!({}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!(
+                    "/api/admin/transcriber/results/{}/media",
+                    media.id
+                ))
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!(
+                    "/api/admin/transcriber/results/{}/media",
+                    unqueued_media.id
+                ))
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
         let mut login: login::ActiveModel = login::Entity::find_by_id(login_id)
             .one(&env.dbx)
             .await
@@ -572,6 +1178,30 @@ mod tests {
             &app,
             test::TestRequest::post()
                 .uri("/api/admin/transcriber/status")
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/api/admin/transcriber/results/list")
+                .cookie(cookie.clone())
+                .set_json(serde_json::json!({}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(&format!(
+                    "/api/admin/transcriber/results/{}/media",
+                    media.id
+                ))
                 .cookie(cookie.clone())
                 .to_request(),
         )
@@ -611,6 +1241,353 @@ mod tests {
         )
         .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    struct TranscriptionResultsFixture {
+        instance_id: Uuid,
+        completed_source_id: Uuid,
+        terminal_source_id: Uuid,
+        pending_source_id: Uuid,
+        now: chrono::NaiveDateTime,
+    }
+
+    async fn seed_transcription_results(
+        env: &Env,
+    ) -> TranscriptionResultsFixture {
+        let instance = echo_gpu_client::create_instance(
+            &env.dbx,
+            echo_gpu_client::CreateInstance {
+                name: "result-list-gpu".to_string(),
+                host: "result-list.invalid".to_string(),
+                rs_port: 1,
+                py_port: 2,
+                train: false,
+                ordering: Some(1),
+            },
+        )
+        .await
+        .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let completed_media =
+            insert_test_media(env, Some("alpha-recording.ogg")).await;
+        let terminal_media =
+            insert_test_media(env, Some("beta-recording.ogg")).await;
+        let pending_source_id = Uuid::now_v7();
+        insert_transcription_result(
+            env,
+            TranscriptionResultSeed {
+                source_id: completed_media.id,
+                state: "completed",
+                created_at: now - chrono::Duration::seconds(30),
+                started_at: Some(now - chrono::Duration::seconds(28)),
+                finished_at: Some(now - chrono::Duration::seconds(23)),
+                selected_instance_id: None,
+                actual_instance_id: Some(instance.id),
+                value: Some("recognized alpha"),
+                error: None,
+            },
+        )
+        .await;
+        insert_transcription_result(
+            env,
+            TranscriptionResultSeed {
+                source_id: terminal_media.id,
+                state: "terminal",
+                created_at: now - chrono::Duration::seconds(20),
+                started_at: Some(now - chrono::Duration::seconds(18)),
+                finished_at: Some(now - chrono::Duration::seconds(15)),
+                selected_instance_id: Some(instance.id),
+                actual_instance_id: None,
+                value: None,
+                error: Some("transcription failed"),
+            },
+        )
+        .await;
+        insert_transcription_result(
+            env,
+            TranscriptionResultSeed {
+                source_id: pending_source_id,
+                state: "queued",
+                created_at: now - chrono::Duration::seconds(10),
+                started_at: None,
+                finished_at: None,
+                selected_instance_id: None,
+                actual_instance_id: None,
+                value: None,
+                error: None,
+            },
+        )
+        .await;
+        TranscriptionResultsFixture {
+            instance_id: instance.id,
+            completed_source_id: completed_media.id,
+            terminal_source_id: terminal_media.id,
+            pending_source_id,
+            now,
+        }
+    }
+
+    async fn assert_transcription_result_filters(
+        env: &Env,
+        fixture: &TranscriptionResultsFixture,
+    ) {
+        let filtered = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                global_filter: Some("alpha".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(filtered.total, 1);
+        assert_eq!(filtered.rows[0].source_id, fixture.completed_source_id);
+        assert_eq!(filtered.rows[0].completion_time_seconds, Some(5));
+        assert_eq!(filtered.rows[0].instance_id, Some(fixture.instance_id));
+        assert_eq!(
+            filtered.rows[0].instance_name.as_deref(),
+            Some("result-list-gpu")
+        );
+
+        let terminal = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                column_filters: vec![TranscriptionResultColumnFilter {
+                    id: "status".to_string(),
+                    value: serde_json::json!("terminal"),
+                }],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(terminal.total, 1);
+        assert_eq!(terminal.rows[0].source_id, fixture.terminal_source_id);
+        assert_eq!(
+            terminal.rows[0].error.as_deref(),
+            Some("transcription failed")
+        );
+        assert_eq!(
+            terminal.rows[0].instance_name.as_deref(),
+            Some("result-list-gpu")
+        );
+
+        let localized_status = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                column_filters: vec![TranscriptionResultColumnFilter {
+                    id: "status".to_string(),
+                    value: serde_json::json!("Завершено"),
+                }],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(localized_status.total, 1);
+        assert_eq!(
+            localized_status.rows[0].source_id,
+            fixture.completed_source_id
+        );
+
+        let completion_time = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                column_filters: vec![TranscriptionResultColumnFilter {
+                    id: "completion_time_seconds".to_string(),
+                    value: serde_json::json!("00:00:05"),
+                }],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(completion_time.total, 1);
+        assert_eq!(
+            completion_time.rows[0].source_id,
+            fixture.completed_source_id
+        );
+
+        let pending_created_at = (fixture.now - chrono::Duration::seconds(10))
+            .and_utc()
+            .with_timezone(&chrono_tz::Europe::Kyiv)
+            .format("%d.%m.%Y, %H:%M:%S")
+            .to_string();
+        let created_at = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                column_filters: vec![TranscriptionResultColumnFilter {
+                    id: "created_at".to_string(),
+                    value: serde_json::json!(pending_created_at),
+                }],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(created_at.total, 1);
+        assert_eq!(created_at.rows[0].source_id, fixture.pending_source_id);
+
+        let invalid_filter = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                column_filters: vec![TranscriptionResultColumnFilter {
+                    id: "unknown".to_string(),
+                    value: serde_json::json!("value"),
+                }],
+                ..Default::default()
+            },
+        )
+        .await;
+        assert!(matches!(invalid_filter, Err(AppError::BL { .. })));
+    }
+
+    async fn assert_transcription_result_cursors(
+        env: &Env,
+        fixture: &TranscriptionResultsFixture,
+    ) {
+        let first = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                limit: Some(1),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(first.rows[0].source_id, fixture.pending_source_id);
+        assert_eq!(first.rows[0].started_transcription_at, None);
+        let first_cursor = first.next_cursor.unwrap();
+
+        let inserted_source_id = Uuid::now_v7();
+        insert_transcription_result(
+            env,
+            TranscriptionResultSeed {
+                source_id: inserted_source_id,
+                state: "queued",
+                created_at: fixture.now,
+                started_at: None,
+                finished_at: None,
+                selected_instance_id: None,
+                actual_instance_id: None,
+                value: None,
+                error: None,
+            },
+        )
+        .await;
+        let second = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                limit: Some(1),
+                after: Some(first_cursor),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(second.rows[0].source_id, fixture.terminal_source_id);
+        assert_eq!(second.total, 4);
+
+        let previous = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                limit: Some(1),
+                before: second.previous_cursor,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(previous.rows[0].source_id, fixture.pending_source_id);
+
+        let last = query_transcription_results(
+            &env.dbx,
+            &TranscriptionResultListReq {
+                limit: Some(1),
+                last_page: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(last.rows[0].source_id, fixture.completed_source_id);
+        assert!(!last.has_more);
+    }
+
+    async fn assert_transcription_start_reconciliation(
+        env: &Env,
+        fixture: &TranscriptionResultsFixture,
+    ) {
+        fn assert_started_at(
+            actual: Option<chrono::NaiveDateTime>,
+            expected: chrono::NaiveDateTime,
+        ) {
+            assert_eq!(
+                actual.map(|value| value.and_utc().timestamp_micros()),
+                Some(expected.and_utc().timestamp_micros())
+            );
+        }
+
+        let reset_at = fixture.now + chrono::Duration::seconds(1);
+        let queue = transition_transcription_result(
+            env,
+            fixture.completed_source_id,
+            "queued",
+            reset_at,
+        )
+        .await;
+        assert_eq!(queue.started_transcription_at, None);
+        let started_at = fixture.now + chrono::Duration::seconds(2);
+        let queue = transition_transcription_result(
+            env,
+            fixture.completed_source_id,
+            "processing",
+            started_at,
+        )
+        .await;
+        assert_started_at(queue.started_transcription_at, started_at);
+        let queue = transition_transcription_result(
+            env,
+            fixture.completed_source_id,
+            "retrying",
+            fixture.now + chrono::Duration::seconds(3),
+        )
+        .await;
+        assert_started_at(queue.started_transcription_at, started_at);
+        let queue = transition_transcription_result(
+            env,
+            fixture.completed_source_id,
+            "processing",
+            fixture.now + chrono::Duration::seconds(4),
+        )
+        .await;
+        assert_started_at(queue.started_transcription_at, started_at);
+        transition_transcription_result(
+            env,
+            fixture.completed_source_id,
+            "terminal",
+            fixture.now + chrono::Duration::seconds(5),
+        )
+        .await;
+        let restarted_at = fixture.now + chrono::Duration::seconds(6);
+        let queue = transition_transcription_result(
+            env,
+            fixture.completed_source_id,
+            "processing",
+            restarted_at,
+        )
+        .await;
+        assert_started_at(queue.started_transcription_at, restarted_at);
+    }
+
+    #[tokio::test]
+    async fn result_listing_is_filtered_cursor_stable_and_reconciles_starts() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let fixture = seed_transcription_results(&env).await;
+        assert_transcription_result_filters(&env, &fixture).await;
+        assert_transcription_result_cursors(&env, &fixture).await;
+        assert_transcription_start_reconciliation(&env, &fixture).await;
     }
 
     #[tokio::test]

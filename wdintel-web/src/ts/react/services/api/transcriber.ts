@@ -1,3 +1,4 @@
+import { transformCamelToSnake } from '../../../snake-to-camel';
 import { postJson } from './client';
 
 export type TranscriberInstance = {
@@ -41,7 +42,6 @@ export type TranscriptionResult = {
   id: string;
   source_id: string;
   file_name: string | null;
-  content_type: string | null;
   created_at: number;
   started_transcription_at: number | null;
   completion_time_seconds: number | null;
@@ -56,6 +56,20 @@ export type TranscriptionResultList = {
   rows: TranscriptionResult[];
   total: number;
   has_more: boolean;
+  next_cursor: string | null;
+  previous_cursor: string | null;
+};
+
+export type TranscriptionResultQueryState = {
+  globalFilter: string;
+  columnFilters: Array<{ id: string; value: unknown }>;
+};
+
+export type TranscriptionResultListRequest = TranscriptionResultQueryState & {
+  limit: number;
+  after?: string;
+  before?: string;
+  lastPage?: boolean;
 };
 
 export async function listTranscriberInstances(): Promise<TranscriberInstance[]> {
@@ -87,12 +101,12 @@ export async function checkTranscriberInstance(id: string): Promise<TranscriberI
 }
 
 export async function listTranscriptionResults(
-  offset: number,
+  req: TranscriptionResultListRequest,
   options?: { signal?: AbortSignal },
 ): Promise<TranscriptionResultList> {
   return postJson<TranscriptionResultList>(
     '/api/admin/transcriber/results/list',
-    { offset, limit: 100 },
+    transformCamelToSnake(req),
     options,
   );
 }
