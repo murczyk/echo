@@ -326,6 +326,13 @@ function ResultsPageBody() {
         setPageRequest(nextPageRequest);
       } catch (nextError) {
         if (!abortController.signal.aborted) {
+          setRows([]);
+          setTotal(null);
+          setHasMore(false);
+          setNextCursor(null);
+          setPreviousCursor(null);
+          setPageIndex(0);
+          setPageRequest({});
           const message = `Помилка завантаження результатів транскрибації: ${errorMessage(nextError)}`;
           setError(message);
           notify({ severity: 'error', message });
