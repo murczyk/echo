@@ -143,7 +143,19 @@ afterEach(() => {
 });
 
 describe('AdminDeviceAnalyticsPage', () => {
-  it('loads tabs from the URL, canonicalizes invalid values, and preserves query/hash', async () => {
+  it('canonicalizes invalid and missing tabs during popstate even when general is already selected', async () => {
+    window.history.replaceState(null, '', '/admin/device-analytics?owner=1&tab=invalid#settings');
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
+    expect(window.location.href).toContain('?owner=1&tab=general#settings');
+
+    window.history.replaceState(null, '', '/admin/device-analytics?owner=1#settings');
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
+    expect(window.location.href).toContain('?owner=1&tab=general#settings');
+  });
+
+  it('loads a valid tab directly from the URL', async () => {
     act(() => root.unmount());
     window.history.replaceState(null, '', '/admin/device-analytics?owner=1&tab=tags#settings');
     root = createRoot(container);
@@ -152,11 +164,6 @@ describe('AdminDeviceAnalyticsPage', () => {
 
     expect(buttonWithText('Теги пристроїв')?.getAttribute('aria-selected')).toBe('true');
     expect(window.location.href).toContain('?owner=1&tab=tags#settings');
-
-    window.history.replaceState(null, '', '/admin/device-analytics?owner=1&tab=invalid#settings');
-    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
-    expect(window.location.href).toContain('?owner=1&tab=general#settings');
   });
 
   it('pushes a new URL only for a changed tab and restores it on popstate', async () => {

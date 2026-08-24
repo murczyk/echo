@@ -20,16 +20,21 @@ function writeTab(tab: DeviceAnalysisSettingsTab, replace = false) {
   );
 }
 
+function readCanonicalTab(): DeviceAnalysisSettingsTab {
+  const tab = readTab();
+  if (new URLSearchParams(window.location.search).get('tab') !== tab) writeTab(tab, true);
+  return tab;
+}
+
 export function AdminDeviceAnalyticsPage() {
   const [activeTab, setActiveTab] = useState<DeviceAnalysisSettingsTab>(readTab);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('tab') !== activeTab)
-      writeTab(activeTab, true);
-    const onPopState = () => setActiveTab(readTab());
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [activeTab]);
+    const syncTabFromUrl = () => setActiveTab(readCanonicalTab());
+    syncTabFromUrl();
+    window.addEventListener('popstate', syncTabFromUrl);
+    return () => window.removeEventListener('popstate', syncTabFromUrl);
+  }, []);
 
   const selectTab = (tab: DeviceAnalysisSettingsTab) => {
     if (tab === activeTab) return;

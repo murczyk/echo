@@ -670,8 +670,20 @@ function AdminGoiIntegrationsNeoPageBody() {
           busy={editorBusy}
           onClose={closeEditor}
           footer={
-            <Stack direction="row" spacing={1} justifyContent="flex-end">
-              <PowerButton variant="outlined" onClick={closeEditor} disabled={editorBusy}>
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={1}
+              useFlexGap
+              flexWrap="wrap"
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+              justifyContent="flex-end"
+            >
+              <PowerButton
+                variant="outlined"
+                onClick={closeEditor}
+                disabled={editorBusy}
+                sx={{ width: { xs: '100%', sm: 'auto' } }}
+              >
                 Скасувати
               </PowerButton>
               {form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
@@ -679,16 +691,27 @@ function AdminGoiIntegrationsNeoPageBody() {
                   variant="outlined"
                   onClick={handleCheckConnection}
                   disabled={editorBusy}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
                 >
                   Перевірити з'єднання
                 </PowerButton>
               ) : null}
               {form.id && form.integrationType === GOI_INTEGRATION_TYPE_FULL ? (
-                <PowerButton variant="outlined" onClick={handleSetupWorker} disabled={editorBusy}>
+                <PowerButton
+                  variant="outlined"
+                  onClick={handleSetupWorker}
+                  disabled={editorBusy}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
+                >
                   Налаштувати воркер
                 </PowerButton>
               ) : null}
-              <PowerButton variant="contained" onClick={handleSave} disabled={editorBusy}>
+              <PowerButton
+                variant="contained"
+                onClick={handleSave}
+                disabled={editorBusy}
+                sx={{ width: { xs: '100%', sm: 'auto' } }}
+              >
                 {form.id ? 'Зберегти' : 'Створити'}
               </PowerButton>
             </Stack>
