@@ -160,6 +160,7 @@ type Props = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -200,6 +201,7 @@ type AnalysisMessageCardItemProps = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -237,6 +239,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
   callsignInfoMap,
@@ -270,6 +273,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsOrder={tagsOrder}
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
+      messageTextPreviewLines={messageTextPreviewLines}
       searchText={searchText}
       onOpenPointsOnMap={onOpenPointsOnMap}
       onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
@@ -405,6 +409,7 @@ function AnalysisMessagesPaneComponent({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
   callsignInfoMap,
@@ -566,6 +571,7 @@ function AnalysisMessagesPaneComponent({
               tagsOrder={tagsOrder}
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
+              messageTextPreviewLines={messageTextPreviewLines}
               showCallsignAddForm={showCallsignAddForm}
               searchText={searchText}
               callsignInfoMap={callsignInfoMap}

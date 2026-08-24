@@ -1317,6 +1317,76 @@ describe('MessageCard', () => {
     ).toBeNull();
   });
 
+  it.each([
+    [40, false],
+    [41, true],
+  ] as const)(
+    'uses the configured forty-line boundary for %s source rows',
+    async (count, overflow) => {
+      const rows = Array.from({ length: count }, (_, index) => `Рядок ${index + 1}`);
+      const view = await renderCard({
+        msg: buildMessage({ text: rows.join('\n'), textMarked: [] }),
+        messageTextPreviewLines: 40,
+      });
+      rendered.push(view);
+
+      expect(view.container.textContent).toContain(`Рядок ${overflow ? 40 : count}`);
+      if (overflow) {
+        expect(
+          view.container.querySelector('button[aria-label="Показати текст повідомлення"]'),
+        ).not.toBeNull();
+        expect(view.container.textContent).not.toContain('Рядок 41');
+      } else {
+        expect(
+          view.container.querySelector('button[aria-label="Показати текст повідомлення"]'),
+        ).toBeNull();
+      }
+    },
+  );
+
+  it('does not truncate message text when preview is off', async () => {
+    const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
+    const view = await renderCard({
+      msg: buildMessage({ text: rows.join('\n'), textMarked: [] }),
+      messageTextPreviewLines: null,
+    });
+    rendered.push(view);
+
+    expect(view.container.textContent).toContain('Рядок 41');
+    expect(
+      view.container.querySelector('button[aria-label="Показати текст повідомлення"]'),
+    ).toBeNull();
+  });
+
+  it('resets expanded message text when the preview limit changes', async () => {
+    const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
+    const view = await renderCard({
+      msg: buildMessage({ text: rows.join('\n'), textMarked: [] }),
+      messageTextPreviewLines: 20,
+    });
+    rendered.push(view);
+
+    const showMoreButton = view.container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Показати текст повідомлення"]',
+    );
+    if (showMoreButton == null) throw new Error('Show more button not found');
+    await click(showMoreButton);
+    expect(view.container.textContent).toContain('Рядок 41');
+
+    await act(async () => {
+      view.root.render(
+        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+          <MessageCard {...view.props} messageTextPreviewLines={40} />
+        </AudioTranscriptionPreferencesProvider>,
+      );
+    });
+
+    expect(view.container.textContent).not.toContain('Рядок 41');
+    expect(
+      view.container.querySelector('button[aria-label="Показати текст повідомлення"]'),
+    ).not.toBeNull();
+  });
+
   it('renders the network label in the header as bold text', async () => {
     const view = await renderHeader();
     rendered.push(view);

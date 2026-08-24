@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20260824_090738_sigint_unit_change": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" },
+        { "table": "public.sigint_unit_change", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260822_105557_add_settlement_stats_index": {
       "changes": []
     },
@@ -17,6 +23,14 @@
       ]
     },
     "echo:m20260813_181612_add_duty_collapse_media_previews": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
+    "echo:m20260824_120000_add_message_text_preview_lines": {
       "changes": [
         {
           "table": "public.user_settings",

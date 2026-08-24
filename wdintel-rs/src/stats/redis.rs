@@ -1183,6 +1183,7 @@ impl GroupStatsRedis {
             timestamp + Duration::days(GROUP_STATS_REDIS_DETAIL_5MIN_TTL_DAYS),
         )
         .await
+        .context(h!())
     }
 
     pub async fn write_general_day(
@@ -1231,6 +1232,7 @@ impl GroupStatsRedis {
             timestamp + Duration::days(GROUP_STATS_REDIS_DAY_TTL_DAYS),
         )
         .await
+        .context(h!())
     }
 
     pub async fn replace_network_day(
@@ -1307,6 +1309,7 @@ impl GroupStatsRedis {
                 .collect(),
         )
         .await
+        .context(h!())
     }
 
     pub async fn read_general_days(

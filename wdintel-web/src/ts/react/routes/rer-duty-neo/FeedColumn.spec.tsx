@@ -25,12 +25,16 @@ vi.mock('./FeedKeywordsPanel', () => ({
 vi.mock('../shared/message-card/MessageCard', () => ({
   DutyMessageCard: (props: {
     id: number;
+    messageTextPreviewLines?: 20 | 40 | null;
     botTagAction?: { messageId: number; tagId: number } | null;
     onCopyEtalon?: () => void;
     onCopyLocation?: () => void;
     onEditDetails?: () => void;
   }) => (
-    <div data-testid="message-card">
+    <div
+      data-testid="message-card"
+      data-message-text-preview-lines={props.messageTextPreviewLines ?? 'off'}
+    >
       <span data-testid={`bot-action-${props.id}`}>{props.botTagAction?.messageId ?? ''}</span>
       {props.onCopyEtalon != null ? <span data-testid="copy-etalon">copy-etalon</span> : null}
       {props.onCopyLocation != null ? <span data-testid="copy-location">copy-location</span> : null}
@@ -173,6 +177,7 @@ function buildProps(): FeedColumnProps {
         profiles: {},
         featureStrictNetworks: false,
         tagsLayout: 'compact',
+        messageTextPreviewLines: 20,
         tagsMap: {},
         tagsOrder: [],
         botTagAction: null,
@@ -264,6 +269,44 @@ describe('FeedColumn', () => {
 
     expect(container.querySelector('[data-duty-feed-list]')).not.toBeNull();
     expect(container.querySelectorAll('[data-duty-message-id]')).toHaveLength(2);
+  });
+
+  it('updates mounted message cards when the preview limit changes', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.messageCard.messageTextPreviewLines = 20;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+    expect(
+      container
+        .querySelector('[data-testid="message-card"]')
+        ?.getAttribute('data-message-text-preview-lines'),
+    ).toBe('20');
+
+    for (const [value, renderedValue] of [
+      [40, '40'],
+      [null, 'off'],
+      [20, '20'],
+    ] as const) {
+      const updatedColumn = {
+        ...props.column,
+        messageCard: {
+          ...props.column.messageCard,
+          messageTextPreviewLines: value,
+        },
+      };
+      await act(async () => {
+        root.render(<FeedColumn column={updatedColumn} />);
+      });
+
+      expect(
+        container
+          .querySelector('[data-testid="message-card"]')
+          ?.getAttribute('data-message-text-preview-lines'),
+      ).toBe(renderedValue);
+    }
   });
 
   it('shows waterfall debug info after eight quick bell presses', async () => {

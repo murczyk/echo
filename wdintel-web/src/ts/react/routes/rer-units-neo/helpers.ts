@@ -134,6 +134,7 @@ export function buildUnitsListReq({
 }
 
 export const EMPTY_UNIT_FORM: UnitForm = {
+  name: null,
   other: '',
   teamOrCrew: '',
   section: '',
@@ -157,6 +158,7 @@ export const EMPTY_UNIT_FORM: UnitForm = {
 
 export function unitToForm(unit: Unit): UnitForm {
   return {
+    name: unit.name,
     other: unit.other ?? '',
     teamOrCrew: unit.teamOrCrew ?? '',
     section: unit.section ?? '',
@@ -181,6 +183,7 @@ export function unitToForm(unit: Unit): UnitForm {
 
 export function trimUnitForm(form: UnitForm): UnitForm {
   return {
+    name: form.name?.trim() ?? null,
     other: (form.other ?? '').trim(),
     teamOrCrew: (form.teamOrCrew ?? '').trim(),
     section: (form.section ?? '').trim(),
@@ -230,7 +233,7 @@ export function unitName(form: UnitForm): string {
 }
 
 export function isUnitFormValid(form: UnitForm): boolean {
-  return unitNameParts(form).length > 0;
+  return Boolean(form.name?.trim()) || unitNameParts(form).length > 0;
 }
 
 export function uniqueTrimmed(values: string[]): string[] {

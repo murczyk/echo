@@ -235,6 +235,8 @@ vi.mock('./SettingsDutySection', () => ({
     onTagsLayoutChange: (layout: 'full' | 'compact' | 'hidden') => void;
     onDisableAutoScrollChange: (value: boolean) => void;
     onAudioTranscriptionCollapsedChange: (value: boolean) => void;
+    messageTextPreviewLines: 20 | 40 | null;
+    onMessageTextPreviewLinesChange: (value: 20 | 40 | null) => void;
     showAudioTranscriptionSettings: boolean;
   }) => (
     <div>
@@ -249,12 +251,52 @@ vi.mock('./SettingsDutySection', () => ({
           change-duty-transcription
         </button>
       ) : null}
+      <section aria-label="Картка повідомлення">
+        <h3>Картка повідомлення</h3>
+        <button type="button">Повний</button>
+        <button type="button">Щільний</button>
+        <button type="button">Без тегів</button>
+        <span>Згортати перегляд довгих повідомлень:</span>
+        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(20)}>
+          20 рядків
+        </button>
+        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(40)}>
+          40 рядків
+        </button>
+        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(null)}>
+          Без скорочення
+        </button>
+        <span>Визначає, коли з’являється кнопка «Показати більше».</span>
+        <p>Спільні налаштування для Оперативного та Аналізу.</p>
+      </section>
     </div>
   ),
 }));
 
 vi.mock('./SettingsSharedTagsLayoutCard', () => ({
-  SettingsSharedTagsLayoutCard: () => <div />,
+  SettingsSharedTagsLayoutCard: (props: {
+    messageTextPreviewLines: 20 | 40 | null;
+    onMessageTextPreviewLinesChange: (value: 20 | 40 | null) => void;
+  }) => (
+    <section aria-label="Картка повідомлення">
+      <h3>Картка повідомлення</h3>
+      <button type="button">Повний</button>
+      <button type="button">Щільний</button>
+      <button type="button">Без тегів</button>
+      <span>Згортати перегляд довгих повідомлень:</span>
+      <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(20)}>
+        20 рядків
+      </button>
+      <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(40)}>
+        40 рядків
+      </button>
+      <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(null)}>
+        Без скорочення
+      </button>
+      <span>Визначає, коли з’являється кнопка «Показати більше».</span>
+      <p>Спільні налаштування для Оперативного та Аналізу.</p>
+    </section>
+  ),
 }));
 
 vi.mock('./SettingsMyOrganismSection', () => ({
@@ -311,6 +353,58 @@ describe('SettingsNeoPage', () => {
     container.remove();
   });
 
+  it.each(['duty', 'analysis'] as const)(
+    'renders the shared preview control inside the message-card settings for %s',
+    async (section) => {
+      await act(async () => {
+        root.render(<SettingsNeoPage section={section} />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const card = container.querySelector('[aria-label="Картка повідомлення"]');
+      expect(card).not.toBeNull();
+      expect(card?.querySelector('select')).toBeNull();
+      expect(card?.textContent).toContain('20 рядків');
+      expect(card?.textContent).toContain('40 рядків');
+      expect(card?.textContent).toContain('Без скорочення');
+      expect(card?.textContent).toContain('Повний');
+      expect(card?.textContent).toContain('Щільний');
+      expect(card?.textContent).toContain('Без тегів');
+      expect(card?.textContent).toContain('Згортати перегляд довгих повідомлень:');
+      expect(card?.textContent).toContain('Визначає, коли з’являється кнопка «Показати більше».');
+      expect(card?.textContent).toContain('Спільні налаштування для Оперативного та Аналізу.');
+
+      saveUserDutySettings.mockClear();
+      for (const [label, value] of [
+        ['20 рядків', 20],
+        ['40 рядків', 40],
+        ['Без скорочення', null],
+      ] as const) {
+        const button = Array.from(card?.querySelectorAll('button') ?? []).find(
+          (candidate) => candidate.textContent === label,
+        );
+        expect(button).toBeTruthy();
+        await act(async () => {
+          button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          await Promise.resolve();
+        });
+        expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+          tagsLayout: 'compact',
+          messageTextPreviewLines: value,
+          disableAutoScroll: false,
+          analysisMapInSidebar: false,
+          dutyAudioTranscriptionCollapsed: false,
+          analysisAudioTranscriptionCollapsed: false,
+          showAnalysisCallsignAddForm: false,
+          showClassicDuty: false,
+          showClassicAnalysis: false,
+          dutyCollapseMediaPreviews: true,
+        });
+      }
+    },
+  );
+
   it('drains queued duty saves after a transient failure', async () => {
     const firstSave = deferred<void>();
     const secondSave = deferred<void>();
@@ -357,6 +451,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      messageTextPreviewLines: 20,
     });
 
     await act(async () => {
@@ -399,6 +494,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -431,6 +527,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -463,6 +560,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      messageTextPreviewLines: 20,
     });
 
     saveUserDutySettings.mockClear();
@@ -492,6 +590,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      messageTextPreviewLines: 20,
     });
   });
 

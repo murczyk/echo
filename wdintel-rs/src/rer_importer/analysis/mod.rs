@@ -4483,6 +4483,17 @@ fn append_xlsx_omitted_count_token(
 async fn build_summary_table_report(
     data: &SummaryTableReportData,
 ) -> Result<Vec<u8>, AppError> {
+    let callsign_count = data
+        .summary_table
+        .rows
+        .iter()
+        .flat_map(|row| row.callsigns.iter())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let record_count =
+        data.summary_table.rows.len().saturating_add(callsign_count);
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     let SummaryTableReportData {
         description,
         summary_table,

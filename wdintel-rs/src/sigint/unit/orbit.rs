@@ -371,6 +371,7 @@ pub(crate) async fn reconcile_sigint_unit_orbit<C>(
 where
     C: ConnectionTrait,
 {
+    super::changelog::set_author(dbx, login).await.c(h!())?;
     let mut unit = sigint_unit::Entity::find_by_id(sigint_unit_id)
         .filter(sigint_unit::Column::Deleted.eq(false))
         .lock_exclusive()
@@ -452,6 +453,7 @@ where
             Err(AppError::BL { .. }) => return Ok(false),
             Err(err) => return Err(err),
         };
+    let update_name = super::unit_name_is_derived(unit);
     let mut hierarchy = owned_sigint_unit_hierarchy(unit);
     let mut updated = false;
     let other_level = crate::orbit::EchoEchelon::Other.index();
@@ -472,7 +474,7 @@ where
         }
     }
     if updated {
-        apply_owned_sigint_unit_hierarchy(unit, hierarchy);
+        apply_owned_sigint_unit_hierarchy(unit, hierarchy, update_name);
     }
     Ok(updated)
 }
@@ -511,6 +513,7 @@ fn owned_sigint_unit_hierarchy(unit: &sigint_unit::Model) -> [String; 14] {
 fn apply_owned_sigint_unit_hierarchy(
     unit: &mut sigint_unit::Model,
     hierarchy: [String; 14],
+    update_name: bool,
 ) {
     let [other, team_or_crew, section, squad, platoon, company, battalion, regiment, brigade, division, corps, army, military_district, army_region] =
         hierarchy;
@@ -528,7 +531,10 @@ fn apply_owned_sigint_unit_hierarchy(
     unit.army = army;
     unit.military_district = military_district;
     unit.army_region = army_region;
-    unit.name = super::unit_name_from_hierarchy(super::unit_hierarchy(unit));
+    if update_name {
+        unit.name =
+            super::unit_name_from_hierarchy(super::unit_hierarchy(unit));
+    }
 }
 
 fn set_active_hierarchy(
@@ -1090,6 +1096,7 @@ fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
         is_deduplicate_candidate: req.is_deduplicate_candidate,
         orbit_note: req.orbit_note.clone(),
         is_inconsistent: false,
+        updated_at: chrono::Utc::now().naive_utc(),
     }
 }
 
@@ -1150,6 +1157,9 @@ pub(super) async fn link_orbit_unit_for_login(
     orbit_unit_id: Uuid,
 ) -> Result<(), AppError> {
     let transaction = crate::orbit::acquire_import_lock(dbx).await.c(h!())?;
+    super::changelog::set_author(&transaction, login)
+        .await
+        .c(h!())?;
     let sigint_unit =
         find_available_sigint_unit(&transaction, sigint_unit_id).await?;
     let orbit_unit =
@@ -1237,6 +1247,9 @@ pub(super) async fn import_orbit_unit_for_login(
 ) -> Result<CreateUnitWithAutoNetworkRsp, AppError> {
     let transaction =
         crate::orbit::acquire_import_lock(&env.dbx).await.c(h!())?;
+    super::changelog::set_author(&transaction, login)
+        .await
+        .c(h!())?;
     let orbit_unit =
         find_available_orbit_unit(&transaction, orbit_unit_id).await?;
     if orbit_unit_has_active_sigint_link(&transaction, orbit_unit_id).await? {
@@ -2101,6 +2114,7 @@ where
     let [other, team_or_crew, section, squad, platoon, company, battalion, regiment, brigade, division, corps, army, military_district, army_region] =
         hierarchy;
     Ok(CreateUnitReq {
+        name: None,
         other,
         team_or_crew,
         section,
@@ -2541,6 +2555,7 @@ mod tests {
             .unwrap();
         }
         let unit_req = CreateUnitReq {
+            name: None,
             other: String::new(),
             team_or_crew: String::new(),
             section: String::new(),
@@ -3131,6 +3146,7 @@ mod tests {
         .unwrap();
 
         assert!(outcome.hierarchy_updated);
+        assert_eq!(outcome.unit.name, "SIGINT unit");
         assert_eq!(outcome.unit.other, "ORBIT other");
         assert!(outcome.unit.platoon.is_empty());
         assert_eq!(outcome.unit.company, "Existing company");
