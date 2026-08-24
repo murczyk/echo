@@ -536,15 +536,14 @@ where
         return Ok(false);
     }
 
-    has_any_copy_access_for_ids(
+    Ok(has_any_copy_access_for_ids(
         dbx,
         &parent_ids,
         allowed_groups,
         login_id,
         organism_logins,
     )
-    .await
-    .c(h!())
+    .await?)
 }
 
 async fn has_any_copy_access_for_ids<C>(
