@@ -15,6 +15,7 @@ type ShortStateFixtureOptions = {
         quantity: number;
         first_element_ts: number | null;
       }>;
+  signalGroups?: string[];
 };
 
 type ShortStateFixtureHandle = {
@@ -211,7 +212,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/user/sigint-groups') {
-      await fulfillJson(route, []);
+      await fulfillJson(route, options.signalGroups ?? []);
       return;
     }
 
@@ -221,7 +222,9 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/rer-importer/signal-group-batch') {
-      await fulfillJson(route, emptyDutySignalGroupBatchResponse());
+      await fulfillJson(route, {
+        data: (options.signalGroups ?? []).map((master_key) => ({ master_key, name: master_key })),
+      });
       return;
     }
 

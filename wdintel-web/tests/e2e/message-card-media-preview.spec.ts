@@ -44,6 +44,31 @@ async function expectDownloadAndFilename(page: Page, link: Locator, expectedFile
   expect(download.suggestedFilename()).toBe(expectedFilename);
 }
 
+async function expectPreviewCounter(dialog: Locator, value: string) {
+  const counter = dialog.locator(`[data-attachment-preview-counter="true"]:visible`, {
+    hasText: value,
+  });
+  await expect(counter).toHaveCount(1);
+  await expect(counter).toHaveText(value);
+}
+
+async function verifyFullscreenEscape(page: Page, dialog: Locator) {
+  const toggle = dialog.getByRole('button', {
+    name: /^(Повноекранний режим|Вийти з повноекранного режиму)$/,
+  });
+  const initialLabel = await toggle.getAttribute('aria-label');
+  const alternateLabel =
+    initialLabel === 'Повноекранний режим'
+      ? 'Вийти з повноекранного режиму'
+      : 'Повноекранний режим';
+  await toggle.click();
+  await expect(dialog.getByRole('button', { name: alternateLabel })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog.getByRole('button', { name: initialLabel ?? '' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+}
+
 test.describe('@smoke', () => {
   for (const host of ['duty', 'analysis'] as const) {
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
@@ -55,7 +80,7 @@ test.describe('@smoke', () => {
       await expect(
         imageDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       ).toBeVisible();
-      await expect(imageDialog.getByRole('link', { name: 'Завантажити' })).toBeVisible();
+      await expect(imageDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
       await imageDialog.getByRole('button', { name: 'Закрити' }).click();
 
       const videoDialog = await openVideoPreview(page);
@@ -64,7 +89,7 @@ test.describe('@smoke', () => {
       await expect(
         videoDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       ).toBeVisible();
-      await expect(videoDialog.getByRole('button', { name: 'Завантажити' })).toBeVisible();
+      await expect(videoDialog.getByRole('button', { name: 'Скачати' })).toBeVisible();
       await videoDialog.getByRole('button', { name: 'Закрити' }).click();
 
       const textDialog = await openTextPreview(page);
@@ -74,7 +99,7 @@ test.describe('@smoke', () => {
       await expect(
         textDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       ).toBeVisible();
-      await expect(textDialog.getByRole('link', { name: 'Завантажити' })).toBeVisible();
+      await expect(textDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
       await expect(textDialog.getByRole('button', { name: 'Повноекранний режим' })).toHaveCount(0);
       await textDialog.getByRole('button', { name: 'Закрити' }).click();
 
@@ -92,7 +117,7 @@ test.describe('@smoke', () => {
     await page.setViewportSize({ width: 375, height: 844 });
     await openMessageCardPreviewHost(page, 'duty');
 
-    const imageDialog = await openImagePreview(page);
+    let imageDialog = await openImagePreview(page);
     await expect(imageDialog).toBeVisible();
     await imageDialog.getByRole('button', { name: 'Закрити' }).click();
     await expect(imageDialog).toHaveCount(0);
@@ -100,19 +125,21 @@ test.describe('@smoke', () => {
 });
 
 test.describe('message card media preview contract', () => {
-  test('image previews preserve carousel order, info, download, and fullscreen escape', async ({
-    page,
-  }) => {
+  test('image previews preserve carousel order, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
-    const imageDialog = await openImagePreview(page);
-    await expect(imageDialog.getByText('1 / 2')).toBeVisible();
+    let imageDialog = await openImagePreview(page);
+    await expectPreviewCounter(imageDialog, '1 / 6');
 
     await imageDialog.getByRole('button', { name: 'Інформація' }).click();
     await expect(
-      page.getByText(MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1, { exact: true }),
+      page
+        .getByRole('dialog', { name: 'Інформація про вкладення' })
+        .getByText(MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1, { exact: true }),
     ).toBeVisible();
     await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toHaveCount(0);
+    await expect(imageDialog).toBeVisible();
 
     await expectPopupAndClose(
       page,
@@ -125,36 +152,24 @@ test.describe('message card media preview contract', () => {
 
     await expectDownloadAndFilename(
       page,
-      imageDialog.getByRole('link', { name: 'Завантажити' }),
+      imageDialog.getByRole('link', { name: 'Скачати' }),
       MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
     );
 
     await imageDialog.getByRole('button', { name: 'Наступне' }).click();
-    await expect(imageDialog.getByText('2 / 2')).toBeVisible();
+    await expectPreviewCounter(imageDialog, '2 / 6');
 
     await page.keyboard.press('ArrowLeft');
-    await expect(imageDialog.getByText('1 / 2')).toBeVisible();
+    await expectPreviewCounter(imageDialog, '1 / 6');
 
-    await imageDialog.getByRole('button', { name: 'Повноекранний режим' }).click();
-    await expect(imageDialog.getByRole('button', { name: 'Закрити' })).toHaveCount(0);
-
-    await page.keyboard.press('Escape');
-    await expect(imageDialog.getByRole('button', { name: 'Закрити' })).toBeVisible();
-    await expect(
-      imageDialog.getByRole('button', { name: 'Вийти з повноекранного режиму' }),
-    ).toHaveCount(0);
-
-    await page.keyboard.press('Escape');
-    await expect(imageDialog).toHaveCount(0);
+    await verifyFullscreenEscape(page, imageDialog);
   });
 
-  test('video previews preserve carousel controls, info, download, and fullscreen escape', async ({
-    page,
-  }) => {
+  test('video previews preserve carousel controls, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const videoDialog = await openVideoPreview(page);
-    await expect(videoDialog.getByText('1 / 2')).toBeVisible();
+    await expectPreviewCounter(videoDialog, '3 / 6');
     await expect(videoDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
     await expectPopupAndClose(
       page,
@@ -166,24 +181,17 @@ test.describe('message card media preview contract', () => {
     );
     await expectDownloadAndFilename(
       page,
-      videoDialog.getByRole('button', { name: 'Завантажити' }),
+      videoDialog.getByRole('button', { name: 'Скачати' }),
       MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1,
     );
 
     await videoDialog.getByRole('button', { name: 'Наступне' }).click();
-    await expect(videoDialog.getByText('2 / 2')).toBeVisible();
+    await expectPreviewCounter(videoDialog, '4 / 6');
 
     await page.keyboard.press('ArrowLeft');
-    await expect(videoDialog.getByText('1 / 2')).toBeVisible();
+    await expectPreviewCounter(videoDialog, '3 / 6');
 
-    await videoDialog.getByRole('button', { name: 'Повноекранний режим' }).click();
-    await expect(videoDialog.getByRole('button', { name: 'Закрити' })).toHaveCount(0);
-
-    await page.keyboard.press('Escape');
-    await expect(videoDialog.getByRole('button', { name: 'Закрити' })).toBeVisible();
-
-    await page.keyboard.press('Escape');
-    await expect(videoDialog).toHaveCount(0);
+    await verifyFullscreenEscape(page, videoDialog);
   });
 
   test('txt and markdown previews preserve source text, mixed carousel order, and normal escape close', async ({
@@ -192,7 +200,7 @@ test.describe('message card media preview contract', () => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const textDialog = await openTextPreview(page);
-    await expect(textDialog.getByText('1 / 2')).toBeVisible();
+    await expectPreviewCounter(textDialog, '5 / 6');
     await expect(page.getByText('E2E TXT preview line 1')).toBeVisible();
     await expect(textDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
     await expectPopupAndClose(
@@ -205,7 +213,7 @@ test.describe('message card media preview contract', () => {
     );
     await expectDownloadAndFilename(
       page,
-      textDialog.getByRole('link', { name: 'Завантажити' }),
+      textDialog.getByRole('link', { name: 'Скачати' }),
       MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text,
     );
     await expect(textDialog.getByRole('button', { name: 'Зменшити' })).toHaveCount(0);
@@ -214,7 +222,7 @@ test.describe('message card media preview contract', () => {
     await textDialog.getByRole('button', { name: 'Наступне' }).click();
 
     const markdownDialog = page.getByRole('dialog', { name: 'Перегляд документа' });
-    await expect(markdownDialog.getByText('2 / 2')).toBeVisible();
+    await expectPreviewCounter(markdownDialog, '6 / 6');
     await expect(
       markdownDialog.getByRole('heading', { name: 'E2E Markdown preview', level: 1 }),
     ).toBeVisible();
@@ -229,7 +237,7 @@ test.describe('message card media preview contract', () => {
     );
     await expectDownloadAndFilename(
       page,
-      markdownDialog.getByRole('link', { name: 'Завантажити' }),
+      markdownDialog.getByRole('link', { name: 'Скачати' }),
       MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown,
     );
 

@@ -17,6 +17,7 @@ import { CoordinateAttachmentPreviewRenderer } from '../renderers/CoordinateAtta
 import { DocumentAttachmentPreviewRenderer } from '../renderers/DocumentAttachmentPreviewRenderer';
 import { ImageAttachmentPreviewRenderer } from '../renderers/ImageAttachmentPreviewRenderer';
 import { VideoAttachmentPreviewRenderer } from '../renderers/VideoAttachmentPreviewRenderer';
+import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
 
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
@@ -26,29 +27,60 @@ function getPreviewKind(item: MessageCardPreviewItem) {
   return item.type === 'coordinate' ? 'coordinate-map' : item.type;
 }
 
+function getPreviewDialogLabel(previewKind: string) {
+  if (previewKind === 'image') return 'Перегляд зображення';
+  if (previewKind === 'video') return 'Перегляд відео';
+  if (previewKind === 'coordinate-map') return 'Перегляд координат';
+  return 'Перегляд документа';
+}
+
 export function MessageCardAttachmentPreviewDialog({
   item,
   navigation,
   onClose,
   isDownloadStarting = isDownloadIdle,
   onDownloadStart = allowDownloadStart,
+  imageEditing,
 }: {
   item: MessageCardPreviewItem;
   navigation: MessageCardPreviewNavigation;
   onClose: () => void;
+  imageEditing?: ImageEditingCapability;
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
+  const dialogLabel = getPreviewDialogLabel(previewKind);
   const [isFullscreen, setIsFullscreen] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [childOverlayOpen, setChildOverlayOpen] = useState(false);
+  const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
+  const [fullscreenEscapeHandled, setFullscreenEscapeHandled] = useState(false);
+  const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
+  const dialogIsFullscreen = isFullscreen && previewConfig.supportsFullscreen;
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (isEditing) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
+        if (childOverlayOpen) {
+          setDismissChildOverlay((value) => value + 1);
+          return;
+        }
+        if (
+          previewConfig.layout === 'media' &&
+          previewConfig.supportsFullscreen &&
+          !fullscreenEscapeHandled
+        ) {
+          setIsFullscreen((value) => !value);
+          setFullscreenEscapeHandled(true);
+          return;
+        }
         closeDialog();
         return;
       }
-      if (navigation.count <= 1 || shouldIgnoreArrowNavigation(event.target)) return;
+      if (childOverlayOpen || navigation.count <= 1 || shouldIgnoreArrowNavigation(event.target))
+        return;
 
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
@@ -63,15 +95,13 @@ export function MessageCardAttachmentPreviewDialog({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [navigation]);
+  }, [childOverlayOpen, fullscreenEscapeHandled, isEditing, navigation, previewConfig]);
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
     setIsFullscreen(true);
     onClose();
   };
-  const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
-  const dialogIsFullscreen = isFullscreen && previewConfig.supportsFullscreen;
   const paperSx: Record<string, unknown> = {
     display: 'flex',
     flexDirection: 'column',
@@ -85,7 +115,10 @@ export function MessageCardAttachmentPreviewDialog({
   const rendererProps = {
     navigation,
     isFullscreen: dialogIsFullscreen,
-    onFullscreenChange: setIsFullscreen,
+    onFullscreenChange: (value: boolean) => {
+      setFullscreenEscapeHandled(false);
+      setIsFullscreen(value);
+    },
     onClose: closeDialog,
     isDownloadStarting,
     onDownloadStart,
@@ -94,13 +127,15 @@ export function MessageCardAttachmentPreviewDialog({
   return (
     <Dialog
       open
-      onClose={closeDialog}
+      onClose={() => {
+        if (!isEditing) closeDialog();
+      }}
       maxWidth={false}
       fullScreen={dialogIsFullscreen}
       disableEscapeKeyDown={false}
       disableRestoreFocus={previewConfig.disableRestoreFocus}
       PaperProps={{
-        'aria-label': 'Перегляд вкладення',
+        'aria-label': dialogLabel,
         sx: {
           ...getAttachmentPreviewDialogPaperSx(dialogIsFullscreen),
           backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
@@ -112,9 +147,21 @@ export function MessageCardAttachmentPreviewDialog({
       }}
     >
       {item.type === 'image' ? (
-        <ImageAttachmentPreviewRenderer image={item.value} {...rendererProps} />
+        <ImageAttachmentPreviewRenderer
+          image={item.value}
+          imageEditing={imageEditing}
+          onEditModeChange={setIsEditing}
+          onChildOverlayChange={setChildOverlayOpen}
+          dismissChildOverlay={dismissChildOverlay}
+          {...rendererProps}
+        />
       ) : item.type === 'video' ? (
-        <VideoAttachmentPreviewRenderer video={item.value} {...rendererProps} />
+        <VideoAttachmentPreviewRenderer
+          video={item.value}
+          onChildOverlayChange={setChildOverlayOpen}
+          dismissChildOverlay={dismissChildOverlay}
+          {...rendererProps}
+        />
       ) : item.type === 'document' ? (
         <DocumentAttachmentPreviewRenderer document={item.value} {...rendererProps} />
       ) : (

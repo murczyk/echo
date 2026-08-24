@@ -186,6 +186,10 @@ export async function openMessageCardPreviewHost(
   await installMessageCardMediaPreviewHostFixture(page, host);
   await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
 
+  if (host === 'duty') {
+    await page.getByRole('button', { name: /^Показати .*фото/ }).click();
+  }
+
   await expect(
     page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text }),
   ).toBeVisible();

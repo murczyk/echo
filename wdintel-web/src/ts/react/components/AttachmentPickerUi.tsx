@@ -102,7 +102,7 @@ export function AttachmentDropzone({
   );
 }
 
-type PreviewUrl = { url: string };
+type PreviewUrl = { url: string; data: Blob };
 
 function isLocalBlob(data: unknown): data is Blob {
   return (
@@ -117,8 +117,6 @@ export function useLocalMediaPreviewUrls(files: AttachmentPreviewFile[]) {
   const urlsRef = useRef(new Map<string, PreviewUrl>());
   const failedRef = useRef(new Set<string>());
   const [, refresh] = useState(0);
-  const fileIdentity = files.map((file) => `${file.id}:${file.type}:${file.data}`).join('|');
-
   useEffect(() => {
     const currentIds = new Set(files.map((file) => file.id));
     for (const [id, preview] of urlsRef.current) {
@@ -131,20 +129,18 @@ export function useLocalMediaPreviewUrls(files: AttachmentPreviewFile[]) {
 
     for (const file of files) {
       const data = file.data;
-      if (
-        !mediaKind(file.type, file.name) ||
-        !isLocalBlob(data) ||
-        failedRef.current.has(file.id) ||
-        urlsRef.current.has(file.id)
-      ) {
-        continue;
-      }
-      urlsRef.current.set(file.id, { url: URL.createObjectURL(data) });
+      const existing = urlsRef.current.get(file.id);
+      if (!mediaKind(file.type, file.name) || !isLocalBlob(data)) continue;
+      if (failedRef.current.has(file.id) && existing?.data === data) continue;
+      if (existing?.data === data) continue;
+      failedRef.current.delete(file.id);
+      if (existing) URL.revokeObjectURL(existing.url);
+      urlsRef.current.set(file.id, { url: URL.createObjectURL(data), data });
     }
     refresh((value) => value + 1);
 
     return () => undefined;
-  }, [fileIdentity]);
+  }, [files]);
 
   useEffect(
     () => () => {

@@ -115,6 +115,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
     uppy.on('upload-pause', updateFiles);
     uppy.on('upload-retry', updateFiles);
     uppy.on('restriction-failed', handleRestrictionFailed);
+    uppy.on('state-update', updateFiles);
     return () => {
       uppy.off('file-added', updateFilesAndClearError);
       uppy.off('file-removed', updateFilesAndClearError);
@@ -125,6 +126,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       uppy.off('upload-pause', updateFiles);
       uppy.off('upload-retry', updateFiles);
       uppy.off('restriction-failed', handleRestrictionFailed);
+      uppy.off('state-update', updateFiles);
     };
   }, [uppy]);
 

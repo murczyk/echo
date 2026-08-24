@@ -1,0 +1,131 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  exportEditedImage: vi.fn(),
+  sourceImage: {
+    width: 200,
+    height: 100,
+    set: vi.fn(),
+    get: vi.fn(),
+  },
+  fromURL: vi.fn(),
+}));
+
+vi.mock('./image-editor-export', () => ({ exportEditedImage: mocks.exportEditedImage }));
+vi.mock('fabric', () => {
+  class Canvas {
+    width = 200;
+    height = 100;
+    viewportTransform = [1, 0, 0, 1, 0, 0];
+    upperCanvasEl = document.createElement('canvas');
+    setDimensions = vi.fn();
+    add = vi.fn();
+    on = vi.fn();
+    off = vi.fn();
+    dispose = vi.fn();
+    getActiveObject = vi.fn();
+    getObjects = vi.fn(() => [mocks.sourceImage]);
+    requestRenderAll = vi.fn();
+    setViewportTransform = vi.fn();
+    setZoom = vi.fn();
+    getZoom = vi.fn(() => 1);
+    toJSON = vi.fn(() => ({}));
+  }
+  return {
+    Canvas,
+    FabricImage: { fromURL: mocks.fromURL },
+    IText: class IText {},
+    Point: class Point {},
+  };
+});
+
+import { ImageEditor } from './ImageEditor';
+
+describe('ImageEditor initialization', () => {
+  const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:source');
+
+  afterEach(() => {
+    vi.clearAllMocks();
+    mocks.fromURL.mockResolvedValue(mocks.sourceImage);
+    document.body.replaceChildren();
+  });
+
+  it('sets the source reference so Apply works immediately after initialization', async () => {
+    mocks.fromURL.mockResolvedValue(mocks.sourceImage);
+    mocks.exportEditedImage.mockResolvedValue(
+      new File(['edited'], 'photo.png', { type: 'image/png' }),
+    );
+    const onApply = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    const resizeObserver = vi.fn();
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = resizeObserver;
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{
+            blob: new Blob(['source'], { type: 'image/jpeg' }),
+            fileName: 'photo.jpg',
+            mimeType: 'image/jpeg',
+          }}
+          onCancel={vi.fn()}
+          onApply={onApply}
+        />,
+      );
+    });
+
+    const apply = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Застосувати',
+    ) as HTMLButtonElement;
+    await vi.waitFor(() => expect(apply.disabled).toBe(false));
+    await act(async () => apply.click());
+    expect(mocks.exportEditedImage).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceImage: mocks.sourceImage }),
+    );
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ file: expect.any(File) }));
+
+    act(() => root.unmount());
+  });
+
+  it('keeps Apply disabled when Fabric cannot initialize the source image', async () => {
+    mocks.fromURL.mockRejectedValueOnce(new Error('Не вдалося декодувати зображення'));
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={vi.fn()}
+          onApply={vi.fn()}
+        />,
+      );
+    });
+
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('Не вдалося декодувати зображення'),
+    );
+    const apply = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Застосувати',
+    ) as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
+    expect(
+      (container.querySelector('button[aria-label="Лупа"]') as HTMLButtonElement).disabled,
+    ).toBe(true);
+    act(() => root.unmount());
+  });
+});

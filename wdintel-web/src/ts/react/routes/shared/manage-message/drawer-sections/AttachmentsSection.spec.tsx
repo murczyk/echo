@@ -36,7 +36,7 @@ async function renderSection(files: unknown[] = [], existingMedia: any[] = []) {
   return { container, root };
 }
 
-function pendingFile(id: string, name: string, type: string) {
+function pendingFile(id: string, name: string, type: string, meta: Record<string, string> = {}) {
   return {
     id,
     name,
@@ -44,6 +44,7 @@ function pendingFile(id: string, name: string, type: string) {
     size: 4,
     data: new Blob(['media'], { type }),
     progress: { percentage: 0, uploadStarted: null, uploadComplete: false },
+    meta,
   };
 }
 
@@ -132,6 +133,60 @@ describe('AttachmentsSection media previews', () => {
     act(() => root.unmount());
   });
 
+  it('refreshes a local preview when a same-ID file receives replacement data', async () => {
+    const file = pendingFile('image', 'photo.png', 'image/png');
+    const { root } = await renderSection([file]);
+    const replacement = { ...file, data: new Blob(['replacement'], { type: 'image/png' }) };
+
+    act(() => {
+      root.render(
+        <Form>
+          <AttachmentsSection
+            uppy={{} as never}
+            uppyFiles={[replacement] as never[]}
+            fileInputRef={{ current: null }}
+            handleFileSelect={vi.fn()}
+            handleDrop={vi.fn()}
+            handleDropzoneKeyDown={vi.fn()}
+            busy={false}
+          />
+        </Form>,
+      );
+    });
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:local');
+    act(() => root.unmount());
+  });
+
+  it('retries a failed local preview when replacement data keeps the same ID', async () => {
+    const file = pendingFile('image', 'photo.png', 'image/png');
+    const { container, root } = await renderSection([file]);
+    act(() => container.querySelector('img')?.dispatchEvent(new Event('error')));
+    expect(container.querySelector('img')).toBeNull();
+
+    const replacement = { ...file, data: new Blob(['replacement'], { type: 'image/png' }) };
+    await act(async () => {
+      root.render(
+        <Form>
+          <AttachmentsSection
+            uppy={{} as never}
+            uppyFiles={[replacement] as never[]}
+            fileInputRef={{ current: null }}
+            handleFileSelect={vi.fn()}
+            handleDrop={vi.fn()}
+            handleDropzoneKeyDown={vi.fn()}
+            busy={false}
+          />
+        </Form>,
+      );
+    });
+
+    expect(container.querySelector('img')).not.toBeNull();
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    act(() => root.unmount());
+  });
+
   it('renders previews for existing image and video media in edit mode', async () => {
     const existingMedia = [
       {
@@ -184,6 +239,44 @@ describe('AttachmentsSection media previews', () => {
       container.querySelector('button[aria-label="Більше дій для report.pdf"]'),
     ).not.toBeNull();
 
+    act(() => root.unmount());
+  });
+
+  it('anchors an existing-media replacement once at its original logical position', async () => {
+    const existingMedia = [
+      {
+        id: 'first',
+        fileName: 'first.png',
+        contentType: 'image/png',
+        sizeBytes: 1,
+        href: 'https://example.com/first.png',
+      },
+      {
+        id: 'middle',
+        fileName: 'middle.png',
+        contentType: 'image/png',
+        sizeBytes: 1,
+        href: 'https://example.com/middle.png',
+      },
+      {
+        id: 'last',
+        fileName: 'last.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1,
+        href: 'https://example.com/last.pdf',
+      },
+    ];
+    const replacement = pendingFile('replacement', 'middle-edited.png', 'image/png', {
+      replaces_media_id: 'middle',
+    });
+    const { container, root } = await renderSection([replacement], existingMedia);
+
+    const names = Array.from(container.querySelectorAll('p[title]')).map((node) =>
+      node.getAttribute('title'),
+    );
+    expect(names).toEqual(['first.png', 'middle-edited.png', 'last.pdf']);
+    expect(container.querySelectorAll('p[title="middle-edited.png"]')).toHaveLength(1);
+    expect(container.textContent).toContain('Вкладення (3)');
     act(() => root.unmount());
   });
 

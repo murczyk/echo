@@ -18,6 +18,9 @@ import {
 } from '../../message-card/MessageCardMedia';
 import { MessageCardAttachmentPreviewProvider } from '../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { MessageCardPreviewItem } from '../../message-card/attachment-preview/message-card-preview.types';
+import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
+import { replacePendingImageFile } from '../../image-editor/image-editor-upload';
+import { MAX_MESSAGE_ATTACHMENTS } from '../useMessageUppy';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import type { MessageFormData } from '../manage-message-drawer.schema';
 
@@ -81,7 +84,18 @@ export function AttachmentsSection({
 }: Props) {
   const { watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
-  const visibleMedia = existingMedia.filter((media) => !deletedMediaIds.includes(media.id));
+  const replacementByMediaId = useMemo(() => {
+    const replacements = new Map<string, UppyFile<any, any>>();
+    uppyFiles.forEach((file) => {
+      const mediaId = file.meta?.replaces_media_id;
+      if (typeof mediaId === 'string' && existingMedia.some((media) => media.id === mediaId))
+        replacements.set(mediaId, file);
+    });
+    return replacements;
+  }, [existingMedia, uppyFiles]);
+  const visibleMedia = existingMedia.filter(
+    (media) => !deletedMediaIds.includes(media.id) || replacementByMediaId.has(media.id),
+  );
 
   const sortedVisibleMedia = useMemo(() => {
     return [...visibleMedia].sort((a, b) => {
@@ -113,15 +127,21 @@ export function AttachmentsSection({
     });
   }, [uppyFiles]);
 
-  const previewFiles = uppyFiles.map((file) => ({
-    id: file.id,
-    name: file.name ?? '',
-    type: file.type,
-    size: file.size,
-    data: file.data,
-  }));
+  const previewFiles = useMemo(
+    () =>
+      uppyFiles.map((file) => ({
+        id: file.id,
+        name: file.name ?? '',
+        type: file.type,
+        size: file.size,
+        data: file.data,
+      })),
+    [uppyFiles],
+  );
   const { urls, failPreview } = useLocalMediaPreviewUrls(previewFiles);
-  const totalFiles = uppyFiles.length + visibleMedia.length;
+  const replacementFiles = [...replacementByMediaId.values()];
+  const totalFiles =
+    visibleMedia.length + uppyFiles.filter((file) => !replacementFiles.includes(file)).length;
 
   const [failedExistingMediaIds, setFailedExistingMediaIds] = useState<Set<string>>(
     () => new Set(),
@@ -131,6 +151,60 @@ export function AttachmentsSection({
   }, []);
 
   const [previewDialogIndex, setPreviewDialogIndex] = useState<number | null>(null);
+  const imageEditing = useMemo<ImageEditingCapability>(
+    () => ({
+      canEdit: (image) =>
+        !busy &&
+        ['image/jpeg', 'image/png', 'image/webp'].includes((image.contentType ?? '').toLowerCase()),
+      loadSource: async (image, signal) => {
+        const imageId = image.id ?? '';
+        const pending = uppy.getFile(imageId);
+        if (pending?.data instanceof Blob)
+          return {
+            blob: pending.data,
+            fileName: pending.name ?? image.fileName ?? 'image',
+            mimeType: pending.type ?? image.contentType ?? 'image/png',
+          };
+        const response = await fetch(image.href, { signal, credentials: 'same-origin' });
+        if (!response.ok) throw new Error('Не вдалося завантажити зображення для редагування');
+        const blob = await response.blob();
+        return {
+          blob,
+          fileName: image.fileName ?? 'image',
+          mimeType: image.contentType ?? blob.type ?? 'image/png',
+        };
+      },
+      applyReplacement: async (image, result) => {
+        const imageId = image.id ?? '';
+        if (!imageId) throw new Error('Не вдалося визначити вкладення для заміни');
+        const pending = uppy.getFile(imageId);
+        if (pending) {
+          replacePendingImageFile({ uppy, fileId: imageId, pending, replacement: result.file });
+          return;
+        }
+        if (visibleMedia.length - 1 + uppy.getFiles().length >= MAX_MESSAGE_ATTACHMENTS)
+          throw new Error(`Перевищено максимальну кількість вкладень (${MAX_MESSAGE_ATTACHMENTS})`);
+        try {
+          uppy.addFile({
+            name: result.file.name,
+            type: result.file.type,
+            data: result.file,
+            meta: { replaces_media_id: imageId },
+          });
+        } catch (cause) {
+          throw new Error(
+            cause instanceof Error
+              ? `Не вдалося додати заміну вкладення: ${cause.message}`
+              : 'Не вдалося додати заміну вкладення',
+          );
+        }
+        setValue('deleted_media_ids', Array.from(new Set([...deletedMediaIds, imageId])), {
+          shouldDirty: true,
+        });
+      },
+    }),
+    [busy, deletedMediaIds, setValue, uppy, visibleMedia.length],
+  );
 
   const previewAttachments = useMemo<MessageCardPreviewItem[]>(() => {
     const items: MessageCardPreviewItem[] = [];
@@ -146,6 +220,7 @@ export function AttachmentsSection({
       const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
       const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
       const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
+      if (replacementByMediaId.has(id)) continue;
       if (failedExistingMediaIds.has(id) || !href) continue;
       const kind = mediaKind(contentType, fileName ?? '');
       if (
@@ -249,7 +324,7 @@ export function AttachmentsSection({
     }
 
     return items;
-  }, [sortedUppyFiles, urls, sortedVisibleMedia, failedExistingMediaIds]);
+  }, [sortedUppyFiles, urls, sortedVisibleMedia, failedExistingMediaIds, replacementByMediaId]);
 
   const openPreviewForId = useCallback(
     (id: string) => {
@@ -289,6 +364,18 @@ export function AttachmentsSection({
     document.body.removeChild(a);
   }, []);
 
+  const removeReplacement = useCallback(
+    (file: UppyFile<any, any>, mediaId: string) => {
+      uppy.removeFile(file.id);
+      setValue(
+        'deleted_media_ids',
+        deletedMediaIds.filter((id) => id !== mediaId),
+        { shouldDirty: true },
+      );
+    },
+    [deletedMediaIds, setValue, uppy],
+  );
+
   return (
     <FormSectionWrapper title={`Вкладення (${totalFiles})`}>
       <AttachmentDropzone
@@ -320,54 +407,71 @@ export function AttachmentsSection({
             const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
             const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
             const isFailed = failedExistingMediaIds.has(id);
+            const replacement = replacementByMediaId.get(id);
+            const preview = replacement ? urls.get(replacement.id) : undefined;
             return (
               <AttachmentFileRow
-                key={id}
+                key={replacement?.id ?? id}
                 file={{
-                  id,
-                  name: fileName,
-                  type: contentType,
-                  size: sizeBytes,
+                  id: replacement?.id ?? id,
+                  name: replacement?.name ?? fileName,
+                  type: replacement?.type ?? contentType,
+                  size: replacement?.size ?? sizeBytes,
                 }}
                 busy={busy}
                 onRemove={() =>
-                  setValue('deleted_media_ids', [...deletedMediaIds, id], {
-                    shouldDirty: true,
-                  })
+                  replacement
+                    ? removeReplacement(replacement, id)
+                    : setValue('deleted_media_ids', Array.from(new Set([...deletedMediaIds, id])), {
+                        shouldDirty: true,
+                      })
                 }
                 onDownload={() =>
-                  downloadExistingMedia({ ...media, id, fileName, contentType, href: href ?? '' })
+                  replacement
+                    ? downloadUppyFile(replacement)
+                    : downloadExistingMedia({
+                        ...media,
+                        id,
+                        fileName,
+                        contentType,
+                        href: href ?? '',
+                      })
                 }
-                previewUrl={!isFailed && href ? href : undefined}
-                onPreviewError={() => failExistingMedia(id)}
-                onPreviewClick={() => openPreviewForId(id)}
+                previewUrl={replacement ? preview?.url : !isFailed && href ? href : undefined}
+                onPreviewError={() =>
+                  replacement ? failPreview(replacement.id) : failExistingMedia(id)
+                }
+                onPreviewClick={() => openPreviewForId(replacement?.id ?? id)}
+                upload={replacement ? fileUploadPresentation(replacement, busy) : undefined}
               />
             );
           })}
 
-          {sortedUppyFiles.map((file) => {
-            const previewFile = {
-              id: file.id,
-              name: file.name ?? '',
-              type: file.type,
-              size: file.size,
-              data: file.data,
-            };
-            const preview = urls.get(file.id);
-            return (
-              <AttachmentFileRow
-                key={file.id}
-                file={previewFile}
-                busy={busy}
-                onRemove={() => uppy.removeFile(file.id)}
-                onDownload={() => downloadUppyFile(file)}
-                previewUrl={preview?.url}
-                onPreviewError={() => failPreview(file.id)}
-                onPreviewClick={() => openPreviewForId(file.id)}
-                upload={fileUploadPresentation(file, busy)}
-              />
-            );
-          })}
+          {sortedUppyFiles
+            .filter((file) => !replacementFiles.includes(file))
+            .map((file) => {
+              const previewFile = {
+                id: file.id,
+                name: file.name ?? '',
+                type: file.type,
+                size: file.size,
+                data: file.data,
+              };
+              const preview = urls.get(file.id);
+              return (
+                <AttachmentFileRow
+                  key={file.id}
+                  file={previewFile}
+                  busy={busy}
+                  onRemove={() => uppy.removeFile(file.id)}
+                  onDownload={() => downloadUppyFile(file)}
+                  previewUrl={preview?.url}
+                  onPreviewError={() => failPreview(file.id)}
+                  onPreviewClick={() => openPreviewForId(file.id)}
+                  upload={fileUploadPresentation(file, busy)}
+                />
+              );
+            })}
         </Box>
       ) : null}
 
@@ -376,6 +480,7 @@ export function AttachmentsSection({
           attachments={previewAttachments}
           initialIndex={previewDialogIndex}
           onClose={() => setPreviewDialogIndex(null)}
+          imageEditing={imageEditing}
         />
       ) : null}
     </FormSectionWrapper>

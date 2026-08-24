@@ -1,8 +1,10 @@
 import type { PointerEvent as ReactPointerEvent, SyntheticEvent } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import EditIcon from '@mui/icons-material/Edit';
 import {
   Box,
+  Alert,
   CircularProgress,
   Divider,
   IconButton,
@@ -54,6 +56,16 @@ import {
   MediaReprocessAction,
 } from '../attachment-preview/MediaReprocessAction';
 import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
+import type {
+  ImageEditingCapability,
+  ImageEditorSource,
+} from '../../image-editor/image-editor.types';
+
+const ImageEditor = lazy(() =>
+  import('../../image-editor/ImageEditor').then(({ ImageEditor: Component }) => ({
+    default: Component,
+  })),
+);
 
 type StageSize = {
   width: number;
@@ -222,12 +234,20 @@ export function ImageAttachmentPreviewRenderer({
   onFullscreenChange,
   isDownloadStarting,
   onDownloadStart,
+  imageEditing,
+  onEditModeChange,
+  onChildOverlayChange,
+  dismissChildOverlay,
 }: {
   image: MessageCardImage;
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
   isFullscreen: boolean;
   onFullscreenChange: (isFullscreen: boolean) => void;
+  imageEditing?: ImageEditingCapability;
+  onEditModeChange?: (editing: boolean) => void;
+  onChildOverlayChange?: (open: boolean) => void;
+  dismissChildOverlay?: number;
 } & MessageCardDownloadGuardProps) {
   const resolvedIndex = navigation.index;
   const currentImage = image;
@@ -238,6 +258,14 @@ export function ImageAttachmentPreviewRenderer({
   const [loadedImageKey, setLoadedImageKey] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   const [zoom, setZoom] = useState(ZOOM_MIN);
+  const [editorSource, setEditorSource] = useState<ImageEditorSource | null>(null);
+  const [editorError, setEditorError] = useState<string | null>(null);
+  const [editorLoading, setEditorLoading] = useState(false);
+
+  useEffect(() => {
+    onEditModeChange?.(editorSource !== null);
+    return () => onEditModeChange?.(false);
+  }, [editorSource, onEditModeChange]);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
@@ -259,7 +287,12 @@ export function ImageAttachmentPreviewRenderer({
     move: (event: PointerEvent) => void;
     end: (event: PointerEvent) => void;
   } | null>(null);
+  const editorAbortRef = useRef<AbortController | null>(null);
   const infoOpen = infoAnchorEl !== null;
+  useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
+  useEffect(() => {
+    if (dismissChildOverlay) setInfoAnchorEl(null);
+  }, [dismissChildOverlay]);
   const previewFileName = useMemo(
     () => derivePreviewFileName(currentImage, resolvedIndex),
     [currentImage, resolvedIndex],
@@ -550,6 +583,27 @@ export function ImageAttachmentPreviewRenderer({
     changeFullscreen(!dialogIsFullscreen);
   };
 
+  const openEditor = async () => {
+    if (imageEditing == null || !imageEditing.canEdit(currentImage) || editorLoading) return;
+    editorAbortRef.current?.abort();
+    const controller = new AbortController();
+    editorAbortRef.current = controller;
+    setEditorError(null);
+    setEditorLoading(true);
+    try {
+      const source = await imageEditing.loadSource(currentImage, controller.signal);
+      if (controller.signal.aborted) return;
+      setEditorSource(source);
+    } catch (cause) {
+      if (controller.signal.aborted) return;
+      setEditorError(cause instanceof Error ? cause.message : 'Не вдалося завантажити зображення');
+    } finally {
+      if (editorAbortRef.current === controller) setEditorLoading(false);
+    }
+  };
+
+  useEffect(() => () => editorAbortRef.current?.abort(), []);
+
   const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
     setOcrStatus(nextOcr);
     setOcrVisible(true);
@@ -607,6 +661,23 @@ export function ImageAttachmentPreviewRenderer({
       // Ignore pointer-capture teardown failures.
     }
   };
+
+  if (editorSource !== null) {
+    return (
+      <Suspense
+        fallback={<CircularProgress className="m-auto" aria-label="Завантаження редактора" />}
+      >
+        <ImageEditor
+          source={editorSource}
+          onCancel={() => setEditorSource(null)}
+          onApply={async (result) => {
+            await imageEditing?.applyReplacement(currentImage, result);
+            setEditorSource(null);
+          }}
+        />
+      </Suspense>
+    );
+  }
 
   const fileSize = currentImage.sizeBytes;
   const sourceStage = (
@@ -694,6 +765,24 @@ export function ImageAttachmentPreviewRenderer({
             }
             onCopy={handleCopyImage}
           />
+          {imageEditing?.canEdit(currentImage) ? (
+            <Tooltip title="Редагувати зображення" enterDelay={300}>
+              <span>
+                <IconButton
+                  aria-label="Редагувати зображення"
+                  size="small"
+                  onClick={() => void openEditor()}
+                  disabled={editorLoading}
+                >
+                  {editorLoading ? (
+                    <CircularProgress size={16} color="inherit" />
+                  ) : (
+                    <EditIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : null}
         </>
       }
       overflowAction={
@@ -711,7 +800,10 @@ export function ImageAttachmentPreviewRenderer({
         />
       }
       status={<ImageCopyStatus status={copyStatus} />}
-      onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+      onInfoClick={(event) => {
+        setInfoAnchorEl(event.currentTarget);
+        onChildOverlayChange?.(true);
+      }}
       infoSeverity={getOcrInfoSeverity(ocrStatus)}
       isFullscreen={dialogIsFullscreen}
       canFullscreen={canFullscreen}
@@ -726,7 +818,10 @@ export function ImageAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewInfoPopover
       open={infoOpen}
       anchorEl={infoAnchorEl}
-      onClose={() => setInfoAnchorEl(null)}
+      onClose={() => {
+        setInfoAnchorEl(null);
+        onChildOverlayChange?.(false);
+      }}
       fields={[
         { label: 'URL', value: currentImage.href || '—' },
         { label: 'Файл', value: previewFileName },
@@ -746,7 +841,18 @@ export function ImageAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewLayout
       isFullscreen={dialogIsFullscreen}
       config={previewConfig}
-      stage={stage}
+      stage={
+        editorError ? (
+          <>
+            <Alert severity="error" className="m-2">
+              {editorError}
+            </Alert>
+            {stage}
+          </>
+        ) : (
+          stage
+        )
+      }
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
