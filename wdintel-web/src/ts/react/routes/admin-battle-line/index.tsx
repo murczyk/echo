@@ -25,6 +25,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
+  BattleLineNetworksRsp,
   BattleLineSettlementCandidate,
   BattleLineState,
   BattleLineTestRsp,
@@ -32,6 +33,7 @@ import type {
   BattleLineUnresolvedLocationsRsp,
 } from '../../../../Bindings';
 import {
+  fetchBattleLineNetworks,
   fetchBattleLineState,
   fetchBattleLineUnlinkedInbox,
   fetchBattleLineUnresolvedLocations,
@@ -43,14 +45,15 @@ import { MessageCard } from '../shared/message-card/MessageCard';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { BattleLineMap } from './BattleLineMap';
+import { NetworkUnitMap } from './NetworkUnitMap';
 
-export type BattleLineTab = 'lbz' | 'unlinked' | 'unresolved';
+export type BattleLineTab = 'lbz' | 'networks' | 'unlinked' | 'unresolved';
 
 const DEFAULT_BATTLE_LINE_TAB: BattleLineTab = 'lbz';
 
 function readBattleLineTab(location = window.location): BattleLineTab {
   const tab = new URLSearchParams(location.search).get('tab');
-  return tab === 'unlinked' || tab === 'unresolved' || tab === 'lbz'
+  return tab === 'networks' || tab === 'unlinked' || tab === 'unresolved' || tab === 'lbz'
     ? tab
     : DEFAULT_BATTLE_LINE_TAB;
 }
@@ -445,6 +448,50 @@ function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
   );
 }
 
+function NetworksTab({ onError }: { onError: (message: string) => void }) {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<BattleLineNetworksRsp | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const controller = new AbortController();
+    setData(null);
+    setLoading(true);
+    fetchBattleLineNetworks({ page }, { signal: controller.signal })
+      .then(setData)
+      .catch((loadError) => {
+        if (!controller.signal.aborted) onError(toErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [onError, page]);
+  if (loading) {
+    return (
+      <Stack spacing={1.5} aria-label="Завантаження мереж">
+        {Array.from({ length: 5 }, (_, index) => (
+          <Skeleton key={index} variant="rounded" height={310} />
+        ))}
+      </Stack>
+    );
+  }
+  if (!data) return null;
+  return (
+    <Stack spacing={2}>
+      {data.items.length === 0 ? (
+        <Alert severity="info">Активних підрозділів немає</Alert>
+      ) : (
+        data.items.map((item) => <NetworkUnitMap key={item.unitId} item={item} />)
+      )}
+      <Pagination
+        page={page}
+        count={Math.max(1, Math.ceil(data.total / data.pageSize))}
+        onChange={(_, value) => setPage(value)}
+      />
+    </Stack>
+  );
+}
+
 export function AdminBattleLinePage() {
   const [tab, setTab] = useState<BattleLineTab>(readBattleLineTab);
   const [state, setState] = useState<BattleLineState | null>(null);
@@ -492,6 +539,7 @@ export function AdminBattleLinePage() {
         variant="scrollable"
       >
         <Tab value="lbz" label="ЛБЗ" />
+        <Tab value="networks" label="Мережі" />
         <Tab value="unlinked" label="ПЕРЕХОПЛЕННЯ БЕЗ НП" />
         <Tab value="unresolved" label="НЕВИЗНАЧЕНІ ЛОКАЦІЇ" />
       </Tabs>
@@ -513,6 +561,7 @@ export function AdminBattleLinePage() {
         ) : null}
         {tab === 'unlinked' ? <UnlinkedTab onError={setError} /> : null}
         {tab === 'unresolved' ? <UnresolvedTab onError={setError} /> : null}
+        {tab === 'networks' ? <NetworksTab onError={setError} /> : null}
       </Box>
       <Snackbar open={error != null} autoHideDuration={8000} onClose={() => setError(null)}>
         <Alert severity="error" onClose={() => setError(null)}>

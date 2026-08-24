@@ -1291,6 +1291,24 @@ export type BattleLineUnresolvedLocationsRsp = {
   pageSize: number;
 };
 
+export type BattleLineNetworkMapPoint = {
+  lat: number;
+  lon: number;
+};
+
+export type BattleLineNetworkUnitMap = {
+  unitId: number;
+  unitName: string;
+  settlementPoints: Array<BattleLineNetworkMapPoint>;
+  pelengPoints: Array<BattleLineNetworkMapPoint>;
+};
+
+export type BattleLineNetworksRsp = {
+  items: Array<BattleLineNetworkUnitMap>;
+  total: number;
+  pageSize: number;
+};
+
 export type MessageIdsReq = {
   messageIds: Array<number>;
   inboxReq: InboxMessagesReq | null;

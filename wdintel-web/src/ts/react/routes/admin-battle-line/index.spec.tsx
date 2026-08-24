@@ -10,6 +10,7 @@ import { minimalInboxMessage } from '../rer-duty-neo/inbox-message-mocks';
 import { AdminBattleLinePage } from './index';
 
 const api = vi.hoisted(() => ({
+  fetchBattleLineNetworks: vi.fn(),
   fetchBattleLineState: vi.fn(),
   fetchBattleLineUnlinkedInbox: vi.fn(),
   fetchBattleLineUnresolvedLocations: vi.fn(),
@@ -30,6 +31,11 @@ vi.mock('./BattleLineMap', () => ({
     <div data-testid="battle-line-map">
       {selectedSettlements.map((settlement) => settlement.label).join(', ')}
     </div>
+  ),
+}));
+vi.mock('./NetworkUnitMap', () => ({
+  NetworkUnitMap: ({ item }: { item: { unitId: number; unitName: string } }) => (
+    <div data-testid={`network-unit-${item.unitId}`}>{item.unitName}</div>
   ),
 }));
 
@@ -118,6 +124,18 @@ beforeEach(() => {
     total: 11,
     pageSize: 10,
   });
+  api.fetchBattleLineNetworks.mockResolvedValue({
+    items: [
+      {
+        unitId: 17,
+        unitName: '17 підрозділ',
+        settlementPoints: [{ lat: 48.1, lon: 35.2 }],
+        pelengPoints: [{ lat: 48.3, lon: 35.4 }],
+      },
+    ],
+    total: 6,
+    pageSize: 5,
+  });
 });
 
 afterEach(() => {
@@ -175,6 +193,26 @@ describe('AdminBattleLinePage', () => {
     await act(async () => button('2').click());
     await vi.waitFor(() =>
       expect(api.fetchBattleLineUnresolvedLocations).toHaveBeenLastCalledWith(
+        { page: 2 },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+  });
+
+  it('loads live unit network maps five at a time', async () => {
+    await renderPage();
+
+    await act(async () => button('Мережі').click());
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="network-unit-17"]')).not.toBeNull(),
+    );
+    expect(api.fetchBattleLineNetworks).toHaveBeenCalledWith(
+      { page: 1 },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    await act(async () => button('2').click());
+    await vi.waitFor(() =>
+      expect(api.fetchBattleLineNetworks).toHaveBeenLastCalledWith(
         { page: 2 },
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),

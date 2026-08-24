@@ -1232,6 +1232,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::battle_line::test_battle_line)
             .service(crate::battle_line::list_unlinked_inbox_items)
             .service(crate::battle_line::list_unresolved_locations)
+            .service(crate::battle_line::list_network_maps)
             .service(crate::sigint::etalonka::task::report_networks_task_launch)
             .service(crate::sigint::etalonka::task::report_networks_batch_id_task_launch)
             .service(crate::sigint::source::list_sources)
