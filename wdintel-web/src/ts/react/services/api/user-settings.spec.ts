@@ -35,7 +35,7 @@ describe('user-settings api', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
-      dutyCollapseMediaPreviews: false,
+      dutyCollapseMediaPreviews: true,
     });
   });
 

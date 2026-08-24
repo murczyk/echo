@@ -181,6 +181,8 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     setCallsignSectionMode: actions.setCallsignSectionMode,
     callsignStatusFilter: state.callsignStatusFilter,
     setCallsignStatusFilter: actions.setCallsignStatusFilter,
+    networkCallsignsPeriod: state.networkCallsignsPeriod,
+    setNetworkCallsignsPeriod: actions.setNetworkCallsignsPeriod,
     callsignInterceptedExpanded: state.callsignInterceptedExpanded,
     toggleCallsignInterceptedExpanded: actions.toggleCallsignInterceptedExpanded,
     networkCallsigns: state.networkCallsigns,

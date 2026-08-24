@@ -495,6 +495,7 @@ pub struct SingleNetworkCallsignsReq {
     pub network_id: i64,
     pub include_activity_info: Option<bool>,
     pub section: Option<SingleNetworkCallsignsSection>,
+    pub period: Option<NetworkFreqCallsignsPeriod>,
 }
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,

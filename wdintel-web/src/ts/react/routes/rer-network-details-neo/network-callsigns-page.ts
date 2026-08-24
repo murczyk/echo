@@ -20,6 +20,8 @@ export function buildCallsignPanelProps(page: Page) {
     onSectionModeChange: page.setCallsignSectionMode,
     statusFilter: page.callsignStatusFilter,
     onStatusFilterChange: page.setCallsignStatusFilter,
+    period: page.networkCallsignsPeriod,
+    onPeriodChange: page.setNetworkCallsignsPeriod,
     interceptedExpanded: page.callsignInterceptedExpanded,
     onToggleInterceptedExpanded: page.toggleCallsignInterceptedExpanded,
     onOpenCreateDrawer: page.openCallsignDrawerForCreate,

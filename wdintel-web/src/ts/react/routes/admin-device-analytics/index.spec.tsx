@@ -339,7 +339,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
-  // @test-scope safeguard: prevents an irreversible global reanalysis from being scheduled without confirmation
   it('requires confirmation before scheduling global reanalysis', async () => {
     await openDeviceTagsTab();
 

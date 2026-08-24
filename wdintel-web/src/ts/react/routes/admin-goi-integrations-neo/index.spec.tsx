@@ -181,7 +181,6 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope safeguard: prevents a GOI integration overflow action from deleting a record other than the selected ID
   it('deletes through the row overflow action', async () => {
     const { container, root } = await renderPage();
 

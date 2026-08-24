@@ -51,8 +51,9 @@ export function getBgtaskProgressFromPercent(
 export async function fetchBgtaskStatusAndLogs(
   taskId: number,
   skip: number,
+  options?: { signal?: AbortSignal },
 ): Promise<BgtaskStatusAndLogsRsp> {
-  const raw = await getJson<unknown>(`/api/bgtask/${taskId}/status-and-logs?skip=${skip}`);
+  const raw = await getJson<unknown>(`/api/bgtask/${taskId}/status-and-logs?skip=${skip}`, options);
   const rsp = transformSnakeToCamel<BgtaskStatusAndLogsRsp>(raw);
   return {
     ...rsp,

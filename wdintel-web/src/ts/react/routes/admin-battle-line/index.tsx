@@ -8,6 +8,7 @@ import {
   Pagination,
   Paper,
   Snackbar,
+  Skeleton,
   Stack,
   Tab,
   Table,
@@ -39,7 +40,30 @@ import {
 } from '../../services/api/battle-line';
 import { toErrorMessage } from '../rer-analysis-neo/use-analysis-data.shared';
 import { MessageCard } from '../shared/message-card/MessageCard';
+import { PageHeader } from '../../components/PageHeader';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { BattleLineMap } from './BattleLineMap';
+
+export type BattleLineTab = 'lbz' | 'unlinked' | 'unresolved';
+
+const DEFAULT_BATTLE_LINE_TAB: BattleLineTab = 'lbz';
+
+function readBattleLineTab(location = window.location): BattleLineTab {
+  const tab = new URLSearchParams(location.search).get('tab');
+  return tab === 'unlinked' || tab === 'unresolved' || tab === 'lbz'
+    ? tab
+    : DEFAULT_BATTLE_LINE_TAB;
+}
+
+function writeBattleLineTab(tab: BattleLineTab, replace = false) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', tab);
+  window.history[replace ? 'replaceState' : 'pushState'](
+    window.history.state,
+    '',
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
 
 function ReadOnlyMessage({ id, message }: { id: number; message: BattleLineTestRsp['message'] }) {
   return (
@@ -332,7 +356,14 @@ function UnlinkedTab({ onError }: { onError: (message: string) => void }) {
       });
     return () => controller.abort();
   }, [onError, page]);
-  if (loading) return <CircularProgress />;
+  if (loading) {
+    return (
+      <Stack spacing={1.5} aria-label="Завантаження перехоплень без НП">
+        <Skeleton variant="rounded" height={160} />
+        <Skeleton variant="rounded" height={160} />
+      </Stack>
+    );
+  }
   if (!data) return null;
   return (
     <Stack spacing={2}>
@@ -372,7 +403,15 @@ function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
       });
     return () => controller.abort();
   }, [onError, page]);
-  if (loading) return <CircularProgress />;
+  if (loading) {
+    return (
+      <Stack spacing={1.5} aria-label="Завантаження невизначених локацій">
+        <Skeleton variant="rounded" height={44} />
+        <Skeleton variant="rounded" height={44} />
+        <Skeleton variant="rounded" height={44} />
+      </Stack>
+    );
+  }
   if (!data) return null;
   return (
     <Stack spacing={2}>
@@ -407,7 +446,7 @@ function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
 }
 
 export function AdminBattleLinePage() {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState<BattleLineTab>(readBattleLineTab);
   const [state, setState] = useState<BattleLineState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -432,21 +471,37 @@ export function AdminBattleLinePage() {
       loadSerialRef.current += 1;
     };
   }, [reload]);
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested !== tab) writeBattleLineTab(tab, true);
+    const onPopState = () => setTab(readBattleLineTab());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [tab]);
+  const selectTab = (nextTab: BattleLineTab) => {
+    if (nextTab === tab) return;
+    writeBattleLineTab(nextTab);
+    setTab(nextTab);
+  };
   return (
     <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-      <Typography variant="h4">Карта</Typography>
-      <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable">
-        <Tab label="ЛБЗ" />
-        <Tab label="ПЕРЕХОПЛЕННЯ БЕЗ НП" />
-        <Tab label="НЕВИЗНАЧЕНІ ЛОКАЦІЇ" />
+      <PageHeader title="Карта" />
+      <Tabs
+        value={tab}
+        onChange={(_, value: BattleLineTab) => selectTab(value)}
+        variant="scrollable"
+      >
+        <Tab value="lbz" label="ЛБЗ" />
+        <Tab value="unlinked" label="ПЕРЕХОПЛЕННЯ БЕЗ НП" />
+        <Tab value="unresolved" label="НЕВИЗНАЧЕНІ ЛОКАЦІЇ" />
       </Tabs>
       <Divider />
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {tab === 0 ? (
+        {tab === 'lbz' ? (
           state ? (
             <LbzTab state={state} reload={reload} />
           ) : loading ? (
-            <CircularProgress />
+            <PageLoadingState />
           ) : (
             <Alert
               severity="error"
@@ -456,8 +511,8 @@ export function AdminBattleLinePage() {
             </Alert>
           )
         ) : null}
-        {tab === 1 ? <UnlinkedTab onError={setError} /> : null}
-        {tab === 2 ? <UnresolvedTab onError={setError} /> : null}
+        {tab === 'unlinked' ? <UnlinkedTab onError={setError} /> : null}
+        {tab === 'unresolved' ? <UnresolvedTab onError={setError} /> : null}
       </Box>
       <Snackbar open={error != null} autoHideDuration={8000} onClose={() => setError(null)}>
         <Alert severity="error" onClose={() => setError(null)}>

@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import type { AiEngineItem } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { deleteAiEngine, getAiEngine, listAiEngines } from '../../services/api/ai-engines';
 import { AiEngineDetails } from './AiEngineDetails';
@@ -177,7 +178,7 @@ export function AiEnginesSection({
   }
 
   if (loading && aiEngines.length === 0) {
-    return <CircularProgress />;
+    return <PageLoadingState />;
   }
 
   return (
