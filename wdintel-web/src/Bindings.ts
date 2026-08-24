@@ -3045,8 +3045,18 @@ export type UnitNameReview = {
   updatedAt: number;
 };
 
+export type UnitNameReviewCursor = {
+  updatedAtMicros: number;
+  sigintUnitId: number;
+};
+
+export type ListUnitNameReviewsReq = {
+  after: UnitNameReviewCursor | null;
+};
+
 export type ListUnitNameReviewsRsp = {
   units: Array<UnitNameReview>;
+  nextCursor: UnitNameReviewCursor | null;
 };
 
 export type UpdateUnitNameReq = {

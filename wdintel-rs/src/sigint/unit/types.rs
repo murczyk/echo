@@ -280,8 +280,24 @@ pub struct UnitNameReview {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnitNameReviewCursor {
+    pub updated_at_micros: i64,
+    pub sigint_unit_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListUnitNameReviewsReq {
+    pub after: Option<UnitNameReviewCursor>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct ListUnitNameReviewsRsp {
     pub units: Vec<UnitNameReview>,
+    pub next_cursor: Option<UnitNameReviewCursor>,
 }
 
 #[derive(

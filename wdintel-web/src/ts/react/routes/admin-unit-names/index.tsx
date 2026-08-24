@@ -7,6 +7,7 @@ import SyncAltIcon from '@mui/icons-material/SyncAlt';
 import {
   Box,
   Button,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -20,7 +21,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent, MouseEvent as ReactMouseEvent } from 'react';
 
-import type { UnitNameReview } from '../../../../Bindings';
+import type { UnitNameReview, UnitNameReviewCursor } from '../../../../Bindings';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import {
@@ -72,9 +73,17 @@ function sortReviews(units: UnitNameReview[]): UnitNameReview[] {
   );
 }
 
+function mergeReviews(current: UnitNameReview[], incoming: UnitNameReview[]): UnitNameReview[] {
+  const unitsById = new Map(current.map((unit) => [unit.sigintUnitId, unit]));
+  incoming.forEach((unit) => unitsById.set(unit.sigintUnitId, unit));
+  return sortReviews(Array.from(unitsById.values()));
+}
+
 export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUnitNamesPageProps) {
   const [units, setUnits] = useState<UnitNameReview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<UnitNameReviewCursor | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -83,21 +92,33 @@ export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUni
   const [editedName, setEditedName] = useState('');
   const canEdit = hasRole(authUserRoles, 'Rer') && hasRole(authUserRoles, 'UnitsEditor');
 
-  const loadUnits = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      setUnits(sortReviews(await getUnitNameReviews(signal ? { signal } : undefined)));
-    } catch (error) {
-      if (!signal?.aborted) setLoadError(formatUnitError(error));
-    } finally {
-      if (!signal?.aborted) setLoading(false);
-    }
-  }, []);
+  const loadUnits = useCallback(
+    async (after: UnitNameReviewCursor | null, signal?: AbortSignal) => {
+      const append = after !== null;
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      setLoadError(null);
+      try {
+        const page = await getUnitNameReviews({ after }, signal ? { signal } : undefined);
+        setUnits((current) =>
+          append ? mergeReviews(current, page.units) : sortReviews(page.units),
+        );
+        setNextCursor(page.nextCursor);
+      } catch (error) {
+        if (!signal?.aborted) setLoadError(formatUnitError(error));
+      } finally {
+        if (!signal?.aborted) {
+          if (append) setLoadingMore(false);
+          else setLoading(false);
+        }
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadUnits(controller.signal);
+    void loadUnits(null, controller.signal);
     return () => controller.abort();
   }, [loadUnits]);
 
@@ -309,7 +330,11 @@ export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUni
           trailingActionsAfterInternal={
             <Tooltip title="Оновити">
               <span>
-                <IconButton size="small" disabled={loading} onClick={() => void loadUnits()}>
+                <IconButton
+                  size="small"
+                  disabled={loading || loadingMore}
+                  onClick={() => void loadUnits(null)}
+                >
                   <RefreshIcon fontSize="small" />
                 </IconButton>
               </span>
@@ -329,6 +354,18 @@ export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUni
             tableContainerSx={{ maxHeight: '100%' }}
           />
         </Box>
+        {nextCursor ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="outlined"
+              disabled={loading || loadingMore}
+              startIcon={loadingMore ? <CircularProgress size={16} color="inherit" /> : null}
+              onClick={() => void loadUnits(nextCursor)}
+            >
+              {loadingMore ? 'Завантаження…' : 'Завантажити ще'}
+            </Button>
+          </Box>
+        ) : null}
       </Stack>
       <Dialog
         open={editingUnit !== null}

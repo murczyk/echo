@@ -7897,8 +7897,35 @@ unitNameReviewEncoder struct =
         ]
 
 
+type alias UnitNameReviewCursor =
+    { updatedAtMicros : Int
+    , sigintUnitId : Int
+    }
+
+
+unitNameReviewCursorEncoder : UnitNameReviewCursor -> Json.Encode.Value
+unitNameReviewCursorEncoder struct =
+    Json.Encode.object
+        [ ( "updated_at_micros", (Json.Encode.int) struct.updatedAtMicros )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
+type alias ListUnitNameReviewsReq =
+    { after : Maybe (UnitNameReviewCursor)
+    }
+
+
+listUnitNameReviewsReqEncoder : ListUnitNameReviewsReq -> Json.Encode.Value
+listUnitNameReviewsReqEncoder struct =
+    Json.Encode.object
+        [ ( "after", (Maybe.withDefault Json.Encode.null << Maybe.map (unitNameReviewCursorEncoder)) struct.after )
+        ]
+
+
 type alias ListUnitNameReviewsRsp =
     { units : List (UnitNameReview)
+    , nextCursor : Maybe (UnitNameReviewCursor)
     }
 
 
@@ -7906,6 +7933,7 @@ listUnitNameReviewsRspEncoder : ListUnitNameReviewsRsp -> Json.Encode.Value
 listUnitNameReviewsRspEncoder struct =
     Json.Encode.object
         [ ( "units", (Json.Encode.list (unitNameReviewEncoder)) struct.units )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (unitNameReviewCursorEncoder)) struct.nextCursor )
         ]
 
 
@@ -19158,10 +19186,24 @@ unitNameReviewDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
 
 
+unitNameReviewCursorDecoder : Json.Decode.Decoder UnitNameReviewCursor
+unitNameReviewCursorDecoder =
+    Json.Decode.succeed UnitNameReviewCursor
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at_micros" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+
+
+listUnitNameReviewsReqDecoder : Json.Decode.Decoder ListUnitNameReviewsReq
+listUnitNameReviewsReqDecoder =
+    Json.Decode.succeed ListUnitNameReviewsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after" (Json.Decode.nullable (unitNameReviewCursorDecoder))))
+
+
 listUnitNameReviewsRspDecoder : Json.Decode.Decoder ListUnitNameReviewsRsp
 listUnitNameReviewsRspDecoder =
     Json.Decode.succeed ListUnitNameReviewsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitNameReviewDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (unitNameReviewCursorDecoder))))
 
 
 updateUnitNameReqDecoder : Json.Decode.Decoder UpdateUnitNameReq

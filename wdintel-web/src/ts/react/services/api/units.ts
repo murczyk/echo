@@ -12,6 +12,7 @@ import type {
   InconsistentUnit,
   LinkOrbitUnitReq,
   ListInconsistentUnitsRsp,
+  ListUnitNameReviewsReq,
   ListUnitNameReviewsRsp,
   ListUnitDuplicatesRsp,
   ListUnitsByIdRsp,
@@ -186,9 +187,12 @@ export async function getInconsistentUnits(options?: RequestOptions): Promise<In
   return transformSnakeToCamel<ListInconsistentUnitsRsp>(raw).units;
 }
 
-export async function getUnitNameReviews(options?: RequestOptions): Promise<UnitNameReview[]> {
-  const raw = await postJson<unknown>('/api/admin/unit-names', null, options);
-  return transformSnakeToCamel<ListUnitNameReviewsRsp>(raw).units;
+export async function getUnitNameReviews(
+  req: ListUnitNameReviewsReq,
+  options?: RequestOptions,
+): Promise<ListUnitNameReviewsRsp> {
+  const raw = await postJson<unknown>('/api/admin/unit-names', transformCamelToSnake(req), options);
+  return transformSnakeToCamel<ListUnitNameReviewsRsp>(raw);
 }
 
 export async function updateUnitNameReview(req: UpdateUnitNameReq): Promise<UnitNameReview> {
