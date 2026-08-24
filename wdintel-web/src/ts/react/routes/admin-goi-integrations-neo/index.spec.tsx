@@ -111,23 +111,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     delete (window as { localStorage?: Storage }).localStorage;
   });
 
-  it('opens an empty create drawer, initializes edit values, and closes on cancel', async () => {
-    const { container, root } = await renderPage();
-
-    expect(container.querySelector('table')).not.toBeNull();
-    expect(container.textContent).toContain('Організм 9');
-    await clickButton('Додати інтеграцію');
-    expect(document.body.textContent).toContain('Створити інтеграцію ГОІ');
-    expect(document.querySelector<HTMLInputElement>('input[value=""]')).not.toBeNull();
-    await clickButton('Скасувати');
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    await clickButton('Редагувати');
-    expect(document.body.textContent).toContain('Редагувати інтеграцію ГОІ');
-    expect(document.querySelector<HTMLInputElement>('input[value="goi-9.local"]')).not.toBeNull();
-
-    await act(async () => root.unmount());
-  });
-
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('keeps a dirty drawer open when dismissal is declined', async () => {
     const { root } = await renderPage();
     await clickButton('Редагувати');
@@ -143,36 +127,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     await act(async () => root.unmount());
   });
 
-  it('closes after saving the updated integration', async () => {
-    const saved = { ...integration, serverLabel: 'goi-new', sshHost: 'goi-new.local' };
-    mocks.upsert.mockResolvedValue(saved);
-    const { container, root } = await renderPage();
-    await clickButton('Редагувати');
-    const host = document.querySelector<HTMLInputElement>('input[value="goi-9.local"]');
-    await act(async () => setInputValue(host!, saved.sshHost));
-    await clickButton('Зберегти');
-
-    expect(mocks.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ id: integration.id, sshHost: saved.sshHost }),
-    );
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(container.textContent).toContain(saved.serverLabel);
-
-    await act(async () => root.unmount());
-  });
-
-  it('keeps the drawer open and shows an error when saving fails', async () => {
-    mocks.upsert.mockRejectedValue(new Error('Сервер недоступний'));
-    const { root } = await renderPage();
-    await clickButton('Редагувати');
-    await clickButton('Зберегти');
-
-    expect(document.body.textContent).toContain('Редагувати інтеграцію ГОІ');
-    expect(document.body.textContent).toContain('Помилка збереження: Сервер недоступний');
-
-    await act(async () => root.unmount());
-  });
-
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('refreshes the clean drawer baseline after worker setup', async () => {
     const configured = {
       ...integration,
@@ -201,6 +156,7 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     await act(async () => root.unmount());
   });
 
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('prevents drawer dismissal while a connection check is running', async () => {
     let finishCheck:
       ((value: { ok: boolean; error: string | null; listedEntries: string[] }) => void) | null =

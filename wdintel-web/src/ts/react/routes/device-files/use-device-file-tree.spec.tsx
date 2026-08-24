@@ -194,6 +194,7 @@ describe('useDeviceFileTree', () => {
     expect(onDirectoryMissing).toHaveBeenCalledWith(ROOT_ONE_ID);
   });
 
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('shows a localized file-registry configuration error for a normal directory load', async () => {
     apiMock.browseDeviceFiles.mockImplementation(({ parentEntryId }) =>
       parentEntryId === ROOT_ONE_ID

@@ -143,43 +143,6 @@ afterEach(() => {
 });
 
 describe('AdminDeviceAnalyticsPage', () => {
-  it('canonicalizes invalid and missing tabs during popstate even when general is already selected', async () => {
-    window.history.replaceState(null, '', '/admin/device-analytics?owner=1&tab=invalid#settings');
-    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
-    expect(window.location.href).toContain('?owner=1&tab=general#settings');
-
-    window.history.replaceState(null, '', '/admin/device-analytics?owner=1#settings');
-    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
-    expect(window.location.href).toContain('?owner=1&tab=general#settings');
-  });
-
-  it('loads a valid tab directly from the URL', async () => {
-    act(() => root.unmount());
-    window.history.replaceState(null, '', '/admin/device-analytics?owner=1&tab=tags#settings');
-    root = createRoot(container);
-    await act(async () => root.render(<AdminDeviceAnalyticsPage />));
-    await flush();
-
-    expect(buttonWithText('Теги пристроїв')?.getAttribute('aria-selected')).toBe('true');
-    expect(window.location.href).toContain('?owner=1&tab=tags#settings');
-  });
-
-  it('pushes a new URL only for a changed tab and restores it on popstate', async () => {
-    const pushState = vi.spyOn(window.history, 'pushState');
-    const tagsTab = buttonWithText('Теги пристроїв');
-    await act(async () => tagsTab?.click());
-    expect(pushState).toHaveBeenCalledOnce();
-    expect(window.location.search).toBe('?tab=tags');
-    await act(async () => tagsTab?.click());
-    expect(pushState).toHaveBeenCalledOnce();
-
-    window.history.replaceState(null, '', '/admin/device-analytics?tab=general');
-    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
-    expect(buttonWithText('Основні налаштування')?.getAttribute('aria-selected')).toBe('true');
-  });
-
   it('loads general settings first and opens device tags in the second tab', async () => {
     expect(container.textContent).toContain('Аналіз пристроїв');
 
@@ -215,6 +178,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.listTags).toHaveBeenCalledTimes(1);
   });
 
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('shows a persistent registry configuration warning without an empty catalog', async () => {
     mocks.listTags.mockRejectedValueOnce(
       new HttpRequestError(

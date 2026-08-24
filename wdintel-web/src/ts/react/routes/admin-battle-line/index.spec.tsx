@@ -128,6 +128,7 @@ afterEach(() => {
 });
 
 describe('AdminBattleLinePage', () => {
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('pushes explicit tab values and restores them on browser navigation', async () => {
     window.history.replaceState(null, '', '/admin/battle-line?keep=1#map');
     await renderPage();
