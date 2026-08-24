@@ -3038,6 +3038,7 @@ export type ListInconsistentUnitsRsp = {
 };
 
 export type CreateUnitReq = {
+  name: string | null;
   other: string;
   teamOrCrew: string;
   section: string;
@@ -3092,6 +3093,24 @@ export type UnitSearchReq = {
 
 export type UnitDetailsReq = {
   unitId: number;
+};
+
+export type UnitChangelogChange = {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+};
+
+export type UnitChangelogEntry = {
+  id: number;
+  author: string;
+  createdAt: number;
+  action: string;
+  changes: Array<UnitChangelogChange>;
+};
+
+export type UnitChangelogRsp = {
+  entries: Array<UnitChangelogEntry>;
 };
 
 export type UnitAttachmentAor = {

@@ -320,6 +320,17 @@ function UnitDetailsFields({
         уже наявними підрозділами.
       </Typography>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {editing ? (
+          <TextField
+            label="Назва"
+            placeholder="Назва підрозділу"
+            value={form.name ?? ''}
+            onChange={(event) => onChange({ ...form, name: event.target.value })}
+            disabled={disabled}
+            fullWidth
+            sx={{ gridColumn: { md: '1 / -1' } }}
+          />
+        ) : null}
         {HIERARCHY_FIELDS.map(({ key, label, placeholder }) => (
           <TextField
             key={key}

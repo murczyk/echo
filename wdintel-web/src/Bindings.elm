@@ -7878,7 +7878,8 @@ listInconsistentUnitsRspEncoder struct =
 
 
 type alias CreateUnitReq =
-    { other : String
+    { name : Maybe (String)
+    , other : String
     , teamOrCrew : String
     , section : String
     , squad : String
@@ -7903,7 +7904,8 @@ type alias CreateUnitReq =
 createUnitReqEncoder : CreateUnitReq -> Json.Encode.Value
 createUnitReqEncoder struct =
     Json.Encode.object
-        [ ( "other", (Json.Encode.string) struct.other )
+        [ ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
+        , ( "other", (Json.Encode.string) struct.other )
         , ( "team_or_crew", (Json.Encode.string) struct.teamOrCrew )
         , ( "section", (Json.Encode.string) struct.section )
         , ( "squad", (Json.Encode.string) struct.squad )
@@ -8020,6 +8022,54 @@ unitDetailsReqEncoder : UnitDetailsReq -> Json.Encode.Value
 unitDetailsReqEncoder struct =
     Json.Encode.object
         [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        ]
+
+
+type alias UnitChangelogChange =
+    { field : String
+    , oldValue : Maybe (String)
+    , newValue : Maybe (String)
+    }
+
+
+unitChangelogChangeEncoder : UnitChangelogChange -> Json.Encode.Value
+unitChangelogChangeEncoder struct =
+    Json.Encode.object
+        [ ( "field", (Json.Encode.string) struct.field )
+        , ( "old_value", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.oldValue )
+        , ( "new_value", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.newValue )
+        ]
+
+
+type alias UnitChangelogEntry =
+    { id : Int
+    , author : String
+    , createdAt : Int
+    , action : String
+    , changes : List (UnitChangelogChange)
+    }
+
+
+unitChangelogEntryEncoder : UnitChangelogEntry -> Json.Encode.Value
+unitChangelogEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "author", (Json.Encode.string) struct.author )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "action", (Json.Encode.string) struct.action )
+        , ( "changes", (Json.Encode.list (unitChangelogChangeEncoder)) struct.changes )
+        ]
+
+
+type alias UnitChangelogRsp =
+    { entries : List (UnitChangelogEntry)
+    }
+
+
+unitChangelogRspEncoder : UnitChangelogRsp -> Json.Encode.Value
+unitChangelogRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (unitChangelogEntryEncoder)) struct.entries )
         ]
 
 
@@ -19043,6 +19093,7 @@ listInconsistentUnitsRspDecoder =
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq
 createUnitReqDecoder =
     Json.Decode.succeed CreateUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "team_or_crew" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.string)))
@@ -19104,6 +19155,30 @@ unitDetailsReqDecoder : Json.Decode.Decoder UnitDetailsReq
 unitDetailsReqDecoder =
     Json.Decode.succeed UnitDetailsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+
+
+unitChangelogChangeDecoder : Json.Decode.Decoder UnitChangelogChange
+unitChangelogChangeDecoder =
+    Json.Decode.succeed UnitChangelogChange
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "old_value" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "new_value" (Json.Decode.nullable (Json.Decode.string))))
+
+
+unitChangelogEntryDecoder : Json.Decode.Decoder UnitChangelogEntry
+unitChangelogEntryDecoder =
+    Json.Decode.succeed UnitChangelogEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "action" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changes" (Json.Decode.list (unitChangelogChangeDecoder))))
+
+
+unitChangelogRspDecoder : Json.Decode.Decoder UnitChangelogRsp
+unitChangelogRspDecoder =
+    Json.Decode.succeed UnitChangelogRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (unitChangelogEntryDecoder))))
 
 
 unitAttachmentAorDecoder : Json.Decode.Decoder UnitAttachmentAor

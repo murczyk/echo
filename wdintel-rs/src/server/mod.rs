@@ -1108,6 +1108,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
+            .service(crate::sigint::unit::changelog::unit_changelog)
             .service(crate::sigint::unit::labels::create_unit_label)
             .service(crate::sigint::unit::labels::delete_unit_label)
             .service(

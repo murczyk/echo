@@ -271,6 +271,8 @@ pub struct ListInconsistentUnitsRsp {
 )]
 pub struct CreateUnitReq {
     #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
     pub other: String,
     #[serde(default)]
     pub team_or_crew: String,
@@ -305,6 +307,8 @@ pub struct CreateUnitReq {
 pub struct UpdateUnitReq {
     pub id: i64,
     #[serde(default)]
+    pub name: String,
+    #[serde(default)]
     pub other: Option<String>,
     #[serde(default)]
     pub team_or_crew: Option<String>,
@@ -337,6 +341,7 @@ impl From<Unit> for UpdateUnitReq {
     fn from(unit: Unit) -> Self {
         Self {
             id: unit.id,
+            name: unit.name,
             other: Some(unit.other),
             team_or_crew: Some(unit.team_or_crew),
             section: Some(unit.section),
@@ -412,6 +417,33 @@ pub struct UnitSearchReq {
 )]
 pub struct UnitDetailsReq {
     pub unit_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitChangelogChange {
+    pub field: String,
+    pub old_value: Option<String>,
+    pub new_value: Option<String>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitChangelogEntry {
+    pub id: i64,
+    pub author: String,
+    pub created_at: i64,
+    pub action: String,
+    pub changes: Vec<UnitChangelogChange>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UnitChangelogRsp {
+    pub entries: Vec<UnitChangelogEntry>,
 }
 
 #[derive(
