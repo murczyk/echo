@@ -131,6 +131,7 @@ export type NetworkDetailsNeoPageState = {
   pelengPointsRequestedFrom: number | null;
   pelengPointsRequestedTo: number | null;
   callsignCount: number | null;
+  networkCallsignsPeriod: NetworkFreqCallsignsPeriod;
   networkCallsigns: NetworkCallsign[];
   networkCallsignGroups: NetworkCallsignRes[];
   callsignActivityMap: NetworkCallsignActivityMap;
@@ -291,6 +292,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   interceptedCallsignsLoading: false,
   interceptedCallsignsError: null,
   callsignCount: null,
+  networkCallsignsPeriod: 'Last21Days',
   networkCallsigns: [],
   networkCallsignGroups: [],
   callsignActivityMap: new Map(),

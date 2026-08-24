@@ -3429,6 +3429,7 @@ export type ListNetworkCallsignsSortBy =
 export type ListNetworkCallsignsReq = {
   networkId: number;
   sortBy: Array<ListNetworkCallsignsSortBy> | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type ListNetworkCallsignsRes = {
@@ -4157,6 +4158,7 @@ export type SingleNetworkCallsignsReq = {
   networkId: number;
   includeActivityInfo: boolean | null;
   section: SingleNetworkCallsignsSection | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {

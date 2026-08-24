@@ -472,6 +472,7 @@ async fn load_network_callsigns(
         &ListNetworkCallsignsReq {
             network_id,
             sort_by: None,
+            period: None,
         },
         user_id,
         dbx,

@@ -45,6 +45,17 @@ pub async fn list_network_callsigns(
             .await
             .context(h!())?;
     let source_db = env.dbx.clone();
+    let network =
+        crate::sigint::network::bl::find_network(&env.dbx, req.network_id)
+            .await
+            .context(h!())?;
+    let period = crate::sigint::network::resolve_network_callsign_period(
+        req.period.clone(),
+    );
+    let period_filter = crate::sigint::network::network_callsign_period_filter(
+        &network, &period,
+    );
+    let activity_required = period_filter.is_some();
     let analytics_groups = groups.clone();
     let analytics_req = req.clone();
     let postgres_req = req.clone();
@@ -59,26 +70,43 @@ pub async fn list_network_callsigns(
                     &analytics_db,
                     &analytics_groups,
                     analytics_req.network_id,
+                    &period,
                 )
-                .await?;
-            bl_get_network_callsigns_list_with_activity_info(
+                .await
+                .context(h!())?;
+            Ok(bl_get_network_callsigns_list_with_activity_info(
                 &analytics_req,
                 &user_id,
                 &source_db,
                 activity_info,
+                activity_required,
             )
             .await
+            .context(h!())?)
         },
         move |postgres_db| async move {
-            bl_get_network_callsigns_list(
-                &postgres_req,
-                &user_id,
-                &postgres_db,
-            )
-            .await
+            if let Some(period_filter) = period_filter.as_ref() {
+                Ok(bl_get_network_callsigns_list_with_activity_period(
+                    &postgres_req,
+                    &user_id,
+                    &postgres_db,
+                    period_filter,
+                )
+                .await
+                .context(h!())?)
+            } else {
+                Ok(bl_get_network_callsigns_list(
+                    &postgres_req,
+                    &user_id,
+                    &postgres_db,
+                )
+                .await
+                .context(h!())?)
+            }
         },
     )
-    .await?;
+    .await
+    .context(h!())?;
 
     Ok(Json(ListNetworkCallsignsRes {
         network_callsigns: res,
@@ -359,14 +387,17 @@ pub async fn network_callsigns_activity(
         "network callsigns activity",
         true,
         move |analytics_db| async move {
+            let period = crate::sigint::network::types::NetworkFreqCallsignsPeriod::Unlimited;
             let activity_info =
                 crate::sigint::network::analytics::load_network_callsign_activity(
                     &source_db,
                     &analytics_db,
                     &analytics_groups,
                     analytics_req.network_id,
+                    &period,
                 )
-                .await?;
+                .await
+                .context(h!())?;
             Ok(render_network_callsigns_activity(
                 &analytics_req,
                 &activity_info,

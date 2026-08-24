@@ -539,6 +539,7 @@ async fn collect_etalonka_entry(
     let list_network_callsigns_req = ListNetworkCallsignsReq {
         network_id: network.id,
         sort_by: None,
+        period: None,
     };
     for (index, filter) in options.filters.iter().enumerate() {
         if options.filters.len() > 1 {

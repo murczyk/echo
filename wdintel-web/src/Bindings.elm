@@ -8903,6 +8903,7 @@ listNetworkCallsignsSortByEncoder enum =
 type alias ListNetworkCallsignsReq =
     { networkId : Int
     , sortBy : Maybe (List (ListNetworkCallsignsSortBy))
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -8911,6 +8912,7 @@ listNetworkCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (listNetworkCallsignsSortByEncoder))) struct.sortBy )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -10752,6 +10754,7 @@ type alias SingleNetworkCallsignsReq =
     { networkId : Int
     , includeActivityInfo : Maybe (Bool)
     , section : Maybe (SingleNetworkCallsignsSection)
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -10761,6 +10764,7 @@ singleNetworkCallsignsReqEncoder struct =
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "include_activity_info", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeActivityInfo )
         , ( "section", (Maybe.withDefault Json.Encode.null << Maybe.map (singleNetworkCallsignsSectionEncoder)) struct.section )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -19686,6 +19690,7 @@ listNetworkCallsignsReqDecoder =
     Json.Decode.succeed ListNetworkCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list (listNetworkCallsignsSortByDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 listNetworkCallsignsResDecoder : Json.Decode.Decoder ListNetworkCallsignsRes
@@ -20830,6 +20835,7 @@ singleNetworkCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_activity_info" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.nullable (singleNetworkCallsignsSectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsignsListRsp

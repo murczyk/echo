@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import type { NetworkCallsign, Source } from '../../../../../Bindings';
+import type { NetworkCallsign, NetworkFreqCallsignsPeriod, Source } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerChip } from '../../../components/PowerChip';
 import type {
@@ -130,6 +130,8 @@ export type Props = {
   onSectionModeChange: (next: NetworkCallsignSectionMode) => void;
   statusFilter: NetworkCallsignStatusFilter;
   onStatusFilterChange: (next: NetworkCallsignStatusFilter) => void;
+  period: NetworkFreqCallsignsPeriod;
+  onPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
   interceptedExpanded: boolean;
   onToggleInterceptedExpanded: () => void;
   onOpenCreateDrawer: () => void;
@@ -163,6 +165,8 @@ export function NetworkDetailsCallsignsPanel({
   onSectionModeChange,
   statusFilter,
   onStatusFilterChange,
+  period,
+  onPeriodChange,
   interceptedExpanded,
   onToggleInterceptedExpanded,
   onOpenCreateDrawer,
@@ -372,6 +376,11 @@ export function NetworkDetailsCallsignsPanel({
               canManage={canManage}
               statusFilter={statusFilter}
               onStatusFilterChange={onStatusFilterChange}
+              period={period}
+              periodSettingsDisabled={
+                networkCallsignsLoading || catalogCallsignsLoading || interceptedCallsignsLoading
+              }
+              onPeriodChange={onPeriodChange}
               onOpenEditDrawer={onOpenEditDrawer}
               onOpenDeleteDialog={onOpenDeleteDialog}
               onSetMarkerMode={onSetMarkerMode}
