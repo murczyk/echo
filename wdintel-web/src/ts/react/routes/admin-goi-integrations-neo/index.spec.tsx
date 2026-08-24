@@ -173,6 +173,34 @@ describe('AdminGoiIntegrationsNeoPage', () => {
     await act(async () => root.unmount());
   });
 
+  it('refreshes the clean drawer baseline after worker setup', async () => {
+    const configured = {
+      ...integration,
+      serverLabel: 'goi-configured',
+      sshHost: 'goi-configured.local',
+      apiPassword: 'generated-secret',
+    };
+    mocks.setupWorker.mockResolvedValue(configured);
+    Object.defineProperty(window, 'confirm', { configurable: true, value: vi.fn(() => true) });
+    const { container, root } = await renderPage();
+    await clickButton('Редагувати');
+    await clickButton('Налаштувати воркер');
+
+    expect(mocks.setupWorker).toHaveBeenCalledWith(
+      expect.objectContaining({ id: integration.id, sshHost: integration.sshHost }),
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[value="goi-configured.local"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain(configured.serverLabel);
+
+    await clickButton('Скасувати');
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
   it('prevents drawer dismissal while a connection check is running', async () => {
     let finishCheck:
       ((value: { ok: boolean; error: string | null; listedEntries: string[] }) => void) | null =

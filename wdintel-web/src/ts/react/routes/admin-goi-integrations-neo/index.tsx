@@ -448,7 +448,8 @@ function AdminGoiIntegrationsNeoPageBody() {
     setEditorOpen(true);
   }
 
-  function updateSelectedIntegration(nextIntegration: GoiAdminIntegration) {
+  function updateSelectedIntegration(nextIntegration: GoiAdminIntegration): GoiForm {
+    const nextForm = toForm(nextIntegration);
     setIntegrations((prev) => {
       const exists = prev.some((item) => item.id === nextIntegration.id);
       const next = exists
@@ -456,7 +457,8 @@ function AdminGoiIntegrationsNeoPageBody() {
         : [nextIntegration, ...prev];
       return next.sort((a, b) => a.serverLabel.localeCompare(b.serverLabel, 'uk'));
     });
-    setForm(toForm(nextIntegration));
+    setForm(nextForm);
+    return nextForm;
   }
 
   function handleIntegrationTypeChange(integrationType: GoiIntegrationType) {
@@ -561,7 +563,8 @@ function AdminGoiIntegrationsNeoPageBody() {
         apiHost: form.apiHost.trim() || form.sshHost.trim(),
         apiPort: form.apiPort,
       });
-      updateSelectedIntegration(saved);
+      const nextForm = updateSelectedIntegration(saved);
+      initialFormRef.current = nextForm;
       setStatus({
         kind: 'success',
         message:
