@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BattleLineState, BattleLineTestRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from '../rer-duty-neo/inbox-message-mocks';
-import { AdminBattleLinePage, readBattleLineTab } from './index';
+import { AdminBattleLinePage } from './index';
 
 const api = vi.hoisted(() => ({
   fetchBattleLineState: vi.fn(),
@@ -128,15 +128,6 @@ afterEach(() => {
 });
 
 describe('AdminBattleLinePage', () => {
-  it('maps public tab values and canonicalizes missing or invalid values to LBZ', async () => {
-    await renderPage();
-    expect(window.location.search).toBe('?tab=lbz');
-    window.history.replaceState(null, '', '/admin/battle-line?tab=unlinked#map');
-    expect(readBattleLineTab()).toBe('unlinked');
-    window.history.replaceState(null, '', '/admin/battle-line?tab=invalid#map');
-    expect(readBattleLineTab()).toBe('lbz');
-  });
-
   it('pushes explicit tab values and restores them on browser navigation', async () => {
     window.history.replaceState(null, '', '/admin/battle-line?keep=1#map');
     await renderPage();

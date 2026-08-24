@@ -48,7 +48,7 @@ export type BattleLineTab = 'lbz' | 'unlinked' | 'unresolved';
 
 const DEFAULT_BATTLE_LINE_TAB: BattleLineTab = 'lbz';
 
-export function readBattleLineTab(location = window.location): BattleLineTab {
+function readBattleLineTab(location = window.location): BattleLineTab {
   const tab = new URLSearchParams(location.search).get('tab');
   return tab === 'unlinked' || tab === 'unresolved' || tab === 'lbz'
     ? tab
