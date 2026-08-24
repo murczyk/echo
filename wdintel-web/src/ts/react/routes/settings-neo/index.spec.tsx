@@ -256,7 +256,7 @@ vi.mock('./SettingsDutySection', () => ({
         <button type="button">Повний</button>
         <button type="button">Щільний</button>
         <button type="button">Без тегів</button>
-        <span>Скорочення тексту:</span>
+        <span>Згортати перегляд довгих повідомлень:</span>
         <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(20)}>
           20 рядків
         </button>
@@ -283,7 +283,7 @@ vi.mock('./SettingsSharedTagsLayoutCard', () => ({
       <button type="button">Повний</button>
       <button type="button">Щільний</button>
       <button type="button">Без тегів</button>
-      <span>Скорочення тексту:</span>
+      <span>Згортати перегляд довгих повідомлень:</span>
       <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(20)}>
         20 рядків
       </button>
@@ -371,7 +371,7 @@ describe('SettingsNeoPage', () => {
       expect(card?.textContent).toContain('Повний');
       expect(card?.textContent).toContain('Щільний');
       expect(card?.textContent).toContain('Без тегів');
-      expect(card?.textContent).toContain('Скорочення тексту:');
+      expect(card?.textContent).toContain('Згортати перегляд довгих повідомлень:');
       expect(card?.textContent).toContain('Визначає, коли з’являється кнопка «Показати більше».');
       expect(card?.textContent).toContain('Спільні налаштування для Оперативного та Аналізу.');
 

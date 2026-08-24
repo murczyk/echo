@@ -69,7 +69,7 @@ export function SettingsTagsLayoutCard({
           <ToggleButton value="hidden">Без тегів</ToggleButton>
         </ToggleButtonGroup>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Скорочення тексту:
+          Згортати перегляд довгих повідомлень:
         </Typography>
         <ToggleButtonGroup
           value={messageTextPreviewLines === null ? 'off' : String(messageTextPreviewLines)}
