@@ -219,7 +219,12 @@ export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUni
             size="small"
             variant="outlined"
             startIcon={<SyncAltIcon />}
-            disabled={!canEdit || submittingUnitId !== null || row.original.matchesExpected}
+            disabled={
+              !canEdit ||
+              submittingUnitId !== null ||
+              row.original.matchesExpected ||
+              !row.original.expectedName.trim()
+            }
             onClick={() =>
               void replaceName(
                 row.original,
@@ -348,7 +353,11 @@ export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUni
           <Button disabled={submittingUnitId !== null} onClick={() => setEditingUnit(null)}>
             Скасувати
           </Button>
-          <Button type="submit" variant="contained" disabled={submittingUnitId !== null}>
+          <Button
+            type="submit"
+            variant="contained"
+            disabled={submittingUnitId !== null || !editedName.trim()}
+          >
             Зберегти
           </Button>
         </DialogActions>

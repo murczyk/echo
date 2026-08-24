@@ -4613,6 +4613,9 @@ mod tests {
             hierarchy_unit(&env.dbx, ["", "2 бат", "55 мбр", "", ""]).await;
         let surviving =
             hierarchy_unit(&env.dbx, ["1 рота", "2 бат", "", "", ""]).await;
+        let mut surviving = surviving.into_active_model();
+        surviving.name = Set("Custom survivor".to_string());
+        let surviving = surviving.update(&env.dbx).await.unwrap();
         let duplicate =
             hierarchy_unit(&env.dbx, ["", "", "55 мбр", "", ""]).await;
         set_unit_activity(&env.dbx, &login_id, &old_parent, true)
@@ -4629,7 +4632,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(merged.regiment, "55 мбр");
-        assert_eq!(merged.name, "1 рота 2 бат 55 мбр");
+        assert_eq!(merged.name, "Custom survivor");
         assert!(active(&env.dbx, old_parent.id).await);
         assert!(active(&env.dbx, new_parent.id).await);
     }

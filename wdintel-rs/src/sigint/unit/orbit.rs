@@ -3146,6 +3146,7 @@ mod tests {
         .unwrap();
 
         assert!(outcome.hierarchy_updated);
+        assert_eq!(outcome.unit.name, "SIGINT unit");
         assert_eq!(outcome.unit.other, "ORBIT other");
         assert!(outcome.unit.platoon.is_empty());
         assert_eq!(outcome.unit.company, "Existing company");

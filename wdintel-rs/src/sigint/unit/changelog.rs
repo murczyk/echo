@@ -83,6 +83,11 @@ pub async fn unit_changelog(
         .ok_or(AppError::NotFound)
         .c(h!())?;
 
+    let visible_unit_fields = UNIT_FIELDS
+        .iter()
+        .filter(|field| unit_field_visible(field, can_view_orbit))
+        .map(|field| (*field).to_string())
+        .collect::<Vec<_>>();
     let rows =
         UnitChangelogRow::find_by_statement(Statement::from_sql_and_values(
             DbBackend::Postgres,
@@ -97,10 +102,25 @@ from sigint_unit_change unit_change
 join login on login.id = unit_change.author_login_id
 where unit_change.sigint_unit_id = $1
   and unit_change.old_value is distinct from unit_change.new_value
+  and (
+      unit_change.kind <> 'unit'
+      or exists (
+          select 1
+          from unnest($3::text[]) as visible_field(field)
+          where unit_change.old_value -> visible_field.field
+              is distinct from unit_change.new_value -> visible_field.field
+      )
+  )
+  and ($4 or unit_change.kind <> 'orbit_links')
 order by unit_change.created_at desc, unit_change.id desc
 limit $2
             "#,
-            [req.unit_id.into(), SIGINT_UNIT_CHANGELOG_LIMIT.into()],
+            [
+                req.unit_id.into(),
+                SIGINT_UNIT_CHANGELOG_LIMIT.into(),
+                visible_unit_fields.into(),
+                can_view_orbit.into(),
+            ],
         ))
         .all(&env.dbx)
         .await
@@ -172,10 +192,7 @@ fn unit_changes(
 ) -> Vec<UnitChangelogChange> {
     UNIT_FIELDS
         .iter()
-        .filter(|field| {
-            can_view_orbit
-                || !matches!(**field, "orbit_note" | "is_deduplicate_candidate")
-        })
+        .filter(|field| unit_field_visible(field, can_view_orbit))
         .filter_map(|field| {
             let old_value = json_field(old_value, field);
             let new_value = json_field(new_value, field);
@@ -186,6 +203,11 @@ fn unit_changes(
             })
         })
         .collect()
+}
+
+fn unit_field_visible(field: &str, can_view_orbit: bool) -> bool {
+    can_view_orbit
+        || !matches!(field, "orbit_note" | "is_deduplicate_candidate")
 }
 
 fn json_field<'a>(

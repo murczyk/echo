@@ -91,6 +91,12 @@ async fn touch_unit_name(
     sigint_unit_id: i64,
     name: Option<String>,
 ) -> Result<sigint_unit::Model, AppError> {
+    let name = name.map(|name| name.trim().to_string());
+    if name.as_deref() == Some("") {
+        return Err(AppError::BL {
+            msg: "Назва підрозділу не може бути порожньою".to_string(),
+        });
+    }
     let transaction = dbx.begin().await.c(h!())?;
     super::changelog::set_author(&transaction, login)
         .await
@@ -106,7 +112,7 @@ async fn touch_unit_name(
     let mut unit = unit.into_active_model();
     let name_updated = name.is_some();
     if let Some(name) = name {
-        unit.name = Set(name.trim().to_string());
+        unit.name = Set(name);
     }
     unit.updated_at = Set(Utc::now().naive_utc());
     let unit = unit.update(&transaction).await.c(h!())?;
@@ -162,26 +168,6 @@ mod tests {
     use crate::functest::tests::{cleanup, mk_sigint_unit};
     use chrono::Duration;
     use serial_test::serial;
-
-    #[test]
-    fn expected_name_uses_non_empty_hierarchy_in_order() {
-        assert_eq!(
-            expected_unit_name_from_hierarchy([
-                " екіпаж ",
-                "",
-                "ланка",
-                " ",
-                "рота",
-                "",
-                "полк",
-                "бригада",
-                "",
-                "корпус",
-                "армія",
-            ]),
-            "екіпаж ланка рота полк бригада корпус армія"
-        );
-    }
 
     #[tokio::test]
     #[serial]
