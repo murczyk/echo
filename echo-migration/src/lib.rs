@@ -392,6 +392,7 @@ mod m20260822_105557_add_settlement_stats_index;
 mod m20260824_090738_sigint_unit_change;
 mod m20260824_120000_add_message_text_preview_lines;
 mod m20260824_124325_transcription_started_at;
+mod m20260824_141424_validate_sigint_inbox_item_datetime_reconciliation;
 
 pub struct Migrator;
 
@@ -909,6 +910,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260824_090738_sigint_unit_change::Migration),
             Box::new(m20260824_120000_add_message_text_preview_lines::Migration),
             Box::new(m20260824_124325_transcription_started_at::Migration),
+            Box::new(
+                m20260824_141424_validate_sigint_inbox_item_datetime_reconciliation::Migration,
+            ),
         ]
     }
 }

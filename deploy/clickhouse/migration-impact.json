@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260824_141424_validate_sigint_inbox_item_datetime_reconciliation": {
+      "changes": []
+    },
     "echo:m20260824_124325_transcription_started_at": {
       "changes": [
         {

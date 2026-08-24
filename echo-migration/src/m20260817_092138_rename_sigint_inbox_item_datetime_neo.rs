@@ -23,9 +23,9 @@ begin
     if exists (
         select 1
         from sigint_inbox_item
-        where datetime is distinct from datetime_neo
+        where datetime is not null and datetime_neo is null
     ) then
-        raise exception 'cannot switch sigint_inbox_item datetime columns before datetime_neo reconciliation completes';
+        raise exception 'cannot switch sigint_inbox_item datetime columns before datetime_neo backfill completes';
     end if;
 end
 $$;
