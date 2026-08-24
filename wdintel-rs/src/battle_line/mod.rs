@@ -643,6 +643,8 @@ where
             )
             .filter(settlement::Column::Lat.is_not_null())
             .filter(settlement::Column::Lon.is_not_null())
+            .filter(settlement::Column::Lat.between(-90.0, 90.0))
+            .filter(settlement::Column::Lon.between(-180.0, 180.0))
             .select_only()
             .column(sigint_network_unit::Column::UnitId)
             .column_as(settlement::Column::Lat, "lat")
@@ -686,6 +688,8 @@ where
                 sigint_inbox_item::Relation::SigintPeleng.def(),
             )
             .filter(sigint_peleng::Column::Deleted.eq(false))
+            .filter(sigint_peleng::Column::Lat.between(-90.0, 90.0))
+            .filter(sigint_peleng::Column::Lng.between(-180.0, 180.0))
             .select_only()
             .column(sigint_network_unit::Column::UnitId)
             .column_as(sigint_peleng::Column::Lat, "lat")
