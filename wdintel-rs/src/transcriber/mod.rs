@@ -14,9 +14,10 @@ use actix_identity::Identity;
 use actix_web::{get, post, web::Json, HttpRequest, HttpResponse};
 use anyhow::Context;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, DatabaseConnection,
-    EntityTrait, FromQueryResult, QueryFilter, QuerySelect, RelationTrait,
-    Statement, TransactionTrait, Value,
+    AccessMode, ColumnTrait, ConnectionTrait, DatabaseBackend,
+    DatabaseConnection, EntityTrait, FromQueryResult, IsolationLevel,
+    QueryFilter, QuerySelect, RelationTrait, Statement, TransactionTrait,
+    Value,
 };
 use std::collections::HashMap;
 use tokio::process::Command;
@@ -595,12 +596,15 @@ fn transcription_result_limit(req: &TranscriptionResultListReq) -> u64 {
         )
 }
 
-async fn query_transcription_result_total(
-    dbx: &DatabaseConnection,
+async fn query_transcription_result_total<C>(
+    dbx: &C,
     from_sql: &str,
     filters_sql: &str,
     values: &[Value],
-) -> Result<u64, AppError> {
+) -> Result<u64, AppError>
+where
+    C: ConnectionTrait,
+{
     let total = TranscriptionResultCount::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -683,15 +687,18 @@ fn transcription_result_fetch_limit(
     }
 }
 
-async fn query_transcription_result_rows(
-    dbx: &DatabaseConnection,
+async fn query_transcription_result_rows<C>(
+    dbx: &C,
     from_sql: &str,
     filters_sql: &str,
     mut values: Vec<Value>,
     page: TranscriptionResultPage,
     total: u64,
     limit: u64,
-) -> Result<(Vec<TranscriptionResultRow>, bool), AppError> {
+) -> Result<(Vec<TranscriptionResultRow>, bool), AppError>
+where
+    C: ConnectionTrait,
+{
     let (boundary_sql, order_sql, reverse_rows) =
         transcription_result_page_sql(page, &mut values);
     let page_filters_sql =
@@ -771,13 +778,24 @@ async fn query_transcription_results(
     let (filters_sql, values) =
         transcription_result_filters_sql(req).context(h!())?;
     let from_sql = transcription_results_from_sql(!filters_sql.is_empty());
-    let total =
-        query_transcription_result_total(dbx, &from_sql, &filters_sql, &values)
-            .await
-            .c(h!())?;
+    let transaction = dbx
+        .begin_with_config(
+            Some(IsolationLevel::RepeatableRead),
+            Some(AccessMode::ReadOnly),
+        )
+        .await
+        .c(h!())?;
+    let total = query_transcription_result_total(
+        &transaction,
+        &from_sql,
+        &filters_sql,
+        &values,
+    )
+    .await
+    .c(h!())?;
     let page = transcription_result_page(req).context(h!())?;
     let (rows, had_extra) = query_transcription_result_rows(
-        dbx,
+        &transaction,
         &from_sql,
         &filters_sql,
         values,
@@ -787,6 +805,7 @@ async fn query_transcription_results(
     )
     .await
     .c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(transcription_result_list_response(
         rows, total, page, had_extra,
     ))

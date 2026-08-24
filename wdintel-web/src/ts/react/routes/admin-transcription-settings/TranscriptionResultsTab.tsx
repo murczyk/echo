@@ -1,5 +1,5 @@
 import { Box, Chip, Stack } from '@mui/material';
-import { MaterialReactTable } from 'material-react-table';
+import { MaterialReactTable, type MRT_ColumnFiltersState } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { PowerAlert } from '../../components/PowerAlert';
@@ -55,6 +55,14 @@ const DEFAULT_COLUMN_ORDER = [
   'transcribed_value',
   'error',
 ];
+
+const RESULT_COLUMN_FILTER_IDS = new Set(Object.keys(DEFAULT_COLUMNS_VISIBILITY));
+
+function sanitizeResultColumnFilters(
+  columnFilters: MRT_ColumnFiltersState,
+): MRT_ColumnFiltersState {
+  return columnFilters.filter((columnFilter) => RESULT_COLUMN_FILTER_IDS.has(columnFilter.id));
+}
 
 const STATUS_LABELS: Record<string, string> = {
   queued: 'У черзі',
@@ -401,6 +409,7 @@ export function TranscriptionResultsTab() {
       defaultColumnOrder={DEFAULT_COLUMN_ORDER}
       defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
       defaultEnableColumnOrdering={false}
+      sanitizeColumnFilters={sanitizeResultColumnFilters}
     >
       <ResultsPageBody />
     </TableStateProvider>

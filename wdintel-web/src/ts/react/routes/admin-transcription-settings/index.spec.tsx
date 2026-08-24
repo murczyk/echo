@@ -234,6 +234,28 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
+  it('does not send instance column filters to transcription results', async () => {
+    const columnFilters = encodeURIComponent(JSON.stringify([{ id: 'name', value: 'GPU 1' }]));
+    window.history.replaceState(
+      {},
+      '',
+      `/admin/transcription-settings?columnFilters=${columnFilters}`,
+    );
+    const { root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+
+    expect(mocks.listResults).toHaveBeenCalledWith(
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    await act(async () => root.unmount());
+  });
+
   it('shows transcription-result load failures in a toast', async () => {
     mocks.listResults.mockRejectedValue(new Error('results unavailable'));
     const { root } = await renderPage();

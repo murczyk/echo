@@ -15,7 +15,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { MaterialReactTable } from 'material-react-table';
+import { MaterialReactTable, type MRT_ColumnFiltersState } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
@@ -78,6 +78,14 @@ const DEFAULT_COLUMN_ORDER = [
   'py_port',
   'is_active',
 ];
+
+const INSTANCE_COLUMN_FILTER_IDS = new Set(Object.keys(DEFAULT_COLUMNS_VISIBILITY));
+
+function sanitizeInstanceColumnFilters(
+  columnFilters: MRT_ColumnFiltersState,
+): MRT_ColumnFiltersState {
+  return columnFilters.filter((columnFilter) => INSTANCE_COLUMN_FILTER_IDS.has(columnFilter.id));
+}
 
 const defaultMRTOptions = getDefaultMRTOptions<TranscriberInstance>();
 
@@ -752,6 +760,7 @@ export function AdminTranscriptionSettingsPage() {
             defaultColumnOrder={DEFAULT_COLUMN_ORDER}
             defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
             defaultEnableColumnOrdering={false}
+            sanitizeColumnFilters={sanitizeInstanceColumnFilters}
           >
             <AdminTranscriptionSettingsPageBody />
           </TableStateProvider>
