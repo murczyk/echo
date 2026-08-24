@@ -73,7 +73,8 @@ pub async fn report_xlsx_kind_interception(
         collect_interception_report_messages(user_login, env, &inbox_req)
             .await?;
     let record_count = interception_report_record_count(&messages);
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     let mut workbook = Workbook::new();
     let sheet1 = get_worksheet(&mut workbook)?;
@@ -134,7 +135,8 @@ async fn collect_interception_report_messages(
         );
         crate::report_history::ensure_report_record_count(
             interception_report_record_count(&messages),
-        )?;
+        )
+        .context(h!())?;
     }
     sort_interception_report_messages(&mut messages);
     Ok(messages)

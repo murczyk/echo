@@ -45,7 +45,8 @@ pub async fn report_docx_kind_naushnom(
         .fold(0_usize, |count, messages| {
             count.saturating_add(messages.len())
         });
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     let style_invisible = Style::new("Invisible", StyleType::Paragraph)
         .name("Invisible")

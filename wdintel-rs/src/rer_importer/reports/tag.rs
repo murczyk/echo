@@ -491,7 +491,8 @@ fn write_tag_report_docx(
     period: &TagReportPeriod,
     data: &TagReportData,
 ) -> Result<(), AppError> {
-    crate::report_history::ensure_report_record_count(data.messages.len())?;
+    crate::report_history::ensure_report_record_count(data.messages.len())
+        .context(h!())?;
     let file = std::fs::File::create(outpath).context(h!())?;
 
     let style_invisible = Style::new("Invisible", StyleType::Paragraph)

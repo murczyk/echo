@@ -161,7 +161,8 @@ pub fn build_babak_report(
         without_comments,
     } = data;
     let record_count = babak_report_record_count(&units, without_comments);
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     let tz = crate::config::get_tz();
     let date_from_dt_tz = Utc.from_utc_datetime(&date_from).with_timezone(&tz);
     let date_to_dt_tz = Utc.from_utc_datetime(&date_to).with_timezone(&tz);

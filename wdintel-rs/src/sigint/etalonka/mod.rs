@@ -206,7 +206,8 @@ pub async fn generate_networks_docx_report_to_path(
 ) -> Result<(), AppError> {
     crate::report_history::ensure_report_record_count(
         etalonka_report_record_count(&etalonka_data),
-    )?;
+    )
+    .context(h!())?;
     let file = std::fs::File::create(outpath)?;
 
     let doc = match etalonka_type {

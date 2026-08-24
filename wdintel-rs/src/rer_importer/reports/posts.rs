@@ -221,7 +221,8 @@ pub async fn report_docx_kind_posts(
             .cmp(&stats_a.current_total)
             .then(name_a.cmp(name_b))
     });
-    crate::report_history::ensure_report_record_count(posts_vec.len())?;
+    crate::report_history::ensure_report_record_count(posts_vec.len())
+        .context(h!())?;
 
     let freq_range = get_freq_range(freq_values);
 

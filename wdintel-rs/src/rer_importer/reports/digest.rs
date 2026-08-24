@@ -182,7 +182,8 @@ pub async fn report_docx_kind_digest(
             count.saturating_add(network.notes.len())
         })
     });
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     info!("report_docx_kind_digest data collected");
     let omit_exo_id = req.digest_omit_exo_id.unwrap_or(false);
     let use_form_1217 = req.digest_form_1_2_17.unwrap_or(false);

@@ -65,7 +65,8 @@ async fn build_goi_report_workbook(
     let record_count = grouped.iter().fold(0_usize, |count, (_, freqs)| {
         count.saturating_add(freqs.len())
     });
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     let mut workbook = new_goi_report_workbook()?;
 
     let _enemy_sheet =

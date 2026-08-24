@@ -145,7 +145,8 @@ pub async fn report_xlsx_kind_senders(
             1
         })
     });
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     write_report_to_file(
         outpath,

@@ -62,7 +62,8 @@ pub(crate) async fn rer_analysis_kmz_bytes(
             item.freq.is_some() && item.lat.is_some() && item.lng.is_some()
         })
         .count();
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     let tmp_dir = TempDir::new().context(h!())?;
     // let outpath = tmp_dir.path().join("summary-table.kmz");

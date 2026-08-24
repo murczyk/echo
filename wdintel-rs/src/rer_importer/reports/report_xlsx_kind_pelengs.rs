@@ -738,7 +738,8 @@ pub async fn report_xlsx_kind_pelengs1(
                 && message.freq.is_some()
         })
         .count();
-    crate::report_history::ensure_report_record_count(record_count)?;
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     // Build sender display names map (uuid -> profile entry)
     let sender_uuids = messages
