@@ -5450,8 +5450,15 @@ export type DutyTagsLayout =
   | 'Hidden'
 ;
 
+export type MessageTextPreviewLines =
+  | 'Twenty'
+  | 'Forty'
+  | 'Off'
+;
+
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
+  messageTextPreviewLines: MessageTextPreviewLines;
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
   dutyAudioTranscriptionCollapsed: boolean;

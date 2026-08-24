@@ -4,6 +4,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 
 const cardSx = {
   border: 1,
@@ -30,6 +31,8 @@ export type SettingsDutySectionProps = {
   onShowClassicDutyChange: (value: boolean) => void;
   collapseMediaPreviews: boolean;
   onCollapseMediaPreviewsChange: (value: boolean) => void;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
+  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
 };
 
 export function SettingsDutySection({
@@ -48,6 +51,8 @@ export function SettingsDutySection({
   onShowClassicDutyChange,
   collapseMediaPreviews,
   onCollapseMediaPreviewsChange,
+  messageTextPreviewLines,
+  onMessageTextPreviewLinesChange,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -86,6 +91,8 @@ export function SettingsDutySection({
           <SettingsSharedTagsLayoutCard
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
+            messageTextPreviewLines={messageTextPreviewLines}
+            onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
             loadInProgress={loadInProgress}
           />
 
@@ -146,7 +153,7 @@ export function SettingsDutySection({
                 label={
                   <Stack spacing={0.75} sx={{ pt: 0.25 }}>
                     <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                      Автоматична прокрутка стрічок Оперативного
+                      Автоматична прокрутка стрічок
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
                       Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим

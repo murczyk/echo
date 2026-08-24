@@ -32,6 +32,7 @@ import { PowerChip } from '../../components/PowerChip';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import {
   buildCopyTextWithNetworkAndNote,
@@ -97,6 +98,7 @@ type DutyMessageCardItemProps = {
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews?: boolean;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -135,6 +137,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   feedCount,
   tagsLayout,
   collapseMediaPreviews = false,
+  messageTextPreviewLines,
   botTagAction,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -186,6 +189,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       feedCount={feedCount}
       tagsLayout={tagsLayout}
       collapseMediaPreviews={collapseMediaPreviews}
+      messageTextPreviewLines={messageTextPreviewLines}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
       onMarkBotTagWrong={onMarkBotTagWrong}
@@ -271,6 +275,7 @@ type DutyMessageListProps = {
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews?: boolean;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
@@ -314,6 +319,7 @@ const DutyMessageList = memo(
     feedCount,
     tagsLayout,
     collapseMediaPreviews = false,
+    messageTextPreviewLines,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
@@ -368,6 +374,7 @@ const DutyMessageList = memo(
                   feedCount={feedCount}
                   tagsLayout={tagsLayout}
                   collapseMediaPreviews={collapseMediaPreviews}
+                  messageTextPreviewLines={messageTextPreviewLines}
                   botTagAction={botTagAction}
                   onCancelBotTagAction={onCancelBotTagAction}
                   onMarkBotTagWrong={onMarkBotTagWrong}
@@ -612,6 +619,7 @@ export const FeedColumnContent = memo(
       featureStrictNetworks,
       tagsLayout,
       collapseMediaPreviews = false,
+      messageTextPreviewLines,
       tagsMap,
       tagsOrder,
       botTagAction,
@@ -740,6 +748,7 @@ export const FeedColumnContent = memo(
           feedCount={feedCount}
           tagsLayout={tagsLayout}
           collapseMediaPreviews={collapseMediaPreviews}
+          messageTextPreviewLines={messageTextPreviewLines}
           botTagAction={botTagAction}
           onCancelBotTagAction={stableOnCancelBotTagAction}
           onMarkBotTagWrong={stableOnMarkBotTagWrong}

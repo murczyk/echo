@@ -22573,8 +22573,31 @@ dutyTagsLayoutDecoder =
                 )
         ]
 
+type MessageTextPreviewLines
+    = Twenty
+    | Forty
+    | Off
+
+
+messageTextPreviewLinesDecoder : Json.Decode.Decoder MessageTextPreviewLines
+messageTextPreviewLinesDecoder =
+    Json.Decode.string
+        |> Json.Decode.andThen
+            (\x ->
+                case x of
+                    "twenty" ->
+                        Json.Decode.succeed Twenty
+                    "forty" ->
+                        Json.Decode.succeed Forty
+                    "off" ->
+                        Json.Decode.succeed Off
+                    unexpected ->
+                        Json.Decode.fail <| "Unexpected variant " ++ unexpected
+            )
+
 type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout
+    , messageTextPreviewLines : MessageTextPreviewLines
     , disableAutoScroll : Bool
     , analysisMapInSidebar : Bool
     , dutyAudioTranscriptionCollapsed : Bool
@@ -22590,6 +22613,7 @@ userDutySettingsDtoDecoder : Json.Decode.Decoder UserDutySettingsDto
 userDutySettingsDtoDecoder =
     Json.Decode.succeed UserDutySettingsDto
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageTextPreviewLines" (messageTextPreviewLinesDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyAudioTranscriptionCollapsed" (Json.Decode.bool)))

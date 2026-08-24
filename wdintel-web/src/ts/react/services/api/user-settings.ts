@@ -8,6 +8,7 @@ export const USER_SETTINGS_UPDATED_EVENT = 'user-settings-updated';
 
 export type { UserDutySettingsDto };
 export type UserDutySettings = {
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
   tagsLayout: TagsLayoutVariant;
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
@@ -18,6 +19,8 @@ export type UserDutySettings = {
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
 };
+
+export type MessageTextPreviewLineLimit = 20 | 40 | null;
 
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
 type UserDutySettingsWire = Omit<
@@ -31,6 +34,7 @@ type UserDutySettingsWire = Omit<
   | 'showClassicAnalysis'
   | 'dutyCollapseMediaPreviews'
 > & {
+  messageTextPreviewLines?: string | null;
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
   dutyAudioTranscriptionCollapsed?: boolean | null;
@@ -40,6 +44,29 @@ type UserDutySettingsWire = Omit<
   showClassicAnalysis?: boolean | null;
   dutyCollapseMediaPreviews?: boolean | null;
 };
+
+function normalizeMessageTextPreviewLines(
+  value: string | number | null | undefined,
+): MessageTextPreviewLineLimit {
+  switch (value) {
+    case 'forty':
+    case 'Forty':
+    case 40:
+      return 40;
+    case 'off':
+    case 'Off':
+      return null;
+    case 'twenty':
+    case 'Twenty':
+    case 20:
+    default:
+      return 20;
+  }
+}
+
+function serializeMessageTextPreviewLines(value: MessageTextPreviewLineLimit): string {
+  return value === 40 ? 'forty' : value === null ? 'off' : 'twenty';
+}
 
 function normalizeTagsLayout(tagsLayout: DutyTagsLayoutWire | null | undefined): TagsLayoutVariant {
   switch (tagsLayout) {
@@ -72,6 +99,7 @@ function serializeTagsLayout(tagsLayout: TagsLayoutVariant): DutyTagsLayoutWire 
 
 function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings {
   return {
+    messageTextPreviewLines: normalizeMessageTextPreviewLines(raw.messageTextPreviewLines),
     tagsLayout: normalizeTagsLayout(raw.tagsLayout),
     disableAutoScroll: raw.disableAutoScroll,
     analysisMapInSidebar: raw.analysisMapInSidebar ?? false,
@@ -97,6 +125,7 @@ export async function saveUserSettings(
   const response = await putJson<UserDutySettingsWire>(
     '/api/user/settings',
     {
+      messageTextPreviewLines: serializeMessageTextPreviewLines(body.messageTextPreviewLines),
       tagsLayout: serializeTagsLayout(body.tagsLayout),
       disableAutoScroll: body.disableAutoScroll,
       analysisMapInSidebar: body.analysisMapInSidebar,
