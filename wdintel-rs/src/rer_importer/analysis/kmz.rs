@@ -56,6 +56,13 @@ pub(crate) async fn rer_analysis_kmz_bytes(
         }
     }
     let items = items.into_values().collect::<Vec<_>>();
+    let record_count = items
+        .iter()
+        .filter(|item| {
+            item.freq.is_some() && item.lat.is_some() && item.lng.is_some()
+        })
+        .count();
+    crate::report_history::ensure_report_record_count(record_count)?;
 
     let tmp_dir = TempDir::new().context(h!())?;
     // let outpath = tmp_dir.path().join("summary-table.kmz");

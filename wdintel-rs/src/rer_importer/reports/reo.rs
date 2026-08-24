@@ -235,6 +235,11 @@ pub async fn report_docx_kind_reo(
     report
         .undefined_networks
         .sort_by_key(|x| -(x.activity.seances_qty as i64));
+    let record_count = report
+        .hostile_networks
+        .len()
+        .saturating_add(report.undefined_networks.len());
+    crate::report_history::ensure_report_record_count(record_count)?;
     info!("sorting networks took: {:?}", start.elapsed());
 
     let network_summary_total =

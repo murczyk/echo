@@ -57,6 +57,10 @@ pub async fn report_docx_kind_network_frequencies(
         },
     )
     .await?;
+    let record_count = aor_data
+        .iter()
+        .fold(0_usize, |count, aor| count.saturating_add(aor.rows.len()));
+    crate::report_history::ensure_report_record_count(record_count)?;
 
     let mut docx = get_docx_document(req);
 

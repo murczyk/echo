@@ -32,7 +32,6 @@ pub async fn report_docx_kind_naushnom(
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
-    let file = std::fs::File::create(outpath)?;
     let width_unit = 100;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
@@ -40,6 +39,13 @@ pub async fn report_docx_kind_naushnom(
         get_inbox_messages_report_network(user_login, env, &inbox_req)
             .await
             .c(h!())?;
+    let record_count = network_map
+        .values()
+        .flat_map(|(_, _, network_units)| network_units.values())
+        .fold(0_usize, |count, messages| {
+            count.saturating_add(messages.len())
+        });
+    crate::report_history::ensure_report_record_count(record_count)?;
 
     let style_invisible = Style::new("Invisible", StyleType::Paragraph)
         .name("Invisible")
@@ -205,6 +211,7 @@ pub async fn report_docx_kind_naushnom(
             .add_paragraph(Paragraph::new());
     }
 
+    let file = std::fs::File::create(outpath)?;
     doc.build().pack(file).context(h!())?;
 
     Ok(())

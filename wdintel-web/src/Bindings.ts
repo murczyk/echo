@@ -329,6 +329,7 @@ export type ReportHistoryRow = {
   blockedByStartedAt: string | null;
   blockedByBgtaskId: number | null;
   status: string;
+  errorStatus: string;
   completedAt: string | null;
   hasFile: boolean;
   fileName: string | null;

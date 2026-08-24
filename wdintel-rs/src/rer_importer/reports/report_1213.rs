@@ -945,6 +945,7 @@ fn build_report_1213_docx_to_path(
     report_data: &Report1213Data,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    crate::report_history::ensure_report_record_count(report_data.items.len())?;
     let file = std::fs::File::create(outpath)?;
     build_report_1213_docx(report_data)
         .build()

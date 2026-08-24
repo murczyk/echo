@@ -29,6 +29,7 @@ const COLUMN_WIDTHS: [f64; 13] = [
 pub(super) fn render_goi_associations_report(
     associations: &[GoiAssociation],
 ) -> Result<Vec<u8>, AppError> {
+    crate::report_history::ensure_report_record_count(associations.len())?;
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet().set_name("Висновки").c(h!())?;
     let cell_format = Format::new()

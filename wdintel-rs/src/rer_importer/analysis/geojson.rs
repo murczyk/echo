@@ -287,6 +287,7 @@ pub(crate) async fn rer_analysis_geojson_bytes(
             }
         }
     }
+    crate::report_history::ensure_report_record_count(features.len())?;
 
     let geojson = GeoJson {
         type_: "FeatureCollection".to_string(),

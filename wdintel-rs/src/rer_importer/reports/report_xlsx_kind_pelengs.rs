@@ -725,6 +725,20 @@ pub async fn report_xlsx_kind_pelengs1(
         Utc::now(),
         messages.len()
     );
+    let record_count = messages
+        .iter()
+        .filter(|(_, coords, message)| {
+            coords.is_some()
+                && message
+                    .coords
+                    .as_ref()
+                    .is_some_and(|coords| !coords.is_empty())
+                && message.date.is_some()
+                && message.time.is_some()
+                && message.freq.is_some()
+        })
+        .count();
+    crate::report_history::ensure_report_record_count(record_count)?;
 
     // Build sender display names map (uuid -> profile entry)
     let sender_uuids = messages

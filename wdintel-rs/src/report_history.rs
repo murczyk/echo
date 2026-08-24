@@ -1,8 +1,14 @@
 use crate::config::{
-    DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_CANCELLED_ERROR_STATUS,
+    REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
     REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
-    REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GLOBAL_WORKER_COUNT,
+    REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GENERIC_ERROR_STATUS,
+    REPORT_HISTORY_GLOBAL_WORKER_COUNT,
     REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS, REPORT_HISTORY_LIST_LIMIT,
+    REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS,
+    REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS, REPORT_HISTORY_RECORD_LIMIT,
+    REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS,
+    REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
 };
 use crate::delta::{bgtask_log, finish_bgtask};
@@ -104,6 +110,7 @@ pub struct ReportHistoryRow {
     pub blocked_by_started_at: Option<String>,
     pub blocked_by_bgtask_id: Option<i64>,
     pub status: String,
+    pub error_status: String,
     pub completed_at: Option<String>,
     pub has_file: bool,
     pub file_name: Option<String>,
@@ -373,6 +380,7 @@ fn to_report_history_row(
         None => (None, None, None, None),
     };
     let is_cancelled = report_history_is_cancelled(&report_history);
+    let error_status = report_history_error_status(&report_history);
     let report_period = report_history_period(&report_history.request);
     ReportHistoryRow {
         id: report_history.id,
@@ -390,6 +398,7 @@ fn to_report_history_row(
         blocked_by_started_at,
         blocked_by_bgtask_id,
         status: report_history.status,
+        error_status,
         completed_at: report_history
             .completed_at
             .map(|completed_at| completed_at.to_string()),
@@ -415,8 +424,142 @@ fn report_history_is_cancelled(report_history: &report_history::Model) -> bool {
         && report_history
             .last_error
             .as_deref()
-            .map(|last_error| last_error.contains("Скасовано користувачем"))
+            .map(|last_error| {
+                last_error.contains(REPORT_HISTORY_CANCELLED_ERROR_STATUS)
+            })
             .unwrap_or(false)
+}
+
+fn report_history_error_status(
+    report_history: &report_history::Model,
+) -> String {
+    if report_history.status != STATUS_FAILED {
+        return String::new();
+    }
+    if report_history_is_cancelled(report_history) {
+        return REPORT_HISTORY_CANCELLED_ERROR_STATUS.to_string();
+    }
+
+    let last_error = report_history
+        .log
+        .as_array()
+        .and_then(|entries| {
+            entries.iter().rev().find_map(|entry| {
+                entry.get("message").and_then(serde_json::Value::as_str)
+            })
+        })
+        .or(report_history.last_error.as_deref());
+    last_error
+        .map(report_history_error_hint)
+        .unwrap_or_else(|| REPORT_HISTORY_GENERIC_ERROR_STATUS.to_string())
+}
+
+fn report_history_error_hint(error: &str) -> String {
+    if let Some(hint) = report_history_known_error_hint(error) {
+        return hint.to_string();
+    }
+
+    let message = debug_msg_values(error)
+        .last()
+        .cloned()
+        .or_else(|| nested_app_error_message(error))
+        .or_else(|| nested_string_message(error))
+        .or_else(|| plain_error_message(error));
+    let Some(message) = message else {
+        return REPORT_HISTORY_GENERIC_ERROR_STATUS.to_string();
+    };
+    report_history_known_error_hint(&message)
+        .unwrap_or(&message)
+        .to_string()
+}
+
+fn report_history_known_error_hint(error: &str) -> Option<&'static str> {
+    let normalized = error.to_lowercase();
+    if normalized.contains("mouse_report_message_limit")
+        || normalized.contains("summary_table_report_message_limit")
+    {
+        Some(REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS)
+    } else if error.contains(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS) {
+        Some(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS)
+    } else if normalized.contains("no default aor found") {
+        Some(REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS)
+    } else if normalized.contains("timed out")
+        || normalized.contains("timeout")
+        || normalized.contains("deadline has elapsed")
+        || normalized.contains("перевищив допустимий час")
+    {
+        Some(REPORT_HISTORY_TIMEOUT_ERROR_STATUS)
+    } else {
+        None
+    }
+}
+
+fn debug_msg_values(error: &str) -> Vec<String> {
+    error
+        .match_indices("msg")
+        .filter_map(|(index, _)| {
+            let before = error[..index].chars().next_back();
+            if before.is_some_and(|character| {
+                character.is_ascii_alphanumeric() || character == '_'
+            }) {
+                return None;
+            }
+            let value = error[index + 3..].trim_start().strip_prefix(':')?;
+            parse_debug_string(value.trim_start())
+        })
+        .collect()
+}
+
+fn parse_debug_string(value: &str) -> Option<String> {
+    if !value.starts_with('"') {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, character) in value.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            '"' => return serde_json::from_str(&value[..=index]).ok(),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn nested_app_error_message(error: &str) -> Option<String> {
+    const PREFIXES: [&str; 2] =
+        ["Business-logic error:", "Service unavailable:"];
+
+    error.lines().rev().find_map(|line| {
+        let line = line.trim().trim_end_matches(',');
+        PREFIXES.iter().find_map(|prefix| {
+            line.strip_prefix(prefix)
+                .map(str::trim)
+                .filter(|message| !message.is_empty())
+                .map(str::to_string)
+        })
+    })
+}
+
+fn nested_string_message(error: &str) -> Option<String> {
+    error
+        .match_indices('"')
+        .filter_map(|(index, _)| parse_debug_string(&error[index..]))
+        .next_back()
+}
+
+fn plain_error_message(error: &str) -> Option<String> {
+    let error = error.trim();
+    if error.is_empty()
+        || error.contains(['{', '}'])
+        || error.lines().count() != 1
+    {
+        return None;
+    }
+    Some(error.to_string())
 }
 
 async fn report_history_queue_meta(
@@ -2101,7 +2244,7 @@ pub async fn report_history_cancel(
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
-    let reason = "Скасовано користувачем".to_string();
+    let reason = REPORT_HISTORY_CANCELLED_ERROR_STATUS.to_string();
     let txn = env.dbx.begin().await.c(h!())?;
     lock_report_request(
         &txn,
@@ -2848,6 +2991,17 @@ async fn generate_and_store_report(
     Ok(())
 }
 
+pub(crate) fn ensure_report_record_count(
+    record_count: usize,
+) -> Result<(), AppError> {
+    if record_count <= REPORT_HISTORY_RECORD_LIMIT {
+        return Ok(());
+    }
+    Err(AppError::BL {
+        msg: REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS.to_string(),
+    })
+}
+
 async fn generate_report(
     env: &Env,
     report_history: &report_history::Model,
@@ -3268,7 +3422,7 @@ async fn handle_report_failure(
     }
     let err_msg = format!("{err:#?}");
     let attempt_count =
-        (report_history.retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS);
+        report_failure_attempt_count(report_history.retry_count, &err_msg);
     let report_log = append_log_entry(report_history.log, "system", &err_msg);
     let now = Utc::now().naive_utc();
     if attempt_count < REPORT_HISTORY_MAX_ATTEMPTS {
@@ -3355,6 +3509,14 @@ async fn handle_report_failure(
     Ok(())
 }
 
+fn report_failure_attempt_count(retry_count: i32, error: &str) -> i32 {
+    if error.contains(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS) {
+        REPORT_HISTORY_MAX_ATTEMPTS
+    } else {
+        (retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS)
+    }
+}
+
 fn append_log_entry(
     log: serde_json::Value,
     login: &str,
@@ -3396,6 +3558,60 @@ mod tests {
                 "ORDER BY \"report_history\".\"started_at\" DESC NULLS LAST, \"report_history\".\"id\" DESC"
             ),
             "{sql}"
+        );
+    }
+
+    #[test]
+    fn report_error_hint_extracts_safe_nested_messages_and_known_hints() {
+        let cases = [
+            (
+                r#"BL { msg: "Оберіть інший період" }"#,
+                "Оберіть інший період",
+            ),
+            (
+                r#"Outer { msg: "зовнішня", source: BL { msg: "внутрішня" } }"#,
+                "внутрішня",
+            ),
+            (
+                "AnyhowError { source: context\n\nCaused by:\n    Service unavailable: Сервіс тимчасово недоступний,\n}",
+                "Сервіс тимчасово недоступний",
+            ),
+            (
+                r#"OuterError { source: "Коротке пояснення" }"#,
+                "Коротке пояснення",
+            ),
+            (
+                "Report generation timed out after 3600 seconds",
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                r#"BL { msg: "summary_table_report_message_limit" }"#,
+                REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS,
+            ),
+            (
+                "CustomInfrastructureError { source: DatabaseError }",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(report_history_error_hint(error), expected);
+        }
+    }
+
+    #[test]
+    fn report_record_limit_fails_without_retry() {
+        assert!(ensure_report_record_count(REPORT_HISTORY_RECORD_LIMIT).is_ok());
+        let error = ensure_report_record_count(REPORT_HISTORY_RECORD_LIMIT + 1)
+            .unwrap_err();
+        let error = format!("{error:#?}");
+        assert_eq!(
+            report_history_error_hint(&error),
+            REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS
+        );
+        assert_eq!(
+            report_failure_attempt_count(0, &error),
+            REPORT_HISTORY_MAX_ATTEMPTS
         );
     }
 

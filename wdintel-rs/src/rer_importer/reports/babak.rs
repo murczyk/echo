@@ -160,11 +160,11 @@ pub fn build_babak_report(
         date_to,
         without_comments,
     } = data;
+    let record_count = babak_report_record_count(&units, without_comments);
+    crate::report_history::ensure_report_record_count(record_count)?;
     let tz = crate::config::get_tz();
     let date_from_dt_tz = Utc.from_utc_datetime(&date_from).with_timezone(&tz);
     let date_to_dt_tz = Utc.from_utc_datetime(&date_to).with_timezone(&tz);
-
-    let file = std::fs::File::create(outpath)?;
 
     let units_list = units
         .iter()
@@ -438,6 +438,7 @@ pub fn build_babak_report(
         .into_iter()
         .map(BabakStreamUnit::from_report)
         .collect::<Vec<_>>();
+    let file = std::fs::File::create(outpath)?;
     pack_babak_docx(doc.build(), file, &stream_units, without_comments)
         .context(h!())?;
 
@@ -459,6 +460,41 @@ struct BabakStreamUnit {
     comments: Vec<BabakComment>,
     losses_comments: Vec<BabakComment>,
     others_comments: Vec<BabakComment>,
+}
+
+fn babak_report_record_count(
+    units: &[StatsPerUnitReport],
+    without_comments: bool,
+) -> usize {
+    units.iter().fold(units.len(), |count, unit| {
+        let unit = BabakStreamUnit::from_report(unit.clone());
+        let comments = if without_comments {
+            0
+        } else {
+            unit.comments
+                .iter()
+                .filter(|comment| {
+                    comment.datetime.is_some()
+                        && babak_non_empty_text(comment.comment.as_deref())
+                            .is_some()
+                })
+                .count()
+        };
+        let supplemental = unit
+            .losses_comments
+            .iter()
+            .chain(&unit.others_comments)
+            .filter(|comment| {
+                comment.datetime.is_some()
+                    && ((!without_comments
+                        && babak_non_empty_text(comment.comment.as_deref())
+                            .is_some())
+                        || babak_non_empty_text(comment.text.as_deref())
+                            .is_some())
+            })
+            .count();
+        count.saturating_add(comments).saturating_add(supplemental)
+    })
 }
 
 impl BabakStreamUnit {

@@ -104,6 +104,7 @@ const DEFAULT_REPORTS_COLUMNS_VISIBILITY = {
   details: true,
   createdAt: true,
   status: true,
+  errorStatus: true,
   plannedForTs: false,
   startedAt: false,
   queuePosition: true,
@@ -119,6 +120,7 @@ const DEFAULT_REPORTS_COLUMN_ORDER = [
   'details',
   'createdAt',
   'status',
+  'errorStatus',
   'plannedForTs',
   'startedAt',
   'queuePosition',
@@ -130,6 +132,7 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
   id: true,
   startedAt: true,
+  errorStatus: false,
   requestedBy: true,
   executionTime: true,
   errorLog: true,
@@ -290,13 +293,21 @@ function reportDurationSeconds(startedAt: Date, completedAt: Date): number | nul
 }
 
 function formatReportExecutionTime(row: ReportHistoryRow): string {
-  if (row.status !== 'done' || !row.hasFile) return '';
+  const isCancelled = isCancelledReportHistory(row);
+  if ((row.status !== 'done' || !row.hasFile) && !isCancelled) return '';
 
-  const createdAt = parseReportDate(row.createdAt);
   const startedAt = parseReportDate(row.startedAt);
   const completedAt = parseReportDate(row.completedAt);
-  if (createdAt === null || completedAt === null) return '';
+  if (completedAt === null) return '';
 
+  if (isCancelled) {
+    if (startedAt === null) return '';
+    const executionSeconds = reportDurationSeconds(startedAt, completedAt);
+    return executionSeconds === null ? '' : `виконання ${formatReportDuration(executionSeconds)}`;
+  }
+
+  const createdAt = parseReportDate(row.createdAt);
+  if (createdAt === null) return '';
   if (startedAt === null) {
     const totalSeconds = reportDurationSeconds(createdAt, completedAt);
     return totalSeconds === null ? '' : formatReportDuration(totalSeconds);
@@ -318,6 +329,7 @@ function buildReportLoadingRows(rowCount: number): ReportHistoryRow[] {
     requestedBy: '',
     createdAt: '',
     status: 'planned',
+    errorStatus: '',
     completedAt: null,
     hasFile: false,
     fileName: null,
@@ -413,7 +425,7 @@ export function SettingsMyReportsSection({ active }: Props) {
     <ReportHistoryTableSection
       active={active}
       title="Мої звіти"
-      tableId="settings-neo-my-reports-v3"
+      tableId="settings-neo-my-reports-v4"
       panelId="settings-neo-panel-my-reports"
       labelledBy="settings-neo-tab-my-reports"
     />
@@ -792,6 +804,7 @@ export function ReportHistoryTableSection({
         id: 'status',
         accessorFn: (row) => formatReportStatus(row),
         header: 'Статус',
+        ...(!includeAuthor ? { size: 90 } : {}),
         meta: { overflowMode: 'none' },
         ...(includeAuthor
           ? {
@@ -820,6 +833,23 @@ export function ReportHistoryTableSection({
           return <Tooltip title={row.original.lastError}>{chip}</Tooltip>;
         },
       },
+    );
+
+    if (!includeAuthor) {
+      nextColumns.push({
+        accessorKey: 'errorStatus',
+        header: 'Статус помилки',
+        enableSorting: false,
+        enableColumnFilter: false,
+        meta: { overflowMode: 'text' },
+        Cell: mrtTextCell({
+          displayValue: ({ row }) => row.original.errorStatus,
+          fullValue: ({ row }) => row.original.errorStatus,
+        }),
+      });
+    }
+
+    nextColumns.push(
       {
         accessorKey: 'plannedForTs',
         header: 'План',
