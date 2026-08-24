@@ -280,6 +280,9 @@ pub async fn unlink_sigint_unit_with_lock(
     orbit_unit_id: Uuid,
 ) -> Result<(), AppError> {
     let transaction = acquire_import_lock(db).await.c(h!())?;
+    crate::sigint::unit::changelog::set_author(&transaction, login)
+        .await
+        .c(h!())?;
     if !persistence::delete_sigint_unit_link_in_transaction(
         &transaction,
         sigint_unit_id,
@@ -1021,6 +1024,7 @@ mod tests {
             is_deduplicate_candidate: None,
             orbit_note: None,
             is_inconsistent: false,
+            updated_at: Default::default(),
         }
     }
 }

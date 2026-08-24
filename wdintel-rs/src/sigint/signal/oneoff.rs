@@ -319,6 +319,7 @@ mod tests {
             is_deduplicate_candidate: Default::default(),
             orbit_note: Default::default(),
             is_inconsistent: false,
+            updated_at: Default::default(),
         }];
         let mut unit_mapping = Default::default();
         let mut suggested_mapping = Default::default();
@@ -368,6 +369,7 @@ mod tests {
             is_deduplicate_candidate: Default::default(),
             orbit_note: Default::default(),
             is_inconsistent: false,
+            updated_at: Default::default(),
         }];
         let mut unit_mapping = Default::default();
         let mut suggested_mapping = Default::default();

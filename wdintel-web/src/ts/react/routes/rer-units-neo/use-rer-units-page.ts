@@ -348,7 +348,11 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     try {
       let successText: string;
       if (editUnit !== null) {
-        const updated = await updateUnit({ ...editUnit, ...value.unit });
+        const updated = await updateUnit({
+          ...editUnit,
+          ...value.unit,
+          name: value.unit.name ?? '',
+        });
         setUnits((current) => replaceUnit(current, updated));
         successText = `Підрозділ «${updated.name}» оновлено.`;
       } else if (value.autoNetwork !== undefined) {

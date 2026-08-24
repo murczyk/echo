@@ -1,5 +1,11 @@
 {
   "migrations": {
+    "echo:m20260824_090738_sigint_unit_change": {
+      "changes": [
+        { "table": "public.sigint_unit", "strategy": "mirror_resync" },
+        { "table": "public.sigint_unit_change", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260822_105557_add_settlement_stats_index": {
       "changes": []
     },

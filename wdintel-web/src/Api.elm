@@ -742,6 +742,18 @@ sigint_unit_details toMsg req =
         }
 
 
+sigint_unit_changelog :
+    (Result ApiError UnitChangelogRsp -> msg)
+    -> UnitDetailsReq
+    -> Cmd msg
+sigint_unit_changelog toMsg req =
+    Http.post
+        { url = "/api/sigint/unit/changelog"
+        , body = Http.jsonBody (unitDetailsReqEncoder req)
+        , expect = leExpectJson toMsg unitChangelogRspDecoder
+        }
+
+
 sigint_unit_label_create :
     (Result ApiError UnitLabel -> msg)
     -> CreateUnitLabelReq

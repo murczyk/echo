@@ -7877,8 +7877,95 @@ listInconsistentUnitsRspEncoder struct =
         ]
 
 
+type alias UnitNameReview =
+    { sigintUnitId : Int
+    , currentName : String
+    , expectedName : String
+    , matchesExpected : Bool
+    , updatedAt : Int
+    }
+
+
+unitNameReviewEncoder : UnitNameReview -> Json.Encode.Value
+unitNameReviewEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "current_name", (Json.Encode.string) struct.currentName )
+        , ( "expected_name", (Json.Encode.string) struct.expectedName )
+        , ( "matches_expected", (Json.Encode.bool) struct.matchesExpected )
+        , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias UnitNameReviewCursor =
+    { updatedAtMicros : Int
+    , sigintUnitId : Int
+    }
+
+
+unitNameReviewCursorEncoder : UnitNameReviewCursor -> Json.Encode.Value
+unitNameReviewCursorEncoder struct =
+    Json.Encode.object
+        [ ( "updated_at_micros", (Json.Encode.int) struct.updatedAtMicros )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
+type alias ListUnitNameReviewsReq =
+    { after : Maybe (UnitNameReviewCursor)
+    }
+
+
+listUnitNameReviewsReqEncoder : ListUnitNameReviewsReq -> Json.Encode.Value
+listUnitNameReviewsReqEncoder struct =
+    Json.Encode.object
+        [ ( "after", (Maybe.withDefault Json.Encode.null << Maybe.map (unitNameReviewCursorEncoder)) struct.after )
+        ]
+
+
+type alias ListUnitNameReviewsRsp =
+    { units : List (UnitNameReview)
+    , nextCursor : Maybe (UnitNameReviewCursor)
+    }
+
+
+listUnitNameReviewsRspEncoder : ListUnitNameReviewsRsp -> Json.Encode.Value
+listUnitNameReviewsRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (unitNameReviewEncoder)) struct.units )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (unitNameReviewCursorEncoder)) struct.nextCursor )
+        ]
+
+
+type alias UpdateUnitNameReq =
+    { sigintUnitId : Int
+    , name : String
+    }
+
+
+updateUnitNameReqEncoder : UpdateUnitNameReq -> Json.Encode.Value
+updateUnitNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias ConfirmUnitNameReq =
+    { sigintUnitId : Int
+    }
+
+
+confirmUnitNameReqEncoder : ConfirmUnitNameReq -> Json.Encode.Value
+confirmUnitNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
 type alias CreateUnitReq =
-    { other : String
+    { name : Maybe (String)
+    , other : String
     , teamOrCrew : String
     , section : String
     , squad : String
@@ -7903,7 +7990,8 @@ type alias CreateUnitReq =
 createUnitReqEncoder : CreateUnitReq -> Json.Encode.Value
 createUnitReqEncoder struct =
     Json.Encode.object
-        [ ( "other", (Json.Encode.string) struct.other )
+        [ ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
+        , ( "other", (Json.Encode.string) struct.other )
         , ( "team_or_crew", (Json.Encode.string) struct.teamOrCrew )
         , ( "section", (Json.Encode.string) struct.section )
         , ( "squad", (Json.Encode.string) struct.squad )
@@ -8020,6 +8108,54 @@ unitDetailsReqEncoder : UnitDetailsReq -> Json.Encode.Value
 unitDetailsReqEncoder struct =
     Json.Encode.object
         [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        ]
+
+
+type alias UnitChangelogChange =
+    { field : String
+    , oldValue : Maybe (String)
+    , newValue : Maybe (String)
+    }
+
+
+unitChangelogChangeEncoder : UnitChangelogChange -> Json.Encode.Value
+unitChangelogChangeEncoder struct =
+    Json.Encode.object
+        [ ( "field", (Json.Encode.string) struct.field )
+        , ( "old_value", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.oldValue )
+        , ( "new_value", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.newValue )
+        ]
+
+
+type alias UnitChangelogEntry =
+    { id : Int
+    , author : String
+    , createdAt : Int
+    , action : String
+    , changes : List (UnitChangelogChange)
+    }
+
+
+unitChangelogEntryEncoder : UnitChangelogEntry -> Json.Encode.Value
+unitChangelogEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "author", (Json.Encode.string) struct.author )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "action", (Json.Encode.string) struct.action )
+        , ( "changes", (Json.Encode.list (unitChangelogChangeEncoder)) struct.changes )
+        ]
+
+
+type alias UnitChangelogRsp =
+    { entries : List (UnitChangelogEntry)
+    }
+
+
+unitChangelogRspEncoder : UnitChangelogRsp -> Json.Encode.Value
+unitChangelogRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (unitChangelogEntryEncoder)) struct.entries )
         ]
 
 
@@ -19040,9 +19176,53 @@ listInconsistentUnitsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (inconsistentUnitDecoder))))
 
 
+unitNameReviewDecoder : Json.Decode.Decoder UnitNameReview
+unitNameReviewDecoder =
+    Json.Decode.succeed UnitNameReview
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "current_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matches_expected" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+
+
+unitNameReviewCursorDecoder : Json.Decode.Decoder UnitNameReviewCursor
+unitNameReviewCursorDecoder =
+    Json.Decode.succeed UnitNameReviewCursor
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at_micros" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+
+
+listUnitNameReviewsReqDecoder : Json.Decode.Decoder ListUnitNameReviewsReq
+listUnitNameReviewsReqDecoder =
+    Json.Decode.succeed ListUnitNameReviewsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after" (Json.Decode.nullable (unitNameReviewCursorDecoder))))
+
+
+listUnitNameReviewsRspDecoder : Json.Decode.Decoder ListUnitNameReviewsRsp
+listUnitNameReviewsRspDecoder =
+    Json.Decode.succeed ListUnitNameReviewsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitNameReviewDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (unitNameReviewCursorDecoder))))
+
+
+updateUnitNameReqDecoder : Json.Decode.Decoder UpdateUnitNameReq
+updateUnitNameReqDecoder =
+    Json.Decode.succeed UpdateUnitNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+confirmUnitNameReqDecoder : Json.Decode.Decoder ConfirmUnitNameReq
+confirmUnitNameReqDecoder =
+    Json.Decode.succeed ConfirmUnitNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+
+
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq
 createUnitReqDecoder =
     Json.Decode.succeed CreateUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "team_or_crew" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.string)))
@@ -19104,6 +19284,30 @@ unitDetailsReqDecoder : Json.Decode.Decoder UnitDetailsReq
 unitDetailsReqDecoder =
     Json.Decode.succeed UnitDetailsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+
+
+unitChangelogChangeDecoder : Json.Decode.Decoder UnitChangelogChange
+unitChangelogChangeDecoder =
+    Json.Decode.succeed UnitChangelogChange
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "old_value" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "new_value" (Json.Decode.nullable (Json.Decode.string))))
+
+
+unitChangelogEntryDecoder : Json.Decode.Decoder UnitChangelogEntry
+unitChangelogEntryDecoder =
+    Json.Decode.succeed UnitChangelogEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "action" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changes" (Json.Decode.list (unitChangelogChangeDecoder))))
+
+
+unitChangelogRspDecoder : Json.Decode.Decoder UnitChangelogRsp
+unitChangelogRspDecoder =
+    Json.Decode.succeed UnitChangelogRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (unitChangelogEntryDecoder))))
 
 
 unitAttachmentAorDecoder : Json.Decode.Decoder UnitAttachmentAor
