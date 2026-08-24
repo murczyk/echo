@@ -280,6 +280,61 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
+  it('derives the last transcription-results page from the response total', async () => {
+    const result = {
+      id: '01900000-0000-7000-8000-000000000002',
+      source_id: '01900000-0000-7000-8000-000000000003',
+      file_name: 'recording.mp3',
+      created_at: 1_700_000_000_000,
+      started_transcription_at: null,
+      completion_time_seconds: null,
+      status: 'queued',
+      transcribed_value: null,
+      error: null,
+      instance_id: null,
+      instance_name: null,
+    };
+    mocks.listResults
+      .mockResolvedValueOnce({
+        rows: [result],
+        total: 200,
+        has_more: true,
+        next_cursor: 'cursor-next',
+        previous_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [result],
+        total: 201,
+        has_more: false,
+        next_cursor: null,
+        previous_cursor: 'cursor-previous',
+      });
+    const { container, root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+    await clickButton('1-1 з 200');
+    const lastPageItem = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.includes('Остання сторінка'));
+    expect(lastPageItem).toBeDefined();
+    await act(async () => {
+      lastPageItem?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
+
+    expect(mocks.listResults).toHaveBeenLastCalledWith(
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+        lastPage: true,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(container.textContent).toContain('201-201 з 201');
+    await act(async () => root.unmount());
+  });
+
   it('uses operator defaults and the next available ordering in the add dialog', async () => {
     mocks.list.mockResolvedValue([{ ...instance, ordering: 4 }]);
     const { root } = await renderPage();

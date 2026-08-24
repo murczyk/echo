@@ -310,7 +310,11 @@ function ResultsPageBody() {
         setHasMore(result.has_more);
         setNextCursor(result.next_cursor);
         setPreviousCursor(result.previous_cursor);
-        setPageIndex(nextPageIndex);
+        setPageIndex(
+          nextPageRequest.lastPage
+            ? Math.max(0, Math.ceil(result.total / PAGE_SIZE) - 1)
+            : nextPageIndex,
+        );
         setPageRequest(nextPageRequest);
       } catch (nextError) {
         if (!abortController.signal.aborted) {

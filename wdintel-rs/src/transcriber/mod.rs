@@ -262,12 +262,42 @@ struct TranscriptionResultCount {
     total: i64,
 }
 
-const TRANSCRIPTION_RESULTS_FROM_SQL: &str = r#"
-from echo_gpu_transcription_queue queue
+const TRANSCRIPTION_RESULTS_QUEUE_COLUMNS: &str = r#"
+id,
+source_id,
+created_at,
+started_transcription_at,
+finished_at,
+state,
+transcribed_value,
+last_error,
+actual_instance_id,
+selected_instance_id
+"#;
+
+fn transcription_results_from_sql(filtered: bool) -> String {
+    let queue_sql = if filtered {
+        format!(
+            r#"(
+select {TRANSCRIPTION_RESULTS_QUEUE_COLUMNS}
+from echo_gpu_transcription_queue
+order by created_at desc, id desc
+limit {}
+)"#,
+            crate::config::ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_ROW_LIMIT
+        )
+    } else {
+        "echo_gpu_transcription_queue".to_string()
+    };
+    format!(
+        r#"
+from {queue_sql} queue
 left join signal_message_media media on media.id = queue.source_id
 left join gpu_config actual_instance on actual_instance.id = queue.actual_instance_id
 left join gpu_config selected_instance on selected_instance.id = queue.selected_instance_id
-"#;
+"#
+    )
+}
 
 const TRANSCRIPTION_RESULT_CREATED_AT_FILTER: &str = "to_char(queue.created_at at time zone 'UTC' at time zone 'Europe/Kyiv', 'DD.MM.YYYY, HH24:MI:SS')";
 const TRANSCRIPTION_RESULT_STARTED_AT_FILTER: &str = "coalesce(to_char(queue.started_transcription_at at time zone 'UTC' at time zone 'Europe/Kyiv', 'DD.MM.YYYY, HH24:MI:SS'), '—')";
@@ -567,15 +597,14 @@ fn transcription_result_limit(req: &TranscriptionResultListReq) -> u64 {
 
 async fn query_transcription_result_total(
     dbx: &DatabaseConnection,
+    from_sql: &str,
     filters_sql: &str,
     values: &[Value],
 ) -> Result<u64, AppError> {
     let total = TranscriptionResultCount::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
-            format!(
-                "select count(*) as total {TRANSCRIPTION_RESULTS_FROM_SQL} {filters_sql}"
-            ),
+            format!("select count(*) as total {from_sql} {filters_sql}"),
             values.to_vec(),
         ),
     )
@@ -656,6 +685,7 @@ fn transcription_result_fetch_limit(
 
 async fn query_transcription_result_rows(
     dbx: &DatabaseConnection,
+    from_sql: &str,
     filters_sql: &str,
     mut values: Vec<Value>,
     page: TranscriptionResultPage,
@@ -686,7 +716,7 @@ select
     queue.last_error as error,
     coalesce(queue.actual_instance_id, queue.selected_instance_id) as instance_id,
     coalesce(actual_instance.name, selected_instance.name) as instance_name
-{TRANSCRIPTION_RESULTS_FROM_SQL}
+{from_sql}
 {page_filters_sql}
 order by {order_sql}
 limit ${limit_placeholder}
@@ -740,12 +770,15 @@ async fn query_transcription_results(
     let limit = transcription_result_limit(req);
     let (filters_sql, values) =
         transcription_result_filters_sql(req).context(h!())?;
-    let total = query_transcription_result_total(dbx, &filters_sql, &values)
-        .await
-        .c(h!())?;
+    let from_sql = transcription_results_from_sql(!filters_sql.is_empty());
+    let total =
+        query_transcription_result_total(dbx, &from_sql, &filters_sql, &values)
+            .await
+            .c(h!())?;
     let page = transcription_result_page(req).context(h!())?;
     let (rows, had_extra) = query_transcription_result_rows(
         dbx,
+        &from_sql,
         &filters_sql,
         values,
         page,
