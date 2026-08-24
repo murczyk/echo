@@ -817,9 +817,14 @@ deploy _server_pos="" server silent="false":
       trap - EXIT
 
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; unmasking runtime services and leaving them stopped..." >&2
-        if ! ssh "$SERVER" 'sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service'; then
-          echo "Failed to unmask runtime services after deployment failure." >&2
+        echo "Deployment failed; stopping and unmasking runtime services..." >&2
+        if ! ssh "$SERVER" '
+          status=0
+          sudo systemctl stop wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          exit "$status"
+        '; then
+          echo "Failed to stop or unmask runtime services after deployment failure." >&2
         fi
       fi
 
@@ -1184,9 +1189,14 @@ deploy-from-local _server_pos="" server silent="false":
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
       fi
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; unmasking runtime services and leaving them stopped..." >&2
-        if ! ssh "$SERVER" 'sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service'; then
-          echo "Failed to unmask runtime services after deployment failure." >&2
+        echo "Deployment failed; stopping and unmasking runtime services..." >&2
+        if ! ssh "$SERVER" '
+          status=0
+          sudo systemctl stop wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          exit "$status"
+        '; then
+          echo "Failed to stop or unmask runtime services after deployment failure." >&2
         fi
       fi
 

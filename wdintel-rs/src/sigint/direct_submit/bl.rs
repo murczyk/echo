@@ -1760,6 +1760,7 @@ mod tests {
         let mut inbox_item = inbox_item.into_active_model();
         inbox_item.date = Set(None);
         inbox_item.time = Set(None);
+        inbox_item.datetime = Set(None);
         inbox_item.update(&env.dbx).await.unwrap();
 
         edit_signal_message(
@@ -1786,6 +1787,7 @@ mod tests {
                 .unwrap();
         assert_eq!(inbox_item.date, None);
         assert_eq!(inbox_item.time, None);
+        assert_eq!(inbox_item.datetime, None);
     }
 
     #[tokio::test]
