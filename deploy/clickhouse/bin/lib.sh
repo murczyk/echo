@@ -91,6 +91,7 @@ reconcile_analytics_schema_with_retry() {
     "$analytics_bin_dir/refresh-current-views.sh" \
       && "$analytics_bin_dir/refresh-gateway.sh" \
       && "$analytics_bin_dir/reconcile-schema.sh" \
+      && "$analytics_bin_dir/reconcile-if-needed.sh" \
       && "$analytics_bin_dir/check-analytics-health.sh" \
       || status=$?
     ((status != 0)) || return 0
