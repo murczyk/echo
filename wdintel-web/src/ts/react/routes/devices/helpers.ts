@@ -12,6 +12,7 @@ import type {
   UnitSummary,
 } from '../../../../Bindings';
 import { buildSelectableUnitOptions, getUnitDisplayLabel } from '../../utils/unit-search';
+import { HttpRequestError } from '../../services/api/client';
 import type { SelectedSidebarUnitFilter, UnitHierarchyFilter } from '../rer-callsigns-neo/types';
 
 export type DeviceArchivedFilterValue = 'active' | 'archived' | 'all';
@@ -292,7 +293,21 @@ export function isSameDeviceSidebarUnitFilter(
   return false;
 }
 
+const FILE_REGISTRY_NOT_CONFIGURED_ERROR_MESSAGE =
+  'Device file operations are unavailable because the [file_registry] configuration section is missing.';
+const FILE_REGISTRY_NOT_CONFIGURED_USER_MESSAGE =
+  'Сховище файлів пристроїв не налаштоване. Аналіз файлів недоступний. Зверніться до адміністратора сервера.';
+
+export function isFileRegistryNotConfiguredError(error: unknown): boolean {
+  return (
+    error instanceof HttpRequestError &&
+    error.status === 503 &&
+    error.message === FILE_REGISTRY_NOT_CONFIGURED_ERROR_MESSAGE
+  );
+}
+
 export function formatDeviceErrorMessage(error: unknown): string {
+  if (isFileRegistryNotConfiguredError(error)) return FILE_REGISTRY_NOT_CONFIGURED_USER_MESSAGE;
   if (error instanceof Error && error.message.trim()) return error.message;
   if (typeof error === 'string' && error.trim()) return error;
   try {

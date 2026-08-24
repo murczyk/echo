@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Unit } from '../../../../../Bindings';
 import { getCreateUnitDuplicateCandidates, getUnitsPage } from '../../../services/api/units';
-import { UnitFormDialog, type UnitFormSubmit } from './UnitFormDialog';
+import { UnitFormDrawer, type UnitFormSubmit } from './UnitFormDrawer';
 
 vi.mock('../../../services/api/units', () => ({
   DEFAULT_LIST_UNITS_REQ: {},
@@ -63,7 +63,7 @@ async function renderDialog(onSubmit: (value: UnitFormSubmit) => void): Promise<
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <UnitFormDialog
+      <UnitFormDrawer
         open
         unit={null}
         devicesSectionEnabled={false}
@@ -89,7 +89,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-describe('UnitFormDialog', () => {
+describe('UnitFormDrawer', () => {
   it('waits for duplicate selection before creating an ORBIT-linked unit', async () => {
     vi.mocked(getCreateUnitDuplicateCandidates).mockResolvedValue([duplicate]);
     const onSubmit = vi.fn();
