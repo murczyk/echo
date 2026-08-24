@@ -7,7 +7,10 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::types::*;
 use chrono::Utc;
-use sea_orm::sea_query::{Expr, LockType};
+use sea_orm::sea_query::{
+    Alias, CommonTableExpression, Expr, LockType, Order, PostgresQueryBuilder,
+    Query, UnionType, WithClause,
+};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashSet};
 use uuid::Uuid;
@@ -157,41 +160,121 @@ where
         return Ok(vec![]);
     }
 
-    let sql = r#"
-        with recursive ancestors as (
-            select
-                ip.source_message_id,
-                1 as depth,
-                array[ip.intel_message_id, ip.source_message_id] as path
-            from intel_product ip
-            where ip.intel_message_id = any($1)
-              and ip.relation_kind = 'report'::intel_product_relation_kind
-            union all
-            select
-                ip.source_message_id,
-                a.depth + 1,
-                a.path || ip.source_message_id
-            from intel_product ip
-            join ancestors a on ip.intel_message_id = a.source_message_id
-            where ip.relation_kind = 'report'::intel_product_relation_kind
-              and a.depth < 100
-              and not (ip.source_message_id = any(a.path))
-        )
-        select source_message_id
-        from ancestors
-        group by source_message_id
-        order by min(depth) asc, source_message_id asc
-    "#;
+    let ancestors = Alias::new("ancestors");
+    let source_message_id = Alias::new("source_message_id");
+    let depth = Alias::new("depth");
+    let path = Alias::new("path");
 
-    let rows =
-        AncestorIdRow::find_by_statement(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            sql,
-            [signal_message_ids.to_vec().into()],
+    let mut seed = Query::select()
+        .expr_as(
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
+            )),
+            source_message_id.clone(),
+        )
+        .expr_as(Expr::val(1), depth.clone())
+        .expr_as(
+            Expr::cust_with_exprs(
+                "ARRAY[$1, $2]::bigint[]",
+                [
+                    Expr::col((
+                        intel_product::Entity,
+                        intel_product::Column::IntelMessageId,
+                    )),
+                    Expr::col((
+                        intel_product::Entity,
+                        intel_product::Column::SourceMessageId,
+                    )),
+                ],
+            ),
+            path.clone(),
+        )
+        .from(intel_product::Entity)
+        .and_where(
+            intel_product::Column::IntelMessageId
+                .is_in(signal_message_ids.to_vec()),
+        )
+        .and_where(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
         ))
-        .all(dbx)
-        .await
-        .c(h!())?;
+        .to_owned();
+    let recursive = Query::select()
+        .expr_as(
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
+            )),
+            source_message_id.clone(),
+        )
+        .expr_as(
+            Expr::col((ancestors.clone(), depth.clone())).add(1),
+            depth.clone(),
+        )
+        .expr_as(
+            Expr::cust_with_exprs(
+                "$1 || $2",
+                [
+                    Expr::col((ancestors.clone(), path.clone())),
+                    Expr::col((
+                        intel_product::Entity,
+                        intel_product::Column::SourceMessageId,
+                    )),
+                ],
+            ),
+            path.clone(),
+        )
+        .from(intel_product::Entity)
+        .join(
+            JoinType::InnerJoin,
+            ancestors.clone(),
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
+            ))
+            .equals((ancestors.clone(), source_message_id.clone())),
+        )
+        .and_where(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
+        .and_where(Expr::col((ancestors.clone(), depth.clone())).lt(100))
+        .and_where(Expr::cust_with_exprs(
+            "NOT ($1 = ANY($2))",
+            [
+                Expr::col((
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
+                )),
+                Expr::col((ancestors, path.clone())),
+            ],
+        ))
+        .to_owned();
+    let cte = CommonTableExpression::new()
+        .table_name(Alias::new("ancestors"))
+        .columns([source_message_id.clone(), depth.clone(), path.clone()])
+        .query(seed.union(UnionType::All, recursive).to_owned())
+        .to_owned();
+    let mut with_clause = WithClause::new();
+    with_clause.recursive(true).cte(cte);
+    let mut query = Query::select();
+    query
+        .column((Alias::new("ancestors"), source_message_id.clone()))
+        .from(Alias::new("ancestors"))
+        .group_by_col((Alias::new("ancestors"), source_message_id.clone()))
+        .order_by_expr(
+            Expr::col((Alias::new("ancestors"), depth)).min(),
+            Order::Asc,
+        )
+        .order_by((Alias::new("ancestors"), source_message_id), Order::Asc)
+        .with_cte(with_clause);
+    let (sql, values) = query.build(PostgresQueryBuilder);
+
+    let rows = AncestorIdRow::find_by_statement(
+        Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
 
     Ok(rows.into_iter().map(|row| row.source_message_id).collect())
 }
