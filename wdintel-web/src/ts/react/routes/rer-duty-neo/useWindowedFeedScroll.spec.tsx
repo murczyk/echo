@@ -1530,6 +1530,106 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(150);
   });
 
+  it('cancels the follow ease when the user scrolls upward mid-animation', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const onLeftBottom = vi.fn();
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} onLeftBottom={onLeftBottom} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} onLeftBottom={onLeftBottom} />);
+    });
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    const nextIds = [1, 2, 3, 4, 5];
+    metrics.scrollHeight = 300;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} onLeftBottom={onLeftBottom} />);
+    });
+
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+    const midEaseTop = scroller.scrollTop;
+    expect(midEaseTop).toBeGreaterThan(100);
+    expect(midEaseTop).toBeLessThan(200);
+
+    onLeftBottom.mockClear();
+    scroller.scrollTop = midEaseTop - 40;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    expect(onLeftBottom).toHaveBeenCalledTimes(1);
+    expect(scroller.scrollTop).toBe(midEaseTop - 40);
+
+    await waitForFollowEase();
+    // Ease must not resume and yank back to the tail.
+    expect(scroller.scrollTop).toBe(midEaseTop - 40);
+  });
+
+  it('publishes physical-bottom after a smooth follow from above the tail', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const onPhysicalBottomChange = vi.fn();
+    const onReachedBottom = vi.fn(() => true);
+    const ids = [1, 2, 3, 4, 5, 6];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 300 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+          onReachedBottom={onReachedBottom}
+        />,
+      );
+    });
+    // Leave the live edge (above the tail), then clear initial-bottom noise.
+    scroller.scrollTop = 50;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+    await act(async () => {
+      await waitForAnimationFrame();
+    });
+    onPhysicalBottomChange.mockClear();
+    onReachedBottom.mockClear();
+
+    act(() => {
+      latestScrollHandle?.scrollToBottom('smooth');
+    });
+
+    // Sticky local ref must not have published yet.
+    expect(onPhysicalBottomChange).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+    await waitForFollowEase();
+
+    expect(scroller.scrollTop).toBe(200);
+    expect(onPhysicalBottomChange).toHaveBeenCalledWith(true);
+  });
+
   it('pins follow-tail appends after layout stabilizes when reduced motion is preferred', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: true }) as MediaQueryList);
     const ids = [1, 2, 3, 4];

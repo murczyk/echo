@@ -889,18 +889,65 @@ export function useWindowedFeedScroll({
         const fromScrollTop = scroller.scrollTop;
         const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
         const enableFollow = options?.enableFollow !== false;
-        if (Math.abs(maxScrollTop - fromScrollTop) < 0.5) {
+
+        const finishFollowEaseLanding = (reason: string) => {
           followAnimatingRef.current = false;
           smoothFollowUntilMsRef.current = 0;
-          if (enableFollow) liveBottomFollowRef.current = true;
-          physicallyAtBottomRef.current = true;
+          const active = scrollerRef.current;
+          if (!active) return;
+          const bottomDistance = distanceToBottom(active);
+          const atPhysical = bottomDistance <= 1;
+          if (atPhysical) {
+            const wasPhysical = physicallyAtBottomRef.current;
+            physicallyAtBottomRef.current = true;
+            // Sticky true mid-ease hides the transition from updateScrollState — always
+            // publish so FeedColumn / poll refs learn we landed on the tail.
+            callbacksRef.current.onPhysicalBottomChange?.(true);
+            if (wasPhysical !== true) {
+              recordDutyScrollDebugEvent(
+                debugFeedId,
+                'state:physical-bottom',
+                `${wasPhysical ?? '—'}→true; distance=${bottomDistance.toFixed(1)}; reason=follow-ease-land`,
+              );
+              if (enableFollow) {
+                const shouldFollow =
+                  callbacksRef.current.onReachedBottom?.({
+                    hasSeenNotAtBottom: hasSeenNotAtBottomRef.current,
+                  }) !== false;
+                liveBottomFollowRef.current = shouldFollow;
+                recordDutyScrollDebugEvent(
+                  debugFeedId,
+                  shouldFollow ? 'follow:enable' : 'follow:blocked',
+                  `follow-ease land; returned=${hasSeenNotAtBottomRef.current}`,
+                );
+              }
+            } else if (enableFollow) {
+              liveBottomFollowRef.current = true;
+            }
+          }
+          updateScrollState({
+            allowLoadOlder: false,
+            allowLoadNewer: false,
+            allowTopReached: false,
+          });
           captureAnchorSnapshot();
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            'scroll-to-bottom',
+            `${reason}; behavior=raf-ease; top=${active.scrollTop.toFixed(1)}; height=${active.scrollHeight.toFixed(1)}`,
+          );
+        };
+
+        if (Math.abs(maxScrollTop - fromScrollTop) < 0.5) {
+          if (enableFollow) liveBottomFollowRef.current = true;
+          finishFollowEaseLanding(debugReason);
           return;
         }
 
         smoothFollowUntilMsRef.current = now + DUTY_SMOOTH_FOLLOW_MS;
         followAnimatingRef.current = true;
         if (enableFollow) liveBottomFollowRef.current = true;
+        // Local sticky only — parent is notified in finishFollowEaseLanding.
         physicallyAtBottomRef.current = true;
         // Frame-count clock: rAF timestamps barely advance in jsdom/happy-dom, and under
         // CPU throttle wall-clock ease would finish in too few painted frames.
@@ -943,20 +990,7 @@ export function useWindowedFeedScroll({
             followScrollRafRef.current = requestAnimationFrame(tick);
             return;
           }
-          followAnimatingRef.current = false;
-          smoothFollowUntilMsRef.current = 0;
-          physicallyAtBottomRef.current = true;
-          updateScrollState({
-            allowLoadOlder: false,
-            allowLoadNewer: false,
-            allowTopReached: false,
-          });
-          captureAnchorSnapshot();
-          recordDutyScrollDebugEvent(
-            debugFeedId,
-            'scroll-to-bottom',
-            `${debugReason}; behavior=raf-ease; top=${active.scrollTop.toFixed(1)}; height=${active.scrollHeight.toFixed(1)}`,
-          );
+          finishFollowEaseLanding(debugReason);
         };
 
         recordDutyScrollDebugEvent(
@@ -1384,12 +1418,21 @@ export function useWindowedFeedScroll({
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!enabledRef.current) return;
     if (isRestoringAnchorRef.current) return;
-    if (followAnimatingRef.current) {
-      const animScroller = scrollerRef.current;
-      if (animScroller) previousScrollTopRef.current = animScroller.scrollTop;
-      return;
-    }
     const scroller = scrollerRef.current;
+    if (followAnimatingRef.current) {
+      if (!scroller) return;
+      // Programmatic ease only increases scrollTop; an upward delta is user input.
+      if (scroller.scrollTop >= previousScrollTopRef.current - 1) {
+        previousScrollTopRef.current = scroller.scrollTop;
+        return;
+      }
+      clearFollowScroll();
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'follow:ease-cancel',
+        `upward scroll to ${scroller.scrollTop.toFixed(1)}`,
+      );
+    }
     if (scroller && scroller.scrollTop < previousScrollTopRef.current - 1) {
       previousScrollTopRef.current = scroller.scrollTop;
       const leftPhysicalBottom = distanceToBottom(scroller) > 1;
@@ -1443,6 +1486,7 @@ export function useWindowedFeedScroll({
     bottomLoadBufferPx,
     captureAnchorSnapshot,
     captureVisibleAnchorSnapshot,
+    clearFollowScroll,
     debugFeedId,
     topLoadBufferPx,
     updateScrollState,
