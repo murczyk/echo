@@ -575,12 +575,17 @@ where
     let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
     let cutoff =
         now - chrono::Duration::days(BATTLE_LINE_NETWORKS_LOOKBACK_DAYS);
-    let settlement_points =
-        load_network_settlement_points(dbx, allowed_groups, &unit_ids, cutoff)
-            .await
-            .c(h!())?;
+    let settlement_points = load_network_settlement_points(
+        dbx,
+        allowed_groups,
+        &unit_ids,
+        cutoff,
+        now,
+    )
+    .await
+    .c(h!())?;
     let peleng_points =
-        load_network_peleng_points(dbx, allowed_groups, &unit_ids, cutoff)
+        load_network_peleng_points(dbx, allowed_groups, &unit_ids, cutoff, now)
             .await
             .c(h!())?;
 
@@ -616,6 +621,7 @@ async fn load_network_settlement_points<C>(
     allowed_groups: &[String],
     unit_ids: &[i64],
     cutoff: NaiveDateTime,
+    now: NaiveDateTime,
 ) -> anyhow::Result<BTreeMap<i64, Vec<BattleLineNetworkMapPoint>>>
 where
     C: ConnectionTrait,
@@ -623,7 +629,7 @@ where
     if unit_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let rows = network_point_query(allowed_groups, unit_ids, cutoff)
+    let rows = network_point_query(allowed_groups, unit_ids, cutoff, now)
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintInboxItemSettlement.def(),
@@ -651,6 +657,7 @@ async fn load_network_peleng_points<C>(
     allowed_groups: &[String],
     unit_ids: &[i64],
     cutoff: NaiveDateTime,
+    now: NaiveDateTime,
 ) -> anyhow::Result<BTreeMap<i64, Vec<BattleLineNetworkMapPoint>>>
 where
     C: ConnectionTrait,
@@ -658,7 +665,7 @@ where
     if unit_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let rows = network_point_query(allowed_groups, unit_ids, cutoff)
+    let rows = network_point_query(allowed_groups, unit_ids, cutoff, now)
         .join(
             JoinType::InnerJoin,
             sigint_inbox_item::Relation::SigintPeleng.def(),
@@ -680,6 +687,7 @@ fn network_point_query(
     allowed_groups: &[String],
     unit_ids: &[i64],
     cutoff: NaiveDateTime,
+    now: NaiveDateTime,
 ) -> Select<sigint_network_unit::Entity> {
     sigint_network_unit::Entity::find()
         .join(
@@ -701,6 +709,7 @@ fn network_point_query(
         .filter(sigint_network_unit::Column::UnitId.is_in(unit_ids.to_vec()))
         .filter(sigint_network::Column::Deleted.eq(false))
         .filter(sigint_inbox_item::Column::Datetime.gte(cutoff))
+        .filter(sigint_inbox_item::Column::Datetime.lte(now))
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(message_is_accessible(allowed_groups))
 }
@@ -2485,6 +2494,9 @@ values (
         insert_test_settlement(&txn, 2_287_304, "Invalid", 95.0, 190.0)
             .await
             .unwrap();
+        insert_test_settlement(&txn, 2_287_305, "Future", 45.1, 32.2)
+            .await
+            .unwrap();
         insert_network_map_item(
             &txn,
             &group.master_key,
@@ -2532,6 +2544,16 @@ values (
             2_287_302,
             now - chrono::Duration::days(8),
             (47.3, 34.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_305,
+            now + chrono::Duration::days(1),
+            (45.3, 32.4),
         )
         .await
         .unwrap();
