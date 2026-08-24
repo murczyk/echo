@@ -373,6 +373,8 @@ pub const REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS: &str =
     "Формування звіту було перервано через перезапуск сервісу. Спробуйте сформувати звіт повторно.";
 pub const REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE: &str =
     "Report generation was interrupted by report worker restart and requeued without consuming an attempt";
+pub const REPORT_HISTORY_USER_RETRY_LOG_MESSAGE: &str =
+    "user requested another attempt for a failed task";
 pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
     "Не вдалося сформувати звіт. Спробуйте ще раз.";
 pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;

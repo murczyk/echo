@@ -10,6 +10,7 @@ use crate::config::{
     REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS,
     REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
+    REPORT_HISTORY_USER_RETRY_LOG_MESSAGE,
     REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS,
     REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE,
     RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
@@ -1626,7 +1627,7 @@ where
     let report_log = append_log_entry(
         report_history.log.clone(),
         &retried_by_login_id.to_string(),
-        "user requested another attempt for a failed task",
+        REPORT_HISTORY_USER_RETRY_LOG_MESSAGE,
     );
     let mut report_history = report_history.into_active_model();
     report_history.status = Set(STATUS_PLANNED.to_string());
@@ -2402,45 +2403,52 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
                     select count(*)::integer
                     from jsonb_array_elements(
                         coalesce(report_history.log, '[]'::jsonb)
-                    ) as entry
-                    where entry->>'message' = $1
+                    ) with ordinality as entry(value, position)
+                    where entry.value->>'message' = $1
+                      and entry.position > coalesce((
+                          select max(retry_entry.position)
+                          from jsonb_array_elements(
+                              coalesce(report_history.log, '[]'::jsonb)
+                          ) with ordinality as retry_entry(value, position)
+                          where retry_entry.value->>'message' = $2
+                      ), 0)
                 ) + 1 as recovery_count
             from report_history
-            where status = $6
+            where status = $7
         )
         update report_history
         set
             status = case
-                when recovered_report.recovery_count >= $2 then $3
-                else $4
+                when recovered_report.recovery_count >= $3 then $4
+                else $5
             end,
             planned_for_ts = case
-                when recovered_report.recovery_count >= $2 then null
+                when recovered_report.recovery_count >= $3 then null
                 else now() at time zone 'utc'
             end,
             started_at = case
-                when recovered_report.recovery_count >= $2
+                when recovered_report.recovery_count >= $3
                     then report_history.started_at
                 else null
             end,
             completed_at = case
-                when recovered_report.recovery_count >= $2
+                when recovered_report.recovery_count >= $3
                     then now() at time zone 'utc'
                 else null
             end,
             bgtask_id = null,
             last_error = case
-                when recovered_report.recovery_count >= $2 then format(
+                when recovered_report.recovery_count >= $3 then format(
                     'Report generation was interrupted while in progress; recorded recovery %s/%s during report worker startup recovery',
                     recovered_report.recovery_count,
-                    $2
+                    $3
                 )
                 else null
             end,
             log = coalesce(report_history.log, '[]'::jsonb)
                 || jsonb_build_array(jsonb_build_object(
                     'login',
-                    $5,
+                    $6,
                     'timestamp',
                     now() at time zone 'utc',
                     'message',
@@ -2451,6 +2459,7 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
         "#,
         [
             REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE.into(),
+            REPORT_HISTORY_USER_RETRY_LOG_MESSAGE.into(),
             REPORT_HISTORY_MAX_ATTEMPTS.into(),
             STATUS_FAILED.into(),
             STATUS_PLANNED.into(),
@@ -3743,6 +3752,25 @@ mod tests {
             error_log.last().map(|entry| entry.message.as_str()),
             exhausted.last_error.as_deref()
         );
+
+        let retried = reset_failed_report(&env.dbx, exhausted, &login.id)
+            .await
+            .c(h!())?;
+        let mut retried = retried.into_active_model();
+        retried.status = Set(STATUS_IN_PROGRESS.to_string());
+        retried.started_at = Set(Some(now));
+        let retried = retried.update(&env.dbx).await.c(h!())?;
+
+        recover_interrupted_reports(&env).await.c(h!())?;
+
+        let recovered_after_retry = ReportHistory::find_by_id(retried.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        assert_eq!(recovered_after_retry.status, STATUS_PLANNED);
+        assert_eq!(recovered_after_retry.retry_count, 0);
         Ok(())
     }
 
