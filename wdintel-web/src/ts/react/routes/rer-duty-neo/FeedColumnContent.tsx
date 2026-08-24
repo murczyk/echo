@@ -424,6 +424,7 @@ const DutyMessageList = memo(
     prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
     prev.collapseMediaPreviews === next.collapseMediaPreviews &&
+    prev.messageTextPreviewLines === next.messageTextPreviewLines &&
     prev.botTagAction === next.botTagAction &&
     prev.onCancelBotTagAction === next.onCancelBotTagAction &&
     prev.onMarkBotTagWrong === next.onMarkBotTagWrong &&
@@ -897,6 +898,7 @@ export const FeedColumnContent = memo(
       prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
       prevCard.tagsLayout !== nextCard.tagsLayout ||
       prevCard.collapseMediaPreviews !== nextCard.collapseMediaPreviews ||
+      prevCard.messageTextPreviewLines !== nextCard.messageTextPreviewLines ||
       prevCard.tagsMap !== nextCard.tagsMap ||
       prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction ||
