@@ -103,6 +103,107 @@ pub async fn update_aor(
     Ok(Json(render_aor(aor)))
 }
 
+struct ResolvedBattleLineBoundaries {
+    id: i64,
+    left: AorCoordinates,
+    left_settlement: Option<String>,
+    right: AorCoordinates,
+    right_settlement: Option<String>,
+}
+
+async fn resolve_battle_line_boundaries(
+    env: &Data<Env>,
+    req: &UpdateAorBattleLineBoundariesReq,
+) -> anyhow::Result<Vec<ResolvedBattleLineBoundaries>> {
+    let mut resolved = Vec::with_capacity(req.items.len());
+    for item in &req.items {
+        let left_settlement = find_settlement(
+            &env.mil_geo,
+            item.left_coordinates.latitude,
+            item.left_coordinates.longitude,
+        )
+        .await
+        .c(h!())?;
+        let right_settlement = find_settlement(
+            &env.mil_geo,
+            item.right_coordinates.latitude,
+            item.right_coordinates.longitude,
+        )
+        .await
+        .c(h!())?;
+        resolved.push(ResolvedBattleLineBoundaries {
+            id: item.id,
+            left: item.left_coordinates.clone(),
+            left_settlement,
+            right: item.right_coordinates.clone(),
+            right_settlement,
+        });
+    }
+    Ok(resolved)
+}
+
+async fn save_battle_line_boundaries(
+    txn: &DatabaseTransaction,
+    resolved: Vec<ResolvedBattleLineBoundaries>,
+) -> anyhow::Result<Vec<area_of_responsibility::Model>> {
+    let aor_ids = resolved.iter().map(|item| item.id).collect::<Vec<_>>();
+    let mut aors = area_of_responsibility::Entity::find()
+        .filter(area_of_responsibility::Column::Id.is_in(aor_ids))
+        .filter(area_of_responsibility::Column::Deleted.eq(false))
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|aor| (aor.id, aor))
+        .collect::<BTreeMap<_, _>>();
+    let mut updated = Vec::with_capacity(resolved.len());
+    for resolved in resolved {
+        let aor = aors.remove(&resolved.id).c(h!())?;
+        let mut aor = aor.into_active_model();
+        aor.left_lat = Set(Some(resolved.left.latitude));
+        aor.left_lon = Set(Some(resolved.left.longitude));
+        aor.left_settlement = Set(resolved.left_settlement);
+        aor.right_lat = Set(Some(resolved.right.latitude));
+        aor.right_lon = Set(Some(resolved.right.longitude));
+        aor.right_settlement = Set(resolved.right_settlement);
+        let aor = aor.update(txn).await.c(h!())?;
+        crate::battle_line::refresh_aor_geometry(txn, aor.id)
+            .await
+            .c(h!())?;
+        updated.push(aor);
+    }
+    Ok(updated)
+}
+
+#[post("/api/sigint/aor/update-battle-line-boundaries")]
+pub async fn update_aor_battle_line_boundaries(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<UpdateAorBattleLineBoundariesReq>,
+) -> Result<Json<Vec<AreaOfResponsibility>>, AppError> {
+    ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let resolved = resolve_battle_line_boundaries(&env, &req).await.c(h!())?;
+    let txn = env.dbx.begin().await.c(h!())?;
+    crate::battle_line::lock_updates(&txn).await.c(h!())?;
+    let updated = save_battle_line_boundaries(&txn, resolved).await.c(h!())?;
+    if !updated.is_empty() {
+        crate::battle_line::requeue_settlement_links(&txn)
+            .await
+            .c(h!())?;
+    }
+    txn.commit().await.c(h!())?;
+    for aor in &updated {
+        crate::sigint::network::etalon_calc::invalidate_network_inbox_for_aor(
+            &env.dbx,
+            aor,
+            format!("edit AOR BattleLine boundaries from web UI: {}", aor.name),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(Json(updated.into_iter().map(render_aor).collect()))
+}
+
 #[post("/api/sigint/aor/delete")]
 pub async fn delete_aor(
     user: actix_identity::Identity,

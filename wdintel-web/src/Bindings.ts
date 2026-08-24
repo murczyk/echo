@@ -5404,6 +5404,16 @@ export type UpdateAreaOfResponsibilityReq = {
   insert: AreaOfResponsibilityInsert;
 };
 
+export type AorBattleLineBoundariesUpdate = {
+  id: number;
+  leftCoordinates: AorCoordinates;
+  rightCoordinates: AorCoordinates;
+};
+
+export type UpdateAorBattleLineBoundariesReq = {
+  items: Array<AorBattleLineBoundariesUpdate>;
+};
+
 export type DeleteAreaOfResponsibilityReq = {
   id: number;
 };

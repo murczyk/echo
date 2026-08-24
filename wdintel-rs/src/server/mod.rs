@@ -1224,6 +1224,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::aor::aor_list)
             .service(crate::sigint::aor::create_aor)
             .service(crate::sigint::aor::update_aor)
+            .service(crate::sigint::aor::update_aor_battle_line_boundaries)
             .service(crate::sigint::aor::update_aor_report_order)
             .service(crate::sigint::aor::delete_aor)
             .service(crate::battle_line::read_battle_line)

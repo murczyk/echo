@@ -24,7 +24,7 @@ import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
 import { isNullOrUndefined } from '../../utils/misc';
 
-import { AorCoordinates, AreaOfResponsibility } from '../../../../Bindings';
+import { AorCoordinates, AreaOfResponsibility, BattleLineState } from '../../../../Bindings';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { formatMrtCellTextValue } from '../../components/formatMrtCellTextValue';
 import {
@@ -55,6 +55,8 @@ import { listAors } from '../../services/api/aor';
 import { listAorLocationConfigs, saveAorLocationConfig } from '../../services/api/location-config';
 import { navigateWithinSpa, withBackTo } from '../../utils/browser';
 import { PowerAlert } from '../../components/PowerAlert';
+import { fetchBattleLineState } from '../../services/api/battle-line';
+import { AorBattleLineWidget } from './AorBattleLineWidget';
 
 type LoadingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -353,28 +355,36 @@ function AdminAorNeoPageBody() {
   const [loadStatus, setLoadStatus] = useState<LoadingStatus>('idle');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [availableLocationConfigs, setAvailableLocationConfigs] = useState<string[]>([]);
+  const [battleLineState, setBattleLineState] = useState<BattleLineState | null>(null);
   const [locationConfigDialog, setLocationConfigDialog] =
     useState<LocationConfigDialogState | null>(null);
 
-  async function loadAorPage() {
-    setLoadStatus('loading');
-    setLoadError(null);
+  async function loadAorPage(showLoading = true) {
+    if (showLoading) {
+      setLoadStatus('loading');
+      setLoadError(null);
+    }
     try {
-      const [aorList, locationConfigsRsp] = await Promise.all([
+      const [aorList, locationConfigsRsp, nextBattleLineState] = await Promise.all([
         listAors({ sortBy: null }),
         listAorLocationConfigs(),
+        fetchBattleLineState(),
       ]);
       setAvailableLocationConfigs(locationConfigsRsp.availableConfigs);
       setAors(buildAorRows(aorList, buildLocationConfigsByAorId(locationConfigsRsp.items)));
+      setBattleLineState(nextBattleLineState);
       setLoadStatus('success');
     } catch (error) {
-      setLoadStatus('error');
-      setLoadError(formatErrorMessage(error));
+      if (showLoading) {
+        setLoadStatus('error');
+        setLoadError(formatErrorMessage(error));
+      }
+      throw error;
     }
   }
 
   useEffect(() => {
-    void loadAorPage();
+    void loadAorPage().catch(() => undefined);
   }, []);
 
   function openLocationConfigDialog(aor: AorRow) {
@@ -508,6 +518,14 @@ function AdminAorNeoPageBody() {
             </div>
           }
         />
+
+        {loadStatus === 'success' && battleLineState ? (
+          <AorBattleLineWidget
+            aors={aors}
+            state={battleLineState}
+            reload={() => loadAorPage(false)}
+          />
+        ) : null}
 
         <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>
           {renderTable()}
