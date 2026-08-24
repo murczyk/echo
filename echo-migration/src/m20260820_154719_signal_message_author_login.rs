@@ -16,39 +16,13 @@ alter table signal_message
 alter table signal_message_group
     add column login_id uuid;
 
-update signal_message
-set login_id = login.id
-from login
-where signal_message.sender = login.id::text;
-
-update signal_message_group group_link
-set login_id = login.id
-from login
-where group_link.sender = login.id::text;
-
-update signal_message_group
-set sender = null
-where login_id is not null;
-
-update signal_message
-set sender = null
-where login_id is not null;
-
 alter table signal_message
     add constraint signal_message_login_id_fk
     foreign key (login_id) references login(id) on delete set null;
 
-create index signal_message_login_id_idx
-    on signal_message (login_id)
-    where login_id is not null;
-
 alter table signal_message_group
     add constraint signal_message_group_login_id_fk
     foreign key (login_id) references login(id) on delete set null;
-
-create index signal_message_group_login_id_idx
-    on signal_message_group (login_id)
-    where login_id is not null;
                 "#,
             )
             .await

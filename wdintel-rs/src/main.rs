@@ -291,6 +291,19 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillSignalMessageAuthorLoginPs {
+    /// Number of rows updated in each transaction per table.
+    #[arg(long, default_value_t = 10_000)]
+    pub batch_size: u64,
+    /// Resume message backfill after this message id.
+    #[arg(long, default_value_t = 0)]
+    pub after_message_id: i64,
+    /// Resume group-link backfill after this group-link id.
+    #[arg(long, default_value_t = 0)]
+    pub after_group_id: i64,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffPrepareInboxNetworkUniquenessPs {
     /// Confirm deletion of duplicate links and online unique-index creation.
     #[arg(long, action)]
@@ -1069,6 +1082,9 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillSignalMessageAuthorLogin(
+        OneoffBackfillSignalMessageAuthorLoginPs,
+    ),
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
@@ -1820,6 +1836,10 @@ async fn async_main(
         }
         Cmd::OneoffBackfillInboxNetworks(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
+                .await
+        }
+        Cmd::OneoffBackfillSignalMessageAuthorLogin(ps) => {
+            sigint::oneoff::oneoff_backfill_signal_message_author_login(mode, &ps)
                 .await
         }
         Cmd::OneoffPrepareInboxNetworkUniqueness(ps) => {
