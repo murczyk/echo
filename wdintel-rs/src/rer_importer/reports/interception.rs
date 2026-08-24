@@ -72,13 +72,10 @@ pub async fn report_xlsx_kind_interception(
     let messages =
         collect_interception_report_messages(user_login, env, &inbox_req)
             .await?;
-    let record_count = interception_report_record_count(&messages);
-    crate::report_history::ensure_report_record_count(record_count)
-        .context(h!())?;
 
     let mut workbook = Workbook::new();
-    let sheet1 = get_worksheet(&mut workbook)?;
-    set_colors_and_formats_for_sheet(sheet1, keep_old_colors)?;
+    let sheet1 = get_worksheet(&mut workbook).context(h!())?;
+    set_colors_and_formats_for_sheet(sheet1, keep_old_colors).context(h!())?;
     process_messages_for_interception_report(
         sheet1,
         messages,
@@ -111,6 +108,7 @@ async fn collect_interception_report_messages(
 
     let mut seen = HashSet::new();
     let mut messages = vec![];
+    let mut record_count = 0_usize;
     for (index, chunk) in chunks.iter().enumerate() {
         log::info!(
             "Interception report chunk {}/{}: {}..{} ({:?})",
@@ -128,15 +126,14 @@ async fn collect_interception_report_messages(
         )
         .await
         .context(h!())?;
-        merge_interception_report_chunk(
-            &mut messages,
-            &mut seen,
-            chunk_messages,
-        );
-        crate::report_history::ensure_report_record_count(
-            interception_report_record_count(&messages),
-        )
-        .context(h!())?;
+        record_count =
+            record_count.saturating_add(merge_interception_report_chunk(
+                &mut messages,
+                &mut seen,
+                chunk_messages,
+            ));
+        crate::report_history::ensure_report_record_count(record_count)
+            .context(h!())?;
     }
     sort_interception_report_messages(&mut messages);
     Ok(messages)
@@ -305,7 +302,8 @@ fn merge_interception_report_chunk(
     messages: &mut Vec<InboxMessage>,
     seen: &mut HashSet<InterceptionMessageKey>,
     chunk_messages: Vec<InboxMessage>,
-) {
+) -> usize {
+    let mut record_count = 0_usize;
     for message in chunk_messages {
         let key = (
             message.date.clone(),
@@ -313,9 +311,13 @@ fn merge_interception_report_chunk(
             message.body.clone(),
         );
         if seen.insert(key) {
+            if message.date.is_some() && message.time.is_some() {
+                record_count = record_count.saturating_add(1);
+            }
             messages.push(message);
         }
     }
+    record_count
 }
 
 fn sort_interception_report_messages(messages: &mut [InboxMessage]) {
@@ -592,13 +594,6 @@ fn process_messages_for_interception_report(
     }
 
     Ok(())
-}
-
-fn interception_report_record_count(messages: &[InboxMessage]) -> usize {
-    messages
-        .iter()
-        .filter(|message| message.date.is_some() && message.time.is_some())
-        .count()
 }
 
 fn get_parsed_date(date: &String) -> Result<ExcelDateTime, AppError> {
@@ -1405,7 +1400,7 @@ mod tests {
         let mut messages = vec![];
         let mut seen = HashSet::new();
 
-        merge_interception_report_chunk(
+        let first_record_count = merge_interception_report_chunk(
             &mut messages,
             &mut seen,
             vec![
@@ -1413,7 +1408,7 @@ mod tests {
                 duplicate,
             ],
         );
-        merge_interception_report_chunk(
+        let second_record_count = merge_interception_report_chunk(
             &mut messages,
             &mut seen,
             vec![
@@ -1422,6 +1417,8 @@ mod tests {
             ],
         );
 
+        assert_eq!(first_record_count, 2);
+        assert_eq!(second_record_count, 1);
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].body.as_deref(), Some("newest"));
         assert_eq!(messages[1].body.as_deref(), Some("same message"));

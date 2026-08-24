@@ -12,6 +12,8 @@ use crate::config::{
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
     REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS,
     REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE,
+    RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
+    RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
 };
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{
@@ -442,15 +444,13 @@ fn report_history_error_status(
         return REPORT_HISTORY_CANCELLED_ERROR_STATUS.to_string();
     }
 
-    let last_error = report_history
-        .log
-        .as_array()
-        .and_then(|entries| {
+    let last_error = report_history.last_error.as_deref().or_else(|| {
+        report_history.log.as_array().and_then(|entries| {
             entries.iter().rev().find_map(|entry| {
                 entry.get("message").and_then(serde_json::Value::as_str)
             })
         })
-        .or(report_history.last_error.as_deref());
+    });
     last_error
         .map(report_history_error_hint)
         .unwrap_or_else(|| REPORT_HISTORY_GENERIC_ERROR_STATUS.to_string())
@@ -792,9 +792,10 @@ fn report_history_error_log(
     report_history: &report_history::Model,
     expose_last_error: bool,
 ) -> Option<Vec<ReportHistoryLogEntry>> {
-    if !expose_last_error || report_history.last_error.is_none() {
+    if !expose_last_error {
         return None;
     }
+    let last_error = report_history.last_error.as_deref()?;
     let mut entries = report_history
         .log
         .as_array()
@@ -805,7 +806,7 @@ fn report_history_error_log(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    if entries.is_empty() {
+    if entries.last().map(|entry| entry.message.as_str()) != Some(last_error) {
         entries.push(ReportHistoryLogEntry {
             login: "system".to_string(),
             timestamp: report_history
@@ -813,7 +814,7 @@ fn report_history_error_log(
                 .or(report_history.started_at)
                 .unwrap_or(report_history.created_at)
                 .to_string(),
-            message: report_history.last_error.clone().unwrap_or_default(),
+            message: last_error.to_string(),
         });
     }
     Some(entries)
@@ -3502,7 +3503,10 @@ async fn handle_report_failure(
 }
 
 fn report_failure_attempt_count(retry_count: i32, error: &str) -> i32 {
-    if error.contains(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS) {
+    if error.contains(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS)
+        || error.contains(RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE)
+        || error.contains(RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE)
+    {
         REPORT_HISTORY_MAX_ATTEMPTS
     } else {
         (retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS)
@@ -3623,11 +3627,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn report_message_limits_fail_without_retry() {
+        for error in [
+            RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
+            RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
+        ] {
+            assert_eq!(
+                report_failure_attempt_count(0, error),
+                REPORT_HISTORY_MAX_ATTEMPTS
+            );
+        }
+    }
+
     #[tokio::test]
     #[serial]
     async fn startup_recovery_uses_separate_bounded_attempts(
     ) -> Result<(), AppError> {
-        let env = cleanup().await?;
+        let env = cleanup().await.c(h!())?;
         report_history::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -3636,7 +3653,8 @@ mod tests {
             &env.dbx,
             "report-history-startup-recovery",
         )
-        .await?;
+        .await
+        .c(h!())?;
         let now = Utc::now().naive_utc();
         let report = insert_report_history(
             &env.dbx,
@@ -3647,21 +3665,23 @@ mod tests {
             Some(now),
             None,
         )
-        .await?;
-        let bgtask = create_running_bgtask(&env.dbx).await?;
+        .await
+        .c(h!())?;
+        let bgtask = create_running_bgtask(&env.dbx).await.c(h!())?;
         let mut report = report.into_active_model();
         report.retry_count = Set(1);
         report.bgtask_id = Set(Some(bgtask.id));
         report.last_error = Set(Some("previous attempt failed".to_string()));
         let report = report.update(&env.dbx).await.c(h!())?;
 
-        recover_interrupted_reports(&env).await?;
+        recover_interrupted_reports(&env).await.c(h!())?;
 
         let recovered = ReportHistory::find_by_id(report.id)
             .one(&env.dbx)
             .await
             .c(h!())?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
         assert_eq!(recovered.status, STATUS_PLANNED);
         assert_eq!(recovered.retry_count, 1);
         assert!(recovered.planned_for_ts.is_some());
@@ -3684,23 +3704,28 @@ mod tests {
         recovered.started_at = Set(Some(now));
         let recovered = recovered.update(&env.dbx).await.c(h!())?;
 
-        recover_interrupted_reports(&env).await?;
+        recover_interrupted_reports(&env).await.c(h!())?;
 
         let exhausted = ReportHistory::find_by_id(recovered.id)
             .one(&env.dbx)
             .await
             .c(h!())?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
         assert_eq!(exhausted.status, STATUS_FAILED);
         assert_eq!(exhausted.retry_count, 1);
         assert_eq!(exhausted.planned_for_ts, None);
         assert!(exhausted.completed_at.is_some());
         assert_eq!(
-            exhausted
-                .last_error
-                .as_deref()
-                .map(report_history_error_hint),
-            Some(REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS.to_string())
+            report_history_error_status(&exhausted),
+            REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS
+        );
+        let error_log = report_history_error_log(&exhausted, true)
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        assert_eq!(
+            error_log.last().map(|entry| entry.message.as_str()),
+            exhausted.last_error.as_deref()
         );
         Ok(())
     }

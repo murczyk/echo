@@ -154,13 +154,18 @@ pub fn build_babak_report(
     outpath: &Path,
 ) -> Result<(), AppError> {
     let BabakReportData {
-        units,
+        mut units,
         new_callsigns: new_callsigns_res,
         date_from,
         date_to,
         without_comments,
     } = data;
-    let record_count = babak_report_record_count(&units, without_comments);
+    let stream_units = units
+        .iter_mut()
+        .map(BabakStreamUnit::from_report)
+        .collect::<Vec<_>>();
+    let record_count =
+        babak_report_record_count(&stream_units, without_comments);
     crate::report_history::ensure_report_record_count(record_count)
         .context(h!())?;
     let tz = crate::config::get_tz();
@@ -435,11 +440,7 @@ pub fn build_babak_report(
 
     doc = doc.add_paragraph(babak_stream_marker(BABAK_OTHERS_MARKER));
 
-    let stream_units = units
-        .into_iter()
-        .map(BabakStreamUnit::from_report)
-        .collect::<Vec<_>>();
-    let file = std::fs::File::create(outpath)?;
+    let file = std::fs::File::create(outpath).context(h!())?;
     pack_babak_docx(doc.build(), file, &stream_units, without_comments)
         .context(h!())?;
 
@@ -464,11 +465,10 @@ struct BabakStreamUnit {
 }
 
 fn babak_report_record_count(
-    units: &[StatsPerUnitReport],
+    units: &[BabakStreamUnit],
     without_comments: bool,
 ) -> usize {
     units.iter().fold(units.len(), |count, unit| {
-        let unit = BabakStreamUnit::from_report(unit.clone());
         let comments = if without_comments {
             0
         } else {
@@ -499,9 +499,9 @@ fn babak_report_record_count(
 }
 
 impl BabakStreamUnit {
-    fn from_report(mut report: StatsPerUnitReport) -> Self {
+    fn from_report(report: &mut StatsPerUnitReport) -> Self {
         Self {
-            unit: report.unit.take().unwrap_or_else(|| "НВ".to_string()),
+            unit: report.unit.clone().unwrap_or_else(|| "НВ".to_string()),
             comments: take_babak_comments(report.comments.take()),
             losses_comments: take_babak_comments(report.losses_comments.take()),
             others_comments: take_babak_comments(report.others_comments.take()),

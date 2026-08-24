@@ -212,7 +212,7 @@ pub async fn report_docx_kind_naushnom(
             .add_paragraph(Paragraph::new());
     }
 
-    let file = std::fs::File::create(outpath)?;
+    let file = std::fs::File::create(outpath).context(h!())?;
     doc.build().pack(file).context(h!())?;
 
     Ok(())
