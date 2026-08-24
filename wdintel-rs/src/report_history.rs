@@ -488,10 +488,10 @@ fn report_history_known_error_hint(error: &str) -> Option<&'static str> {
         && normalized.contains("report worker startup recovery")
     {
         Some(REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS)
-    } else if normalized.contains("timed out")
-        || normalized.contains("timeout")
-        || normalized.contains("deadline has elapsed")
-        || normalized.contains("перевищив допустимий час")
+    } else if normalized.starts_with("report generation timed out after")
+        || normalized.contains("canceling statement due to statement timeout")
+        || normalized
+            .starts_with("аналітичний запит перевищив допустимий час виконання")
     {
         Some(REPORT_HISTORY_TIMEOUT_ERROR_STATUS)
     } else {
@@ -3591,6 +3591,18 @@ mod tests {
             (
                 r#"AnyhowError { source: Query(SqlxError(Database(PgDatabaseError { code: "57014", message: "canceling statement due to statement timeout" }))) }"#,
                 REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                "Service unavailable: Аналітичний запит перевищив допустимий час виконання. Спробуйте звузити параметри пошуку.",
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                "Object storage upload timed out after 30 seconds",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                "AnyhowError { source: deadline has elapsed }",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
             ),
             (
                 r#"BL { msg: "summary_table_report_message_limit" }"#,
