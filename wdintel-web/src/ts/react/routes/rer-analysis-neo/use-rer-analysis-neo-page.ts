@@ -569,6 +569,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     profiles: data.profiles,
     queryState,
     tagsLayout: dutySettings.tagsLayout,
+    messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     rightPanelOpen,

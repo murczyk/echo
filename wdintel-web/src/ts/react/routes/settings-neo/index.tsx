@@ -92,6 +92,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const scheduleDutySettingsSave = (overrides: Partial<UserDutySettings>) => {
     dutySettings.scheduleSave({
       tagsLayout: dutySettings.tagsLayout,
+      messageTextPreviewLines: dutySettings.messageTextPreviewLines,
       disableAutoScroll: dutySettings.disableAutoScroll,
       analysisMapInSidebar: dutySettings.analysisMapInSidebar,
       dutyAudioTranscriptionCollapsed: dutySettings.dutyAudioTranscriptionCollapsed,
@@ -187,7 +188,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   return (
     <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
       <Stack spacing={2} useFlexGap>
-        <PageHeader title="Налаштування" titleInfo="Зберігається для вашого облікового запису" />
+        <PageHeader title="Налаштування" titleInfo="Зберігаються для вашого облікового запису" />
         <Card
           variant="outlined"
           sx={{
@@ -289,6 +290,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 dutySettings.setDutyCollapseMediaPreviews(value);
                 scheduleDutySettingsSave({ dutyCollapseMediaPreviews: value });
               }}
+              messageTextPreviewLines={dutySettings.messageTextPreviewLines}
+              onMessageTextPreviewLinesChange={(value) => {
+                dutySettings.setMessageTextPreviewLines(value);
+                scheduleDutySettingsSave({ messageTextPreviewLines: value });
+              }}
             />
           ) : null}
 
@@ -312,6 +318,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                     onTagsLayoutChange={(layout) => {
                       dutySettings.setTagsLayout(layout);
                       scheduleDutySettingsSave({ tagsLayout: layout });
+                    }}
+                    messageTextPreviewLines={dutySettings.messageTextPreviewLines}
+                    onMessageTextPreviewLinesChange={(value) => {
+                      dutySettings.setMessageTextPreviewLines(value);
+                      scheduleDutySettingsSave({ messageTextPreviewLines: value });
                     }}
                     loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
                   />
@@ -387,9 +398,17 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                           />
                         }
                         label={
-                          <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                            Відображати форму додавання позивного
-                          </Typography>
+                          <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+                            <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                              Відображати форму додавання позивного
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              sx={{ color: 'text.secondary', lineHeight: 1.6 }}
+                            >
+                              Показує форму в картці повідомлення.
+                            </Typography>
+                          </Stack>
                         }
                       />
                     </Stack>

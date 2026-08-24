@@ -437,3 +437,27 @@ pub enum UserSettingsTagsLayout {
     #[sea_orm(string_value = "hidden")]
     Hidden,
 }
+
+#[derive(
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    EnumIter,
+    DeriveActiveEnum,
+    Serialize,
+    Deserialize,
+)]
+#[sea_orm(
+    rs_type = "Enum",
+    db_type = "Enum",
+    enum_name = "user_settings_message_text_preview_lines"
+)]
+pub enum UserSettingsMessageTextPreviewLines {
+    #[sea_orm(string_value = "twenty")]
+    Twenty,
+    #[sea_orm(string_value = "forty")]
+    Forty,
+    #[sea_orm(string_value = "off")]
+    Off,
+}
