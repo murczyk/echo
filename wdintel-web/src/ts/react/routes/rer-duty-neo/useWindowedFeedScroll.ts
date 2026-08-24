@@ -986,7 +986,14 @@ export function useWindowedFeedScroll({
           active.scrollTop = frame.scrollTop;
           previousScrollTopRef.current = active.scrollTop;
           if (!frame.done) {
-            smoothFollowUntilMsRef.current = frameNowMs + DUTY_SMOOTH_FOLLOW_MS;
+            // ResizeObserver compares against wall clock. Ease progress stays on the synthetic
+            // per-frame timeline so throttle/jsdom still paint enough frames; keep the
+            // suppression deadline on the same clock the resize path reads.
+            const realNowMs =
+              typeof performance !== 'undefined' && typeof performance.now === 'function'
+                ? performance.now()
+                : Date.now();
+            smoothFollowUntilMsRef.current = realNowMs + DUTY_SMOOTH_FOLLOW_MS;
             followScrollRafRef.current = requestAnimationFrame(tick);
             return;
           }
@@ -1441,6 +1448,16 @@ export function useWindowedFeedScroll({
         // no-op
       } else {
         stopBottomSettle();
+        // Watch-off catch-up waits with enableFollow=false; follow-mode alone cannot cancel them.
+        // Drop the deferred ease as soon as the user scrolls away from the tail.
+        if (leftPhysicalBottom && followScrollWaitRef.current !== null) {
+          clearFollowScroll();
+          recordDutyScrollDebugEvent(
+            debugFeedId,
+            'follow:wait-cancel',
+            `upward scroll to ${scroller.scrollTop.toFixed(1)}`,
+          );
+        }
         if (liveBottomFollowRef.current) {
           liveBottomFollowRef.current = false;
           recordDutyScrollDebugEvent(

@@ -1489,6 +1489,58 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(200);
   });
 
+  it('keeps resize suppression on wall clock while the follow ease uses a synthetic timeline', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const triggerResize = installResizeObserverMock();
+    let nowMs = 1_000;
+    vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} />);
+    });
+    expect(scroller.scrollTop).toBe(100);
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    const nextIds = [1, 2, 3, 4, 5];
+    metrics.scrollHeight = 250;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} />);
+    });
+
+    // Layout wait + a few ease frames on a throttled wall clock (100ms/frame).
+    await act(async () => {
+      for (let i = 0; i < 8; i++) {
+        nowMs += 100;
+        await waitForAnimationFrame();
+      }
+    });
+    const midEaseTop = scroller.scrollTop;
+    expect(midEaseTop).toBeGreaterThan(100);
+    expect(midEaseTop).toBeLessThan(150);
+
+    // Real time is ahead of the synthetic ease clock; a synthetic-based deadline would
+    // already have expired here and let resize instant-pin to the tail.
+    nowMs += 100;
+    metrics.scrollHeight = 280;
+    layout.items = createItemLayouts(nextIds, 0, 56);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(midEaseTop);
+    expect(scroller.scrollTop).toBeLessThan(180);
+  });
+
   it('eases watch-off catch-up appends instead of instant stick + settle', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
@@ -1528,6 +1580,49 @@ describe('useWindowedFeedScroll', () => {
 
     await waitForFollowEase();
     expect(scroller.scrollTop).toBe(150);
+  });
+
+  it('cancels watch-off layout wait when the user leaves the physical bottom', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const metrics = { scrollTop: 0, clientHeight: 100, scrollHeight: 200 };
+    setClampedScrollMetrics(scroller, metrics);
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+    expect(scroller.scrollTop).toBe(100);
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    const nextIds = [1, 2, 3, 4, 5];
+    metrics.scrollHeight = 250;
+    layout.items = createItemLayouts(nextIds);
+    await act(async () => {
+      root.render(<TestScroller ids={nextIds} isWatchMode={false} />);
+    });
+    // Layout-stability wait armed; ease has not started yet.
+    expect(scroller.scrollTop).toBe(100);
+
+    scroller.scrollTop = 40;
+    act(() => scroller.dispatchEvent(new Event('scroll', { bubbles: true })));
+
+    await act(async () => {
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+      await waitForAnimationFrame();
+    });
+    await waitForFollowEase();
+    // Wait must not start an ease back to the tail after the user left.
+    expect(scroller.scrollTop).toBe(40);
   });
 
   it('cancels the follow ease when the user scrolls upward mid-animation', async () => {
