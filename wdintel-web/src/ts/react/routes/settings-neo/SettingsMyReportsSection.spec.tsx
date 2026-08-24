@@ -255,6 +255,7 @@ describe('SettingsMyReportsSection', () => {
     const executionTimeColumn = columns.find((column) => column.id === 'executionTime');
     const statusColumn = columns.find((column) => column.id === 'status');
     const idColumn = columns.find((column) => column.accessorKey === 'id');
+    const startedAtColumn = columns.find((column) => column.accessorKey === 'startedAt');
     const reportKindColumn = columns.find((column) => column.id === 'reportKind');
     const completedRow = {
       ...sampleRunningRow,
@@ -270,6 +271,11 @@ describe('SettingsMyReportsSection', () => {
     } as never) as { props?: Record<string, any> } | null;
 
     expect(idColumn).toMatchObject({ header: 'ID', size: 92, minSize: 92, maxSize: 92 });
+    expect(startedAtColumn).toMatchObject({
+      header: 'Останній запуск',
+      enableSorting: true,
+      enableColumnFilter: false,
+    });
     expect(reportKindCell?.props?.component).toBe('a');
     expect(reportKindCell?.props?.componentProps?.href).toBe(
       `/admin/all-reports/${sampleRunningRow.id}`,
@@ -286,6 +292,7 @@ describe('SettingsMyReportsSection', () => {
     );
     expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
       id: true,
+      startedAt: true,
       executionTime: true,
     });
     expect(statusColumn).toMatchObject({

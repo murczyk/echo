@@ -129,6 +129,7 @@ const DEFAULT_REPORTS_COLUMN_ORDER = [
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
   id: true,
+  startedAt: true,
   requestedBy: true,
   executionTime: true,
   errorLog: true,
@@ -143,9 +144,9 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'reportPeriod',
   'details',
   'createdAt',
+  'startedAt',
   'status',
   'plannedForTs',
-  'startedAt',
   'queuePosition',
   'bgtaskId',
   'completedAt',
@@ -618,6 +619,41 @@ export function ReportHistoryTableSection({
   }
 
   const columns = useMemo<AppMrtColumnDef<ReportHistoryRow>[]>(() => {
+    const reportKindColumn: AppMrtColumnDef<ReportHistoryRow> = includeAuthor
+      ? {
+          id: 'reportKind',
+          accessorFn: (row) => formatReportKind(row.reportKind),
+          header: 'Вид',
+          meta: { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true },
+          Cell: mrtCustomCell<ReportHistoryRow>(({ row }) => {
+            const value = formatReportKind(row.original.reportKind);
+            const href = `/admin/all-reports/${row.original.id}`;
+            return (
+              <MrtOverflowText
+                displayValue={value}
+                fullValue={value}
+                interactive
+                component="a"
+                componentProps={{
+                  href,
+                  onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                    handleNavigateWithinSpaClick(event, href),
+                }}
+                sx={{ color: 'primary.main', fontWeight: 600, textDecoration: 'none' }}
+              />
+            );
+          }),
+        }
+      : {
+          id: 'reportKind',
+          accessorFn: (row) => formatReportKind(row.reportKind),
+          header: 'Вид',
+          meta: { overflowMode: 'text' },
+          Cell: mrtTextCell({
+            displayValue: ({ row }) => formatReportKind(row.original.reportKind),
+            fullValue: ({ row }) => formatReportKind(row.original.reportKind),
+          }),
+        };
     const nextColumns: AppMrtColumnDef<ReportHistoryRow>[] = [
       {
         id: 'actions',
@@ -678,37 +714,7 @@ export function ReportHistoryTableSection({
           />
         ),
       },
-      {
-        id: 'reportKind',
-        accessorFn: (row) => formatReportKind(row.reportKind),
-        header: 'Вид',
-        meta: includeAuthor
-          ? { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true }
-          : { overflowMode: 'text' },
-        Cell: includeAuthor
-          ? mrtCustomCell<ReportHistoryRow>(({ row }) => {
-              const value = formatReportKind(row.original.reportKind);
-              const href = `/admin/all-reports/${row.original.id}`;
-              return (
-                <MrtOverflowText
-                  displayValue={value}
-                  fullValue={value}
-                  interactive
-                  component="a"
-                  componentProps={{
-                    href,
-                    onClick: (event: ReactMouseEvent<HTMLElement>) =>
-                      handleNavigateWithinSpaClick(event, href),
-                  }}
-                  sx={{ color: 'primary.main', fontWeight: 600, textDecoration: 'none' }}
-                />
-              );
-            })
-          : mrtTextCell({
-              displayValue: ({ row }) => formatReportKind(row.original.reportKind),
-              fullValue: ({ row }) => formatReportKind(row.original.reportKind),
-            }),
-      },
+      reportKindColumn,
       {
         accessorKey: 'reportPeriod',
         header: 'Період',
@@ -827,8 +833,8 @@ export function ReportHistoryTableSection({
       },
       {
         accessorKey: 'startedAt',
-        header: 'Почато',
-        enableSorting: false,
+        header: includeAuthor ? 'Останній запуск' : 'Почато',
+        enableSorting: includeAuthor,
         enableColumnFilter: false,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({

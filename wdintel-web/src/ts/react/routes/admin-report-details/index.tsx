@@ -65,7 +65,7 @@ function ReportMetadata({
         </MetadataItem>
         <MetadataItem label="Автор">{row.requestedBy || '—'}</MetadataItem>
         <MetadataItem label="Створено">{formatReportDateOrDash(row.createdAt)}</MetadataItem>
-        <MetadataItem label="Почато">{formatReportDateOrDash(row.startedAt)}</MetadataItem>
+        <MetadataItem label="Останній запуск">{formatReportDateOrDash(row.startedAt)}</MetadataItem>
         <MetadataItem label="Завершено">{formatReportDateOrDash(row.completedAt)}</MetadataItem>
         <MetadataItem label="ID задачі">{formatReportId(row.bgtaskId)}</MetadataItem>
         <MetadataItem label="Стан задачі">{formatTaskRunning(taskRunning)}</MetadataItem>
