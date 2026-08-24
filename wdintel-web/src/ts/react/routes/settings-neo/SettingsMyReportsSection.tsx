@@ -132,7 +132,6 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
   id: true,
   startedAt: true,
-  errorStatus: false,
   requestedBy: true,
   executionTime: true,
   errorLog: true,
@@ -149,6 +148,7 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'createdAt',
   'startedAt',
   'status',
+  'errorStatus',
   'plannedForTs',
   'queuePosition',
   'bgtaskId',
@@ -835,19 +835,17 @@ export function ReportHistoryTableSection({
       },
     );
 
-    if (!includeAuthor) {
-      nextColumns.push({
-        accessorKey: 'errorStatus',
-        header: 'Статус помилки',
-        enableSorting: false,
-        enableColumnFilter: false,
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => row.original.errorStatus,
-          fullValue: ({ row }) => row.original.errorStatus,
-        }),
-      });
-    }
+    nextColumns.push({
+      accessorKey: 'errorStatus',
+      header: 'Статус помилки',
+      enableSorting: false,
+      enableColumnFilter: false,
+      meta: { overflowMode: 'text' },
+      Cell: mrtTextCell({
+        displayValue: ({ row }) => row.original.errorStatus,
+        fullValue: ({ row }) => row.original.errorStatus,
+      }),
+    });
 
     nextColumns.push(
       {

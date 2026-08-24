@@ -301,7 +301,8 @@ describe('SettingsMyReportsSection', () => {
         isCancelled: true,
       }),
     ).toBe('виконання 44с');
-    expect(errorStatusColumn).toBeUndefined();
+    expect(errorStatusColumn?.header).toBe('Статус помилки');
+    expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('errorStatus');
     expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('executionTime');
     expect(capturedTableStateProviderProps?.defaultColumnOrder).toEqual(
       expect.arrayContaining(['actions', 'id', 'reportKind']),
@@ -309,6 +310,7 @@ describe('SettingsMyReportsSection', () => {
     expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
       id: true,
       startedAt: true,
+      errorStatus: true,
       executionTime: true,
     });
     expect(statusColumn).toMatchObject({
