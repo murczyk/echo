@@ -13963,6 +13963,34 @@ updateAreaOfResponsibilityReqEncoder struct =
         ]
 
 
+type alias AorBattleLineBoundariesUpdate =
+    { id : Int
+    , leftCoordinates : AorCoordinates
+    , rightCoordinates : AorCoordinates
+    }
+
+
+aorBattleLineBoundariesUpdateEncoder : AorBattleLineBoundariesUpdate -> Json.Encode.Value
+aorBattleLineBoundariesUpdateEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "left_coordinates", (aorCoordinatesEncoder) struct.leftCoordinates )
+        , ( "right_coordinates", (aorCoordinatesEncoder) struct.rightCoordinates )
+        ]
+
+
+type alias UpdateAorBattleLineBoundariesReq =
+    { items : List (AorBattleLineBoundariesUpdate)
+    }
+
+
+updateAorBattleLineBoundariesReqEncoder : UpdateAorBattleLineBoundariesReq -> Json.Encode.Value
+updateAorBattleLineBoundariesReqEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aorBattleLineBoundariesUpdateEncoder)) struct.items )
+        ]
+
+
 type alias DeleteAreaOfResponsibilityReq =
     { id : Int
     }
@@ -22181,6 +22209,20 @@ updateAreaOfResponsibilityReqDecoder =
     Json.Decode.succeed UpdateAreaOfResponsibilityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "insert" (areaOfResponsibilityInsertDecoder)))
+
+
+aorBattleLineBoundariesUpdateDecoder : Json.Decode.Decoder AorBattleLineBoundariesUpdate
+aorBattleLineBoundariesUpdateDecoder =
+    Json.Decode.succeed AorBattleLineBoundariesUpdate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_coordinates" (aorCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_coordinates" (aorCoordinatesDecoder)))
+
+
+updateAorBattleLineBoundariesReqDecoder : Json.Decode.Decoder UpdateAorBattleLineBoundariesReq
+updateAorBattleLineBoundariesReqDecoder =
+    Json.Decode.succeed UpdateAorBattleLineBoundariesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aorBattleLineBoundariesUpdateDecoder))))
 
 
 deleteAreaOfResponsibilityReqDecoder : Json.Decode.Decoder DeleteAreaOfResponsibilityReq

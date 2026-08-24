@@ -7,6 +7,7 @@ import {
   ListAreasOfResponsibilityReq,
   UpdateAreaOfResponsibilityReportOrderReq,
   UpdateAreaOfResponsibilityReq,
+  UpdateAorBattleLineBoundariesReq,
 } from '../../../../Bindings';
 
 import { postJson, postVoid } from './client';
@@ -196,6 +197,22 @@ export async function updateAor(req: UpdateAreaOfResponsibilityReq): Promise<Are
     toUpdateAreaOfResponsibilityReqBody(req),
   );
   return normalizeAor(data);
+}
+
+export async function updateAorBattleLineBoundaries(
+  req: UpdateAorBattleLineBoundariesReq,
+): Promise<AreaOfResponsibility[]> {
+  const data = await postJson<AreaOfResponsibilityLike[]>(
+    '/api/sigint/aor/update-battle-line-boundaries',
+    {
+      items: req.items.map((item) => ({
+        id: item.id,
+        left_coordinates: toAorCoordinatesBody(item.leftCoordinates),
+        right_coordinates: toAorCoordinatesBody(item.rightCoordinates),
+      })),
+    },
+  );
+  return (data || []).map(normalizeAor);
 }
 
 export async function updateAorReportOrders(
