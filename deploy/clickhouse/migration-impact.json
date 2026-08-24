@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260824_100228_add_media_summary_enabled_to_user_settings": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
     "echo:m20260822_105557_add_settlement_stats_index": {
       "changes": []
     },
