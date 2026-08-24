@@ -18,9 +18,12 @@ use csv::Writer;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sea_orm::prelude::*;
 use sea_orm::*;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration as StdDuration;
 
+const SIGNAL_MESSAGE_AUTHOR_LOGIN_CHECKPOINT_KEY: &str =
+    "oneoff_signal_message_author_login_checkpoint";
 const SIGNAL_MESSAGE_LOGIN_ID_INDEX: &str = "signal_message_login_id_idx";
 const SIGNAL_MESSAGE_GROUP_LOGIN_ID_INDEX: &str =
     "signal_message_group_login_id_idx";
@@ -56,6 +59,23 @@ pub async fn oneoff_backfill_signal_message_author_login(
         .collect::<HashMap<_, _>>();
     let mut message_id = ps.after_message_id;
     let mut group_id = ps.after_group_id;
+    if message_id == 0 && group_id == 0 {
+        if let Some(checkpoint) = crate::kv::get_kv::<AuthorBackfillCheckpoint>(
+            &db,
+            SIGNAL_MESSAGE_AUTHOR_LOGIN_CHECKPOINT_KEY,
+        )
+        .await
+        .c(h!())?
+        {
+            message_id = checkpoint.message_id;
+            group_id = checkpoint.group_id;
+            println!(
+                "resuming from checkpoint: message_id={message_id}, group_id={group_id}"
+            );
+        }
+    }
+    let mut message_total = 0;
+    let mut group_total = 0;
     loop {
         let txn = db.begin().await.c(h!())?;
         let (message_count, next_message_id) = backfill_signal_message_batch(
@@ -79,16 +99,46 @@ pub async fn oneoff_backfill_signal_message_author_login(
         if message_count == 0 && group_count == 0 {
             break;
         }
+        message_total += message_count;
+        group_total += group_count;
         message_id = next_message_id;
         group_id = next_group_id;
+        crate::kv::put_kv(
+            &db,
+            SIGNAL_MESSAGE_AUTHOR_LOGIN_CHECKPOINT_KEY,
+            AuthorBackfillCheckpoint {
+                message_id,
+                group_id,
+            },
+        )
+        .await
+        .c(h!())?;
         println!(
-            "backfilled {message_count} messages and {group_count} group links; cursors message_id={message_id}, group_id={group_id}"
+            "signal_message: {}; signal_message_group: {}",
+            backfill_progress(message_count, message_total, next_message_id),
+            backfill_progress(group_count, group_total, next_group_id),
         );
     }
 
     create_signal_message_author_indexes(&db).await.c(h!())?;
-    println!("signal-message author backfill completed");
+    println!(
+        "signal-message author backfill completed: {message_total} messages, {group_total} group links"
+    );
     Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct AuthorBackfillCheckpoint {
+    message_id: i64,
+    group_id: i64,
+}
+
+fn backfill_progress(count: usize, total: usize, last_id: i64) -> String {
+    if count == 0 {
+        "no matching rows".to_string()
+    } else {
+        format!("+{count} rows (total {total}, through id {last_id})")
+    }
 }
 
 async fn backfill_signal_message_batch<C: ConnectionTrait>(
