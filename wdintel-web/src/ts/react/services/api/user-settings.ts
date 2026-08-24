@@ -17,6 +17,7 @@ export type UserDutySettings = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
+  mediaSummaryEnabled: boolean;
 };
 
 type DutyTagsLayoutWire = DutyTagsLayout | 'full' | 'compact' | 'hidden';
@@ -30,6 +31,7 @@ type UserDutySettingsWire = Omit<
   | 'showClassicDuty'
   | 'showClassicAnalysis'
   | 'dutyCollapseMediaPreviews'
+  | 'mediaSummaryEnabled'
 > & {
   tagsLayout: DutyTagsLayoutWire;
   analysisMapInSidebar?: boolean | null;
@@ -39,6 +41,7 @@ type UserDutySettingsWire = Omit<
   showClassicDuty?: boolean | null;
   showClassicAnalysis?: boolean | null;
   dutyCollapseMediaPreviews?: boolean | null;
+  mediaSummaryEnabled?: boolean | null;
 };
 
 function normalizeTagsLayout(tagsLayout: DutyTagsLayoutWire | null | undefined): TagsLayoutVariant {
@@ -82,6 +85,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     showClassicAnalysis: raw.showClassicAnalysis ?? false,
     dutyCollapseMediaPreviews:
       raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+    mediaSummaryEnabled: raw.mediaSummaryEnabled ?? true,
   };
 }
 
@@ -106,6 +110,7 @@ export async function saveUserSettings(
       showClassicDuty: body.showClassicDuty,
       showClassicAnalysis: body.showClassicAnalysis,
       dutyCollapseMediaPreviews: body.dutyCollapseMediaPreviews,
+      mediaSummaryEnabled: body.mediaSummaryEnabled,
     },
     { signal },
   );

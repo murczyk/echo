@@ -357,13 +357,14 @@ export function MediaSummaryAction({
           aria-pressed={active}
           color={active ? 'primary' : 'default'}
           onClick={onClick}
-          className={
-            active
-              ? 'text-(--color-primary)!'
-              : processing
-                ? 'text-blue-500!'
-                : 'text-(--color-text-muted)! hover:text-(--color-text)!'
-          }
+          sx={{
+            color: active ? 'primary.main' : processing ? 'info.main' : 'text.secondary',
+            '&:hover': {
+              color: active ? 'primary.dark' : 'text.primary',
+              backgroundColor: 'action.hover',
+            },
+            '&.Mui-disabled': { color: 'action.disabled' },
+          }}
         >
           <Icon fontSize="small" />
         </IconButton>
@@ -662,11 +663,15 @@ export function MessageCardMediaSummary({
     status == null ||
     (state === 'completed' && summary === '' && result != null);
   const hasSummary = !isNoResult && !isFailed && !isProcessing && !isLoading && summary !== '';
+  const [prevSummary, setPrevSummary] = useState(summary);
   const [hasOverflow, setHasOverflow] = useState(() => summary.split(/\r?\n/).length > 3);
 
-  if (prevMediaId !== mediaId) {
+  if (prevMediaId !== mediaId || prevSummary !== summary) {
     setPrevMediaId(mediaId);
-    setExpanded(false);
+    setPrevSummary(summary);
+    if (prevMediaId !== mediaId) {
+      setExpanded(false);
+    }
     setHasOverflow(summary.split(/\r?\n/).length > 3);
   }
 
@@ -846,25 +851,28 @@ export function MessageCardMediaSummaryCarousel({
     onIndexChange?.(nextIndex);
   }, [firstSummaryIndex, mediaIds, onIndexChange]);
 
+  const resolvedIndex = Math.min(index, media.length - 1);
+  const current = media[resolvedIndex];
+
   useEffect(() => {
-    media.forEach((item) => {
-      if (item.id != null && item.summary?.state === 'completed') {
+    media.forEach((item, itemIdx) => {
+      if (itemIdx !== resolvedIndex && item.id != null && item.summary?.state === 'completed') {
         const key = `messenger:${item.id}`;
         if (!summaryCache.has(key)) {
-          void getMediaSummary(item.id, undefined, 'messenger')
-            .then((res) => {
-              if (res.state === 'completed' || res.state === 'failed') {
-                setLruCacheValue(summaryCache, key, res, MEDIA_SUMMARY_CACHE_LIMIT);
-              }
-            })
-            .catch(() => {});
+          const promise = getMediaSummary(item.id, undefined, 'messenger');
+          if (promise != null && typeof promise.then === 'function') {
+            void promise
+              .then((res) => {
+                if (res?.state === 'completed' || res?.state === 'failed') {
+                  setLruCacheValue(summaryCache, key, res, MEDIA_SUMMARY_CACHE_LIMIT);
+                }
+              })
+              .catch(() => {});
+          }
         }
       }
     });
-  }, [media, mediaIds]);
-
-  const resolvedIndex = Math.min(index, media.length - 1);
-  const current = media[resolvedIndex];
+  }, [media, mediaIds, resolvedIndex]);
   if (firstSummaryIndex < 0 || current == null) return null;
 
   const selectIndex = (nextIndex: number) => {

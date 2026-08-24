@@ -357,6 +357,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
     });
 
     await act(async () => {
@@ -399,6 +400,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
     });
   });
 
@@ -431,6 +433,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
     });
   });
 
@@ -463,6 +466,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
     });
 
     saveUserDutySettings.mockClear();
@@ -492,6 +496,43 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+    });
+  });
+
+  it('saves media summary preference from the ai settings tab', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="ai" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Штучний інтелект');
+    expect(container.textContent).toContain('Стислий опис файлів у картках');
+
+    const switchButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.parentElement?.textContent?.includes('Стислий опис файлів у картках'),
+    );
+    expect(switchButton).toBeTruthy();
+
+    await act(async () => {
+      switchButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: false,
     });
   });
 

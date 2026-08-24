@@ -22583,6 +22583,7 @@ type alias UserDutySettingsDto =
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
     , dutyCollapseMediaPreviews : Bool
+    , mediaSummaryEnabled : Bool
     }
 
 
@@ -22598,3 +22599,4 @@ userDutySettingsDtoDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicDuty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "showClassicAnalysis" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyCollapseMediaPreviews" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mediaSummaryEnabled" (Json.Decode.bool)))

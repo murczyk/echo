@@ -347,7 +347,7 @@ describe('MessageCardMediaSummary', () => {
       );
     });
 
-    expect(getMediaSummary).toHaveBeenCalledWith('media-10', undefined, 'messenger');
+    expect(getMediaSummary).toHaveBeenCalledWith('media-10', expect.anything(), 'messenger');
     expect(getMediaSummary).toHaveBeenCalledWith('media-11', undefined, 'messenger');
   });
 });

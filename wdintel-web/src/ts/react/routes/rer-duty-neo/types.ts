@@ -62,6 +62,7 @@ export type FeedColumnModel = {
     tagsLayout: TagsLayoutVariant;
     /** When true, Duty cards hide heavy media behind reveal banners until opened. */
     collapseMediaPreviews?: boolean;
+    mediaSummaryEnabled?: boolean;
     tagsMap: Record<number, Tag>;
     tagsOrder: number[];
     botTagAction: MessageCardBotTagAction | null;

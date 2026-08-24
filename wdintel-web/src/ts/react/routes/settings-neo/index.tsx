@@ -8,6 +8,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { PageHeader } from '../../components/PageHeader';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
+import { SettingsAiSection } from './SettingsAiSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
 import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
@@ -17,7 +18,7 @@ import type { UserDutySettings } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 
 export type SettingsSection =
-  'general' | 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
+  'general' | 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'ai' | 'myReports';
 
 type SettingsNeoPageProps = {
   section?: string;
@@ -43,7 +44,7 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'my-reports') {
     return 'myReports';
   }
-  if (section === 'duty' || section === 'analysis') {
+  if (section === 'duty' || section === 'analysis' || section === 'ai') {
     return section;
   }
   return 'myGroups';
@@ -100,6 +101,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       showClassicDuty: dutySettings.showClassicDuty,
       showClassicAnalysis: dutySettings.showClassicAnalysis,
       dutyCollapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
+      mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
       ...overrides,
     });
   };
@@ -237,6 +239,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               label="Аналіз"
               id="settings-neo-tab-analysis"
               aria-controls="settings-neo-panel-analysis"
+            />
+            <Tab
+              value="ai"
+              label="ШІ"
+              id="settings-neo-tab-ai"
+              aria-controls="settings-neo-panel-ai"
             />
             <Tab
               value="myReports"
@@ -446,6 +454,19 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 </Stack>
               </Box>
             </Box>
+          ) : null}
+
+          {settingsSection === 'ai' ? (
+            <SettingsAiSection
+              loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+              prefsLoadError={dutySettings.loadError}
+              saveError={dutySettings.saveError}
+              mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
+              onMediaSummaryEnabledChange={(value) => {
+                dutySettings.setMediaSummaryEnabled(value);
+                scheduleDutySettingsSave({ mediaSummaryEnabled: value });
+              }}
+            />
           ) : null}
         </Card>
       </Stack>

@@ -34,7 +34,8 @@ describe('user-settings api', () => {
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
-      dutyCollapseMediaPreviews: false,
+      dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
     });
   });
 
@@ -54,6 +55,22 @@ describe('user-settings api', () => {
     });
   });
 
+  it.each([
+    ['null', null, true],
+    ['explicit false', false, false],
+    ['explicit true', true, true],
+  ])('normalizes %s media-summary preferences', async (_, mediaSummaryEnabled, expected) => {
+    mocks.getJson.mockResolvedValueOnce({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      mediaSummaryEnabled,
+    });
+
+    await expect(fetchUserSettings()).resolves.toMatchObject({
+      mediaSummaryEnabled: expected,
+    });
+  });
+
   it('serializes duty settings when saving', async () => {
     mocks.putJson.mockResolvedValueOnce({
       tagsLayout: 'compact',
@@ -65,6 +82,7 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: false,
+      mediaSummaryEnabled: true,
     });
 
     await saveUserSettings({
@@ -77,6 +95,7 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: false,
+      mediaSummaryEnabled: true,
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
@@ -91,6 +110,7 @@ describe('user-settings api', () => {
         showClassicDuty: false,
         showClassicAnalysis: false,
         dutyCollapseMediaPreviews: false,
+        mediaSummaryEnabled: true,
       },
       { signal: undefined },
     );
@@ -101,6 +121,7 @@ describe('user-settings api', () => {
       tagsLayout: 'compact',
       disableAutoScroll: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: false,
     });
 
     await saveUserSettings({
@@ -113,11 +134,12 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: false,
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
       '/api/user/settings',
-      expect.objectContaining({ dutyCollapseMediaPreviews: true }),
+      expect.objectContaining({ dutyCollapseMediaPreviews: true, mediaSummaryEnabled: false }),
       { signal: undefined },
     );
   });

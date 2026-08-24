@@ -139,6 +139,7 @@ export type MessageCardProps = {
    * Defaults to true for `displayMode="duty"`.
    */
   collapseMediaPreviews?: boolean;
+  mediaSummaryEnabled?: boolean;
 };
 
 // Performance boundary: this component is repeated throughout Duty feeds.
@@ -194,6 +195,7 @@ function MessageCardComponent({
   analysisCallsignActions,
   showCallsignAddForm = false,
   collapseMediaPreviews,
+  mediaSummaryEnabled = true,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const compactLayout = feedCount >= 3;
@@ -358,6 +360,7 @@ function MessageCardComponent({
           onOpenPointsOnMap={onOpenPointsOnMap}
           onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
           collapseMediaPreviews={collapseMediaPreviews ?? false}
+          mediaSummaryEnabled={mediaSummaryEnabled}
         />
       </MessageCardRoot>
     </li>

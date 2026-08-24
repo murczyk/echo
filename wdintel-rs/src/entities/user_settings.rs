@@ -23,6 +23,7 @@ pub struct Model {
     pub show_classic_duty: bool,
     pub show_classic_analysis: bool,
     pub duty_collapse_media_previews: bool,
+    pub media_summary_enabled: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

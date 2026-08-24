@@ -87,6 +87,7 @@ export function RerDutyNeoPage({
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
+  const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(true);
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
@@ -98,11 +99,13 @@ export function RerDutyNeoPage({
         setCollapseMediaPreviews(
           prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
         );
+        setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? true);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
         setCollapseMediaPreviews(true);
+        setMediaSummaryEnabled(true);
       }
     };
     loadLayout();
@@ -117,6 +120,7 @@ export function RerDutyNeoPage({
           tagsLayout?: TagsLayoutVariant;
           dutyAudioTranscriptionCollapsed?: boolean;
           dutyCollapseMediaPreviews?: boolean;
+          mediaSummaryEnabled?: boolean;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -127,6 +131,9 @@ export function RerDutyNeoPage({
       }
       if (typeof detail?.dutyCollapseMediaPreviews === 'boolean') {
         setCollapseMediaPreviews(detail.dutyCollapseMediaPreviews);
+      }
+      if (typeof detail?.mediaSummaryEnabled === 'boolean') {
+        setMediaSummaryEnabled(detail.mediaSummaryEnabled);
       }
     };
 
@@ -464,6 +471,7 @@ export function RerDutyNeoPage({
       featureStrictNetworks,
       tagsLayout,
       collapseMediaPreviews,
+      mediaSummaryEnabled,
       tagsMap,
       tagsOrder,
       botTagAction,

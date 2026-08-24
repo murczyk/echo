@@ -218,6 +218,7 @@ export type AnalysisPageState = {
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
+  mediaSummaryEnabled?: boolean;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
   rightPanelOpen: boolean;
