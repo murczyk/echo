@@ -356,6 +356,7 @@ function AdminAorNeoPageBody() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [availableLocationConfigs, setAvailableLocationConfigs] = useState<string[]>([]);
   const [battleLineState, setBattleLineState] = useState<BattleLineState | null>(null);
+  const [battleLineError, setBattleLineError] = useState<string | null>(null);
   const [locationConfigDialog, setLocationConfigDialog] =
     useState<LocationConfigDialogState | null>(null);
 
@@ -365,14 +366,12 @@ function AdminAorNeoPageBody() {
       setLoadError(null);
     }
     try {
-      const [aorList, locationConfigsRsp, nextBattleLineState] = await Promise.all([
+      const [aorList, locationConfigsRsp] = await Promise.all([
         listAors({ sortBy: null }),
         listAorLocationConfigs(),
-        fetchBattleLineState(),
       ]);
       setAvailableLocationConfigs(locationConfigsRsp.availableConfigs);
       setAors(buildAorRows(aorList, buildLocationConfigsByAorId(locationConfigsRsp.items)));
-      setBattleLineState(nextBattleLineState);
       setLoadStatus('success');
     } catch (error) {
       if (showLoading) {
@@ -383,8 +382,23 @@ function AdminAorNeoPageBody() {
     }
   }
 
+  async function loadBattleLine() {
+    try {
+      setBattleLineState(await fetchBattleLineState());
+      setBattleLineError(null);
+    } catch (error) {
+      setBattleLineError(formatErrorMessage(error));
+      throw error;
+    }
+  }
+
+  async function reloadAorPage() {
+    await Promise.all([loadAorPage(false), loadBattleLine()]);
+  }
+
   useEffect(() => {
     void loadAorPage().catch(() => undefined);
+    void loadBattleLine().catch(() => undefined);
   }, []);
 
   function openLocationConfigDialog(aor: AorRow) {
@@ -519,12 +533,14 @@ function AdminAorNeoPageBody() {
           }
         />
 
+        {loadStatus === 'success' && battleLineError ? (
+          <PowerAlert severity="error">
+            Не вдалося завантажити дані ЛБЗ: {battleLineError}
+          </PowerAlert>
+        ) : null}
+
         {loadStatus === 'success' && battleLineState ? (
-          <AorBattleLineWidget
-            aors={aors}
-            state={battleLineState}
-            reload={() => loadAorPage(false)}
-          />
+          <AorBattleLineWidget aors={aors} state={battleLineState} reload={reloadAorPage} />
         ) : null}
 
         <Box sx={{ flex: 1, minHeight: { xs: 'auto', lg: 0 }, minWidth: 0, display: 'flex' }}>

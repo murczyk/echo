@@ -446,6 +446,7 @@ export function AorBattleLineWidget({ aors, state, reload }: Props) {
   const [pendingAddAorId, setPendingAddAorId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => setVisibleAorIds(initialVisibleIds), [initialVisibleIds]);
@@ -504,14 +505,23 @@ export function AorBattleLineWidget({ aors, state, reload }: Props) {
     }
     setSaving(true);
     setError(null);
+    setRefreshError(null);
     try {
       await updateAorBattleLineBoundaries({ items });
-      await reload();
-      setEditorOpen(false);
-      setEditorMap(null);
-      setSaved(true);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
+      setSaving(false);
+      return;
+    }
+
+    setEditorOpen(false);
+    setEditorMap(null);
+    try {
+      await reload();
+      setSaved(true);
+    } catch (reloadError) {
+      const message = reloadError instanceof Error ? reloadError.message : String(reloadError);
+      setRefreshError(`Межі збережено, але не вдалося оновити дані: ${message}`);
     } finally {
       setSaving(false);
     }
@@ -556,6 +566,15 @@ export function AorBattleLineWidget({ aors, state, reload }: Props) {
       <Snackbar open={saved} autoHideDuration={5000} onClose={() => setSaved(false)}>
         <Alert severity="success" onClose={() => setSaved(false)}>
           {state.activeVersion ? 'Межі збережено, сегменти ЛБЗ перераховано' : 'Межі збережено'}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={refreshError != null}
+        autoHideDuration={8000}
+        onClose={() => setRefreshError(null)}
+      >
+        <Alert severity="error" onClose={() => setRefreshError(null)}>
+          {refreshError}
         </Alert>
       </Snackbar>
     </>
