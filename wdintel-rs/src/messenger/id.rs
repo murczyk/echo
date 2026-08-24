@@ -191,7 +191,13 @@ pub async fn oneoff_assign_message_ids(
             );
             let same_group = m1.datasource_group_id == m2.datasource_group_id;
             let same_body = m1.body == m2.body;
-            let same_sender = m1.sender == m2.sender;
+            let sender_identity = |message: &signal_message::Model| {
+                message
+                    .sender
+                    .clone()
+                    .or_else(|| message.login_id.map(|id| id.to_string()))
+            };
+            let same_sender = sender_identity(m1) == sender_identity(m2);
             if same_group && same_sender && same_body {
                 if dry_run {
                     warn!("duplicated messages occurred: id{x}, id{y}");

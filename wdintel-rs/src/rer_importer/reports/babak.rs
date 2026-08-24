@@ -1688,7 +1688,7 @@ async fn load_babak_enrichment_batch(
                         linked.id,
                         linked.created_at,
                         linked.body as comment,
-                        linked.sender as author
+                        coalesce(linked.sender, linked.login_id::text) as author
                     from intel_product link
                     join signal_message linked
                       on linked.id = link.intel_message_id
