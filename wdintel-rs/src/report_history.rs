@@ -469,7 +469,7 @@ fn report_history_error_hint(error: &str) -> String {
         return REPORT_HISTORY_GENERIC_ERROR_STATUS.to_string();
     };
     report_history_known_error_hint(&message)
-        .unwrap_or(&message)
+        .unwrap_or(REPORT_HISTORY_GENERIC_ERROR_STATUS)
         .to_string()
 }
 
@@ -3558,19 +3558,23 @@ mod tests {
     }
 
     #[test]
-    fn report_error_hint_extracts_safe_nested_messages_and_known_hints() {
+    fn report_error_hint_exposes_only_known_nested_messages() {
         let cases = [
             (
                 r#"BL { msg: "Оберіть інший період" }"#,
-                "Оберіть інший період",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
             ),
             (
                 r#"Outer { msg: "зовнішня", source: BL { msg: "внутрішня" } }"#,
-                "внутрішня",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
             ),
             (
                 "AnyhowError { source: context\n\nCaused by:\n    Service unavailable: Сервіс тимчасово недоступний,\n}",
-                "Сервіс тимчасово недоступний",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                r#"BL { msg: "geo-screenshot failed. Exit code: Some(1). Stdout: secret. Stderr: internal details" }"#,
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
             ),
             (
                 r#"OuterError { source: "Коротке пояснення" }"#,
