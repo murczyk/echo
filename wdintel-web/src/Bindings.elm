@@ -8903,6 +8903,7 @@ listNetworkCallsignsSortByEncoder enum =
 type alias ListNetworkCallsignsReq =
     { networkId : Int
     , sortBy : Maybe (List (ListNetworkCallsignsSortBy))
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -8911,6 +8912,7 @@ listNetworkCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (listNetworkCallsignsSortByEncoder))) struct.sortBy )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -10752,6 +10754,7 @@ type alias SingleNetworkCallsignsReq =
     { networkId : Int
     , includeActivityInfo : Maybe (Bool)
     , section : Maybe (SingleNetworkCallsignsSection)
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -10761,6 +10764,7 @@ singleNetworkCallsignsReqEncoder struct =
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "include_activity_info", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeActivityInfo )
         , ( "section", (Maybe.withDefault Json.Encode.null << Maybe.map (singleNetworkCallsignsSectionEncoder)) struct.section )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -13956,6 +13960,34 @@ updateAreaOfResponsibilityReqEncoder struct =
     Json.Encode.object
         [ ( "id", (Json.Encode.int) struct.id )
         , ( "insert", (areaOfResponsibilityInsertEncoder) struct.insert )
+        ]
+
+
+type alias AorBattleLineBoundariesUpdate =
+    { id : Int
+    , leftCoordinates : AorCoordinates
+    , rightCoordinates : AorCoordinates
+    }
+
+
+aorBattleLineBoundariesUpdateEncoder : AorBattleLineBoundariesUpdate -> Json.Encode.Value
+aorBattleLineBoundariesUpdateEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "left_coordinates", (aorCoordinatesEncoder) struct.leftCoordinates )
+        , ( "right_coordinates", (aorCoordinatesEncoder) struct.rightCoordinates )
+        ]
+
+
+type alias UpdateAorBattleLineBoundariesReq =
+    { items : List (AorBattleLineBoundariesUpdate)
+    }
+
+
+updateAorBattleLineBoundariesReqEncoder : UpdateAorBattleLineBoundariesReq -> Json.Encode.Value
+updateAorBattleLineBoundariesReqEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aorBattleLineBoundariesUpdateEncoder)) struct.items )
         ]
 
 
@@ -19686,6 +19718,7 @@ listNetworkCallsignsReqDecoder =
     Json.Decode.succeed ListNetworkCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list (listNetworkCallsignsSortByDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 listNetworkCallsignsResDecoder : Json.Decode.Decoder ListNetworkCallsignsRes
@@ -20830,6 +20863,7 @@ singleNetworkCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_activity_info" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.nullable (singleNetworkCallsignsSectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsignsListRsp
@@ -22177,6 +22211,20 @@ updateAreaOfResponsibilityReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "insert" (areaOfResponsibilityInsertDecoder)))
 
 
+aorBattleLineBoundariesUpdateDecoder : Json.Decode.Decoder AorBattleLineBoundariesUpdate
+aorBattleLineBoundariesUpdateDecoder =
+    Json.Decode.succeed AorBattleLineBoundariesUpdate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_coordinates" (aorCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_coordinates" (aorCoordinatesDecoder)))
+
+
+updateAorBattleLineBoundariesReqDecoder : Json.Decode.Decoder UpdateAorBattleLineBoundariesReq
+updateAorBattleLineBoundariesReqDecoder =
+    Json.Decode.succeed UpdateAorBattleLineBoundariesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aorBattleLineBoundariesUpdateDecoder))))
+
+
 deleteAreaOfResponsibilityReqDecoder : Json.Decode.Decoder DeleteAreaOfResponsibilityReq
 deleteAreaOfResponsibilityReqDecoder =
     Json.Decode.succeed DeleteAreaOfResponsibilityReq
@@ -22573,8 +22621,31 @@ dutyTagsLayoutDecoder =
                 )
         ]
 
+type MessageTextPreviewLines
+    = Twenty
+    | Forty
+    | Off
+
+
+messageTextPreviewLinesDecoder : Json.Decode.Decoder MessageTextPreviewLines
+messageTextPreviewLinesDecoder =
+    Json.Decode.string
+        |> Json.Decode.andThen
+            (\x ->
+                case x of
+                    "twenty" ->
+                        Json.Decode.succeed Twenty
+                    "forty" ->
+                        Json.Decode.succeed Forty
+                    "off" ->
+                        Json.Decode.succeed Off
+                    unexpected ->
+                        Json.Decode.fail <| "Unexpected variant " ++ unexpected
+            )
+
 type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout
+    , messageTextPreviewLines : MessageTextPreviewLines
     , disableAutoScroll : Bool
     , analysisMapInSidebar : Bool
     , dutyAudioTranscriptionCollapsed : Bool
@@ -22590,6 +22661,7 @@ userDutySettingsDtoDecoder : Json.Decode.Decoder UserDutySettingsDto
 userDutySettingsDtoDecoder =
     Json.Decode.succeed UserDutySettingsDto
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageTextPreviewLines" (messageTextPreviewLinesDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyAudioTranscriptionCollapsed" (Json.Decode.bool)))

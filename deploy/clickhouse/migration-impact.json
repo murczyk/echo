@@ -30,6 +30,14 @@
         }
       ]
     },
+    "echo:m20260824_120000_add_message_text_preview_lines": {
+      "changes": [
+        {
+          "table": "public.user_settings",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
     "echo:m20260818_130237_battle_line_and_inbox_settlement": {
       "changes": [
         { "table": "public.battle_line_version", "strategy": "excluded" },

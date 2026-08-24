@@ -225,6 +225,14 @@ WHERE inbox_item.id BETWEEN $2 AND $3
       signal_message.timestamp,
       signal_message.created_at
   ) >= network_freq.active_from
+  AND (
+      $5::TIMESTAMP IS NULL
+      OR COALESCE(
+          inbox_item.datetime,
+          signal_message.timestamp,
+          signal_message.created_at
+      ) >= $5
+  )
   AND COALESCE(
       inbox_item.datetime,
       signal_message.timestamp,
@@ -232,6 +240,14 @@ WHERE inbox_item.id BETWEEN $2 AND $3
   ) <= COALESCE(
       network_freq.active_to,
       CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
+  )
+  AND (
+      $6::TIMESTAMP IS NULL
+      OR COALESCE(
+          inbox_item.datetime,
+          signal_message.timestamp,
+          signal_message.created_at
+      ) <= $6
   )
   AND inbox_item.id IN (
       SELECT network_link.sigint_inbox_item_id
@@ -622,6 +638,7 @@ pub(crate) async fn load_network_callsign_activity(
     analytics_db: &DatabaseConnection,
     groups: &[String],
     network_id: i64,
+    period: &NetworkFreqCallsignsPeriod,
 ) -> Result<HashMap<String, CallsignActivityInfo>, AppError> {
     if groups.is_empty() {
         return Ok(HashMap::new());
@@ -642,10 +659,16 @@ pub(crate) async fn load_network_callsign_activity(
         return Ok(HashMap::new());
     }
 
+    let period_bounds = super::network_callsign_period_bounds(&network, period);
     let Some((min_item_id, max_item_id)) =
-        load_network_message_id_bounds(source_db, network_id)
-            .await
-            .context(h!())?
+        load_network_callsign_message_id_bounds(
+            source_db,
+            analytics_db,
+            network_id,
+            period_bounds,
+        )
+        .await
+        .context(h!())?
     else {
         return Ok(HashMap::new());
     };
@@ -655,6 +678,7 @@ pub(crate) async fn load_network_callsign_activity(
         min_item_id,
         max_item_id,
         &datasource_group_ids,
+        period_bounds,
     )
     .await
     .context(h!())?;
@@ -756,7 +780,9 @@ async fn load_network_callsign_activity_rows(
     min_item_id: i64,
     max_item_id: i64,
     datasource_group_ids: &[i64],
+    period_bounds: Option<(NaiveDateTime, NaiveDateTime)>,
 ) -> Result<Vec<NetworkCallsignActivityRow>, AppError> {
+    let (since, till) = period_bounds.unzip();
     Ok(sqlx::query_as::<_, NetworkCallsignActivityRow>(
         NETWORK_CALLSIGN_ACTIVITY_SQL,
     )
@@ -764,9 +790,69 @@ async fn load_network_callsign_activity_rows(
     .bind(min_item_id)
     .bind(max_item_id)
     .bind(datasource_group_ids)
+    .bind(since)
+    .bind(till)
     .fetch_all(db.get_postgres_connection_pool())
     .await
     .c(h!())?)
+}
+
+async fn load_network_callsign_message_id_bounds(
+    source_db: &DatabaseConnection,
+    analytics_db: &DatabaseConnection,
+    network_id: i64,
+    period_bounds: Option<(NaiveDateTime, NaiveDateTime)>,
+) -> Result<Option<(i64, i64)>, AppError> {
+    let network_bounds = load_network_message_id_bounds(source_db, network_id);
+    let Some((since, till)) = period_bounds else {
+        return Ok(network_bounds.await.context(h!())?);
+    };
+    let (network_bounds, period_bounds) = tokio::try_join!(
+        network_bounds,
+        load_activity_message_id_bounds_for_period(analytics_db, since, till,),
+    )
+    .context(h!())?;
+    let (
+        Some((network_min_id, network_max_id)),
+        Some((period_min_id, period_max_id)),
+    ) = (network_bounds, period_bounds)
+    else {
+        return Ok(None);
+    };
+    let min_item_id = std::cmp::max(network_min_id, period_min_id);
+    let max_item_id = std::cmp::min(network_max_id, period_max_id);
+    Ok((min_item_id <= max_item_id).then_some((min_item_id, max_item_id)))
+}
+
+async fn load_activity_message_id_bounds_for_period(
+    db: &DatabaseConnection,
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+) -> Result<Option<(i64, i64)>, AppError> {
+    let bounds = sqlx::query_as::<_, NetworkMessageIdBounds>(
+        r#"
+        SELECT min(inbox_item.id) AS min_id, max(inbox_item.id) AS max_id
+        FROM sigint_inbox_item inbox_item
+        JOIN signal_message
+            ON signal_message.id = inbox_item.id
+        WHERE COALESCE(
+            inbox_item.datetime,
+            signal_message.timestamp,
+            signal_message.created_at
+        ) >= $1
+          AND COALESCE(
+            inbox_item.datetime,
+            signal_message.timestamp,
+            signal_message.created_at
+        ) <= $2
+        "#,
+    )
+    .bind(since)
+    .bind(till)
+    .fetch_one(db.get_postgres_connection_pool())
+    .await
+    .c(h!())?;
+    Ok(bounds.min_id.zip(bounds.max_id))
 }
 
 pub(crate) async fn load_network_freq_callsigns(

@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import type { NetworkFreqCallsignsPeriod } from '../../../../Bindings';
 
 import {
   deleteNetwork,
@@ -38,7 +39,7 @@ type Args = {
   unitNames: string[];
   reloadGeneration: MutableRefObject<number>;
   currentNetworkIdRef: MutableRefObject<number | null>;
-  loadCallsigns: (networkId: number) => Promise<void>;
+  loadCallsigns: (networkId: number, period?: NetworkFreqCallsignsPeriod) => Promise<void>;
 };
 
 function syncNetworkRelations(editForm: NetworkEditForm) {

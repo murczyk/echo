@@ -1,8 +1,8 @@
 import AddIcon from '@mui/icons-material/Add';
-import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import ArchiveIcon from '@mui/icons-material/Archive';
+import EditIcon from '@mui/icons-material/Edit';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import RestoreOutlinedIcon from '@mui/icons-material/RestoreOutlined';
+import RestoreIcon from '@mui/icons-material/Restore';
 import {
   Box,
   CircularProgress,
@@ -23,6 +23,7 @@ import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { PowerChip } from '../../components/PowerChip';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import {
   archiveAnalyticsTag,
   createAnalyticsTag,
@@ -32,6 +33,7 @@ import {
   updateAnalyticsTag,
 } from '../../services/api/device-analytics';
 import { reanalyzeAll } from '../../services/api/devices';
+import { formatDeviceErrorMessage, isFileRegistryNotConfiguredError } from '../devices/helpers';
 import { TagEditorDialog, type TagDraft } from './TagEditorDialog';
 
 const dateTimeFormatter = new Intl.DateTimeFormat('uk-UA', {
@@ -75,6 +77,7 @@ export function DeviceTagsSettingsPanel() {
   const [tags, setTags] = useState<AdminAnalyticsTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [fileRegistryUnavailable, setFileRegistryUnavailable] = useState(false);
   const [draft, setDraft] = useState<TagDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -84,11 +87,13 @@ export function DeviceTagsSettingsPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setFileRegistryUnavailable(false);
     try {
       const rsp = await listAdminAnalyticsTags();
       setTags(rsp.tags);
     } catch (error) {
-      setLoadError(errorMessage(error));
+      setLoadError(formatDeviceErrorMessage(error));
+      setFileRegistryUnavailable(isFileRegistryNotConfiguredError(error));
     } finally {
       setLoading(false);
     }
@@ -221,7 +226,7 @@ export function DeviceTagsSettingsPanel() {
               startIcon={
                 reanalyzing ? <CircularProgress size={18} color="inherit" /> : <RefreshIcon />
               }
-              disabled={reanalyzing || loading}
+              disabled={reanalyzing || loading || fileRegistryUnavailable}
               onClick={() => void scheduleGlobalReanalysis()}
             >
               {reanalyzing ? 'Плануємо…' : 'Повторно проаналізувати всі файли'}
@@ -229,6 +234,7 @@ export function DeviceTagsSettingsPanel() {
             <PowerButton
               variant="contained"
               startIcon={<AddIcon />}
+              disabled={fileRegistryUnavailable}
               onClick={() => {
                 setSaveError(null);
                 setDraft({ persisted: null, name: '', ruleExpression: null });
@@ -239,7 +245,12 @@ export function DeviceTagsSettingsPanel() {
           </Stack>
         </Stack>
 
-        {loadError ? (
+        {fileRegistryUnavailable ? (
+          <PowerAlert severity="warning" autoHideDuration={null} dismissible={false}>
+            Сховище файлів пристроїв не налаштоване. Аналіз файлів недоступний. Зверніться до
+            адміністратора сервера.
+          </PowerAlert>
+        ) : loadError ? (
           <PowerAlert
             severity="warning"
             autoHideDuration={null}
@@ -254,101 +265,100 @@ export function DeviceTagsSettingsPanel() {
           </PowerAlert>
         ) : null}
 
-        <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
-          <Table aria-label="Теги пристроїв" sx={{ minWidth: 840 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Назва</TableCell>
-                <TableCell>Стан</TableCell>
-                <TableCell>Правило</TableCell>
-                <TableCell>Оновлено</TableCell>
-                <TableCell align="right">Дії</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {loading ? (
+        {!fileRegistryUnavailable ? (
+          <TableContainer component={Paper} variant="outlined" sx={{ overflowX: 'auto' }}>
+            <Table aria-label="Теги пристроїв" sx={{ minWidth: 840 }}>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
-                    <CircularProgress aria-label="Завантаження тегів пристроїв" />
+                  <TableCell align="center" sx={{ width: 56 }}>
+                    №
                   </TableCell>
+                  <TableCell sx={{ width: 76 }}>Дії</TableCell>
+                  <TableCell>Назва</TableCell>
+                  <TableCell>Стан</TableCell>
+                  <TableCell>Правило</TableCell>
+                  <TableCell>Оновлено</TableCell>
                 </TableRow>
-              ) : null}
-              {!loading && sortedTags.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
-                    <Typography color="text.secondary">
-                      Каталог порожній. Створіть перший динамічний тег.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              ) : null}
-              {!loading
-                ? sortedTags.map((tag) => {
-                    const archived = tag.archivedAt !== null;
-                    const mutating = mutatingId === tag.id;
-                    return (
-                      <TableRow key={tag.id} hover>
-                        <TableCell component="th" scope="row">
-                          {tag.name}
-                        </TableCell>
-                        <TableCell>
-                          <PowerChip
-                            label={archived ? 'Архівний' : 'Активний'}
-                            color={archived ? 'default' : 'success'}
-                            selected={!archived}
-                            interactive={false}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {tag.ruleExpression === null ? 'Немає' : 'Налаштоване'}
-                        </TableCell>
-                        <TableCell>{formatDateTime(tag.updatedAt)}</TableCell>
-                        <TableCell align="right">
-                          <Stack direction="row" spacing={1} justifyContent="flex-end">
-                            <PowerButton
-                              size="small"
-                              variant="outlined"
-                              startIcon={<EditOutlinedIcon />}
-                              disabled={mutating}
-                              onClick={() => {
-                                setSaveError(null);
-                                setDraft({
-                                  persisted: tag,
-                                  name: tag.name,
-                                  ruleExpression: tag.ruleExpression,
-                                });
-                              }}
-                            >
-                              Редагувати
-                            </PowerButton>
-                            <PowerButton
-                              key={archived ? 'restore' : 'archive'}
-                              size="small"
-                              color={archived ? 'primary' : 'warning'}
-                              variant="outlined"
-                              startIcon={
-                                mutating ? (
-                                  <CircularProgress size={16} color="inherit" />
-                                ) : archived ? (
-                                  <RestoreOutlinedIcon />
-                                ) : (
-                                  <ArchiveOutlinedIcon />
-                                )
-                              }
-                              disabled={mutating}
-                              onClick={() => void toggleArchived(tag)}
-                            >
-                              {archived ? 'Відновити' : 'Архівувати'}
-                            </PowerButton>
-                          </Stack>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                : null}
-            </TableBody>
-          </Table>
-        </TableContainer>
+              </TableHead>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                      <CircularProgress aria-label="Завантаження тегів пристроїв" />
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+                {!loading && sortedTags.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                      <Typography color="text.secondary">
+                        Каталог порожній. Створіть перший динамічний тег.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+                {!loading
+                  ? sortedTags.map((tag, index) => {
+                      const archived = tag.archivedAt !== null;
+                      const mutating = mutatingId === tag.id;
+                      return (
+                        <TableRow key={tag.id} hover>
+                          <TableCell align="center">{index + 1}</TableCell>
+                          <TableCell>
+                            <MrtRowActions forceMenu>
+                              <MrtRowActionButton
+                                label="Редагувати"
+                                icon={<EditIcon fontSize="small" />}
+                                disabled={mutating}
+                                opensModal
+                                onClick={() => {
+                                  setSaveError(null);
+                                  setDraft({
+                                    persisted: tag,
+                                    name: tag.name,
+                                    ruleExpression: tag.ruleExpression,
+                                  });
+                                }}
+                              />
+                              <MrtRowActionButton
+                                label={archived ? 'Відновити' : 'Архівувати'}
+                                icon={
+                                  archived ? (
+                                    <RestoreIcon fontSize="small" />
+                                  ) : (
+                                    <ArchiveIcon fontSize="small" />
+                                  )
+                                }
+                                disabled={mutating}
+                                tone={archived ? 'default' : 'warning'}
+                                opensModal
+                                onClick={() => void toggleArchived(tag)}
+                              />
+                            </MrtRowActions>
+                          </TableCell>
+                          <TableCell component="th" scope="row">
+                            {tag.name}
+                          </TableCell>
+                          <TableCell>
+                            <PowerChip
+                              label={archived ? 'Архівний' : 'Активний'}
+                              color={archived ? 'default' : 'success'}
+                              selected={!archived}
+                              interactive={false}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {tag.ruleExpression === null ? 'Немає' : 'Налаштоване'}
+                          </TableCell>
+                          <TableCell>{formatDateTime(tag.updatedAt)}</TableCell>
+                        </TableRow>
+                      );
+                    })
+                  : null}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        ) : null}
       </Stack>
 
       <TagEditorDialog

@@ -28,7 +28,7 @@ use actix_web::{post, HttpResponse};
 use chrono::{Datelike, Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, info, warn};
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::{Expr, NullOrdering, Order, SimpleExpr};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel,
@@ -1171,6 +1171,19 @@ fn apply_report_history_admin_sorting(
             } else {
                 query.order_by_asc(login::Column::Login)
             };
+            applied_sorting = true;
+            continue;
+        }
+        if sorting.id == "startedAt" {
+            query = query.order_by_with_nulls(
+                report_history::Column::StartedAt,
+                if sorting.desc {
+                    Order::Desc
+                } else {
+                    Order::Asc
+                },
+                NullOrdering::Last,
+            );
             applied_sorting = true;
             continue;
         }
@@ -3363,9 +3376,28 @@ mod tests {
     use crate::functest::tests::{cleanup, mk_login};
     use chrono::Timelike;
     use sea_orm::ActiveValue::{NotSet, Set};
-    use sea_orm::EntityTrait;
+    use sea_orm::{EntityTrait, QueryTrait};
     use serde_json::json;
     use serial_test::serial;
+
+    #[test]
+    fn admin_started_at_sort_keeps_unlaunched_reports_last() {
+        let query = apply_report_history_admin_sorting(
+            ReportHistory::find(),
+            &[ReportHistorySorting {
+                id: "startedAt".to_string(),
+                desc: true,
+            }],
+        );
+        let sql = query.build(DatabaseBackend::Postgres).to_string();
+
+        assert!(
+            sql.contains(
+                "ORDER BY \"report_history\".\"started_at\" DESC NULLS LAST, \"report_history\".\"id\" DESC"
+            ),
+            "{sql}"
+        );
+    }
 
     async fn insert_report_history(
         dbx: &DatabaseConnection,

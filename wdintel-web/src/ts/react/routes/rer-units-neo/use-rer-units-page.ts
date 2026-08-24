@@ -23,7 +23,7 @@ import type { RequestOptions } from '../../services/api/client';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
-import type { UnitFormSubmit } from './components/UnitFormDialog';
+import type { UnitFormSubmit } from './components/UnitFormDrawer';
 import { formatUnitError } from './helpers';
 
 type Status = {

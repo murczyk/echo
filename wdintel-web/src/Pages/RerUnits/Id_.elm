@@ -753,7 +753,7 @@ detailsHeader user model details =
             [ a
                 [ class "btn btn-outline-secondary btn-sm"
                 , Route.href
-                    { path = Route.Path.RerUnits
+                    { path = Route.Path.RerUnitsNeo
                     , query = Dict.empty
                     , hash = Nothing
                     }

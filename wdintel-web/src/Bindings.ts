@@ -3429,6 +3429,7 @@ export type ListNetworkCallsignsSortBy =
 export type ListNetworkCallsignsReq = {
   networkId: number;
   sortBy: Array<ListNetworkCallsignsSortBy> | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type ListNetworkCallsignsRes = {
@@ -4157,6 +4158,7 @@ export type SingleNetworkCallsignsReq = {
   networkId: number;
   includeActivityInfo: boolean | null;
   section: SingleNetworkCallsignsSection | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {
@@ -5402,6 +5404,16 @@ export type UpdateAreaOfResponsibilityReq = {
   insert: AreaOfResponsibilityInsert;
 };
 
+export type AorBattleLineBoundariesUpdate = {
+  id: number;
+  leftCoordinates: AorCoordinates;
+  rightCoordinates: AorCoordinates;
+};
+
+export type UpdateAorBattleLineBoundariesReq = {
+  items: Array<AorBattleLineBoundariesUpdate>;
+};
+
 export type DeleteAreaOfResponsibilityReq = {
   id: number;
 };
@@ -5450,8 +5462,15 @@ export type DutyTagsLayout =
   | 'Hidden'
 ;
 
+export type MessageTextPreviewLines =
+  | 'Twenty'
+  | 'Forty'
+  | 'Off'
+;
+
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
+  messageTextPreviewLines: MessageTextPreviewLines;
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
   dutyAudioTranscriptionCollapsed: boolean;

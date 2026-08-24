@@ -12,7 +12,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  IconButton,
   Pagination,
   Stack,
   TextField,
@@ -28,6 +27,7 @@ import type {
 } from '../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerIconButton } from '../../components/PowerIconButton';
 import { PowerChip } from '../../components/PowerChip';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
@@ -459,16 +459,17 @@ export function AdminUnitUnparsedPage({
               }}
             />
           }
-          trailingActionsAfterInternal={
+          additionalInternalActions={
             <Tooltip title="Оновити">
               <span>
-                <IconButton
+                <PowerIconButton
+                  aria-label="Оновити"
                   size="small"
                   disabled={loading || processing}
                   onClick={() => void loadRows()}
                 >
                   <RefreshIcon fontSize="small" />
-                </IconButton>
+                </PowerIconButton>
               </span>
             </Tooltip>
           }

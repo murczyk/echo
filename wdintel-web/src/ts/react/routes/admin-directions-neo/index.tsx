@@ -660,8 +660,13 @@ function buildAorLabels(aors: AreaOfResponsibility[] | null | undefined): string
 }
 
 function buildAorNames(aors: AreaOfResponsibility[] | null | undefined): string[] {
-  if (!aors || aors.length === 0) return [EMPTY_AOR_FILTER_VALUE];
+  if (!aors || aors.length === 0) return [];
   return aors.map((aor) => aor.name);
+}
+
+function buildAorFilterNames(aors: AreaOfResponsibility[] | null | undefined): string[] {
+  const names = buildAorNames(aors);
+  return names.length > 0 ? names : [EMPTY_AOR_FILTER_VALUE];
 }
 
 function buildAorFilterOptions(aors: AreaOfResponsibility[]): { text: string; value: string }[] {
@@ -865,7 +870,7 @@ function OrphanGroupsTable(props: {
       {
         header: 'Смуги',
         id: 'aors',
-        accessorFn: (row) => buildAorNames(row?.areasOfResponsibility),
+        accessorFn: (row) => buildAorFilterNames(row?.areasOfResponsibility),
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<OrphanSignalGroupEntry, string>({
           items: ({ row }) => buildAorNames(row.original?.areasOfResponsibility),
@@ -873,6 +878,7 @@ function OrphanGroupsTable(props: {
           measurementScope: 'admin-directions:orphan-aors',
           getItemKey: (name) => name,
           getItemText: (name) => name,
+          emptyValue: NO_DATA_LABEL,
         }),
         filterVariant: 'multi-select',
         filterSelectOptions: props.aorFilterOptions,
@@ -1273,12 +1279,14 @@ function ZoneGroupsTable(props: {
         id: 'admins',
         accessorFn: (row) =>
           row?.group?.adminLogins?.length > 0
-            ? formatZoneGroupLoginIds(
-                row.group.adminLogins,
-                row.group.adminLoginDetails,
-                props.loginById,
-              )
-            : NO_DATA_LABEL,
+            ? [
+                formatZoneGroupLoginIds(
+                  row.group.adminLogins,
+                  row.group.adminLoginDetails,
+                  props.loginById,
+                ),
+              ]
+            : [NO_DATA_LABEL],
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<ZoneGroupRow, string>({
           items: ({ row }) => {
@@ -1293,19 +1301,20 @@ function ZoneGroupsTable(props: {
               ? loginIds.map(
                   (id) => detailsById.get(id)?.login ?? props.loginById.get(id)?.login ?? id,
                 )
-              : [NO_DATA_LABEL];
+              : [];
           },
           renderItem: (label) => <EchoChip label={label} tone="neutral" />,
           measurementScope: 'admin-directions:admins',
           getItemKey: (label) => label,
           getItemText: (label) => label,
+          emptyValue: NO_DATA_LABEL,
         }),
         size: 220,
       },
       {
         header: 'Смуги',
         id: 'aors',
-        accessorFn: (row) => buildAorNames(row?.group?.areasOfResponsibility),
+        accessorFn: (row) => buildAorFilterNames(row?.group?.areasOfResponsibility),
         meta: { overflowMode: 'items' },
         Cell: mrtItemsCell<ZoneGroupRow, string>({
           items: ({ row }) => buildAorNames(row.original?.group?.areasOfResponsibility),
@@ -1313,6 +1322,7 @@ function ZoneGroupsTable(props: {
           measurementScope: 'admin-directions:aors',
           getItemKey: (name) => name,
           getItemText: (name) => name,
+          emptyValue: NO_DATA_LABEL,
         }),
         filterVariant: 'multi-select',
         filterSelectOptions: props.aorFilterOptions,

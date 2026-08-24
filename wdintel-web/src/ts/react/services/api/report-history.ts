@@ -49,9 +49,16 @@ export async function listAllReportHistory(
   return transformSnakeToCamel<ReportHistoryBatchRsp>(raw);
 }
 
-export async function fetchReportHistoryStatus(id: number): Promise<ReportHistoryRow> {
+export async function fetchReportHistoryStatus(
+  id: number,
+  options?: { signal?: AbortSignal },
+): Promise<ReportHistoryRow> {
   const req: ReportHistoryIdReq = { id };
-  const raw = await postJson<unknown>('/api/report-history/status', transformCamelToSnake(req));
+  const raw = await postJson<unknown>(
+    '/api/report-history/status',
+    transformCamelToSnake(req),
+    options,
+  );
   return transformSnakeToCamel<ReportHistoryRow>(raw);
 }
 

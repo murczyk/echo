@@ -108,7 +108,7 @@ export const databaseSubs: Menu[] = [
   },
   {
     type: 'item',
-    link: { type: 'internal', path: '/rer-units' },
+    link: { type: 'internal', path: '/rer-units-neo' },
     activeName: 'rer-units',
     label: 'Підрозділи',
   },

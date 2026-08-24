@@ -1,13 +1,46 @@
 import { Box, Stack, Tab, Tabs, Typography } from '@mui/material';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { DeviceGeneralSettingsPanel } from './DeviceGeneralSettingsPanel';
 import { DeviceTagsSettingsPanel } from './DeviceTagsSettingsPanel';
 
 type DeviceAnalysisSettingsTab = 'general' | 'tags';
 
+function readTab(): DeviceAnalysisSettingsTab {
+  return new URLSearchParams(window.location.search).get('tab') === 'tags' ? 'tags' : 'general';
+}
+
+function writeTab(tab: DeviceAnalysisSettingsTab, replace = false) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', tab);
+  window.history[replace ? 'replaceState' : 'pushState'](
+    window.history.state,
+    '',
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
+
+function readCanonicalTab(): DeviceAnalysisSettingsTab {
+  const tab = readTab();
+  if (new URLSearchParams(window.location.search).get('tab') !== tab) writeTab(tab, true);
+  return tab;
+}
+
 export function AdminDeviceAnalyticsPage() {
-  const [activeTab, setActiveTab] = useState<DeviceAnalysisSettingsTab>('general');
+  const [activeTab, setActiveTab] = useState<DeviceAnalysisSettingsTab>(readTab);
+
+  useEffect(() => {
+    const syncTabFromUrl = () => setActiveTab(readCanonicalTab());
+    syncTabFromUrl();
+    window.addEventListener('popstate', syncTabFromUrl);
+    return () => window.removeEventListener('popstate', syncTabFromUrl);
+  }, []);
+
+  const selectTab = (tab: DeviceAnalysisSettingsTab) => {
+    if (tab === activeTab) return;
+    writeTab(tab);
+    setActiveTab(tab);
+  };
 
   return (
     <Box sx={{ width: '100%', minWidth: 0 }}>
@@ -19,7 +52,7 @@ export function AdminDeviceAnalyticsPage() {
         <Box>
           <Tabs
             value={activeTab}
-            onChange={(_, value: DeviceAnalysisSettingsTab) => setActiveTab(value)}
+            onChange={(_, value: DeviceAnalysisSettingsTab) => selectTab(value)}
             variant="scrollable"
             allowScrollButtonsMobile
             aria-label="Розділи налаштувань аналізу пристроїв"
