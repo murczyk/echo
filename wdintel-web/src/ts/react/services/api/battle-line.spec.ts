@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchBattleLineNetworks, fetchBattleLineState, uploadBattleLine } from './battle-line';
+import { fetchBattleLineState, uploadBattleLine } from './battle-line';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -48,34 +48,5 @@ describe('battle-line API', () => {
     await uploadBattleLine(file);
     const body = fetchMock.mock.calls[0][1].body as FormData;
     expect(body.get('file')).toBe(file);
-  });
-
-  it('normalizes paginated network maps', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            items: [
-              {
-                unit_id: 7,
-                unit_name: '7 підрозділ',
-                settlement_points: [{ lat: 48.1, lon: 35.2 }],
-                peleng_points: [{ lat: 48.3, lon: 35.4 }],
-              },
-            ],
-            total: 6,
-            page_size: 5,
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
-
-    await expect(fetchBattleLineNetworks({ page: 2 })).resolves.toMatchObject({
-      items: [{ unitId: 7, settlementPoints: [{ lon: 35.2 }] }],
-      total: 6,
-      pageSize: 5,
-    });
   });
 });

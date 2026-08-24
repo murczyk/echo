@@ -154,7 +154,6 @@ struct CanonicalSettlementRow {
 #[derive(Debug, FromQueryResult)]
 struct UnitMapPointRow {
     unit_id: i64,
-    _point_id: i64,
     lat: f64,
     lon: f64,
 }
@@ -637,7 +636,6 @@ where
         .filter(settlement::Column::Lon.is_not_null())
         .select_only()
         .column(sigint_network_unit::Column::UnitId)
-        .column_as(sigint_inbox_item_settlement::Column::Id, "_point_id")
         .column_as(settlement::Column::Lat, "lat")
         .column_as(settlement::Column::Lon, "lon")
         .distinct()
@@ -668,7 +666,6 @@ where
         .filter(sigint_peleng::Column::Deleted.eq(false))
         .select_only()
         .column(sigint_network_unit::Column::UnitId)
-        .column_as(sigint_peleng::Column::Id, "_point_id")
         .column_as(sigint_peleng::Column::Lat, "lat")
         .column_as(sigint_peleng::Column::Lng, "lon")
         .distinct()
@@ -713,6 +710,9 @@ fn group_unit_map_points(
 ) -> BTreeMap<i64, Vec<BattleLineNetworkMapPoint>> {
     let mut points = BTreeMap::<i64, Vec<_>>::new();
     for row in rows {
+        if !is_valid_map_coordinate(row.lat, row.lon) {
+            continue;
+        }
         points.entry(row.unit_id).or_default().push(
             BattleLineNetworkMapPoint {
                 lat: row.lat,
@@ -721,6 +721,13 @@ fn group_unit_map_points(
         );
     }
     points
+}
+
+fn is_valid_map_coordinate(lat: f64, lon: f64) -> bool {
+    lat.is_finite()
+        && lon.is_finite()
+        && (-90.0..=90.0).contains(&lat)
+        && (-180.0..=180.0).contains(&lon)
 }
 
 fn message_is_accessible(allowed_groups: &[String]) -> SimpleExpr {
@@ -2385,7 +2392,7 @@ values (
             item_id: Set(message.id),
             settlement_text: Set(format!("settlement-{settlement_id}")),
             settlement_id: Set(Some(settlement_id)),
-            is_undefined: Set(Some(false)),
+            is_undefined: Set(None),
             ..Default::default()
         }
         .insert(txn)
@@ -2405,15 +2412,24 @@ values (
         Ok(())
     }
 
+    // Regression: https://github.com/echoua/echo/issues/2287
     #[tokio::test]
     #[serial_test::serial]
-    async fn paginates_live_units_and_maps_recent_network_points() {
+    async fn paginates_live_units_and_maps_distinct_accessible_recent_points() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
         let now = Utc::now().naive_utc();
         let group = crate::functest::tests::mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_group = crate::functest::tests::mk_signal_group(
             &txn,
             signal_group::ActiveModel {
                 ..Default::default()
@@ -2463,6 +2479,12 @@ values (
         insert_test_settlement(&txn, 2_287_302, "Old", 47.1, 34.2)
             .await
             .unwrap();
+        insert_test_settlement(&txn, 2_287_303, "Inaccessible", 46.1, 33.2)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_304, "Invalid", 95.0, 190.0)
+            .await
+            .unwrap();
         insert_network_map_item(
             &txn,
             &group.master_key,
@@ -2470,6 +2492,36 @@ values (
             2_287_301,
             now - chrono::Duration::days(1),
             (48.3, 35.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_301,
+            now - chrono::Duration::days(1),
+            (48.3, 35.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &other_group.master_key,
+            network.id,
+            2_287_303,
+            now - chrono::Duration::days(1),
+            (46.3, 33.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_304,
+            now - chrono::Duration::days(1),
+            (95.0, 190.0),
         )
         .await
         .unwrap();

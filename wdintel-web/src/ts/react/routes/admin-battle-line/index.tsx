@@ -42,6 +42,7 @@ import {
 } from '../../services/api/battle-line';
 import { toErrorMessage } from '../rer-analysis-neo/use-analysis-data.shared';
 import { MessageCard } from '../shared/message-card/MessageCard';
+import { PowerAlert } from '../../components/PowerAlert';
 import { PageHeader } from '../../components/PageHeader';
 import { PageLoadingState } from '../../components/PageLoadingState';
 import { BattleLineMap } from './BattleLineMap';
@@ -448,38 +449,47 @@ function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
   );
 }
 
-function NetworksTab({ onError }: { onError: (message: string) => void }) {
+function NetworksTab() {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<BattleLineNetworksRsp | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     const controller = new AbortController();
     setData(null);
+    setError(null);
     setLoading(true);
     fetchBattleLineNetworks({ page }, { signal: controller.signal })
       .then(setData)
       .catch((loadError) => {
-        if (!controller.signal.aborted) onError(toErrorMessage(loadError));
+        if (!controller.signal.aborted) setError(toErrorMessage(loadError));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [onError, page]);
+  }, [page]);
   if (loading) {
     return (
-      <Stack spacing={1.5} aria-label="Завантаження мереж">
+      <div className="flex flex-col gap-echo-md" aria-label="Завантаження мереж">
         {Array.from({ length: 5 }, (_, index) => (
           <Skeleton key={index} variant="rounded" height={310} />
         ))}
-      </Stack>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <PowerAlert severity="error" autoHideDuration={null}>
+        {error}
+      </PowerAlert>
     );
   }
   if (!data) return null;
   return (
-    <Stack spacing={2}>
+    <div className="flex flex-col gap-echo-lg">
       {data.items.length === 0 ? (
-        <Alert severity="info">Активних підрозділів немає</Alert>
+        <PowerAlert severity="info">Активних підрозділів немає</PowerAlert>
       ) : (
         data.items.map((item) => <NetworkUnitMap key={item.unitId} item={item} />)
       )}
@@ -488,7 +498,7 @@ function NetworksTab({ onError }: { onError: (message: string) => void }) {
         count={Math.max(1, Math.ceil(data.total / data.pageSize))}
         onChange={(_, value) => setPage(value)}
       />
-    </Stack>
+    </div>
   );
 }
 
@@ -561,7 +571,7 @@ export function AdminBattleLinePage() {
         ) : null}
         {tab === 'unlinked' ? <UnlinkedTab onError={setError} /> : null}
         {tab === 'unresolved' ? <UnresolvedTab onError={setError} /> : null}
-        {tab === 'networks' ? <NetworksTab onError={setError} /> : null}
+        {tab === 'networks' ? <NetworksTab /> : null}
       </Box>
       <Snackbar open={error != null} autoHideDuration={8000} onClose={() => setError(null)}>
         <Alert severity="error" onClose={() => setError(null)}>

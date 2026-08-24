@@ -1,7 +1,8 @@
-import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useEffect, useRef } from 'react';
 
 import type { BattleLineNetworkUnitMap } from '../../../../Bindings';
+import { PowerChip } from '../../components/PowerChip';
 import { L } from '../../../maps/leaflet-markercluster';
 import { getTileLayers } from '../../../web-components/analysis-map/tile-layers';
 
@@ -9,11 +10,12 @@ function addPoints(
   layer: L.LayerGroup,
   points: BattleLineNetworkUnitMap['settlementPoints'],
   color: string,
+  borderColor: string,
   label: string,
 ) {
   for (const point of points) {
     L.circleMarker([point.lat, point.lon], {
-      color: '#ffffff',
+      color: borderColor,
       fillColor: color,
       fillOpacity: 1,
       radius: 6,
@@ -32,6 +34,8 @@ function fitMap(map: L.Map, layer: L.LayerGroup) {
 
 export function NetworkUnitMap({ item }: { item: BattleLineNetworkUnitMap }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const theme = useTheme();
+  const colors = theme.echo.color[theme.palette.mode];
 
   useEffect(() => {
     const host = hostRef.current;
@@ -48,45 +52,45 @@ export function NetworkUnitMap({ item }: { item: BattleLineNetworkUnitMap }) {
     });
     getTileLayers().googleHybrid.addTo(map);
     const layer = L.layerGroup().addTo(map);
-    addPoints(layer, item.settlementPoints, '#2196f3', 'Населений пункт');
-    addPoints(layer, item.pelengPoints, '#f44336', 'Пеленг');
+    addPoints(layer, item.settlementPoints, colors.info, colors.surfaceRaised, 'Населений пункт');
+    addPoints(layer, item.pelengPoints, colors.error, colors.surfaceRaised, 'Пеленг');
     fitMap(map, layer);
     const frame = window.requestAnimationFrame(() => map.invalidateSize());
     return () => {
       window.cancelAnimationFrame(frame);
       map.remove();
     };
-  }, [item]);
+  }, [colors.error, colors.info, colors.surfaceRaised, item]);
+
+  const unitLabel = item.unitName || `#${item.unitId}`;
+  const headingId = `network-unit-map-${item.unitId}`;
 
   return (
-    <Paper variant="outlined" sx={{ p: 2 }}>
-      <Stack spacing={1.5}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          justifyContent="space-between"
-          alignItems={{ xs: 'flex-start', sm: 'center' }}
-        >
-          <Typography variant="h6">{item.unitName || `#${item.unitId}`}</Typography>
-          <Stack direction="row" spacing={1}>
-            <Chip
-              size="small"
+    <article
+      aria-labelledby={headingId}
+      className="rounded-echo-lg border border-echo-border bg-echo-surface-raised p-echo-lg"
+    >
+      <div className="flex flex-col gap-echo-md">
+        <header className="flex flex-col items-start justify-between gap-echo-sm echo-sm:flex-row echo-sm:items-center">
+          <h2 id={headingId} className="m-0 text-echo-lg font-semibold text-echo-text">
+            {unitLabel}
+          </h2>
+          <div className="flex flex-wrap gap-echo-sm">
+            <PowerChip
+              color="info"
+              selected
               label={`Населені пункти: ${item.settlementPoints.length}`}
-              sx={{ bgcolor: '#2196f3', color: '#fff' }}
             />
-            <Chip
-              size="small"
-              label={`Пеленги: ${item.pelengPoints.length}`}
-              sx={{ bgcolor: '#f44336', color: '#fff' }}
-            />
-          </Stack>
-        </Stack>
-        <Box
+            <PowerChip color="error" selected label={`Пеленги: ${item.pelengPoints.length}`} />
+          </div>
+        </header>
+        <div
           ref={hostRef}
-          aria-label={`Карта мереж підрозділу ${item.unitName || item.unitId}`}
-          sx={{ height: 240, overflow: 'hidden', borderRadius: 1, bgcolor: 'grey.900' }}
+          role="img"
+          aria-label={`Карта мереж підрозділу ${unitLabel}: населених пунктів ${item.settlementPoints.length}, пеленгів ${item.pelengPoints.length}`}
+          className="h-60 overflow-hidden rounded-echo-md bg-neutral-900"
         />
-      </Stack>
-    </Paper>
+      </div>
+    </article>
   );
 }
