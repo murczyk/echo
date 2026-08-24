@@ -361,6 +361,25 @@ pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT: usize = 32_000;
 pub const RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR: &str = ", ";
 pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
+pub const REPORT_HISTORY_CANCELLED_ERROR_STATUS: &str =
+    "Скасовано користувачем";
+pub const REPORT_HISTORY_TIMEOUT_ERROR_STATUS: &str =
+    "Обраний період звіту завеликий. Оберіть вужчий період і повторіть спробу.";
+pub const REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS: &str =
+    "Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.";
+pub const REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS: &str =
+    "Не знайдено AOR за замовчуванням для формування цього звіту.";
+pub const REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS: &str =
+    "Формування звіту було перервано через перезапуск сервісу. Спробуйте сформувати звіт повторно.";
+pub const REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE: &str =
+    "Report generation was interrupted by report worker restart and requeued without consuming an attempt";
+pub const REPORT_HISTORY_USER_RETRY_LOG_MESSAGE: &str =
+    "user requested another attempt for a failed task";
+pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
+    "Не вдалося сформувати звіт. Спробуйте ще раз.";
+pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
+pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
+    "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";

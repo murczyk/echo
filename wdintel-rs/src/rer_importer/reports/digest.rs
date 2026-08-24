@@ -177,6 +177,13 @@ pub async fn report_docx_kind_digest(
     )
     .await
     .context(h!())?;
+    let record_count = report.aor_data.iter().fold(0_usize, |count, aor| {
+        aor.network_data.iter().fold(count, |count, network| {
+            count.saturating_add(network.notes.len())
+        })
+    });
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     info!("report_docx_kind_digest data collected");
     let omit_exo_id = req.digest_omit_exo_id.unwrap_or(false);
     let use_form_1217 = req.digest_form_1_2_17.unwrap_or(false);
