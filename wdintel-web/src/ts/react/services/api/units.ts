@@ -2,6 +2,7 @@ import type {
   CreateUnitReq,
   CreateUnitWithAutoNetworkReq,
   CreateUnitWithAutoNetworkRsp,
+  ConfirmUnitNameReq,
   CreateDeviceNetworkReq,
   CreateDeviceNetworkRsp,
   DeleteUnitAttachmentReq,
@@ -11,6 +12,7 @@ import type {
   InconsistentUnit,
   LinkOrbitUnitReq,
   ListInconsistentUnitsRsp,
+  ListUnitNameReviewsRsp,
   ListUnitDuplicatesRsp,
   ListUnitsByIdRsp,
   ListUnitsReq,
@@ -22,10 +24,12 @@ import type {
   Unit,
   UnitAttachment,
   UnitDuplicate,
+  UnitNameReview,
   UnitAttachmentUnitIdsRsp,
   UnitDetailsRsp,
   UnitStatusCountsRsp,
   UpdateUnitAttachmentReq,
+  UpdateUnitNameReq,
 } from '../../../../Bindings';
 import { emitUnauthorizedEvent } from '../../auth-redirect';
 import { HttpRequestError, postBytes, postJson, postVoid } from './client';
@@ -180,6 +184,21 @@ export async function getUnitDuplicates(options?: RequestOptions): Promise<UnitD
 export async function getInconsistentUnits(options?: RequestOptions): Promise<InconsistentUnit[]> {
   const raw = await postJson<unknown>('/api/admin/unit-inconsistent', null, options);
   return transformSnakeToCamel<ListInconsistentUnitsRsp>(raw).units;
+}
+
+export async function getUnitNameReviews(options?: RequestOptions): Promise<UnitNameReview[]> {
+  const raw = await postJson<unknown>('/api/admin/unit-names', null, options);
+  return transformSnakeToCamel<ListUnitNameReviewsRsp>(raw).units;
+}
+
+export async function updateUnitNameReview(req: UpdateUnitNameReq): Promise<UnitNameReview> {
+  const raw = await postJson<unknown>('/api/admin/unit-name/update', transformCamelToSnake(req));
+  return transformSnakeToCamel<UnitNameReview>(raw);
+}
+
+export async function confirmUnitNameReview(req: ConfirmUnitNameReq): Promise<UnitNameReview> {
+  const raw = await postJson<unknown>('/api/admin/unit-name/confirm', transformCamelToSnake(req));
+  return transformSnakeToCamel<UnitNameReview>(raw);
 }
 
 export async function createUnit(unit: CreateUnitReq): Promise<Unit> {

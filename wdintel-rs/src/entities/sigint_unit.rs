@@ -69,6 +69,7 @@ pub struct Model {
     pub corps: String,
     #[serde(default)]
     pub is_inconsistent: bool,
+    pub updated_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

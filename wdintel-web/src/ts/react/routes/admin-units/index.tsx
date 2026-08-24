@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import { PageHeader } from '../../components/PageHeader';
 import { AdminUnitDuplicatesPage } from '../admin-unit-duplicates';
 import { AdminUnitInconsistentPage } from '../admin-unit-inconsistent';
+import { AdminUnitNamesPage } from '../admin-unit-names';
 import { AdminUnitUnparsedPage } from '../admin-unit-unparsed';
 
-type AdminUnitsTab = 'duplicates' | 'inconsistent' | 'unparsed';
+type AdminUnitsTab = 'duplicates' | 'inconsistent' | 'names' | 'unparsed';
 
 type AdminUnitsPageProps = {
   authUserRoles: string[];
@@ -16,6 +17,7 @@ type AdminUnitsPageProps = {
 const TAB_PATHS: Record<AdminUnitsTab, string> = {
   duplicates: '/admin/units?tab=duplicates',
   inconsistent: '/admin/units?tab=inconsistent',
+  names: '/admin/units?tab=names',
   unparsed: '/admin/units?tab=unparsed',
 };
 
@@ -25,7 +27,7 @@ function canonicalTabPath(tab: AdminUnitsTab): string {
 
 export function readAdminUnitsTab(search = window.location.search): AdminUnitsTab {
   const tab = new URLSearchParams(search).get('tab');
-  return tab === 'inconsistent' || tab === 'unparsed' ? tab : 'duplicates';
+  return tab === 'inconsistent' || tab === 'names' || tab === 'unparsed' ? tab : 'duplicates';
 }
 
 export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProps) {
@@ -40,6 +42,7 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
         rawTab !== null &&
         rawTab !== 'duplicates' &&
         rawTab !== 'inconsistent' &&
+        rawTab !== 'names' &&
         rawTab !== 'unparsed'
       ) {
         window.history.replaceState(null, '', canonicalTabPath('duplicates'));
@@ -69,6 +72,7 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
           >
             <Tab value="duplicates" label="Дублікати підрозділів" />
             <Tab value="inconsistent" label="Неконсистентні підрозділи" />
+            <Tab value="names" label="Назви підрозділів" />
             <Tab value="unparsed" label="Нерозпізнані підрозділи" />
           </Tabs>
         }
@@ -79,6 +83,7 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
           <AdminUnitDuplicatesPage authUserRoles={authUserRoles} embedded />
         ) : null}
         {tab === 'inconsistent' ? <AdminUnitInconsistentPage embedded /> : null}
+        {tab === 'names' ? <AdminUnitNamesPage authUserRoles={authUserRoles} embedded /> : null}
         {tab === 'unparsed' ? (
           <AdminUnitUnparsedPage authUserRoles={authUserRoles} embedded />
         ) : null}

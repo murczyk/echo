@@ -1096,6 +1096,7 @@ fn sigint_unit_for_orbit_matching(req: &CreateUnitReq) -> sigint_unit::Model {
         is_deduplicate_candidate: req.is_deduplicate_candidate,
         orbit_note: req.orbit_note.clone(),
         is_inconsistent: false,
+        updated_at: chrono::Utc::now().naive_utc(),
     }
 }
 

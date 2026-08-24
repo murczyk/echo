@@ -101,6 +101,7 @@ mod tests {
             army_region: "ЗС РФ".to_string(),
             military_district: "Західний ВО".to_string(),
             is_inconsistent: false,
+            updated_at: Default::default(),
         };
         let etalon = EtalonData {
             area_of_responsibility: vec![],

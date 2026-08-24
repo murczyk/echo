@@ -22,6 +22,7 @@ use std::collections::{BTreeSet, HashMap};
 pub mod attachment;
 pub mod changelog;
 pub mod labels;
+pub mod names;
 pub mod orbit;
 pub mod types;
 
@@ -1014,6 +1015,7 @@ where
         sigint_origin_id: NotSet,
         original_id: NotSet,
         is_inconsistent: NotSet,
+        updated_at: NotSet,
     }
     .insert(dbx)
     .await
@@ -1316,6 +1318,7 @@ async fn update_unit_for_login(
     unit.military_district = Set(military_district.clone());
     unit.army_region = Set(army_region.clone());
     unit.active = Set(req.active);
+    unit.updated_at = Set(chrono::Utc::now().naive_utc());
     unit.name = Set(if req.name.trim().is_empty() {
         unit_name_from_hierarchy([
             &other,

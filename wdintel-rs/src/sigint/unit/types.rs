@@ -269,6 +269,39 @@ pub struct ListInconsistentUnitsRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct UnitNameReview {
+    pub sigint_unit_id: i64,
+    pub current_name: String,
+    pub expected_name: String,
+    pub matches_expected: bool,
+    pub updated_at: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ListUnitNameReviewsRsp {
+    pub units: Vec<UnitNameReview>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateUnitNameReq {
+    pub sigint_unit_id: i64,
+    pub name: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct ConfirmUnitNameReq {
+    pub sigint_unit_id: i64,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct CreateUnitReq {
     #[serde(default)]
     pub name: Option<String>,

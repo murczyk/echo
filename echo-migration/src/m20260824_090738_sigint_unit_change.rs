@@ -16,6 +16,14 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
+alter table sigint_unit
+    add column updated_at timestamp without time zone not null
+        default (now() at time zone 'utc');
+
+create index sigint_unit_active_updated_idx
+    on sigint_unit (updated_at, id)
+    where active = true and deleted = false;
+
 create table sigint_unit_change (
     id bigserial primary key,
     sigint_unit_id bigint not null references sigint_unit(id) on delete cascade,
@@ -59,15 +67,15 @@ begin
     if tg_op = 'INSERT' then
         target_sigint_unit_id := new.id;
         old_json := null;
-        new_json := to_jsonb(new) - 'search_tsv';
+        new_json := to_jsonb(new) - 'search_tsv' - 'updated_at';
     elsif tg_op = 'DELETE' then
         target_sigint_unit_id := old.id;
-        old_json := to_jsonb(old) - 'search_tsv';
+        old_json := to_jsonb(old) - 'search_tsv' - 'updated_at';
         new_json := null;
     else
         target_sigint_unit_id := new.id;
-        old_json := to_jsonb(old) - 'search_tsv';
-        new_json := to_jsonb(new) - 'search_tsv';
+        old_json := to_jsonb(old) - 'search_tsv' - 'updated_at';
+        new_json := to_jsonb(new) - 'search_tsv' - 'updated_at';
     end if;
 
     if old_json is not distinct from new_json then
@@ -154,6 +162,11 @@ begin
         select distinct id
         from unnest(target_sigint_unit_ids) as ids(id)
         where id is not null
+          and exists (
+              select 1
+              from sigint_unit
+              where sigint_unit.id = ids.id
+          )
     loop
         insert into sigint_unit_change (
             sigint_unit_id,
@@ -252,6 +265,8 @@ drop function if exists sigint_unit_orbit_links_snapshot(bigint);
 drop function if exists record_sigint_unit_change();
 drop function if exists sigint_unit_change_author_id();
 drop table if exists sigint_unit_change;
+drop index if exists sigint_unit_active_updated_idx;
+alter table sigint_unit drop column if exists updated_at;
                 "#,
             )
             .await

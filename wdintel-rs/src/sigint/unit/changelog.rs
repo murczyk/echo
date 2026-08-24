@@ -5,7 +5,7 @@ use crate::config::SIGINT_UNIT_CHANGELOG_LIMIT;
 use crate::entities::sigint_unit;
 use crate::error::AppError;
 use crate::types::*;
-use crate::users::ensure_rer_role;
+use crate::users::{ensure_rer_role, login_id_from_identity};
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use chrono::NaiveDateTime;
@@ -71,6 +71,10 @@ pub async fn unit_changelog(
     req: Json<UnitDetailsReq>,
 ) -> Result<Json<UnitChangelogRsp>, AppError> {
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
+    let login = login_id_from_identity(&user).c(h!())?;
+    let can_view_orbit = super::orbit::can_view_orbit_data(&env.dbx, &login)
+        .await
+        .c(h!())?;
     sigint_unit::Entity::find_by_id(req.unit_id)
         .filter(sigint_unit::Column::Deleted.eq(false))
         .one(&env.dbx)
@@ -103,11 +107,20 @@ limit $2
         .c(h!())?;
 
     Ok(Json(UnitChangelogRsp {
-        entries: rows.into_iter().map(render_entry).collect(),
+        entries: rows
+            .into_iter()
+            .filter_map(|row| render_entry(row, can_view_orbit))
+            .collect(),
     }))
 }
 
-fn render_entry(row: UnitChangelogRow) -> UnitChangelogEntry {
+fn render_entry(
+    row: UnitChangelogRow,
+    can_view_orbit: bool,
+) -> Option<UnitChangelogEntry> {
+    if row.kind == "orbit_links" && !can_view_orbit {
+        return None;
+    }
     let action = entry_action(&row);
     let changes = if row.kind == "orbit_links" {
         vec![UnitChangelogChange {
@@ -116,15 +129,22 @@ fn render_entry(row: UnitChangelogRow) -> UnitChangelogEntry {
             new_value: orbit_links_value(row.new_value.as_ref()),
         }]
     } else {
-        unit_changes(row.old_value.as_ref(), row.new_value.as_ref())
+        unit_changes(
+            row.old_value.as_ref(),
+            row.new_value.as_ref(),
+            can_view_orbit,
+        )
     };
-    UnitChangelogEntry {
+    if changes.is_empty() {
+        return None;
+    }
+    Some(UnitChangelogEntry {
         id: row.id,
         author: row.author,
         created_at: row.created_at.and_utc().timestamp_millis(),
         action,
         changes,
-    }
+    })
 }
 
 fn entry_action(row: &UnitChangelogRow) -> String {
@@ -148,9 +168,14 @@ fn entry_action(row: &UnitChangelogRow) -> String {
 fn unit_changes(
     old_value: Option<&JsonValue>,
     new_value: Option<&JsonValue>,
+    can_view_orbit: bool,
 ) -> Vec<UnitChangelogChange> {
     UNIT_FIELDS
         .iter()
+        .filter(|field| {
+            can_view_orbit
+                || !matches!(**field, "orbit_note" | "is_deduplicate_candidate")
+        })
         .filter_map(|field| {
             let old_value = json_field(old_value, field);
             let new_value = json_field(new_value, field);
@@ -199,4 +224,31 @@ fn orbit_links_value(value: Option<&JsonValue>) -> Option<String> {
         })
         .collect::<Vec<_>>();
     (!links.is_empty()).then(|| links.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hidden_orbit_fields_are_removed_from_unit_changes() {
+        let old_value = serde_json::json!({
+            "name": "unit",
+            "orbit_note": "old",
+            "is_deduplicate_candidate": false
+        });
+        let new_value = serde_json::json!({
+            "name": "unit",
+            "orbit_note": "new",
+            "is_deduplicate_candidate": true
+        });
+
+        assert!(
+            unit_changes(Some(&old_value), Some(&new_value), false).is_empty()
+        );
+        assert_eq!(
+            unit_changes(Some(&old_value), Some(&new_value), true).len(),
+            2
+        );
+    }
 }

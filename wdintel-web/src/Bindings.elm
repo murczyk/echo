@@ -7877,6 +7877,64 @@ listInconsistentUnitsRspEncoder struct =
         ]
 
 
+type alias UnitNameReview =
+    { sigintUnitId : Int
+    , currentName : String
+    , expectedName : String
+    , matchesExpected : Bool
+    , updatedAt : Int
+    }
+
+
+unitNameReviewEncoder : UnitNameReview -> Json.Encode.Value
+unitNameReviewEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "current_name", (Json.Encode.string) struct.currentName )
+        , ( "expected_name", (Json.Encode.string) struct.expectedName )
+        , ( "matches_expected", (Json.Encode.bool) struct.matchesExpected )
+        , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias ListUnitNameReviewsRsp =
+    { units : List (UnitNameReview)
+    }
+
+
+listUnitNameReviewsRspEncoder : ListUnitNameReviewsRsp -> Json.Encode.Value
+listUnitNameReviewsRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (unitNameReviewEncoder)) struct.units )
+        ]
+
+
+type alias UpdateUnitNameReq =
+    { sigintUnitId : Int
+    , name : String
+    }
+
+
+updateUnitNameReqEncoder : UpdateUnitNameReq -> Json.Encode.Value
+updateUnitNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias ConfirmUnitNameReq =
+    { sigintUnitId : Int
+    }
+
+
+confirmUnitNameReqEncoder : ConfirmUnitNameReq -> Json.Encode.Value
+confirmUnitNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
 type alias CreateUnitReq =
     { name : Maybe (String)
     , other : String
@@ -19088,6 +19146,35 @@ listInconsistentUnitsRspDecoder : Json.Decode.Decoder ListInconsistentUnitsRsp
 listInconsistentUnitsRspDecoder =
     Json.Decode.succeed ListInconsistentUnitsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (inconsistentUnitDecoder))))
+
+
+unitNameReviewDecoder : Json.Decode.Decoder UnitNameReview
+unitNameReviewDecoder =
+    Json.Decode.succeed UnitNameReview
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "current_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matches_expected" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+
+
+listUnitNameReviewsRspDecoder : Json.Decode.Decoder ListUnitNameReviewsRsp
+listUnitNameReviewsRspDecoder =
+    Json.Decode.succeed ListUnitNameReviewsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitNameReviewDecoder))))
+
+
+updateUnitNameReqDecoder : Json.Decode.Decoder UpdateUnitNameReq
+updateUnitNameReqDecoder =
+    Json.Decode.succeed UpdateUnitNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+confirmUnitNameReqDecoder : Json.Decode.Decoder ConfirmUnitNameReq
+confirmUnitNameReqDecoder =
+    Json.Decode.succeed ConfirmUnitNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
 
 
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq
