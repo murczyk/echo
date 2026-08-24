@@ -1,9 +1,6 @@
-import AddIcon from '@mui/icons-material/Add';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
 import SettingsIcon from '@mui/icons-material/Settings';
 import {
   Box,
-  Button,
   IconButton,
   ListItemText,
   Menu,
@@ -14,10 +11,11 @@ import {
   useTheme,
 } from '@mui/material';
 import type { MRT_PaginationState } from 'material-react-table';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { PageErrorState } from '../../components/PageErrorState';
 import { PowerAlert } from '../../components/PowerAlert';
+import { PowerButton } from '../../components/PowerButton';
 import { PowerChip } from '../../components/PowerChip';
 import { GlobalFilterTextField } from '../../components/mui-customized/table/components/table-top-toolbar/components/global-filter-text-field';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
@@ -28,7 +26,7 @@ import { OrbitUnitLinkDialog } from '../rer-unit-details/OrbitUnitLinkDialog';
 import { DeleteUnitDialog, MergeUnitDialog } from './components/UnitActionDialogs';
 import { KmzTaskStatus } from './components/KmzTaskStatus';
 import { KmzUploadDialog } from './components/KmzUploadDialog';
-import { UnitFormDialog } from './components/UnitFormDialog';
+import { UnitFormDrawer } from './components/UnitFormDrawer';
 import { UnitsTable } from './components/UnitsTable';
 import { UnitsPaginationControl } from './components/UnitsPaginationControl';
 import { buildUnitsListReq, type UnitStatusFilter } from './helpers';
@@ -176,22 +174,12 @@ function PageActions({
 
   return (
     <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: 'wrap' }}>
-      <Button
-        variant="contained"
-        startIcon={<AddIcon />}
-        onClick={onCreate}
-        disabled={createDisabled}
-      >
+      <PowerButton variant="contained" onClick={onCreate} disabled={createDisabled}>
         Додати підрозділ
-      </Button>
-      <Button
-        variant="outlined"
-        startIcon={<UploadFileIcon />}
-        disabled={kmzDisabled || uploadingKmz}
-        onClick={onOpenKmz}
-      >
+      </PowerButton>
+      <PowerButton variant="outlined" disabled={kmzDisabled || uploadingKmz} onClick={onOpenKmz}>
         {uploadingKmz ? 'Підвантаження…' : 'Підвантажити KMZ'}
-      </Button>
+      </PowerButton>
     </Stack>
   );
 }
@@ -256,6 +244,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('lg'));
   const [kmzDialogOpen, setKmzDialogOpen] = useState(false);
   const [orbitLinkOpen, setOrbitLinkOpen] = useState(false);
+  const [orbitLinkTransition, setOrbitLinkTransition] = useState(false);
   const [searchMode, setSearchMode] = useState<UnitSearchMode>('strict');
   const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>('active');
   const [pagination, setPagination] = useState<MRT_PaginationState>({
@@ -284,6 +273,15 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
     ],
   );
   const page = useRerUnitsPage(authUserRoles, listReq);
+  const orbitTransitionTimerRef = useRef<number | null>(null);
+
+  const clearOrbitTransitionTimer = () => {
+    if (orbitTransitionTimerRef.current === null) return;
+    window.clearTimeout(orbitTransitionTimerRef.current);
+    orbitTransitionTimerRef.current = null;
+  };
+
+  useEffect(() => clearOrbitTransitionTimer, []);
 
   useEffect(() => {
     setPagination((current) => (current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }));
@@ -307,6 +305,24 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
     setStatusFilter(status);
   };
 
+  const openOrbitLinkDialog = () => {
+    clearOrbitTransitionTimer();
+    setOrbitLinkTransition(true);
+    orbitTransitionTimerRef.current = window.setTimeout(() => {
+      orbitTransitionTimerRef.current = null;
+      setOrbitLinkOpen(true);
+    }, 0);
+  };
+
+  const closeOrbitLinkDialog = () => {
+    clearOrbitTransitionTimer();
+    setOrbitLinkOpen(false);
+    orbitTransitionTimerRef.current = window.setTimeout(() => {
+      orbitTransitionTimerRef.current = null;
+      setOrbitLinkTransition(false);
+    }, 0);
+  };
+
   return (
     <Box
       sx={{
@@ -327,13 +343,8 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
           title="Підрозділи противника"
           withGlobalTextFilter={false}
           filter={
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
-              <Stack
-                direction="row"
-                spacing={0}
-                alignItems="center"
-                sx={{ width: { xs: '100%', sm: 360 }, maxWidth: '100%', minWidth: 0 }}
-              >
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 w-full sm:w-[360px] sm:max-w-full">
                 <GlobalFilterTextField
                   globalFilter={tableState.globalFilter}
                   setGlobalFilter={tableState.onChangeGlobalFilter}
@@ -344,13 +355,13 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
                   searchMode={searchMode}
                   onSearchModeChange={setSearchMode}
                 />
-              </Stack>
+              </div>
               <UnitStatusFilters
                 status={statusFilter}
                 counts={page.statusCounts}
                 onChange={changeStatusFilter}
               />
-            </Stack>
+            </div>
           }
           hideGlobalTextFilter={page.loading || page.loadError !== null}
           internalActionsDisabled={page.loading || page.loadError !== null}
@@ -421,7 +432,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         </Box>
       </Stack>
 
-      <UnitFormDialog
+      <UnitFormDrawer
         open={page.createOpen}
         unit={null}
         devicesSectionEnabled={page.devicesSectionEnabled}
@@ -437,8 +448,9 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         onLinkOrbitUnit={() => undefined}
         onUnlinkOrbitUnit={() => undefined}
       />
-      <UnitFormDialog
+      <UnitFormDrawer
         open={page.editUnit !== null}
+        suspended={orbitLinkTransition}
         unit={page.editUnit}
         devicesSectionEnabled={false}
         submitting={page.submitting}
@@ -450,7 +462,7 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         unlinkingOrbitUnitId={page.unlinkingOrbitUnitId}
         onClose={page.closeDialogs}
         onSubmit={(value) => void page.submitUnit(value)}
-        onLinkOrbitUnit={() => setOrbitLinkOpen(true)}
+        onLinkOrbitUnit={openOrbitLinkDialog}
         onUnlinkOrbitUnit={(orbitUnit) => void page.unlinkEditOrbitUnit(orbitUnit)}
       />
       <DeleteUnitDialog
@@ -477,9 +489,9 @@ function RerUnitsNeoPageBody({ authUserRoles }: { authUserRoles: string[] }) {
         <OrbitUnitLinkDialog
           unitId={page.editUnit.id}
           unit={page.editUnit}
-          onClose={() => setOrbitLinkOpen(false)}
+          onClose={closeOrbitLinkDialog}
           onLinked={() => {
-            setOrbitLinkOpen(false);
+            closeOrbitLinkDialog();
             void page.refreshLinkedEditOrbitUnit();
           }}
         />

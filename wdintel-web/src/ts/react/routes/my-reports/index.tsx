@@ -6,7 +6,7 @@ export function MyReportsPage() {
     <ReportHistoryTableSection
       active
       title="Мої звіти"
-      tableId="my-reports-v1"
+      tableId="my-reports-v2"
       fullHeight
       compactFullHeight
       showReportCount

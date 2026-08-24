@@ -54,6 +54,14 @@ pub async fn report_docx_kind_active_networks(
             },
         )
         .await?;
+    let record_count = aor_data
+        .iter()
+        .flat_map(|aor| aor.network_unit_comments.iter())
+        .fold(0_usize, |count, network| {
+            count.saturating_add(network.comments.len().saturating_add(1))
+        });
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     let mut docx = get_docx_document(req);
 

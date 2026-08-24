@@ -23,7 +23,7 @@ import type { RequestOptions } from '../../services/api/client';
 import { fetchBgtaskStatusAndLogs, getBgtaskProgressFromPercent } from '../../services/api/bgtask';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { hasRole } from '../../utils/roles';
-import type { UnitFormSubmit } from './components/UnitFormDialog';
+import type { UnitFormSubmit } from './components/UnitFormDrawer';
 import { formatUnitError } from './helpers';
 
 type Status = {
@@ -348,7 +348,11 @@ export function useRerUnitsPage(authUserRoles: string[], listReq: ListUnitsReq) 
     try {
       let successText: string;
       if (editUnit !== null) {
-        const updated = await updateUnit({ ...editUnit, ...value.unit });
+        const updated = await updateUnit({
+          ...editUnit,
+          ...value.unit,
+          name: value.unit.name ?? '',
+        });
         setUnits((current) => replaceUnit(current, updated));
         successText = `Підрозділ «${updated.name}» оновлено.`;
       } else if (value.autoNetwork !== undefined) {

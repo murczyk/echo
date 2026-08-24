@@ -10,11 +10,13 @@ const childMockState = vi.hoisted(() => ({
   networkCallsignsError: null as string | null,
   catalogCallsignsError: null as string | null,
   interceptedCallsignsError: null as string | null,
+  period: null as string | null,
 }));
 
 vi.mock('./NetworkCallsignsNetworkTable', () => ({
-  NetworkCallsignsNetworkTable: (props: { loadingError: string | null }) => {
+  NetworkCallsignsNetworkTable: (props: { loadingError: string | null; period: string }) => {
     childMockState.networkCallsignsError = props.loadingError;
+    childMockState.period = props.period;
     return <div data-testid="network-table">network</div>;
   },
 }));
@@ -131,6 +133,7 @@ describe('NetworkDetailsCallsignsPanel', () => {
     childMockState.networkCallsignsError = null;
     childMockState.catalogCallsignsError = null;
     childMockState.interceptedCallsignsError = null;
+    childMockState.period = null;
     for (const item of rendered.splice(0)) {
       act(() => {
         item.root.unmount();
@@ -158,6 +161,8 @@ describe('NetworkDetailsCallsignsPanel', () => {
       onSectionModeChange: vi.fn(),
       statusFilter: 'All',
       onStatusFilterChange: vi.fn(),
+      period: 'Last21Days',
+      onPeriodChange: vi.fn(),
       interceptedExpanded: false,
       onToggleInterceptedExpanded: vi.fn(),
       onOpenCreateDrawer: vi.fn(),
@@ -179,6 +184,7 @@ describe('NetworkDetailsCallsignsPanel', () => {
     expect(view.container.textContent).toContain('network');
     expect(view.container.textContent).toContain('catalog');
     expect(view.container.textContent).toContain('intercepted');
+    expect(childMockState.period).toBe('Last21Days');
     expect(childMockState.networkCallsignsError).toBe('Позивні мережі помилка');
     expect(childMockState.catalogCallsignsError).toBe('Каталог помилка');
     expect(childMockState.interceptedCallsignsError).toBe('Перехоплення помилка');
@@ -212,6 +218,8 @@ describe('NetworkDetailsCallsignsPanel', () => {
       onSectionModeChange: vi.fn(),
       statusFilter: 'All',
       onStatusFilterChange: vi.fn(),
+      period: 'Last21Days',
+      onPeriodChange: vi.fn(),
       interceptedExpanded: false,
       onToggleInterceptedExpanded: vi.fn(),
       onOpenCreateDrawer: vi.fn(),

@@ -134,12 +134,36 @@ pub async fn network_callsigns_relations(
     .await
     .context(h!())?;
 
-    let messages = load_network_relation_messages_for_graph(
-        &env.dbx,
-        network_id,
-        &groups,
-        since_date_inclusive_ms,
-        till_date_noninclusive_ms,
+    let since = dt_from_millis(since_date_inclusive_ms).context(h!())?;
+    let till = dt_from_millis(till_date_noninclusive_ms).context(h!())?;
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let postgres_groups = groups;
+    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
+        &env,
+        "network callsign relations",
+        true,
+        move |analytics_db| async move {
+            super::analytics::load_network_relation_messages_for_graph(
+                &source_db,
+                &analytics_db,
+                &analytics_groups,
+                network_id,
+                since,
+                till,
+            )
+            .await
+        },
+        move |postgres_db| async move {
+            load_network_relation_messages_for_graph(
+                &postgres_db,
+                network_id,
+                &postgres_groups,
+                since_date_inclusive_ms,
+                till_date_noninclusive_ms,
+            )
+            .await
+        },
     )
     .await
     .context(h!())?;
@@ -181,10 +205,41 @@ pub async fn network_callsigns_relation_messages(
 
     let req = req.into_inner();
     validate_network_relation_message_selection(&req)?;
-    let messages =
-        load_network_relation_messages(&env.dbx, &user, &env.config, &req)
+    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
+        &env.dbx,
+        &user,
+        &env.config,
+    )
+    .await
+    .context(h!())?;
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let analytics_req = req.clone();
+    let postgres_req = req.clone();
+    let messages = crate::rer_importer::analysis::with_analytics_read_fallback(
+        &env,
+        "network callsign relation messages",
+        true,
+        move |analytics_db| async move {
+            super::analytics::load_selected_network_relation_messages(
+                &source_db,
+                &analytics_db,
+                &analytics_groups,
+                &analytics_req,
+            )
             .await
-            .context(h!())?;
+        },
+        move |postgres_db| async move {
+            load_network_relation_messages_with_groups(
+                &postgres_db,
+                &groups,
+                &postgres_req,
+            )
+            .await
+        },
+    )
+    .await
+    .context(h!())?;
 
     Ok(Json(NetworkCallsignRelationMessagesRsp { messages }))
 }
@@ -220,20 +275,13 @@ fn validate_network_relation_message_selection(
     }
 }
 
-async fn load_network_relation_messages(
+async fn load_network_relation_messages_with_groups(
     dbx: &DatabaseConnection,
-    user: &actix_identity::Identity,
-    config: &crate::Config,
+    groups: &[String],
     req: &NetworkCallsignRelationMessagesReq,
 ) -> Result<Vec<NetworkCallsignRelationMessage>, AppError> {
-    let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
-        dbx, user, config,
-    )
-    .await
-    .context(h!())?;
-
     let message_ids =
-        load_network_relation_message_ids(dbx, req.network_id, &groups, req)
+        load_network_relation_message_ids(dbx, req.network_id, groups, req)
             .await
             .context(h!())?;
     if message_ids.is_empty() {
@@ -424,6 +472,7 @@ async fn load_network_callsigns(
         &ListNetworkCallsignsReq {
             network_id,
             sort_by: None,
+            period: None,
         },
         user_id,
         dbx,

@@ -1090,6 +1090,7 @@ where
             is_deduplicate_candidate: NotSet,
             orbit_note: NotSet,
             is_inconsistent: NotSet,
+            updated_at: Set(rec.updated_at),
         };
 
         let new_rec = if new_record {

@@ -69,6 +69,7 @@ pub struct Model {
     pub corps: String,
     #[serde(default)]
     pub is_inconsistent: bool,
+    pub updated_at: DateTime,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
@@ -105,6 +106,8 @@ pub enum Relation {
     SigintSignal,
     #[sea_orm(has_many = "super::sigint_unit_attachment::Entity")]
     SigintUnitAttachment,
+    #[sea_orm(has_many = "super::sigint_unit_change::Entity")]
+    SigintUnitChange,
     #[sea_orm(has_many = "super::sigint_unit_changelog::Entity")]
     SigintUnitChangelog,
     #[sea_orm(has_many = "super::sigint_unit_label::Entity")]
@@ -168,6 +171,12 @@ impl Related<super::sigint_signal::Entity> for Entity {
 impl Related<super::sigint_unit_attachment::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintUnitAttachment.def()
+    }
+}
+
+impl Related<super::sigint_unit_change::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintUnitChange.def()
     }
 }
 

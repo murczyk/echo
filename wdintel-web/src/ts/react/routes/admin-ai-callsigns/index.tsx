@@ -18,6 +18,7 @@ import type {
   AiCallsignWorkerSettingsItem,
 } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { PowerAlert } from '../../components/PowerAlert';
 import { PowerButton } from '../../components/PowerButton';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
@@ -234,7 +235,7 @@ export function AdminAiCallsignsPage() {
   }
 
   if (loading) {
-    return <CircularProgress />;
+    return <PageLoadingState />;
   }
 
   if (screen.kind === 'create') {

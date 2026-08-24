@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
-import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
+import type {
+  NetworkCallsignRelationsRsp,
+  NetworkFreqCallsignsPeriod,
+  NetworkGroupActivityPeriod,
+} from '../../../../Bindings';
 
 import { listAors } from '../../services/api/aor';
 import {
@@ -179,13 +183,13 @@ export function useRerNetworkDetailsNeoPageLoad(
   reloadGeneration: ReloadGenerationRef,
 ): {
   reload: () => () => void;
-  loadCallsigns: (networkId: number) => Promise<void>;
+  loadCallsigns: (networkId: number, period?: NetworkFreqCallsignsPeriod) => Promise<void>;
   loadRelations: (
     networkId: number,
     sinceDateInclusiveMs: number,
     tillDateNoninclusiveMs: number,
   ) => Promise<void>;
-  loadNetworkActivity: (networkId: number) => Promise<void>;
+  loadNetworkActivity: (networkId: number, period: NetworkGroupActivityPeriod) => Promise<void>;
   loadPelengPoints: (
     networkId: number,
     sinceDateInclusiveMs: number,
@@ -200,7 +204,7 @@ export function useRerNetworkDetailsNeoPageLoad(
   const pelengPointsLoadRequestIdRef = useRef(0);
 
   const loadNetworkCallsigns = useCallback(
-    async (targetNetworkId: number) => {
+    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod) => {
       const generation = reloadGeneration.current;
       const requestId = ++networkCallsignsLoadRequestIdRef.current;
       const isCurrent = () =>
@@ -239,7 +243,11 @@ export function useRerNetworkDetailsNeoPageLoad(
 
       try {
         const [networkCallsignsRes, sources] = await Promise.all([
-          listNetworkCallsigns({ networkId: targetNetworkId, sortBy: ['NetworkCallsignAsc'] }),
+          listNetworkCallsigns({
+            networkId: targetNetworkId,
+            sortBy: ['NetworkCallsignAsc'],
+            period,
+          }),
           listSources(),
         ]);
 
@@ -281,7 +289,7 @@ export function useRerNetworkDetailsNeoPageLoad(
   );
 
   const loadCandidateCallsigns = useCallback(
-    async (targetNetworkId: number) => {
+    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod) => {
       const generation = reloadGeneration.current;
       const requestId = ++catalogCallsignsLoadRequestIdRef.current;
       const interceptedRequestId = ++interceptedCallsignsLoadRequestIdRef.current;
@@ -336,6 +344,7 @@ export function useRerNetworkDetailsNeoPageLoad(
           networkId: targetNetworkId,
           includeActivityInfo: true,
           section: 'Everything',
+          period,
         });
       } catch (error) {
         if (!isCurrent()) return null;
@@ -405,10 +414,10 @@ export function useRerNetworkDetailsNeoPageLoad(
   );
 
   const loadCallsigns = useCallback(
-    async (targetNetworkId: number) => {
+    async (targetNetworkId: number, period: NetworkFreqCallsignsPeriod = 'Last21Days') => {
       await Promise.all([
-        loadNetworkCallsigns(targetNetworkId),
-        loadCandidateCallsigns(targetNetworkId),
+        loadNetworkCallsigns(targetNetworkId, period),
+        loadCandidateCallsigns(targetNetworkId, period),
       ]);
     },
     [loadCandidateCallsigns, loadNetworkCallsigns],
@@ -499,7 +508,7 @@ export function useRerNetworkDetailsNeoPageLoad(
   );
 
   const loadNetworkActivity = useCallback(
-    async (targetNetworkId: number) => {
+    async (targetNetworkId: number, period: NetworkGroupActivityPeriod) => {
       const generation = reloadGeneration.current;
       const requestId = ++networkActivityLoadRequestIdRef.current;
       const isCurrent = () =>
@@ -519,12 +528,13 @@ export function useRerNetworkDetailsNeoPageLoad(
 
       setState((current) => ({
         ...current,
+        networkActivityPeriod: period,
         networkActivityLoading: true,
         networkActivityError: null,
       }));
 
       try {
-        const networkActivity = await getNetworkGroupsActivityOne(targetNetworkId);
+        const networkActivity = await getNetworkGroupsActivityOne(targetNetworkId, period);
         if (!isCurrent()) return;
 
         setState((current) => ({

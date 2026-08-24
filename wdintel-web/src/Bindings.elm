@@ -897,6 +897,7 @@ type alias ReportHistoryRow =
     , blockedByStartedAt : Maybe (String)
     , blockedByBgtaskId : Maybe (Int)
     , status : String
+    , errorStatus : String
     , completedAt : Maybe (String)
     , hasFile : Bool
     , fileName : Maybe (String)
@@ -925,6 +926,7 @@ reportHistoryRowEncoder struct =
         , ( "blocked_by_started_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.blockedByStartedAt )
         , ( "blocked_by_bgtask_id", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.blockedByBgtaskId )
         , ( "status", (Json.Encode.string) struct.status )
+        , ( "error_status", (Json.Encode.string) struct.errorStatus )
         , ( "completed_at", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.completedAt )
         , ( "has_file", (Json.Encode.bool) struct.hasFile )
         , ( "file_name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.fileName )
@@ -3341,6 +3343,54 @@ battleLineUnresolvedLocationsRspEncoder : BattleLineUnresolvedLocationsRsp -> Js
 battleLineUnresolvedLocationsRspEncoder struct =
     Json.Encode.object
         [ ( "items", (Json.Encode.list (battleLineUnresolvedLocationEncoder)) struct.items )
+        , ( "total", (Json.Encode.int) struct.total )
+        , ( "page_size", (Json.Encode.int) struct.pageSize )
+        ]
+
+
+type alias BattleLineNetworkMapPoint =
+    { lat : Float
+    , lon : Float
+    }
+
+
+battleLineNetworkMapPointEncoder : BattleLineNetworkMapPoint -> Json.Encode.Value
+battleLineNetworkMapPointEncoder struct =
+    Json.Encode.object
+        [ ( "lat", (Json.Encode.float) struct.lat )
+        , ( "lon", (Json.Encode.float) struct.lon )
+        ]
+
+
+type alias BattleLineNetworkUnitMap =
+    { unitId : Int
+    , unitName : String
+    , settlementPoints : List (BattleLineNetworkMapPoint)
+    , pelengPoints : List (BattleLineNetworkMapPoint)
+    }
+
+
+battleLineNetworkUnitMapEncoder : BattleLineNetworkUnitMap -> Json.Encode.Value
+battleLineNetworkUnitMapEncoder struct =
+    Json.Encode.object
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "unit_name", (Json.Encode.string) struct.unitName )
+        , ( "settlement_points", (Json.Encode.list (battleLineNetworkMapPointEncoder)) struct.settlementPoints )
+        , ( "peleng_points", (Json.Encode.list (battleLineNetworkMapPointEncoder)) struct.pelengPoints )
+        ]
+
+
+type alias BattleLineNetworksRsp =
+    { items : List (BattleLineNetworkUnitMap)
+    , total : Int
+    , pageSize : Int
+    }
+
+
+battleLineNetworksRspEncoder : BattleLineNetworksRsp -> Json.Encode.Value
+battleLineNetworksRspEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (battleLineNetworkUnitMapEncoder)) struct.items )
         , ( "total", (Json.Encode.int) struct.total )
         , ( "page_size", (Json.Encode.int) struct.pageSize )
         ]
@@ -7827,8 +7877,95 @@ listInconsistentUnitsRspEncoder struct =
         ]
 
 
+type alias UnitNameReview =
+    { sigintUnitId : Int
+    , currentName : String
+    , expectedName : String
+    , matchesExpected : Bool
+    , updatedAt : Int
+    }
+
+
+unitNameReviewEncoder : UnitNameReview -> Json.Encode.Value
+unitNameReviewEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "current_name", (Json.Encode.string) struct.currentName )
+        , ( "expected_name", (Json.Encode.string) struct.expectedName )
+        , ( "matches_expected", (Json.Encode.bool) struct.matchesExpected )
+        , ( "updated_at", (Json.Encode.int) struct.updatedAt )
+        ]
+
+
+type alias UnitNameReviewCursor =
+    { updatedAtMicros : Int
+    , sigintUnitId : Int
+    }
+
+
+unitNameReviewCursorEncoder : UnitNameReviewCursor -> Json.Encode.Value
+unitNameReviewCursorEncoder struct =
+    Json.Encode.object
+        [ ( "updated_at_micros", (Json.Encode.int) struct.updatedAtMicros )
+        , ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
+type alias ListUnitNameReviewsReq =
+    { after : Maybe (UnitNameReviewCursor)
+    }
+
+
+listUnitNameReviewsReqEncoder : ListUnitNameReviewsReq -> Json.Encode.Value
+listUnitNameReviewsReqEncoder struct =
+    Json.Encode.object
+        [ ( "after", (Maybe.withDefault Json.Encode.null << Maybe.map (unitNameReviewCursorEncoder)) struct.after )
+        ]
+
+
+type alias ListUnitNameReviewsRsp =
+    { units : List (UnitNameReview)
+    , nextCursor : Maybe (UnitNameReviewCursor)
+    }
+
+
+listUnitNameReviewsRspEncoder : ListUnitNameReviewsRsp -> Json.Encode.Value
+listUnitNameReviewsRspEncoder struct =
+    Json.Encode.object
+        [ ( "units", (Json.Encode.list (unitNameReviewEncoder)) struct.units )
+        , ( "next_cursor", (Maybe.withDefault Json.Encode.null << Maybe.map (unitNameReviewCursorEncoder)) struct.nextCursor )
+        ]
+
+
+type alias UpdateUnitNameReq =
+    { sigintUnitId : Int
+    , name : String
+    }
+
+
+updateUnitNameReqEncoder : UpdateUnitNameReq -> Json.Encode.Value
+updateUnitNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        , ( "name", (Json.Encode.string) struct.name )
+        ]
+
+
+type alias ConfirmUnitNameReq =
+    { sigintUnitId : Int
+    }
+
+
+confirmUnitNameReqEncoder : ConfirmUnitNameReq -> Json.Encode.Value
+confirmUnitNameReqEncoder struct =
+    Json.Encode.object
+        [ ( "sigint_unit_id", (Json.Encode.int) struct.sigintUnitId )
+        ]
+
+
 type alias CreateUnitReq =
-    { other : String
+    { name : Maybe (String)
+    , other : String
     , teamOrCrew : String
     , section : String
     , squad : String
@@ -7853,7 +7990,8 @@ type alias CreateUnitReq =
 createUnitReqEncoder : CreateUnitReq -> Json.Encode.Value
 createUnitReqEncoder struct =
     Json.Encode.object
-        [ ( "other", (Json.Encode.string) struct.other )
+        [ ( "name", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.name )
+        , ( "other", (Json.Encode.string) struct.other )
         , ( "team_or_crew", (Json.Encode.string) struct.teamOrCrew )
         , ( "section", (Json.Encode.string) struct.section )
         , ( "squad", (Json.Encode.string) struct.squad )
@@ -7970,6 +8108,54 @@ unitDetailsReqEncoder : UnitDetailsReq -> Json.Encode.Value
 unitDetailsReqEncoder struct =
     Json.Encode.object
         [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        ]
+
+
+type alias UnitChangelogChange =
+    { field : String
+    , oldValue : Maybe (String)
+    , newValue : Maybe (String)
+    }
+
+
+unitChangelogChangeEncoder : UnitChangelogChange -> Json.Encode.Value
+unitChangelogChangeEncoder struct =
+    Json.Encode.object
+        [ ( "field", (Json.Encode.string) struct.field )
+        , ( "old_value", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.oldValue )
+        , ( "new_value", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.newValue )
+        ]
+
+
+type alias UnitChangelogEntry =
+    { id : Int
+    , author : String
+    , createdAt : Int
+    , action : String
+    , changes : List (UnitChangelogChange)
+    }
+
+
+unitChangelogEntryEncoder : UnitChangelogEntry -> Json.Encode.Value
+unitChangelogEntryEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "author", (Json.Encode.string) struct.author )
+        , ( "created_at", (Json.Encode.int) struct.createdAt )
+        , ( "action", (Json.Encode.string) struct.action )
+        , ( "changes", (Json.Encode.list (unitChangelogChangeEncoder)) struct.changes )
+        ]
+
+
+type alias UnitChangelogRsp =
+    { entries : List (UnitChangelogEntry)
+    }
+
+
+unitChangelogRspEncoder : UnitChangelogRsp -> Json.Encode.Value
+unitChangelogRspEncoder struct =
+    Json.Encode.object
+        [ ( "entries", (Json.Encode.list (unitChangelogEntryEncoder)) struct.entries )
         ]
 
 
@@ -8903,6 +9089,7 @@ listNetworkCallsignsSortByEncoder enum =
 type alias ListNetworkCallsignsReq =
     { networkId : Int
     , sortBy : Maybe (List (ListNetworkCallsignsSortBy))
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -8911,6 +9098,7 @@ listNetworkCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "sort_by", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (listNetworkCallsignsSortByEncoder))) struct.sortBy )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -10095,9 +10283,26 @@ findLiveNetworkEncoder struct =
         ]
 
 
+type NetworkGroupActivityPeriod
+    = Last10Days
+    | Last30Days
+    | Last60Days
+
+
+networkGroupActivityPeriodEncoder : NetworkGroupActivityPeriod -> Json.Encode.Value
+networkGroupActivityPeriodEncoder enum =
+    case enum of
+        Last10Days ->
+            Json.Encode.string "Last10Days"
+        Last30Days ->
+            Json.Encode.string "Last30Days"
+        Last60Days ->
+            Json.Encode.string "Last60Days"
+
 type alias NetworkGroupsActivityOneReq =
     { networkId : Int
     , tillDateNoninclusiveMs : Maybe (Int)
+    , period : Maybe (NetworkGroupActivityPeriod)
     }
 
 
@@ -10106,12 +10311,14 @@ networkGroupsActivityOneReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateNoninclusiveMs )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkGroupActivityPeriodEncoder)) struct.period )
         ]
 
 
 type alias NetworkGroupsActivityReq =
     { networkIds : List (Int)
     , tillDateNoninclusiveMs : Maybe (Int)
+    , period : Maybe (NetworkGroupActivityPeriod)
     }
 
 
@@ -10120,6 +10327,7 @@ networkGroupsActivityReqEncoder struct =
     Json.Encode.object
         [ ( "network_ids", (Json.Encode.list (Json.Encode.int)) struct.networkIds )
         , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateNoninclusiveMs )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkGroupActivityPeriodEncoder)) struct.period )
         ]
 
 
@@ -10642,8 +10850,25 @@ singleNetworkFreqsListRspEncoder struct =
         ]
 
 
+type NetworkFreqCallsignsPeriod
+    = Last7Days
+    | Last21Days
+    | Unlimited
+
+
+networkFreqCallsignsPeriodEncoder : NetworkFreqCallsignsPeriod -> Json.Encode.Value
+networkFreqCallsignsPeriodEncoder enum =
+    case enum of
+        Last7Days ->
+            Json.Encode.string "Last7Days"
+        Last21Days ->
+            Json.Encode.string "Last21Days"
+        Unlimited ->
+            Json.Encode.string "Unlimited"
+
 type alias NetworkFreqCallsignsReq =
     { networkFreqId : Int
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -10651,6 +10876,7 @@ networkFreqCallsignsReqEncoder : NetworkFreqCallsignsReq -> Json.Encode.Value
 networkFreqCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_freq_id", (Json.Encode.int) struct.networkFreqId )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -10670,6 +10896,7 @@ networkFreqCallsignsRspEncoder struct =
 
 type alias NetworkFreqCallsignsBatchReq =
     { networkFreqIds : List (Int)
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -10677,6 +10904,7 @@ networkFreqCallsignsBatchReqEncoder : NetworkFreqCallsignsBatchReq -> Json.Encod
 networkFreqCallsignsBatchReqEncoder struct =
     Json.Encode.object
         [ ( "network_freq_ids", (Json.Encode.list (Json.Encode.int)) struct.networkFreqIds )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -10712,6 +10940,7 @@ type alias SingleNetworkCallsignsReq =
     { networkId : Int
     , includeActivityInfo : Maybe (Bool)
     , section : Maybe (SingleNetworkCallsignsSection)
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -10721,6 +10950,7 @@ singleNetworkCallsignsReqEncoder struct =
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "include_activity_info", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.includeActivityInfo )
         , ( "section", (Maybe.withDefault Json.Encode.null << Maybe.map (singleNetworkCallsignsSectionEncoder)) struct.section )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -13919,6 +14149,34 @@ updateAreaOfResponsibilityReqEncoder struct =
         ]
 
 
+type alias AorBattleLineBoundariesUpdate =
+    { id : Int
+    , leftCoordinates : AorCoordinates
+    , rightCoordinates : AorCoordinates
+    }
+
+
+aorBattleLineBoundariesUpdateEncoder : AorBattleLineBoundariesUpdate -> Json.Encode.Value
+aorBattleLineBoundariesUpdateEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.int) struct.id )
+        , ( "left_coordinates", (aorCoordinatesEncoder) struct.leftCoordinates )
+        , ( "right_coordinates", (aorCoordinatesEncoder) struct.rightCoordinates )
+        ]
+
+
+type alias UpdateAorBattleLineBoundariesReq =
+    { items : List (AorBattleLineBoundariesUpdate)
+    }
+
+
+updateAorBattleLineBoundariesReqEncoder : UpdateAorBattleLineBoundariesReq -> Json.Encode.Value
+updateAorBattleLineBoundariesReqEncoder struct =
+    Json.Encode.object
+        [ ( "items", (Json.Encode.list (aorBattleLineBoundariesUpdateEncoder)) struct.items )
+        ]
+
+
 type alias DeleteAreaOfResponsibilityReq =
     { id : Int
     }
@@ -15689,6 +15947,30 @@ battleLineUnresolvedLocationsRspDecoder : Json.Decode.Decoder BattleLineUnresolv
 battleLineUnresolvedLocationsRspDecoder =
     Json.Decode.succeed BattleLineUnresolvedLocationsRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (battleLineUnresolvedLocationDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
+
+
+battleLineNetworkMapPointDecoder : Json.Decode.Decoder BattleLineNetworkMapPoint
+battleLineNetworkMapPointDecoder =
+    Json.Decode.succeed BattleLineNetworkMapPoint
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lat" (Json.Decode.float)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "lon" (Json.Decode.float)))
+
+
+battleLineNetworkUnitMapDecoder : Json.Decode.Decoder BattleLineNetworkUnitMap
+battleLineNetworkUnitMapDecoder =
+    Json.Decode.succeed BattleLineNetworkUnitMap
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlement_points" (Json.Decode.list (battleLineNetworkMapPointDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "peleng_points" (Json.Decode.list (battleLineNetworkMapPointDecoder))))
+
+
+battleLineNetworksRspDecoder : Json.Decode.Decoder BattleLineNetworksRsp
+battleLineNetworksRspDecoder =
+    Json.Decode.succeed BattleLineNetworksRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (battleLineNetworkUnitMapDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "total" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_size" (Json.Decode.int)))
 
@@ -18894,9 +19176,53 @@ listInconsistentUnitsRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (inconsistentUnitDecoder))))
 
 
+unitNameReviewDecoder : Json.Decode.Decoder UnitNameReview
+unitNameReviewDecoder =
+    Json.Decode.succeed UnitNameReview
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "current_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "expected_name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "matches_expected" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at" (Json.Decode.int)))
+
+
+unitNameReviewCursorDecoder : Json.Decode.Decoder UnitNameReviewCursor
+unitNameReviewCursorDecoder =
+    Json.Decode.succeed UnitNameReviewCursor
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updated_at_micros" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+
+
+listUnitNameReviewsReqDecoder : Json.Decode.Decoder ListUnitNameReviewsReq
+listUnitNameReviewsReqDecoder =
+    Json.Decode.succeed ListUnitNameReviewsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "after" (Json.Decode.nullable (unitNameReviewCursorDecoder))))
+
+
+listUnitNameReviewsRspDecoder : Json.Decode.Decoder ListUnitNameReviewsRsp
+listUnitNameReviewsRspDecoder =
+    Json.Decode.succeed ListUnitNameReviewsRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units" (Json.Decode.list (unitNameReviewDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "next_cursor" (Json.Decode.nullable (unitNameReviewCursorDecoder))))
+
+
+updateUnitNameReqDecoder : Json.Decode.Decoder UpdateUnitNameReq
+updateUnitNameReqDecoder =
+    Json.Decode.succeed UpdateUnitNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+
+
+confirmUnitNameReqDecoder : Json.Decode.Decoder ConfirmUnitNameReq
+confirmUnitNameReqDecoder =
+    Json.Decode.succeed ConfirmUnitNameReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sigint_unit_id" (Json.Decode.int)))
+
+
 createUnitReqDecoder : Json.Decode.Decoder CreateUnitReq
 createUnitReqDecoder =
     Json.Decode.succeed CreateUnitReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "other" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "team_or_crew" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.string)))
@@ -18958,6 +19284,30 @@ unitDetailsReqDecoder : Json.Decode.Decoder UnitDetailsReq
 unitDetailsReqDecoder =
     Json.Decode.succeed UnitDetailsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+
+
+unitChangelogChangeDecoder : Json.Decode.Decoder UnitChangelogChange
+unitChangelogChangeDecoder =
+    Json.Decode.succeed UnitChangelogChange
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "field" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "old_value" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "new_value" (Json.Decode.nullable (Json.Decode.string))))
+
+
+unitChangelogEntryDecoder : Json.Decode.Decoder UnitChangelogEntry
+unitChangelogEntryDecoder =
+    Json.Decode.succeed UnitChangelogEntry
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "author" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "action" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "changes" (Json.Decode.list (unitChangelogChangeDecoder))))
+
+
+unitChangelogRspDecoder : Json.Decode.Decoder UnitChangelogRsp
+unitChangelogRspDecoder =
+    Json.Decode.succeed UnitChangelogRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "entries" (Json.Decode.list (unitChangelogEntryDecoder))))
 
 
 unitAttachmentAorDecoder : Json.Decode.Decoder UnitAttachmentAor
@@ -19646,6 +19996,7 @@ listNetworkCallsignsReqDecoder =
     Json.Decode.succeed ListNetworkCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sort_by" (Json.Decode.nullable (Json.Decode.list (listNetworkCallsignsSortByDecoder)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 listNetworkCallsignsResDecoder : Json.Decode.Decoder ListNetworkCallsignsRes
@@ -20603,11 +20954,44 @@ findLiveNetworkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 
+networkGroupActivityPeriodDecoder : Json.Decode.Decoder NetworkGroupActivityPeriod
+networkGroupActivityPeriodDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last10Days" ->
+                            Json.Decode.succeed Last10Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last30Days" ->
+                            Json.Decode.succeed Last30Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last60Days" ->
+                            Json.Decode.succeed Last60Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 networkGroupsActivityOneReqDecoder : Json.Decode.Decoder NetworkGroupsActivityOneReq
 networkGroupsActivityOneReqDecoder =
     Json.Decode.succeed NetworkGroupsActivityOneReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkGroupActivityPeriodDecoder))))
 
 
 networkGroupsActivityReqDecoder : Json.Decode.Decoder NetworkGroupsActivityReq
@@ -20615,6 +20999,7 @@ networkGroupsActivityReqDecoder =
     Json.Decode.succeed NetworkGroupsActivityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkGroupActivityPeriodDecoder))))
 
 
 networkUnitStatRowDecoder : Json.Decode.Decoder NetworkUnitStatRow
@@ -20659,10 +21044,43 @@ singleNetworkFreqsListRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list (networkFreqsResDecoder))))
 
 
+networkFreqCallsignsPeriodDecoder : Json.Decode.Decoder NetworkFreqCallsignsPeriod
+networkFreqCallsignsPeriodDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last7Days" ->
+                            Json.Decode.succeed Last7Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last21Days" ->
+                            Json.Decode.succeed Last21Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Unlimited" ->
+                            Json.Decode.succeed Unlimited
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 networkFreqCallsignsReqDecoder : Json.Decode.Decoder NetworkFreqCallsignsReq
 networkFreqCallsignsReqDecoder =
     Json.Decode.succeed NetworkFreqCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 networkFreqCallsignsRspDecoder : Json.Decode.Decoder NetworkFreqCallsignsRsp
@@ -20676,6 +21094,7 @@ networkFreqCallsignsBatchReqDecoder : Json.Decode.Decoder NetworkFreqCallsignsBa
 networkFreqCallsignsBatchReqDecoder =
     Json.Decode.succeed NetworkFreqCallsignsBatchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 networkFreqCallsignsBatchRspDecoder : Json.Decode.Decoder NetworkFreqCallsignsBatchRsp
@@ -20722,6 +21141,7 @@ singleNetworkCallsignsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "include_activity_info" (Json.Decode.nullable (Json.Decode.bool))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "section" (Json.Decode.nullable (singleNetworkCallsignsSectionDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 singleNetworkCallsignsListRspDecoder : Json.Decode.Decoder SingleNetworkCallsignsListRsp
@@ -22069,6 +22489,20 @@ updateAreaOfResponsibilityReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "insert" (areaOfResponsibilityInsertDecoder)))
 
 
+aorBattleLineBoundariesUpdateDecoder : Json.Decode.Decoder AorBattleLineBoundariesUpdate
+aorBattleLineBoundariesUpdateDecoder =
+    Json.Decode.succeed AorBattleLineBoundariesUpdate
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "left_coordinates" (aorCoordinatesDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "right_coordinates" (aorCoordinatesDecoder)))
+
+
+updateAorBattleLineBoundariesReqDecoder : Json.Decode.Decoder UpdateAorBattleLineBoundariesReq
+updateAorBattleLineBoundariesReqDecoder =
+    Json.Decode.succeed UpdateAorBattleLineBoundariesReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "items" (Json.Decode.list (aorBattleLineBoundariesUpdateDecoder))))
+
+
 deleteAreaOfResponsibilityReqDecoder : Json.Decode.Decoder DeleteAreaOfResponsibilityReq
 deleteAreaOfResponsibilityReqDecoder =
     Json.Decode.succeed DeleteAreaOfResponsibilityReq
@@ -22465,8 +22899,31 @@ dutyTagsLayoutDecoder =
                 )
         ]
 
+type MessageTextPreviewLines
+    = Twenty
+    | Forty
+    | Off
+
+
+messageTextPreviewLinesDecoder : Json.Decode.Decoder MessageTextPreviewLines
+messageTextPreviewLinesDecoder =
+    Json.Decode.string
+        |> Json.Decode.andThen
+            (\x ->
+                case x of
+                    "twenty" ->
+                        Json.Decode.succeed Twenty
+                    "forty" ->
+                        Json.Decode.succeed Forty
+                    "off" ->
+                        Json.Decode.succeed Off
+                    unexpected ->
+                        Json.Decode.fail <| "Unexpected variant " ++ unexpected
+            )
+
 type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout
+    , messageTextPreviewLines : MessageTextPreviewLines
     , disableAutoScroll : Bool
     , analysisMapInSidebar : Bool
     , dutyAudioTranscriptionCollapsed : Bool
@@ -22482,6 +22939,7 @@ userDutySettingsDtoDecoder : Json.Decode.Decoder UserDutySettingsDto
 userDutySettingsDtoDecoder =
     Json.Decode.succeed UserDutySettingsDto
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "tagsLayout" (dutyTagsLayoutDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageTextPreviewLines" (messageTextPreviewLinesDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "disableAutoScroll" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "analysisMapInSidebar" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "dutyAudioTranscriptionCollapsed" (Json.Decode.bool)))

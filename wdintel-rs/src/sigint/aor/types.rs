@@ -65,6 +65,22 @@ pub struct UpdateAreaOfResponsibilityReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct AorBattleLineBoundariesUpdate {
+    pub id: i64,
+    pub left_coordinates: AorCoordinates,
+    pub right_coordinates: AorCoordinates,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct UpdateAorBattleLineBoundariesReq {
+    pub items: Vec<AorBattleLineBoundariesUpdate>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct DeleteAreaOfResponsibilityReq {
     pub id: i64,
 }

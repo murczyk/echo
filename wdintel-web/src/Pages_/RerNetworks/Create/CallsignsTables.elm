@@ -185,7 +185,7 @@ applyMarkerSelection markerSelection state =
 loadCatalogAndNetworkCallsigns : Int -> List (Effect CallsignsMsg)
 loadCatalogAndNetworkCallsigns networkId =
     [ loadCatalogCallsigns networkId
-    , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing }
+    , E.getNetworkCallsignsList NetworkCallsignsReturnedByApi { networkId = networkId, sortBy = Nothing, period = Just B.Unlimited }
     ]
 
 
@@ -195,6 +195,7 @@ loadCatalogCallsigns networkId =
         { networkId = networkId
         , includeActivityInfo = Just False
         , section = Just B.Everything
+        , period = Just B.Unlimited
         }
 
 

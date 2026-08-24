@@ -1,17 +1,22 @@
 import { Box, List, ListItem, ListItemIcon, Stack, Typography } from '@mui/material';
 
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import { SettingsTagsLayoutCard } from './SettingsTagsLayoutCard';
 
 export type SettingsSharedTagsLayoutCardProps = {
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
+  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
   loadInProgress: boolean;
 };
 
 export function SettingsSharedTagsLayoutCard({
   tagsLayout,
   onTagsLayoutChange,
+  messageTextPreviewLines,
+  onMessageTextPreviewLinesChange,
   loadInProgress,
 }: SettingsSharedTagsLayoutCardProps) {
   return (
@@ -50,9 +55,11 @@ export function SettingsSharedTagsLayoutCard({
           </List>
         </Stack>
       }
-      note="Спільне налаштування для Оперативного та Аналізу."
+      note="Спільні налаштування для Оперативного та Аналізу."
       tagsLayout={tagsLayout}
       onTagsLayoutChange={onTagsLayoutChange}
+      messageTextPreviewLines={messageTextPreviewLines}
+      onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
       loadInProgress={loadInProgress}
     />
   );

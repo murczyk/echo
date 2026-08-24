@@ -1,14 +1,13 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import LinkIcon from '@mui/icons-material/Link';
 import {
   Button,
+  Box,
   Checkbox,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
+  Drawer,
   FormControlLabel,
   Link,
   MenuItem,
@@ -23,10 +22,13 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { CreateUnitReq, OrbitUnitDetails, Unit } from '../../../../../Bindings';
 import { PowerAlert } from '../../../components/PowerAlert';
+import { PowerButton } from '../../../components/PowerButton';
+import { PowerIconButton } from '../../../components/PowerIconButton';
+import { pageDrawerBackdropSx } from '../../../components/loadingOverlayStyles';
 import {
   DEFAULT_LIST_UNITS_REQ,
   getCreateUnitDuplicateCandidates,
@@ -59,6 +61,7 @@ export type UnitFormSubmit = {
 
 type Props = {
   open: boolean;
+  suspended?: boolean;
   unit: Unit | null;
   devicesSectionEnabled: boolean;
   submitting: boolean;
@@ -317,6 +320,17 @@ function UnitDetailsFields({
         уже наявними підрозділами.
       </Typography>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {editing ? (
+          <TextField
+            label="Назва"
+            placeholder="Назва підрозділу"
+            value={form.name ?? ''}
+            onChange={(event) => onChange({ ...form, name: event.target.value })}
+            disabled={disabled}
+            fullWidth
+            sx={{ gridColumn: { md: '1 / -1' } }}
+          />
+        ) : null}
         {HIERARCHY_FIELDS.map(({ key, label, placeholder }) => (
           <TextField
             key={key}
@@ -525,8 +539,9 @@ function DuplicateMergeSelection({
   );
 }
 
-export function UnitFormDialog({
+export function UnitFormDrawer({
   open,
+  suspended = false,
   unit,
   devicesSectionEnabled,
   submitting,
@@ -552,12 +567,29 @@ export function UnitFormDialog({
   const [selectedDuplicateUnitIds, setSelectedDuplicateUnitIds] = useState<Set<number>>(new Set());
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
   const [duplicateCheckError, setDuplicateCheckError] = useState<string | null>(null);
+  const initialFormRef = useRef<UnitForm>(EMPTY_UNIT_FORM);
+  const sessionRef = useRef<{
+    open: boolean;
+    unitId: number | null;
+    editSection: Props['editSection'];
+  } | null>(null);
   const editing = unit !== null;
   const duplicateStep = pendingSubmission !== null;
 
   useEffect(() => {
-    if (!open) return;
-    setForm(unit === null ? EMPTY_UNIT_FORM : unitToForm(unit));
+    const previousSession = sessionRef.current;
+    const unitId = unit?.id ?? null;
+    const isNewSession =
+      open &&
+      (previousSession === null ||
+        !previousSession.open ||
+        previousSession.unitId !== unitId ||
+        previousSession.editSection !== editSection);
+    sessionRef.current = { open, unitId, editSection };
+    if (!isNewSession) return;
+    const initialForm = unit === null ? EMPTY_UNIT_FORM : unitToForm(unit);
+    initialFormRef.current = initialForm;
+    setForm(initialForm);
     setNetworkStep(false);
     setSkipNetworkCreation(false);
     setLocations([]);
@@ -642,6 +674,20 @@ export function UnitFormDialog({
     setNetworkStep(false);
   }
 
+  const busy = submitting || checkingDuplicates || unlinkingOrbitUnitId !== null;
+  const hasUnsavedChanges =
+    JSON.stringify(form) !== JSON.stringify(initialFormRef.current) ||
+    networkStep ||
+    pendingSubmission !== null ||
+    locations.length > 0 ||
+    unitMask.length > 0 ||
+    skipNetworkCreation;
+  const requestClose = () => {
+    if (busy) return;
+    if (hasUnsavedChanges && !window.confirm('Є незбережені зміни. Закрити форму?')) return;
+    onClose();
+  };
+
   const confirmDisabled =
     submitting ||
     checkingDuplicates ||
@@ -649,28 +695,50 @@ export function UnitFormDialog({
     (networkStep && !skipNetworkCreation && locations.length === 0);
 
   return (
-    <Dialog
-      open={open}
-      onClose={
-        submitting || checkingDuplicates || unlinkingOrbitUnitId !== null ? undefined : onClose
-      }
-      fullWidth
-      maxWidth={networkStep || editSection === 'orbit' ? 'sm' : 'lg'}
+    <Drawer
+      anchor="right"
+      open={open && !suspended}
+      onClose={busy ? undefined : requestClose}
+      ModalProps={{ BackdropProps: { sx: (theme) => pageDrawerBackdropSx(theme) } }}
+      slotProps={{
+        paper: {
+          'aria-labelledby': 'unit-form-drawer-title',
+          sx: {
+            width: { xs: '100vw', sm: 760 },
+            maxWidth: '100vw',
+            display: 'flex',
+            backgroundColor: 'background.default',
+            backgroundImage: 'none',
+          },
+        },
+      }}
     >
-      <DialogTitle>
-        {duplicateStep
-          ? 'Об’єднати дублікати'
-          : editing && editSection === 'unit'
-            ? 'Редагувати дані підрозділу'
-            : editing && editSection === 'orbit'
-              ? 'Редагувати примітку Orbit'
-              : editing
-                ? 'Редагувати підрозділ'
-                : networkStep
-                  ? 'Налаштування радіомережі'
-                  : 'Новий підрозділ'}
-      </DialogTitle>
-      <DialogContent>
+      <Box sx={{ p: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+          <Typography variant="h6" id="unit-form-drawer-title">
+            {duplicateStep
+              ? 'Об’єднати дублікати'
+              : editing && editSection === 'unit'
+                ? 'Редагувати дані підрозділу'
+                : editing && editSection === 'orbit'
+                  ? 'Редагувати примітку Orbit'
+                  : editing
+                    ? 'Редагувати підрозділ'
+                    : networkStep
+                      ? 'Налаштування радіомережі'
+                      : 'Новий підрозділ'}
+          </Typography>
+          <PowerIconButton
+            aria-label="Закрити форму"
+            size="small"
+            disabled={busy}
+            onClick={requestClose}
+          >
+            <CloseIcon fontSize="small" />
+          </PowerIconButton>
+        </Stack>
+      </Box>
+      <Box sx={{ p: 2.5, flex: 1, overflowY: 'auto' }}>
         <Stack spacing={3} sx={{ pt: 1 }}>
           {duplicateStep ? (
             <DuplicateMergeSelection
@@ -722,47 +790,55 @@ export function UnitFormDialog({
             </PowerAlert>
           ) : null}
         </Stack>
-      </DialogContent>
-      <DialogActions>
-        {networkStep || duplicateStep ? (
-          <Button
-            onClick={goBack}
-            disabled={submitting || checkingDuplicates}
-            startIcon={<ArrowBackIcon />}
-            sx={{ mr: 'auto' }}
+      </Box>
+      <Box sx={{ p: 2.5, borderTop: '1px solid', borderColor: 'divider' }}>
+        <Stack direction="row" spacing={1} justifyContent="flex-end">
+          {networkStep || duplicateStep ? (
+            <PowerButton
+              onClick={goBack}
+              disabled={busy}
+              startIcon={<ArrowBackIcon />}
+              sx={{ mr: 'auto' }}
+            >
+              Назад
+            </PowerButton>
+          ) : null}
+          <PowerButton onClick={requestClose} disabled={busy}>
+            Скасувати
+          </PowerButton>
+          <PowerButton
+            key={
+              duplicateStep
+                ? 'create-from-duplicates'
+                : networkStep
+                  ? 'network-next'
+                  : 'unit-submit'
+            }
+            onClick={
+              duplicateStep
+                ? submitDuplicateStep
+                : networkStep
+                  ? submitNetworkStep
+                  : continueFromDetails
+            }
+            variant="contained"
+            disabled={confirmDisabled || busy}
+            startIcon={
+              submitting || checkingDuplicates ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : null
+            }
           >
-            Назад
-          </Button>
-        ) : null}
-        <Button
-          onClick={onClose}
-          disabled={submitting || checkingDuplicates || unlinkingOrbitUnitId !== null}
-        >
-          Скасувати
-        </Button>
-        <Button
-          onClick={
-            duplicateStep
-              ? submitDuplicateStep
-              : networkStep
-                ? submitNetworkStep
-                : continueFromDetails
-          }
-          variant="contained"
-          disabled={confirmDisabled || unlinkingOrbitUnitId !== null}
-          startIcon={
-            submitting || checkingDuplicates ? <CircularProgress size={16} color="inherit" /> : null
-          }
-        >
-          {duplicateStep
-            ? 'Створити'
-            : !editing && devicesSectionEnabled && !networkStep
-              ? 'Далі'
-              : editing
-                ? 'Зберегти'
-                : 'Створити'}
-        </Button>
-      </DialogActions>
-    </Dialog>
+            {duplicateStep
+              ? 'Створити'
+              : !editing && devicesSectionEnabled && !networkStep
+                ? 'Далі'
+                : editing
+                  ? 'Зберегти'
+                  : 'Створити'}
+          </PowerButton>
+        </Stack>
+      </Box>
+    </Drawer>
   );
 }

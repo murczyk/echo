@@ -112,10 +112,11 @@ export function NetworkDetailsActivityChart({
   const innerHeight = CHART_VIEWBOX_HEIGHT - CHART_MARGIN.top - CHART_MARGIN.bottom;
   const maxValue = Math.max(chartData.maxValue, 1);
   const bandWidth = chartData.days.length > 0 ? innerWidth / chartData.days.length : innerWidth;
-  const barWidth = Math.max(18, bandWidth - BAR_GAP);
+  const barWidth = Math.max(2, bandWidth - Math.min(BAR_GAP, bandWidth / 3));
   const chartBottomY = CHART_MARGIN.top + innerHeight;
   const yLabelWidthPx = 44;
   const xLabelHeightPx = 28;
+  const xLabelStep = Math.max(1, Math.ceil(chartData.days.length / 10));
 
   function setHoveredBarFromElement(bar: Element | null) {
     if (!bar) return;
@@ -329,6 +330,7 @@ export function NetworkDetailsActivityChart({
           }}
         >
           {chartData.days.map((day, index) => {
+            if (index % xLabelStep !== 0 && index !== chartData.days.length - 1) return null;
             const x = CHART_MARGIN.left + index * bandWidth + bandWidth / 2;
             const leftPercent = (x / CHART_VIEWBOX_WIDTH) * 100;
             return (

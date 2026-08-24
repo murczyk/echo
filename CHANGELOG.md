@@ -11,6 +11,9 @@
 ## NEXT
 
 - [#3266](https://github.com/echoua/echo/issues/3266) ✅🐞 Оперативний: стрічка не стрибає після створення розвіддонесення; плавніша поява нових повідомлень.
+- [#3200](https://github.com/echoua/echo/issues/3200) ✅👷 Оперативний, Аналіз: додано налаштування скорочення довгих текстів у картках. ClickHouse: після міграції виконати resync `user_settings` — `/opt/echo-peerdb/bin/resync.sh --yes`, потім `/opt/echo-peerdb/bin/finish-resync.sh` — і перевірити успішний analytics health check.
+- [#2287](https://github.com/echoua/echo/issues/2287) ✅🛡️ Карта, ЛБЗ: додано вкладку «Мережі» з посторінковими картами активних підрозділів, населеними пунктами та пеленгами їхніх мереж за останні сім днів.
+- [#3113](https://github.com/echoua/echo/issues/3113) ✅🛡️👷 Підрозділи: додано перевірку, редагування й підтвердження очікуваних назв активних підрозділів; після деплою на інстансах із ClickHouse виконати повний resync дзеркала `sigint_unit` — `/opt/echo-peerdb/bin/resync.sh --yes`, дочекатися успішного завершення `/opt/echo-peerdb/bin/finish-resync.sh` і перевірити analytics health check.
 - 🐞👷 Месенджери: додано перевірку нових медіафайлів після завантаження та аудит і відновлення пошкоджених об'єктів; після деплою виконати аудит за [інструкцією](docs/MONITORING.md#audit-messenger-media-storage).
 - 🐞👷 ШІ: виправлено зведення за останні 24 години по всіх доступних даних; перед деплоєм оновити спільний dispatcher і шаблон AI-агента та перестворити керовані контейнери відповідного namespace згідно з [інструкцією](echo-ai-agent/DEPLOYMENT.md).
 - [#2287](https://github.com/echoua/echo/issues/2287) 👷 Аналіз, ЛБЗ: додано окрему погодинну й добову статистику за прив'язаними населеними пунктами; після деплою виконати `sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats --only settlement`.

@@ -8,6 +8,7 @@ import {
   Pagination,
   Paper,
   Snackbar,
+  Skeleton,
   Stack,
   Tab,
   Table,
@@ -24,6 +25,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
+  BattleLineNetworksRsp,
   BattleLineSettlementCandidate,
   BattleLineState,
   BattleLineTestRsp,
@@ -31,6 +33,7 @@ import type {
   BattleLineUnresolvedLocationsRsp,
 } from '../../../../Bindings';
 import {
+  fetchBattleLineNetworks,
   fetchBattleLineState,
   fetchBattleLineUnlinkedInbox,
   fetchBattleLineUnresolvedLocations,
@@ -39,7 +42,32 @@ import {
 } from '../../services/api/battle-line';
 import { toErrorMessage } from '../rer-analysis-neo/use-analysis-data.shared';
 import { MessageCard } from '../shared/message-card/MessageCard';
+import { PowerAlert } from '../../components/PowerAlert';
+import { PageHeader } from '../../components/PageHeader';
+import { PageLoadingState } from '../../components/PageLoadingState';
 import { BattleLineMap } from './BattleLineMap';
+import { NetworkUnitMap } from './NetworkUnitMap';
+
+export type BattleLineTab = 'lbz' | 'networks' | 'unlinked' | 'unresolved';
+
+const DEFAULT_BATTLE_LINE_TAB: BattleLineTab = 'lbz';
+
+function readBattleLineTab(location = window.location): BattleLineTab {
+  const tab = new URLSearchParams(location.search).get('tab');
+  return tab === 'networks' || tab === 'unlinked' || tab === 'unresolved' || tab === 'lbz'
+    ? tab
+    : DEFAULT_BATTLE_LINE_TAB;
+}
+
+function writeBattleLineTab(tab: BattleLineTab, replace = false) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('tab', tab);
+  window.history[replace ? 'replaceState' : 'pushState'](
+    window.history.state,
+    '',
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
 
 function ReadOnlyMessage({ id, message }: { id: number; message: BattleLineTestRsp['message'] }) {
   return (
@@ -332,7 +360,14 @@ function UnlinkedTab({ onError }: { onError: (message: string) => void }) {
       });
     return () => controller.abort();
   }, [onError, page]);
-  if (loading) return <CircularProgress />;
+  if (loading) {
+    return (
+      <Stack spacing={1.5} aria-label="Завантаження перехоплень без НП">
+        <Skeleton variant="rounded" height={160} />
+        <Skeleton variant="rounded" height={160} />
+      </Stack>
+    );
+  }
   if (!data) return null;
   return (
     <Stack spacing={2}>
@@ -372,7 +407,15 @@ function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
       });
     return () => controller.abort();
   }, [onError, page]);
-  if (loading) return <CircularProgress />;
+  if (loading) {
+    return (
+      <Stack spacing={1.5} aria-label="Завантаження невизначених локацій">
+        <Skeleton variant="rounded" height={44} />
+        <Skeleton variant="rounded" height={44} />
+        <Skeleton variant="rounded" height={44} />
+      </Stack>
+    );
+  }
   if (!data) return null;
   return (
     <Stack spacing={2}>
@@ -406,8 +449,61 @@ function UnresolvedTab({ onError }: { onError: (message: string) => void }) {
   );
 }
 
+function NetworksTab() {
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<BattleLineNetworksRsp | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const controller = new AbortController();
+    setData(null);
+    setError(null);
+    setLoading(true);
+    fetchBattleLineNetworks({ page }, { signal: controller.signal })
+      .then(setData)
+      .catch((loadError) => {
+        if (!controller.signal.aborted) setError(toErrorMessage(loadError));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [page]);
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-echo-md" aria-label="Завантаження мереж">
+        {Array.from({ length: 5 }, (_, index) => (
+          <Skeleton key={index} variant="rounded" height={310} />
+        ))}
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <PowerAlert severity="error" autoHideDuration={null}>
+        {error}
+      </PowerAlert>
+    );
+  }
+  if (!data) return null;
+  return (
+    <div className="flex flex-col gap-echo-lg">
+      {data.items.length === 0 ? (
+        <PowerAlert severity="info">Активних підрозділів немає</PowerAlert>
+      ) : (
+        data.items.map((item) => <NetworkUnitMap key={item.unitId} item={item} />)
+      )}
+      <Pagination
+        page={page}
+        count={Math.max(1, Math.ceil(data.total / data.pageSize))}
+        onChange={(_, value) => setPage(value)}
+      />
+    </div>
+  );
+}
+
 export function AdminBattleLinePage() {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState<BattleLineTab>(readBattleLineTab);
   const [state, setState] = useState<BattleLineState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -432,21 +528,38 @@ export function AdminBattleLinePage() {
       loadSerialRef.current += 1;
     };
   }, [reload]);
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested !== tab) writeBattleLineTab(tab, true);
+    const onPopState = () => setTab(readBattleLineTab());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [tab]);
+  const selectTab = (nextTab: BattleLineTab) => {
+    if (nextTab === tab) return;
+    writeBattleLineTab(nextTab);
+    setTab(nextTab);
+  };
   return (
     <Stack spacing={2} sx={{ height: '100%', minHeight: 0 }}>
-      <Typography variant="h4">Карта</Typography>
-      <Tabs value={tab} onChange={(_, value) => setTab(value)} variant="scrollable">
-        <Tab label="ЛБЗ" />
-        <Tab label="ПЕРЕХОПЛЕННЯ БЕЗ НП" />
-        <Tab label="НЕВИЗНАЧЕНІ ЛОКАЦІЇ" />
+      <PageHeader title="Карта" />
+      <Tabs
+        value={tab}
+        onChange={(_, value: BattleLineTab) => selectTab(value)}
+        variant="scrollable"
+      >
+        <Tab value="lbz" label="ЛБЗ" />
+        <Tab value="networks" label="Мережі" />
+        <Tab value="unlinked" label="ПЕРЕХОПЛЕННЯ БЕЗ НП" />
+        <Tab value="unresolved" label="НЕВИЗНАЧЕНІ ЛОКАЦІЇ" />
       </Tabs>
       <Divider />
       <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {tab === 0 ? (
+        {tab === 'lbz' ? (
           state ? (
             <LbzTab state={state} reload={reload} />
           ) : loading ? (
-            <CircularProgress />
+            <PageLoadingState />
           ) : (
             <Alert
               severity="error"
@@ -456,8 +569,9 @@ export function AdminBattleLinePage() {
             </Alert>
           )
         ) : null}
-        {tab === 1 ? <UnlinkedTab onError={setError} /> : null}
-        {tab === 2 ? <UnresolvedTab onError={setError} /> : null}
+        {tab === 'unlinked' ? <UnlinkedTab onError={setError} /> : null}
+        {tab === 'unresolved' ? <UnresolvedTab onError={setError} /> : null}
+        {tab === 'networks' ? <NetworksTab /> : null}
       </Box>
       <Snackbar open={error != null} autoHideDuration={8000} onClose={() => setError(null)}>
         <Alert severity="error" onClose={() => setError(null)}>

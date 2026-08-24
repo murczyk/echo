@@ -281,6 +281,8 @@ fn build_mouse_report(
     data: &MouseReportData,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    crate::report_history::ensure_report_record_count(data.messages.len())
+        .context(h!())?;
     let MouseReportData {
         messages,
         date_to,

@@ -329,6 +329,7 @@ export type ReportHistoryRow = {
   blockedByStartedAt: string | null;
   blockedByBgtaskId: number | null;
   status: string;
+  errorStatus: string;
   completedAt: string | null;
   hasFile: boolean;
   fileName: string | null;
@@ -1287,6 +1288,24 @@ export type BattleLineUnresolvedLocation = {
 
 export type BattleLineUnresolvedLocationsRsp = {
   items: Array<BattleLineUnresolvedLocation>;
+  total: number;
+  pageSize: number;
+};
+
+export type BattleLineNetworkMapPoint = {
+  lat: number;
+  lon: number;
+};
+
+export type BattleLineNetworkUnitMap = {
+  unitId: number;
+  unitName: string;
+  settlementPoints: Array<BattleLineNetworkMapPoint>;
+  pelengPoints: Array<BattleLineNetworkMapPoint>;
+};
+
+export type BattleLineNetworksRsp = {
+  items: Array<BattleLineNetworkUnitMap>;
   total: number;
   pageSize: number;
 };
@@ -3018,7 +3037,39 @@ export type ListInconsistentUnitsRsp = {
   units: Array<InconsistentUnit>;
 };
 
+export type UnitNameReview = {
+  sigintUnitId: number;
+  currentName: string;
+  expectedName: string;
+  matchesExpected: boolean;
+  updatedAt: number;
+};
+
+export type UnitNameReviewCursor = {
+  updatedAtMicros: number;
+  sigintUnitId: number;
+};
+
+export type ListUnitNameReviewsReq = {
+  after: UnitNameReviewCursor | null;
+};
+
+export type ListUnitNameReviewsRsp = {
+  units: Array<UnitNameReview>;
+  nextCursor: UnitNameReviewCursor | null;
+};
+
+export type UpdateUnitNameReq = {
+  sigintUnitId: number;
+  name: string;
+};
+
+export type ConfirmUnitNameReq = {
+  sigintUnitId: number;
+};
+
 export type CreateUnitReq = {
+  name: string | null;
   other: string;
   teamOrCrew: string;
   section: string;
@@ -3073,6 +3124,24 @@ export type UnitSearchReq = {
 
 export type UnitDetailsReq = {
   unitId: number;
+};
+
+export type UnitChangelogChange = {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+};
+
+export type UnitChangelogEntry = {
+  id: number;
+  author: string;
+  createdAt: number;
+  action: string;
+  changes: Array<UnitChangelogChange>;
+};
+
+export type UnitChangelogRsp = {
+  entries: Array<UnitChangelogEntry>;
 };
 
 export type UnitAttachmentAor = {
@@ -3429,6 +3498,7 @@ export type ListNetworkCallsignsSortBy =
 export type ListNetworkCallsignsReq = {
   networkId: number;
   sortBy: Array<ListNetworkCallsignsSortBy> | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type ListNetworkCallsignsRes = {
@@ -3902,14 +3972,22 @@ export type FindLiveNetwork = {
   locations: Array<string>;
 };
 
+export type NetworkGroupActivityPeriod =
+  | 'Last10Days'
+  | 'Last30Days'
+  | 'Last60Days'
+;
+
 export type NetworkGroupsActivityOneReq = {
   networkId: number;
   tillDateNoninclusiveMs: number | null;
+  period: NetworkGroupActivityPeriod | null;
 };
 
 export type NetworkGroupsActivityReq = {
   networkIds: Array<number>;
   tillDateNoninclusiveMs: number | null;
+  period: NetworkGroupActivityPeriod | null;
 };
 
 export type AddNetworkFreqReq = {
@@ -4114,8 +4192,15 @@ export type SingleNetworkFreqsListRsp = {
   freqs: Array<NetworkFreqsRes>;
 };
 
+export type NetworkFreqCallsignsPeriod =
+  | 'Last7Days'
+  | 'Last21Days'
+  | 'Unlimited'
+;
+
 export type NetworkFreqCallsignsReq = {
   networkFreqId: number;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type NetworkFreqCallsignsRsp = {
@@ -4125,6 +4210,7 @@ export type NetworkFreqCallsignsRsp = {
 
 export type NetworkFreqCallsignsBatchReq = {
   networkFreqIds: Array<number>;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type NetworkFreqCallsignsBatchRsp = {
@@ -4141,6 +4227,7 @@ export type SingleNetworkCallsignsReq = {
   networkId: number;
   includeActivityInfo: boolean | null;
   section: SingleNetworkCallsignsSection | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {
@@ -5386,6 +5473,16 @@ export type UpdateAreaOfResponsibilityReq = {
   insert: AreaOfResponsibilityInsert;
 };
 
+export type AorBattleLineBoundariesUpdate = {
+  id: number;
+  leftCoordinates: AorCoordinates;
+  rightCoordinates: AorCoordinates;
+};
+
+export type UpdateAorBattleLineBoundariesReq = {
+  items: Array<AorBattleLineBoundariesUpdate>;
+};
+
 export type DeleteAreaOfResponsibilityReq = {
   id: number;
 };
@@ -5434,8 +5531,15 @@ export type DutyTagsLayout =
   | 'Hidden'
 ;
 
+export type MessageTextPreviewLines =
+  | 'Twenty'
+  | 'Forty'
+  | 'Off'
+;
+
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
+  messageTextPreviewLines: MessageTextPreviewLines;
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
   dutyAudioTranscriptionCollapsed: boolean;

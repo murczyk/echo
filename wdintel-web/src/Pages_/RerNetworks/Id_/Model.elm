@@ -54,6 +54,7 @@ type alias Model =
     , callsigns : RemoteData ApiError (List B.NetworkCallsignRes)
     , mapPoints : RemoteData ApiError (List B.NetworkPoint)
     , groupsActivity : RemoteData ApiError GroupsByDate
+    , groupsActivityPeriod : B.NetworkGroupActivityPeriod
     , networkFreqsActivity : RemoteData ApiError (Dict String (Dict String Int))
     , freqs : RemoteData ApiError (List B.NetworkFreqsRes)
     , networkKeys : RemoteData ApiError (List B.EncryptionKeyData)

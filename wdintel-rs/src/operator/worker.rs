@@ -154,6 +154,7 @@ async fn load_echo_operator_queue_for_group(
         .filter(
             signal_message::Column::DatasourceGroupId.eq(datasource_group_id),
         )
+        .filter(signal_message::Column::Deleted.eq(false))
         // Intentionally ignore older operator backlog here. This worker is a
         // near-live bridge, and old recovery must be handled explicitly rather
         // than reopening broad scans on signal_message.
@@ -346,4 +347,61 @@ struct MetadataMessageRow {
     pub dmr_sender_id: Option<String>,
     pub dmr_call_group_id: Option<String>,
     pub dmr_color_code: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{
+        cleanup, mk_datasource_group, mk_signal_message,
+    };
+    use serial_test::serial;
+
+    #[tokio::test]
+    #[serial]
+    async fn operator_queue_excludes_deleted_messages() {
+        let env = cleanup().await.unwrap();
+        let datasource_group = mk_datasource_group(
+            &env.dbx,
+            datasource_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let created_at = Utc::now().naive_utc() - chrono::Duration::minutes(1);
+        let active_message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(created_at),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                datasource_group_id: Set(Some(datasource_group.id)),
+                created_at: Set(created_at),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let rows = load_echo_operator_queue_for_group(
+            &env.dbx,
+            datasource_group.id,
+            created_at - chrono::Duration::minutes(1),
+            created_at + chrono::Duration::minutes(1),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rows, vec![(active_message.id, active_message.created_at)]);
+    }
 }

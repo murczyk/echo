@@ -126,6 +126,8 @@ describe('NetworkDetailsFrequenciesPanel', () => {
           freqsError: null,
           freqCallsignsById: new Map(),
           freqCallsignsStatus: 'idle',
+          freqCallsignsPeriod: 'Last21Days',
+          onFreqCallsignsPeriodChange: vi.fn(),
           encryptions: [],
           expandedFrequencyGroupIds: [],
           onToggleFrequencyGroupExpanded: vi.fn(),

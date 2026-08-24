@@ -1,15 +1,18 @@
 use super::super::types::*;
 use crate::config::{
-    RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM, TAG_MINIMUM_CONFIDENCE,
-    XLSX_WORKSHEET_ROW_MAX,
+    AnalyticsConfig, ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT,
+    RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM,
+    RER_REPORT_ENRICHMENT_ID_BATCH_SIZE, TAG_MINIMUM_CONFIDENCE,
 };
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer;
 use crate::rer_importer::analysis::*;
+use crate::rer_importer::inbox::query::scan_analytics_inbox_candidate_ids;
 use crate::rer_importer::report_chunking::{
-    oldest_first_inbox_report_req, report_period_chunks, ReportPeriodChunk,
-    ReportPeriodEnd,
+    exclude_inbox_report_linked_intel_products, oldest_first_inbox_report_req,
+    report_chunk_exclusive_till, report_period_chunks,
+    restrict_inbox_report_to_message_ids, ReportPeriodChunk, ReportPeriodEnd,
 };
 use crate::types::*;
 use crate::utils::dt_from_millis;
@@ -58,22 +61,21 @@ pub async fn report_xlsx_kind_interception(
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
-    let mut workbook = Workbook::new(); // Use rust_xlsxwriter
-    let sheet1 = get_worksheet(&mut workbook)?;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
     let keep_full_message = req.interception_keep_full_message.unwrap_or(false);
     let keep_old_colors = req.interception_keep_old_colors.unwrap_or(false);
-    // Define formats using rust_xlsxwriter
-
-    set_colors_and_formats_for_sheet(sheet1, keep_old_colors)?;
 
     let read_db = env.replica();
     let all_tags = get_all_tags(&read_db).await?;
     let messages =
         collect_interception_report_messages(user_login, env, &inbox_req)
             .await?;
+
+    let mut workbook = Workbook::new();
+    let sheet1 = get_worksheet(&mut workbook).context(h!())?;
+    set_colors_and_formats_for_sheet(sheet1, keep_old_colors).context(h!())?;
     process_messages_for_interception_report(
         sheet1,
         messages,
@@ -106,6 +108,7 @@ async fn collect_interception_report_messages(
 
     let mut seen = HashSet::new();
     let mut messages = vec![];
+    let mut record_count = 0_usize;
     for (index, chunk) in chunks.iter().enumerate() {
         log::info!(
             "Interception report chunk {}/{}: {}..{} ({:?})",
@@ -118,46 +121,154 @@ async fn collect_interception_report_messages(
         let mut chunk_req = req.clone();
         chunk_req.since_date_inclusive_ms = Some(chunk.since_ms);
         chunk_req.till_date_inclusive_ms = Some(chunk.till_ms);
-        let analytics_req = &chunk_req;
-        let postgres_req = &chunk_req;
-        let chunk_messages =
-            crate::rer_importer::analysis::with_analytics_read_fallback(
-                env,
-                "interception report message scan",
-                crate::rer_importer::analysis::analytics_inbox_request_supported(
-                    &chunk_req,
-                ),
-                |db| async move {
-                    load_interception_report_chunk(
-                        &db,
-                        user_login,
-                        env,
-                        analytics_req,
-                        chunk.end,
-                    )
-                    .await
-                },
-                |db| async move {
-                    load_interception_report_chunk(
-                        &db,
-                        user_login,
-                        env,
-                        postgres_req,
-                        chunk.end,
-                    )
-                    .await
-                },
-            )
-            .await
+        let chunk_messages = load_interception_report_messages_chunk(
+            user_login, env, &chunk_req, chunk.end,
+        )
+        .await
+        .context(h!())?;
+        record_count =
+            record_count.saturating_add(merge_interception_report_chunk(
+                &mut messages,
+                &mut seen,
+                chunk_messages,
+            ));
+        crate::report_history::ensure_report_record_count(record_count)
             .context(h!())?;
-        merge_interception_report_chunk(
-            &mut messages,
-            &mut seen,
-            chunk_messages,
-        );
-        ensure_interception_report_row_limit(user_login, messages.len())?;
     }
     sort_interception_report_messages(&mut messages);
+    Ok(messages)
+}
+
+async fn load_interception_report_messages_chunk(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+) -> Result<Vec<InboxMessage>, AppError> {
+    let analytics_supported = analytics_inbox_request_supported(req);
+    let login = *user_login;
+    let req = req.clone();
+    let env_analytics = env.clone();
+    let candidate_ids = with_analytics_read_fallback(
+        env,
+        "interception report message scan",
+        analytics_supported,
+        {
+            let req = req.clone();
+            let env_analytics = env_analytics.clone();
+            move |analytics_db| async move {
+                scan_interception_report_message_ids(
+                    analytics_db,
+                    login,
+                    env_analytics,
+                    req,
+                    period_end,
+                )
+                .await
+            }
+        },
+        |_postgres_db| async move { Ok(None) },
+    )
+    .await
+    .context(h!())?;
+
+    match candidate_ids {
+        Some(candidate_ids) => {
+            log::info!(
+                "Interception report using analytics ({} ids)",
+                candidate_ids.len()
+            );
+            hydrate_interception_report_messages(
+                user_login,
+                env,
+                &req,
+                period_end,
+                &candidate_ids,
+            )
+            .await
+            .map_err(|error| {
+                map_postgres_runtime_timeout(
+                    error,
+                    "interception report message hydration",
+                )
+            })
+        }
+        None => {
+            log::debug!(
+                "Interception report analytics scan unavailable; using PostgreSQL scan"
+            );
+            load_interception_report_chunk_postgres(
+                user_login, env, &req, period_end, None,
+            )
+            .await
+            .map_err(|error| {
+                map_postgres_runtime_timeout(
+                    error,
+                    "interception report message scan",
+                )
+            })
+        }
+    }
+}
+
+async fn scan_interception_report_message_ids(
+    analytics_db: DatabaseConnection,
+    user_login: uuid::Uuid,
+    env: Env,
+    req: InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+) -> Result<Option<Vec<i64>>, AppError> {
+    let freshness_max_age_ms = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let exclusive_till =
+        report_chunk_exclusive_till(&req, period_end).context(h!())?;
+    Ok(scan_analytics_inbox_candidate_ids(
+        &user_login,
+        &env,
+        &req,
+        &analytics_db,
+        freshness_max_age_ms,
+        exclusive_till,
+        None,
+        interception_analytics_scan_filters,
+    )
+    .await
+    .context(h!())?)
+}
+
+fn interception_analytics_scan_filters(
+    query: Select<signal_message::Entity>,
+) -> Select<signal_message::Entity> {
+    exclude_inbox_report_linked_intel_products(query)
+}
+
+async fn hydrate_interception_report_messages(
+    user_login: &uuid::Uuid,
+    env: &Env,
+    req: &InboxMessagesReq,
+    period_end: ReportPeriodEnd,
+    candidate_ids: &[i64],
+) -> Result<Vec<InboxMessage>, AppError> {
+    let mut messages = Vec::new();
+    for candidate_ids in
+        candidate_ids.chunks(RER_REPORT_ENRICHMENT_ID_BATCH_SIZE)
+    {
+        messages.extend(
+            load_interception_report_chunk_postgres(
+                user_login,
+                env,
+                req,
+                period_end,
+                Some(candidate_ids),
+            )
+            .await
+            .context(h!())?,
+        );
+    }
     Ok(messages)
 }
 
@@ -191,7 +302,8 @@ fn merge_interception_report_chunk(
     messages: &mut Vec<InboxMessage>,
     seen: &mut HashSet<InterceptionMessageKey>,
     chunk_messages: Vec<InboxMessage>,
-) {
+) -> usize {
+    let mut record_count = 0_usize;
     for message in chunk_messages {
         let key = (
             message.date.clone(),
@@ -199,9 +311,13 @@ fn merge_interception_report_chunk(
             message.body.clone(),
         );
         if seen.insert(key) {
+            if message.date.is_some() && message.time.is_some() {
+                record_count = record_count.saturating_add(1);
+            }
             messages.push(message);
         }
     }
+    record_count
 }
 
 fn sort_interception_report_messages(messages: &mut [InboxMessage]) {
@@ -365,16 +481,25 @@ async fn get_all_tags(
     Ok(all_tags)
 }
 
-async fn load_interception_report_chunk(
-    read_db: &DatabaseConnection,
+async fn load_interception_report_chunk_postgres(
     user_login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
     period_end: ReportPeriodEnd,
+    candidate_ids: Option<&[i64]>,
 ) -> Result<Vec<InboxMessage>, AppError> {
-    let combined_query =
-        build_inbox_messages_report_sql(user_login, env, req, period_end)
-            .await?;
+    if candidate_ids.is_some_and(<[i64]>::is_empty) {
+        return Ok(Vec::new());
+    }
+    let read_db = env.replica();
+    let combined_query = build_inbox_messages_report_sql(
+        user_login,
+        env,
+        req,
+        period_end,
+        candidate_ids,
+    )
+    .await?;
 
     let results = read_db
         .query_all_raw(Statement::from_string(
@@ -397,7 +522,7 @@ async fn load_interception_report_chunk(
     let allowed_comment_logins = if req.report_tags_only_this_unit == Some(true)
     {
         Some(
-            crate::users::get_organism_login_ids_by_id(read_db, user_login)
+            crate::users::get_organism_login_ids_by_id(&read_db, user_login)
                 .await
                 .context(h!())?,
         )
@@ -405,7 +530,7 @@ async fn load_interception_report_chunk(
         None
     };
     let comments = crate::sigint::comments::find_report_comments(
-        read_db,
+        &read_db,
         &message_ids,
         allowed_comment_logins.as_deref(),
     )
@@ -471,27 +596,6 @@ fn process_messages_for_interception_report(
     Ok(())
 }
 
-fn ensure_interception_report_row_limit(
-    user_login: &uuid::Uuid,
-    rows_count: usize,
-) -> Result<(), AppError> {
-    let max_rows =
-        XLSX_WORKSHEET_ROW_MAX - RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM;
-    if rows_count <= max_rows {
-        return Ok(());
-    }
-
-    log::error!(
-        "interception report row limit exceeded: user={user_login}, rows={rows_count}, max_rows={max_rows}",
-    );
-
-    Err(AppError::BL {
-        msg: format!(
-            "Звіт містить {rows_count} рядків, максимум для XLSX: {max_rows}. Зменшіть період або фільтри."
-        ),
-    })
-}
-
 fn get_parsed_date(date: &String) -> Result<ExcelDateTime, AppError> {
     let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").context(h!())?;
     Ok(ExcelDateTime::from_ymd(
@@ -507,6 +611,7 @@ async fn build_inbox_messages_report_sql(
     env: &Env,
     req: &InboxMessagesReq,
     period_end: ReportPeriodEnd,
+    candidate_ids: Option<&[i64]>,
 ) -> Result<String, AppError> {
     let include_peleng_locations =
         req.include_peleng_locations.unwrap_or(false);
@@ -677,6 +782,9 @@ async fn build_inbox_messages_report_sql(
     let linked_message_ids = linked_intel_product_message_ids_query();
     q = q
         .filter(signal_message::Column::Id.not_in_subquery(linked_message_ids));
+    if let Some(candidate_ids) = candidate_ids {
+        q = restrict_inbox_report_to_message_ids(q, candidate_ids);
+    }
 
     if req.without_model_tags == Some(true) {
         q = q.filter(sigint_inbox_item_tag::Column::Model.is_null());
@@ -1187,16 +1295,17 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::{
-        eject_body_from_message, ensure_interception_report_row_limit,
+        eject_body_from_message, interception_analytics_scan_filters,
         interception_report_chunks, interception_report_newest_first,
         linked_intel_product_message_ids_query,
         merge_interception_report_chunk, select_report_message_body,
         sort_interception_report_messages, InboxMessage, PostgresQueryBuilder,
     };
-    use crate::config::XLSX_WORKSHEET_ROW_MAX;
+    use crate::entities::prelude::SignalMessage;
     use crate::rer_importer::report_chunking::ReportPeriodEnd;
     use crate::rer_importer::types::InboxMessagesReq;
     use chrono::NaiveDateTime;
+    use sea_orm::{DbBackend, EntityTrait, QueryTrait};
     use std::collections::HashSet;
 
     const HOUR_MS: i64 = 60 * 60 * 1_000;
@@ -1209,6 +1318,21 @@ mod tests {
         assert!(sql.contains("'comment'"), "{sql}");
         assert!(sql.contains("'report'"), "{sql}");
         assert!(!sql.contains("intel_product_relation_kind"), "{sql}");
+    }
+
+    #[test]
+    fn interception_analytics_scan_only_adds_candidate_filters() {
+        let sql = interception_analytics_scan_filters(SignalMessage::find())
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(
+            sql.contains("intel_product") && sql.contains("NOT IN"),
+            "{sql}"
+        );
+        assert!(!sql.contains("array_agg"), "{sql}");
+        assert!(!sql.contains("sigint_inbox_item_tag"), "{sql}");
+        assert!(!sql.contains("sigint_network_freq"), "{sql}");
     }
 
     fn interception_message(
@@ -1276,7 +1400,7 @@ mod tests {
         let mut messages = vec![];
         let mut seen = HashSet::new();
 
-        merge_interception_report_chunk(
+        let first_record_count = merge_interception_report_chunk(
             &mut messages,
             &mut seen,
             vec![
@@ -1284,7 +1408,7 @@ mod tests {
                 duplicate,
             ],
         );
-        merge_interception_report_chunk(
+        let second_record_count = merge_interception_report_chunk(
             &mut messages,
             &mut seen,
             vec![
@@ -1293,6 +1417,8 @@ mod tests {
             ],
         );
 
+        assert_eq!(first_record_count, 2);
+        assert_eq!(second_record_count, 1);
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].body.as_deref(), Some("newest"));
         assert_eq!(messages[1].body.as_deref(), Some("same message"));
@@ -1549,23 +1675,5 @@ y:73-71279
         let output = select_report_message_body(input, true).unwrap();
 
         assert_eq!(output, input.to_string());
-    }
-
-    #[test]
-    fn interception_report_row_limit_allows_excel_max_data_rows() {
-        assert!(ensure_interception_report_row_limit(
-            &uuid::Uuid::nil(),
-            XLSX_WORKSHEET_ROW_MAX - 1
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn interception_report_row_limit_rejects_overflow() {
-        assert!(ensure_interception_report_row_limit(
-            &uuid::Uuid::nil(),
-            XLSX_WORKSHEET_ROW_MAX
-        )
-        .is_err());
     }
 }

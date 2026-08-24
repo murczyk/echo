@@ -76,7 +76,11 @@ vi.mock('../../../components/mui-customized/table/mrt-cell-text', () => ({
 }));
 vi.mock(
   '../../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions',
-  () => ({ InternalTableActions: () => null }),
+  () => ({
+    InternalTableActions: ({ leadingInternalActions }: { leadingInternalActions?: ReactNode }) => (
+      <div data-testid="table-controls">{leadingInternalActions}</div>
+    ),
+  }),
 );
 vi.mock('../../../components/mui-customized/table/table-state-provider', () => ({
   TableStateProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
@@ -95,6 +99,11 @@ vi.mock('../../../components/mui-customized/table/table-state-provider', () => (
 }));
 vi.mock('./NetworkCallsignSourceUi', () => ({ NetworkCallsignSourceCell: () => null }));
 vi.mock('./NetworkCallsignStatusUi', () => ({ NetworkCallsignStatusDot: () => null }));
+vi.mock('./NetworkFreqCallsignPeriodSettings', () => ({
+  NetworkFreqCallsignPeriodSettings: () => (
+    <button type="button" aria-label="Налаштування позивних" />
+  ),
+}));
 
 import { NetworkCallsignsNetworkTable } from './NetworkCallsignsNetworkTable';
 
@@ -141,6 +150,9 @@ function renderTable(row: NetworkCallsignRowView) {
         canManage
         statusFilter="All"
         onStatusFilterChange={vi.fn()}
+        period="Last21Days"
+        periodSettingsDisabled={false}
+        onPeriodChange={vi.fn()}
         onOpenEditDrawer={vi.fn()}
         onOpenDeleteDialog={vi.fn()}
         onSetMarkerMode={onSetMarkerMode}
@@ -159,6 +171,19 @@ afterEach(() => {
 });
 
 describe('NetworkCallsignsNetworkTable marker actions', () => {
+  it('places period settings with the table controls', () => {
+    const view = renderTable(createRow());
+
+    expect(
+      view.container.querySelector(
+        '[data-testid="table-controls"] [aria-label="Налаштування позивних"]',
+      ),
+    ).toBeTruthy();
+
+    view.root.unmount();
+    view.container.remove();
+  });
+
   it.each([
     [createRow(), ['Зробити головною', 'Зробити ланкою управління']],
     [createRow({ mainRadioStation: true }), ['Зняти головну', 'Зробити ланкою управління']],

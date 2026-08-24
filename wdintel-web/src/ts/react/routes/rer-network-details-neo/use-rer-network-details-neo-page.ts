@@ -388,7 +388,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (networkIdValue === null) return;
     if (state.activeNetworkDetailsTab !== 'callsigns') return;
     if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
-    void loadCallsigns(networkIdValue);
+    void loadCallsigns(networkIdValue, state.networkCallsignsPeriod);
   }, [
     loadCallsigns,
     networkIdValue,
@@ -396,6 +396,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     state.callsignsError,
     state.callsignsLoaded,
     state.callsignsLoading,
+    state.networkCallsignsPeriod,
   ]);
 
   useEffect(() => {
@@ -435,7 +436,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       state.networkActivityError !== null
     )
       return;
-    void loadNetworkActivity(networkIdValue);
+    void loadNetworkActivity(networkIdValue, state.networkActivityPeriod);
   }, [
     canViewActivityTab,
     loadNetworkActivity,
@@ -445,6 +446,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     state.networkActivityError,
     state.networkActivityLoaded,
     state.networkActivityLoading,
+    state.networkActivityPeriod,
   ]);
 
   useEffect(() => {

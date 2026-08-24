@@ -18,6 +18,7 @@ const sampleRunningRow = {
   requestedBy: 'alice',
   createdAt: '2026-06-26 16:45:00',
   status: 'in_progress',
+  errorStatus: '',
   completedAt: null,
   hasFile: false,
   fileName: null,
@@ -166,6 +167,7 @@ describe('SettingsMyReportsSection', () => {
     const queuePositionColumn = columns.find((column) => column.accessorKey === 'queuePosition');
     const createdAtColumn = columns.find((column) => column.accessorKey === 'createdAt');
     const statusColumn = columns.find((column) => column.id === 'status');
+    const errorStatusColumn = columns.find((column) => column.accessorKey === 'errorStatus');
     const requestedByColumn = columns.find((column) => column.accessorKey === 'requestedBy');
     const bgtaskIdColumn = columns.find((column) => column.accessorKey === 'bgtaskId');
     const completedAtColumn = columns.find((column) => column.accessorKey === 'completedAt');
@@ -183,6 +185,8 @@ describe('SettingsMyReportsSection', () => {
     expect(createdAtColumn?.enableColumnFilter).not.toBe(false);
     expect(statusColumn?.enableSorting).not.toBe(false);
     expect(statusColumn?.enableColumnFilter).not.toBe(false);
+    expect(statusColumn?.size).toBe(90);
+    expect(errorStatusColumn?.header).toBe('Статус помилки');
     expect(requestedByColumn?.enableSorting).not.toBe(false);
     expect(requestedByColumn?.enableColumnFilter).not.toBe(false);
     expect(bgtaskIdColumn?.enableSorting).not.toBe(false);
@@ -201,6 +205,7 @@ describe('SettingsMyReportsSection', () => {
       'details',
       'createdAt',
       'status',
+      'errorStatus',
       'plannedForTs',
       'startedAt',
       'queuePosition',
@@ -215,6 +220,7 @@ describe('SettingsMyReportsSection', () => {
       details: true,
       createdAt: true,
       status: true,
+      errorStatus: true,
       plannedForTs: false,
       startedAt: false,
       queuePosition: true,
@@ -222,7 +228,7 @@ describe('SettingsMyReportsSection', () => {
       completedAt: false,
     });
 
-    expect(capturedTableStateProviderProps?.tableId).toBe('settings-neo-my-reports-v3');
+    expect(capturedTableStateProviderProps?.tableId).toBe('settings-neo-my-reports-v4');
     expect(capturedDangerDialogProps?.title).toBe('Скасування звіту');
     expect(capturedDangerDialogProps?.cancelLabel).toBe('СКАСУВАТИ');
     expect(capturedDangerDialogProps?.confirmLabel).toBe('СКАСУВАТИ ЗВІТ');
@@ -234,7 +240,7 @@ describe('SettingsMyReportsSection', () => {
     container.remove();
   });
 
-  it('adds execution time for author report tables', async () => {
+  it('adds report links, copyable IDs, and execution time for author report tables', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -254,6 +260,10 @@ describe('SettingsMyReportsSection', () => {
     const columns = (capturedSettingsNeoTableProps?.columns as Array<Record<string, any>>) ?? [];
     const executionTimeColumn = columns.find((column) => column.id === 'executionTime');
     const statusColumn = columns.find((column) => column.id === 'status');
+    const idColumn = columns.find((column) => column.accessorKey === 'id');
+    const startedAtColumn = columns.find((column) => column.accessorKey === 'startedAt');
+    const reportKindColumn = columns.find((column) => column.id === 'reportKind');
+    const errorStatusColumn = columns.find((column) => column.accessorKey === 'errorStatus');
     const completedRow = {
       ...sampleRunningRow,
       status: 'done',
@@ -263,14 +273,44 @@ describe('SettingsMyReportsSection', () => {
       completedAt: '2026-06-26 17:01:21',
     };
 
+    const reportKindCell = reportKindColumn?.Cell?.({
+      row: { original: sampleRunningRow },
+    } as never) as { props?: Record<string, any> } | null;
+
+    expect(idColumn).toMatchObject({ header: 'ID', size: 92, minSize: 92, maxSize: 92 });
+    expect(startedAtColumn).toMatchObject({
+      header: 'Останній запуск',
+      enableSorting: true,
+      enableColumnFilter: false,
+    });
+    expect(reportKindCell?.props?.component).toBe('a');
+    expect(reportKindCell?.props?.componentProps?.href).toBe(
+      `/admin/all-reports/${sampleRunningRow.id}`,
+    );
     expect(executionTimeColumn?.header).toBe('Час виконання');
     expect(executionTimeColumn?.enableSorting).toBe(false);
     expect(executionTimeColumn?.enableColumnFilter).toBe(false);
     expect(executionTimeColumn?.accessorFn?.(completedRow)).toBe(
       'очікування 15хв 37с, виконання 44с',
     );
+    expect(
+      executionTimeColumn?.accessorFn?.({
+        ...completedRow,
+        status: 'failed',
+        hasFile: false,
+        isCancelled: true,
+      }),
+    ).toBe('виконання 44с');
+    expect(errorStatusColumn?.header).toBe('Статус помилки');
+    expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('errorStatus');
     expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('executionTime');
+    expect(capturedTableStateProviderProps?.defaultColumnOrder).toEqual(
+      expect.arrayContaining(['actions', 'id', 'reportKind']),
+    );
     expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
+      id: true,
+      startedAt: true,
+      errorStatus: true,
       executionTime: true,
     });
     expect(statusColumn).toMatchObject({

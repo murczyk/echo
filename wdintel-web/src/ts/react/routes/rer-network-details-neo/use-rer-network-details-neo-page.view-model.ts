@@ -1,5 +1,6 @@
 import { useRerNetworkDetailsNeoPageActions } from './use-rer-network-details-neo-page.actions';
 import type { NetworkDetailsNeoPageState } from './use-rer-network-details-neo-page.shared';
+import type { NetworkGroupActivityPeriod } from '../../../../Bindings';
 
 type Actions = ReturnType<typeof useRerNetworkDetailsNeoPageActions>;
 
@@ -53,7 +54,7 @@ type ViewModelArgs = {
     sinceDateInclusiveMs: number,
     tillDateNoninclusiveMs: number,
   ) => Promise<void>;
-  loadNetworkActivity: (networkId: number) => Promise<void>;
+  loadNetworkActivity: (networkId: number, period: NetworkGroupActivityPeriod) => Promise<void>;
   reload: () => void;
   actions: Actions;
   setEtalonkaReportProgressExpanded: (progressExpanded: boolean) => void;
@@ -137,6 +138,8 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     freqsLoading: state.freqsLoading,
     freqsError: state.freqsError,
     freqActivityByFreq: state.freqActivityByFreq,
+    freqCallsignsPeriod: state.freqCallsignsPeriod,
+    setFreqCallsignsPeriod: actions.setFreqCallsignsPeriod,
     networkActivity: state.networkActivity,
     networkActivityLoaded: state.networkActivityLoaded,
     networkActivityLoading: state.networkActivityLoading,
@@ -178,6 +181,8 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     setCallsignSectionMode: actions.setCallsignSectionMode,
     callsignStatusFilter: state.callsignStatusFilter,
     setCallsignStatusFilter: actions.setCallsignStatusFilter,
+    networkCallsignsPeriod: state.networkCallsignsPeriod,
+    setNetworkCallsignsPeriod: actions.setNetworkCallsignsPeriod,
     callsignInterceptedExpanded: state.callsignInterceptedExpanded,
     toggleCallsignInterceptedExpanded: actions.toggleCallsignInterceptedExpanded,
     networkCallsigns: state.networkCallsigns,

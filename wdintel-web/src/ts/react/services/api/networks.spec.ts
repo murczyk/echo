@@ -253,6 +253,7 @@ describe('networks API etalonka report download', () => {
     await getNetworksGroupsActivity({
       networkIds: [1, 2],
       tillDateNoninclusiveMs: 123,
+      period: 'Last30Days',
     });
 
     expect(postJsonMock).toHaveBeenCalledWith(
@@ -260,6 +261,7 @@ describe('networks API etalonka report download', () => {
       expect.objectContaining({
         network_ids: [1, 2],
         till_date_noninclusive_ms: 123,
+        period: 'Last30Days',
       }),
       undefined,
     );
@@ -307,12 +309,13 @@ describe('networks API etalonka report download', () => {
       },
     });
 
-    const callsignsById = await getNetworkFreqCallsignsBatch([7, 9]);
+    const callsignsById = await getNetworkFreqCallsignsBatch([7, 9], 'Last21Days');
 
     expect(postJsonMock).toHaveBeenCalledWith(
       '/api/sigint/network-freq-callsigns-batch',
       expect.objectContaining({
         network_freq_ids: [7, 9],
+        period: 'Last21Days',
       }),
     );
     expect(callsignsById.get(7)).toEqual(['ALPHA']);
@@ -501,12 +504,13 @@ describe('networks API v2 frequency mutations', () => {
       callsigns: ['ALPHA'],
     });
 
-    await expect(getNetworkFreqCallsigns(7)).resolves.toEqual(['ALPHA']);
+    await expect(getNetworkFreqCallsigns(7, 'Last7Days')).resolves.toEqual(['ALPHA']);
 
     expect(postJsonMock).toHaveBeenCalledWith(
       '/api/sigint/network-freq-callsigns',
       expect.objectContaining({
         network_freq_id: 7,
+        period: 'Last7Days',
       }),
     );
   });

@@ -137,7 +137,11 @@ export function buildRoundedTopRectPath(
   ].join(' ');
 }
 
-function buildActivityDays(networkActivity: NetworkActivity, anchorDayMs: number): ActivityDay[] {
+function buildActivityDays(
+  networkActivity: NetworkActivity,
+  anchorDayMs: number,
+  periodDays: number,
+): ActivityDay[] {
   const normalizedByDay = new Map<number, Record<string, number>>();
 
   for (const [dayMsText, countsByGroup] of Object.entries(networkActivity)) {
@@ -159,8 +163,8 @@ function buildActivityDays(networkActivity: NetworkActivity, anchorDayMs: number
   const lastDayMs = Number.isFinite(anchorDayMs)
     ? startOfKyivDayMs(anchorDayMs)
     : Math.max(...dayMsValues);
-  return Array.from({ length: 10 }, (_, index) => {
-    const dayMs = lastDayMs - (9 - index) * DAY_MS;
+  return Array.from({ length: periodDays }, (_, index) => {
+    const dayMs = lastDayMs - (periodDays - 1 - index) * DAY_MS;
     const countsByGroup = normalizedByDay.get(dayMs) ?? {};
     return {
       dayMs,
@@ -199,8 +203,9 @@ export function buildYTicks(maxValue: number): number[] {
 export function buildActivityChartData(
   networkActivity: NetworkActivity,
   anchorDayMs: number,
+  periodDays = 10,
 ): ActivityChartData {
-  const days = buildActivityDays(networkActivity, anchorDayMs);
+  const days = buildActivityDays(networkActivity, anchorDayMs, periodDays);
   const groupTotals = new Map<string, number>();
 
   for (const day of days) {

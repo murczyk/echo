@@ -19,6 +19,7 @@ const ENTRYPOINTS = [
   { modulePath: './unit-edit-dialog-element', tag: 'unit-edit-dialog' },
   { modulePath: './tags-neo-element', tag: 'tags-neo' },
   { modulePath: './admin-all-reports-element', tag: 'admin-all-reports' },
+  { modulePath: './admin-report-details-element', tag: 'admin-report-details' },
   { modulePath: './admin-unit-duplicates-element', tag: 'admin-unit-duplicates' },
   { modulePath: './admin-unit-inconsistent-element', tag: 'admin-unit-inconsistent' },
   { modulePath: './admin-unit-unparsed-element', tag: 'admin-unit-unparsed' },

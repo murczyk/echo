@@ -26,6 +26,8 @@ vi.mock('@mui/material', () => ({
     <section ref={ref}>{children}</section>
   )),
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  ToggleButton: ({ children }: { children?: ReactNode }) => <button>{children}</button>,
+  ToggleButtonGroup: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
 }));
 
@@ -63,9 +65,11 @@ describe('NetworkDetailsActivityPanel', () => {
   it('shows a loading state before the activity data arrives', async () => {
     const view = await renderComponent({
       networkActivity: {},
+      networkActivityPeriod: 'Last10Days',
       networkActivityLoading: false,
       networkActivityLoaded: false,
       networkActivityError: null,
+      onNetworkActivityPeriodChange: vi.fn(),
       onReloadNetworkActivity: vi.fn(),
     });
     rendered.push(view);
@@ -79,9 +83,11 @@ describe('NetworkDetailsActivityPanel', () => {
       networkActivity: {
         '1711756800000': { Alpha: 0, Beta: 0 },
       },
+      networkActivityPeriod: 'Last10Days',
       networkActivityLoading: false,
       networkActivityLoaded: true,
       networkActivityError: null,
+      onNetworkActivityPeriodChange: vi.fn(),
       onReloadNetworkActivity: vi.fn(),
     });
     rendered.push(view);
@@ -97,9 +103,11 @@ describe('NetworkDetailsActivityPanel', () => {
     const onReloadNetworkActivity = vi.fn();
     const view = await renderComponent({
       networkActivity: {},
+      networkActivityPeriod: 'Last10Days',
       networkActivityLoading: false,
       networkActivityLoaded: false,
       networkActivityError: 'Помилка завантаження',
+      onNetworkActivityPeriodChange: vi.fn(),
       onReloadNetworkActivity,
     });
     rendered.push(view);
@@ -123,9 +131,11 @@ describe('NetworkDetailsActivityPanel', () => {
         [String(todayUtcMs - 86400000)]: { Alpha: 2, Bravo: 4 },
         [String(todayUtcMs)]: { Alpha: 3, Charlie: 1 },
       },
+      networkActivityPeriod: 'Last10Days',
       networkActivityLoading: false,
       networkActivityLoaded: true,
       networkActivityError: null,
+      onNetworkActivityPeriodChange: vi.fn(),
       onReloadNetworkActivity: vi.fn(),
     });
     rendered.push(view);
@@ -151,21 +161,24 @@ describe('NetworkDetailsActivityPanel', () => {
     expect(document.body.textContent).not.toContain('Разом');
   });
 
-  it('anchors the 10-day window to today instead of the last datapoint', async () => {
+  it('renders the selected period anchored to today instead of the last datapoint', async () => {
     const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.UTC(2026, 4, 13, 23, 30, 0));
     const view = await renderComponent({
       networkActivity: {
         [String(Date.UTC(2026, 4, 12))]: { Alpha: 2 },
         [String(Date.UTC(2026, 4, 14))]: { Alpha: 1 },
       },
+      networkActivityPeriod: 'Last30Days',
       networkActivityLoading: false,
       networkActivityLoaded: true,
       networkActivityError: null,
+      onNetworkActivityPeriodChange: vi.fn(),
       onReloadNetworkActivity: vi.fn(),
     });
     rendered.push(view);
     dateNowSpy.mockRestore();
 
     expect(view.container.textContent).toContain('14.05');
+    expect(view.container.querySelectorAll('g[data-day]')).toHaveLength(30);
   });
 });
