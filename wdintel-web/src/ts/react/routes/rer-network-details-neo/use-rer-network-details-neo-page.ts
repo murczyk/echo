@@ -435,7 +435,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
       state.networkActivityError !== null
     )
       return;
-    void loadNetworkActivity(networkIdValue);
+    void loadNetworkActivity(networkIdValue, state.networkActivityPeriod);
   }, [
     canViewActivityTab,
     loadNetworkActivity,
@@ -445,6 +445,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     state.networkActivityError,
     state.networkActivityLoaded,
     state.networkActivityLoading,
+    state.networkActivityPeriod,
   ]);
 
   useEffect(() => {

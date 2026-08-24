@@ -185,6 +185,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
               {
                 networkIds: networksList.map((network) => network.id),
                 tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
+                period: null,
               },
               { signal: controller.signal },
             );
@@ -333,6 +334,7 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
               {
                 networkIds: networksList.map((network) => network.id),
                 tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
+                period: null,
               },
               { signal: activityController.signal },
             );

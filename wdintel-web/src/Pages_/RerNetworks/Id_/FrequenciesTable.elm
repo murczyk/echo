@@ -947,7 +947,7 @@ update _ msg model =
                             E.none
 
                         Nothing ->
-                            E.getNetworkFreqCallsigns NetworkFreqCallsignsReturnedByApi { networkFreqId = networkFreqId }
+                            E.getNetworkFreqCallsigns NetworkFreqCallsignsReturnedByApi { networkFreqId = networkFreqId, period = Nothing }
                     )
 
                 Nothing ->

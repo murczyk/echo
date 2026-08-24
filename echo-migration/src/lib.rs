@@ -374,6 +374,7 @@ mod m20260813_183642_sigint_unit_orbit_echelons;
 mod m20260815_125337_add_sigint_comment_migration_marker;
 mod m20260816_102640_ocr;
 mod m20260816_173322_media_summary;
+mod m20260817_092138_rename_sigint_inbox_item_datetime_neo;
 mod m20260817_124312_sigint_unit_inconsistent;
 mod m20260817_125243_add_intel_prod_relation_kind;
 mod m20260818_052317_shared_ai_engine_capabilities;
@@ -387,6 +388,7 @@ mod m20260820_081114_messenger_queue_retry;
 mod m20260820_115208_battle_line_source_provenance;
 mod m20260820_121919_ai_intel_report_attempt;
 mod m20260821_080931_recalculate_battle_line_aor_sectors;
+mod m20260822_105557_add_settlement_stats_index;
 
 pub struct Migrator;
 
@@ -872,6 +874,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260816_102640_ocr::Migration),
             Box::new(m20260816_173322_media_summary::Migration),
+            Box::new(
+                m20260817_092138_rename_sigint_inbox_item_datetime_neo::Migration,
+            ),
             Box::new(m20260817_125243_add_intel_prod_relation_kind::Migration),
             Box::new(m20260818_104740_sigint_comment_migration_indexes::Migration),
             Box::new(m20260817_124312_sigint_unit_inconsistent::Migration),
@@ -897,6 +902,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260821_080931_recalculate_battle_line_aor_sectors::Migration,
             ),
+            Box::new(m20260822_105557_add_settlement_stats_index::Migration),
         ]
     }
 }

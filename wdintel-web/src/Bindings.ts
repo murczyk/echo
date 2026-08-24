@@ -3902,14 +3902,22 @@ export type FindLiveNetwork = {
   locations: Array<string>;
 };
 
+export type NetworkGroupActivityPeriod =
+  | 'Last10Days'
+  | 'Last30Days'
+  | 'Last60Days'
+;
+
 export type NetworkGroupsActivityOneReq = {
   networkId: number;
   tillDateNoninclusiveMs: number | null;
+  period: NetworkGroupActivityPeriod | null;
 };
 
 export type NetworkGroupsActivityReq = {
   networkIds: Array<number>;
   tillDateNoninclusiveMs: number | null;
+  period: NetworkGroupActivityPeriod | null;
 };
 
 export type AddNetworkFreqReq = {
@@ -4114,8 +4122,15 @@ export type SingleNetworkFreqsListRsp = {
   freqs: Array<NetworkFreqsRes>;
 };
 
+export type NetworkFreqCallsignsPeriod =
+  | 'Last7Days'
+  | 'Last21Days'
+  | 'Unlimited'
+;
+
 export type NetworkFreqCallsignsReq = {
   networkFreqId: number;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type NetworkFreqCallsignsRsp = {
@@ -4125,6 +4140,7 @@ export type NetworkFreqCallsignsRsp = {
 
 export type NetworkFreqCallsignsBatchReq = {
   networkFreqIds: Array<number>;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type NetworkFreqCallsignsBatchRsp = {

@@ -4640,7 +4640,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_submit_upsert_synchronizes_datetime_neo_on_create_and_edit() {
+    async fn test_submit_upsert_synchronizes_datetime_on_create_and_edit() {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let message = mk_signal_message(&env.dbx, Default::default())
@@ -4696,7 +4696,7 @@ mod tests {
                 &txn,
                 message.id,
                 &InboxMessage::from(InboxInsertPayload {
-                    text: "datetime neo submit".to_string(),
+                    text: "datetime submit".to_string(),
                     date: Some(date.to_string()),
                     time: Some(time.to_string()),
                     ..Default::default()
@@ -4717,7 +4717,6 @@ mod tests {
                 .unwrap()
                 .unwrap();
             assert_eq!(inbox_item.datetime, Some(expected));
-            assert_eq!(inbox_item.datetime_neo, inbox_item.datetime);
         }
     }
 

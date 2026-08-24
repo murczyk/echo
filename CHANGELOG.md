@@ -10,6 +10,9 @@
 
 ## NEXT
 
+- 🐞👷 Месенджери: додано перевірку нових медіафайлів після завантаження та аудит і відновлення пошкоджених об'єктів; після деплою виконати аудит за [інструкцією](docs/MONITORING.md#audit-messenger-media-storage).
+- 🐞👷 ШІ: виправлено зведення за останні 24 години по всіх доступних даних; перед деплоєм оновити спільний dispatcher і шаблон AI-агента та перестворити керовані контейнери відповідного namespace згідно з [інструкцією](echo-ai-agent/DEPLOYMENT.md).
+- [#2287](https://github.com/echoua/echo/issues/2287) 👷 Аналіз, ЛБЗ: додано окрему погодинну й добову статистику за прив'язаними населеними пунктами; після деплою виконати `sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats --only settlement`.
 - [#3228](https://github.com/echoua/echo/issues/3228) ✅ Аналіз, Оперативний: додано можливість завантаження аудіо в картці повідомлення.
 - [#3227](https://github.com/echoua/echo/issues/3227) ✅ Оперативний, Аналіз: покращено відображення оброблених файлів.
 - [#3246](https://github.com/echoua/echo/issues/3246) 🐞 Таблиці: виправлено деградацію швидкодії відображення великої кількості спеціалізованих значень в таблицях.
@@ -58,7 +61,7 @@
 - [#3067](https://github.com/echoua/echo/issues/2949) 👷 Аналіз, Позивні: 2й етап нормалізації зберігання позивних перехоплень; перед міграцією видалення legacy-полів підтвердити завершення історичного backfill, після міграції на інстансах з ClickHouse виконати reconciliation похідної схеми після появи дзеркала `sigint_inbox_item_callsign` у PeerDB.
 - [#3026](https://github.com/echoua/echo/issues/3026) ✅ ORBIT: додано безпечний повний повторний імпорт даних та активацію батьківських підрозділів.
 - [#3052](https://github.com/echoua/echo/issues/3052) ✅🐞 Палітра. Виправлено проблему зі створенням палітри з доступом на рівні логінів.
-- [#3050](https://github.com/echoua/echo/issues/3050) 👷 Аналіз: підготовлено нове поле часу повідомлення; після деплою запустити `sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-sigint-inbox-item-datetime-neo`, а на інстансах з ClickHouse до переведення коду на читання нового поля підтвердити узгодження схеми, current view і gateway та справність аналітики.
+- [#3050](https://github.com/echoua/echo/issues/3050) 👷 Аналіз: нове поле часу повідомлення переведено в основне; перед встановленням цієї версії виконати `sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-sigint-inbox-item-datetime-neo`, а на відповідному ClickHouse-хості після міграції виконати `cd /opt/echo-analytics/deploy && bin/resync.sh --yes && bin/finish-resync.sh`.
 - [#3035](https://github.com/echoua/echo/issues/3035) ✅ Аналіз/Оперативнийдодано: покращено вигляд аудіоплеєра, додано Storybook для картки повідомлення з варіантами аудіоплеєра.
 - [#3079](https://github.com/echoua/echo/issues/3079) ✅🐞👷 Аналіз: для runtime-сервісів увімкнено обмеження PostgreSQL запитів (`statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`), щоб запобігати зависанням аналітики та звітів на великих запитах; увімкніть секцію `[postgres_runtime]` і перезапустіть runtime служби для активації.
 - [#2972](https://github.com/echoua/echo/issues/2972) 🛡️👷 ШІ: `copy-db` автоматично зберігає локальний профіль AI-агента, очищує скопійований runtime та перевіряє локальний диспетчер і HTTPS proxy; за відсутності локального профілю очищує також control plane, а для свідомого перенесення конфігурації джерела використайте `--no-preserve-local-ai-agent-profile`.

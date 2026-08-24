@@ -1,7 +1,12 @@
 import { useCallback, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 
-import type { AddNetworkFreqReq, Network, NetworkFreqsRes } from '../../../../Bindings';
+import type {
+  AddNetworkFreqReq,
+  Network,
+  NetworkFreqCallsignsPeriod,
+  NetworkFreqsRes,
+} from '../../../../Bindings';
 import {
   addFreqToNetworkV2,
   deleteNetworkFreq,
@@ -184,7 +189,12 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
           freqsError: null,
         }));
 
-        void loadFreqCallsignsBatch(networkId, freqsResponse.freqs, generation);
+        void loadFreqCallsignsBatch(
+          networkId,
+          freqsResponse.freqs,
+          generation,
+          state.freqCallsignsPeriod,
+        );
       } catch (error) {
         if (!isCurrent()) return;
         setState((current) => ({
@@ -196,11 +206,22 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
         }));
       }
     },
-    [currentNetworkIdRef, reloadGeneration, setState, state.freqsLoading],
+    [
+      currentNetworkIdRef,
+      reloadGeneration,
+      setState,
+      state.freqCallsignsPeriod,
+      state.freqsLoading,
+    ],
   );
 
   const loadFreqCallsignsBatch = useCallback(
-    async (networkId: number, freqs: NetworkFreqsRes[], generation: number) => {
+    async (
+      networkId: number,
+      freqs: NetworkFreqsRes[],
+      generation: number,
+      period: NetworkFreqCallsignsPeriod,
+    ) => {
       const requestId = ++freqCallsignsBatchRequestIdRef.current;
       const isCurrent = () =>
         reloadGeneration.current === generation &&
@@ -224,7 +245,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
       }));
 
       try {
-        const callsignsById = await getNetworkFreqCallsignsBatch(networkFreqIds);
+        const callsignsById = await getNetworkFreqCallsignsBatch(networkFreqIds, period);
         if (!isCurrent()) return;
 
         setState((current) => ({
@@ -244,7 +265,12 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
   );
 
   const loadFreqCallsignsSingle = useCallback(
-    async (networkId: number, networkFreqId: number, generation: number) => {
+    async (
+      networkId: number,
+      networkFreqId: number,
+      generation: number,
+      period: NetworkFreqCallsignsPeriod,
+    ) => {
       const requestId = ++freqCallsignsSingleRequestIdRef.current;
       const isCurrent = () =>
         reloadGeneration.current === generation &&
@@ -252,7 +278,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
         freqCallsignsSingleRequestIdRef.current === requestId;
 
       try {
-        const callsigns = await getNetworkFreqCallsigns(networkFreqId);
+        const callsigns = await getNetworkFreqCallsigns(networkFreqId, period);
         if (!isCurrent()) return;
 
         setState((current) => ({
@@ -269,6 +295,32 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
       }
     },
     [currentNetworkIdRef, reloadGeneration, setState],
+  );
+
+  const setFreqCallsignsPeriod = useCallback(
+    (period: NetworkFreqCallsignsPeriod) => {
+      if (period === state.freqCallsignsPeriod) return;
+      const networkId = currentNetworkIdRef.current;
+      const generation = reloadGeneration.current;
+      freqCallsignsSingleRequestIdRef.current += 1;
+
+      setState((current) => ({
+        ...current,
+        freqCallsignsPeriod: period,
+        ...buildFreqCallsignsStatusPatch('loading'),
+      }));
+      if (networkId) {
+        void loadFreqCallsignsBatch(networkId, state.freqs, generation, period);
+      }
+    },
+    [
+      currentNetworkIdRef,
+      loadFreqCallsignsBatch,
+      reloadGeneration,
+      setState,
+      state.freqCallsignsPeriod,
+      state.freqs,
+    ],
   );
 
   const openFreqCreateWizard = useCallback(() => {
@@ -437,7 +489,12 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
       });
 
       if (response.freq) {
-        void loadFreqCallsignsSingle(targetNetworkId, response.freq.networkFreqId, generation);
+        void loadFreqCallsignsSingle(
+          targetNetworkId,
+          response.freq.networkFreqId,
+          generation,
+          state.freqCallsignsPeriod,
+        );
       } else {
         await loadFrequencies(targetNetworkId);
       }
@@ -455,6 +512,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
     reloadGeneration,
     state.freqCreateWizardSaving,
     state.freqCreateWizardForm,
+    state.freqCallsignsPeriod,
     state.network,
     setState,
   ]);
@@ -520,7 +578,12 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
       });
 
       if (response.freq) {
-        void loadFreqCallsignsSingle(targetNetworkId, response.freq.networkFreqId, generation);
+        void loadFreqCallsignsSingle(
+          targetNetworkId,
+          response.freq.networkFreqId,
+          generation,
+          state.freqCallsignsPeriod,
+        );
       } else {
         await loadFrequencies(targetNetworkId);
       }
@@ -536,6 +599,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
     loadFreqCallsignsSingle,
     loadFrequencies,
     reloadGeneration,
+    state.freqCallsignsPeriod,
     state.freqEditDrawerForm,
     state.freqEditDrawerSaving,
     state.freqs,
@@ -589,6 +653,7 @@ export function useRerNetworkDetailsNeoPageFrequencyActions({
   return {
     setActiveNetworkDetailsTab,
     loadFrequencies,
+    setFreqCallsignsPeriod,
     openFreqCreateWizard,
     closeFreqCreateWizard,
     setFreqCreateWizardForm,

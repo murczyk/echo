@@ -10095,9 +10095,26 @@ findLiveNetworkEncoder struct =
         ]
 
 
+type NetworkGroupActivityPeriod
+    = Last10Days
+    | Last30Days
+    | Last60Days
+
+
+networkGroupActivityPeriodEncoder : NetworkGroupActivityPeriod -> Json.Encode.Value
+networkGroupActivityPeriodEncoder enum =
+    case enum of
+        Last10Days ->
+            Json.Encode.string "Last10Days"
+        Last30Days ->
+            Json.Encode.string "Last30Days"
+        Last60Days ->
+            Json.Encode.string "Last60Days"
+
 type alias NetworkGroupsActivityOneReq =
     { networkId : Int
     , tillDateNoninclusiveMs : Maybe (Int)
+    , period : Maybe (NetworkGroupActivityPeriod)
     }
 
 
@@ -10106,12 +10123,14 @@ networkGroupsActivityOneReqEncoder struct =
     Json.Encode.object
         [ ( "network_id", (Json.Encode.int) struct.networkId )
         , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateNoninclusiveMs )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkGroupActivityPeriodEncoder)) struct.period )
         ]
 
 
 type alias NetworkGroupsActivityReq =
     { networkIds : List (Int)
     , tillDateNoninclusiveMs : Maybe (Int)
+    , period : Maybe (NetworkGroupActivityPeriod)
     }
 
 
@@ -10120,6 +10139,7 @@ networkGroupsActivityReqEncoder struct =
     Json.Encode.object
         [ ( "network_ids", (Json.Encode.list (Json.Encode.int)) struct.networkIds )
         , ( "till_date_noninclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateNoninclusiveMs )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkGroupActivityPeriodEncoder)) struct.period )
         ]
 
 
@@ -10642,8 +10662,25 @@ singleNetworkFreqsListRspEncoder struct =
         ]
 
 
+type NetworkFreqCallsignsPeriod
+    = Last7Days
+    | Last21Days
+    | Unlimited
+
+
+networkFreqCallsignsPeriodEncoder : NetworkFreqCallsignsPeriod -> Json.Encode.Value
+networkFreqCallsignsPeriodEncoder enum =
+    case enum of
+        Last7Days ->
+            Json.Encode.string "Last7Days"
+        Last21Days ->
+            Json.Encode.string "Last21Days"
+        Unlimited ->
+            Json.Encode.string "Unlimited"
+
 type alias NetworkFreqCallsignsReq =
     { networkFreqId : Int
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -10651,6 +10688,7 @@ networkFreqCallsignsReqEncoder : NetworkFreqCallsignsReq -> Json.Encode.Value
 networkFreqCallsignsReqEncoder struct =
     Json.Encode.object
         [ ( "network_freq_id", (Json.Encode.int) struct.networkFreqId )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -10670,6 +10708,7 @@ networkFreqCallsignsRspEncoder struct =
 
 type alias NetworkFreqCallsignsBatchReq =
     { networkFreqIds : List (Int)
+    , period : Maybe (NetworkFreqCallsignsPeriod)
     }
 
 
@@ -10677,6 +10716,7 @@ networkFreqCallsignsBatchReqEncoder : NetworkFreqCallsignsBatchReq -> Json.Encod
 networkFreqCallsignsBatchReqEncoder struct =
     Json.Encode.object
         [ ( "network_freq_ids", (Json.Encode.list (Json.Encode.int)) struct.networkFreqIds )
+        , ( "period", (Maybe.withDefault Json.Encode.null << Maybe.map (networkFreqCallsignsPeriodEncoder)) struct.period )
         ]
 
 
@@ -20603,11 +20643,44 @@ findLiveNetworkDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "locations" (Json.Decode.list (Json.Decode.string))))
 
 
+networkGroupActivityPeriodDecoder : Json.Decode.Decoder NetworkGroupActivityPeriod
+networkGroupActivityPeriodDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last10Days" ->
+                            Json.Decode.succeed Last10Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last30Days" ->
+                            Json.Decode.succeed Last30Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last60Days" ->
+                            Json.Decode.succeed Last60Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 networkGroupsActivityOneReqDecoder : Json.Decode.Decoder NetworkGroupsActivityOneReq
 networkGroupsActivityOneReqDecoder =
     Json.Decode.succeed NetworkGroupsActivityOneReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_id" (Json.Decode.int)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkGroupActivityPeriodDecoder))))
 
 
 networkGroupsActivityReqDecoder : Json.Decode.Decoder NetworkGroupsActivityReq
@@ -20615,6 +20688,7 @@ networkGroupsActivityReqDecoder =
     Json.Decode.succeed NetworkGroupsActivityReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_ids" (Json.Decode.list (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_noninclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkGroupActivityPeriodDecoder))))
 
 
 networkUnitStatRowDecoder : Json.Decode.Decoder NetworkUnitStatRow
@@ -20659,10 +20733,43 @@ singleNetworkFreqsListRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freqs" (Json.Decode.list (networkFreqsResDecoder))))
 
 
+networkFreqCallsignsPeriodDecoder : Json.Decode.Decoder NetworkFreqCallsignsPeriod
+networkFreqCallsignsPeriodDecoder =
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last7Days" ->
+                            Json.Decode.succeed Last7Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Last21Days" ->
+                            Json.Decode.succeed Last21Days
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Unlimited" ->
+                            Json.Decode.succeed Unlimited
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
+
 networkFreqCallsignsReqDecoder : Json.Decode.Decoder NetworkFreqCallsignsReq
 networkFreqCallsignsReqDecoder =
     Json.Decode.succeed NetworkFreqCallsignsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 networkFreqCallsignsRspDecoder : Json.Decode.Decoder NetworkFreqCallsignsRsp
@@ -20676,6 +20783,7 @@ networkFreqCallsignsBatchReqDecoder : Json.Decode.Decoder NetworkFreqCallsignsBa
 networkFreqCallsignsBatchReqDecoder =
     Json.Decode.succeed NetworkFreqCallsignsBatchReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "network_freq_ids" (Json.Decode.list (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "period" (Json.Decode.nullable (networkFreqCallsignsPeriodDecoder))))
 
 
 networkFreqCallsignsBatchRspDecoder : Json.Decode.Decoder NetworkFreqCallsignsBatchRsp

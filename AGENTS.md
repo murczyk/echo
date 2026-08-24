@@ -41,10 +41,10 @@
 
 ## Changelog
 
-- Every new `CHANGELOG.md` entry must include a GitHub reference in the beginning: issue (`[#123](https://github.com/echoua/echo/issues/123)`).
+- Every new `CHANGELOG.md` entry must include a GitHub reference in the beginning: issue (`[#123](https://github.com/echoua/echo/issues/123)`), unless the user explicitly identifies the work as a no-ticket hotfix. For an explicit no-ticket hotfix, omit the reference entirely and do not add a placeholder.
 - Before asking the user for a GitHub issue number, try to extract it from the current git branch name. If the branch contains project key + number (for example `ABC-123`), use both when reporting the detected issue reference. If the branch contains only a number (for example `123`), use the number only.
 - Prefer following `.github/skills/changelog-next-update/SKILL.md` for exact `NEXT` formatting and phrasing style.
-- If the GitHub issue number is unknown, ask the user for it and do not add placeholder markers like `TODO` to `CHANGELOG.md`.
+- If the GitHub issue number is unknown and the work is not an explicitly identified no-ticket hotfix, ask the user for it and do not add placeholder markers like `TODO` to `CHANGELOG.md`.
 
 ## Migrations
 

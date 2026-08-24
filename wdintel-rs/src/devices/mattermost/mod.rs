@@ -62,14 +62,17 @@ pub(crate) async fn analysis_run_completed_nofail(env: &Env, run_id: Uuid) {
         let device = load_device(env, run.device_id).await.context(h!())?;
         let summary =
             query::analysis_run_summary(file_db, &run).await.c(h!())?;
-        let text = render_analysis_run_completed(
+        let Some(text) = render_analysis_run_completed(
             &env.config.public_host,
             device.id,
             device.name.as_deref(),
             device.external_url.as_deref(),
             &summary,
         )
-        .context(h!())?;
+        .context(h!())?
+        else {
+            return Ok(());
+        };
         post_text(&target, &text).await
     }
     .await;
@@ -141,7 +144,10 @@ fn render_analysis_run_completed(
     name: Option<&str>,
     external_url: Option<&str>,
     summary: &AnalysisRunSummary,
-) -> Result<String> {
+) -> Result<Option<String>> {
+    if summary.items.is_empty() {
+        return Ok(None);
+    }
     let mut heading = format!(
         "Завершено аналіз пристрою {}",
         device_markdown_link(public_host, device_id, name).context(h!())?
@@ -171,7 +177,7 @@ fn render_analysis_run_completed(
         write!(heading, ", Інші теги: {omitted_tag_count}")
             .expect("writing to a String cannot fail");
     }
-    Ok(heading)
+    Ok(Some(heading))
 }
 
 fn device_name(device_id: Uuid, name: Option<&str>) -> String {
@@ -310,7 +316,8 @@ mod tests {
             device.external_url.as_deref(),
             &summary,
         )
-        .unwrap();
+        .unwrap()
+        .expect("a run with tagged files should render a notification");
 
         assert_eq!(
             text,
@@ -321,6 +328,28 @@ mod tests {
                  ([Джерело](https://secret.example/device))\n\
                  Файли: 12573, Тег 1: 123, Тег 2: 321"
             )
+        );
+    }
+
+    #[test]
+    fn completed_analysis_payload_is_omitted_without_tagged_files() {
+        let device_id = Uuid::now_v7();
+        let device = device_fixture(device_id);
+        let summary = AnalysisRunSummary {
+            file_count: 12_573,
+            items: Vec::new(),
+        };
+
+        assert_eq!(
+            render_analysis_run_completed(
+                "localhost",
+                device.id,
+                device.name.as_deref(),
+                device.external_url.as_deref(),
+                &summary,
+            )
+            .unwrap(),
+            None
         );
     }
 

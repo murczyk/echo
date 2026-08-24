@@ -57,7 +57,10 @@ function renderPanel(): Rendered {
     freqsError: null,
     freqCallsignsById: new Map(),
     freqCallsignsStatus: 'idle',
+    freqCallsignsPeriod: 'Last21Days',
+    onFreqCallsignsPeriodChange: vi.fn(),
     networkActivity: {},
+    networkActivityPeriod: 'Last10Days',
     networkActivityLoaded: false,
     networkActivityLoading: false,
     networkActivityError: null,
@@ -94,6 +97,7 @@ function renderPanel(): Rendered {
     pelengSatelliteEnabled: true,
     pelengHeatmapEnabled: false,
     onReloadNetworkActivity: vi.fn(),
+    onNetworkActivityPeriodChange: vi.fn(),
     onReloadPelengPoints: vi.fn(),
     onPelengSinceChange: vi.fn(),
     onPelengTillChange: vi.fn(),
@@ -171,6 +175,8 @@ describe('NetworkDetailsTabPanel', () => {
           freqsError={null}
           freqCallsignsById={new Map()}
           freqCallsignsStatus="idle"
+          freqCallsignsPeriod="Last21Days"
+          onFreqCallsignsPeriodChange={vi.fn()}
           networkActivity={{}}
           networkActivityLoaded={false}
           networkActivityLoading={false}

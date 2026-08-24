@@ -83,6 +83,7 @@ function getColorForItem(group: string, colorMapping: { [key: string]: string })
 class BarChart extends LitElement {
   @property() data: Data;
   @property() lastDay: string;
+  @property({ type: Number }) days = 10;
 
   xAxisGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
   yAxisGroup: d3.Selection<SVGGElement, unknown, null, undefined>;
@@ -119,22 +120,27 @@ class BarChart extends LitElement {
   }
 
   updated(changedProperties: PropertyValues<this>) {
-    if (changedProperties.has('data') || changedProperties.has('lastDay')) {
+    if (
+      changedProperties.has('data') ||
+      changedProperties.has('lastDay') ||
+      changedProperties.has('days')
+    ) {
       const lastDay = dayjs(this.lastDay);
       const transformedData = this.transformData(
         this.data,
         lastDay.isValid() ? lastDay.toDate() : new Date(),
+        this.days,
       );
       this.renderChart(transformedData);
     }
   }
 
-  transformData(data: Data, lastDay: Date): TransformedData {
+  transformData(data: Data, lastDay: Date, daysToDisplayCount: number): TransformedData {
     const dayInMs = 24 * 60 * 60 * 1000;
-    let days = Object.keys(data).map((dateInSecs) => new Date(parseInt(dateInSecs)));
+    const dataDays = Object.keys(data).map((dateInSecs) => new Date(parseInt(dateInSecs)));
 
     const daysToDisplay = [lastDay];
-    for (let i = 1; i < 10; i++) {
+    for (let i = 1; i < Math.max(1, Math.floor(daysToDisplayCount)); i++) {
       const previousDay = new Date(lastDay.getTime() - i * dayInMs);
       daysToDisplay.push(previousDay);
     }
@@ -142,7 +148,7 @@ class BarChart extends LitElement {
     const transformedData: TransformedData = [];
 
     daysToDisplay.forEach((day) => {
-      const dayData = days.find(
+      const dayData = dataDays.find(
         (d) => d.getDate() === day.getDate() && d.getMonth() === day.getMonth(),
       );
       const groups = dayData ? data[dayData.getTime()] : null;
@@ -201,9 +207,14 @@ class BarChart extends LitElement {
     const svgEl = this.renderRoot.querySelector('#chart');
     const svg = d3.select(svgEl);
 
+    const dates = Array.from(new Set(data.map((item) => item.date)));
+    const xTickStep = Math.max(1, Math.ceil(dates.length / 10));
+    const xTickValues = dates.filter(
+      (_, index) => index % xTickStep === 0 || index === dates.length - 1,
+    );
     const xScale = d3
       .scaleBand<string>()
-      .domain(data.map((d) => d.date))
+      .domain(dates)
       .rangeRound([this.margins.left, this.chartWidth - this.margins.right])
       .padding(0.1);
     const yScale = d3
@@ -248,7 +259,12 @@ class BarChart extends LitElement {
     }
     this.xAxisGroup
       .attr('transform', `translate(0, ${this.chartHeight - this.margins.bottom})`)
-      .call(d3.axisBottom(xScale).tickFormat((d) => dayjs(d).format('DD')));
+      .call(
+        d3
+          .axisBottom(xScale)
+          .tickValues(xTickValues)
+          .tickFormat((d) => dayjs(d).format('DD')),
+      );
 
     if (!this.yAxisGroup) {
       this.yAxisGroup = svg.append('g');

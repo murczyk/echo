@@ -279,7 +279,16 @@ pub async fn upload_encrypted_to_s3_with_operator(
         .map_err(|err| AppError::BL {
             msg: format!("failed to encrypt payload for {remote_key}: {err}"),
         })?;
+    let expected_size = u64::try_from(ciphertext.len()).c(h!())?;
+    let first_byte = ciphertext.first().copied();
     op.write(&remote_key, ciphertext).await.c(h!())?;
+    if let Err(error) =
+        verify_uploaded_s3_object(op, &remote_key, expected_size, first_byte)
+            .await
+    {
+        delete_unverified_upload(op, &remote_key).await;
+        return Err(error);
+    }
     info!("stored to {}: {}", config.bucket.clone(), remote_key);
     Ok(())
 }
@@ -320,7 +329,7 @@ pub async fn upload_plaintext_file_to_s3_with_operator(
             return Err(err);
         }
     };
-    if written != expected_size {
+    if written.size != expected_size {
         if let Err(abort_err) = writer.abort().await {
             warn!(
                 "failed to abort plaintext upload for {remote_key}: {abort_err:#?}"
@@ -328,7 +337,8 @@ pub async fn upload_plaintext_file_to_s3_with_operator(
         }
         return Err(AppError::BL {
             msg: format!(
-                "plaintext upload source changed for {remote_key}: expected {expected_size} bytes, read {written}"
+                "plaintext upload source changed for {remote_key}: expected {expected_size} bytes, read {}",
+                written.size
             ),
         });
     }
@@ -340,20 +350,16 @@ pub async fn upload_plaintext_file_to_s3_with_operator(
         }
         return Err(err.into());
     }
-    let uploaded_size = match op.stat(&remote_key).await {
-        Ok(metadata) => metadata.content_length(),
-        Err(err) => {
-            delete_failed_plaintext_upload(op, &remote_key).await;
-            return Err(anyhow::Error::from(err).context(h!()).into());
-        }
-    };
-    if uploaded_size != expected_size {
-        delete_failed_plaintext_upload(op, &remote_key).await;
-        return Err(AppError::BL {
-            msg: format!(
-                "plaintext upload verification failed for {remote_key}: expected {expected_size} bytes, stored {uploaded_size}"
-            ),
-        });
+    if let Err(error) = verify_uploaded_s3_object(
+        op,
+        &remote_key,
+        expected_size,
+        written.first_byte,
+    )
+    .await
+    {
+        delete_unverified_upload(op, &remote_key).await;
+        return Err(error);
     }
     info!("stored plaintext to {}: {}", config.bucket, remote_key);
     Ok(())
@@ -378,6 +384,8 @@ pub async fn upload_plaintext_to_s3_with_operator(
         .c(h!())?;
     let mut writer = PlaintextUploadWriter::new(writer, remote_key.clone());
     let data = bytes::Bytes::from(data);
+    let expected_size = u64::try_from(data.len()).c(h!())?;
+    let first_byte = data.first().copied();
     if let Err(error) = write_plaintext_bytes(writer.writer(), data).await {
         if let Err(abort_error) = writer.abort().await {
             warn!(
@@ -394,15 +402,55 @@ pub async fn upload_plaintext_to_s3_with_operator(
         }
         return Err(error.into());
     }
+    if let Err(error) =
+        verify_uploaded_s3_object(op, &remote_key, expected_size, first_byte)
+            .await
+    {
+        delete_unverified_upload(op, &remote_key).await;
+        return Err(error);
+    }
     info!("stored plaintext to {}: {}", config.bucket, remote_key);
     Ok(())
 }
 
-async fn delete_failed_plaintext_upload(op: &Operator, remote_key: &str) {
+async fn verify_uploaded_s3_object(
+    op: &Operator,
+    remote_key: &str,
+    expected_size: u64,
+    expected_first_byte: Option<u8>,
+) -> Result<(), AppError> {
+    let stored_size = op.stat(remote_key).await.c(h!())?.content_length();
+    if stored_size != expected_size {
+        return Err(AppError::BL {
+            msg: format!(
+                "upload verification failed for {remote_key}: expected {expected_size} bytes, stored {stored_size}"
+            ),
+        });
+    }
+    let Some(expected_first_byte) = expected_first_byte else {
+        return Ok(());
+    };
+    let probe_size =
+        crate::config::MESSENGER_MEDIA_UPLOAD_VERIFICATION_PROBE_SIZE_BYTES;
+    let probe = op
+        .read_with(remote_key)
+        .range(0..probe_size)
+        .await
+        .c(h!())?
+        .to_vec();
+    if probe.as_slice() != [expected_first_byte] {
+        return Err(AppError::BL {
+            msg: format!(
+                "upload verification failed for {remote_key}: first byte is missing or differs"
+            ),
+        });
+    }
+    Ok(())
+}
+
+async fn delete_unverified_upload(op: &Operator, remote_key: &str) {
     if let Err(err) = op.delete(remote_key).await {
-        warn!(
-            "failed to delete unverified plaintext upload {remote_key}: {err:#?}"
-        );
+        warn!("failed to delete unverified upload {remote_key}: {err:#?}");
     }
 }
 
@@ -423,7 +471,7 @@ async fn write_plaintext_file(
     writer: &mut opendal::Writer,
     file: tokio::fs::File,
     expected_size: u64,
-) -> Result<u64, AppError> {
+) -> Result<PlaintextUploadSummary, AppError> {
     let read_limit = expected_size.checked_add(1).ok_or(AppError::BL {
         msg: "plaintext upload read limit overflowed".to_string(),
     })?;
@@ -432,10 +480,14 @@ async fn write_plaintext_file(
         crate::config::MESSENGER_MEDIA_PLAINTEXT_UPLOAD_CHUNK_SIZE_BYTES,
     );
     let mut written = 0_u64;
+    let mut first_byte = None;
     while let Some(chunk) = futures_util::TryStreamExt::try_next(&mut stream)
         .await
         .c(h!())?
     {
+        if first_byte.is_none() {
+            first_byte = chunk.first().copied();
+        }
         written = written
             .checked_add(u64::try_from(chunk.len()).c(h!())?)
             .ok_or(AppError::BL {
@@ -443,7 +495,15 @@ async fn write_plaintext_file(
             })?;
         writer.write(chunk).await.c(h!())?;
     }
-    Ok(written)
+    Ok(PlaintextUploadSummary {
+        size: written,
+        first_byte,
+    })
+}
+
+struct PlaintextUploadSummary {
+    size: u64,
+    first_byte: Option<u8>,
 }
 
 /// Download data from S3 and decrypt it with StrongBox
@@ -834,6 +894,37 @@ mod tests {
             error,
             AppError::BL { msg } if msg.contains("expected 5 bytes, read 6")
         ));
+    }
+
+    #[tokio::test]
+    async fn upload_verification_rejects_different_first_byte() {
+        let op = Operator::new(Memory::default()).unwrap().finish();
+        op.write("object", "content").await.unwrap();
+
+        let error = verify_uploaded_s3_object(&op, "object", 7, Some(b'd'))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            AppError::BL { msg } if msg.contains("first byte is missing or differs")
+        ));
+    }
+
+    #[tokio::test]
+    async fn empty_plaintext_upload_uses_metadata_verification() {
+        let op = Operator::new(Memory::default()).unwrap().finish();
+
+        upload_plaintext_to_s3_with_operator(
+            &Some(op.clone()),
+            &memory_config(),
+            "empty",
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(op.stat("media/empty").await.unwrap().content_length(), 0);
     }
 
     #[tokio::test]

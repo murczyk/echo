@@ -6,7 +6,12 @@ import { Box, Button, CircularProgress, Stack, Tooltip, Typography } from '@mui/
 import { MaterialReactTable, type MRT_ColumnFiltersState } from 'material-react-table';
 import { useEffect, useMemo } from 'react';
 
-import type { EncryptionRec, Network, NetworkFreqsRes } from '../../../../../Bindings';
+import type {
+  EncryptionRec,
+  Network,
+  NetworkFreqCallsignsPeriod,
+  NetworkFreqsRes,
+} from '../../../../../Bindings';
 import { MrtRowActionButton, MrtRowActions } from '../../../components/MrtRowActionButton';
 import {
   CUSTOM_STYLES,
@@ -39,6 +44,7 @@ import {
   type NetworkFreqTableRow,
 } from '../frequency-utils';
 import { buildNetworkColumnOrder } from './NetworkCallsignsTableShared';
+import { NetworkFreqCallsignPeriodSettings } from './NetworkFreqCallsignPeriodSettings';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkFreqTableRow>();
 const NETWORK_MRT_LOCALIZATION = {
@@ -212,6 +218,8 @@ export type NetworkDetailsFrequenciesTableProps = {
   freqsError: string | null;
   freqCallsignsById: Map<number, string[]>;
   freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error';
+  freqCallsignsPeriod: NetworkFreqCallsignsPeriod;
+  onFreqCallsignsPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
   encryptions: EncryptionRec[];
   expandedFrequencyGroupIds: string[];
   onToggleFrequencyGroupExpanded: (groupId: string) => void;
@@ -315,6 +323,8 @@ function NetworkDetailsFrequenciesTableContent({
   encryptions,
   freqCallsignsById,
   freqCallsignsStatus,
+  freqCallsignsPeriod,
+  onFreqCallsignsPeriodChange,
   expandedFrequencyGroupIds,
   onToggleFrequencyGroupExpanded,
   onOpenFreqCreateWizard,
@@ -667,7 +677,17 @@ function NetworkDetailsFrequenciesTableContent({
         >
           <Box sx={{ minWidth: 0 }}>{statusFilterChips}</Box>
           <Box sx={{ flexShrink: 0 }}>
-            <InternalTableActions table={table} rowNumberAppearanceControl />
+            <InternalTableActions
+              table={table}
+              rowNumberAppearanceControl
+              leadingInternalActions={
+                <NetworkFreqCallsignPeriodSettings
+                  period={freqCallsignsPeriod}
+                  disabled={freqCallsignsStatus === 'loading'}
+                  onChange={onFreqCallsignsPeriodChange}
+                />
+              }
+            />
           </Box>
         </Box>
         <Box

@@ -20,7 +20,8 @@ type
     -- =============================================================================
     = NetworkReturnedByApi (Result ApiError B.Network)
     | MapPointsReturnedByApi (Result ApiError B.ListNetworkPointsRsp)
-    | GroupsActivityReturnedByApi (Result ApiError GroupsByDate)
+    | GroupsActivityReturnedByApi B.NetworkGroupActivityPeriod (Result ApiError GroupsByDate)
+    | GroupsActivityPeriodChangedByUser B.NetworkGroupActivityPeriod
     | NetworkUpdatedByApi (Result ApiError B.Network)
     | NetworkPostsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)
     | NetworkUnitsUpdatedByApi B.UpdateNetworkReq (Result ApiError B.Network)

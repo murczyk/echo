@@ -17,7 +17,9 @@ use crate::sigint::network::filter::{
 };
 use crate::sigint::network::resolve_network_text_search_mode;
 use crate::sigint::network::sort as network_sort;
-use crate::sigint::network::types::ListNetworksReq;
+use crate::sigint::network::types::{
+    ListNetworksReq, NetworkFreqCallsignsPeriod,
+};
 use crate::sigint::signal::types::Signal;
 use crate::types::*;
 use crate::utils::*;
@@ -1754,18 +1756,52 @@ pub async fn get_callsigns_for_network_freq(
     groups: &Vec<String>,
     network_freq_id: i64,
 ) -> Result<Vec<String>, AppError> {
-    Ok(
-        get_callsigns_for_network_freq_batch(db, groups, &[network_freq_id])
-            .await?
-            .remove(&network_freq_id)
-            .unwrap_or_default(),
+    get_callsigns_for_network_freq_with_period(
+        db,
+        groups,
+        network_freq_id,
+        None,
     )
+    .await
+}
+
+pub async fn get_callsigns_for_network_freq_with_period(
+    db: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_freq_id: i64,
+    period: Option<&NetworkFreqCallsignsPeriod>,
+) -> Result<Vec<String>, AppError> {
+    Ok(get_callsigns_for_network_freq_batch_with_period(
+        db,
+        groups,
+        &[network_freq_id],
+        period,
+    )
+    .await
+    .context(h!())?
+    .remove(&network_freq_id)
+    .unwrap_or_default())
 }
 
 pub async fn get_callsigns_for_network_freq_batch(
     db: &DatabaseConnection,
     groups: &Vec<String>,
     network_freq_ids: &[i64],
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    get_callsigns_for_network_freq_batch_with_period(
+        db,
+        groups,
+        network_freq_ids,
+        None,
+    )
+    .await
+}
+
+pub async fn get_callsigns_for_network_freq_batch_with_period(
+    db: &DatabaseConnection,
+    groups: &Vec<String>,
+    network_freq_ids: &[i64],
+    period: Option<&NetworkFreqCallsignsPeriod>,
 ) -> Result<HashMap<i64, Vec<String>>, AppError> {
     if network_freq_ids.is_empty() {
         return Ok(HashMap::new());
@@ -1775,7 +1811,7 @@ pub async fn get_callsigns_for_network_freq_batch(
     let join_condition =
         build_network_freq_join_condition(None, true).c(h!())?;
 
-    let query = Query::select()
+    let mut query = Query::select()
         .distinct()
         .expr_as(
             Expr::col((nf.clone(), SigintNetworkFreq::Id)),
@@ -1833,6 +1869,13 @@ pub async fn get_callsigns_for_network_freq_batch(
             Order::Asc,
         )
         .to_owned();
+    if let Some(lookback_days) =
+        period.and_then(NetworkFreqCallsignsPeriod::lookback_days)
+    {
+        query.and_where(Expr::cust(format!(
+            "COALESCE(sigint_inbox_item.datetime, signal_message.timestamp, signal_message.created_at) >= COALESCE(network_freqs.active_to, CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '{lookback_days} days'"
+        )));
+    }
 
     let rows = db
         .query_all_raw(Statement::from_string(

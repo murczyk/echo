@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260822_105557_add_settlement_stats_index": {
+      "changes": []
+    },
     "echo:m20260821_080931_recalculate_battle_line_aor_sectors": {
       "changes": []
     },
@@ -106,6 +109,11 @@
         { "table": "public.sigint_unit", "strategy": "mirror_resync" }
       ]
     },
+    "echo:m20260817_092138_rename_sigint_inbox_item_datetime_neo": {
+      "changes": [
+        { "table": "public.sigint_inbox_item", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260817_124312_sigint_unit_inconsistent": {
       "changes": [
         { "table": "public.sigint_unit", "strategy": "mirror_resync" }
@@ -123,8 +131,7 @@
       "changes": [
         {
           "table": "public.sigint_inbox_item",
-          "strategy": "cdc_backfill",
-          "backfill": "wdintel-rs/src/inbox/datetime.rs"
+          "strategy": "mirror_resync"
         }
       ]
     },

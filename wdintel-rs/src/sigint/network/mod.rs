@@ -1587,6 +1587,7 @@ pub async fn network_group_activity_one(
     let new_req = Json(NetworkGroupsActivityReq {
         network_ids: vec![req.network_id],
         till_date_noninclusive_ms: req.till_date_noninclusive_ms,
+        period: req.period,
     });
 
     let networks_group_stat = network_group_activity_bl(user, env, new_req)
@@ -1890,19 +1891,53 @@ pub async fn list_network_points(
     .await
     .context(h!())?;
 
+    let since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let till = req
+        .till_date_noninclusive_ms
+        .map(dt_from_millis)
+        .transpose()
+        .context(h!())?;
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let postgres_groups = groups;
+    let network_id = req.network_id;
     let map_points =
-        bl_get_network_points(&env.dbx, &groups, req.network_id, Some(&filter))
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|p| NetworkPoint {
-                id: p.id,
-                body: p.body,
-                lat: p.lat,
-                lng: p.lng,
-                freq: p.freq,
-            })
-            .collect::<Vec<NetworkPoint>>();
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            &env,
+            "network points",
+            true,
+            move |analytics_db| async move {
+                analytics::load_network_points(
+                    &source_db,
+                    &analytics_db,
+                    &analytics_groups,
+                    network_id,
+                    since,
+                    till,
+                )
+                .await
+            },
+            move |postgres_db| async move {
+                bl_get_network_points(
+                    &postgres_db,
+                    &postgres_groups,
+                    network_id,
+                    Some(&filter),
+                )
+                .await
+            },
+        )
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|p| NetworkPoint {
+            id: p.id,
+            body: p.body,
+            lat: p.lat,
+            lng: p.lng,
+            freq: p.freq,
+        })
+        .collect::<Vec<NetworkPoint>>();
 
     Ok(Json(ListNetworkPointsRsp { points: map_points }))
 }
@@ -3885,10 +3920,17 @@ pub async fn network_freq_callsigns(
     .await
     .context(h!())?;
 
-    let callsigns =
-        get_callsigns_for_network_freq(&env.dbx, &groups, req.network_freq_id)
-            .await
-            .context(h!())?;
+    let mut callsigns_by_network_freq_id = load_network_freq_callsigns_current(
+        &env,
+        groups,
+        vec![req.network_freq_id],
+        req.period.clone(),
+    )
+    .await
+    .context(h!())?;
+    let callsigns = callsigns_by_network_freq_id
+        .remove(&req.network_freq_id)
+        .unwrap_or_default();
 
     Ok(Json(NetworkFreqCallsignsRsp {
         network_freq_id: req.network_freq_id,
@@ -3917,34 +3959,14 @@ pub async fn network_freq_callsigns_batch(
     .await
     .context(h!())?;
 
-    let source_db = env.dbx.clone();
-    let analytics_groups = groups.clone();
-    let analytics_network_freq_ids = req.network_freq_ids.clone();
-    let postgres_network_freq_ids = req.network_freq_ids.clone();
-    let callsigns_by_network_freq_id =
-        crate::rer_importer::analysis::with_analytics_read_fallback(
-            &env,
-            "network frequency callsigns batch",
-            true,
-            move |analytics_db| async move {
-                analytics::load_network_freq_callsigns(
-                    &source_db,
-                    &analytics_db,
-                    &analytics_groups,
-                    &analytics_network_freq_ids,
-                )
-                .await
-            },
-            move |postgres_db| async move {
-                get_callsigns_for_network_freq_batch(
-                    &postgres_db,
-                    &groups,
-                    &postgres_network_freq_ids,
-                )
-                .await
-            },
-        )
-        .await?;
+    let callsigns_by_network_freq_id = load_network_freq_callsigns_current(
+        &env,
+        groups,
+        req.network_freq_ids.clone(),
+        req.period.clone(),
+    )
+    .await
+    .context(h!())?;
 
     let callsigns_by_network_freq_id = callsigns_by_network_freq_id
         .into_iter()
@@ -3956,6 +3978,44 @@ pub async fn network_freq_callsigns_batch(
     Ok(Json(NetworkFreqCallsignsBatchRsp {
         callsigns_by_network_freq_id,
     }))
+}
+
+async fn load_network_freq_callsigns_current(
+    env: &Env,
+    groups: Vec<String>,
+    network_freq_ids: Vec<i64>,
+    period: Option<NetworkFreqCallsignsPeriod>,
+) -> Result<HashMap<i64, Vec<String>>, AppError> {
+    let source_db = env.dbx.clone();
+    let analytics_groups = groups.clone();
+    let analytics_network_freq_ids = network_freq_ids.clone();
+    let analytics_period = period.clone();
+    let postgres_period = period;
+    crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "network frequency callsigns",
+        true,
+        move |analytics_db| async move {
+            analytics::load_network_freq_callsigns(
+                &source_db,
+                &analytics_db,
+                &analytics_groups,
+                &analytics_network_freq_ids,
+                analytics_period.as_ref(),
+            )
+            .await
+        },
+        move |postgres_db| async move {
+            get_callsigns_for_network_freq_batch_with_period(
+                &postgres_db,
+                &groups,
+                &network_freq_ids,
+                postgres_period.as_ref(),
+            )
+            .await
+        },
+    )
+    .await
 }
 
 #[post("/api/sigint/encryptions-list")]

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
-import type { NetworkCallsignRelationsRsp } from '../../../../Bindings';
+import type { NetworkCallsignRelationsRsp, NetworkGroupActivityPeriod } from '../../../../Bindings';
 
 import { listAors } from '../../services/api/aor';
 import {
@@ -185,7 +185,7 @@ export function useRerNetworkDetailsNeoPageLoad(
     sinceDateInclusiveMs: number,
     tillDateNoninclusiveMs: number,
   ) => Promise<void>;
-  loadNetworkActivity: (networkId: number) => Promise<void>;
+  loadNetworkActivity: (networkId: number, period: NetworkGroupActivityPeriod) => Promise<void>;
   loadPelengPoints: (
     networkId: number,
     sinceDateInclusiveMs: number,
@@ -499,7 +499,7 @@ export function useRerNetworkDetailsNeoPageLoad(
   );
 
   const loadNetworkActivity = useCallback(
-    async (targetNetworkId: number) => {
+    async (targetNetworkId: number, period: NetworkGroupActivityPeriod) => {
       const generation = reloadGeneration.current;
       const requestId = ++networkActivityLoadRequestIdRef.current;
       const isCurrent = () =>
@@ -519,12 +519,13 @@ export function useRerNetworkDetailsNeoPageLoad(
 
       setState((current) => ({
         ...current,
+        networkActivityPeriod: period,
         networkActivityLoading: true,
         networkActivityError: null,
       }));
 
       try {
-        const networkActivity = await getNetworkGroupsActivityOne(targetNetworkId);
+        const networkActivity = await getNetworkGroupsActivityOne(targetNetworkId, period);
         if (!isCurrent()) return;
 
         setState((current) => ({

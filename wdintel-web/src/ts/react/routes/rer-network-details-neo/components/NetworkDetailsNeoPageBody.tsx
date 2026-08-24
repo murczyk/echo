@@ -141,11 +141,17 @@ export function NetworkDetailsNeoPageBody({
       freqsError={page.freqsError}
       freqCallsignsById={page.freqCallsignsById}
       freqCallsignsStatus={page.freqCallsignsStatus}
+      freqCallsignsPeriod={page.freqCallsignsPeriod}
+      onFreqCallsignsPeriodChange={page.setFreqCallsignsPeriod}
       networkActivity={page.networkActivity}
+      networkActivityPeriod={page.networkActivityPeriod}
       networkActivityLoaded={page.networkActivityLoaded}
       networkActivityLoading={page.networkActivityLoading}
       networkActivityError={page.networkActivityError}
-      onReloadNetworkActivity={() => page.loadNetworkActivity(networkId)}
+      onNetworkActivityPeriodChange={(period) => page.loadNetworkActivity(networkId, period)}
+      onReloadNetworkActivity={() =>
+        page.loadNetworkActivity(networkId, page.networkActivityPeriod)
+      }
       pelengPoints={page.pelengPoints}
       pelengPointsLoaded={page.pelengPointsLoaded}
       pelengPointsLoading={page.pelengPointsLoading}

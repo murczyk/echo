@@ -5,6 +5,8 @@ import type {
   EncryptionRec,
   Network,
   NetworkDescrType,
+  NetworkFreqCallsignsPeriod,
+  NetworkGroupActivityPeriod,
   NetworkFreqsRes,
   NetworkPoint,
 } from '../../../../../Bindings';
@@ -40,7 +42,10 @@ type Props = {
   freqsError: string | null;
   freqCallsignsById: Map<number, string[]>;
   freqCallsignsStatus: 'idle' | 'loading' | 'success' | 'error';
+  freqCallsignsPeriod: NetworkFreqCallsignsPeriod;
+  onFreqCallsignsPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
   networkActivity: Record<string, Record<string, number>>;
+  networkActivityPeriod: NetworkGroupActivityPeriod;
   networkActivityLoaded: boolean;
   networkActivityLoading: boolean;
   networkActivityError: string | null;
@@ -84,6 +89,7 @@ type Props = {
   pelengPointsLoading: boolean;
   pelengPointsError: string | null;
   onReloadNetworkActivity: () => void;
+  onNetworkActivityPeriodChange: (period: NetworkGroupActivityPeriod) => void;
   onReloadPelengPoints: () => void;
   encryptions: EncryptionRec[];
   expandedFrequencyGroupIds: string[];
@@ -121,7 +127,10 @@ export function NetworkDetailsTabPanel({
   freqsError,
   freqCallsignsById,
   freqCallsignsStatus,
+  freqCallsignsPeriod,
+  onFreqCallsignsPeriodChange,
   networkActivity,
+  networkActivityPeriod,
   networkActivityLoaded,
   networkActivityLoading,
   networkActivityError,
@@ -165,6 +174,7 @@ export function NetworkDetailsTabPanel({
   pelengPointsLoading,
   pelengPointsError,
   onReloadNetworkActivity,
+  onNetworkActivityPeriodChange,
   onReloadPelengPoints,
   encryptions,
   expandedFrequencyGroupIds,
@@ -236,6 +246,8 @@ export function NetworkDetailsTabPanel({
               freqsError={freqsError}
               freqCallsignsById={freqCallsignsById}
               freqCallsignsStatus={freqCallsignsStatus}
+              freqCallsignsPeriod={freqCallsignsPeriod}
+              onFreqCallsignsPeriodChange={onFreqCallsignsPeriodChange}
               encryptions={encryptions}
               expandedFrequencyGroupIds={expandedFrequencyGroupIds}
               onToggleFrequencyGroupExpanded={toggleFrequencyGroupExpanded}
@@ -331,10 +343,12 @@ export function NetworkDetailsTabPanel({
             <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
               <NetworkDetailsActivityPanel
                 networkActivity={networkActivity}
+                networkActivityPeriod={networkActivityPeriod}
                 networkActivityLoaded={networkActivityLoaded}
                 networkActivityLoading={networkActivityLoading}
                 networkActivityError={networkActivityError}
                 onReloadNetworkActivity={onReloadNetworkActivity}
+                onNetworkActivityPeriodChange={onNetworkActivityPeriodChange}
               />
             </Box>
           </Box>

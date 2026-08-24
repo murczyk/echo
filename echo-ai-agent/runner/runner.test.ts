@@ -5,10 +5,13 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  analysisPeriodRequestBody,
+  callsignFrequencyMatchesRequestBody,
   compactInboxResponse,
   createToolLifecycleGuard,
   createToolInvocationGuard,
   dailyActivityRequestBody,
+  directionFindingsRequestBody,
   inboxMessagesRequestBody,
   interceptionContextRequestBody,
   messagesByIdRequestBody,
@@ -317,6 +320,38 @@ test("accepts only the matching typed inbox and message-ID routes", () => {
   );
 });
 
+test("accepts only matching typed analysis routes", () => {
+  assert.equal(
+    validateSkill({
+      method: "POST",
+      path: "/api/rer/analysis/stats/networks",
+      skill: "network_statistics",
+      label: "Аналіз радіомереж",
+      requestKind: "analysisPeriod",
+    }).requestKind,
+    "analysisPeriod",
+  );
+  assert.equal(
+    validateSkill({
+      method: "POST",
+      path: "/api/rer-importer/get-freq-pelengs-summary",
+      skill: "direction_findings",
+      label: "Аналіз пеленгів",
+      requestKind: "directionFindings",
+    }).requestKind,
+    "directionFindings",
+  );
+  assert.throws(() =>
+    validateSkill({
+      method: "POST",
+      path: "/api/rer/analysis/stats/networks",
+      skill: "network_statistics",
+      label: "Аналіз радіомереж",
+      requestKind: "directionFindings",
+    }),
+  );
+});
+
 test("emits frontend-compatible source fields", () => {
   assert.deepEqual(
     sourceEvent(
@@ -417,6 +452,69 @@ test("builds exact three-day Kyiv boundaries on ordinary dates", () => {
       till_date_noninclusive_ms: Date.parse("2026-08-04T21:00:00Z"),
       selected_groups: ["alpha"],
     },
+  );
+});
+
+test("normalizes the failed production rolling-day tool arguments", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_hours", hours: 24 },
+    maxItems: 128,
+  };
+  const expectedAnalysis = {
+    since_date_inclusive_ms: Date.parse("2026-08-03T12:00:00Z"),
+    till_date_noninclusive_ms: Date.parse("2026-08-04T12:00:00Z"),
+  };
+  assert.deepEqual(
+    analysisPeriodRequestBody(params, context),
+    expectedAnalysis,
+  );
+  assert.deepEqual(dailyActivityRequestBody(params, context), expectedAnalysis);
+  assert.deepEqual(inboxMessagesRequestBody(params, context), {
+    since_date_inclusive_ms: Date.parse("2026-08-03T12:00:00Z"),
+    till_date_inclusive_ms: Date.parse("2026-08-04T12:00:00Z") - 1,
+    newest_first: true,
+    skip_group_stats: true,
+  });
+  assert.deepEqual(directionFindingsRequestBody(params, context), {
+    since_date_inclusive_ms: Date.parse("2026-08-03T12:00:00Z"),
+    till_date_inclusive_ms: Date.parse("2026-08-04T12:00:00Z") - 1,
+  });
+});
+
+test("builds nested callsign-frequency requests from discovered callsigns", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  assert.deepEqual(
+    callsignFrequencyMatchesRequestBody(
+      {
+        period: { kind: "relative_hours", hours: 24 },
+        selectedGroups: ["alpha"],
+        callsigns: ["ALPHA", "BRAVO"],
+        minMatches: 2,
+      },
+      context,
+    ),
+    {
+      req: {
+        since_date_inclusive_ms: Date.parse("2026-08-03T12:00:00Z"),
+        till_date_noninclusive_ms: Date.parse("2026-08-04T12:00:00Z"),
+        selected_groups: ["alpha"],
+      },
+      callsigns: ["ALPHA", "BRAVO"],
+      min_matches: 2,
+    },
+  );
+  assert.throws(
+    () =>
+      callsignFrequencyMatchesRequestBody(
+        {
+          period: { kind: "relative_hours", hours: 24 },
+          callsigns: ["ALPHA"],
+          minMatches: 2,
+        },
+        context,
+      ),
+    /unique callsign count/,
   );
 });
 
@@ -611,6 +709,8 @@ test("guides last-three-days gist follow-ups through inbox pagination and UID co
   assert.match(prompt, /inherit the most recent period and group scope/);
   assert.match(prompt, /following every returned next cursor/);
   assert.match(prompt, /using a UID returned with an inbox message/);
+  assert.match(prompt, /“за останню добу” mean the rolling 24 hours/);
+  assert.match(prompt, /never inside body/);
   assert.match(prompt, /Never ask the user/);
 });
 
@@ -618,7 +718,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.08.05.2",
+    harnessRelease: "2026.08.22.1",
   });
 });
 

@@ -154,6 +154,39 @@ Common Echo services include `wdintel-rs`, `wdintel-rs-bgworker`,
 `wdintel-rs-report-worker`, `postgresql`, `echo-signal-bot`, and
 `echo-whatsapp-bot`.
 
+### Audit messenger media storage
+
+Audit media created since the new storage path was introduced in bounded
+pages. The command only reads PostgreSQL and object storage unless `--apply`
+is supplied:
+
+```bash
+sudo /usr/bin/wdintel-rs --mode=live oneoff-audit-media-storage \
+  --since-ts 2026-07-20T00:00:00Z \
+  --limit 10000 \
+  --concurrency 8 \
+  --output /var/tmp/media-storage-audit-1.jsonl
+```
+
+Use the printed UUID as `--after-media-id` for the next page and choose a new
+output path. Records are classified as `available`, `missing`, `unreadable`,
+or `stat_mismatch`. To repair audited rows, create a JSONL manifest with one
+object per line:
+
+```json
+{"media_id":"01a02a3f-e1e0-7c00-961d-b57bd98be83c","source_path":"/path/to/original"}
+```
+
+First run with `--repair-manifest` but without `--apply` to validate source
+sizes. Add `--apply` to upload a fully verified replacement and update the
+media row. The corrupt object is retained for provider investigation and
+manual cleanup.
+
+Terminal object-read failures remain `ERROR`: they represent a failed user
+request after transport retries. Count one `Internal server error` row per
+failure; do not downgrade these rows to warnings or count nested error text as
+another failure.
+
 ### Troubleshooting
 
 - No expected host: increase the discovery window, then check
