@@ -377,7 +377,7 @@ pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
     "Не вдалося сформувати звіт. Спробуйте ще раз.";
 pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
 pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
-    "Обрізано до 1 млн. записів! Обмежте період розразхунку звіту";
+    "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";

@@ -464,9 +464,7 @@ fn report_history_error_hint(error: &str) -> String {
     let message = debug_msg_values(error)
         .last()
         .cloned()
-        .or_else(|| nested_app_error_message(error))
-        .or_else(|| nested_string_message(error))
-        .or_else(|| plain_error_message(error));
+        .or_else(|| nested_app_error_message(error));
     let Some(message) = message else {
         return REPORT_HISTORY_GENERIC_ERROR_STATUS.to_string();
     };
@@ -549,24 +547,6 @@ fn nested_app_error_message(error: &str) -> Option<String> {
                 .map(str::to_string)
         })
     })
-}
-
-fn nested_string_message(error: &str) -> Option<String> {
-    error
-        .match_indices('"')
-        .filter_map(|(index, _)| parse_debug_string(&error[index..]))
-        .next_back()
-}
-
-fn plain_error_message(error: &str) -> Option<String> {
-    let error = error.trim();
-    if error.is_empty()
-        || error.contains(['{', '}'])
-        || error.lines().count() != 1
-    {
-        return None;
-    }
-    Some(error.to_string())
 }
 
 async fn report_history_queue_meta(
@@ -2414,29 +2394,66 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
     let stmt = Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
+        with recovered_report as (
+            select
+                id,
+                (
+                    select count(*)::integer
+                    from jsonb_array_elements(
+                        coalesce(report_history.log, '[]'::jsonb)
+                    ) as entry
+                    where entry->>'message' = $1
+                ) + 1 as recovery_count
+            from report_history
+            where status = $6
+        )
         update report_history
         set
-            status = $1,
-            planned_for_ts = now() at time zone 'utc',
-            started_at = null,
-            completed_at = null,
+            status = case
+                when recovered_report.recovery_count >= $2 then $3
+                else $4
+            end,
+            planned_for_ts = case
+                when recovered_report.recovery_count >= $2 then null
+                else now() at time zone 'utc'
+            end,
+            started_at = case
+                when recovered_report.recovery_count >= $2
+                    then report_history.started_at
+                else null
+            end,
+            completed_at = case
+                when recovered_report.recovery_count >= $2
+                    then now() at time zone 'utc'
+                else null
+            end,
             bgtask_id = null,
-            last_error = null,
+            last_error = case
+                when recovered_report.recovery_count >= $2 then format(
+                    'Report generation was interrupted while in progress; recorded recovery %s/%s during report worker startup recovery',
+                    recovered_report.recovery_count,
+                    $2
+                )
+                else null
+            end,
             log = coalesce(report_history.log, '[]'::jsonb)
                 || jsonb_build_array(jsonb_build_object(
                     'login',
-                    $2,
+                    $5,
                     'timestamp',
                     now() at time zone 'utc',
                     'message',
-                    $3
+                    $1
                 ))
-        where status = $4
+        from recovered_report
+        where report_history.id = recovered_report.id
         "#,
         [
+            REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE.into(),
+            REPORT_HISTORY_MAX_ATTEMPTS.into(),
+            STATUS_FAILED.into(),
             STATUS_PLANNED.into(),
             REPORT_CRASH_RECOVERY_LOGIN.into(),
-            REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE.into(),
             STATUS_IN_PROGRESS.into(),
         ],
     );
@@ -3553,7 +3570,11 @@ mod tests {
             ),
             (
                 r#"OuterError { source: "Коротке пояснення" }"#,
-                "Коротке пояснення",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                r#"DatabaseError { table: "report_history", constraint: "private_constraint" }"#,
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
             ),
             (
                 "Report generation timed out after 3600 seconds",
@@ -3604,7 +3625,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn startup_recovery_requeues_without_consuming_attempt(
+    async fn startup_recovery_uses_separate_bounded_attempts(
     ) -> Result<(), AppError> {
         let env = cleanup().await?;
         report_history::Entity::delete_many()
@@ -3656,6 +3677,30 @@ mod tests {
                 .and_then(|entry| entry.get("message"))
                 .and_then(serde_json::Value::as_str),
             Some(REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE)
+        );
+
+        let mut recovered = recovered.into_active_model();
+        recovered.status = Set(STATUS_IN_PROGRESS.to_string());
+        recovered.started_at = Set(Some(now));
+        let recovered = recovered.update(&env.dbx).await.c(h!())?;
+
+        recover_interrupted_reports(&env).await?;
+
+        let exhausted = ReportHistory::find_by_id(recovered.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert_eq!(exhausted.status, STATUS_FAILED);
+        assert_eq!(exhausted.retry_count, 1);
+        assert_eq!(exhausted.planned_for_ts, None);
+        assert!(exhausted.completed_at.is_some());
+        assert_eq!(
+            exhausted
+                .last_error
+                .as_deref()
+                .map(report_history_error_hint),
+            Some(REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS.to_string())
         );
         Ok(())
     }
