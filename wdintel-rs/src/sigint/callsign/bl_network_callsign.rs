@@ -771,7 +771,11 @@ pub async fn bl_get_network_callsigns_list(
     user_id: &uuid::Uuid,
     dbx: &DatabaseConnection,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
-    bl_get_network_callsigns_list_impl(req, user_id, dbx, None, None).await
+    Ok(bl_get_network_callsigns_list_impl(
+        req, user_id, dbx, None, None, None, false,
+    )
+    .await
+    .context(h!())?)
 }
 
 pub async fn bl_get_network_callsigns_list_with_activity_info(
@@ -779,15 +783,38 @@ pub async fn bl_get_network_callsigns_list_with_activity_info(
     user_id: &uuid::Uuid,
     dbx: &DatabaseConnection,
     activity_info: HashMap<String, CallsignActivityInfo>,
+    activity_required: bool,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
-    bl_get_network_callsigns_list_impl(
+    Ok(bl_get_network_callsigns_list_impl(
         req,
         user_id,
         dbx,
         None,
+        None,
         Some(activity_info),
+        activity_required,
     )
     .await
+    .context(h!())?)
+}
+
+pub async fn bl_get_network_callsigns_list_with_activity_period(
+    req: &ListNetworkCallsignsReq,
+    user_id: &uuid::Uuid,
+    dbx: &DatabaseConnection,
+    filter: &NetworkFreqFilter,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    Ok(bl_get_network_callsigns_list_impl(
+        req,
+        user_id,
+        dbx,
+        None,
+        Some(filter),
+        None,
+        true,
+    )
+    .await
+    .context(h!())?)
 }
 
 pub async fn bl_get_network_callsigns_list_for_period(
@@ -796,18 +823,29 @@ pub async fn bl_get_network_callsigns_list_for_period(
     dbx: &DatabaseConnection,
     filter: &NetworkFreqFilter,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
-    bl_get_network_callsigns_list_impl(req, user_id, dbx, Some(filter), None)
-        .await
+    Ok(bl_get_network_callsigns_list_impl(
+        req,
+        user_id,
+        dbx,
+        Some(filter),
+        Some(filter),
+        None,
+        true,
+    )
+    .await
+    .context(h!())?)
 }
 
 async fn bl_get_network_callsigns_list_impl(
     req: &ListNetworkCallsignsReq,
     user_id: &uuid::Uuid,
     dbx: &DatabaseConnection,
-    filter: Option<&NetworkFreqFilter>,
+    history_filter: Option<&NetworkFreqFilter>,
+    activity_filter: Option<&NetworkFreqFilter>,
     activity_info: Option<HashMap<String, CallsignActivityInfo>>,
+    activity_required: bool,
 ) -> Result<Vec<NetworkCallsign>, AppError> {
-    let network_callsign_ids = if filter.is_some() {
+    let network_callsign_ids = if history_filter.is_some() {
         Some(
             network_callsign_ids_for_period(dbx, req.network_id)
                 .await
@@ -841,7 +879,7 @@ async fn bl_get_network_callsigns_list_impl(
             sigint_network_callsign::Column::SigintNetworkId.eq(req.network_id),
         )
     };
-    if filter.is_none() {
+    if history_filter.is_none() {
         query = query
             .filter(sigint_network_callsign::Column::Deleted.eq(false))
             .filter(
@@ -892,7 +930,7 @@ async fn bl_get_network_callsigns_list_impl(
         .await
         .context(h!())?;
 
-    if let Some(filter) = filter {
+    if let Some(filter) = history_filter {
         let groups =
             crate::messenger::group::get_identity_sigint_groups(dbx, user_id)
                 .await
@@ -921,7 +959,7 @@ async fn bl_get_network_callsigns_list_impl(
             groups,
             req.network_id,
             &activity_callsigns,
-            None,
+            activity_filter,
         )
         .await
         .context(h!())?
@@ -936,13 +974,30 @@ async fn bl_get_network_callsigns_list_impl(
         })
         .collect::<HashMap<_, _>>();
 
-    let mut res = vec![];
-    for network_callsign in network_callsigns {
-        let callsign_activity = activity_info.get(&network_callsign.id);
-        let nc = render_network_callsign(&network_callsign, callsign_activity)?;
-        res.push(nc);
-    }
+    Ok(render_current_network_callsigns(
+        network_callsigns,
+        &activity_info,
+        activity_required,
+    )
+    .context(h!())?)
+}
 
+fn render_current_network_callsigns(
+    network_callsigns: Vec<NetworkCallsignResult>,
+    activity_info: &HashMap<i64, CallsignActivityInfo>,
+    activity_required: bool,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    let mut res = Vec::with_capacity(network_callsigns.len());
+    for network_callsign in &network_callsigns {
+        let callsign_activity = activity_info.get(&network_callsign.id);
+        if activity_required && callsign_activity.is_none() {
+            continue;
+        }
+        res.push(
+            render_network_callsign(network_callsign, callsign_activity)
+                .context(h!())?,
+        );
+    }
     Ok(res)
 }
 
@@ -1962,6 +2017,50 @@ mod tests {
             vec!["BRAVO", "ALPHA"]
         );
         assert_eq!(records[0].activity.message_count, 3);
+    }
+
+    #[test]
+    fn limited_period_excludes_network_callsigns_without_activity() {
+        let network_callsigns = vec![
+            network_callsign_result(
+                1,
+                "active",
+                NaiveDateTime::default(),
+                false,
+            ),
+            network_callsign_result(
+                2,
+                "inactive",
+                NaiveDateTime::default(),
+                false,
+            ),
+        ];
+        let activity_info = HashMap::from([(
+            1,
+            CallsignActivityInfo {
+                message_count: 2,
+                last_datetime: Some(3),
+                freqs: Some(vec!["100".to_string()]),
+                network_names: None,
+            },
+        )]);
+
+        let limited = render_current_network_callsigns(
+            network_callsigns.clone(),
+            &activity_info,
+            true,
+        )
+        .unwrap();
+        let unlimited = render_current_network_callsigns(
+            network_callsigns,
+            &activity_info,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].callsign, "active");
+        assert_eq!(unlimited.len(), 2);
     }
 
     fn network_callsign_for_link_check(

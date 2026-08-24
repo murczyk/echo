@@ -234,7 +234,7 @@ describe('SettingsMyReportsSection', () => {
     container.remove();
   });
 
-  it('adds execution time for author report tables', async () => {
+  it('adds report links, copyable IDs, and execution time for author report tables', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -254,6 +254,9 @@ describe('SettingsMyReportsSection', () => {
     const columns = (capturedSettingsNeoTableProps?.columns as Array<Record<string, any>>) ?? [];
     const executionTimeColumn = columns.find((column) => column.id === 'executionTime');
     const statusColumn = columns.find((column) => column.id === 'status');
+    const idColumn = columns.find((column) => column.accessorKey === 'id');
+    const startedAtColumn = columns.find((column) => column.accessorKey === 'startedAt');
+    const reportKindColumn = columns.find((column) => column.id === 'reportKind');
     const completedRow = {
       ...sampleRunningRow,
       status: 'done',
@@ -263,6 +266,20 @@ describe('SettingsMyReportsSection', () => {
       completedAt: '2026-06-26 17:01:21',
     };
 
+    const reportKindCell = reportKindColumn?.Cell?.({
+      row: { original: sampleRunningRow },
+    } as never) as { props?: Record<string, any> } | null;
+
+    expect(idColumn).toMatchObject({ header: 'ID', size: 92, minSize: 92, maxSize: 92 });
+    expect(startedAtColumn).toMatchObject({
+      header: 'Останній запуск',
+      enableSorting: true,
+      enableColumnFilter: false,
+    });
+    expect(reportKindCell?.props?.component).toBe('a');
+    expect(reportKindCell?.props?.componentProps?.href).toBe(
+      `/admin/all-reports/${sampleRunningRow.id}`,
+    );
     expect(executionTimeColumn?.header).toBe('Час виконання');
     expect(executionTimeColumn?.enableSorting).toBe(false);
     expect(executionTimeColumn?.enableColumnFilter).toBe(false);
@@ -270,7 +287,12 @@ describe('SettingsMyReportsSection', () => {
       'очікування 15хв 37с, виконання 44с',
     );
     expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('executionTime');
+    expect(capturedTableStateProviderProps?.defaultColumnOrder).toEqual(
+      expect.arrayContaining(['actions', 'id', 'reportKind']),
+    );
     expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
+      id: true,
+      startedAt: true,
       executionTime: true,
     });
     expect(statusColumn).toMatchObject({

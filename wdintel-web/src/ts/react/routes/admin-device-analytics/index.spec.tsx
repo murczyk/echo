@@ -55,6 +55,7 @@ vi.mock('./RuleTestPanel', () => ({
 }));
 
 import { AdminDeviceAnalyticsPage } from '.';
+import { HttpRequestError } from '../../services/api/client';
 
 const TAG_ID = '018f0000-0000-7000-8000-000000000101';
 const NOW = '2026-08-06T12:00:00Z';
@@ -74,6 +75,12 @@ let root: Root;
 function buttonWithText(text: string) {
   return Array.from(document.querySelectorAll('button')).find(
     (button) => button.textContent?.trim() === text,
+  );
+}
+
+function menuItemWithText(text: string) {
+  return Array.from(document.querySelectorAll('[role="menuitem"]')).find(
+    (item) => item.textContent?.trim() === text,
   );
 }
 
@@ -99,7 +106,17 @@ async function openDeviceTagsTab() {
   await flush();
 }
 
+async function openTagActions() {
+  const trigger = Array.from(document.querySelectorAll('button'))
+    .filter((button) => button.getAttribute('aria-label') === 'Дії')
+    .at(-1);
+  if (!trigger) throw new Error('Tag actions trigger was not rendered');
+  await act(async () => trigger.click());
+  await flush();
+}
+
 beforeEach(async () => {
+  window.history.replaceState(null, '', '/admin/device-analytics?tab=general');
   Object.defineProperty(window, 'confirm', {
     configurable: true,
     value: vi.fn(() => true),
@@ -159,6 +176,23 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(tagsPanel?.hidden).toBe(false);
     expect(container.textContent).toContain('Каталог порожній');
     expect(mocks.listTags).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3268
+  it('shows a persistent registry configuration warning without an empty catalog', async () => {
+    mocks.listTags.mockRejectedValueOnce(
+      new HttpRequestError(
+        503,
+        'Device file operations are unavailable because the [file_registry] configuration section is missing.',
+      ),
+    );
+    await openDeviceTagsTab();
+
+    expect(container.textContent).toContain('Сховище файлів пристроїв не налаштоване');
+    expect(container.textContent).not.toContain('Device file operations are unavailable');
+    expect(container.textContent).not.toContain('Каталог порожній');
+    expect(buttonWithText('Повторити')).toBeUndefined();
+    expect(buttonWithText('Створити тег')).toHaveProperty('disabled', true);
   });
 
   it('replaces the masked device webhook and clears it only through the explicit action', async () => {
@@ -243,7 +277,11 @@ describe('AdminDeviceAnalyticsPage', () => {
     mocks.updateTag.mockResolvedValue(renamedTag);
     await openDeviceTagsTab();
 
-    await act(async () => buttonWithText('Редагувати')?.click());
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Редагувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
     const nameInput = document.querySelector<HTMLInputElement>('input');
     expect(nameInput).not.toBeNull();
     act(() => setInputValue(nameInput!, renamedTag.name));
@@ -253,7 +291,11 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.updateTag).toHaveBeenCalledWith({ id: TAG_ID, name: renamedTag.name });
     expect(mocks.saveRule).not.toHaveBeenCalled();
 
-    await act(async () => buttonWithText('Редагувати')?.click());
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Редагувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
     await act(async () => buttonWithText('Зберегти')?.click());
     await flush();
 
@@ -261,7 +303,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.saveRule).not.toHaveBeenCalled();
   });
 
-  it('archives and restores an existing tag from the edit dialog', async () => {
+  it('archives and restores an existing tag from its action menu', async () => {
     await openDeviceTagsTab();
 
     await act(async () => buttonWithText('Створити тег')?.click());
@@ -270,25 +312,30 @@ describe('AdminDeviceAnalyticsPage', () => {
     await act(async () => buttonWithText('Зберегти')?.click());
     await flush();
 
-    await act(async () => buttonWithText('Редагувати')?.click());
-    await act(async () => buttonWithText('Архівувати тег')?.click());
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Архівувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
     await flush();
 
     expect(mocks.archiveTag).toHaveBeenCalledWith({ id: TAG_ID });
-    expect(document.body.textContent).toContain(
-      'Архівний тег спочатку потрібно відновити, щоб змінити назву або правило.',
-    );
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Архівний'));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
 
-    const restoreButton = buttonWithText('Відновити тег');
-    expect(restoreButton).not.toBeUndefined();
-    expect(restoreButton?.disabled).toBe(false);
-    await act(async () => restoreButton?.click());
+    await openTagActions();
+    expect(menuItemWithText('Відновити')).toBeDefined();
+    await act(async () =>
+      menuItemWithText('Відновити')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
     await flush();
-    expect(window.confirm).toHaveBeenCalledTimes(2);
-    expect(mocks.archiveTag).toHaveBeenCalledTimes(1);
+    await flush();
 
     expect(mocks.restoreTag).toHaveBeenCalledWith({ id: TAG_ID });
-    expect(buttonWithText('Встановити тестове правило')).not.toBeUndefined();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Активний'));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
   it('requires confirmation before scheduling global reanalysis', async () => {

@@ -252,6 +252,8 @@ pub enum ListNetworkCallsignsSortBy {
 pub struct ListNetworkCallsignsReq {
     pub network_id: i64,
     pub sort_by: Option<Vec<ListNetworkCallsignsSortBy>>,
+    pub period:
+        Option<crate::sigint::network::types::NetworkFreqCallsignsPeriod>,
 }
 
 #[derive(

@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { act } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -52,10 +52,13 @@ const integration = {
   accessLogins: [],
 };
 
+let renderedRoot: Root | null = null;
+
 async function renderPage() {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
+  renderedRoot = root;
   await act(async () => root.render(<AdminGoiIntegrationsNeoPage />));
   await act(async () => Promise.resolve());
   await act(async () => Promise.resolve());
@@ -73,6 +76,11 @@ async function clickButton(label: string) {
     button(label)?.click();
     await new Promise((resolve) => window.setTimeout(resolve, 410));
   });
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 describe('AdminGoiIntegrationsNeoPage', () => {
@@ -97,20 +105,78 @@ describe('AdminGoiIntegrationsNeoPage', () => {
   });
 
   afterEach(() => {
+    act(() => renderedRoot?.unmount());
+    renderedRoot = null;
     document.body.innerHTML = '';
     delete (window as { localStorage?: Storage }).localStorage;
   });
 
-  it('renders the standard table and create/edit dialogs', async () => {
-    const { container, root } = await renderPage();
-
-    expect(container.querySelector('table')).not.toBeNull();
-    expect(container.textContent).toContain('Організм 9');
-    await clickButton('Додати інтеграцію');
-    expect(document.body.textContent).toContain('Створити інтеграцію ГОІ');
-    await clickButton('Скасувати');
+  // Regression: https://github.com/echoua/echo/pull/3268
+  it('keeps a dirty drawer open when dismissal is declined', async () => {
+    const { root } = await renderPage();
     await clickButton('Редагувати');
+    const host = document.querySelector<HTMLInputElement>('input[value="goi-9.local"]');
+    expect(host).not.toBeNull();
+    await act(async () => {
+      setInputValue(host!, 'draft');
+    });
+    Object.defineProperty(window, 'confirm', { configurable: true, value: vi.fn(() => false) });
+    await clickButton('Скасувати');
+    expect(window.confirm).toHaveBeenCalled();
     expect(document.body.textContent).toContain('Редагувати інтеграцію ГОІ');
+    await act(async () => root.unmount());
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3268
+  it('refreshes the clean drawer baseline after worker setup', async () => {
+    const configured = {
+      ...integration,
+      serverLabel: 'goi-configured',
+      sshHost: 'goi-configured.local',
+      apiPassword: 'generated-secret',
+    };
+    mocks.setupWorker.mockResolvedValue(configured);
+    Object.defineProperty(window, 'confirm', { configurable: true, value: vi.fn(() => true) });
+    const { container, root } = await renderPage();
+    await clickButton('Редагувати');
+    await clickButton('Налаштувати воркер');
+
+    expect(mocks.setupWorker).toHaveBeenCalledWith(
+      expect.objectContaining({ id: integration.id, sshHost: integration.sshHost }),
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[value="goi-configured.local"]'),
+    ).not.toBeNull();
+    expect(container.textContent).toContain(configured.serverLabel);
+
+    await clickButton('Скасувати');
+    expect(window.confirm).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3268
+  it('prevents drawer dismissal while a connection check is running', async () => {
+    let finishCheck:
+      ((value: { ok: boolean; error: string | null; listedEntries: string[] }) => void) | null =
+      null;
+    mocks.check.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishCheck = resolve;
+        }),
+    );
+    const { root } = await renderPage();
+    await clickButton('Редагувати');
+    await act(async () => button("Перевірити з'єднання")?.click());
+    expect(button('Скасувати')?.disabled).toBe(true);
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+    expect(document.body.textContent).toContain('Редагувати інтеграцію ГОІ');
+
+    await act(async () => finishCheck?.({ ok: true, error: null, listedEntries: [] }));
+    await act(async () => Promise.resolve());
+    expect(button('Скасувати')?.disabled).toBe(false);
 
     await act(async () => root.unmount());
   });

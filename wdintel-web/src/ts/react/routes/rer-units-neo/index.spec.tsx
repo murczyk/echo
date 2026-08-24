@@ -57,14 +57,18 @@ vi.mock('../../components/TablePageToolbar', () => ({
 }));
 
 vi.mock('./components/UnitsTable', () => ({ UnitsTable: () => <div data-testid="units-table" /> }));
-vi.mock('./components/UnitFormDialog', () => ({ UnitFormDialog: () => null }));
+vi.mock('./components/UnitFormDrawer', () => ({
+  UnitFormDrawer: () => null,
+}));
 vi.mock('./components/UnitActionDialogs', () => ({
   DeleteUnitDialog: () => null,
   MergeUnitDialog: () => null,
 }));
 vi.mock('./components/KmzTaskStatus', () => ({ KmzTaskStatus: () => null }));
 vi.mock('./components/KmzUploadDialog', () => ({ KmzUploadDialog: () => null }));
-vi.mock('../rer-unit-details/OrbitUnitLinkDialog', () => ({ OrbitUnitLinkDialog: () => null }));
+vi.mock('../rer-unit-details/OrbitUnitLinkDialog', () => ({
+  OrbitUnitLinkDialog: () => null,
+}));
 
 vi.mock('./use-rer-units-page', () => ({
   useRerUnitsPage: (_roles: string[], req: ListUnitsReq) => {

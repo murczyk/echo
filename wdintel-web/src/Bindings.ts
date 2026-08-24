@@ -3429,6 +3429,7 @@ export type ListNetworkCallsignsSortBy =
 export type ListNetworkCallsignsReq = {
   networkId: number;
   sortBy: Array<ListNetworkCallsignsSortBy> | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type ListNetworkCallsignsRes = {
@@ -4157,6 +4158,7 @@ export type SingleNetworkCallsignsReq = {
   networkId: number;
   includeActivityInfo: boolean | null;
   section: SingleNetworkCallsignsSection | null;
+  period: NetworkFreqCallsignsPeriod | null;
 };
 
 export type SingleNetworkCallsignsListRsp = {
@@ -5400,6 +5402,16 @@ export type AreaOfResponsibilityInsert = {
 export type UpdateAreaOfResponsibilityReq = {
   id: number;
   insert: AreaOfResponsibilityInsert;
+};
+
+export type AorBattleLineBoundariesUpdate = {
+  id: number;
+  leftCoordinates: AorCoordinates;
+  rightCoordinates: AorCoordinates;
+};
+
+export type UpdateAorBattleLineBoundariesReq = {
+  items: Array<AorBattleLineBoundariesUpdate>;
 };
 
 export type DeleteAreaOfResponsibilityReq = {

@@ -272,6 +272,12 @@ describe('use-rer-network-details-neo-page.load', () => {
       networkId: 42,
       includeActivityInfo: true,
       section: 'Everything',
+      period: 'Last21Days',
+    });
+    expect(callsignsApiMock.listNetworkCallsigns).toHaveBeenCalledWith({
+      networkId: 42,
+      sortBy: ['NetworkCallsignAsc'],
+      period: 'Last21Days',
     });
     expect(latestState?.networkCallsignsLoading).toBe(true);
     expect(latestState?.catalogCallsignsLoaded).toBe(true);

@@ -3632,8 +3632,9 @@ pub async fn network_callsigns_list(
     )
     .await?;
 
-    let _network =
-        find_network(&env.dbx, req.network_id).await.context(h!())?;
+    let network = find_network(&env.dbx, req.network_id).await.context(h!())?;
+    let period = resolve_network_callsign_period(req.period);
+    let period_filter = network_callsign_period_filter(&network, &period);
 
     let groups = crate::messenger::group::get_identity_sigint_groups_noimport(
         &env.dbx,
@@ -3650,6 +3651,8 @@ pub async fn network_callsigns_list(
         req.network_id,
         include_activity_info,
         req.section.clone(),
+        period,
+        period_filter,
     )
     .await?;
 
@@ -3678,11 +3681,13 @@ async fn load_current_network_callsigns(
     network_id: i64,
     include_activity_info: bool,
     section: Option<SingleNetworkCallsignsSection>,
+    period: NetworkFreqCallsignsPeriod,
+    period_filter: Option<NetworkFreqFilter>,
 ) -> Result<Vec<CallsignRes>, AppError> {
     let source_db = env.dbx.clone();
     let analytics_groups = groups.clone();
     let analytics_section = section.clone();
-    crate::rer_importer::analysis::with_analytics_read_fallback(
+    Ok(crate::rer_importer::analysis::with_analytics_read_fallback(
         env,
         "network callsigns list",
         true,
@@ -3692,9 +3697,11 @@ async fn load_current_network_callsigns(
                 &analytics_db,
                 &analytics_groups,
                 network_id,
+                &period,
             )
-            .await?;
-            load_callsigns_from_activity_info(
+            .await
+            .context(h!())?;
+            Ok(load_callsigns_from_activity_info(
                 &source_db,
                 network_id,
                 None,
@@ -3703,22 +3710,58 @@ async fn load_current_network_callsigns(
                 &activity_info,
             )
             .await
+            .context(h!())?)
         },
         move |postgres_db| async move {
-            load_callsigns(
+            let exclude_network_callsign_activity = period_filter.is_some();
+            Ok(load_callsigns(
                 &postgres_db,
                 &groups,
                 network_id,
                 None,
                 include_activity_info,
                 section,
-                None,
-                false,
+                period_filter.as_ref(),
+                exclude_network_callsign_activity,
             )
             .await
+            .context(h!())?)
         },
     )
     .await
+    .context(h!())?)
+}
+
+pub(crate) fn resolve_network_callsign_period(
+    period: Option<NetworkFreqCallsignsPeriod>,
+) -> NetworkFreqCallsignsPeriod {
+    period.unwrap_or(NetworkFreqCallsignsPeriod::Last21Days)
+}
+
+pub(crate) fn network_callsign_period_bounds(
+    network: &sigint_network::Model,
+    period: &NetworkFreqCallsignsPeriod,
+) -> Option<(NaiveDateTime, NaiveDateTime)> {
+    let lookback_days = period.lookback_days()?;
+    let till = network.active_to.unwrap_or_else(|| Utc::now().naive_utc());
+    Some((till - Duration::days(lookback_days), till))
+}
+
+pub(crate) fn network_callsign_period_filter(
+    network: &sigint_network::Model,
+    period: &NetworkFreqCallsignsPeriod,
+) -> Option<NetworkFreqFilter> {
+    network_callsign_period_bounds(network, period).map(|(since, till)| {
+        NetworkFreqFilter {
+            active_freqs_only: false,
+            since_date_inclusive_ms: Some(
+                since.and_utc().timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(till.and_utc().timestamp_millis()),
+            till_date_end:
+                crate::rer_importer::report_chunking::ReportPeriodEnd::Inclusive,
+        }
+    })
 }
 
 #[post("/api/sigint/network-freqs-list")]
@@ -4783,6 +4826,20 @@ mod tests {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap()
+    }
+
+    #[test]
+    fn network_callsign_period_defaults_to_last_21_days() {
+        assert_eq!(
+            resolve_network_callsign_period(None),
+            NetworkFreqCallsignsPeriod::Last21Days
+        );
+        assert_eq!(
+            resolve_network_callsign_period(Some(
+                NetworkFreqCallsignsPeriod::Unlimited,
+            )),
+            NetworkFreqCallsignsPeriod::Unlimited
+        );
     }
 
     fn empty_list_networks_req() -> ListNetworksReq {

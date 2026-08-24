@@ -7,7 +7,9 @@ use crate::h;
 use crate::mattermost::{self, WebhookTarget};
 use crate::types::{Env, ShortContext};
 use anyhow::{Context, Result};
-use sea_orm::EntityTrait;
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
+};
 use serde::Serialize;
 use std::{fmt::Write as _, sync::Arc, time::Duration};
 use url::{Host, Url};
@@ -62,12 +64,15 @@ pub(crate) async fn analysis_run_completed_nofail(env: &Env, run_id: Uuid) {
         let device = load_device(env, run.device_id).await.context(h!())?;
         let summary =
             query::analysis_run_summary(file_db, &run).await.c(h!())?;
+        let is_first_analysis =
+            is_first_analysis_run(file_db, &run).await.context(h!())?;
         let Some(text) = render_analysis_run_completed(
             &env.config.public_host,
             device.id,
             device.name.as_deref(),
             device.external_url.as_deref(),
             &summary,
+            is_first_analysis,
         )
         .context(h!())?
         else {
@@ -120,6 +125,23 @@ async fn load_device(env: &Env, device_id: Uuid) -> Result<device::Model> {
         .context(h!())
 }
 
+async fn is_first_analysis_run(
+    db: &impl ConnectionTrait,
+    run: &file_analysis_run::Model,
+) -> Result<bool> {
+    Ok(file_analysis_run::Entity::find()
+        .select_only()
+        .column(file_analysis_run::Column::Id)
+        .filter(file_analysis_run::Column::DeviceId.eq(run.device_id))
+        .filter(file_analysis_run::Column::RunSequence.lt(run.run_sequence))
+        .limit(1)
+        .into_tuple::<Uuid>()
+        .one(db)
+        .await
+        .c(h!())?
+        .is_none())
+}
+
 fn render_device_created(
     public_host: &str,
     device: &DeviceCurrentState,
@@ -144,6 +166,7 @@ fn render_analysis_run_completed(
     name: Option<&str>,
     external_url: Option<&str>,
     summary: &AnalysisRunSummary,
+    is_first_analysis: bool,
 ) -> Result<Option<String>> {
     if summary.items.is_empty() {
         return Ok(None);
@@ -160,7 +183,12 @@ fn render_analysis_run_completed(
     let visible_tag_count = summary.items.len().min(ANALYSIS_TAG_MAX_COUNT);
     heading.reserve(32 + visible_tag_count.saturating_mul(32));
     heading.push('\n');
-    write!(heading, "Файли: {}", summary.file_count)
+    let file_count_label = if is_first_analysis {
+        "Файли"
+    } else {
+        "Нові файли"
+    };
+    write!(heading, "{file_count_label}: {}", summary.file_count)
         .expect("writing to a String cannot fail");
     for item in summary.items.iter().take(ANALYSIS_TAG_MAX_COUNT) {
         heading.push_str(", ");
@@ -315,6 +343,7 @@ mod tests {
             device.name.as_deref(),
             device.external_url.as_deref(),
             &summary,
+            true,
         )
         .unwrap()
         .expect("a run with tagged files should render a notification");
@@ -329,6 +358,32 @@ mod tests {
                  Файли: 12573, Тег 1: 123, Тег 2: 321"
             )
         );
+    }
+
+    #[test]
+    fn repeat_analysis_payload_labels_new_files() {
+        let device_id = Uuid::from_u128(0x01a01df4_7cc6_7110_bcf6_6c72132387f8);
+        let device = device_fixture(device_id);
+        let summary = AnalysisRunSummary {
+            file_count: 7,
+            items: vec![AnalysisRunTagSummary {
+                tag_name: "Тег".to_string(),
+                file_count: 3,
+            }],
+        };
+
+        let text = render_analysis_run_completed(
+            "localhost",
+            device.id,
+            device.name.as_deref(),
+            device.external_url.as_deref(),
+            &summary,
+            false,
+        )
+        .unwrap()
+        .expect("a run with tagged files should render a notification");
+
+        assert!(text.ends_with("\nНові файли: 7, Тег: 3"));
     }
 
     #[test]
@@ -347,6 +402,7 @@ mod tests {
                 device.name.as_deref(),
                 device.external_url.as_deref(),
                 &summary,
+                true,
             )
             .unwrap(),
             None

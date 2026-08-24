@@ -32,6 +32,7 @@ type HookResult = ReturnType<typeof useRerNetworkDetailsNeoPageCallsignActions>;
 let root: Root | null = null;
 let latestActions: HookResult | null = null;
 let latestState: NetworkDetailsNeoPageState | null = null;
+const loadCallsigns = vi.fn();
 
 function Harness({
   unitIds,
@@ -51,7 +52,7 @@ function Harness({
   latestActions = useRerNetworkDetailsNeoPageCallsignActions({
     state,
     setState,
-    loadCallsigns: vi.fn(),
+    loadCallsigns,
   });
 
   return null;
@@ -79,6 +80,20 @@ afterEach(() => {
 });
 
 describe('useRerNetworkDetailsNeoPageCallsignActions', () => {
+  it('defaults to 21 days and reloads callsign data when the period changes', async () => {
+    renderHarness([101]);
+
+    expect(latestState?.networkCallsignsPeriod).toBe('Last21Days');
+
+    await act(async () => {
+      latestActions?.setNetworkCallsignsPeriod('Last7Days');
+      await Promise.resolve();
+    });
+
+    expect(latestState?.networkCallsignsPeriod).toBe('Last7Days');
+    expect(loadCallsigns).toHaveBeenCalledWith(17, 'Last7Days');
+  });
+
   it('defaults a new callsign when the network has exactly one unit', () => {
     renderHarness([101]);
 
