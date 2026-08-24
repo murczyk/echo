@@ -1275,6 +1275,9 @@ export function useWindowedFeedScroll({
       hasSeenNotAtBottomRef.current = false;
       anchorSnapshotRef.current = null;
       stopBottomSettle();
+      // A wait/ease armed for the previous feed would land on the reset result and
+      // fight its initial positioning.
+      clearFollowScroll();
     }
 
     const currentItemIds = itemIdsRef.current;
@@ -1288,6 +1291,7 @@ export function useWindowedFeedScroll({
       hasSeenNotAtBottomRef.current = false;
       previousItemIdsRef.current = currentItemIds;
       stopBottomSettle();
+      clearFollowScroll();
       return;
     }
 
@@ -1360,6 +1364,7 @@ export function useWindowedFeedScroll({
     }
   }, [
     captureAnchorSnapshot,
+    clearFollowScroll,
     debugFeedId,
     enabledBeforeRender,
     enabled,
