@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: XLSX fallback sheet-name truncation fixtures
 import { zipSync, strToU8 } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
 

@@ -1,3 +1,4 @@
+// @test-scope parser: analysis callsign-hint network, hierarchy, and tooltip normalization fixtures
 import { describe, expect, it } from 'vitest';
 
 import type { CallsignInfoRes, Network, Unit } from '../../../../Bindings';

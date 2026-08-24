@@ -265,6 +265,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(nextLoadMapPalitras).toHaveBeenCalledTimes(1);
   });
 
+  // @test-scope safeguard: prevents rapid query changes from applying an obsolete analysis reload
   it('debounces rapid reload trigger updates and keeps only the latest reload', async () => {
     vi.useFakeTimers();
     const params = buildParams();
@@ -301,6 +302,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
   });
 
+  // @test-scope safeguard: prevents a reverted query from being stranded after its prior reload was aborted
   it('reschedules an aborted key when the user reverts before the debounce fires', async () => {
     vi.useFakeTimers();
     let resolveInitialReload: (() => void) | null = null;
@@ -353,6 +355,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
   });
 
+  // @test-scope safeguard: prevents summary data from loading against an unsettled newer query
   it('blocks summary reloads until the debounced reload settles', async () => {
     vi.useFakeTimers();
     let resolveNextReload: (() => void) | null = null;
@@ -409,6 +412,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     expect(nextLoadSummaryData).toHaveBeenCalledTimes(1);
   });
 
+  // @test-scope safeguard: prevents a superseded analysis reload from completing against the newer query
   it('aborts the previous reload when a newer reload starts', async () => {
     vi.useFakeTimers();
     let resolveFirstReload: (() => void) | null = null;
@@ -451,6 +455,7 @@ describe('useAnalysisReloadOrchestrator', () => {
     });
   });
 
+  // @test-scope safeguard: prevents an unmounted analysis page from starting or completing a pending reload
   it('aborts the active reload and clears pending debounce timers on unmount', async () => {
     vi.useFakeTimers();
     let resolveFirstReload: (() => void) | null = null;

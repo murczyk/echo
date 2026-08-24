@@ -1,3 +1,4 @@
+// @test-scope parser: locality API response normalization fixture
 import { describe, expect, it, vi } from 'vitest';
 
 import { postJson } from './client';

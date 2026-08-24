@@ -1,5 +1,5 @@
 /** @vitest-environment happy-dom */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getJson: vi.fn(),
@@ -17,19 +17,14 @@ import {
   cancelAiAgentRequest,
   getAiAgentAuditRequest,
   saveAiAgentDispatcher,
-  streamAiAgentEvents,
   testAiAgentDispatcher,
   updateAiAgentConversation,
 } from './ai-agent';
 
 beforeEach(() => vi.clearAllMocks());
 
-afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
-});
-
 describe('AI agent API mapping', () => {
+  // @test-scope parser: AI-agent cancellation response state normalization fixture
   it('returns the authoritative state from cancellation', async () => {
     mocks.postJson.mockResolvedValue({ state: 'completed' });
 
@@ -39,6 +34,7 @@ describe('AI agent API mapping', () => {
     });
   });
 
+  // @test-scope parser: AI-agent audit activity and conversation response normalization fixture
   it('keeps structured API activity and Mattermost alert retry state', async () => {
     mocks.postJson.mockResolvedValue({
       request: {
@@ -147,6 +143,7 @@ describe('AI agent API mapping', () => {
     expect(JSON.stringify(request)).not.toContain('не показувати');
   });
 
+  // @test-scope parser: AI-agent conversation request and unique message-key compatibility fixture
   it('updates titles with the generated request shape and unique message keys', async () => {
     mocks.postJson.mockResolvedValue({
       id: 'conversation-1',
@@ -188,30 +185,7 @@ describe('AI agent API mapping', () => {
     ]);
   });
 
-  it('aborts an inactive event stream after 15 seconds', async () => {
-    vi.useFakeTimers();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(new ReadableStream<Uint8Array>({ start() {} }), {
-          status: 200,
-          headers: { 'Content-Type': 'text/event-stream' },
-        }),
-      ),
-    );
-
-    const stream = streamAiAgentEvents({
-      requestId: 'request-1',
-      afterSequence: 0,
-      signal: new AbortController().signal,
-      onEvent: vi.fn(),
-    });
-    const result = expect(stream).rejects.toThrow('Потік подій неактивний понад 15 секунд.');
-    await vi.advanceTimersByTimeAsync(15_001);
-
-    await result;
-  });
-
+  // @test-scope safeguard: prevents dispatcher saves from sending non-editable sensitive host-file settings
   it('saves only editable dispatcher fields and tests the singleton', async () => {
     const dispatcher = {
       configured: true,

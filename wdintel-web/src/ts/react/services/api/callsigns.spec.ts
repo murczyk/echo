@@ -11,6 +11,7 @@ describe('callsigns API', () => {
     window.history.replaceState({}, '', '/sigint/callsigns?filter=alpha#panel');
   });
 
+  // @test-scope safeguard: prevents unauthorized binary downloads from leaving users on a protected route
   it('redirects binary downloads on 401', async () => {
     vi.stubGlobal(
       'fetch',
@@ -30,6 +31,7 @@ describe('callsigns API', () => {
     );
   });
 
+  // @test-scope parser: callsign list and export filter wire-format fixture
   it('serializes region and district filters for list and exports', async () => {
     const fetchMock = vi
       .fn()

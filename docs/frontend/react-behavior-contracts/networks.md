@@ -1,0 +1,39 @@
+# Networks
+
+## Network API compatibility
+
+- **Status:** operational compatibility
+
+- **Behavior ID:** `react-networks-api-compatibility`
+- **Affected route/component:** network list, frequency editor, callsign relations, activity views, and report downloads
+- **User role or permission:** users authorized for the network data and mutations
+- **Preconditions:** a network list, report, activity, callsign, relation, or frequency mutation is requested
+- **User action or external event:** the user filters, downloads, pages activity, opens callsign relations, or changes a frequency
+- **Expected observable result:** wire requests preserve supported snake-case filters and optional values; response maps normalize numeric IDs, nested frequency payloads, callsigns, and activity data for React consumers.
+- **Loading/empty/error/success behavior:** optional callsign/AOR activity can be omitted intentionally; an empty text filter avoids the server default cap.
+- **URL, localStorage, or user-settings persistence:** route-owned filters and table state are outside this API boundary.
+- **API endpoint and compatibility requirements:** classic and Neo report payloads remain aligned; task-result bytes are downloaded by task ID; frequency mutations use established Neo endpoints.
+- **Responsive and keyboard requirements:** none at the API boundary.
+- **Known race/idempotency constraints:** caller-owned abort signals are forwarded to relation-message requests.
+- **Source implementation:** `src/ts/react/services/api/networks.ts`
+- **Existing test(s):** `networks.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
+
+## Network route state normalization
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-networks-route-state-normalization`
+- **Affected route/component:** RER Networks filter, report, status, and activity helper boundary
+- **User role or permission:** users allowed to inspect RER network data
+- **Preconditions:** a network filter, saved table state, report request, or activity response is available
+- **User action or external event:** the user filters/sorts networks, restores table state, opens a frequency group, or renders activity bars
+- **Expected observable result:** AOR and hierarchy filters preserve classic-compatible request semantics; unsupported restored column filters are removed; status/labels/colors derive from one canonical state; frequency grouping and activity bars retain correct active/inactive and date-range meaning.
+- **Loading/empty/error/success behavior:** absent/invalid filters resolve to supported default behavior rather than malformed requests.
+- **URL, localStorage, or user-settings persistence:** restored table filters are normalized before use.
+- **API endpoint and compatibility requirements:** request fields map to the established backend flags, sorting variants, and unpaged report/count semantics.
+- **Responsive and keyboard requirements:** none at the helper boundary.
+- **Known race/idempotency constraints:** stale restored column state cannot introduce unknown filter identifiers.
+- **Source implementation:** `routes/rer-networks-neo/helpers.ts`
+- **Existing test(s):** `helpers.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.

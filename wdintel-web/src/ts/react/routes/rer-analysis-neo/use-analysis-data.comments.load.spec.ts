@@ -89,6 +89,7 @@ describe('loadMissingMessageCommentsForMessages', () => {
     });
   });
 
+  // @test-scope safeguard: prevents a late comment batch from overwriting comments after analysis invalidation
   it('does not surface stale loads after the request version changes', async () => {
     fetchMessageComments.mockResolvedValue({
       data: [{ messageId: 42, comments: [buildComment({ login: 'stale-login' })] }],

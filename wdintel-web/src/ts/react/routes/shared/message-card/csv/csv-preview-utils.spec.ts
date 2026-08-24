@@ -1,3 +1,4 @@
+// @test-scope parser: CSV delimiter, encoding, binary, malformed-input, and bounded-preview fixtures
 import { describe, expect, it } from 'vitest';
 
 import {

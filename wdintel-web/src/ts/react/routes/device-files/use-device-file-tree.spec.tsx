@@ -193,4 +193,26 @@ describe('useDeviceFileTree', () => {
     expect(latest?.branches[ROOT_ONE_ID].error?.status).toBe(404);
     expect(onDirectoryMissing).toHaveBeenCalledWith(ROOT_ONE_ID);
   });
+
+  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  it('shows a localized file-registry configuration error for a normal directory load', async () => {
+    apiMock.browseDeviceFiles.mockImplementation(({ parentEntryId }) =>
+      parentEntryId === ROOT_ONE_ID
+        ? Promise.reject(
+            new HttpRequestError(
+              503,
+              'Device file operations are unavailable because the [file_registry] configuration section is missing.',
+            ),
+          )
+        : Promise.resolve(browseResponse(parentEntryId, [])),
+    );
+    await mountHook();
+
+    expect(latest?.branches[ROOT_ONE_ID].error?.message).toContain(
+      'Сховище файлів пристроїв не налаштоване',
+    );
+    expect(latest?.branches[ROOT_ONE_ID].error?.message).not.toContain(
+      'Device file operations are unavailable',
+    );
+  });
 });

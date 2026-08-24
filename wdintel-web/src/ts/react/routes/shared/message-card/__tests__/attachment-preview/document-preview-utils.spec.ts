@@ -22,6 +22,7 @@ describe('document preview response cache', () => {
     vi.unstubAllGlobals();
   });
 
+  // @test-scope safeguard: prevents the document-preview cache from retaining more responses than its entry cap
   it('evicts the least recently used response when the entry limit is reached', async () => {
     const fetchMock = vi.fn(async () => createResponse(1));
     vi.stubGlobal('fetch', fetchMock);
@@ -41,6 +42,7 @@ describe('document preview response cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(DOCUMENT_CACHE_LIMIT + 2);
   });
 
+  // @test-scope safeguard: prevents the document-preview cache from exceeding its retained byte budget
   it('evicts old responses when the retained byte budget is reached', async () => {
     const entryByteLength = Math.floor(DOCUMENT_CACHE_MAX_BYTES / 3) + 1;
     const fetchCounts = new Map<string, number>();

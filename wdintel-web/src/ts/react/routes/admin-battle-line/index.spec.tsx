@@ -102,6 +102,7 @@ async function setInputValue(input: HTMLInputElement, value: string) {
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/admin/battle-line');
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -127,6 +128,22 @@ afterEach(() => {
 });
 
 describe('AdminBattleLinePage', () => {
+  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  it('pushes explicit tab values and restores them on browser navigation', async () => {
+    window.history.replaceState(null, '', '/admin/battle-line?keep=1#map');
+    await renderPage();
+    expect(window.location.href).toContain('?keep=1&tab=lbz#map');
+    const pushState = vi.spyOn(window.history, 'pushState');
+    await act(async () => button('ПЕРЕХОПЛЕННЯ БЕЗ НП').click());
+    expect(pushState).toHaveBeenCalledOnce();
+    expect(window.location.href).toContain('?keep=1&tab=unlinked#map');
+    window.history.replaceState(null, '', '/admin/battle-line?keep=1&tab=unresolved#map');
+    await act(async () => window.dispatchEvent(new PopStateEvent('popstate')));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(
+      'НЕВИЗНАЧЕНІ ЛОКАЦІЇ',
+    );
+  });
+
   it('renders current/history data and loads both paginated tabs', async () => {
     await renderPage();
     expect(container.textContent).toContain('previous.kml');

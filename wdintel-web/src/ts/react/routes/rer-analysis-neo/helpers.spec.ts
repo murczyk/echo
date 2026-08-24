@@ -1,3 +1,4 @@
+// @test-scope parser: analysis URL, saved-filter, request, and date-range normalization fixtures
 import { describe, expect, it } from 'vitest';
 
 import type { SavedFilter } from '../../../../Bindings';

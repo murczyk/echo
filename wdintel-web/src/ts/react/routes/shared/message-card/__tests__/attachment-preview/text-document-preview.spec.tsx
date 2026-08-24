@@ -81,6 +81,7 @@ describe('text-document-preview', () => {
     vi.restoreAllMocks();
   });
 
+  // @test-scope safeguard: prevents oversized streamed text attachments from exhausting preview resources
   it('shows an error when the TXT stream exceeds the byte cap', async () => {
     const firstChunk = new Uint8Array(700_000);
     const secondChunk = new Uint8Array(400_000);
@@ -105,6 +106,7 @@ describe('text-document-preview', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents a failed text attachment fetch from leaving an empty successful preview
   it('shows an error when TXT fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('network error'));
 
@@ -122,6 +124,7 @@ describe('text-document-preview', () => {
     root.unmount();
   });
 
+  // @test-scope parser: Markdown sanitization and safe-link rendering fixture
   it('renders markdown safely without html, scripts, or images', async () => {
     const markdown = [
       '# Title',
@@ -173,6 +176,7 @@ describe('text-document-preview', () => {
     root.unmount();
   });
 
+  // @test-scope parser: UTF-16 text attachment decoding fixture
   it('renders utf-16le and utf-16be TXT fixtures', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -215,6 +219,7 @@ describe('text-document-preview', () => {
     secondRoot.unmount();
   });
 
+  // @test-scope parser: Windows-1251 extensionless text and Markdown decoding fixture
   it('renders windows-1251 TXT and Markdown fixtures from extensionless URLs', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const text = 'Привет';
@@ -258,6 +263,7 @@ describe('text-document-preview', () => {
     markdownRoot.unmount();
   });
 
+  // @test-scope parser: case-insensitive declared text charset fixture
   it('honors case-variant charset parameters', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(buildWindows1251PrivetChunk(), {
@@ -280,6 +286,7 @@ describe('text-document-preview', () => {
     root.unmount();
   });
 
+  // @test-scope parser: unsupported text charset fallback fixture
   it('falls back to UTF-8 for unsupported charset labels', async () => {
     const text = 'Привіт UTF-8';
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
@@ -302,6 +309,7 @@ describe('text-document-preview', () => {
     root.unmount();
   });
 
+  // @test-scope parser: text BOM precedence over declared charset fixture
   it('prefers BOM over a contradictory declared charset', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(buildUtf16LeChunk('Привіт UTF-16'), {
@@ -323,6 +331,7 @@ describe('text-document-preview', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents binary payloads disguised as legacy text from rendering as documents
   it('rejects binary payloads with a declared legacy charset', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(new Uint8Array([0xcf, 0x00, 0xf0, 0x00]), {

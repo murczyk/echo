@@ -1,12 +1,7 @@
+// @test-scope parser: direct-submit response compatibility fixtures
 import { describe, expect, it, vi } from 'vitest';
 
-import { HttpRequestError } from './client';
-import {
-  copyDirectSubmit,
-  editDirectSubmit,
-  formatDirectSubmitError,
-  submitDirect,
-} from './direct-submit';
+import { editDirectSubmit, submitDirect } from './direct-submit';
 
 const apiMocks = vi.hoisted(() => ({
   postJson: vi.fn(),
@@ -16,36 +11,6 @@ vi.mock('./client', async () => ({
   ...(await vi.importActual<typeof import('./client')>('./client')),
   postJson: apiMocks.postJson,
 }));
-
-describe('formatDirectSubmitError', () => {
-  it('shows a user-friendly backend validation error', () => {
-    const error = new HttpRequestError(400, 'Додайте текст повідомлення або медіафайл.');
-
-    expect(formatDirectSubmitError(error, 'save')).toBe(error.message);
-  });
-
-  it('keeps an unknown business error detail', () => {
-    const error = new HttpRequestError(400, 'Некоректна частота');
-
-    expect(formatDirectSubmitError(error, 'save')).toBe('Некоректна частота');
-  });
-
-  it('replaces internal error text with an actionable message', () => {
-    const error = new HttpRequestError(500, 'Internal server error');
-
-    expect(formatDirectSubmitError(error, 'save')).toBe(
-      'Не вдалося зберегти повідомлення. Спробуйте ще раз. Якщо помилка повторюється, зверніться до адміністратора.',
-    );
-  });
-
-  it('formats an internal report deletion error', () => {
-    const error = new HttpRequestError(500, 'Internal server error');
-
-    expect(formatDirectSubmitError(error, 'delete')).toBe(
-      'Не вдалося видалити розвіддонесення. Спробуйте ще раз. Якщо помилка повторюється, зверніться до адміністратора.',
-    );
-  });
-});
 
 const request = { signal_group_master_key: 'group-1' };
 
@@ -66,27 +31,6 @@ const rawMessage = {
 };
 
 describe('direct-submit response normalization', () => {
-  it('loads the report-copy payload from the message endpoint', async () => {
-    const response = {
-      payloads: [
-        {
-          full_body: 'original',
-          signal_group_master_key: null,
-          retained_media_ids: ['media-1'],
-          parent_signal_message_ids: [42],
-        },
-      ],
-    };
-    apiMocks.postJson.mockResolvedValueOnce(response);
-
-    await expect(copyDirectSubmit([42])).resolves.toEqual(response);
-    expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/1.1/messages/copy',
-      { message_ids: [42] },
-      undefined,
-    );
-  });
-
   it('normalizes an inline snake_case create message', async () => {
     apiMocks.postJson.mockResolvedValueOnce({ signal_message_id: 101, message: rawMessage });
 

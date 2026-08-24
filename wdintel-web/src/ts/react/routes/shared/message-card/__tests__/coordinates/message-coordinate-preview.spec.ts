@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: message-coordinate extraction, precedence, and document-merge fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ContentNode, InboxMessage, PalitraReadV2, Tag } from '../../../../../../../Bindings';
@@ -17,7 +18,6 @@ import {
   primeCoordinatePreviewPalitraIds,
   resetCoordinatePreviewStateForTests,
   hasCoordinatePreviewCandidate,
-  formatCoordinatePreviewPointCount,
   resolveMessageCoordinatePreview,
 } from '../../message-coordinate-preview';
 
@@ -72,15 +72,6 @@ const palitraTagsMap: Record<number, Tag> = {
 };
 
 describe('message coordinate preview resolver', () => {
-  it.each([
-    [1, '1 точка'],
-    [2, '2 точки'],
-    [3, '3 точки'],
-    [9, '9 точок'],
-  ])('formats %s coordinate points', (count, label) => {
-    expect(formatCoordinatePreviewPointCount(count)).toBe(label);
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
     resetCoordinatePreviewStateForTests();

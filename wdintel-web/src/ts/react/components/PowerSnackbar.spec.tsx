@@ -248,6 +248,7 @@ describe('PowerSnackbarProvider', () => {
     await act(async () => root.unmount());
   });
 
+  // @test-scope safeguard: prevents a queued notification from replacing the current alert before its exit completes
   it('keeps the next notification hidden until the current exit completes', async () => {
     vi.useFakeTimers();
     const container = document.createElement('div');

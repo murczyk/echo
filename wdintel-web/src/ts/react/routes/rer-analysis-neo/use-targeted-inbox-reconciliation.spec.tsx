@@ -32,6 +32,7 @@ describe('useTargetedInboxReconciliation', () => {
     act(() => root.unmount());
   });
 
+  // @test-scope safeguard: prevents repeated reconciliation requests from applying an obsolete message response
   it('coalesces an in-flight message into one follow-up and applies only the newest response', async () => {
     const responses: Array<() => void> = [];
     const applied: number[] = [];
@@ -74,6 +75,7 @@ describe('useTargetedInboxReconciliation', () => {
     );
   });
 
+  // @test-scope safeguard: prevents an unmounted analysis view from applying a late reconciliation response
   it('aborts the active request and prevents application after unmount', async () => {
     let finishRequest: (() => void) | undefined;
     let shouldApply: ((messageId: number) => boolean) | undefined;

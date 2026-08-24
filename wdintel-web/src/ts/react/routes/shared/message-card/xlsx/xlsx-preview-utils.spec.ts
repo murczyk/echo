@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: XLSX workbook parsing, limits, malformed-input, and metadata fixtures
 import { zipSync, strToU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 

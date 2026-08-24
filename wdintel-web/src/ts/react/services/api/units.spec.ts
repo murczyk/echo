@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: unit search, duplicate, attachment, and API compatibility fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Unit } from '../../../../Bindings';
 

@@ -19,6 +19,7 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - Derive impacted screens/routes from changed components/pages.
 - Derive available test/build scripts from `justfile` and `wdintel-web/package.json`.
 - Derive whether touched UI state is URL-backed, localStorage-backed, or user-settings-backed.
+- Read the **Test scope** section of `CODE_REVIEW.md` before creating or expanding tests.
 
 ## Procedure (checklist)
 - REST API contract checks:
@@ -49,7 +50,9 @@ Use at the end of any task that changes frontend behavior, API calls, UI states,
 - For message-card preview E2E changes, including shared preview shell/config/capabilities, preview dialogs/stages/actions/controls, `MessageCardContent`, and attachment-preview classification, run `cd wdintel-web && npx playwright test tests/e2e/message-card-media-preview.spec.ts`, and keep the smoke cases tagged `@smoke`.
 - If Chromium is unavailable, report the exact failure and request approval before running `cd wdintel-web && npm run e2e:install`; rerun the focused spec after installation.
 - If the local server or browser still cannot run, report the exact blocker and do not claim full E2E verification.
-- If tests are missing for changed logic, add or extend unit/component tests where feasible in same change.
+- Add or extend tests only when they qualify under `CODE_REVIEW.md`. Do not create isolated coverage for trivial helpers, defaults, formatting, static rendering/configuration, or mocked implementation sequencing.
+- For issue/PR-linked regressions, include the stable Echo issue or pull-request reference in the test and exercise the real failure mode at the lowest faithful test level.
+- Run `npm run test:ts:scope-check` when changing the admitted React suite. The gate enforces traceability; review still verifies the category honestly matches the failure.
 
 ## Definition of Done (checklist)
 - API contract compatibility verified or intentionally migrated.
@@ -71,6 +74,7 @@ Changed /api/palitra/update/:id body?
 - Confirm every list item is either validated or intentionally changed and documented.
 - Confirm no unrelated files were modified.
 - Confirm no new layout-only `Box`, `Stack`, `Grid`, `Container`, or structural `sx` was introduced.
+- Review every added or substantially expanded test against `CODE_REVIEW.md`; remove tests that cannot name an accepted category and a concrete failure mode.
 
 ## Assumptions
 - Manual visual verification is acceptable when automated UI tests are absent.

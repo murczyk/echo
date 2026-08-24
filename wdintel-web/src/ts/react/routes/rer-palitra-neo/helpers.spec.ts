@@ -112,6 +112,7 @@ function makeRow(
 }
 
 describe('rer-palitra helpers', () => {
+  // @test-scope safeguard: prevents unavailable palette access scopes from being offered to the current role
   it('derives available access types from roles and scope', () => {
     expect(getAvailableAccessTypes(makeUser({ roles: ['Admin'] }), makeScope())).toEqual([
       'logins',
@@ -139,6 +140,7 @@ describe('rer-palitra helpers', () => {
     expect(getAvailableAccessTypes(makeUser({ roles: [] }), null)).toEqual([]);
   });
 
+  // @test-scope safeguard: preserves administrator access to permitted scoped login edits
   it('allows admins to edit scoped logins', () => {
     expect(canEditScopedLogins(makeUser({ roles: ['Admin'] }))).toBe(true);
     expect(canEditScopedLogins(makeUser({ roles: ['Rer', 'UnitsEditor'] }))).toBe(false);
@@ -149,6 +151,7 @@ describe('rer-palitra helpers', () => {
     expect(canEditScopedLogins(makeUser({ roles: [] }))).toBe(false);
   });
 
+  // @test-scope safeguard: prevents palette mutations by users who are neither administrators nor authors
   it('allows palitra row mutations only for admins or Rer users who authored the palitra', () => {
     const palitra = makePalitra(1, null, 'operator');
 
@@ -165,6 +168,7 @@ describe('rer-palitra helpers', () => {
     ).toBe(false);
   });
 
+  // @test-scope parser: palette login-access normalization fixture
   it('normalizes login access by trimming, deduplicating, and preserving order', () => {
     expect(normalizeLogins(['  alpha ', '', 'beta', 'alpha', ' beta '])).toEqual(['alpha', 'beta']);
     expect(toPalitraAccess(makeForm({ logins: ['  alpha ', 'beta', 'alpha'] }))).toEqual({
@@ -172,6 +176,7 @@ describe('rer-palitra helpers', () => {
     });
   });
 
+  // @test-scope safeguard: prevents non-admin palette forms from starting outside the current scope
   it('creates scoped initial form values for non-admin users', () => {
     const form = getInitialCreateForm(
       makeUser({ name: 'scout', roles: ['Rer', 'UnitsEditor'] }),
@@ -184,6 +189,7 @@ describe('rer-palitra helpers', () => {
     expect(form.aorIds).toEqual([]);
   });
 
+  // @test-scope safeguard: prevents users without palette roles from receiving a prefilled editable scope
   it('does not prefill unavailable access scopes for non-palitra roles', () => {
     const form = getInitialCreateForm(makeUser({ name: 'scout', roles: ['Basic'] }), makeScope());
 
@@ -193,6 +199,7 @@ describe('rer-palitra helpers', () => {
     expect(form.aorIds).toEqual([]);
   });
 
+  // @test-scope safeguard: prevents changing palette access mode from overwriting existing organism selections
   it('adds default organism access only when switching into an empty organisms mode', () => {
     const scope = makeScope();
 
@@ -203,6 +210,7 @@ describe('rer-palitra helpers', () => {
     expect(withDefaultOrganismAccess(makeForm(), 'logins', scope).accessType).toBe('logins');
   });
 
+  // @test-scope safeguard: prevents non-admin palette forms from retaining out-of-scope access values
   it('restricts form access to the current user scope for non-admin users', () => {
     const restrictedUser = makeUser({ name: 'scout', roles: ['Rer', 'UnitsEditor'] });
     const scope = makeScope();
@@ -233,6 +241,7 @@ describe('rer-palitra helpers', () => {
     ).toEqual([]);
   });
 
+  // @test-scope safeguard: prevents Rer-equivalent users without editor role from assigning broader palette access
   it('restricts Rer-equivalent users without editor role to own login or organism', () => {
     const restrictedUser = makeUser({ name: 'scout', roles: ['Full'] });
     const scope = makeScope();
@@ -260,6 +269,7 @@ describe('rer-palitra helpers', () => {
     ).toEqual([]);
   });
 
+  // @test-scope safeguard: prevents users without palette roles from submitting restricted access values
   it('clears restricted access for users without palitra roles', () => {
     const restrictedUser = makeUser({ name: 'scout', roles: ['Basic'] });
     const scope = makeScope();
@@ -286,6 +296,7 @@ describe('rer-palitra helpers', () => {
     ).toEqual([]);
   });
 
+  // @test-scope safeguard: prevents a scoped editor palette form from retaining an unauthorized login selection
   it('falls back to own login when scoped editor selections contain no allowed logins', () => {
     const restrictedUser = makeUser({ name: 'scout', roles: ['Rer', 'UnitsEditor'] });
 
@@ -299,6 +310,7 @@ describe('rer-palitra helpers', () => {
     ).toEqual(['scout']);
   });
 
+  // @test-scope safeguard: prevents non-admin palette forms from retaining restricted AOR access
   it('clears restricted AOR access for non-admin users', () => {
     const restrictedUser = makeUser({ name: 'scout', roles: ['Rer', 'UnitsEditor'] });
     const scope = makeScope();
@@ -338,6 +350,7 @@ describe('rer-palitra helpers', () => {
     ).toBe('Підрозділи: Scope Unit');
   });
 
+  // @test-scope safeguard: prevents root palette rows from being skipped before a target folder is selected
   it('does not mark root palitras as already in target folder before a folder is chosen', () => {
     const preview = buildAssignFolderPreview([makeRow(1, null), makeRow(2, '')], [1, 2], '');
 
@@ -360,6 +373,7 @@ describe('rer-palitra helpers', () => {
     expect(tree.every((node) => node.depth === 0)).toBe(true);
   });
 
+  // @test-scope safeguard: prevents nested folder paths from being submitted to the flat-folder palette UI
   it('rejects slash in folder names because this UI supports only flat folders', () => {
     expect(validateFolderPath('North')).toBe(null);
     expect(validateFolderPath(' North ')).toBe(null);
@@ -438,6 +452,7 @@ describe('rer-palitra helpers', () => {
     ).toEqual(['Обрано палітр: 3', 'Уже в цій папці: 1', 'Недоступно для зміни: 1']);
   });
 
+  // @test-scope safeguard: prevents GOI-owned palettes from being exposed as mutable selections
   it('marks GOI-owned palitras as selectable but not modifiable', () => {
     const goiOwnedPalitra = {
       ...makePalitra(9, null, 'operator', 10),
@@ -462,6 +477,7 @@ describe('rer-palitra helpers', () => {
     expect(row).toMatchObject({ canModify: false, canSelect: true });
   });
 
+  // @test-scope safeguard: prevents folder actions from mutating GOI-owned palettes
   it('excludes GOI-owned palitras from folder modifiable actions', () => {
     const goiOwnedPalitra = {
       ...makePalitra(9, 'GOI', 'operator', 10),
@@ -486,6 +502,7 @@ describe('rer-palitra helpers', () => {
     expect(folderRow).toMatchObject({ canModify: false, modifiableCount: 0, totalCount: 1 });
   });
 
+  // @test-scope safeguard: preserves read-only palette downloads while blocking bulk mutation
   it('keeps read-only palitras downloadable but not modifiable in bulk selections', () => {
     const rows = [makeRow(1, null, true, true), makeRow(2, null, true, false)];
 

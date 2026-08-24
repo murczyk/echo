@@ -1,3 +1,4 @@
+// @test-scope parser: messenger availability API response normalization fixture
 import { describe, expect, it, vi } from 'vitest';
 
 import { postJson } from './client';

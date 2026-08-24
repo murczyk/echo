@@ -145,6 +145,7 @@ describe('networks API etalonka report download', () => {
     expect(postBytesMock).toHaveBeenCalledWith('/api/report-history/download', { id: 77 });
   });
 
+  // @test-scope parser: network-list response compatibility fixture
   it('encodes the network list request in snake_case and normalizes the combined response', async () => {
     postJsonMock.mockResolvedValueOnce({
       list: [
@@ -301,6 +302,7 @@ describe('networks API etalonka report download', () => {
     );
   });
 
+  // @test-scope parser: network-frequency callsign-map response compatibility fixture
   it('encodes the batch callsigns request and normalizes string keys to numeric ids', async () => {
     postJsonMock.mockResolvedValueOnce({
       callsigns_by_network_freq_id: {
@@ -498,6 +500,7 @@ describe('networks API v2 frequency mutations', () => {
     );
   });
 
+  // @test-scope parser: single network-frequency callsign response compatibility fixture
   it('normalizes the single frequency callsign response', async () => {
     postJsonMock.mockResolvedValueOnce({
       network_freq_id: 7,

@@ -1,0 +1,191 @@
+# Analysis
+
+## Analysis API compatibility
+
+- **Status:** operational compatibility
+
+- **Behavior ID:** `react-analysis-api-compatibility`
+- **Affected route/component:** analysis search, callsign information, message retrieval, and direct submission boundaries
+- **User role or permission:** users authorized to inspect or mutate the current analysis data
+- **Preconditions:** analysis criteria or message IDs are submitted
+- **User action or external event:** the user searches callsign frequencies, loads messages, submits a message, or records a model/tag action origin
+- **Expected observable result:** normalized analysis criteria and ContentNode variants survive the wire boundary; highlight context and optional action origins are preserved without altering the business request body.
+- **Loading/empty/error/success behavior:** absent optional origins retain the legacy-compatible request shape.
+- **URL, localStorage, or user-settings persistence:** analysis route state owns persistence.
+- **API endpoint and compatibility requirements:** callsign lookup and message APIs accept established request fields and normalize supported legacy response fields.
+- **Responsive and keyboard requirements:** none at the API boundary.
+- **Known race/idempotency constraints:** none in the mapper itself.
+- **Source implementation:** `src/ts/react/services/api/analysis.ts`
+- **Existing test(s):** `analysis.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
+
+## AI-agent API compatibility
+
+- **Status:** operational compatibility
+
+- **Behavior ID:** `react-ai-agent-api-compatibility`
+- **Affected route/component:** AI-agent audit/conversation views and dispatcher administration
+- **User role or permission:** users with AI-agent visibility; administrators for dispatcher configuration
+- **Preconditions:** an AI-agent cancellation, audit, conversation title update, or dispatcher save is requested
+- **User action or external event:** the user cancels a request, inspects audit activity, renames a conversation, or saves dispatcher settings
+- **Expected observable result:** cancellation uses the authoritative returned state; audit tool activity and retries normalize without leaking raw reasoning; conversation messages receive stable unique keys; dispatcher saves include only editable fields.
+- **Loading/empty/error/success behavior:** null retry values survive normalization.
+- **URL, localStorage, or user-settings persistence:** none at the API boundary.
+- **API endpoint and compatibility requirements:** generated request/response fields remain wire-compatible.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** the latest cancellation state returned by the server wins.
+- **Source implementation:** `src/ts/react/services/api/ai-agent.ts`
+- **Existing test(s):** `ai-agent.spec.ts`; the isolated inactivity-timer assertion was removed.
+- **Original Echo issue/PR, if known:** none recorded.
+
+## Analysis query state normalization
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-analysis-query-state-normalization`
+- **Affected route/component:** RER Analysis URL, saved-filter, and request helper boundary
+- **User role or permission:** users allowed to run analysis queries
+- **Preconditions:** URL parameters, saved-filter state, or a query form provides analysis selections
+- **User action or external event:** the user restores/shares a URL, applies a saved filter, changes filters, or submits a query
+- **Expected observable result:** managed URL state wins over unsupported legacy state; selected tag/callsign/unit/device/media/coordinate selections normalize into the correct request surface; date bounds default, validate, and reject malformed/inverted ranges; duty map deep links preserve their intent.
+- **Loading/empty/error/success behavior:** invalid time bounds produce no request rather than a misleading date range.
+- **URL, localStorage, or user-settings persistence:** saved filters intentionally omit inbox-only selections while URL state retains managed selections.
+- **API endpoint and compatibility requirements:** null/default request values preserve backend defaults and legacy unit aliases normalize before use.
+- **Responsive and keyboard requirements:** none at the helper boundary.
+- **Known race/idempotency constraints:** applying a saved filter resets stale adjacent-frequency expansion.
+- **Source implementation:** `routes/rer-analysis-neo/helpers.ts`
+- **Existing test(s):** `helpers.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
+## Callsign hint resolution
+
+- **Status:** operational compatibility
+
+- **Behavior ID:** `react-analysis-callsign-hint-resolution`
+- **Affected route/component:** RER Analysis callsign hint and tooltip resolver
+- **User role or permission:** users able to inspect analysis messages and frequency context
+- **Preconditions:** callsign information, assigned/message/frequency network IDs, and hierarchy data are available
+- **User action or external event:** the user views message or frequency callsign hints
+- **Expected observable result:** exact/candidate/catalog/other-network hints classify correctly; network and unit hierarchy scope restricts rows to the relevant formation/region; missing optional API fields safely resolve without a crash; tooltip rows preserve priority/order and omit non-visible/comment-only content.
+- **Loading/empty/error/success behavior:** empty/missing callsign information is unresolved/no hint rather than a malformed tooltip.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** supports legacy/missing `networkIdsReportedIn` and exact/network fallback response shapes.
+- **Responsive and keyboard requirements:** tooltip text remains concise for the existing accessible hint control.
+- **Known race/idempotency constraints:** message context must not mix rows from another network/region after data refresh.
+- **Source implementation:** `routes/rer-analysis-neo/callsign-hints.ts`
+- **Existing test(s):** `callsign-hints.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
+## Analysis message-list stale-response safety
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-analysis-message-list-stale-response-safety`
+- **Affected route/component:** RER Analysis message list enrichment and pagination state
+- **User role or permission:** users viewing analysis messages
+- **Preconditions:** enrichment or page hydration requests overlap with a newer refresh/invalidation
+- **User action or external event:** a late response arrives after ownership, cursor, or page state changed
+- **Expected observable result:** stale enrichment cannot overwrite current callsign ownership or block a later update; refreshed unscoped data is not suppressed by a prior scoped result; duplicate requests are coalesced; stale hydrated pages cannot advance the cursor/index; invalidated pages re-enrich preserved messages and ignore late enrichment.
+- **Loading/empty/error/success behavior:** a failed enrichment releases ownership for a later retry.
+- **URL, localStorage, or user-settings persistence:** pagination cursors remain route state.
+- **API endpoint and compatibility requirements:** none beyond established analysis message responses.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** response ordering and invalidation must win over stale async completion.
+- **Source implementation:** `use-analysis-message-list.ts`
+- **Existing test(s):** stale-response and invalidation cases in `use-analysis-message-list.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
+
+## Analysis filter-facet invalidation
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-analysis-filter-facet-invalidation`
+- **Affected route/component:** RER Analysis lazy filter-section loader
+- **User role or permission:** users able to run analysis queries
+- **Preconditions:** filter facets have loaded or are loading while a targeted query or tag change invalidates them
+- **User action or external event:** the user changes a scoped filter or a tag, a facet request fails, or a late facet response arrives
+- **Expected observable result:** invalidated facets remain queued and stale until a current reload succeeds; tag changes refetch tag counts; an obsolete completion cannot erase the required reload.
+- **Loading/empty/error/success behavior:** failed targeted loads remain retryable instead of silently showing a complete but stale facet.
+- **URL, localStorage, or user-settings persistence:** query-state persistence remains route-owned.
+- **API endpoint and compatibility requirements:** established filter-section response shapes remain unchanged.
+- **Responsive and keyboard requirements:** none at the loader boundary.
+- **Known race/idempotency constraints:** request-version invalidation wins over late facet completions, including before React has propagated loading state.
+- **Source implementation:** `routes/rer-analysis-neo/use-analysis-data-filter-sections.ts`
+- **Existing test(s):** targeted invalidation/retry cases in `use-analysis-data-filter-sections.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
+
+## Analysis reload orchestration
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-analysis-reload-orchestration`
+- **Affected route/component:** RER Analysis reload orchestrator
+- **User role or permission:** users running or refining analysis queries
+- **Preconditions:** an analysis load is active or a reload trigger changes within the debounce window
+- **User action or external event:** the user changes query state rapidly, reverts a change, switches to summary, or leaves the page
+- **Expected observable result:** only the latest query reload runs; reverting a change schedules the restored query; summary loading waits for the active reload; a superseded or unmounted page reload is aborted.
+- **Loading/empty/error/success behavior:** summary loading does not briefly present data for a query that is still being replaced.
+- **URL, localStorage, or user-settings persistence:** query trigger state remains route-owned.
+- **API endpoint and compatibility requirements:** reload requests retain the established analysis data boundary and abort signal.
+- **Responsive and keyboard requirements:** none at the orchestration boundary.
+- **Known race/idempotency constraints:** the latest reload key owns the abort controller and timer; cleanup must prevent post-unmount work.
+- **Source implementation:** `routes/rer-analysis-neo/use-analysis-reload-orchestrator.ts`
+- **Existing test(s):** debounce, abort, and unmount cases in `use-analysis-reload-orchestrator.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
+
+## Targeted inbox reconciliation
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-analysis-targeted-inbox-reconciliation`
+- **Affected route/component:** RER Analysis targeted inbox reconciliation hook
+- **User role or permission:** users viewing analysis messages
+- **Preconditions:** one or more message updates require reconciliation while an earlier batch is still active
+- **User action or external event:** another update for the same message arrives, or the analysis page unmounts before the batch settles
+- **Expected observable result:** repeated IDs coalesce into one current follow-up batch; only the newest response may apply; unmount aborts the request and prevents post-unmount state application.
+- **Loading/empty/error/success behavior:** no obsolete response is displayed after a newer reconciliation request.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** reconciliation receives the established abort signal without changing API payloads.
+- **Responsive and keyboard requirements:** none at the reconciliation boundary.
+- **Known race/idempotency constraints:** per-message version ownership wins over earlier batches.
+- **Source implementation:** `routes/rer-analysis-neo/use-targeted-inbox-reconciliation.ts`
+- **Existing test(s):** `use-targeted-inbox-reconciliation.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as concurrency safeguards.
+
+## Analysis comment hydration ordering
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-analysis-comment-hydration-ordering`
+- **Affected route/component:** RER Analysis message-comment loader
+- **User role or permission:** users viewing message comments
+- **Preconditions:** a comment batch is loading when analysis message state is invalidated
+- **User action or external event:** a late comment response resolves after the request version changes
+- **Expected observable result:** the obsolete batch does not update the current message comments or emit an error.
+- **Loading/empty/error/success behavior:** a current response still populates missing comment entries normally.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** comment request and response shapes remain unchanged.
+- **Responsive and keyboard requirements:** none at the loader boundary.
+- **Known race/idempotency constraints:** request-version ownership wins over late comment hydration.
+- **Source implementation:** `routes/rer-analysis-neo/use-analysis-data.comments.ts`
+- **Existing test(s):** stale-version case in `use-analysis-data.comments.load.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded; retained as a concurrency safeguard.
+
+## Analysis message mutation integrity
+
+- **Status:** inferred characterization
+
+- **Behavior ID:** `react-analysis-message-mutation-integrity`
+- **Affected route/component:** RER Analysis message tag and point-blacklist actions
+- **User role or permission:** users authorized to change message tags or point highlight blacklists
+- **Preconditions:** a tag or blacklist mutation is in progress, fails, is duplicated, or receives an authorization failure
+- **User action or external event:** the user toggles a tag, blacklists a point, repeats a request, or the server responds after an event/lost-response race
+- **Expected observable result:** failed optimistic tag state remains visible and reconcilable; duplicate blacklist requests coalesce; both message and map collections stay consistent; 401 errors use the existing unauthorized path.
+- **Loading/empty/error/success behavior:** ordinary failures surface an error without corrupting local state.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** tag and blacklist endpoint payloads remain unchanged.
+- **Responsive and keyboard requirements:** none at the mutation boundary.
+- **Known race/idempotency constraints:** event-origin reconciliation and blacklist request keys prevent stale or duplicate local state changes.
+- **Source implementation:** `routes/rer-analysis-neo/use-analysis-data.message-actions.ts`
+- **Existing test(s):** mutation failure, race, duplicate, and 401 cases in `use-analysis-data.message-actions.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as integrity and authorization safeguards.

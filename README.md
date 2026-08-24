@@ -84,8 +84,20 @@ just test-fe
 
 This runs the frontend test pipeline in `wdintel-web`:
 - `elm-test`
-- `vitest`
+- the full Vitest suite (`npm run test:ts`)
 - the generated frontend test setup
+
+React test-admission commands are available from `wdintel-web`:
+
+```bash
+npm run test:ts:scope-check
+npm run test:ts:gate
+npm run test:ts:all
+```
+
+`test:ts:scope-check` validates annotations and the checked-in legacy-debt
+baseline. `test:ts:gate` and `test:ts:all` both run that check followed by the
+complete Vitest suite during the migration.
 
 Frontend end-to-end checks:
 
@@ -94,7 +106,21 @@ cd wdintel-web
 npm run e2e
 ```
 
-This runs the Playwright smoke suite for the current React/Elm hybrid frontend. For the slower loading comparisons, use:
+This runs the Playwright smoke suite for the current React/Elm hybrid frontend.
+The disabled browser workflow must be restored and stabilized before browser
+coverage replaces Vitest coverage. Run linked browser regressions with:
+
+```bash
+npm run e2e:regression
+```
+
+Run every browser test locally with:
+
+```bash
+npm run e2e:all
+```
+
+For the slower loading comparisons, use:
 
 ```bash
 npm run e2e:perf

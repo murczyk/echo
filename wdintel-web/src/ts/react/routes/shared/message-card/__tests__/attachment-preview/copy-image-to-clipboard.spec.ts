@@ -29,6 +29,7 @@ describe('copyImageToClipboard', () => {
     document.body.innerHTML = '';
   });
 
+  // @test-scope safeguard: prevents a loaded image copy from losing its rendered PNG data
   it('copies the canvas PNG blob when the preview image is loaded', async () => {
     const image = createLoadedImage();
     const write = vi.fn().mockImplementation(async ([item]: [FakeClipboardItem]) => {
@@ -77,6 +78,7 @@ describe('copyImageToClipboard', () => {
     await expect(clipboardItem.items['image/png']).resolves.toBeInstanceOf(Blob);
   });
 
+  // @test-scope safeguard: preserves the browser user-activation window while canvas conversion is pending
   it('calls clipboard.write before the canvas blob promise resolves', async () => {
     const image = createLoadedImage();
     const write = vi.fn().mockResolvedValue(undefined);
@@ -121,6 +123,7 @@ describe('copyImageToClipboard', () => {
     expect(write).toHaveBeenCalledTimes(1);
   });
 
+  // @test-scope safeguard: prevents a canvas-export failure from losing an image copy action
   it('falls back to the fetched blob when canvas export fails', async () => {
     const image = createLoadedImage();
     const write = vi.fn().mockImplementation(async ([item]: [FakeClipboardItem]) => {
@@ -169,6 +172,7 @@ describe('copyImageToClipboard', () => {
     expect(clipboardItem.items['image/jpeg'].type).toBe('image/jpeg');
   });
 
+  // @test-scope safeguard: retries image copying with the fetched source after a clipboard write failure
   it('falls back to fetch when clipboard write fails', async () => {
     const image = createLoadedImage();
     let writeCalls = 0;
@@ -219,6 +223,7 @@ describe('copyImageToClipboard', () => {
     expect(write).toHaveBeenCalledTimes(2);
   });
 
+  // @test-scope safeguard: prevents non-image response content from entering the image clipboard
   it('rejects non-image fetched content even when ClipboardItem supports it', async () => {
     const image = createLoadedImage();
     const write = vi.fn().mockImplementation(async ([item]: [FakeClipboardItem]) => {
@@ -264,6 +269,7 @@ describe('copyImageToClipboard', () => {
     expect(write).toHaveBeenCalledTimes(1);
   });
 
+  // @test-scope safeguard: prevents unavailable image-copy capability from being presented as executable
   it('reports image copying as unavailable when the browser lacks clipboard support', () => {
     const image = createLoadedImage();
     vi.stubGlobal('ClipboardItem', undefined);

@@ -1,10 +1,10 @@
+// @test-scope parser: inbox request and response wire-compatibility fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { InboxMessage } from '../../../../Bindings';
 import { postJson } from './client';
 import { fetchInboxMessages } from './inbox';
-import { inboxMsgtoSnakeBody, normalizeMessageMediaInfo } from './inbox-messages';
-import type { InboxMessagesReq } from '../../../../Bindings';
+import { normalizeMessageMediaInfo } from './inbox-messages';
 
 vi.mock('./client', () => ({
   postJson: vi.fn(),
@@ -79,50 +79,6 @@ describe('inbox API normalization', () => {
       { CNPointC: { begin: 0, end: 3, etalon: 'P-2', text: 'P-2' } },
     ]);
     expect(message?.pointTokens).toEqual([{ begin: 0, end: 3, etalon: 'P-2', text: 'P-2' }]);
-  });
-
-  it('serializes denied tags and tag presence into the inbox request body', () => {
-    const body = inboxMsgtoSnakeBody({
-      deniedTags: [3, 7],
-      tagPresence: 'WithoutTags',
-      selectedTags: [],
-    } as unknown as InboxMessagesReq) as Record<string, unknown>;
-
-    expect(body.denied_tags).toEqual([3, 7]);
-    expect(body.tag_presence).toBe('WithoutTags');
-    expect(body.selected_tags).toBeNull();
-  });
-
-  it('sends null denied tags and tag presence when unset', () => {
-    const body = inboxMsgtoSnakeBody({
-      deniedTags: [],
-      tagPresence: null,
-    } as unknown as InboxMessagesReq) as Record<string, unknown>;
-
-    expect(body.denied_tags).toBeNull();
-    expect(body.tag_presence).toBeNull();
-  });
-
-  it('serializes without network and without coords flags as typed optional booleans', () => {
-    for (const value of [true, false, null] as const) {
-      const body = inboxMsgtoSnakeBody({
-        withoutNetwork: value,
-        orWithoutCoords: value,
-      } as unknown as InboxMessagesReq) as Record<string, unknown>;
-
-      expect(body.without_network).toBe(value);
-      expect(body.or_without_coords).toBe(value);
-    }
-  });
-
-  it('serializes empty selected networks as null while preserving without network', () => {
-    const body = inboxMsgtoSnakeBody({
-      selectedNetworks: [],
-      withoutNetwork: true,
-    } as unknown as InboxMessagesReq) as Record<string, unknown>;
-
-    expect(body.selected_networks).toBeNull();
-    expect(body.without_network).toBe(true);
   });
 
   it('normalizes inbox metadata fields from snake_case and falls back to an empty array', async () => {

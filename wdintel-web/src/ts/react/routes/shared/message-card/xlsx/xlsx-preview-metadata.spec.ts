@@ -1,6 +1,7 @@
 /**
  * @vitest-environment node
  */
+// @test-scope parser: XLSX metadata and XML entity decoding fixtures
 import { zipSync, strToU8 } from 'fflate';
 import { describe, expect, it } from 'vitest';
 

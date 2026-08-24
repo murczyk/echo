@@ -19,6 +19,14 @@ SQL, trivial helpers, defaults, formatting, or mocks without protecting a
 real failure mode. Prefer a focused fixture in an existing functional or
 parser test over adding another isolated unit test.
 
+For React tests, every retained default-suite test must carry a truthful
+`@test-scope` admission annotation: an operational parser fixture, a safeguard
+that names its concrete harmful outcome, or an Echo issue/PR-linked regression.
+File-level annotations are permitted only for homogeneous parser fixtures.
+See `.github/skills/test-scope-policy/SKILL.md` and
+`docs/frontend/react-behavior-contracts/README.md` for the contributor decision
+tree and migration rules.
+
 ## Query performance
 
 Review database access using [QUERY_PERF.md](QUERY_PERF.md). Require

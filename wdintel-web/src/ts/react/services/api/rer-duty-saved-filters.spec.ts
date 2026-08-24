@@ -1,3 +1,4 @@
+// @test-scope parser: saved-duty-filter API response normalization fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { postJson } from './client';

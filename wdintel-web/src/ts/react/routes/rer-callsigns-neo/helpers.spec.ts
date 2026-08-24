@@ -69,6 +69,7 @@ describe('rer-callsigns helpers', () => {
     expect(req.tillDateInclusiveMs).toBe(parseDateTimeLocalToMs('2026-03-18T12:00'));
   });
 
+  // @test-scope safeguard: prevents duplicate hints from being assigned to the wrong draft callsign row
   it('groups duplicate hints by draft row and keeps row indices', () => {
     const unitsById = new Map<number, Unit>([
       [1, { id: 1, name: '11 АК' } as Unit],
@@ -133,6 +134,7 @@ describe('rer-callsigns helpers', () => {
     ]);
   });
 
+  // @test-scope safeguard: prevents a position change from hiding a real duplicate callsign warning
   it('does not hide duplicate hints when pasted position differs from the existing callsign', () => {
     const unitsById = new Map<number, Unit>([[1, { id: 1, name: '11 АК' } as Unit]]);
     const callsigns = [
@@ -170,6 +172,7 @@ describe('rer-callsigns helpers', () => {
     ]);
   });
 
+  // @test-scope parser: callsign hierarchy filter request fixture
   it('keeps sidebar hierarchy filters in the request, including empty hierarchy nodes', () => {
     const req = buildListCallsignsReq({
       filters: createDefaultFilters(new Date('2026-03-18T12:00:00Z')),
@@ -193,6 +196,7 @@ describe('rer-callsigns helpers', () => {
     expect(req.filterUnitBattalion).toBeNull();
   });
 
+  // @test-scope parser: unit search ranking fixture for callsign editing
   it('ranks unit search by exact label before broader token matches', () => {
     const units = [
       { id: 1, name: '3 шр 1 мсб 126 мсп 71 мсд 14 АК' } as Unit,
@@ -211,6 +215,7 @@ describe('rer-callsigns helpers', () => {
     expect(getUnitSelectionError('', null)).toBeNull();
   });
 
+  // @test-scope parser: callsign unit-stat hierarchy normalization fixture
   it('merges known unit stats with hierarchy and name data', () => {
     const unitsById = new Map<number, Unit>([
       [
@@ -243,6 +248,7 @@ describe('rer-callsigns helpers', () => {
     ]);
   });
 
+  // @test-scope safeguard: prevents missing unit statistics from creating a bogus root hierarchy leaf
   it('ignores missing unit stats so the tree never gets a root #id leaf', () => {
     const unitsById = new Map<number, Unit>([
       [
@@ -286,6 +292,7 @@ describe('rer-callsigns helpers', () => {
     expect(JSON.stringify(tree)).not.toContain('#99');
   });
 
+  // @test-scope parser: callsign unit hierarchy regional disambiguation fixture
   it('separates same-named armies by region and district', () => {
     const tree = buildUnitTree([
       {
@@ -315,6 +322,7 @@ describe('rer-callsigns helpers', () => {
     expect(tree.map((node) => ('label' in node ? node.label : null))).toEqual(['R1', 'R2']);
   });
 
+  // @test-scope safeguard: prevents users without backend edit roles from receiving callsign mutation access
   it('keeps callsign edit access aligned with backend roles', () => {
     expect(getExportPermission({ roles: ['UnitsEditor'] } as User).canEdit).toBe(false);
     expect(getExportPermission({ roles: ['Admin'] } as User).canEdit).toBe(true);
@@ -339,6 +347,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: callsign sort-state wire enum fixture
   it('maps sort state to backend sort enums', () => {
     expect(toBackendSort({ column: 'callsign', direction: 'asc' })).toEqual(['CallsignAsc']);
     expect(toBackendSort({ column: 'fullName', direction: 'asc' })).toEqual([
@@ -370,6 +379,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: prevents submission of draft callsign rows without an identity
   it('requires callsign or full name for draft rows', () => {
     expect(
       validateDraftRows(
@@ -410,6 +420,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: prevents empty callsign draft rows from producing a mutation
   it('rejects draft rows that remain completely empty after filtering', () => {
     expect(
       validateDraftRows(
@@ -431,6 +442,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: prevents radio-source callsign drafts without a required frequency from saving
   it("requires radio frequency for draft rows with source 'РО'", () => {
     expect(
       validateDraftRows(
@@ -471,6 +483,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: prevents an edited callsign record from losing all identity fields
   it('requires callsign or full name when editing', () => {
     expect(
       validateEditForm({
@@ -513,6 +526,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: preserves valid legacy callsign rows that retain meaningful non-identity data
   it('allows editing legacy rows without callsign/full name while they still contain other data', () => {
     expect(
       validateEditForm({
@@ -535,6 +549,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: preserves legacy callsign metadata records during compatible edits
   it('allows editing legacy rows without callsign/full name when only metadata remains', () => {
     expect(
       validateEditForm({
@@ -557,6 +572,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: prevents clearing every meaningful field from a legacy callsign record
   it('rejects clearing all meaningful data from legacy rows without callsign/full name', () => {
     expect(
       validateEditForm({
@@ -579,6 +595,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope safeguard: allows compatible identity removal without turning a populated legacy record into an invalid row
   it('allows removing identity from an existing record when other meaningful data remains', () => {
     expect(
       validateEditForm({
@@ -601,6 +618,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: legacy callsign quick-paste TSV fixture
   it('keeps legacy TSV quick-paste format as callsign, position, comment', () => {
     expect(parseTabDelimitedInput('alpha\tКомандир\tстарий коментар')).toEqual({
       rows: [
@@ -617,6 +635,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: four-column callsign quick-paste TSV fixture
   it('parses 4-column TSV quick-paste as callsign, position, full name, comment', () => {
     expect(
       parseTabDelimitedInput('alpha\tКомандир\tІваненко Іван Іванович\tновий коментар'),
@@ -635,6 +654,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: callsign TSV trailing-empty-column fixture
   it('preserves an empty trailing TSV column instead of collapsing the row shape', () => {
     expect(parseTabDelimitedInput('alpha\tКомандир\tІваненко Іван Іванович\t')).toEqual({
       rows: [
@@ -665,6 +685,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: multiline mixed-shape callsign TSV fixture
   it('parses multiline TSV with mixed 3-column and 4-column rows per line', () => {
     expect(
       parseTabDelimitedInput(
@@ -693,6 +714,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: unsupported callsign TSV row-shape rejection fixture
   it('returns a validation error for unsupported TSV quick-paste row shapes', () => {
     expect(parseTabDelimitedInput('alpha\tКомандир')).toEqual({
       rows: [],
@@ -700,6 +722,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: ambiguous flat multi-row callsign TSV rejection fixture
   it('treats flat multi-row TSV streams as invalid to keep quick-paste unambiguous', () => {
     expect(
       parseTabDelimitedInput('alpha\tКомандир\tкоментар\tbravo\tНавідник\tінший коментар'),
@@ -709,6 +732,7 @@ describe('rer-callsigns helpers', () => {
     });
   });
 
+  // @test-scope parser: callsign duplicate-hint value normalization fixture
   it('normalizes duplicate-hint values for full names', () => {
     expect(normalizeDuplicateLookupValue('  Іваненко   Іван  ')).toBe('іваненко іван');
   });

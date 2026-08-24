@@ -1,3 +1,4 @@
+// @test-scope parser: user-settings API optional-field compatibility fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({

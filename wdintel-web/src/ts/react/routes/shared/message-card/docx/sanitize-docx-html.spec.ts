@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: DOCX HTML sanitization and unsafe-link rejection fixture
 import { describe, expect, it } from 'vitest';
 
 import { sanitizeDocxHtml } from './sanitize-docx-html';

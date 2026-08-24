@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: device-analytics rule expression API compatibility fixtures
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import type { RuleExpression } from '../../../../Bindings';

@@ -376,6 +376,7 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
   });
 
+  // @test-scope safeguard: prevents an invalidated in-flight facet from being lost instead of reloaded
   it('queues an in-flight excluded section when another targeted invalidation bumps the version', async () => {
     const groupsDeferred = deferred<{
       groups: Array<{ masterKey: string; count: number }>;
@@ -412,6 +413,7 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.isFilterSectionStale('groups')).toBe(true);
   });
 
+  // @test-scope safeguard: prevents an early targeted invalidation from losing an in-flight facet reload
   it('treats an in-flight section as reloadable before loading state propagates', async () => {
     const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
     analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);
@@ -436,6 +438,7 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.isFilterSectionStale('callsigns')).toBe(true);
   });
 
+  // @test-scope safeguard: prevents a failed targeted facet reload from silently dropping its retry
   it('keeps a failed targeted section queued for retry', async () => {
     await renderHook();
 
@@ -468,6 +471,7 @@ describe('useAnalysisFilterSections', () => {
     expect(latest?.getReloadFilterSections()).toEqual(['callsigns']);
   });
 
+  // @test-scope safeguard: prevents tag changes from leaving stale facet counts cached for the next analysis reload
   it('marks the loaded tags facet stale and drops its cache so a reload refetches it', async () => {
     await renderHook();
 
@@ -530,6 +534,7 @@ describe('useAnalysisFilterSections', () => {
     expect(analysisApiMocks.fetchAnalysisTags).not.toHaveBeenCalled();
   });
 
+  // @test-scope safeguard: prevents a late invalidated facet response from clearing the required reload
   it('moves an in-flight invalidated section to stale and keeps it queued for reload', async () => {
     const callsignsDeferred = deferred<{ callsigns: Array<{ callsign: string; res: [] }> }>();
     analysisApiMocks.fetchAnalysisCallsigns.mockImplementationOnce(() => callsignsDeferred.promise);

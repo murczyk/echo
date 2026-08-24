@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: analysis request and message-response compatibility fixtures
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AnalysisStatsReq, InboxMessage, InboxMessagesReq } from '../../../../Bindings';

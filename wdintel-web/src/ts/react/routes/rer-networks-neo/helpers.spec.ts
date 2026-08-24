@@ -1,3 +1,4 @@
+// @test-scope parser: network filter, request, status, and activity-state normalization fixtures
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import { describe, expect, it } from 'vitest';

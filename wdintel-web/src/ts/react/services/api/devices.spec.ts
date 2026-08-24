@@ -1,6 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
+// @test-scope parser: device, file-tree, journal, synchronization, and analysis-run API fixtures
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
