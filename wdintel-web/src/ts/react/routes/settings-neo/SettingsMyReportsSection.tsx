@@ -16,6 +16,7 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { type MRT_ColumnFiltersState, type MRT_SortingState } from 'material-react-table';
 
 import type { ReportHistoryRow } from '../../../../Bindings';
@@ -34,9 +35,11 @@ import { ConfirmDangerDialog } from '../../components/ConfirmDangerDialog';
 import { PowerAlert } from '../../components/PowerAlert';
 import { TableStateProvider } from '../../components/mui-customized/table/table-state-provider';
 import {
+  mrtCustomCell,
   mrtTextCell,
   type AppMrtColumnDef,
 } from '../../components/mui-customized/table/get-default-table-options';
+import { MrtOverflowText } from '../../components/mui-customized/table/mrt-overflow';
 import { SettingsNeoTable } from './SettingsNeoTable';
 import { CUSTOM_CELL_STYLES } from '../../components/mui-customized/table/custom-styles';
 import { FULL_HEIGHT_LOADING_ROW_COUNT } from '../../components/mui-customized/table/custom-styles';
@@ -47,6 +50,17 @@ import {
 } from '../../components/MrtRowActionButton';
 import { InternalTableActions } from '../../components/mui-customized/table/components/table-top-toolbar/components/internal-actions';
 import { AnalysisPaginationControl } from '../rer-analysis-neo/components/AnalysisPaginationControl';
+import { handleNavigateWithinSpaClick } from '../../utils/browser';
+import {
+  CopyableReportId,
+  formatReportDate,
+  formatReportDateOrDash,
+  formatReportId,
+  formatReportKind,
+  formatReportStatus,
+  REPORT_STATUS_LABELS,
+  reportStatusColor,
+} from '../shared/report-history-display';
 
 type LoadState = 'idle' | 'loading' | 'success' | 'error';
 
@@ -114,6 +128,8 @@ const DEFAULT_REPORTS_COLUMN_ORDER = [
 
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   ...DEFAULT_REPORTS_COLUMNS_VISIBILITY,
+  id: true,
+  startedAt: true,
   requestedBy: true,
   executionTime: true,
   errorLog: true,
@@ -122,14 +138,15 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'mrt-row-numbers',
   'actions',
+  'id',
   'reportKind',
   'requestedBy',
   'reportPeriod',
   'details',
   'createdAt',
+  'startedAt',
   'status',
   'plannedForTs',
-  'startedAt',
   'queuePosition',
   'bgtaskId',
   'completedAt',
@@ -237,87 +254,16 @@ const REPORTS_LOADING_TABLE_WRAPPER_SX = {
   maxHeight: 384,
 } as const;
 
-const REPORT_STATUS_LABELS: Record<string, string> = {
-  planned: 'Очікує запуску',
-  in_progress: 'Формується',
-  done: 'Готово',
-  failed: 'Помилка',
-};
-
 const REPORT_STATUS_FILTER_OPTIONS = Object.entries(REPORT_STATUS_LABELS).map(([value, text]) => ({
   text,
   value,
 }));
-
-const REPORT_KIND_LABELS: Record<string, string> = {
-  tags: 'З донесенням',
-  pelengs: 'Пеленги',
-  babak: 'Бабак',
-  interception: 'Перехоплення',
-  senders: 'Відправники',
-  posts: 'Пости',
-  posts_docx: 'Пости',
-  mouse: 'Мишка',
-  reo: 'РЕО',
-  digest: 'Дайджест',
-  rer_report: 'РЕР Звіт',
-  sposob: 'Способ',
-  active_networks: 'Активні радіомережі',
-  network_frequencies: 'Частоти Радіомереж',
-  report_125: 'Звіт 1.2.5',
-  report_1213: 'Звіт 1.2.13',
-  summary_table: 'Підсумкова таблиця',
-  kmz: 'KMZ',
-  geojson: 'GeoJSON',
-  etalonka: 'Еталонний опис',
-  goi: 'Звіт ГОІ',
-  goi_associations: 'Висновки ГОІ',
-  legacy: 'Звіт',
-};
-
-function formatReportDate(value: string | null): string {
-  if (value === null || value.trim() === '') return '';
-  const normalized = value.includes('T') ? value : value.replace(' ', 'T') + 'Z';
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('uk-UA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function formatReportDateOrDash(value: string | null | undefined): string {
-  return formatReportDate(value ?? null) || '—';
-}
 
 function parseReportDate(value: string | null | undefined): Date | null {
   if (value == null || value.trim() === '') return null;
   const normalized = value.includes('T') ? value : value.replace(' ', 'T') + 'Z';
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function formatReportId(value: number | null | undefined): string {
-  return value == null ? '—' : `#${value}`;
-}
-
-function statusColor(status: string): 'default' | 'primary' | 'success' | 'error' | 'warning' {
-  if (status === 'done') return 'success';
-  if (status === 'failed') return 'error';
-  if (status === 'in_progress') return 'primary';
-  if (status === 'planned') return 'warning';
-  return 'default';
-}
-
-function formatReportKind(reportKind: string): string {
-  return REPORT_KIND_LABELS[reportKind] ?? '???';
-}
-
-function formatReportProgress(progress: number): string {
-  return `${Math.max(0, Math.min(100, Math.round(progress)))}%`;
 }
 
 function formatReportDuration(totalSeconds: number): string {
@@ -363,18 +309,6 @@ function formatReportExecutionTime(row: ReportHistoryRow): string {
   return `очікування ${formatReportDuration(queueSeconds)}, виконання ${formatReportDuration(
     executionSeconds,
   )}`;
-}
-
-function formatReportStatus(row: ReportHistoryRow): string {
-  if (isCancelledReportHistory(row)) {
-    return 'Скасовано';
-  }
-  if (row.status === 'planned' && row.blockedByReportId != null) {
-    return `Очікує завершення звіту #${row.blockedByReportId}`;
-  }
-  const label = REPORT_STATUS_LABELS[row.status] ?? row.status;
-  if (row.status !== 'in_progress') return label;
-  return `${label} ${formatReportProgress(row.progress)}`;
 }
 
 function buildReportLoadingRows(rowCount: number): ReportHistoryRow[] {
@@ -685,6 +619,41 @@ export function ReportHistoryTableSection({
   }
 
   const columns = useMemo<AppMrtColumnDef<ReportHistoryRow>[]>(() => {
+    const reportKindColumn: AppMrtColumnDef<ReportHistoryRow> = includeAuthor
+      ? {
+          id: 'reportKind',
+          accessorFn: (row) => formatReportKind(row.reportKind),
+          header: 'Вид',
+          meta: { overflowMode: 'custom', overflowOwner: 'shared-text', interactive: true },
+          Cell: mrtCustomCell<ReportHistoryRow>(({ row }) => {
+            const value = formatReportKind(row.original.reportKind);
+            const href = `/admin/all-reports/${row.original.id}`;
+            return (
+              <MrtOverflowText
+                displayValue={value}
+                fullValue={value}
+                interactive
+                component="a"
+                componentProps={{
+                  href,
+                  onClick: (event: ReactMouseEvent<HTMLElement>) =>
+                    handleNavigateWithinSpaClick(event, href),
+                }}
+                sx={{ color: 'primary.main', fontWeight: 600, textDecoration: 'none' }}
+              />
+            );
+          }),
+        }
+      : {
+          id: 'reportKind',
+          accessorFn: (row) => formatReportKind(row.reportKind),
+          header: 'Вид',
+          meta: { overflowMode: 'text' },
+          Cell: mrtTextCell({
+            displayValue: ({ row }) => formatReportKind(row.original.reportKind),
+            fullValue: ({ row }) => formatReportKind(row.original.reportKind),
+          }),
+        };
     const nextColumns: AppMrtColumnDef<ReportHistoryRow>[] = [
       {
         id: 'actions',
@@ -745,16 +714,7 @@ export function ReportHistoryTableSection({
           />
         ),
       },
-      {
-        id: 'reportKind',
-        accessorFn: (row) => formatReportKind(row.reportKind),
-        header: 'Вид',
-        meta: { overflowMode: 'text' },
-        Cell: mrtTextCell({
-          displayValue: ({ row }) => formatReportKind(row.original.reportKind),
-          fullValue: ({ row }) => formatReportKind(row.original.reportKind),
-        }),
-      },
+      reportKindColumn,
       {
         accessorKey: 'reportPeriod',
         header: 'Період',
@@ -780,6 +740,15 @@ export function ReportHistoryTableSection({
     ];
 
     if (includeAuthor) {
+      nextColumns.splice(1, 0, {
+        accessorKey: 'id',
+        header: 'ID',
+        size: 92,
+        minSize: 92,
+        maxSize: 92,
+        meta: { overflowMode: 'none' },
+        Cell: ({ row }) => <CopyableReportId id={row.original.id} />,
+      });
       nextColumns.push(
         {
           accessorKey: 'requestedBy',
@@ -835,7 +804,7 @@ export function ReportHistoryTableSection({
           const chip = (
             <Chip
               size="small"
-              color={statusColor(row.original.status)}
+              color={reportStatusColor(row.original.status)}
               label={formatReportStatus(row.original)}
               variant={row.original.status === 'planned' ? 'outlined' : 'filled'}
             />
@@ -864,8 +833,8 @@ export function ReportHistoryTableSection({
       },
       {
         accessorKey: 'startedAt',
-        header: 'Почато',
-        enableSorting: false,
+        header: includeAuthor ? 'Останній запуск' : 'Почато',
+        enableSorting: includeAuthor,
         enableColumnFilter: false,
         meta: { overflowMode: 'text' },
         Cell: mrtTextCell({

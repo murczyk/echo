@@ -818,7 +818,7 @@ export function UnitsTable({
     manualSorting: true,
     manualPagination: true,
     enableRowActions: canEdit,
-    positionActionsColumn: canEdit ? 'first' : undefined,
+    enableRowNumbers: true,
     columnFilterDisplayMode: 'popover',
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnFiltersChange: tableStateContext.onColumnFiltersChange,

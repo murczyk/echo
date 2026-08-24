@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import type { NetworkFreqCallsignsPeriod } from '../../../../Bindings';
 
 import {
   createNetworkCallsign,
@@ -34,7 +35,7 @@ type SetState = Dispatch<SetStateAction<NetworkDetailsNeoPageState>>;
 type Args = {
   state: NetworkDetailsNeoPageState;
   setState: SetState;
-  loadCallsigns: (networkId: number) => Promise<void>;
+  loadCallsigns: (networkId: number, period?: NetworkFreqCallsignsPeriod) => Promise<void>;
 };
 
 export function useRerNetworkDetailsNeoPageCallsignActions({
@@ -46,8 +47,22 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
 
   const reloadCallsignsData = useCallback(async () => {
     if (!state.network) return;
-    await loadCallsigns(state.network.id);
-  }, [loadCallsigns, state.network]);
+    await loadCallsigns(state.network.id, state.networkCallsignsPeriod);
+  }, [loadCallsigns, state.network, state.networkCallsignsPeriod]);
+
+  const setNetworkCallsignsPeriod = useCallback(
+    (networkCallsignsPeriod: NetworkFreqCallsignsPeriod) => {
+      if (networkCallsignsPeriod === state.networkCallsignsPeriod) return;
+      setState((current) => ({
+        ...current,
+        networkCallsignsPeriod,
+      }));
+      if (state.network) {
+        void loadCallsigns(state.network.id, networkCallsignsPeriod);
+      }
+    },
+    [loadCallsigns, setState, state.network, state.networkCallsignsPeriod],
+  );
 
   const setCallsignSectionMode = useCallback(
     (callsignSectionMode: NetworkCallsignSectionMode) => {
@@ -326,6 +341,7 @@ export function useRerNetworkDetailsNeoPageCallsignActions({
   return {
     loadCallsigns: reloadCallsignsData,
     reloadCallsignsData,
+    setNetworkCallsignsPeriod,
     setCallsignSectionMode,
     setCallsignStatusFilter,
     toggleCallsignInterceptedExpanded,

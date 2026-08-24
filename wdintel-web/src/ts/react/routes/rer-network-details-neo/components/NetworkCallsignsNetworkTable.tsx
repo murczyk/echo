@@ -6,6 +6,7 @@ import { Box, Stack, Tooltip, Typography } from '@mui/material';
 import { useEffect, useMemo } from 'react';
 import { MaterialReactTable } from 'material-react-table';
 
+import type { NetworkFreqCallsignsPeriod } from '../../../../../Bindings';
 import type {
   NetworkCallsignMarkerMode,
   NetworkCallsignRowView,
@@ -50,6 +51,7 @@ import { NetworkCallsignSourceCell } from './NetworkCallsignSourceUi';
 import { NetworkCallsignStatusDot } from './NetworkCallsignStatusUi';
 import { countNetworkCallsignStatusRows } from '../network-callsigns.rows';
 import { formatNetworkCallsignDatetime } from '../network-callsigns.search';
+import { NetworkFreqCallsignPeriodSettings } from './NetworkFreqCallsignPeriodSettings';
 
 const defaultMRTOptions = getDefaultMRTOptions<NetworkCallsignRowView>();
 const NETWORK_MRT_LOCALIZATION = {
@@ -87,6 +89,9 @@ type Props = {
   canManage: boolean;
   statusFilter: NetworkCallsignStatusFilter;
   onStatusFilterChange: (next: NetworkCallsignStatusFilter) => void;
+  period: NetworkFreqCallsignsPeriod;
+  periodSettingsDisabled: boolean;
+  onPeriodChange: (period: NetworkFreqCallsignsPeriod) => void;
   onOpenEditDrawer: (row: NetworkCallsignRowView) => void;
   onOpenDeleteDialog: (row: NetworkCallsignRowView) => void;
   onSetMarkerMode: (row: NetworkCallsignRowView, markerMode: NetworkCallsignMarkerMode) => void;
@@ -145,6 +150,9 @@ export function NetworkCallsignsNetworkTable({
   canManage,
   statusFilter,
   onStatusFilterChange,
+  period,
+  periodSettingsDisabled,
+  onPeriodChange,
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onSetMarkerMode,
@@ -178,6 +186,9 @@ export function NetworkCallsignsNetworkTable({
         canManage={canManage}
         statusFilter={statusFilter}
         onStatusFilterChange={onStatusFilterChange}
+        period={period}
+        periodSettingsDisabled={periodSettingsDisabled}
+        onPeriodChange={onPeriodChange}
         onOpenEditDrawer={onOpenEditDrawer}
         onOpenDeleteDialog={onOpenDeleteDialog}
         onSetMarkerMode={onSetMarkerMode}
@@ -198,6 +209,9 @@ function NetworkCallsignsNetworkTableContent({
   canManage,
   statusFilter,
   onStatusFilterChange,
+  period,
+  periodSettingsDisabled,
+  onPeriodChange,
   onOpenEditDrawer,
   onOpenDeleteDialog,
   onSetMarkerMode,
@@ -557,7 +571,17 @@ function NetworkCallsignsNetworkTableContent({
                 />
               ))}
             </Stack>
-            <InternalTableActions table={table} rowNumberAppearanceControl />
+            <InternalTableActions
+              table={table}
+              rowNumberAppearanceControl
+              leadingInternalActions={
+                <NetworkFreqCallsignPeriodSettings
+                  period={period}
+                  disabled={periodSettingsDisabled}
+                  onChange={onPeriodChange}
+                />
+              }
+            />
           </Box>
         </Stack>
 

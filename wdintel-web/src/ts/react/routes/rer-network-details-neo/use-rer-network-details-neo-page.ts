@@ -388,7 +388,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     if (networkIdValue === null) return;
     if (state.activeNetworkDetailsTab !== 'callsigns') return;
     if (state.callsignsLoaded || state.callsignsLoading || state.callsignsError !== null) return;
-    void loadCallsigns(networkIdValue);
+    void loadCallsigns(networkIdValue, state.networkCallsignsPeriod);
   }, [
     loadCallsigns,
     networkIdValue,
@@ -396,6 +396,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     state.callsignsError,
     state.callsignsLoaded,
     state.callsignsLoading,
+    state.networkCallsignsPeriod,
   ]);
 
   useEffect(() => {

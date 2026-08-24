@@ -96,6 +96,7 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - `just build-front`
 - Run targeted TS tests if touched:
 - `cd wdintel-web && npm run test:ts`
+- Before adding or expanding tests, apply the **Test scope** rules in `CODE_REVIEW.md`. Running existing targeted tests does not require creating new tests.
 
 ## Definition of Done (checklist)
 
@@ -126,7 +127,7 @@ if (isUnauthorizedError(error)) {
 - Use `PowerSnackbar` for new transient, non-blocking action feedback; keep `PowerAlert` for contextual/static page, form, load, permission, and persistent states.
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
 - Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON edits.
-- Check new hook/component modules have focused names and matching targeted tests for pure helpers or state-heavy behavior.
+- Check new hook/component modules have focused names. Add tests only for behavior admitted by `CODE_REVIEW.md`; do not directly test trivial pure helpers, formatting, defaults, static rendering/configuration, or mocked orchestration.
 - Check keyboard access and focus trapping for dialogs/drawers.
 - Check public URL tab values against internal ids; keep aliases only for intentional legacy compatibility.
 - Confirm mobile/tablet/desktop layout still works for touched route.

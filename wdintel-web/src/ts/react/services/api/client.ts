@@ -62,7 +62,9 @@ async function parseErrorMessage(response: Response): Promise<string> {
               (data as Record<string, unknown>).message ??
               (data as Record<string, unknown>).detail)
             : undefined;
-        if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) return knownMessage;
+        if (typeof knownMessage === 'string' && knownMessage.trim().length > 0) {
+          return knownMessage;
+        }
         return JSON.stringify(data);
       }
     } catch (_) {
@@ -199,7 +201,8 @@ export async function postFormData<T>(
   }
   if (!response.ok) {
     if (response.status === 401) emitUnauthorizedEvent();
-    throw new HttpRequestError(response.status, await parseErrorMessage(response));
+    const message = await parseErrorMessage(response);
+    throw new HttpRequestError(response.status, message);
   }
   return (await response.json()) as T;
 }
