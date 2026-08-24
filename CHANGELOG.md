@@ -10,7 +10,7 @@
 
 ## NEXT
 
-- [#2770](https://github.com/echoua/echo/issues/2770) ✅👷 Оперативний, Аналіз: додано окреме зв'язування повідомлень і груп повідомлень з автором-логіном; для імпортованих та отриманих із Signal/WhatsApp повідомлень відображається ім'я відправника, а для створених вручну — логін автора. Після деплою на інстансах із ClickHouse виконати повний resync дзеркал `signal_message` та `signal_message_group` і перевірити analytics health check.
+- [#2770](https://github.com/echoua/echo/issues/2770) ✅👷 Оперативний, Аналіз: додано окреме зв'язування повідомлень і груп повідомлень з автором-логіном; для імпортованих та отриманих із Signal/WhatsApp повідомлень відображається ім'я відправника, а для створених вручну — логін автора. Після деплою обов'язково виконати `sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-signal-message-author-login`, а на інстансах із ClickHouse після завершення one-off виконати повний resync дзеркал `signal_message` та `signal_message_group` і перевірити analytics health check.
 - 🐞👷 Месенджери: додано перевірку нових медіафайлів після завантаження та аудит і відновлення пошкоджених об'єктів; після деплою виконати аудит за [інструкцією](docs/MONITORING.md#audit-messenger-media-storage).
 - 🐞👷 ШІ: виправлено зведення за останні 24 години по всіх доступних даних; перед деплоєм оновити спільний dispatcher і шаблон AI-агента та перестворити керовані контейнери відповідного namespace згідно з [інструкцією](echo-ai-agent/DEPLOYMENT.md).
 - [#2287](https://github.com/echoua/echo/issues/2287) 👷 Аналіз, ЛБЗ: додано окрему погодинну й добову статистику за прив'язаними населеними пунктами; після деплою виконати `sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats --only settlement`.
