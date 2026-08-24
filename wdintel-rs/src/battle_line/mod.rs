@@ -3,7 +3,9 @@ use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
     BATTLE_LINE_AOR_ANCHOR_LATITUDE, BATTLE_LINE_AOR_ANCHOR_LONGITUDE,
     BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_EARTH_RADIUS_METERS,
-    BATTLE_LINE_NETWORKS_LOOKBACK_DAYS, BATTLE_LINE_NETWORKS_PAGE_SIZE,
+    BATTLE_LINE_NETWORKS_LOOKBACK_DAYS,
+    BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT,
+    BATTLE_LINE_NETWORKS_PAGE_SIZE,
     BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
     BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD, BATTLE_LINE_SOURCE_KIND_DELTA_KML,
     BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
@@ -22,7 +24,7 @@ use actix_web::{get, post};
 use anyhow::Context;
 use chrono::{NaiveDateTime, Utc};
 use log::warn;
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::{Alias, Expr, Query, SelectStatement, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, BTreeSet};
@@ -629,27 +631,39 @@ where
     if unit_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let rows = network_point_query(allowed_groups, unit_ids, cutoff, now)
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintInboxItemSettlement.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_settlement::Relation::Settlement.def(),
-        )
-        .filter(settlement::Column::Lat.is_not_null())
-        .filter(settlement::Column::Lon.is_not_null())
-        .select_only()
-        .column(sigint_network_unit::Column::UnitId)
-        .column_as(settlement::Column::Lat, "lat")
-        .column_as(settlement::Column::Lon, "lon")
-        .distinct()
-        .into_model::<UnitMapPointRow>()
-        .all(dbx)
+    let ranked_points =
+        network_point_query(allowed_groups, unit_ids, cutoff, now)
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SigintInboxItemSettlement.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_settlement::Relation::Settlement.def(),
+            )
+            .filter(settlement::Column::Lat.is_not_null())
+            .filter(settlement::Column::Lon.is_not_null())
+            .select_only()
+            .column(sigint_network_unit::Column::UnitId)
+            .column_as(settlement::Column::Lat, "lat")
+            .column_as(settlement::Column::Lon, "lon")
+            .column_as(
+                Expr::cust(
+                    r#"ROW_NUMBER() OVER (
+                    PARTITION BY "sigint_network_unit"."unit_id"
+                    ORDER BY MAX("sigint_inbox_item"."datetime") DESC,
+                             "settlement"."lat", "settlement"."lon"
+                )"#,
+                ),
+                "point_rank",
+            )
+            .group_by(sigint_network_unit::Column::UnitId)
+            .group_by(settlement::Column::Lat)
+            .group_by(settlement::Column::Lon)
+            .into_query();
+    load_bounded_unit_map_points(dbx, ranked_points)
         .await
-        .c(h!())?;
-    Ok(group_unit_map_points(rows))
+        .c(h!())
 }
 
 async fn load_network_peleng_points<C>(
@@ -665,21 +679,62 @@ where
     if unit_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let rows = network_point_query(allowed_groups, unit_ids, cutoff, now)
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintPeleng.def(),
-        )
-        .filter(sigint_peleng::Column::Deleted.eq(false))
-        .select_only()
-        .column(sigint_network_unit::Column::UnitId)
-        .column_as(sigint_peleng::Column::Lat, "lat")
-        .column_as(sigint_peleng::Column::Lng, "lon")
-        .distinct()
-        .into_model::<UnitMapPointRow>()
-        .all(dbx)
+    let ranked_points =
+        network_point_query(allowed_groups, unit_ids, cutoff, now)
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SigintPeleng.def(),
+            )
+            .filter(sigint_peleng::Column::Deleted.eq(false))
+            .select_only()
+            .column(sigint_network_unit::Column::UnitId)
+            .column_as(sigint_peleng::Column::Lat, "lat")
+            .column_as(sigint_peleng::Column::Lng, "lon")
+            .column_as(
+                Expr::cust(
+                    r#"ROW_NUMBER() OVER (
+                    PARTITION BY "sigint_network_unit"."unit_id"
+                    ORDER BY MAX("sigint_inbox_item"."datetime") DESC,
+                             "sigint_peleng"."lat", "sigint_peleng"."lng"
+                )"#,
+                ),
+                "point_rank",
+            )
+            .group_by(sigint_network_unit::Column::UnitId)
+            .group_by(sigint_peleng::Column::Lat)
+            .group_by(sigint_peleng::Column::Lng)
+            .into_query();
+    load_bounded_unit_map_points(dbx, ranked_points)
         .await
-        .c(h!())?;
+        .c(h!())
+}
+
+async fn load_bounded_unit_map_points<C>(
+    dbx: &C,
+    ranked_points: SelectStatement,
+) -> anyhow::Result<BTreeMap<i64, Vec<BattleLineNetworkMapPoint>>>
+where
+    C: ConnectionTrait,
+{
+    let ranked_points_alias = Alias::new("ranked_points");
+    let query = Query::select()
+        .columns([
+            (ranked_points_alias.clone(), Alias::new("unit_id")),
+            (ranked_points_alias.clone(), Alias::new("lat")),
+            (ranked_points_alias.clone(), Alias::new("lon")),
+        ])
+        .from_subquery(ranked_points, ranked_points_alias.clone())
+        .and_where(
+            Expr::col((ranked_points_alias, Alias::new("point_rank")))
+                .lte(BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT),
+        )
+        .to_owned();
+    let rows = UnitMapPointRow::find_by_statement(
+        dbx.get_database_backend().build(&query),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
     Ok(group_unit_map_points(rows))
 }
 
