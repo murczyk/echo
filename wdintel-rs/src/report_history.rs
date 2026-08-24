@@ -10,6 +10,8 @@ use crate::config::{
     REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS,
     REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
+    REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS,
+    REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE,
 };
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{
@@ -483,6 +485,11 @@ fn report_history_known_error_hint(error: &str) -> Option<&'static str> {
         Some(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS)
     } else if normalized.contains("no default aor found") {
         Some(REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS)
+    } else if normalized
+        .contains("report generation was interrupted while in progress")
+        && normalized.contains("report worker startup recovery")
+    {
+        Some(REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS)
     } else if normalized.contains("timed out")
         || normalized.contains("timeout")
         || normalized.contains("deadline has elapsed")
@@ -2407,61 +2414,29 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
     let stmt = Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
-        with recovered_report as (
-            select
-                id,
-                least(retry_count + 1, $1) as attempt_count,
-                retry_count + 1 >= $1 as attempts_exhausted
-            from report_history
-            where status = $5
-        )
         update report_history
         set
-            status = case
-                when recovered_report.attempts_exhausted then $2
-                else $3
-            end,
-            retry_count = recovered_report.attempt_count,
-            planned_for_ts = case
-                when recovered_report.attempts_exhausted then null
-                else now() at time zone 'utc'
-                    + recovered_report.attempt_count * interval '5 minutes'
-            end,
-            started_at = case
-                when recovered_report.attempts_exhausted then report_history.started_at
-                else null
-            end,
-            completed_at = case
-                when recovered_report.attempts_exhausted then now() at time zone 'utc'
-                else null
-            end,
+            status = $1,
+            planned_for_ts = now() at time zone 'utc',
+            started_at = null,
+            completed_at = null,
             bgtask_id = null,
-            last_error = format(
-                'Report generation was interrupted while in progress; recorded attempt %s/%s during report worker startup recovery',
-                recovered_report.attempt_count,
-                $1
-            ),
+            last_error = null,
             log = coalesce(report_history.log, '[]'::jsonb)
                 || jsonb_build_array(jsonb_build_object(
                     'login',
-                    $4,
+                    $2,
                     'timestamp',
                     now() at time zone 'utc',
                     'message',
-                    format(
-                        'Report generation was interrupted while in progress; recorded attempt %s/%s during report worker startup recovery',
-                        recovered_report.attempt_count,
-                        $1
-                    )
+                    $3
                 ))
-        from recovered_report
-        where report_history.id = recovered_report.id
+        where status = $4
         "#,
         [
-            REPORT_HISTORY_MAX_ATTEMPTS.into(),
-            STATUS_FAILED.into(),
             STATUS_PLANNED.into(),
             REPORT_CRASH_RECOVERY_LOGIN.into(),
+            REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE.into(),
             STATUS_IN_PROGRESS.into(),
         ],
     );
@@ -3585,8 +3560,20 @@ mod tests {
                 REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
             ),
             (
+                r#"BL { msg: "Report generation timed out after 3600 seconds: id=8771, kind=reo, requested_by_login_id=019f9010-ba23-7d95-9905-c689dc4b17dc" }"#,
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                r#"AnyhowError { source: Query(SqlxError(Database(PgDatabaseError { code: "57014", message: "canceling statement due to statement timeout" }))) }"#,
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
                 r#"BL { msg: "summary_table_report_message_limit" }"#,
                 REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS,
+            ),
+            (
+                "Report generation was interrupted while in progress; recorded attempt 2/2 during report worker startup recovery",
+                REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS,
             ),
             (
                 "CustomInfrastructureError { source: DatabaseError }",
@@ -3613,6 +3600,64 @@ mod tests {
             report_failure_attempt_count(0, &error),
             REPORT_HISTORY_MAX_ATTEMPTS
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn startup_recovery_requeues_without_consuming_attempt(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-startup-recovery",
+        )
+        .await?;
+        let now = Utc::now().naive_utc();
+        let report = insert_report_history(
+            &env.dbx,
+            &login.login,
+            KIND_GOI,
+            STATUS_IN_PROGRESS,
+            now - Duration::minutes(1),
+            Some(now),
+            None,
+        )
+        .await?;
+        let bgtask = create_running_bgtask(&env.dbx).await?;
+        let mut report = report.into_active_model();
+        report.retry_count = Set(1);
+        report.bgtask_id = Set(Some(bgtask.id));
+        report.last_error = Set(Some("previous attempt failed".to_string()));
+        let report = report.update(&env.dbx).await.c(h!())?;
+
+        recover_interrupted_reports(&env).await?;
+
+        let recovered = ReportHistory::find_by_id(report.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)?;
+        assert_eq!(recovered.status, STATUS_PLANNED);
+        assert_eq!(recovered.retry_count, 1);
+        assert!(recovered.planned_for_ts.is_some());
+        assert_eq!(recovered.started_at, None);
+        assert_eq!(recovered.completed_at, None);
+        assert_eq!(recovered.bgtask_id, None);
+        assert_eq!(recovered.last_error, None);
+        assert_eq!(
+            recovered
+                .log
+                .as_array()
+                .and_then(|entries| entries.last())
+                .and_then(|entry| entry.get("message"))
+                .and_then(serde_json::Value::as_str),
+            Some(REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE)
+        );
+        Ok(())
     }
 
     async fn insert_report_history(

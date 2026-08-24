@@ -364,11 +364,15 @@ pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
 pub const REPORT_HISTORY_CANCELLED_ERROR_STATUS: &str =
     "Скасовано користувачем";
 pub const REPORT_HISTORY_TIMEOUT_ERROR_STATUS: &str =
-    "Формування звіту тривало надто довго. Оберіть вужчий період і повторіть спробу.";
+    "Обраний період звіту завеликий. Оберіть вужчий період і повторіть спробу.";
 pub const REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.";
 pub const REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS: &str =
     "Не знайдено AOR за замовчуванням для формування цього звіту.";
+pub const REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS: &str =
+    "Формування звіту було перервано через перезапуск сервісу. Спробуйте сформувати звіт повторно.";
+pub const REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE: &str =
+    "Report generation was interrupted by report worker restart and requeued without consuming an attempt";
 pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
     "Не вдалося сформувати звіт. Спробуйте ще раз.";
 pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
