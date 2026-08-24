@@ -10,10 +10,12 @@ import {
   FormControlLabel,
   Stack,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
-import { MaterialReactTable } from 'material-react-table';
+import { MaterialReactTable, type MRT_ColumnFiltersState } from 'material-react-table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
@@ -51,6 +53,7 @@ import {
   updateTranscriberInstance,
 } from '../../services/api/transcriber';
 import { currentSystemSettings } from '../../services/api/system-settings';
+import { TranscriptionResultsTab } from './TranscriptionResultsTab';
 
 const GPU_INSTANCE_TEXT_MAX_CHARS = 255;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
@@ -75,6 +78,14 @@ const DEFAULT_COLUMN_ORDER = [
   'py_port',
   'is_active',
 ];
+
+const INSTANCE_COLUMN_FILTER_IDS = new Set(Object.keys(DEFAULT_COLUMNS_VISIBILITY));
+
+function sanitizeInstanceColumnFilters(
+  columnFilters: MRT_ColumnFiltersState,
+): MRT_ColumnFiltersState {
+  return columnFilters.filter((columnFilter) => INSTANCE_COLUMN_FILTER_IDS.has(columnFilter.id));
+}
 
 const defaultMRTOptions = getDefaultMRTOptions<TranscriberInstance>();
 
@@ -673,6 +684,7 @@ type AccessStatus = 'loading' | 'enabled' | 'error';
 export function AdminTranscriptionSettingsPage() {
   const [accessStatus, setAccessStatus] = useState<AccessStatus>('loading');
   const [accessError, setAccessError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'instances' | 'results'>('instances');
 
   const checkAccess = useCallback(async () => {
     setAccessStatus('loading');
@@ -713,13 +725,56 @@ export function AdminTranscriptionSettingsPage() {
   }
 
   return (
-    <TableStateProvider
-      tableId="admin-transcriber-instances"
-      defaultColumnOrder={DEFAULT_COLUMN_ORDER}
-      defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
-      defaultEnableColumnOrdering={false}
-    >
-      <AdminTranscriptionSettingsPageBody />
-    </TableStateProvider>
+    <Stack spacing={2} sx={{ height: '100%', minHeight: 0, overflow: 'hidden' }}>
+      <Tabs
+        value={activeTab}
+        onChange={(_, value: 'instances' | 'results') => setActiveTab(value)}
+        variant="scrollable"
+        allowScrollButtonsMobile
+        aria-label="Розділи транскрибації"
+        sx={{ borderBottom: 1, borderColor: 'divider', flex: 'none' }}
+      >
+        <Tab
+          id="transcription-instances-tab"
+          aria-controls="transcription-instances-panel"
+          value="instances"
+          label="Echo GPU сервери"
+        />
+        <Tab
+          id="transcription-results-tab"
+          aria-controls="transcription-results-panel"
+          value="results"
+          label="Результати транскрибації"
+        />
+      </Tabs>
+      <Box
+        id="transcription-instances-panel"
+        role="tabpanel"
+        aria-labelledby="transcription-instances-tab"
+        hidden={activeTab !== 'instances'}
+        sx={{ flex: 1, minHeight: 0, minWidth: 0 }}
+      >
+        {activeTab === 'instances' ? (
+          <TableStateProvider
+            tableId="admin-transcriber-instances"
+            defaultColumnOrder={DEFAULT_COLUMN_ORDER}
+            defaultColumnVisibility={DEFAULT_COLUMNS_VISIBILITY}
+            defaultEnableColumnOrdering={false}
+            sanitizeColumnFilters={sanitizeInstanceColumnFilters}
+          >
+            <AdminTranscriptionSettingsPageBody />
+          </TableStateProvider>
+        ) : null}
+      </Box>
+      <Box
+        id="transcription-results-panel"
+        role="tabpanel"
+        aria-labelledby="transcription-results-tab"
+        hidden={activeTab !== 'results'}
+        sx={{ flex: 1, minHeight: 0, minWidth: 0 }}
+      >
+        {activeTab === 'results' ? <TranscriptionResultsTab /> : null}
+      </Box>
+    </Stack>
   );
 }
