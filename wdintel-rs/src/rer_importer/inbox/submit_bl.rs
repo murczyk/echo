@@ -298,6 +298,13 @@ async fn submit_inbox_item_with_groups_inner(
         super::save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
             .await
             .c(h!())?;
+    crate::stats::enqueue_group_stats_recalculation_for_message(
+        txn,
+        signal_message.id,
+        format!("submitted inbox message {}", signal_message.id),
+    )
+    .await
+    .c(h!())?;
 
     Ok(SubmittedInboxItem {
         signal_message_id: signal_message.id,
