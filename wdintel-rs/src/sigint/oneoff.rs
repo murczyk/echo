@@ -27,6 +27,12 @@ const SIGNAL_MESSAGE_AUTHOR_LOGIN_CHECKPOINT_KEY: &str =
 const SIGNAL_MESSAGE_LOGIN_ID_INDEX: &str = "signal_message_login_id_idx";
 const SIGNAL_MESSAGE_GROUP_LOGIN_ID_INDEX: &str =
     "signal_message_group_login_id_idx";
+const SIGNAL_MESSAGE_AUTHOR_BACKFILL_INDEX: &str =
+    "signal_message_author_backfill_sender_id_idx";
+const SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX: &str =
+    "signal_message_group_author_backfill_sender_id_lookup_idx";
+const SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX_OLD: &str =
+    "signal_message_group_author_backfill_sender_id_idx";
 
 pub async fn oneoff_backfill_signal_message_author_login(
     mode: Mode,
@@ -45,6 +51,12 @@ pub async fn oneoff_backfill_signal_message_author_login(
     db.execute_unprepared("set statement_timeout = 0; set lock_timeout = 0;")
         .await
         .c(h!())?;
+    create_author_backfill_indexes(&db).await.c(h!())?;
+    db.execute_unprepared(
+        "analyze signal_message; analyze signal_message_group;",
+    )
+    .await
+    .c(h!())?;
 
     let batch_size = ps.batch_size as i64;
     let login_sender_ids = login::Entity::find()
@@ -86,6 +98,12 @@ pub async fn oneoff_backfill_signal_message_author_login(
         )
         .await
         .c(h!())?;
+        txn.execute_unprepared(
+            "set local enable_indexscan = off; \
+             set local enable_seqscan = off;",
+        )
+        .await
+        .c(h!())?;
         let (group_count, next_group_id) = backfill_signal_message_group_batch(
             &txn,
             &login_sender_ids,
@@ -121,6 +139,7 @@ pub async fn oneoff_backfill_signal_message_author_login(
     }
 
     create_signal_message_author_indexes(&db).await.c(h!())?;
+    drop_author_backfill_indexes(&db).await.c(h!())?;
     println!(
         "signal-message author backfill completed: {message_total} messages, {group_total} group links"
     );
@@ -301,6 +320,54 @@ async fn create_signal_message_author_indexes(
     db.execute_unprepared(&format!(
         "create index concurrently if not exists {SIGNAL_MESSAGE_GROUP_LOGIN_ID_INDEX} \
          on signal_message_group (login_id) where login_id is not null;"
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn create_author_backfill_indexes(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    println!("preparing concurrent author-backfill indexes");
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX_OLD};"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "create index concurrently if not exists {SIGNAL_MESSAGE_AUTHOR_BACKFILL_INDEX} \
+         on signal_message (id, sender) \
+         where login_id is null and sender is not null;"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "create index concurrently if not exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX} \
+         on signal_message_group (sender, id) \
+         where login_id is null and sender is not null;"
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn drop_author_backfill_indexes(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    println!("dropping temporary author-backfill indexes");
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_AUTHOR_BACKFILL_INDEX};"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX};"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX_OLD};"
     ))
     .await
     .c(h!())?;
