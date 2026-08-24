@@ -951,7 +951,10 @@ export function useWindowedFeedScroll({
         physicallyAtBottomRef.current = true;
         // Wall-clock progress: under CPU throttle a synthetic 60 Hz clock stretched the
         // ease across many real seconds. Tests advance performance.now per rAF.
-        const startedAtMs = now;
+        let easeFromScrollTop = fromScrollTop;
+        let easeStartedAtMs = now;
+        let easeDurationMs = DUTY_SMOOTH_FOLLOW_MS;
+        let lastMaxScrollTop = maxScrollTop;
 
         const tick = () => {
           followScrollRafRef.current = null;
@@ -976,12 +979,19 @@ export function useWindowedFeedScroll({
               ? performance.now()
               : Date.now();
           const frame = dutyFollowScrollFrame({
-            startedAtMs,
+            startedAtMs: easeStartedAtMs,
             nowMs: frameNowMs,
-            fromScrollTop,
+            fromScrollTop: easeFromScrollTop,
+            currentScrollTop: active.scrollTop,
+            lastMaxScrollTop,
             scrollHeight: active.scrollHeight,
             clientHeight: active.clientHeight,
+            durationMs: easeDurationMs,
           });
+          easeFromScrollTop = frame.fromScrollTop;
+          easeStartedAtMs = frame.startedAtMs;
+          easeDurationMs = frame.durationMs;
+          lastMaxScrollTop = frame.maxScrollTop;
           followAnimatingRef.current = true;
           active.scrollTop = frame.scrollTop;
           previousScrollTopRef.current = active.scrollTop;

@@ -19,27 +19,71 @@ export function dutyFollowEaseOutCubic(t: number): number {
   return 1 - (1 - x) ** 3;
 }
 
-/**
- * Next scrollTop for a follow ease frame. Re-reads max each frame so late card
- * growth retargets without a hard snap.
- */
-export function dutyFollowScrollFrame(args: {
+export type DutyFollowScrollFrameArgs = {
   startedAtMs: number;
   nowMs: number;
   fromScrollTop: number;
   scrollHeight: number;
   clientHeight: number;
   durationMs?: number;
-}): { scrollTop: number; done: boolean } {
-  const durationMs = args.durationMs ?? DUTY_SMOOTH_FOLLOW_MS;
+  /** Current scroller position; required with lastMaxScrollTop to rebase on growth. */
+  currentScrollTop?: number;
+  /** Previous frame's maxScrollTop; when max grows, rebase from current over remaining time. */
+  lastMaxScrollTop?: number;
+};
+
+export type DutyFollowScrollFrameResult = {
+  scrollTop: number;
+  done: boolean;
+  fromScrollTop: number;
+  startedAtMs: number;
+  durationMs: number;
+  maxScrollTop: number;
+};
+
+/**
+ * Next scrollTop for a follow ease frame. When maxScrollTop grows mid-ease, rebases
+ * from the current scroll position over the remaining duration so new distance is not
+ * applied retroactively via the original from×absolute-t lerp.
+ */
+export function dutyFollowScrollFrame(
+  args: DutyFollowScrollFrameArgs,
+): DutyFollowScrollFrameResult {
   const maxScrollTop = Math.max(0, args.scrollHeight - args.clientHeight);
-  const elapsed = args.nowMs - args.startedAtMs;
-  if (elapsed >= durationMs || Math.abs(maxScrollTop - args.fromScrollTop) < 0.5) {
-    return { scrollTop: maxScrollTop, done: true };
+  let fromScrollTop = args.fromScrollTop;
+  let startedAtMs = args.startedAtMs;
+  let durationMs = args.durationMs ?? DUTY_SMOOTH_FOLLOW_MS;
+
+  if (
+    args.currentScrollTop != null &&
+    args.lastMaxScrollTop != null &&
+    maxScrollTop > args.lastMaxScrollTop + 0.5
+  ) {
+    const endAtMs = startedAtMs + durationMs;
+    const remainingMs = Math.max(0, endAtMs - args.nowMs);
+    fromScrollTop = args.currentScrollTop;
+    startedAtMs = args.nowMs;
+    durationMs = remainingMs;
+  }
+
+  const elapsed = args.nowMs - startedAtMs;
+  if (durationMs < 0.5 || elapsed >= durationMs || Math.abs(maxScrollTop - fromScrollTop) < 0.5) {
+    return {
+      scrollTop: maxScrollTop,
+      done: true,
+      fromScrollTop,
+      startedAtMs,
+      durationMs,
+      maxScrollTop,
+    };
   }
   const t = dutyFollowEaseOutCubic(elapsed / durationMs);
   return {
-    scrollTop: args.fromScrollTop + (maxScrollTop - args.fromScrollTop) * t,
+    scrollTop: fromScrollTop + (maxScrollTop - fromScrollTop) * t,
     done: false,
+    fromScrollTop,
+    startedAtMs,
+    durationMs,
+    maxScrollTop,
   };
 }
