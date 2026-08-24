@@ -31,23 +31,27 @@ function serializeSettingsSection(section: SettingsSection): string {
   if (section === 'myGroups') return 'my-groups';
   if (section === 'myOrganism') return 'my-organism';
   if (section === 'myReports') return 'my-reports';
+  if (section === 'ai') return 'general';
   return section;
 }
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === 'my-groups') {
+  if (section === 'myGroups' || section === 'my-groups') {
     return 'myGroups';
   }
-  if (section === 'my-organism') {
+  if (section === 'myOrganism' || section === 'my-organism') {
     return 'myOrganism';
   }
-  if (section === 'my-reports') {
+  if (section === 'myReports' || section === 'my-reports') {
     return 'myReports';
   }
-  if (section === 'duty' || section === 'analysis' || section === 'ai') {
+  if (section === 'duty' || section === 'analysis') {
     return section;
   }
-  return 'myGroups';
+  if (section === 'general' || section === 'ai') {
+    return 'ai';
+  }
+  return 'ai';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -217,6 +221,12 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             }}
           >
             <Tab
+              value="ai"
+              label="Загальні"
+              id="settings-neo-tab-ai"
+              aria-controls="settings-neo-panel-ai"
+            />
+            <Tab
               value="myGroups"
               label="Мої групи"
               id="settings-neo-tab-my-groups"
@@ -241,17 +251,24 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               aria-controls="settings-neo-panel-analysis"
             />
             <Tab
-              value="ai"
-              label="ШІ"
-              id="settings-neo-tab-ai"
-              aria-controls="settings-neo-panel-ai"
-            />
-            <Tab
               value="myReports"
               label={renderMyReportsTabLabel()}
               id="settings-neo-tab-my-reports"
             />
           </Tabs>
+
+          {settingsSection === 'ai' ? (
+            <SettingsAiSection
+              loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+              prefsLoadError={dutySettings.loadError}
+              saveError={dutySettings.saveError}
+              mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
+              onMediaSummaryEnabledChange={(value) => {
+                dutySettings.setMediaSummaryEnabled(value);
+                scheduleDutySettingsSave({ mediaSummaryEnabled: value });
+              }}
+            />
+          ) : null}
 
           {settingsSection === 'myGroups' ? (
             <SettingsMyGroupsSection
@@ -454,19 +471,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 </Stack>
               </Box>
             </Box>
-          ) : null}
-
-          {settingsSection === 'ai' ? (
-            <SettingsAiSection
-              loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
-              prefsLoadError={dutySettings.loadError}
-              saveError={dutySettings.saveError}
-              mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
-              onMediaSummaryEnabledChange={(value) => {
-                dutySettings.setMediaSummaryEnabled(value);
-                scheduleDutySettingsSave({ mediaSummaryEnabled: value });
-              }}
-            />
           ) : null}
         </Card>
       </Stack>

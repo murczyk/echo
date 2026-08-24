@@ -25,9 +25,14 @@ const fetchMyAdminGroupEditReferenceMock = vi.hoisted(() =>
 
 vi.mock('@mui/material', () => ({
   Autocomplete: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: ({ children, ...props }: { children: ReactNode } & Record<string, unknown>) => (
+    <div {...props}>{children}</div>
+  ),
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Chip: ({ label }: { label?: ReactNode }) => <span>{label}</span>,
   CircularProgress: () => <span>loading</span>,
+  Collapse: ({ children, in: inProp }: { children: ReactNode; in?: boolean }) =>
+    inProp ? <div>{children}</div> : null,
   Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
     open ? <div role="dialog">{children}</div> : null,
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -509,8 +514,10 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Штучний інтелект');
+    expect(container.textContent).toContain('Загальні');
     expect(container.textContent).toContain('Стислий опис файлів у картках');
+    expect(container.querySelector('[data-message-card-mock="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-media-summary-mock="true"]')).not.toBeNull();
 
     const switchButton = Array.from(container.querySelectorAll('button')).find((button) =>
       button.parentElement?.textContent?.includes('Стислий опис файлів у картках'),
@@ -521,6 +528,8 @@ describe('SettingsNeoPage', () => {
       switchButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
+
+    expect(container.querySelector('[data-media-summary-mock="true"]')).toBeNull();
 
     expect(saveUserDutySettings).toHaveBeenLastCalledWith({
       tagsLayout: 'compact',
@@ -558,7 +567,7 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).not.toContain('Транскрипція аудіо');
   });
 
-  it('hides general settings and opens my groups for the legacy general section', async () => {
+  it('opens general settings for the general section', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="general" />);
     });
@@ -567,8 +576,9 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Загальні');
-    expect(container.textContent).toContain('Мої групи');
+    expect(container.querySelector('#settings-neo-panel-ai')).not.toBeNull();
+    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).toContain('Стислий опис файлів у картках');
   });
 
   it('renders the my reports tab as a redirect', async () => {
@@ -620,7 +630,6 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Загальні');
     expect(container.textContent).toContain('Мої групи');
     expect(container.textContent).toContain('change-layout');
   });
@@ -651,7 +660,6 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Загальні');
     expect(container.textContent).toContain('Мої групи');
     expect(container.textContent).toContain('change-layout');
     expect(container.textContent).not.toContain('Group 1');
