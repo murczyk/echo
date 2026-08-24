@@ -25,10 +25,10 @@ require_expected_control_release
 print_schema_difference() {
   local expected_label=$1 actual_label=$2 expected=$3 actual=$4
   log "Columns present only in $expected_label:"
-  comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
+  LC_ALL=C comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
     | sed 's/^/  /' >&2
   log "Columns present only in $actual_label:"
-  comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
+  LC_ALL=C comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
     | sed 's/^/  /' >&2
 }
 
