@@ -15,7 +15,15 @@ import {
   useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import type {
   MediaSummaryCoordinate,
@@ -497,9 +505,16 @@ function useMediaSummaryResult({
   onStatusChange?: (status: MediaSummaryStatus) => void;
 }) {
   const cacheKey = mediaId != null ? `${summaryAccess}:${mediaId}` : null;
+  const [prevCacheKey, setPrevCacheKey] = useState(cacheKey);
   const [result, setResult] = useState<MediaSummaryResult | null>(() =>
     getCompatibleCachedSummary(cacheKey, status),
   );
+
+  if (prevCacheKey !== cacheKey) {
+    setPrevCacheKey(cacheKey);
+    setResult(getCompatibleCachedSummary(cacheKey, status));
+  }
+
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const refreshControllerRef = useRef<AbortController | null>(null);
@@ -625,7 +640,9 @@ export function MessageCardMediaSummary({
     onNext: () => void;
   } | null;
 }) {
+  const [prevMediaId, setPrevMediaId] = useState(mediaId);
   const [expanded, setExpanded] = useState(false);
+  const textRef = useRef<HTMLParagraphElement>(null);
   const { result, refreshing, refreshError, refresh, retry } = useMediaSummaryResult({
     mediaId,
     status,
@@ -636,12 +653,43 @@ export function MessageCardMediaSummary({
   const state = result?.state ?? status?.state;
   const summary = result?.summary?.trim() ?? '';
   const isFailed = state === 'failed' || refreshError != null;
-  const isProcessing = (state != null && isMediaSummaryProcessing(state)) || refreshing;
-  const isNoResult = mediaId == null || status == null || (state === 'completed' && summary === '');
-  const hasSummary = !isNoResult && !isFailed && !isProcessing && summary !== '';
-  const expandable = summary.length > 280 || summary.split(/\r?\n/).length > 3;
+  const isBackendProcessing = state != null && isMediaSummaryProcessing(state);
+  const isProcessing = isBackendProcessing || (refreshing && result != null);
+  const isLoading =
+    mediaId != null && status != null && result == null && !isFailed && !isBackendProcessing;
+  const isNoResult =
+    mediaId == null ||
+    status == null ||
+    (state === 'completed' && summary === '' && result != null);
+  const hasSummary = !isNoResult && !isFailed && !isProcessing && !isLoading && summary !== '';
+  const [hasOverflow, setHasOverflow] = useState(() => summary.split(/\r?\n/).length > 3);
 
-  useEffect(() => setExpanded(false), [mediaId, summary]);
+  if (prevMediaId !== mediaId) {
+    setPrevMediaId(mediaId);
+    setExpanded(false);
+    setHasOverflow(summary.split(/\r?\n/).length > 3);
+  }
+
+  useLayoutEffect(() => {
+    if (expanded || !hasSummary) return;
+    const textElement = textRef.current;
+    if (!textElement) return;
+
+    const measure = () => {
+      const isOverflowing =
+        summary.split(/\r?\n/).length > 3 ||
+        textElement.scrollHeight > textElement.clientHeight + 1;
+      setHasOverflow(isOverflowing);
+    };
+
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(textElement);
+    return () => observer.disconnect();
+  }, [expanded, hasSummary, summary]);
+
+  const expandable = hasOverflow;
 
   if (mediaId == null && pagination == null) return null;
 
@@ -664,7 +712,10 @@ export function MessageCardMediaSummary({
     >
       <DescriptionIcon className={`text-[20px]! shrink-0 mt-0.5 ${iconColorClass}`} />
 
-      <div className="flex-1 min-w-0 px-1 py-0.5">
+      <div
+        key={mediaId ?? 'summary-text'}
+        className="flex-1 min-w-0 px-1 py-0.5 animate-[media-summary-carousel-in_160ms_ease-out]"
+      >
         {isFailed ? (
           <div className="flex flex-row items-center gap-1.5 flex-wrap">
             <Typography
@@ -683,15 +734,8 @@ export function MessageCardMediaSummary({
               <RefreshIcon className="text-lg!" />
             </IconButton>
           </div>
-        ) : isNoResult ? (
-          <Typography
-            variant="body2"
-            className="text-(--color-text-muted) font-normal text-sm leading-5"
-          >
-            Не розпізнаний контент
-          </Typography>
         ) : isProcessing ? (
-          <div className="flex flex-row items-center gap-1.5">
+          <div className="flex flex-row items-center gap-1.5 min-h-15">
             <CircularProgress size={14} className="text-(--color-primary)!" />
             <Typography
               variant="body2"
@@ -700,8 +744,22 @@ export function MessageCardMediaSummary({
               {STATE_LABELS[state ?? ''] ?? state ?? 'Опис створюється'}
             </Typography>
           </div>
+        ) : isLoading ? (
+          <div className="flex flex-col gap-1 py-0.5 min-h-15 justify-center">
+            <Skeleton variant="text" width="95%" height={16} />
+            <Skeleton variant="text" width="85%" height={16} />
+            <Skeleton variant="text" width="60%" height={16} />
+          </div>
+        ) : isNoResult ? (
+          <Typography
+            variant="body2"
+            className="text-(--color-text-muted) font-normal text-sm leading-5"
+          >
+            Не розпізнаний контент
+          </Typography>
         ) : (
           <Typography
+            ref={textRef}
             variant="body2"
             className={`min-w-0 text-(--color-text) font-normal text-sm leading-5 whitespace-pre-wrap wrap-break-word ${
               !expanded ? 'line-clamp-3 overflow-hidden' : ''
@@ -788,6 +846,23 @@ export function MessageCardMediaSummaryCarousel({
     onIndexChange?.(nextIndex);
   }, [firstSummaryIndex, mediaIds, onIndexChange]);
 
+  useEffect(() => {
+    media.forEach((item) => {
+      if (item.id != null && item.summary?.state === 'completed') {
+        const key = `messenger:${item.id}`;
+        if (!summaryCache.has(key)) {
+          void getMediaSummary(item.id, undefined, 'messenger')
+            .then((res) => {
+              if (res.state === 'completed' || res.state === 'failed') {
+                setLruCacheValue(summaryCache, key, res, MEDIA_SUMMARY_CACHE_LIMIT);
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    });
+  }, [media, mediaIds]);
+
   const resolvedIndex = Math.min(index, media.length - 1);
   const current = media[resolvedIndex];
   if (firstSummaryIndex < 0 || current == null) return null;
@@ -812,17 +887,11 @@ export function MessageCardMediaSummaryCarousel({
       data-media-summary-carousel="true"
       className="relative mt-2 max-w-full min-w-0 w-[min(580px,100%)]"
     >
-      <div
-        key={`${current.id ?? resolvedIndex}:${resolvedIndex}`}
-        data-media-summary-carousel-content="true"
-        className="animate-[media-summary-carousel-in_160ms_ease-out]"
-      >
-        <MessageCardMediaSummary
-          mediaId={current.id}
-          status={current.summary}
-          pagination={pagination}
-        />
-      </div>
+      <MessageCardMediaSummary
+        mediaId={current.id}
+        status={current.summary}
+        pagination={pagination}
+      />
     </div>
   );
 }
