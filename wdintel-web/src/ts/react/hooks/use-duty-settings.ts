@@ -35,8 +35,10 @@ export type DutySettingsHook = DutySettingsValue & {
 function normalizeDutySettings(
   settings: Partial<DutySettingsValue> | null | undefined,
 ): DutySettingsValue {
+  const messageTextPreviewLines = settings?.messageTextPreviewLines;
+
   return {
-    messageTextPreviewLines: settings?.messageTextPreviewLines ?? 20,
+    messageTextPreviewLines: messageTextPreviewLines === undefined ? 20 : messageTextPreviewLines,
     tagsLayout: settings?.tagsLayout ?? DEFAULT_DUTY_TAGS_LAYOUT,
     disableAutoScroll: settings?.disableAutoScroll ?? false,
     analysisMapInSidebar: settings?.analysisMapInSidebar ?? false,
