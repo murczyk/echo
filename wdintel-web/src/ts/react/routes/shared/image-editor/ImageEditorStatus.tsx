@@ -1,6 +1,7 @@
 export function ImageEditorStatus({ tool }: { tool: 'conceal' | 'magnifier' | string }) {
+  if (tool !== 'conceal' && tool !== 'magnifier') return null;
   return (
-    <div className="min-h-8 shrink-0 px-2 py-1">
+    <div className="shrink-0 px-2 py-1">
       {tool === 'conceal' ? (
         <span className="text-echo-sm text-echo-text">
           Для надійного приховування конфіденційних даних використовуйте «Редакція». Розмиття й

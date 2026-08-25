@@ -6,10 +6,7 @@ import CircleOutlinedIcon from '@mui/icons-material/CircleOutlined';
 import CropIcon from '@mui/icons-material/Crop';
 import DeleteIcon from '@mui/icons-material/Delete';
 import FitScreenIcon from '@mui/icons-material/FitScreen';
-import HighlightIcon from '@mui/icons-material/Highlight';
-import HorizontalRuleIcon from '@mui/icons-material/HorizontalRule';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
-import MouseIcon from '@mui/icons-material/Mouse';
 import PanToolIcon from '@mui/icons-material/PanTool';
 import RectangleOutlinedIcon from '@mui/icons-material/RectangleOutlined';
 import RedoIcon from '@mui/icons-material/Redo';
@@ -19,7 +16,7 @@ import TextFieldsIcon from '@mui/icons-material/TextFields';
 import UndoIcon from '@mui/icons-material/Undo';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import { ListItemIcon, ListSubheader, MenuItem, useMediaQuery } from '@mui/material';
+import { ListItemIcon, ListSubheader, MenuItem, SvgIcon, useMediaQuery } from '@mui/material';
 import { useState, type MouseEvent, type ReactNode } from 'react';
 
 import { PowerButton } from '../../../components/PowerButton';
@@ -53,6 +50,53 @@ type Props = {
   onActualSize: () => void;
   onCenterViewport: () => void;
 };
+
+function SelectObjectIcon() {
+  return (
+    <SvgIcon viewBox="0 0 24 24">
+      <rect
+        x="3"
+        y="3"
+        width="12"
+        height="10"
+        fill="none"
+        stroke="currentColor"
+        strokeDasharray="2 2"
+      />
+      <path d="m11 11 2 9 2.2-3.1 3.3 1.4.9-2.1-3.4-1.4L19 12z" fill="currentColor" />
+    </SvgIcon>
+  );
+}
+
+function DiagonalLineIcon() {
+  return (
+    <SvgIcon viewBox="0 0 24 24">
+      <path
+        d="M5 19 19 5"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="2"
+      />
+    </SvgIcon>
+  );
+}
+
+function HighlighterIcon() {
+  return (
+    <SvgIcon viewBox="0 0 24 24">
+      <path
+        d="m7.2 4.3 8.5 8.5-4.1 4.1-8.5-8.5z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path d="m11.6 16.9 4.1-4.1 2.4 2.4-4.1 4.1H8z" fill="currentColor" />
+      <path d="M5 21h14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </SvgIcon>
+  );
+}
 
 export function ImageEditorToolRail(props: Props) {
   const desktop = useMediaQuery('(min-width: 1280px)', { noSsr: true });
@@ -95,7 +139,7 @@ export function ImageEditorToolRail(props: Props) {
         <>
           <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
             <ToolGroup>
-              {toolButton('select', 'Вибрати об’єкт', <MouseIcon />)}
+              {toolButton('select', 'Вибрати об’єкт', <SelectObjectIcon />)}
               {toolButton('pan', 'Перемістити полотно', <PanToolIcon />)}
               {toolButton('crop', 'Обрізати', <CropIcon />)}
             </ToolGroup>
@@ -103,10 +147,10 @@ export function ImageEditorToolRail(props: Props) {
               {toolButton('text', 'Текст', <TextFieldsIcon />)}
               {toolButton('rectangle', 'Прямокутник', <RectangleOutlinedIcon />)}
               {toolButton('ellipse', 'Еліпс', <CircleOutlinedIcon />)}
-              {toolButton('line', 'Лінія', <HorizontalRuleIcon />)}
+              {toolButton('line', 'Лінія', <DiagonalLineIcon />)}
               {toolButton('arrow', 'Стрілка', <ArrowForwardIcon />)}
               {toolButton('brush', 'Пензель', <BrushIcon />)}
-              {toolButton('highlight', 'Маркер', <HighlightIcon />)}
+              {toolButton('highlight', 'Маркер', <HighlighterIcon />)}
             </ToolGroup>
             <ToolGroup>
               {toolButton('conceal', 'Приховати дані', <BlurOnIcon />)}
@@ -155,7 +199,7 @@ export function ImageEditorToolRail(props: Props) {
       ) : (
         <>
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
-            {toolButton('select', 'Вибрати об’єкт', <MouseIcon />)}
+            {toolButton('select', 'Вибрати об’єкт', <SelectObjectIcon />)}
             {toolButton('pan', 'Перемістити полотно', <PanToolIcon />)}
             {toolButton('text', 'Текст', <TextFieldsIcon />)}
             {toolButton('conceal', 'Приховати дані', <BlurOnIcon />)}
@@ -184,10 +228,10 @@ export function ImageEditorToolRail(props: Props) {
             {menuTool('crop', 'Обрізати', <CropIcon />)}
             {menuTool('rectangle', 'Прямокутник', <RectangleOutlinedIcon />)}
             {menuTool('ellipse', 'Еліпс', <CircleOutlinedIcon />)}
-            {menuTool('line', 'Лінія', <HorizontalRuleIcon />)}
+            {menuTool('line', 'Лінія', <DiagonalLineIcon />)}
             {menuTool('arrow', 'Стрілка', <ArrowForwardIcon />)}
             {menuTool('brush', 'Пензель', <BrushIcon />)}
-            {menuTool('highlight', 'Маркер', <HighlightIcon />)}
+            {menuTool('highlight', 'Маркер', <HighlighterIcon />)}
             <ListSubheader>Редагування</ListSubheader>
             <MenuItem
               disabled={props.disabled || !props.canDeleteSelected}

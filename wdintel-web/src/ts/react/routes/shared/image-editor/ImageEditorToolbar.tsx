@@ -1,5 +1,5 @@
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
-import { MenuItem, Slider, TextField } from '@mui/material';
+import { Slider } from '@mui/material';
 
 import { PowerButton } from '../../../components/PowerButton';
 import { ImageEditorIconButton } from './ImageEditorIconButton';
@@ -47,11 +47,13 @@ type Props = {
 
 function ColorField({
   label,
+  ariaLabel = label,
   value,
   onChange,
   disabled,
 }: {
   label: string;
+  ariaLabel?: string;
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
@@ -60,8 +62,8 @@ function ColorField({
     <label className="flex shrink-0 items-center gap-1 text-echo-sm">
       {label}
       <input
-        aria-label={label}
-        className="size-8 rounded border border-echo-border"
+        aria-label={ariaLabel}
+        className="size-7 appearance-none rounded border border-echo-border p-0"
         type="color"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -101,7 +103,7 @@ export function ImageEditorToolbar(props: Props) {
       {shouldRenderContextualRow(props.tool, props.selection, context) ? (
         <div
           data-image-editor-contextual-row
-          className="flex h-14 shrink-0 items-center gap-3 overflow-x-auto border-b border-echo-border px-2"
+          className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto border-b border-echo-border px-2"
         >
           {props.tool === 'select' && !props.selection ? (
             <span className="shrink-0 text-echo-sm text-echo-text">
@@ -116,15 +118,19 @@ export function ImageEditorToolbar(props: Props) {
                 onChange={props.onStrokeChange}
                 disabled={props.disabled}
               />
-              <TextField
-                label="Розмір тексту"
-                size="small"
-                type="number"
-                value={props.fontSize}
-                onChange={(event) => props.onFontSizeChange(Number(event.target.value))}
-                inputProps={{ min: 10, max: 160 }}
-                disabled={props.disabled}
-              />
+              <label className="flex shrink-0 items-center gap-1 text-echo-sm">
+                Розмір
+                <input
+                  aria-label="Розмір тексту"
+                  className="h-8 w-16 rounded border border-echo-border bg-transparent px-1 text-echo-sm"
+                  type="number"
+                  min={10}
+                  max={160}
+                  value={props.fontSize}
+                  onChange={(event) => props.onFontSizeChange(Number(event.target.value))}
+                  disabled={props.disabled}
+                />
+              </label>
               <ImageEditorIconButton
                 label="Напівжирний текст"
                 icon={<FormatBoldIcon />}
@@ -137,7 +143,8 @@ export function ImageEditorToolbar(props: Props) {
           {showShape || showStroke ? (
             <>
               <ColorField
-                label={showBrush ? 'Колір' : 'Колір контуру'}
+                label={showBrush ? 'Колір' : 'Контур'}
+                ariaLabel={showBrush ? 'Колір' : 'Колір контуру'}
                 value={props.stroke}
                 onChange={props.onStrokeChange}
                 disabled={props.disabled}
@@ -145,7 +152,8 @@ export function ImageEditorToolbar(props: Props) {
               {showShape ? (
                 <>
                   <ColorField
-                    label="Колір заливки"
+                    label="Заливка"
+                    ariaLabel="Колір заливки"
                     value={props.fill === 'transparent' ? '#ffffff' : props.fill}
                     onChange={props.onFillChange}
                     disabled={props.disabled}
@@ -186,19 +194,21 @@ export function ImageEditorToolbar(props: Props) {
             </>
           ) : null}
           {props.tool === 'conceal' ? (
-            <TextField
-              select
-              size="small"
-              label="Приховування"
-              value={props.concealMode}
-              onChange={(event) => props.onConcealModeChange(event.target.value as ConcealMode)}
-              disabled={props.disabled}
-            >
-              <MenuItem value="pixelate">Пікселізація</MenuItem>
-              <MenuItem value="blur">Розмиття</MenuItem>
-              <MenuItem value="whole-blur">Розмити все зображення</MenuItem>
-              <MenuItem value="redact">Редакція (рекомендовано)</MenuItem>
-            </TextField>
+            <label className="flex shrink-0 items-center gap-2 text-echo-sm">
+              Приховування
+              <select
+                aria-label="Приховування"
+                className="h-8 rounded border border-echo-border bg-transparent px-2 text-echo-sm"
+                value={props.concealMode}
+                onChange={(event) => props.onConcealModeChange(event.target.value as ConcealMode)}
+                disabled={props.disabled}
+              >
+                <option value="pixelate">Пікселізація</option>
+                <option value="blur">Розмиття</option>
+                <option value="whole-blur">Розмити все зображення</option>
+                <option value="redact">Редакція (рекомендовано)</option>
+              </select>
+            </label>
           ) : null}
           {props.tool === 'magnifier' ? (
             <label className="flex shrink-0 items-center gap-2 text-echo-sm">

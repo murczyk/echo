@@ -1,6 +1,7 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 
 import { updateMagnifierConnector } from './image-editor-raster';
+import { lockImageEditorSource } from './image-editor-canvas-references';
 import type { ImageEditorSource, ImageEditorTool } from './image-editor.types';
 
 const MAX_PIXELS = 24_000_000;
@@ -74,12 +75,14 @@ export function useImageEditorCanvas({
             'Зображення завелике для редагування у браузері. Його все ще можна переглянути або завантажити.',
           );
         const canvas = new fabric.Canvas(canvasElementRef.current, {
+          enableRetinaScaling: false,
           preserveObjectStacking: true,
           selection: true,
         });
         canvas.setDimensions({ width: image.width, height: image.height });
-        image.set({ selectable: false, evented: false, editorRole: 'source' });
+        lockImageEditorSource(image);
         canvas.add(image);
+        canvas.sendObjectToBack(image);
         canvasRef.current = canvas;
         sourceRef.current = image;
         const commit = () => saveHistory();

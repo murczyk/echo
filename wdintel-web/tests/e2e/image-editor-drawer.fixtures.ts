@@ -124,6 +124,10 @@ export async function openCreateMessageDrawer(
     await installRerDutyShortStateMocks(page, { signalGroups: ['editor-e2e-group'] });
   else await installAnalysisNeoApiMocks(page, { signalGroups: ['editor-e2e-group'] });
   await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
+
+  const readyText =
+    host === 'duty' ? 'Немає повідомлень' : 'Немає жодного повідомлення для аналізу.';
+  await expect(page.getByText(readyText, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
 }

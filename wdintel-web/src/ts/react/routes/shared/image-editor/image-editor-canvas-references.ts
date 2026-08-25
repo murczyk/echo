@@ -1,3 +1,22 @@
+export function lockImageEditorSource(source: import('fabric').FabricImage) {
+  source.set({
+    editorRole: 'source',
+    selectable: false,
+    evented: false,
+    hasControls: false,
+    hasBorders: false,
+    left: 0,
+    top: 0,
+    originX: 'left',
+    originY: 'top',
+    scaleX: 1,
+    scaleY: 1,
+    angle: 0,
+    lockMovementX: true,
+    lockMovementY: true,
+  });
+}
+
 export function restoreImageEditorCanvasReferences({
   canvas,
   sourceRef,
@@ -18,7 +37,11 @@ export function restoreImageEditorCanvasReferences({
   const source = canvas
     .getObjects()
     .find((object) => object.get('editorRole') === 'source') as import('fabric').FabricImage;
-  if (source) sourceRef.current = source;
+  if (source) {
+    lockImageEditorSource(source);
+    canvas.sendObjectToBack(source);
+    sourceRef.current = source;
+  }
   cropRef.current = canvas
     .getObjects()
     .find((object) => object.get('editorRole') === 'crop') as import('fabric').Rect;
