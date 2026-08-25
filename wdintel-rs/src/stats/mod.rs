@@ -6,6 +6,7 @@ use crate::messenger::group::types::{
 };
 use crate::rer_importer::types::*;
 use crate::sigint::freq::types::FreqGroupsMessageCountByDay;
+use crate::sigint::sender::preferred_sender_expr;
 use crate::types::*;
 use crate::types::{Env, Mode, ShortContext};
 use crate::utils::{dt_from_millis, parse_local_datetime};
@@ -2838,7 +2839,7 @@ fn generic_stats_base_select() -> Select<signal_message::Entity> {
         .column_as(Expr::cust("'{}'::bigint[]"), "linked_unit_ids")
         .column_as(Expr::cust("'{}'::bigint[]"), "settlement_ids")
         .column(sigint_inbox_item::Column::PostId)
-        .column(signal_message::Column::Sender)
+        .column_as(preferred_sender_expr(None), "sender")
         .column(signal_group_aor::Column::AorId)
         .expr_as(
             Expr::cust_with_expr(

@@ -1,6 +1,7 @@
 use crate::entities::*;
 use crate::error::AppError;
 use crate::rer_importer::types::{InboxMessage, InboxMessagesReq};
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::types::*;
 use anyhow::Context;
 use sea_orm::*;
@@ -111,8 +112,8 @@ pub(crate) async fn load_message_group_info(
         if let Some(selected_senders) = req.selected_senders.as_ref() {
             if !selected_senders.is_empty() {
                 query = query.filter(
-                    signal_message_group::Column::Sender
-                        .eq_any(selected_senders.clone()),
+                    preferred_group_sender_expr(None)
+                        .is_in(selected_senders.clone()),
                 );
             }
         }

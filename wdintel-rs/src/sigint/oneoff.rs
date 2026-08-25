@@ -2,20 +2,377 @@ use crate::config::{
     get_tz, ONEOFF_ETALONKA_REPORT_OUTPUT_DIR, TAG_SUGGEST_WORKER_BATCH_SIZE,
 };
 use crate::entities::{
-    area_of_responsibility, sigint_inbox_item, sigint_inbox_item_tag,
+    area_of_responsibility, login, sigint_inbox_item, sigint_inbox_item_tag,
+    signal_message, signal_message_group,
 };
 use crate::error::AppError;
 use crate::types::{info, warn};
 use crate::types::{Mode, ShortContext};
 use crate::utils::parse_local_datetime;
-use crate::{h, OneoffSuggestInboxMessageTagsPs};
+use crate::{
+    h, OneoffBackfillSignalMessageAuthorLoginPs,
+    OneoffSuggestInboxMessageTagsPs,
+};
 use chrono::{Duration, NaiveDate, NaiveDateTime, Utc};
 use csv::Writer;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use sea_orm::prelude::*;
 use sea_orm::*;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration as StdDuration;
+
+const SIGNAL_MESSAGE_AUTHOR_LOGIN_CHECKPOINT_KEY: &str =
+    "oneoff_signal_message_author_login_checkpoint";
+const SIGNAL_MESSAGE_LOGIN_ID_INDEX: &str = "signal_message_login_id_idx";
+const SIGNAL_MESSAGE_GROUP_LOGIN_ID_INDEX: &str =
+    "signal_message_group_login_id_idx";
+const SIGNAL_MESSAGE_AUTHOR_BACKFILL_INDEX: &str =
+    "signal_message_author_backfill_sender_id_idx";
+const SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX: &str =
+    "signal_message_group_author_backfill_sender_id_lookup_idx";
+const SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX_OLD: &str =
+    "signal_message_group_author_backfill_sender_id_idx";
+
+pub async fn oneoff_backfill_signal_message_author_login(
+    mode: Mode,
+    ps: &OneoffBackfillSignalMessageAuthorLoginPs,
+) -> Result<(), AppError> {
+    if ps.batch_size == 0 || ps.batch_size > i64::MAX as u64 {
+        return Err(AppError::BL {
+            msg: "batch-size must be between 1 and 9223372036854775807"
+                .to_string(),
+        });
+    }
+
+    let db = crate::new_pg_maintenance_connection_from_mode(mode)
+        .await
+        .c(h!())?;
+    db.execute_unprepared("set statement_timeout = 0; set lock_timeout = 0;")
+        .await
+        .c(h!())?;
+    create_author_backfill_indexes(&db).await.c(h!())?;
+    db.execute_unprepared(
+        "analyze signal_message; analyze signal_message_group;",
+    )
+    .await
+    .c(h!())?;
+
+    let batch_size = ps.batch_size as i64;
+    let login_sender_ids = login::Entity::find()
+        .select_only()
+        .column(login::Column::Id)
+        .into_tuple::<Uuid>()
+        .all(&db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|login_id| (login_id.to_string(), login_id))
+        .collect::<HashMap<_, _>>();
+    let mut message_id = ps.after_message_id;
+    let mut group_id = ps.after_group_id;
+    if message_id == 0 && group_id == 0 {
+        if let Some(checkpoint) = crate::kv::get_kv::<AuthorBackfillCheckpoint>(
+            &db,
+            SIGNAL_MESSAGE_AUTHOR_LOGIN_CHECKPOINT_KEY,
+        )
+        .await
+        .c(h!())?
+        {
+            message_id = checkpoint.message_id;
+            group_id = checkpoint.group_id;
+            println!(
+                "resuming from checkpoint: message_id={message_id}, group_id={group_id}"
+            );
+        }
+    }
+    let mut message_total = 0;
+    let mut group_total = 0;
+    loop {
+        let txn = db.begin().await.c(h!())?;
+        let (message_count, next_message_id) = backfill_signal_message_batch(
+            &txn,
+            &login_sender_ids,
+            message_id,
+            batch_size,
+        )
+        .await
+        .c(h!())?;
+        txn.execute_unprepared(
+            "set local enable_indexscan = off; \
+             set local enable_seqscan = off;",
+        )
+        .await
+        .c(h!())?;
+        let (group_count, next_group_id) = backfill_signal_message_group_batch(
+            &txn,
+            &login_sender_ids,
+            group_id,
+            batch_size,
+        )
+        .await
+        .c(h!())?;
+        txn.commit().await.c(h!())?;
+
+        if message_count == 0 && group_count == 0 {
+            break;
+        }
+        message_total += message_count;
+        group_total += group_count;
+        message_id = next_message_id;
+        group_id = next_group_id;
+        crate::kv::put_kv(
+            &db,
+            SIGNAL_MESSAGE_AUTHOR_LOGIN_CHECKPOINT_KEY,
+            AuthorBackfillCheckpoint {
+                message_id,
+                group_id,
+            },
+        )
+        .await
+        .c(h!())?;
+        println!(
+            "signal_message: {}; signal_message_group: {}",
+            backfill_progress(message_count, message_total, next_message_id),
+            backfill_progress(group_count, group_total, next_group_id),
+        );
+    }
+
+    create_signal_message_author_indexes(&db).await.c(h!())?;
+    drop_author_backfill_indexes(&db).await.c(h!())?;
+    println!(
+        "signal-message author backfill completed: {message_total} messages, {group_total} group links"
+    );
+    Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct AuthorBackfillCheckpoint {
+    message_id: i64,
+    group_id: i64,
+}
+
+fn backfill_progress(count: usize, total: usize, last_id: i64) -> String {
+    if count == 0 {
+        "no matching rows".to_string()
+    } else {
+        format!("+{count} rows (total {total}, through id {last_id})")
+    }
+}
+
+async fn backfill_signal_message_batch<C: ConnectionTrait>(
+    db: &C,
+    login_sender_ids: &HashMap<String, Uuid>,
+    cursor: i64,
+    batch_size: i64,
+) -> anyhow::Result<(usize, i64)> {
+    if login_sender_ids.is_empty() {
+        return Ok((0, cursor));
+    }
+    let sender_ids = login_sender_ids.keys().cloned().collect::<Vec<_>>();
+    let messages = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.gt(cursor))
+        .filter(signal_message::Column::LoginId.is_null())
+        .filter(signal_message::Column::Sender.eq_any(sender_ids))
+        .order_by_asc(signal_message::Column::Id)
+        .limit(batch_size as u64)
+        .all(db)
+        .await
+        .c(h!())?;
+    let rows = messages
+        .iter()
+        .filter_map(|message| {
+            message.sender.as_ref().and_then(|sender| {
+                login_sender_ids
+                    .get(sender)
+                    .map(|login_id| (message.id, sender.clone(), *login_id))
+            })
+        })
+        .collect::<Vec<_>>();
+    update_signal_message_authors(db, &rows).await?;
+    Ok((rows.len(), rows.last().map_or(cursor, |row| row.0)))
+}
+
+async fn backfill_signal_message_group_batch<C: ConnectionTrait>(
+    db: &C,
+    login_sender_ids: &HashMap<String, Uuid>,
+    cursor: i64,
+    batch_size: i64,
+) -> anyhow::Result<(usize, i64)> {
+    if login_sender_ids.is_empty() {
+        return Ok((0, cursor));
+    }
+    let sender_ids = login_sender_ids.keys().cloned().collect::<Vec<_>>();
+    let group_links = signal_message_group::Entity::find()
+        .filter(signal_message_group::Column::Id.gt(cursor))
+        .filter(signal_message_group::Column::LoginId.is_null())
+        .filter(signal_message_group::Column::Sender.eq_any(sender_ids))
+        .order_by_asc(signal_message_group::Column::Id)
+        .limit(batch_size as u64)
+        .all(db)
+        .await
+        .c(h!())?;
+    let rows = group_links
+        .iter()
+        .filter_map(|group_link| {
+            group_link.sender.as_ref().and_then(|sender| {
+                login_sender_ids
+                    .get(sender)
+                    .map(|login_id| (group_link.id, sender.clone(), *login_id))
+            })
+        })
+        .collect::<Vec<_>>();
+    update_signal_message_group_authors(db, &rows).await?;
+    Ok((rows.len(), rows.last().map_or(cursor, |row| row.0)))
+}
+
+async fn update_signal_message_authors<C: ConnectionTrait>(
+    db: &C,
+    rows: &[(i64, String, Uuid)],
+) -> anyhow::Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let login_id = rows.iter().skip(1).fold(
+        Expr::case(
+            Expr::col(signal_message::Column::Sender).eq(rows[0].1.clone()),
+            rows[0].2,
+        ),
+        |login_id, row| {
+            login_id.case(
+                Expr::col(signal_message::Column::Sender).eq(row.1.clone()),
+                row.2,
+            )
+        },
+    );
+    signal_message::Entity::update_many()
+        .filter(
+            signal_message::Column::Id
+                .eq_any(rows.iter().map(|row| row.0).collect::<Vec<_>>()),
+        )
+        .col_expr(
+            signal_message::Column::LoginId,
+            login_id
+                .finally(Expr::col(signal_message::Column::LoginId))
+                .into(),
+        )
+        .col_expr(
+            signal_message::Column::Sender,
+            Expr::value(Option::<String>::None),
+        )
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn update_signal_message_group_authors<C: ConnectionTrait>(
+    db: &C,
+    rows: &[(i64, String, Uuid)],
+) -> anyhow::Result<()> {
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let login_id = rows.iter().skip(1).fold(
+        Expr::case(
+            Expr::col(signal_message_group::Column::Sender)
+                .eq(rows[0].1.clone()),
+            rows[0].2,
+        ),
+        |login_id, row| {
+            login_id.case(
+                Expr::col(signal_message_group::Column::Sender)
+                    .eq(row.1.clone()),
+                row.2,
+            )
+        },
+    );
+    signal_message_group::Entity::update_many()
+        .filter(
+            signal_message_group::Column::Id
+                .eq_any(rows.iter().map(|row| row.0).collect::<Vec<_>>()),
+        )
+        .col_expr(
+            signal_message_group::Column::LoginId,
+            login_id
+                .finally(Expr::col(signal_message_group::Column::LoginId))
+                .into(),
+        )
+        .col_expr(
+            signal_message_group::Column::Sender,
+            Expr::value(Option::<String>::None),
+        )
+        .exec(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn create_signal_message_author_indexes(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    db.execute_unprepared(&format!(
+        "create index concurrently if not exists {SIGNAL_MESSAGE_LOGIN_ID_INDEX} \
+         on signal_message (login_id) where login_id is not null;"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "create index concurrently if not exists {SIGNAL_MESSAGE_GROUP_LOGIN_ID_INDEX} \
+         on signal_message_group (login_id) where login_id is not null;"
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn create_author_backfill_indexes(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    println!("preparing concurrent author-backfill indexes");
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX_OLD};"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "create index concurrently if not exists {SIGNAL_MESSAGE_AUTHOR_BACKFILL_INDEX} \
+         on signal_message (id, sender) \
+         where login_id is null and sender is not null;"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "create index concurrently if not exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX} \
+         on signal_message_group (sender, id) \
+         where login_id is null and sender is not null;"
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn drop_author_backfill_indexes(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    println!("dropping temporary author-backfill indexes");
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_AUTHOR_BACKFILL_INDEX};"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX};"
+    ))
+    .await
+    .c(h!())?;
+    db.execute_unprepared(&format!(
+        "drop index concurrently if exists {SIGNAL_MESSAGE_GROUP_AUTHOR_BACKFILL_INDEX_OLD};"
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
 
 pub async fn oneoff_fill_sigint_inbox_item_tags(
     mode: Mode,

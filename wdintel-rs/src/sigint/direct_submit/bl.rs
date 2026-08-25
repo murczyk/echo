@@ -1460,7 +1460,8 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(signal_message.body.as_deref(), Some("updated body"));
-        assert_eq!(signal_message.sender, Some(login_id.to_string()));
+        assert_eq!(signal_message.sender, None);
+        assert_eq!(signal_message.login_id, Some(login_id));
         assert_eq!(
             signal_message.timestamp,
             Some(

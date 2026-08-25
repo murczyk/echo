@@ -520,8 +520,14 @@ with linked_products as (
     inner join signal_message report_sm
         on report_sm.id = ip.intel_message_id
     inner join login author
-        on report_sm.sender = author.id::text
-        or report_sm.sender = author.login
+        on report_sm.login_id = author.id
+        or (
+            report_sm.login_id is null
+            and (
+                report_sm.sender = author.id::text
+                or report_sm.sender = author.login
+            )
+        )
     left join sigint_inbox_item parent_sii on parent_sii.id = parent_sm.id
     left join datasource_group dg
         on dg.id = parent_sm.datasource_group_id

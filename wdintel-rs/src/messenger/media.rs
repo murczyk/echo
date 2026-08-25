@@ -6,6 +6,7 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::h;
 use crate::messenger::dedupe;
+use crate::sigint::sender::preferred_message_author_expr;
 use crate::storage;
 use crate::types::{error, warn};
 use crate::types::{Env, ShortContext};
@@ -13,7 +14,8 @@ use echo_im::types::MessageAttachmentF1;
 use opendal::Operator;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
-    EntityTrait, NotSet, QueryFilter, QuerySelect, RelationTrait, Set,
+    EntityTrait, ExprTrait, NotSet, QueryFilter, QuerySelect, RelationTrait,
+    Set,
 };
 use std::collections::HashSet;
 use std::io::ErrorKind;
@@ -964,7 +966,7 @@ pub(crate) async fn ensure_media_access(
     let is_owner = signal_message::Entity::find_by_id(signal_message_id)
         .filter(signal_message::Column::Deleted.eq(false))
         .filter(signal_message::Column::DatasourceGroupId.is_null())
-        .filter(signal_message::Column::Sender.is_in(owner_sender_ids))
+        .filter(preferred_message_author_expr(None).is_in(owner_sender_ids))
         .select_only()
         .column(signal_message::Column::Id)
         .into_tuple::<i64>()
