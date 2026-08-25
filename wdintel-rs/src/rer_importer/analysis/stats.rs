@@ -5500,7 +5500,7 @@ pub(super) fn build_networks_analytics_query_with_scope(
         effective_groups_with_access(&req.selected_groups, &master_keys);
     let frequency_matches = build_network_frequency_analytics_arm(
         messages.clone(),
-        build_network_analytics_catalog_query(&req),
+        &req,
         &effective_groups,
     );
     let linked_matches = build_network_linked_analytics_arm(
@@ -5643,108 +5643,23 @@ fn project_network_analytics_messages(
         .into_query()
 }
 
-fn build_network_analytics_catalog_query(
-    req: &AnalysisStatsReq,
-) -> Select<sigint_network_freq::Entity> {
-    let network_value_alias = Alias::new("analytics_network_aor");
-    let networks = sigint_network_freq::Entity::find()
-        .select_only()
-        .column_as(sigint_network::Column::Id, "network_id")
-        .column(sigint_network_freq::Column::Freq)
-        .column(sigint_network_freq::Column::ActiveFrom)
-        .column(sigint_network_freq::Column::ActiveTo)
-        .column_as(
-            Expr::col((
-                network_value_alias.clone(),
-                area_of_responsibility::Column::LeftBound,
-            )),
-            "n_left",
-        )
-        .column_as(
-            Expr::col((
-                network_value_alias.clone(),
-                area_of_responsibility::Column::RightBound,
-            )),
-            "n_right",
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_network_freq::Relation::SigintNetwork.def(),
-        )
-        .join(
-            JoinType::InnerJoin,
-            sigint_network::Relation::SigintNetworkAor.def(),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_network_aor::Relation::AreaOfResponsibility.def(),
-            network_value_alias,
-        )
-        .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .filter(sigint_network::Column::Deleted.eq(false));
-
-    if req
-        .selected_aors
-        .as_ref()
-        .is_some_and(|aors| !aors.is_empty())
-    {
-        let network_scope_link_alias =
-            Alias::new("analytics_network_scope_link");
-        let network_scope_value_alias =
-            Alias::new("analytics_network_scope_value");
-        let mut network_scope_exists = Query::select();
-        network_scope_exists
-            .expr(Expr::value(1))
-            .from_as(
-                sigint_network_aor::Entity,
-                network_scope_link_alias.clone(),
-            )
-            .join_as(
-                JoinType::InnerJoin,
-                area_of_responsibility::Entity,
-                network_scope_value_alias.clone(),
-                Expr::col((
-                    network_scope_link_alias.clone(),
-                    sigint_network_aor::Column::AorId,
-                ))
-                .equals((
-                    network_scope_value_alias.clone(),
-                    area_of_responsibility::Column::Id,
-                )),
-            )
-            .and_where(
-                Expr::col((
-                    network_scope_link_alias,
-                    sigint_network_aor::Column::NetworkId,
-                ))
-                .equals((sigint_network::Entity, sigint_network::Column::Id)),
-            );
-        if let Some(condition) = selected_aor_overlap_condition(
-            network_scope_value_alias,
-            &req.selected_aors,
-        ) {
-            network_scope_exists.cond_where(condition);
-        }
-        networks.filter(Expr::exists(network_scope_exists.to_owned()))
-    } else {
-        networks
-    }
-}
-
 fn build_network_frequency_analytics_arm(
     messages: Select<sigint_inbox_item::Entity>,
-    networks: Select<sigint_network_freq::Entity>,
+    req: &AnalysisStatsReq,
     effective_groups: &[String],
 ) -> SelectStatement {
     let message_alias = Alias::new("analytics_frequency_message");
+    let network_freq_alias = Alias::new("analytics_frequency_network_freq");
     let network_alias = Alias::new("analytics_frequency_network");
+    let network_aor_alias = Alias::new("analytics_frequency_network_aor");
+    let network_value_alias = Alias::new("analytics_frequency_network_value");
     let group_alias = Alias::new("analytics_frequency_group");
     let group_aor_alias = Alias::new("analytics_frequency_group_aor");
     let group_value_alias = Alias::new("analytics_frequency_group_value");
     let mut matches = Query::select();
     matches
         .expr_as(
-            Expr::col((network_alias.clone(), Alias::new("network_id"))),
+            Expr::col((network_alias.clone(), sigint_network::Column::Id)),
             Alias::new("network_id"),
         )
         .expr_as(
@@ -5755,33 +5670,69 @@ fn build_network_frequency_analytics_arm(
             project_network_analytics_messages(messages),
             message_alias.clone(),
         )
-        .join_subquery(
+        .join_as(
             JoinType::InnerJoin,
-            networks.into_query(),
-            network_alias.clone(),
+            sigint_network_freq::Entity,
+            network_freq_alias.clone(),
             Condition::all()
                 .add(
                     Expr::col((message_alias.clone(), Alias::new("freq")))
-                        .equals((network_alias.clone(), Alias::new("freq"))),
+                        .equals((
+                            network_freq_alias.clone(),
+                            sigint_network_freq::Column::Freq,
+                        )),
                 )
                 .add(
-                    Expr::col((network_alias.clone(), Alias::new("freq")))
-                        .is_not_null(),
+                    Expr::col((
+                        network_freq_alias.clone(),
+                        sigint_network_freq::Column::Freq,
+                    ))
+                    .is_not_null(),
                 )
                 .add(
                     Expr::col((message_alias.clone(), Alias::new("datetime")))
                         .gte(Expr::col((
-                            network_alias.clone(),
-                            Alias::new("active_from"),
+                            network_freq_alias.clone(),
+                            sigint_network_freq::Column::ActiveFrom,
                         ))),
                 )
                 .add(
                     Expr::col((message_alias.clone(), Alias::new("datetime")))
                         .lte(Expr::cust(
-                            "COALESCE(analytics_frequency_network.active_to, \
+                        "COALESCE(analytics_frequency_network_freq.active_to, \
                          CURRENT_TIMESTAMP AT TIME ZONE 'UTC')",
-                        )),
+                    )),
                 ),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network::Entity,
+            network_alias.clone(),
+            Expr::col((
+                network_freq_alias.clone(),
+                sigint_network_freq::Column::NetworkId,
+            ))
+            .equals((network_alias.clone(), sigint_network::Column::Id)),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_network_aor::Entity,
+            network_aor_alias.clone(),
+            Expr::col((
+                network_aor_alias.clone(),
+                sigint_network_aor::Column::NetworkId,
+            ))
+            .equals((network_alias.clone(), sigint_network::Column::Id)),
+        )
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            network_value_alias.clone(),
+            Expr::col((network_aor_alias, sigint_network_aor::Column::AorId))
+                .equals((
+                    network_value_alias.clone(),
+                    area_of_responsibility::Column::Id,
+                )),
         );
     join_network_analytics_groups(
         &mut matches,
@@ -5790,10 +5741,75 @@ fn build_network_frequency_analytics_arm(
         group_aor_alias,
         group_value_alias,
         effective_groups,
-        Expr::col((network_alias.clone(), Alias::new("n_left"))),
-        Expr::col((network_alias, Alias::new("n_right"))),
+        Expr::col((
+            network_value_alias.clone(),
+            area_of_responsibility::Column::LeftBound,
+        )),
+        Expr::col((
+            network_value_alias,
+            area_of_responsibility::Column::RightBound,
+        )),
+    );
+    matches
+        .and_where(
+            Expr::col((
+                network_freq_alias,
+                sigint_network_freq::Column::Deleted,
+            ))
+            .eq(false),
+        )
+        .and_where(
+            Expr::col((network_alias.clone(), sigint_network::Column::Deleted))
+                .eq(false),
+        );
+    filter_network_analytics_selected_aors(
+        &mut matches,
+        network_alias,
+        &req.selected_aors,
     );
     matches.to_owned()
+}
+
+fn filter_network_analytics_selected_aors(
+    matches: &mut SelectStatement,
+    network_alias: Alias,
+    selected_aors: &Option<Vec<i64>>,
+) {
+    if !selected_aors.as_ref().is_some_and(|aors| !aors.is_empty()) {
+        return;
+    }
+    let network_scope_link_alias = Alias::new("analytics_network_scope_link");
+    let network_scope_value_alias = Alias::new("analytics_network_scope_value");
+    let mut network_scope_exists = Query::select();
+    network_scope_exists
+        .expr(Expr::value(1))
+        .from_as(sigint_network_aor::Entity, network_scope_link_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            area_of_responsibility::Entity,
+            network_scope_value_alias.clone(),
+            Expr::col((
+                network_scope_link_alias.clone(),
+                sigint_network_aor::Column::AorId,
+            ))
+            .equals((
+                network_scope_value_alias.clone(),
+                area_of_responsibility::Column::Id,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                network_scope_link_alias,
+                sigint_network_aor::Column::NetworkId,
+            ))
+            .equals((network_alias, sigint_network::Column::Id)),
+        );
+    if let Some(condition) =
+        selected_aor_overlap_condition(network_scope_value_alias, selected_aors)
+    {
+        network_scope_exists.cond_where(condition);
+    }
+    matches.cond_where(Expr::exists(network_scope_exists.to_owned()));
 }
 
 fn build_network_linked_analytics_arm(
