@@ -461,7 +461,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => root.unmount());
   });
 
-  it('opens report mode and refreshes all feeds after creation', async () => {
+  it('opens report mode and keeps populated feeds without a full reload after creation', async () => {
     nextCreatedResponse.value = { signal_message_id: 91 };
     const { container, root, state } = await renderPage();
 
@@ -472,8 +472,8 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Створити повідомлення"]'));
 
-    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
-    expect(state.reloadEmptyFeeds).not.toHaveBeenCalled();
+    expect(state.reloadEmptyFeeds).toHaveBeenCalledTimes(1);
+    expect(state.reloadFeeds).not.toHaveBeenCalled();
     expect(notifyMock).toHaveBeenCalledWith({
       message: 'Розвіддонесення успішно створено.',
       severity: 'success',

@@ -27,6 +27,7 @@ import { buildFeedCountSignature } from './rerDutyFeedCount';
 import { compareMessageTuple } from './utils';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
+import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -1037,7 +1038,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           delete pendingScrollToEndRef.current[feedId];
           delete scheduledScrollToEndRef.current[feedId];
-          refs[feedId]?.scrollToEnd('auto');
+          refs[feedId]?.scrollToEnd(getDutyFollowScrollBehavior());
         });
       });
     });
