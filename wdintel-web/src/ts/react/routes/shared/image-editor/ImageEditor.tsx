@@ -1,7 +1,11 @@
-import { Alert, Button, CircularProgress } from '@mui/material';
+import { Alert } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ImageEditorToolbar } from './ImageEditorToolbar';
+import { ImageEditorFooter } from './ImageEditorFooter';
+import { ImageEditorDiscardAlert } from './ImageEditorDiscardAlert';
+import { ImageEditorStatus } from './ImageEditorStatus';
+import { ImageEditorWorkspace } from './ImageEditorWorkspace';
 import { addTextAnnotation, deleteSelectedAnnotations } from './image-editor-actions';
 import { exportEditedImage } from './image-editor-export';
 import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
@@ -11,13 +15,14 @@ import {
 } from './image-editor-raster';
 import { useImageEditorCanvas } from './use-image-editor-canvas';
 import { useImageEditorHistory } from './use-image-editor-history';
-import { useImageEditorPan } from './use-image-editor-pan';
 import { useImageEditorSelectionStyle } from './use-image-editor-selection-style';
+import { useImageEditorSelection } from './use-image-editor-selection';
 import { useImageEditorViewport } from './use-image-editor-viewport';
 import type {
   ConcealMode,
   EditedImageResult,
   ImageEditorSource,
+  ImageEditorSelectionDescriptor,
   ImageEditorTool,
 } from './image-editor.types';
 type FabricModule = typeof import('fabric');
@@ -32,7 +37,7 @@ export function ImageEditor({
   onApply: (result: EditedImageResult) => Promise<void> | void;
 }) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
   const fabricRef = useRef<FabricModule | null>(null);
   const canvasRef = useRef<import('fabric').Canvas | null>(null);
   const sourceRef = useRef<import('fabric').FabricImage | null>(null);
@@ -51,8 +56,23 @@ export function ImageEditor({
   const [fontSize, setFontSize] = useState(36);
   const [bold, setBold] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const { actualSize, cssScale, fitViewport, pan, resetViewport, setPan, setViewportZoom, zoom } =
-    useImageEditorViewport({ canvasRef, viewportRef, canvasReady });
+  const [canDeleteSelected, setCanDeleteSelected] = useState(false);
+  const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
+  const toolRef = useRef(tool);
+  useEffect(() => {
+    toolRef.current = tool;
+  }, [tool]);
+  const {
+    actualSize,
+    centerViewport,
+    fitViewport,
+    panBy,
+    ready: viewportReady,
+    setViewportZoom,
+    view,
+    zoom,
+    zoomAtPoint,
+  } = useImageEditorViewport({ canvasRef, workspaceRef, canvasReady });
 
   const {
     canRedo,
@@ -84,6 +104,7 @@ export function ImageEditor({
     setCanvasReady,
     setLoading,
     setError,
+    toolRef,
   });
 
   const replaceConcealmentDraft = useCallback(
@@ -316,7 +337,19 @@ export function ImageEditor({
     magnification,
   ]);
 
-  useImageEditorPan({ canvasRef, fabricRef, cssScale, tool, setPan, setViewportZoom });
+  useImageEditorSelection({
+    canvasRef,
+    fabricRef,
+    canvasReady,
+    onCanDeleteChange: setCanDeleteSelected,
+    onStrokeChange: setStroke,
+    onFillChange: setFill,
+    onStrokeWidthChange: setStrokeWidth,
+    onDashChange: setDash,
+    onFontSizeChange: setFontSize,
+    onBoldChange: setBold,
+    onSelectionChange: setSelection,
+  });
 
   const deleteSelected = () => {
     const canvas = canvasRef.current;
@@ -420,11 +453,13 @@ export function ImageEditor({
         zoom={zoom}
         canUndo={canUndo}
         canRedo={canRedo}
+        canDeleteSelected={canDeleteSelected}
+        selection={selection}
         onDeleteSelected={deleteSelected}
         onZoomChange={setViewportZoom}
         onFitViewport={fitViewport}
         onActualSize={actualSize}
-        onResetViewport={resetViewport}
+        onCenterViewport={centerViewport}
         onUndo={() => void undo()}
         onRedo={() => void redo()}
         onResetEdits={() => void resetEdits()}
@@ -435,64 +470,25 @@ export function ImageEditor({
         </Alert>
       ) : null}
       {confirmCancel ? (
-        <Alert
-          severity="warning"
-          className="m-2"
-          action={
-            <span className="flex gap-1">
-              <Button
-                type="button"
-                color="inherit"
-                size="small"
-                onClick={() => setConfirmCancel(false)}
-              >
-                Продовжити
-              </Button>
-              <Button
-                type="button"
-                color="inherit"
-                size="small"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onCancel();
-                }}
-              >
-                Відкинути
-              </Button>
-            </span>
-          }
-        >
-          Є незастосовані зміни.
-        </Alert>
+        <ImageEditorDiscardAlert onContinue={() => setConfirmCancel(false)} onDiscard={onCancel} />
       ) : null}
-      {tool === 'conceal' ? (
-        <Alert severity="warning" className="mx-2 mt-2">
-          Для надійного приховування конфіденційних даних використовуйте «Редакція». Розмиття й
-          пікселізація не гарантують незворотного приховування.
-        </Alert>
-      ) : null}
-      {tool === 'magnifier' ? (
-        <Alert severity="info" className="mx-2 mt-2">
-          Клацніть зображення, щоб вибрати область для лупи. Виберіть лупу та Alt+клацніть, щоб
-          змінити її джерело; перетягуйте лупу, щоб змінити лише її розташування.
-        </Alert>
-      ) : null}
-      <div ref={viewportRef} className="min-h-0 flex-1 overflow-auto bg-black p-3">
-        <canvas ref={canvasElementRef} className="mx-auto block max-h-full max-w-full" />
-      </div>
-      <footer className="flex items-center justify-end gap-2 border-t border-echo-border p-2">
-        <Button type="button" onClick={requestCancel} disabled={applying}>
-          Скасувати
-        </Button>
-        <Button
-          variant="contained"
-          type="button"
-          onClick={() => void apply()}
-          disabled={!canvasReady || loading || applying}
-        >
-          {applying ? <CircularProgress size={18} color="inherit" /> : 'Застосувати'}
-        </Button>
-      </footer>
+      <ImageEditorStatus tool={tool} />
+      <ImageEditorWorkspace
+        canvasElementRef={canvasElementRef}
+        workspaceRef={workspaceRef}
+        tool={tool}
+        view={view}
+        ready={viewportReady}
+        loading={loading}
+        onPan={panBy}
+        onZoom={zoomAtPoint}
+      />
+      <ImageEditorFooter
+        applying={applying}
+        ready={canvasReady && !loading}
+        onCancel={requestCancel}
+        onApply={() => void apply()}
+      />
     </section>
   );
 }

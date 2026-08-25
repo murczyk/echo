@@ -1,86 +1,138 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+
+import {
+  clampEditorPan,
+  clampEditorScale,
+  centerEditorView,
+  fitEditorScale,
+  resizeEditorView,
+  zoomEditorAtPoint,
+  type EditorSize,
+  type EditorViewState,
+} from './image-editor-viewport';
 
 type Canvas = import('fabric').Canvas;
 
+const INITIAL_VIEW: EditorViewState = { scale: 1, pan: { x: 0, y: 0 }, mode: 'fit' };
+
+function sizeOf(element: HTMLElement): EditorSize {
+  return { width: element.clientWidth, height: element.clientHeight };
+}
+
 export function useImageEditorViewport({
   canvasRef,
-  viewportRef,
+  workspaceRef,
   canvasReady,
 }: {
   canvasRef: RefObject<Canvas | null>;
-  viewportRef: RefObject<HTMLDivElement | null>;
+  workspaceRef: RefObject<HTMLDivElement | null>;
   canvasReady: boolean;
 }) {
-  const [zoom, setZoom] = useState(100);
-  const [cssScale, setCssScale] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [view, setView] = useState(INITIAL_VIEW);
+  const viewRef = useRef(view);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
-  const setCanvasCssSize = useCallback(
-    (scale: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.setDimensions(
-        { width: Math.max(1, canvas.width * scale), height: Math.max(1, canvas.height * scale) },
-        { cssOnly: true },
-      );
-      setCssScale(scale);
-    },
-    [canvasRef],
-  );
+  const getSizes = useCallback(() => {
+    const canvas = canvasRef.current;
+    const workspace = workspaceRef.current;
+    if (!canvas || !workspace || canvas.width <= 0 || canvas.height <= 0) return null;
+    return {
+      document: { width: canvas.width, height: canvas.height },
+      workspace: sizeOf(workspace),
+    };
+  }, [canvasRef, workspaceRef]);
 
   const fitViewport = useCallback(() => {
-    const canvas = canvasRef.current;
-    const viewport = viewportRef.current;
-    if (!canvas || !viewport || canvas.width <= 0 || canvas.height <= 0) return;
-    const scale = Math.min(
-      1,
-      Math.max(0.1, (viewport.clientWidth - 24) / canvas.width),
-      Math.max(0.1, (viewport.clientHeight - 24) / canvas.height),
-    );
-    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-    setCanvasCssSize(scale);
-    setPan({ x: 0, y: 0 });
-    setZoom(Math.round(scale * 100));
-  }, [canvasRef, setCanvasCssSize, viewportRef]);
-
-  const setViewportZoom = useCallback(
-    (next: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const zoomValue = Math.max(0.1, Math.min(8, next / cssScale));
-      canvas.setZoom(zoomValue);
-      setZoom(Math.round(zoomValue * cssScale * 100));
-    },
-    [canvasRef, cssScale],
-  );
+    const sizes = getSizes();
+    if (!sizes || sizes.workspace.width === 0 || sizes.workspace.height === 0) return;
+    setView({
+      scale: fitEditorScale(sizes.document, sizes.workspace),
+      pan: { x: 0, y: 0 },
+      mode: 'fit',
+    });
+    setReady(true);
+  }, [getSizes]);
 
   const actualSize = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-    setCanvasCssSize(1);
-    setPan({ x: 0, y: 0 });
-    setZoom(100);
-  }, [canvasRef, setCanvasCssSize]);
+    setView({ scale: 1, pan: { x: 0, y: 0 }, mode: 'actual' });
+    setReady(true);
+  }, []);
+  const centerViewport = useCallback(() => setView((current) => centerEditorView(current)), []);
 
-  const resetViewport = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-    setPan({ x: 0, y: 0 });
-    setZoom(Math.round(cssScale * 100));
-  }, [canvasRef, cssScale]);
+  const setViewportZoom = useCallback(
+    (scale: number) => {
+      const sizes = getSizes();
+      if (!sizes) return;
+      setView((current) =>
+        zoomEditorAtPoint({
+          view: current,
+          ...sizes,
+          point: { x: sizes.workspace.width / 2, y: sizes.workspace.height / 2 },
+          scale,
+        }),
+      );
+    },
+    [getSizes],
+  );
+
+  const zoomAtPoint = useCallback(
+    (point: { x: number; y: number }, scale: number) => {
+      const sizes = getSizes();
+      if (!sizes) return;
+      setView((current) => zoomEditorAtPoint({ view: current, ...sizes, point, scale }));
+    },
+    [getSizes],
+  );
+
+  const panBy = useCallback(
+    (delta: { x: number; y: number }) => {
+      const sizes = getSizes();
+      if (!sizes) return;
+      setView((current) => ({
+        ...current,
+        pan: clampEditorPan(
+          { x: current.pan.x + delta.x, y: current.pan.y + delta.y },
+          sizes.document,
+          sizes.workspace,
+          current.scale,
+        ),
+        mode: 'custom',
+      }));
+    },
+    [getSizes],
+  );
 
   useEffect(() => {
     if (!canvasReady) return;
-    const frame = requestAnimationFrame(fitViewport);
-    const observer = new ResizeObserver(fitViewport);
-    if (viewportRef.current) observer.observe(viewportRef.current);
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const sync = () => {
+      const sizes = getSizes();
+      if (!sizes || sizes.workspace.width === 0 || sizes.workspace.height === 0) return;
+      setView((current) => resizeEditorView(current, sizes.document, sizes.workspace));
+      setReady(true);
+    };
+    const frame = requestAnimationFrame(sync);
+    const observer = new ResizeObserver(sync);
+    observer.observe(workspace);
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [canvasReady, fitViewport, viewportRef]);
+  }, [canvasReady, getSizes, workspaceRef]);
 
-  return { actualSize, cssScale, fitViewport, pan, resetViewport, setPan, setViewportZoom, zoom };
+  return {
+    actualSize,
+    centerViewport,
+    fitViewport,
+    panBy,
+    ready,
+    setViewportZoom,
+    view,
+    zoomAtPoint,
+    zoom: Math.round(clampEditorScale(view.scale) * 100),
+  };
 }

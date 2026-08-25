@@ -7,7 +7,7 @@ export const PowerMenu = forwardRef(function PowerMenu(
   ref: ForwardedRef<HTMLDivElement>,
 ) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== 'Escape') {
+    if (!['Escape', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.stopPropagation();
     }
   }

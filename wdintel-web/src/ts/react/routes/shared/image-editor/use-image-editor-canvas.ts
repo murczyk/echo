@@ -1,7 +1,7 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 
 import { updateMagnifierConnector } from './image-editor-raster';
-import type { ImageEditorSource } from './image-editor.types';
+import type { ImageEditorSource, ImageEditorTool } from './image-editor.types';
 
 const MAX_PIXELS = 24_000_000;
 const MAX_SIDE = 8_192;
@@ -34,6 +34,7 @@ export function useImageEditorCanvas({
   setCanvasReady,
   setLoading,
   setError,
+  toolRef,
 }: {
   source: ImageEditorSource;
   canvasElementRef: RefObject<HTMLCanvasElement | null>;
@@ -46,6 +47,7 @@ export function useImageEditorCanvas({
   setCanvasReady: (ready: boolean) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string) => void;
+  toolRef: MutableRefObject<ImageEditorTool>;
 }) {
   useEffect(() => {
     let disposed = false;
@@ -86,7 +88,14 @@ export function useImageEditorCanvas({
           if (event.target?.get('editorRole') === 'magnifier')
             updateMagnifierConnector({ canvas, magnifier: event.target });
         });
-        canvas.on('path:created', commit);
+        canvas.on('path:created', (event) => {
+          const role =
+            toolRef.current === 'brush' || toolRef.current === 'highlight'
+              ? toolRef.current
+              : undefined;
+          if (role && event.path) event.path.set('editorRole' as never, role as never);
+          commit();
+        });
         canvas.on('text:editing:exited', commit);
         saveHistory();
         setCanvasReady(true);
@@ -115,6 +124,7 @@ export function useImageEditorCanvas({
     clearHistory,
     cropRef,
     fabricRef,
+    toolRef,
     saveHistory,
     setCanvasReady,
     setError,

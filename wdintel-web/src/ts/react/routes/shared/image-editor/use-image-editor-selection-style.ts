@@ -1,5 +1,11 @@
 import { useEffect, type MutableRefObject } from 'react';
 
+import {
+  applyArrowStyle,
+  editorObjectRole,
+  normalizeEditorColor,
+  withHighlightAlpha,
+} from './image-editor-selection-style';
 import type { ImageEditorTool } from './image-editor.types';
 
 export function useImageEditorSelectionStyle({
@@ -33,7 +39,8 @@ export function useImageEditorSelectionStyle({
     canvas.isDrawingMode = tool === 'brush' || tool === 'highlight';
     if (canvas.isDrawingMode && fabricRef.current) {
       const brush = new fabricRef.current.PencilBrush(canvas);
-      brush.color = tool === 'highlight' ? `${stroke}88` : stroke;
+      brush.color =
+        tool === 'highlight' ? withHighlightAlpha(stroke) : normalizeEditorColor(stroke);
       brush.width = strokeWidth;
       canvas.freeDrawingBrush = brush;
     }
@@ -62,19 +69,25 @@ export function useImageEditorSelectionStyle({
     const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     const selected = canvas?.getActiveObject();
-    if (
-      !canvas ||
-      !fabric ||
-      !selected ||
-      selected.get('editorRole') === 'source' ||
-      selected instanceof fabric.IText
-    )
+    if (!canvas || !fabric || !selected || selected instanceof fabric.IText) return;
+    const role = editorObjectRole(selected, fabric);
+    if (!role || !['rectangle', 'ellipse', 'line', 'arrow', 'brush', 'highlight'].includes(role))
       return;
+    const isShape = role === 'rectangle' || role === 'ellipse';
+    const supportsDash = isShape || role === 'line' || role === 'arrow';
+    const selectedStroke =
+      role === 'highlight' ? withHighlightAlpha(stroke) : normalizeEditorColor(stroke);
+    if (role === 'arrow') {
+      if (!applyArrowStyle({ selected, fabric, stroke: selectedStroke, strokeWidth, dash })) return;
+      canvas.requestRenderAll();
+      scheduleHistory();
+      return;
+    }
     const properties = {
-      stroke,
-      fill: selected.get('editorRole') === 'concealment' ? selected.fill : fill,
+      stroke: selectedStroke,
+      fill: isShape ? fill : selected.fill,
       strokeWidth,
-      strokeDashArray: dash ? [strokeWidth * 2, strokeWidth * 2] : undefined,
+      strokeDashArray: supportsDash && dash ? [strokeWidth * 2, strokeWidth * 2] : undefined,
     };
     if (
       selected.stroke === properties.stroke &&
@@ -85,16 +98,6 @@ export function useImageEditorSelectionStyle({
     )
       return;
     selected.set(properties);
-    if (selected.get('editorRole') === 'arrow' && selected instanceof fabric.Group) {
-      selected.getObjects().forEach((object) => {
-        object.set({
-          stroke,
-          strokeWidth,
-          strokeDashArray: dash ? [strokeWidth * 2, strokeWidth * 2] : undefined,
-        });
-        if (object instanceof fabric.Triangle) object.set({ fill: stroke });
-      });
-    }
     canvas.requestRenderAll();
     scheduleHistory();
   }, [canvasReady, canvasRef, dash, fabricRef, fill, scheduleHistory, stroke, strokeWidth]);

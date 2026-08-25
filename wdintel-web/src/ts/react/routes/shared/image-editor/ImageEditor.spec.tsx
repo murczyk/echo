@@ -128,4 +128,38 @@ describe('ImageEditor initialization', () => {
     ).toBe(true);
     act(() => root.unmount());
   });
+
+  it('renders an export error once and keeps the loaded editor available for retry', async () => {
+    mocks.exportEditedImage.mockRejectedValueOnce(new Error('Не вдалося експортувати зображення'));
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={vi.fn()}
+          onApply={vi.fn()}
+        />,
+      );
+    });
+    const apply = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Застосувати',
+    ) as HTMLButtonElement;
+    await vi.waitFor(() => expect(apply.disabled).toBe(false));
+    await act(async () => apply.click());
+    await vi.waitFor(() =>
+      expect(container.textContent?.match(/Не вдалося експортувати зображення/g)).toHaveLength(1),
+    );
+    expect(container.querySelector('canvas')).not.toBeNull();
+    expect(apply.disabled).toBe(false);
+    act(() => root.unmount());
+  });
 });

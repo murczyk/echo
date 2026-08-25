@@ -16,6 +16,11 @@ export type ImageEditorTool =
 
 export type ConcealMode = 'pixelate' | 'blur' | 'whole-blur' | 'redact';
 
+export type ImageEditorSelectionDescriptor = {
+  kind: 'text' | 'shape' | 'line' | 'brush' | 'highlight' | 'magnifier' | 'concealment';
+  role: string;
+};
+
 export type ImageEditorSource = {
   blob: Blob;
   fileName: string;
