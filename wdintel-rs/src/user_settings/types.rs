@@ -73,10 +73,16 @@ pub struct UserDutySettingsDto {
     pub show_classic_analysis: bool,
     #[serde(default = "default_duty_collapse_media_previews")]
     pub duty_collapse_media_previews: bool,
+    #[serde(default = "default_media_summary_enabled")]
+    pub media_summary_enabled: bool,
 }
 
 fn default_duty_collapse_media_previews() -> bool {
     false
+}
+
+fn default_media_summary_enabled() -> bool {
+    true
 }
 
 impl Default for UserDutySettingsDto {
@@ -92,6 +98,7 @@ impl Default for UserDutySettingsDto {
             show_classic_duty: false,
             show_classic_analysis: false,
             duty_collapse_media_previews: false,
+            media_summary_enabled: true,
         }
     }
 }

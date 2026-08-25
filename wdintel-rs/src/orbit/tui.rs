@@ -66,6 +66,7 @@ pub enum StartAction {
     Import,
     FindMatch,
     ReconcileSigintUnits,
+    RenameSigintUnits,
     Reimport,
 }
 
@@ -166,12 +167,26 @@ pub fn confirm_sigint_unit_reconciliation() -> Result<bool, AppError> {
     ))
 }
 
+pub fn confirm_sigint_unit_renames() -> Result<bool, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_text_prompt(
+        &mut terminal,
+        "Type RENAME to apply every eligible ORBIT-derived SIGINT unit name (Esc: cancel)",
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    Ok(is_sigint_unit_rename_confirmed(result.c(h!())?.as_deref()))
+}
+
 fn is_reimport_confirmed(input: Option<&str>) -> bool {
     input == Some("REIMPORT")
 }
 
 fn is_sigint_unit_reconciliation_confirmed(input: Option<&str>) -> bool {
     input == Some("RECONCILE")
+}
+
+fn is_sigint_unit_rename_confirmed(input: Option<&str>) -> bool {
+    input == Some("RENAME")
 }
 
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
@@ -295,6 +310,7 @@ fn run_start_menu(
         StartAction::Import,
         StartAction::FindMatch,
         StartAction::ReconcileSigintUnits,
+        StartAction::RenameSigintUnits,
         StartAction::Reimport,
     ];
     let mut selected = 0;
@@ -468,6 +484,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
         "Sync ORBIT units and rebuild SIGINT links",
         "Search an ORBIT unit by SIGINT unit name",
         "Reconcile linked SIGINT units and merge exact duplicates",
+        "Apply all eligible ORBIT-derived SIGINT unit names",
         "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
@@ -684,5 +701,12 @@ mod tests {
         assert!(is_reimport_confirmed(Some("REIMPORT")));
         assert!(!is_reimport_confirmed(Some("reimport")));
         assert!(!is_reimport_confirmed(None));
+    }
+
+    #[test]
+    fn sigint_unit_rename_confirmation_requires_exact_text() {
+        assert!(is_sigint_unit_rename_confirmed(Some("RENAME")));
+        assert!(!is_sigint_unit_rename_confirmed(Some("rename")));
+        assert!(!is_sigint_unit_rename_confirmed(None));
     }
 }

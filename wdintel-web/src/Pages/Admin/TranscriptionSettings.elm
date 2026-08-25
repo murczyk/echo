@@ -57,7 +57,7 @@ subscriptions _ =
 
 view : Model -> View Msg
 view _ =
-    { title = "Адмін: Echo GPU сервери"
+    { title = "Адмін: Транскрибація"
     , body =
         [ div [ class "app-shell-fill-height box-border min-h-0 px-6 pt-6 pb-6 w-full flex flex-col overflow-visible lg:overflow-hidden" ]
             [ div [ class "flex-1 min-h-0 w-full" ]

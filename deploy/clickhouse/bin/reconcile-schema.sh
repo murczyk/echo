@@ -25,11 +25,15 @@ require_expected_control_release
 print_schema_difference() {
   local expected_label=$1 actual_label=$2 expected=$3 actual=$4
   log "Columns present only in $expected_label:"
-  comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
+  LC_ALL=C comm -23 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
     | sed 's/^/  /' >&2
   log "Columns present only in $actual_label:"
-  comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
+  LC_ALL=C comm -13 <(printf '%s\n' "$expected") <(printf '%s\n' "$actual") \
     | sed 's/^/  /' >&2
+}
+
+normalize_schema() {
+  LC_ALL=C sort
 }
 
 source_columns() {
@@ -97,8 +101,8 @@ ORDER BY columns.table_name, columns.column_name;
 SQL
 }
 
-source_schema=$(source_columns)
-raw_schema=$(clickhouse_raw_columns)
+source_schema=$(source_columns | normalize_schema)
+raw_schema=$(clickhouse_raw_columns | normalize_schema)
 [[ -n "$source_schema" ]] || die "source publication has no columns"
 if [[ "$source_schema" != "$raw_schema" ]]; then
   print_schema_difference "the source publication" "raw ClickHouse" \
@@ -106,8 +110,8 @@ if [[ "$source_schema" != "$raw_schema" ]]; then
   die "source and raw ClickHouse schemas differ; waiting for PeerDB schema propagation or resync"
 fi
 
-current_schema=$(clickhouse_current_columns)
-gateway_schema=$(gateway_columns)
+current_schema=$(clickhouse_current_columns | normalize_schema)
+gateway_schema=$(gateway_columns | normalize_schema)
 refresh_current=false
 refresh_gateway=false
 
@@ -133,7 +137,7 @@ fi
 if [[ "$refresh_current" == true ]]; then
   log "Current-state ClickHouse schema drift detected; refreshing views"
   "$SCRIPT_DIR/refresh-current-views.sh"
-  current_schema=$(clickhouse_current_columns)
+  current_schema=$(clickhouse_current_columns | normalize_schema)
   [[ "$source_schema" == "$current_schema" ]] \
     || die "current-state ClickHouse schema still differs after refresh"
 fi
@@ -141,7 +145,7 @@ fi
 if [[ "$refresh_gateway" == true ]]; then
   log "Gateway schema drift detected; refreshing foreign tables and compatibility views"
   "$SCRIPT_DIR/refresh-gateway.sh"
-  gateway_schema=$(gateway_columns)
+  gateway_schema=$(gateway_columns | normalize_schema)
   [[ "$source_schema" == "$gateway_schema" ]] \
     || die "gateway schema still differs after refresh"
 fi

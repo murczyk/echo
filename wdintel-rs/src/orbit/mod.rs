@@ -431,9 +431,29 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         Some(tui::StartAction::ReconcileSigintUnits) => {
             run_sigint_unit_reconciliation(mode).await.c(h!())
         }
+        Some(tui::StartAction::RenameSigintUnits) => {
+            run_sigint_unit_renames(mode).await.c(h!())
+        }
         Some(tui::StartAction::Reimport) => run_reimport(mode).await.c(h!()),
         None => Ok(()),
     }
+}
+
+async fn run_sigint_unit_renames(mode: Mode) -> anyhow::Result<()> {
+    if !tui::confirm_sigint_unit_renames().c(h!())? {
+        return Ok(());
+    }
+    let db = connect_database(mode).await.c(h!())?;
+    let import_lock = acquire_import_lock(&db).await.c(h!())?;
+    let login = crate::users::system_login_id(&db).await.c(h!())?;
+    let renamed = crate::sigint::unit::names::replace_all_eligible_unit_names(
+        &db, &login,
+    )
+    .await
+    .c(h!())?;
+    import_lock.commit().await.c(h!())?;
+    println!("Renamed {renamed} eligible SIGINT units.");
+    Ok(())
 }
 
 async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {

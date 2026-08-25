@@ -260,6 +260,7 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   collapseMediaPreviews = false,
+  mediaSummaryEnabled = true,
   messageTextPreviewLines = 20,
 }: {
   compact?: boolean;
@@ -289,6 +290,7 @@ export function MessageCardMessageBody({
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   /** When true, heavy media mounts only after the user opens a reveal banner (Duty default). */
   collapseMediaPreviews?: boolean;
+  mediaSummaryEnabled?: boolean;
   messageTextPreviewLines?: 20 | 40 | null;
 }) {
   const nameCache = usePointBlacklistPaletteNamesCache();
@@ -714,10 +716,12 @@ export function MessageCardMessageBody({
           />
         </div>
       ) : null}
-      <MessageCardMediaSummaryCarousel
-        media={summaryMedia}
-        onIndexChange={setSelectedSummaryMediaIndex}
-      />
+      {mediaSummaryEnabled ? (
+        <MessageCardMediaSummaryCarousel
+          media={summaryMedia}
+          onIndexChange={setSelectedSummaryMediaIndex}
+        />
+      ) : null}
       {hasTextPrimary || hasMessageTextOverflow ? (
         <div
           className={

@@ -14,20 +14,38 @@ function getAuthUserRoles(element: Element): string[] {
     .filter(Boolean);
 }
 
+function AdminUnitsRoot({ authUserRoles }: { authUserRoles: string[] }) {
+  return (
+    <NeoMuiThemeProvider>
+      <AdminUnitsPage authUserRoles={authUserRoles} />
+    </NeoMuiThemeProvider>
+  );
+}
+
 class AdminUnitsElement extends HTMLElement {
   private root: Root | null = null;
 
+  static get observedAttributes() {
+    return ['data-auth-user-roles'];
+  }
+
+  private renderRoot() {
+    this.root?.render(<AdminUnitsRoot authUserRoles={getAuthUserRoles(this)} />);
+  }
+
   connectedCallback() {
-    this.style.display = 'block';
-    this.style.width = '100%';
-    this.style.height = '100%';
-    this.style.minHeight = '0';
-    this.root = createRoot(this);
-    this.root.render(
-      <NeoMuiThemeProvider>
-        <AdminUnitsPage authUserRoles={getAuthUserRoles(this)} />
-      </NeoMuiThemeProvider>,
-    );
+    if (!this.root) {
+      this.style.display = 'block';
+      this.style.width = '100%';
+      this.style.height = '100%';
+      this.style.minHeight = '0';
+      this.root = createRoot(this);
+    }
+    this.renderRoot();
+  }
+
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
+    if (name === 'data-auth-user-roles' && oldValue !== newValue) this.renderRoot();
   }
 
   disconnectedCallback() {

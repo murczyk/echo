@@ -51,6 +51,7 @@ export function RerDutyNeoPage({
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     collapseMediaPreviews,
+    mediaSummaryEnabled,
     messageTextPreviewLines,
   } = useRerDutyPageSettings();
   const openReportEditor = useCallback(
@@ -109,6 +110,7 @@ export function RerDutyNeoPage({
     currentUser,
     tagsLayout,
     collapseMediaPreviews,
+    mediaSummaryEnabled,
     messageTextPreviewLines,
     openReportEditor: (reportId) => {
       void openReportEditor(reportId);

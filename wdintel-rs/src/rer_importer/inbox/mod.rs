@@ -1083,10 +1083,15 @@ async fn query_inbox_digest(
         .await
         .c(h!())?
         .context(h!())?;
-    Ok((
-        query_res.try_get("", "count")?,
-        query_res.try_get("", "first_element_ts")?,
-    ))
+    let first_element_ts =
+        query_res.try_get("", "first_element_ts").or_else(|_| {
+            query_res
+                .try_get::<Option<DateTime<Utc>>>("", "first_element_ts")
+                .map(|timestamp| {
+                    timestamp.map(|timestamp| timestamp.naive_utc())
+                })
+        })?;
+    Ok((query_res.try_get("", "count")?, first_element_ts))
 }
 
 async fn query_inbox_candidate_ids(
@@ -4154,6 +4159,33 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(cached, (7, None));
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn inbox_digest_accepts_timestamp_with_time_zone() {
+        let env = cleanup().await.unwrap();
+        let digest = query_inbox_digest(
+            env.dbx.clone(),
+            "SELECT 1::bigint AS count, \
+             TIMESTAMPTZ '2026-08-25 09:56:19+00' AS first_element_ts"
+                .to_string(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            digest,
+            (
+                1,
+                Some(
+                    NaiveDate::from_ymd_opt(2026, 8, 25)
+                        .unwrap()
+                        .and_hms_opt(9, 56, 19)
+                        .unwrap()
+                )
+            )
+        );
     }
 
     fn submit_dmr_metadata(cc: Option<i32>) -> SubmitDmrMetadata {

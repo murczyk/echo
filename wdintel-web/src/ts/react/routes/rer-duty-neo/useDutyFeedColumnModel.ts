@@ -16,6 +16,7 @@ export type DutyFeedColumnModelDeps = {
   currentUser: User | null;
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews: boolean;
+  mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   openReportEditor: (reportId: number) => void;
   openMessageEditor: (target: { id: number; message: InboxMessage }) => void;
@@ -253,6 +254,7 @@ function buildFeedMessageCard(
     featureStrictNetworks,
     tagsLayout: deps.tagsLayout,
     collapseMediaPreviews: deps.collapseMediaPreviews,
+    mediaSummaryEnabled: deps.mediaSummaryEnabled,
     messageTextPreviewLines: deps.messageTextPreviewLines,
     tagsMap,
     tagsOrder,

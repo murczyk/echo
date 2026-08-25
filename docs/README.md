@@ -104,6 +104,19 @@ version and retires the active version, including when the same Delta source was
 imported previously. Neither the oneoff nor later admin uploads requeue
 historical settlement links.
 
+## Application deployment maintenance interval
+
+`just deploy` and `just deploy-from-local` stop and runtime-mask the API
+socket, API service, background worker, and report worker before installing the
+application package. The masks prevent package maintainer scripts from
+starting a new binary before its database migrations finish. A successful
+deployment removes the masks and starts the required units after migration.
+
+If deployment fails during this interval, cleanup stops the application units
+and removes the runtime masks. Fix the reported failure and rerun the
+deployment. Start the units manually only after verifying that the installed
+binary and database schema are compatible.
+
 ## Focused documentation
 
 - [Deployment and server operations](../deploy/server.md)

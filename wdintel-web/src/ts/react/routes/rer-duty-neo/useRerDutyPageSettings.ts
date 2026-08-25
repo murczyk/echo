@@ -17,6 +17,7 @@ export type RerDutyPageSettings = {
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
   collapseMediaPreviews: boolean;
+  mediaSummaryEnabled: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
 };
 
@@ -30,6 +31,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
+  const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(true);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
 
@@ -44,12 +46,14 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(
           prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
         );
+        setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? true);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
         setCollapseMediaPreviews(true);
+        setMediaSummaryEnabled(true);
         setMessageTextPreviewLines(20);
       }
     };
@@ -66,6 +70,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
           tagsLayout?: TagsLayoutVariant;
           dutyAudioTranscriptionCollapsed?: boolean;
           dutyCollapseMediaPreviews?: boolean;
+          mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: MessageTextPreviewLineLimit;
         }>
       ).detail;
@@ -77,6 +82,9 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
       }
       if (typeof detail?.dutyCollapseMediaPreviews === 'boolean') {
         setCollapseMediaPreviews(detail.dutyCollapseMediaPreviews);
+      }
+      if (typeof detail?.mediaSummaryEnabled === 'boolean') {
+        setMediaSummaryEnabled(detail.mediaSummaryEnabled);
       }
       if (
         detail?.messageTextPreviewLines === 20 ||
@@ -138,6 +146,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
     audioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     collapseMediaPreviews,
+    mediaSummaryEnabled,
     messageTextPreviewLines,
   };
 }

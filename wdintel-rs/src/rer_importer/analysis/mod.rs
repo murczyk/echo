@@ -7832,16 +7832,12 @@ async fn count_stats(
     Ok(Json(response))
 }
 
-fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
-    req.search
-        .as_ref()
-        .is_none_or(|search| search.trim().is_empty())
+fn analytics_count_request_supported(_req: &AnalysisStatsReq) -> bool {
+    true
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
-    let mut req = req.clone();
-    req.selected_units = None;
-    analytics_count_request_supported(&req)
+    analytics_count_request_supported(req)
 }
 
 fn analytics_stats_request_supported(
@@ -7886,10 +7882,6 @@ pub(crate) fn analytics_inbox_candidates_supported(
 
 fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
     req.only_with_media != Some(true)
-        && req
-            .search
-            .as_ref()
-            .is_none_or(|search| search.trim().is_empty())
 }
 
 #[derive(Clone)]
