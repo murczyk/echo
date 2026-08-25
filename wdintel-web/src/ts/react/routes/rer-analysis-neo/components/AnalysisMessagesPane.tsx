@@ -160,6 +160,7 @@ type Props = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
@@ -201,6 +202,7 @@ type AnalysisMessageCardItemProps = {
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
+  mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
@@ -239,6 +241,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  mediaSummaryEnabled = true,
   messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
@@ -373,6 +376,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
         },
       }}
       showCallsignAddForm={showCallsignAddForm}
+      mediaSummaryEnabled={mediaSummaryEnabled}
     />
   );
 });
@@ -409,6 +413,7 @@ function AnalysisMessagesPaneComponent({
   tagsOrder,
   tagsLoading,
   tagsLayout,
+  mediaSummaryEnabled = true,
   messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
@@ -571,6 +576,7 @@ function AnalysisMessagesPaneComponent({
               tagsOrder={tagsOrder}
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
+              mediaSummaryEnabled={mediaSummaryEnabled}
               messageTextPreviewLines={messageTextPreviewLines}
               showCallsignAddForm={showCallsignAddForm}
               searchText={searchText}

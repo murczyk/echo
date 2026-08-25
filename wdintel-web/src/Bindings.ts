@@ -5548,4 +5548,5 @@ export type UserDutySettingsDto = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
+  mediaSummaryEnabled: boolean;
 };

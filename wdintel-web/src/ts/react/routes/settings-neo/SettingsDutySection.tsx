@@ -1,10 +1,10 @@
 import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
-import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
-import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
+import { SettingsMessageCard } from './SettingsMessageCard';
 
 const cardSx = {
   border: 1,
@@ -20,6 +20,10 @@ export type SettingsDutySectionProps = {
   saveError: string | null;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
+  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
+  mediaSummaryEnabled: boolean;
+  onMediaSummaryEnabledChange: (value: boolean) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
@@ -31,8 +35,6 @@ export type SettingsDutySectionProps = {
   onShowClassicDutyChange: (value: boolean) => void;
   collapseMediaPreviews: boolean;
   onCollapseMediaPreviewsChange: (value: boolean) => void;
-  messageTextPreviewLines: MessageTextPreviewLineLimit;
-  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
 };
 
 export function SettingsDutySection({
@@ -41,6 +43,10 @@ export function SettingsDutySection({
   saveError,
   tagsLayout,
   onTagsLayoutChange,
+  messageTextPreviewLines,
+  onMessageTextPreviewLinesChange,
+  mediaSummaryEnabled,
+  onMediaSummaryEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
   audioTranscriptionCollapsed,
@@ -51,8 +57,6 @@ export function SettingsDutySection({
   onShowClassicDutyChange,
   collapseMediaPreviews,
   onCollapseMediaPreviewsChange,
-  messageTextPreviewLines,
-  onMessageTextPreviewLinesChange,
 }: SettingsDutySectionProps) {
   return (
     <Box
@@ -88,11 +92,13 @@ export function SettingsDutySection({
             </Box>
           ) : null}
 
-          <SettingsSharedTagsLayoutCard
+          <SettingsMessageCard
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}
             onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+            mediaSummaryEnabled={mediaSummaryEnabled}
+            onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
             loadInProgress={loadInProgress}
           />
 

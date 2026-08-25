@@ -5,33 +5,39 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { SettingsTagsLayoutCard } from './SettingsTagsLayoutCard';
+import { SettingsMessageCard } from './SettingsMessageCard';
 
 const mounted: Array<{ container: HTMLDivElement; root: Root }> = [];
 
-function renderCard(messageTextPreviewLines: 20 | 40 | null) {
+function renderCard(messageTextPreviewLines: 20 | 40 | null, mediaSummaryEnabled = true) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   const onTagsLayoutChange = vi.fn();
   const onMessageTextPreviewLinesChange = vi.fn();
+  const onMediaSummaryEnabledChange = vi.fn();
 
   act(() => {
     root.render(
-      <SettingsTagsLayoutCard
-        title="Картка повідомлення"
+      <SettingsMessageCard
         tagsLayout="full"
         onTagsLayoutChange={onTagsLayoutChange}
         messageTextPreviewLines={messageTextPreviewLines}
         onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+        mediaSummaryEnabled={mediaSummaryEnabled}
+        onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
         loadInProgress={false}
-        note="Спільні налаштування для Оперативного та Аналізу."
       />,
     );
   });
 
   mounted.push({ container, root });
-  return { container, onMessageTextPreviewLinesChange };
+  return {
+    container,
+    onTagsLayoutChange,
+    onMessageTextPreviewLinesChange,
+    onMediaSummaryEnabledChange,
+  };
 }
 
 afterEach(() => {
@@ -41,11 +47,13 @@ afterEach(() => {
   }
 });
 
-describe('SettingsTagsLayoutCard', () => {
+describe('SettingsMessageCard', () => {
   it('renders the shared card controls and explanations', () => {
     const { container } = renderCard(20);
 
     for (const text of [
+      'Картка повідомлення',
+      'Відображення тегів:',
       'Повний',
       'Щільний',
       'Без тегів',
@@ -54,6 +62,8 @@ describe('SettingsTagsLayoutCard', () => {
       'Без скорочення',
       'Згортати перегляд довгих повідомлень:',
       'Визначає, коли з’являється кнопка «Показати більше».',
+      'Стислий опис файлів у картках',
+      'Відображати блок стислого опису для зображень та документів у картках повідомлень стрічки.',
       'Спільні налаштування для Оперативного та Аналізу.',
     ]) {
       expect(container.textContent).toContain(text);
@@ -93,5 +103,18 @@ describe('SettingsTagsLayoutCard', () => {
 
     expect(onMessageTextPreviewLinesChange).toHaveBeenCalledOnce();
     expect(onMessageTextPreviewLinesChange).toHaveBeenCalledWith(expectedValue);
+  });
+
+  it('triggers media summary toggle change', () => {
+    const { container, onMediaSummaryEnabledChange } = renderCard(20, true);
+
+    const checkbox = container.querySelector('input[type="checkbox"]');
+    expect(checkbox).not.toBeNull();
+
+    act(() => {
+      checkbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onMediaSummaryEnabledChange).toHaveBeenCalledWith(false);
   });
 });

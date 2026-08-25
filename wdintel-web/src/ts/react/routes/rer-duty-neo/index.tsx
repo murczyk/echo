@@ -87,6 +87,7 @@ export function RerDutyNeoPage({
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
+  const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(true);
   const [messageTextPreviewLines, setMessageTextPreviewLines] = useState<20 | 40 | null>(20);
   useEffect(() => {
     let cancelled = false;
@@ -99,12 +100,14 @@ export function RerDutyNeoPage({
         setCollapseMediaPreviews(
           prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
         );
+        setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? true);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
         setCollapseMediaPreviews(true);
+        setMediaSummaryEnabled(true);
         setMessageTextPreviewLines(20);
       }
     };
@@ -120,6 +123,7 @@ export function RerDutyNeoPage({
           tagsLayout?: TagsLayoutVariant;
           dutyAudioTranscriptionCollapsed?: boolean;
           dutyCollapseMediaPreviews?: boolean;
+          mediaSummaryEnabled?: boolean;
           messageTextPreviewLines?: 20 | 40 | null;
         }>
       ).detail;
@@ -131,6 +135,9 @@ export function RerDutyNeoPage({
       }
       if (typeof detail?.dutyCollapseMediaPreviews === 'boolean') {
         setCollapseMediaPreviews(detail.dutyCollapseMediaPreviews);
+      }
+      if (typeof detail?.mediaSummaryEnabled === 'boolean') {
+        setMediaSummaryEnabled(detail.mediaSummaryEnabled);
       }
       if (
         detail?.messageTextPreviewLines === 20 ||
@@ -475,6 +482,7 @@ export function RerDutyNeoPage({
       featureStrictNetworks,
       tagsLayout,
       collapseMediaPreviews,
+      mediaSummaryEnabled,
       messageTextPreviewLines,
       tagsMap,
       tagsOrder,

@@ -390,6 +390,7 @@ mod m20260820_121919_ai_intel_report_attempt;
 mod m20260821_080931_recalculate_battle_line_aor_sectors;
 mod m20260822_105557_add_settlement_stats_index;
 mod m20260824_090738_sigint_unit_change;
+mod m20260824_100228_add_media_summary_enabled_to_user_settings;
 mod m20260824_120000_add_message_text_preview_lines;
 mod m20260824_124325_transcription_started_at;
 
@@ -907,6 +908,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260822_105557_add_settlement_stats_index::Migration),
             Box::new(m20260824_090738_sigint_unit_change::Migration),
+            Box::new(
+                m20260824_100228_add_media_summary_enabled_to_user_settings::Migration,
+            ),
             Box::new(m20260824_120000_add_message_text_preview_lines::Migration),
             Box::new(m20260824_124325_transcription_started_at::Migration),
         ]
