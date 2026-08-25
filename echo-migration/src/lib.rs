@@ -393,6 +393,7 @@ mod m20260824_090738_sigint_unit_change;
 mod m20260824_100228_add_media_summary_enabled_to_user_settings;
 mod m20260824_120000_add_message_text_preview_lines;
 mod m20260824_124325_transcription_started_at;
+mod m20260825_114553_add_settlement_geography_index;
 
 pub struct Migrator;
 
@@ -913,6 +914,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260824_120000_add_message_text_preview_lines::Migration),
             Box::new(m20260824_124325_transcription_started_at::Migration),
+            Box::new(
+                m20260825_114553_add_settlement_geography_index::Migration,
+            ),
         ]
     }
 }
