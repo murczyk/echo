@@ -69,8 +69,22 @@ allowed only for a table whose schema guarantees a row on every deployment;
 currently that is limited to the `system_settings` singleton. Additive-column
 migrations on tables expected to remain empty may use
 `empty_table_resnapshot`; deployment verifies emptiness and resnapshots only
-that table. Use `mirror_resync` for destructive, incompatible, or non-empty
-schema changes.
+that table. Do not choose `mirror_resync` merely because a changed table is
+non-empty. Require a nullable design, reviewed CDC backfill, targeted table
+resnapshot, or table-replacement migration instead.
+
+Treat `mirror_resync` as an exceptional last resort and reject it by default.
+It rebuilds every mapped table, including `sigint_inbox_item` and
+`signal_message`, even when the migration changes only a smaller table. Approve
+it only when the change genuinely requires rebuilding `sigint_inbox_item` or
+`signal_message` themselves and no scoped strategy can preserve correctness.
+
+Every approved `mirror_resync` must add a `CHANGELOG.md` `NEXT` entry marked
+with both 🚨 and 👷 and beginning with the prominent banner
+`🚨🚨🚨 **MIRROR RESYNC** 🚨🚨🚨`. Require the entry to name the affected
+tables, explain why a scoped strategy is impossible, state expected duration
+and production load, give the exact sequential commands and fallback behavior,
+and define health checks and stop conditions before the next server.
 
 Apply this review to schema migrations shipped by application dependencies
 such as `echo-im`, not only migrations in `echo-migration`.
