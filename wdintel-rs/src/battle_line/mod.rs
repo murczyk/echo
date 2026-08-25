@@ -2,8 +2,7 @@ use crate::battle_line::types::*;
 use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
     BATTLE_LINE_AOR_ANCHOR_LATITUDE, BATTLE_LINE_AOR_ANCHOR_LONGITUDE,
-    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_EARTH_RADIUS_METERS,
-    BATTLE_LINE_NETWORKS_LOOKBACK_DAYS,
+    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_NETWORKS_LOOKBACK_DAYS,
     BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT,
     BATTLE_LINE_NETWORKS_PAGE_SIZE,
     BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
@@ -177,7 +176,6 @@ struct LocationResolutionDraft {
     location: String,
     candidates: Vec<BattleLineSettlementCandidate>,
     battle_line_distances: BTreeMap<usize, f64>,
-    battle_line_match: Option<BattleLineMatch>,
     chosen_candidate_index: Option<usize>,
     invalid_aor_ids: Vec<i64>,
 }
@@ -1523,10 +1521,11 @@ where
     Ok(group_lengths
         .into_iter()
         .map(|group_length| {
-            let mut group =
-                drafts.by_ref().take(group_length).collect::<Vec<_>>();
-            apply_anchor_resolution(&mut group);
-            group.into_iter().map(location_result_from_draft).collect()
+            drafts
+                .by_ref()
+                .take(group_length)
+                .map(location_result_from_draft)
+                .collect()
         })
         .collect())
 }
@@ -1552,7 +1551,6 @@ where
             location,
             candidates,
             battle_line_distances: BTreeMap::new(),
-            battle_line_match: None,
             chosen_candidate_index: None,
             invalid_aor_ids: vec![],
         })
@@ -1818,80 +1816,11 @@ where
         draft
             .battle_line_distances
             .insert(*candidate_index, distance.distance_m);
-        if draft.battle_line_match.is_none() {
-            draft.battle_line_match = Some(BattleLineMatch {
-                candidate_index: *candidate_index,
-                distance_m: distance.distance_m,
-            });
+        if draft.chosen_candidate_index.is_none() {
             draft.chosen_candidate_index = Some(*candidate_index);
         }
     }
     Ok(())
-}
-
-fn apply_anchor_resolution(drafts: &mut [LocationResolutionDraft]) {
-    let Some((anchor_index, anchor_match)) = drafts
-        .iter()
-        .enumerate()
-        .filter_map(|(index, draft)| {
-            draft
-                .battle_line_match
-                .as_ref()
-                .map(|matched| (index, matched))
-        })
-        .max_by(|(left_index, left), (right_index, right)| {
-            left.distance_m.total_cmp(&right.distance_m).then_with(|| {
-                drafts[*right_index]
-                    .location
-                    .cmp(&drafts[*left_index].location)
-            })
-        })
-    else {
-        return;
-    };
-    let anchor_candidate_index = anchor_match.candidate_index;
-    let Some(anchor_coordinate) = drafts
-        .get(anchor_index)
-        .and_then(|draft| draft.candidates.get(anchor_candidate_index))
-        .map(|candidate| candidate.coordinate.clone())
-    else {
-        return;
-    };
-    for (index, draft) in drafts.iter_mut().enumerate() {
-        if index == anchor_index {
-            draft.chosen_candidate_index = Some(anchor_candidate_index);
-            continue;
-        }
-        draft.chosen_candidate_index =
-            closest_candidate_to_anchor(&draft.candidates, &anchor_coordinate);
-    }
-}
-
-fn closest_candidate_to_anchor(
-    candidates: &[BattleLineSettlementCandidate],
-    anchor_coordinate: &BattleLineCoordinate,
-) -> Option<usize> {
-    candidates
-        .iter()
-        .enumerate()
-        .map(|(index, candidate)| {
-            (
-                index,
-                candidate.settlement_id,
-                distance_between_coordinates_m(
-                    &candidate.coordinate,
-                    anchor_coordinate,
-                ),
-            )
-        })
-        .min_by(
-            |(_, left_id, left_distance), (_, right_id, right_distance)| {
-                left_distance
-                    .total_cmp(right_distance)
-                    .then_with(|| left_id.cmp(right_id))
-            },
-        )
-        .map(|(index, _, _)| index)
 }
 
 fn location_result_from_draft(
@@ -1919,20 +1848,6 @@ fn location_result_from_draft(
 
 fn normalize_settlement_name(name: &str) -> String {
     name.trim().to_uppercase().replace(['\'', 'ʼ', '`'], "’")
-}
-
-fn distance_between_coordinates_m(
-    left: &BattleLineCoordinate,
-    right: &BattleLineCoordinate,
-) -> f64 {
-    let left_lat = left.lat.to_radians();
-    let right_lat = right.lat.to_radians();
-    let lat_delta = (right.lat - left.lat).to_radians();
-    let lon_delta = (right.lon - left.lon).to_radians();
-    let haversine = (lat_delta / 2.0).sin().powi(2)
-        + left_lat.cos() * right_lat.cos() * (lon_delta / 2.0).sin().powi(2);
-    2.0 * BATTLE_LINE_EARTH_RADIUS_METERS
-        * haversine.clamp(0.0, 1.0).sqrt().asin()
 }
 
 async fn read_battle_line_state<C>(dbx: &C) -> anyhow::Result<BattleLineState>
@@ -2368,7 +2283,7 @@ insert into battle_line_version
     (geometry, source_file_name, uploaded_by_login_id, source_kind, source_sha256)
 select
     ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(0 0,10 0))', 4326),
-    'anchor-test.kml',
+    'independent-resolution-test.kml',
     id,
     'admin_upload',
     $1
@@ -2946,16 +2861,16 @@ values (
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn resolves_multiple_locations_with_remote_battle_line_anchor() {
+    async fn resolves_ambiguous_locations_independently_2287() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
         let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
         let suffix = uuid::Uuid::now_v7();
-        let anchor_name = format!("#2287 ANCHOR {suffix}");
+        let unique_name = format!("#2287 UNIQUE {suffix}");
         let repeated_name = format!("#2287 SAME {suffix}");
-        insert_test_settlement(&txn, 2_287_211, &anchor_name, 0.10, 1.0)
+        insert_test_settlement(&txn, 2_287_211, &unique_name, 0.10, 1.0)
             .await
             .unwrap();
         insert_test_settlement(&txn, 2_287_212, &repeated_name, 0.01, 9.0)
@@ -2969,7 +2884,7 @@ values (
             vec![
                 crate::location::types::SettlementDetails {
                     id: Some(2_287_211),
-                    name: anchor_name.to_uppercase(),
+                    name: unique_name.to_uppercase(),
                     coords: Some((0.10, 1.0)),
                     ..Default::default()
                 },
@@ -2991,16 +2906,16 @@ values (
         let results = resolve_locations_to_settlements_with_db(
             &txn,
             settlements,
-            vec![anchor_name, repeated_name],
+            vec![unique_name, repeated_name],
             &[aor_id],
         )
         .await
         .unwrap();
 
         assert_eq!(results[0].chosen_settlement_id, Some(2_287_211));
-        assert_eq!(results[1].chosen_settlement_id, Some(2_287_213));
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_212));
         assert!(
-            results[1].distance_m.unwrap() > results[0].distance_m.unwrap()
+            results[1].distance_m.unwrap() < results[0].distance_m.unwrap()
         );
         txn.rollback().await.unwrap();
     }

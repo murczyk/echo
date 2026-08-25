@@ -632,12 +632,19 @@ fn field_army_or_corps_name(
             .as_ref()
             .filter(|corps| contains_word(&corps.full, "корпус"));
     };
-    if !contains_word(&field_army.full, "армія") {
+    if !is_army_name(field_army) {
         return hierarchy[CORPS_INDEX]
             .as_ref()
             .filter(|corps| contains_word(&corps.full, "корпус"));
     }
     Some(field_army)
+}
+
+fn is_army_name(name: &OrbitHierarchyName) -> bool {
+    contains_word(&name.full, "армія")
+        || ["а", "зва", "та"]
+            .into_iter()
+            .any(|abbreviation| contains_word(&name.preferred, abbreviation))
 }
 
 fn contains_word(value: &str, word: &str) -> bool {
@@ -788,6 +795,23 @@ mod tests {
         assert_eq!(
             expected_unit_name_from_orbit_hierarchy(&hierarchy),
             "9 мсп 18 мсд 18 ЗВА"
+        );
+    }
+
+    #[test]
+    fn expected_name_keeps_abbreviated_field_army() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[6] =
+            Some(hierarchy_name("1 мсб", "1 мотострілецький батальйон"));
+        hierarchy[7] =
+            Some(hierarchy_name("380 мсп", "380 мотострілецький полк"));
+        hierarchy[9] = Some(hierarchy_name("47 тд", "47 танкова дивізія"));
+        hierarchy[FIELD_ARMY_INDEX] =
+            Some(hierarchy_name("1 ТА", "Повна назва 1 ТА"));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "1 мсб 380 мсп 47 тд 1 ТА"
         );
     }
 
