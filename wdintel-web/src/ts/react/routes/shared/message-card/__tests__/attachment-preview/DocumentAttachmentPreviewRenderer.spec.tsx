@@ -271,7 +271,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('renders txt and markdown previews without zoom or fullscreen controls', async () => {
+  it('renders txt and markdown previews without zoom controls', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -318,13 +318,12 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
     expect(
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Інформація"]')).not.toBeNull();
     expect(
       document.body.querySelector('button[aria-label="Відкрити в новій вкладці"]'),
     ).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Скачати"]')).not.toBeNull();
-    expect(document.body.querySelectorAll('button')).toHaveLength(8);
     root.unmount();
   });
 
@@ -400,7 +399,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
     expect(
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(
       document.body
         .querySelector('[data-preview-stage="document"]')

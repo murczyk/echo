@@ -812,7 +812,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(video.currentTime).toBe(0);
   });
 
-  it('closes the fullscreen dialog on Escape', async () => {
+  it('exits fullscreen before closing the dialog on Escape', async () => {
     const onClose = vi.fn();
     const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     renderDialog({
@@ -828,6 +828,12 @@ describe('VideoAttachmentPreviewRenderer', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
+    expect(onClose).not.toHaveBeenCalled();
+    expect(latestControlsProps?.playerState.isFullscreen).toBe(false);
+    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(pauseSpy).not.toHaveBeenCalled();
   });

@@ -189,7 +189,7 @@ describe('MediaReprocessAction', () => {
     mocks.reprocessMediaOcr.mockResolvedValueOnce(queued);
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Обробити повторно')
+        .find((button) => button.textContent === 'Повторно запустити OCR')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
@@ -227,7 +227,7 @@ describe('MediaReprocessAction', () => {
     await act(async () => Promise.resolve());
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Обробити повторно через Engine 17')
+        .find((button) => button.textContent === 'Повторно запустити OCR через Engine 17')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
@@ -262,7 +262,7 @@ describe('MediaReprocessAction', () => {
 
     expect(
       Array.from(container.querySelectorAll('button')).find(
-        (button) => button.textContent === 'Обробити повторно',
+        (button) => button.textContent === 'Повторно запустити OCR',
       )?.disabled,
     ).toBe(true);
   });
@@ -290,7 +290,7 @@ describe('MediaReprocessAction', () => {
     mocks.reprocessMediaOcr.mockRejectedValueOnce(new Error('network error'));
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
-        .find((button) => button.textContent === 'Обробити повторно')
+        .find((button) => button.textContent === 'Повторно запустити OCR')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 

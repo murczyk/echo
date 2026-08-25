@@ -356,7 +356,27 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('uses fullscreen geometry and closes dialog on escape key press', async () => {
+  it('hides the toolbar divider when OCR and summary actions are unavailable', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.querySelectorAll('hr')).toHaveLength(0);
+    root.unmount();
+  });
+
+  it('uses fullscreen geometry and exits fullscreen before closing on Escape', async () => {
     const onClose = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -387,6 +407,11 @@ describe('ImageAttachmentPreviewRenderer', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
+    expect(onClose).not.toHaveBeenCalled();
+    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
     root.unmount();
   });

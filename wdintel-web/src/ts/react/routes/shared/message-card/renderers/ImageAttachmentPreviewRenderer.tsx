@@ -751,11 +751,13 @@ export function ImageAttachmentPreviewRenderer({
               })
             }
           />
-          <Divider
-            orientation="vertical"
-            flexItem
-            sx={{ mx: 0.25, my: 0.75, borderColor: 'divider' }}
-          />
+          {summaryStatus != null || ocrStatus != null ? (
+            <Divider
+              orientation="vertical"
+              flexItem
+              sx={{ mx: 0.25, my: 0.75, borderColor: 'divider' }}
+            />
+          ) : null}
           <ImageCopyAction
             status={copyStatus}
             enabled={
@@ -773,6 +775,11 @@ export function ImageAttachmentPreviewRenderer({
                   size="small"
                   onClick={() => void openEditor()}
                   disabled={editorLoading}
+                  sx={{
+                    color: 'text.secondary',
+                    '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
+                    '&.Mui-disabled': { color: 'action.disabled' },
+                  }}
                 >
                   {editorLoading ? (
                     <CircularProgress size={16} color="inherit" />

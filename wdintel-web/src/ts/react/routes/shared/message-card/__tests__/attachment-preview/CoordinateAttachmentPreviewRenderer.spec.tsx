@@ -528,7 +528,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
 
     expect(shellProps.at(-1)).toMatchObject({
       open: true,
-      ariaLabel: 'Перегляд вкладення',
+      ariaLabel: 'Перегляд координат',
       isFullscreen: true,
     });
     expect(document.body.textContent).toContain('Завантаження мапи…');
