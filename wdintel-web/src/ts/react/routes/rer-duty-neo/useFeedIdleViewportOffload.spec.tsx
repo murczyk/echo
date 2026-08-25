@@ -19,6 +19,7 @@ function Harness({
   onSnapshot: (value: {
     offloadActive: boolean;
     mountedCount: number | null;
+    mountedIds: number[] | null;
     hasPlaceholderHeight: boolean;
   }) => void;
 }) {
@@ -33,6 +34,8 @@ function Harness({
   onSnapshot({
     offloadActive: offload.offloadActive,
     mountedCount: offload.mountedItemIds?.size ?? null,
+    mountedIds:
+      offload.mountedItemIds != null ? [...offload.mountedItemIds].sort((a, b) => a - b) : null,
     hasPlaceholderHeight: offload.placeholderHeightPx(itemIds[0] ?? 0) > 0,
   });
   return (
@@ -60,6 +63,7 @@ describe('useFeedIdleViewportOffload', () => {
   let latest: {
     offloadActive: boolean;
     mountedCount: number | null;
+    mountedIds: number[] | null;
     hasPlaceholderHeight: boolean;
   };
 
@@ -68,7 +72,12 @@ describe('useFeedIdleViewportOffload', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
-    latest = { offloadActive: false, mountedCount: null, hasPlaceholderHeight: false };
+    latest = {
+      offloadActive: false,
+      mountedCount: null,
+      mountedIds: null,
+      hasPlaceholderHeight: false,
+    };
   });
 
   afterEach(() => {
@@ -136,6 +145,74 @@ describe('useFeedIdleViewportOffload', () => {
     expect(latest.offloadActive).toBe(true);
     expect(latest.mountedCount).toBe(2);
     expect(latest.hasPlaceholderHeight).toBe(true);
+  });
+
+  it('refreshes mounted ids on programmatic scroll without waking', async () => {
+    await act(async () => {
+      root.render(
+        <Harness
+          enabled
+          itemIds={[1, 2, 3, 4]}
+          idleMs={10_000}
+          onSnapshot={(value) => {
+            latest = value;
+          }}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    Object.defineProperty(scroller, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({
+        top: 0,
+        bottom: 100,
+        left: 0,
+        right: 100,
+        width: 100,
+        height: 100,
+        x: 0,
+        y: 0,
+        toJSON() {},
+      }),
+    });
+    const layoutRows = (scrollTop: number) => {
+      scroller.querySelectorAll<HTMLElement>('[data-duty-message-id]').forEach((node, index) => {
+        const top = index * 50 - scrollTop;
+        Object.defineProperty(node, 'offsetHeight', { configurable: true, value: 50 });
+        Object.defineProperty(node, 'getBoundingClientRect', {
+          configurable: true,
+          value: () => ({
+            top,
+            bottom: top + 50,
+            left: 0,
+            right: 100,
+            width: 100,
+            height: 50,
+            x: 0,
+            y: top,
+            toJSON() {},
+          }),
+        });
+      });
+    };
+    layoutRows(0);
+
+    await act(async () => {
+      vi.advanceTimersByTime(10_000);
+    });
+    expect(latest.offloadActive).toBe(true);
+    expect(latest.mountedIds).toEqual([1, 2]);
+
+    // Stick-bottom / follow ease moves scrollTop without pointer/wheel wake.
+    layoutRows(100);
+    await act(async () => {
+      scroller.dispatchEvent(new Event('scroll', { bubbles: true }));
+      vi.advanceTimersByTime(16);
+    });
+
+    expect(latest.offloadActive).toBe(true);
+    expect(latest.mountedIds).toEqual([3, 4]);
   });
 
   it('wakes and remounts on pointer interaction', async () => {
@@ -212,6 +289,8 @@ describe('useFeedIdleViewportOffload', () => {
       latest = {
         offloadActive: offload.offloadActive,
         mountedCount: offload.mountedItemIds?.size ?? null,
+        mountedIds:
+          offload.mountedItemIds != null ? [...offload.mountedItemIds].sort((a, b) => a - b) : null,
         hasPlaceholderHeight: offload.placeholderHeightPx(1) > 0,
       };
       return (

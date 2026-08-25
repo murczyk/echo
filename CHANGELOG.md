@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3266](https://github.com/echoua/echo/issues/3266) ✅🐞 Оперативний: стрічка не стрибає після створення розвіддонесення; плавніша поява нових повідомлень.
 - [#2287](https://github.com/echoua/echo/issues/2287) 🐞👷 Карта, ЛБЗ: кожен населений пункт тепер зіставляється з найближчим сегментом ЛБЗ незалежно від інших локацій повідомлення; після деплою повторно узгодити наявні прив’язки командою `sudo /usr/bin/wdintel-rs --mode=live oneoff-link-inbox-settlements --since-ts 1970-01-01T00:00:00`, а після завершення перебудувати історичну статистику командою `sudo /usr/bin/wdintel-rs --mode=live oneoff-calculate-historic-stats --only settlement`.
 - [#3200](https://github.com/echoua/echo/issues/3200) ✅👷 Оперативний, Аналіз: додано налаштування скорочення довгих текстів у картках. ClickHouse: після міграції виконати resync `user_settings` — `/opt/echo-peerdb/bin/resync.sh --yes`, потім `/opt/echo-peerdb/bin/finish-resync.sh` — і перевірити успішний analytics health check.
 - [#2287](https://github.com/echoua/echo/issues/2287) ✅🛡️ Карта, ЛБЗ: додано вкладку «Мережі» з посторінковими картами активних підрозділів, населеними пунктами та пеленгами їхніх мереж за останні сім днів.
