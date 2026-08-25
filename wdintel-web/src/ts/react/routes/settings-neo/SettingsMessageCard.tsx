@@ -1,6 +1,7 @@
 import DescriptionIcon from '@mui/icons-material/Description';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ImageIcon from '@mui/icons-material/Image';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
   Box,
   Collapse,
@@ -59,7 +60,7 @@ function MessageCardPreviewMock({
       </div>
 
       {/* Animated AI Summary skeleton */}
-      <Collapse in={mediaSummaryEnabled} timeout={250} unmountOnExit={false}>
+      <Collapse in={mediaSummaryEnabled} timeout={250} unmountOnExit>
         <div
           data-media-summary-mock="true"
           className="flex items-start gap-1.5 rounded-md border-l-[3px] border-echo-primary bg-echo-primary/5 p-1.5"
@@ -79,7 +80,7 @@ function MessageCardPreviewMock({
       </div>
 
       {/* Tags skeleton with animated layout changes */}
-      <Collapse in={tagsLayout !== 'hidden'} timeout={250} unmountOnExit={false}>
+      <Collapse in={tagsLayout !== 'hidden'} timeout={250} unmountOnExit>
         <div data-tags-mock="true" className="pt-0.5">
           <div className="flex flex-col gap-1.5">
             {/* Row 1 - fills the full line */}
@@ -98,7 +99,7 @@ function MessageCardPreviewMock({
             </div>
 
             {/* Row 2 (animated collapse for full mode - exactly 1 tag) */}
-            <Collapse in={tagsLayout === 'full'} timeout={250} unmountOnExit={false}>
+            <Collapse in={tagsLayout === 'full'} timeout={250} unmountOnExit>
               <div className="flex gap-1.5">
                 <div className="h-3.5 w-[26%] rounded-sm bg-echo-primary/35" />
               </div>
@@ -234,6 +235,13 @@ export function SettingsMessageCard({
         />
 
         <MessageCardPreviewMock tagsLayout={tagsLayout} mediaSummaryEnabled={mediaSummaryEnabled} />
+
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
+          <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Спільні налаштування для Оперативного та Аналізу.
+          </Typography>
+        </Stack>
       </Stack>
     </Box>
   );

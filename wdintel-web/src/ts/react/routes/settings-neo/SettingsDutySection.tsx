@@ -1,7 +1,10 @@
 import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
+import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
+import { SettingsMessageCard } from './SettingsMessageCard';
 
 const cardSx = {
   border: 1,
@@ -15,6 +18,12 @@ export type SettingsDutySectionProps = {
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
+  tagsLayout: TagsLayoutVariant;
+  onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
+  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
+  mediaSummaryEnabled: boolean;
+  onMediaSummaryEnabledChange: (value: boolean) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
@@ -32,6 +41,12 @@ export function SettingsDutySection({
   loadInProgress,
   prefsLoadError,
   saveError,
+  tagsLayout,
+  onTagsLayoutChange,
+  messageTextPreviewLines,
+  onMessageTextPreviewLinesChange,
+  mediaSummaryEnabled,
+  onMediaSummaryEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
   audioTranscriptionCollapsed,
@@ -76,6 +91,16 @@ export function SettingsDutySection({
               />
             </Box>
           ) : null}
+
+          <SettingsMessageCard
+            tagsLayout={tagsLayout}
+            onTagsLayoutChange={onTagsLayoutChange}
+            messageTextPreviewLines={messageTextPreviewLines}
+            onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+            mediaSummaryEnabled={mediaSummaryEnabled}
+            onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
+            loadInProgress={loadInProgress}
+          />
 
           {showAudioTranscriptionSettings ? (
             <SettingsAudioTranscriptionCard

@@ -8,16 +8,15 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { PageHeader } from '../../components/PageHeader';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
-import { SettingsGeneralSection } from './SettingsGeneralSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
+import { SettingsMessageCard } from './SettingsMessageCard';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import type { UserDutySettings } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 
-export type SettingsSection =
-  'general' | 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
+export type SettingsSection = 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
 
 type SettingsNeoPageProps = {
   section?: string;
@@ -43,10 +42,10 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'myReports' || section === 'my-reports') {
     return 'myReports';
   }
-  if (section === 'duty' || section === 'analysis') {
-    return section;
+  if (section === 'analysis') {
+    return 'analysis';
   }
-  return 'general';
+  return 'duty';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -217,12 +216,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             }}
           >
             <Tab
-              value="general"
-              label="Загальні"
-              id="settings-neo-tab-general"
-              aria-controls="settings-neo-panel-general"
-            />
-            <Tab
               value="myGroups"
               label="Мої групи"
               id="settings-neo-tab-my-groups"
@@ -253,8 +246,8 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           </Tabs>
 
-          {settingsSection === 'general' ? (
-            <SettingsGeneralSection
+          {settingsSection === 'duty' ? (
+            <SettingsDutySection
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
               saveError={dutySettings.saveError}
@@ -273,26 +266,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                 dutySettings.setMediaSummaryEnabled(value);
                 scheduleDutySettingsSave({ mediaSummaryEnabled: value });
               }}
-            />
-          ) : null}
-
-          {settingsSection === 'myGroups' ? (
-            <SettingsMyGroupsSection
-              status={myGroupsStatus}
-              groups={myGroups}
-              error={myGroupsError}
-              enableEditActions={globalSettings.featureMyAdminGroupsEdit}
-              onGroupsChanged={() => loadMyGroups()}
-            />
-          ) : null}
-
-          {settingsSection === 'myOrganism' ? <SettingsMyOrganismSection /> : null}
-
-          {settingsSection === 'duty' ? (
-            <SettingsDutySection
-              loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
-              prefsLoadError={dutySettings.loadError}
-              saveError={dutySettings.saveError}
               disableAutoScroll={dutySettings.disableAutoScroll}
               onDisableAutoScrollChange={(value) => {
                 dutySettings.setDisableAutoScroll(value);
@@ -359,6 +332,26 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       />
                     </Box>
                   ) : null}
+
+                  <SettingsMessageCard
+                    tagsLayout={dutySettings.tagsLayout}
+                    onTagsLayoutChange={(layout) => {
+                      dutySettings.setTagsLayout(layout);
+                      scheduleDutySettingsSave({ tagsLayout: layout });
+                    }}
+                    messageTextPreviewLines={dutySettings.messageTextPreviewLines}
+                    onMessageTextPreviewLinesChange={(value) => {
+                      dutySettings.setMessageTextPreviewLines(value);
+                      scheduleDutySettingsSave({ messageTextPreviewLines: value });
+                    }}
+                    mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
+                    onMediaSummaryEnabledChange={(value) => {
+                      dutySettings.setMediaSummaryEnabled(value);
+                      scheduleDutySettingsSave({ mediaSummaryEnabled: value });
+                    }}
+                    loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                  />
+
                   {globalSettings.audioTranscriptionEnabled ? (
                     <SettingsAudioTranscriptionCard
                       collapsedByDefault={dutySettings.analysisAudioTranscriptionCollapsed}
@@ -473,6 +466,18 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               </Box>
             </Box>
           ) : null}
+
+          {settingsSection === 'myGroups' ? (
+            <SettingsMyGroupsSection
+              status={myGroupsStatus}
+              groups={myGroups}
+              error={myGroupsError}
+              enableEditActions={globalSettings.featureMyAdminGroupsEdit}
+              onGroupsChanged={() => loadMyGroups()}
+            />
+          ) : null}
+
+          {settingsSection === 'myOrganism' ? <SettingsMyOrganismSection /> : null}
         </Card>
       </Stack>
     </Box>

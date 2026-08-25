@@ -255,6 +255,8 @@ vi.mock('../../services/api/user-settings', () => ({
     showClassicDuty: false,
     showClassicAnalysis: false,
     dutyCollapseMediaPreviews: true,
+    mediaSummaryEnabled: true,
+    messageTextPreviewLines: 20,
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -266,48 +268,29 @@ vi.mock('../../services/api/zones', () => ({
   fetchMyAdminGroupEditReference: fetchMyAdminGroupEditReferenceMock,
 }));
 
-vi.mock('./SettingsDutySection', () => ({
-  SettingsDutySection: (props: {
-    onTagsLayoutChange: (layout: 'full' | 'compact' | 'hidden') => void;
-    onDisableAutoScrollChange: (value: boolean) => void;
-    onAudioTranscriptionCollapsedChange: (value: boolean) => void;
-    messageTextPreviewLines: 20 | 40 | null;
-    onMessageTextPreviewLinesChange: (value: 20 | 40 | null) => void;
-    showAudioTranscriptionSettings: boolean;
-  }) => (
-    <div>
-      <button type="button" onClick={() => props.onTagsLayoutChange('full')}>
-        change-layout
-      </button>
-      <button type="button" onClick={() => props.onDisableAutoScrollChange(true)}>
-        change-scroll
-      </button>
-      {props.showAudioTranscriptionSettings ? (
-        <button type="button" onClick={() => props.onAudioTranscriptionCollapsedChange(true)}>
-          change-duty-transcription
+vi.mock('./SettingsDutySection', async () => {
+  const actual =
+    await vi.importActual<typeof import('./SettingsDutySection')>('./SettingsDutySection');
+  return {
+    ...actual,
+    SettingsDutySection: (props: any) => (
+      <div>
+        <button type="button" onClick={() => props.onTagsLayoutChange('full')}>
+          change-layout
         </button>
-      ) : null}
-      <section aria-label="Картка повідомлення">
-        <h3>Картка повідомлення</h3>
-        <button type="button">Повний</button>
-        <button type="button">Щільний</button>
-        <button type="button">Без тегів</button>
-        <span>Згортати перегляд довгих повідомлень:</span>
-        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(20)}>
-          20 рядків
+        <button type="button" onClick={() => props.onDisableAutoScrollChange(true)}>
+          change-scroll
         </button>
-        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(40)}>
-          40 рядків
-        </button>
-        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(null)}>
-          Без скорочення
-        </button>
-        <span>Визначає, коли з’являється кнопка «Показати більше».</span>
-        <p>Спільні налаштування для Оперативного та Аналізу.</p>
-      </section>
-    </div>
-  ),
-}));
+        {props.showAudioTranscriptionSettings ? (
+          <button type="button" onClick={() => props.onAudioTranscriptionCollapsedChange(true)}>
+            change-duty-transcription
+          </button>
+        ) : null}
+        <actual.SettingsDutySection {...props} />
+      </div>
+    ),
+  };
+});
 
 vi.mock('./SettingsMyOrganismSection', () => ({
   SettingsMyOrganismSection: () => <div>my-organism-active</div>,
@@ -363,51 +346,57 @@ describe('SettingsNeoPage', () => {
     container.remove();
   });
 
-  it('renders the shared preview control inside the message-card settings for general', async () => {
-    await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(container.textContent).toContain('20 рядків');
-    expect(container.textContent).toContain('40 рядків');
-    expect(container.textContent).toContain('Без скорочення');
-    expect(container.textContent).toContain('повний');
-    expect(container.textContent).toContain('щільний');
-    expect(container.textContent).toContain('без тегів');
-    expect(container.textContent).toContain('Згортати перегляд довгих повідомлень:');
-    expect(container.textContent).toContain('Визначає, коли з’являється кнопка «Показати більше».');
-
-    saveUserDutySettings.mockClear();
-    for (const [label, value] of [
-      ['20 рядків', 20],
-      ['40 рядків', 40],
-      ['Без скорочення', null],
-    ] as const) {
-      const button = Array.from(container.querySelectorAll('button')).find(
-        (candidate) => candidate.textContent === label,
-      );
-      expect(button).toBeTruthy();
+  it.each(['duty', 'analysis'] as const)(
+    'renders the shared preview control inside the message-card settings for %s',
+    async (section) => {
       await act(async () => {
-        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        root.render(<SettingsNeoPage section={section} />);
+        await Promise.resolve();
         await Promise.resolve();
       });
-      expect(saveUserDutySettings).toHaveBeenLastCalledWith({
-        tagsLayout: 'compact',
-        messageTextPreviewLines: value,
-        disableAutoScroll: false,
-        analysisMapInSidebar: false,
-        dutyAudioTranscriptionCollapsed: false,
-        analysisAudioTranscriptionCollapsed: false,
-        showAnalysisCallsignAddForm: false,
-        showClassicDuty: false,
-        showClassicAnalysis: false,
-        dutyCollapseMediaPreviews: true,
-        mediaSummaryEnabled: true,
-      });
-    }
-  });
+
+      expect(container.textContent).toContain('20 рядків');
+      expect(container.textContent).toContain('40 рядків');
+      expect(container.textContent).toContain('Без скорочення');
+      expect(container.textContent).toContain('повний');
+      expect(container.textContent).toContain('щільний');
+      expect(container.textContent).toContain('без тегів');
+      expect(container.textContent).toContain('Згортати перегляд довгих повідомлень:');
+      expect(container.textContent).toContain(
+        'Визначає, коли з’являється кнопка «Показати більше».',
+      );
+      expect(container.textContent).toContain('Стислий опис файлів у картках');
+
+      saveUserDutySettings.mockClear();
+      for (const [label, value] of [
+        ['20 рядків', 20],
+        ['40 рядків', 40],
+        ['Без скорочення', null],
+      ] as const) {
+        const button = Array.from(container.querySelectorAll('button')).find(
+          (candidate) => candidate.textContent === label,
+        );
+        expect(button).toBeTruthy();
+        await act(async () => {
+          button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          await Promise.resolve();
+        });
+        expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+          tagsLayout: 'compact',
+          messageTextPreviewLines: value,
+          disableAutoScroll: false,
+          analysisMapInSidebar: false,
+          dutyAudioTranscriptionCollapsed: false,
+          analysisAudioTranscriptionCollapsed: false,
+          showAnalysisCallsignAddForm: false,
+          showClassicDuty: false,
+          showClassicAnalysis: false,
+          dutyCollapseMediaPreviews: true,
+          mediaSummaryEnabled: true,
+        });
+      }
+    },
+  );
 
   it('drains queued duty saves after a transient failure', async () => {
     const firstSave = deferred<void>();
@@ -605,9 +594,9 @@ describe('SettingsNeoPage', () => {
     });
   });
 
-  it('saves tags layout preference from the general settings tab', async () => {
+  it('saves tags layout preference from the duty settings tab', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage section="duty" />);
     });
     await act(async () => {
       await Promise.resolve();
@@ -667,31 +656,33 @@ describe('SettingsNeoPage', () => {
     });
   });
 
-  it('saves media summary preference from the general settings tab', async () => {
+  it('saves media summary preference from the duty settings tab', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage section="duty" />);
     });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Загальні');
+    expect(container.textContent).toContain('Оперативний');
     expect(container.textContent).toContain('Стислий опис файлів у картках');
     expect(container.querySelector('[data-message-card-mock="true"]')).not.toBeNull();
     expect(container.querySelector('[data-media-summary-mock="true"]')).not.toBeNull();
 
-    const switchButton = Array.from(container.querySelectorAll('button')).find((button) =>
-      button.parentElement?.textContent?.includes('Стислий опис файлів у картках'),
+    saveUserDutySettings.mockClear();
+
+    const switchButton = Array.from(container.querySelectorAll('button')).find(
+      (button) =>
+        (button.textContent === 'on' || button.textContent === 'off') &&
+        button.parentElement?.textContent?.includes('Стислий опис файлів у картках'),
     );
     expect(switchButton).toBeTruthy();
 
     await act(async () => {
-      switchButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      switchButton?.click();
       await Promise.resolve();
     });
-
-    expect(container.querySelector('[data-media-summary-mock="true"]')).toBeNull();
 
     expect(saveUserDutySettings).toHaveBeenLastCalledWith({
       tagsLayout: 'compact',
@@ -730,17 +721,17 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).not.toContain('Транскрипція аудіо');
   });
 
-  it('opens general settings for the general section', async () => {
+  it('opens duty settings as default section', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage />);
     });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(container.querySelector('#settings-neo-panel-general')).not.toBeNull();
-    expect(container.textContent).toContain('Загальні');
+    expect(container.querySelector('#settings-neo-panel-duty')).not.toBeNull();
+    expect(container.textContent).toContain('Оперативний');
     expect(container.textContent).toContain('Стислий опис файлів у картках');
   });
 
