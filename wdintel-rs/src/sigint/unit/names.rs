@@ -420,29 +420,20 @@ async fn expected_unit_name_from_orbit(
     orbit_unit: &orbit_unit::Model,
 ) -> Result<String, AppError> {
     let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
-    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy).await?;
+    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy)
+        .await
+        .c(h!())?;
 
     let mut generative_hierarchy =
         std::array::from_fn(|_| None::<OrbitHierarchyName>);
-    fill_orbit_parent_chain(
+    fill_generative_orbit_parent_chain(
         dbx,
         orbit_unit,
-        OrbitParentKind::Generative,
         &mut generative_hierarchy,
     )
-    .await?;
+    .await
+    .c(h!())?;
     merge_orbit_hierarchy(&mut hierarchy, generative_hierarchy);
-
-    let mut operational_hierarchy =
-        std::array::from_fn(|_| None::<OrbitHierarchyName>);
-    fill_orbit_parent_chain(
-        dbx,
-        orbit_unit,
-        OrbitParentKind::Operational,
-        &mut operational_hierarchy,
-    )
-    .await?;
-    merge_orbit_hierarchy(&mut hierarchy, operational_hierarchy);
 
     Ok(expected_unit_name_from_orbit_hierarchy(&hierarchy))
 }
@@ -458,29 +449,13 @@ fn merge_orbit_hierarchy(
     }
 }
 
-#[derive(Clone, Copy)]
-enum OrbitParentKind {
-    Generative,
-    Operational,
-}
-
-impl OrbitParentKind {
-    fn parent_id(self, unit: &orbit_unit::Model) -> Option<Uuid> {
-        match self {
-            Self::Generative => unit.generative_parent_unit_id,
-            Self::Operational => unit.operational_parent_unit_id,
-        }
-    }
-}
-
-async fn fill_orbit_parent_chain(
+async fn fill_generative_orbit_parent_chain(
     dbx: &DatabaseConnection,
     root: &orbit_unit::Model,
-    parent_kind: OrbitParentKind,
     hierarchy: &mut [Option<OrbitHierarchyName>; 14],
 ) -> Result<(), AppError> {
     let mut seen = HashSet::from([root.unit_id]);
-    let mut parent_id = parent_kind.parent_id(root);
+    let mut parent_id = root.generative_parent_unit_id;
     while let Some(unit_id) = parent_id {
         if !seen.insert(unit_id) {
             return Err(AppError::BL {
@@ -488,8 +463,10 @@ async fn fill_orbit_parent_chain(
             });
         }
         let parent = find_available_orbit_unit(dbx, unit_id).await.c(h!())?;
-        parent_id = parent_kind.parent_id(&parent);
-        fill_orbit_hierarchy_level(dbx, &parent, hierarchy).await?;
+        parent_id = parent.generative_parent_unit_id;
+        fill_orbit_hierarchy_level(dbx, &parent, hierarchy)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }
@@ -876,7 +853,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn expected_name_prefers_generative_hierarchy() {
+    async fn expected_name_uses_only_generative_hierarchy() {
         let env = cleanup().await.unwrap();
         let operational_field_army = insert_orbit_unit(
             &env.dbx,
@@ -896,6 +873,14 @@ mod tests {
             None,
         )
         .await;
+        let operational_brigade = insert_orbit_unit(
+            &env.dbx,
+            "оперативна бригада",
+            "brigade",
+            Some(operational_division.unit_id),
+            None,
+        )
+        .await;
         let division = insert_orbit_unit(
             &env.dbx,
             "47 тд",
@@ -908,7 +893,7 @@ mod tests {
             &env.dbx,
             "380 мсп",
             "regiment",
-            Some(operational_division.unit_id),
+            Some(operational_brigade.unit_id),
             Some(division.unit_id),
         )
         .await;
