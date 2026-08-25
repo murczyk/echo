@@ -1,4 +1,5 @@
 import { PowerAlert } from '../../components/PowerAlert';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsMediaSummaryCard } from './SettingsMediaSummaryCard';
 import { SettingsTagsLayoutCard } from './SettingsTagsLayoutCard';
@@ -9,6 +10,8 @@ export type SettingsGeneralSectionProps = {
   saveError: string | null;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
+  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
 };
@@ -19,6 +22,8 @@ export function SettingsGeneralSection({
   saveError,
   tagsLayout,
   onTagsLayoutChange,
+  messageTextPreviewLines,
+  onMessageTextPreviewLinesChange,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
 }: SettingsGeneralSectionProps) {
@@ -39,6 +44,8 @@ export function SettingsGeneralSection({
           <SettingsTagsLayoutCard
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
+            messageTextPreviewLines={messageTextPreviewLines}
+            onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
             loadInProgress={loadInProgress}
           />
 

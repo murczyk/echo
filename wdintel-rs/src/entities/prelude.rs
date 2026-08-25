@@ -175,6 +175,7 @@ pub use super::sigint_signal_changelog::Entity as SigintSignalChangelog;
 pub use super::sigint_unit::Entity as SigintUnit;
 pub use super::sigint_unit_attachment::Entity as SigintUnitAttachment;
 pub use super::sigint_unit_attachment_aor::Entity as SigintUnitAttachmentAor;
+pub use super::sigint_unit_change::Entity as SigintUnitChange;
 pub use super::sigint_unit_changelog::Entity as SigintUnitChangelog;
 pub use super::sigint_unit_label::Entity as SigintUnitLabel;
 pub use super::sigint_zone::Entity as SigintZone;

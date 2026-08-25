@@ -161,6 +161,7 @@ type Props = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -202,6 +203,7 @@ type AnalysisMessageCardItemProps = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
   callsignInfoMap?: Record<string, CallsignInfoRes>;
@@ -240,6 +242,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsLoading,
   tagsLayout,
   mediaSummaryEnabled = true,
+  messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
   callsignInfoMap,
@@ -273,6 +276,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsOrder={tagsOrder}
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
+      messageTextPreviewLines={messageTextPreviewLines}
       searchText={searchText}
       onOpenPointsOnMap={onOpenPointsOnMap}
       onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
@@ -410,6 +414,7 @@ function AnalysisMessagesPaneComponent({
   tagsLoading,
   tagsLayout,
   mediaSummaryEnabled = true,
+  messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
   callsignInfoMap,
@@ -572,6 +577,7 @@ function AnalysisMessagesPaneComponent({
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
               mediaSummaryEnabled={mediaSummaryEnabled}
+              messageTextPreviewLines={messageTextPreviewLines}
               showCallsignAddForm={showCallsignAddForm}
               searchText={searchText}
               callsignInfoMap={callsignInfoMap}

@@ -50,6 +50,7 @@ type Tab
     | Files
     | Management
     | ChildUnits
+    | Changelog
 
 
 type UnitEditSection
@@ -65,6 +66,8 @@ type alias Model =
     , activeTab : Tab
     , childUnits : Maybe B.UnitOrbitChildrenRsp
     , childUnitsLoading : Bool
+    , changelog : Maybe B.UnitChangelogRsp
+    , changelogLoading : Bool
     , downloadInProgress : Maybe Int
     , orbitLinkDialogOpen : Bool
     , orbitUnitUnlinking : Maybe String
@@ -105,10 +108,15 @@ init _ route _ =
                 Just "management" ->
                     Management
 
+                Just "changelog" ->
+                    Changelog
+
                 _ ->
                     Overview
       , childUnits = Nothing
       , childUnitsLoading = False
+      , changelog = Nothing
+      , changelogLoading = False
       , downloadInProgress = Nothing
       , orbitLinkDialogOpen = False
       , orbitUnitUnlinking = Nothing
@@ -145,6 +153,7 @@ type Msg
     | RetryDetails
     | ChangeTab Tab
     | ChildUnitsReturnedByApi (Result ApiError B.UnitOrbitChildrenRsp)
+    | ChangelogReturnedByApi (Result ApiError B.UnitChangelogRsp)
     | AttachmentsUploaded
     | DownloadAttachment B.UnitAttachment
     | AttachmentDownloaded B.UnitAttachment (Result ApiError Bytes)
@@ -183,6 +192,9 @@ update msg model =
 
         ChildUnitsReturnedByApi result ->
             updateChildUnits result model
+
+        ChangelogReturnedByApi result ->
+            updateChangelog result model
 
         AttachmentsUploaded ->
             reloadAttachments model
@@ -267,6 +279,7 @@ updateDetails result model =
                 | details = Just details
                 , detailsLoading = False
                 , detailsLoadFailed = False
+                , changelogLoading = model.activeTab == Changelog && model.changelog == Nothing
                 , activeTab =
                     if model.activeTab == ChildUnits && List.isEmpty details.orbitUnits then
                         Overview
@@ -278,13 +291,31 @@ updateDetails result model =
                         model.activeTab
                 , childUnits = Nothing
               }
-            , E.none
+            , if model.activeTab == Changelog && model.changelog == Nothing then
+                E.sendCmd <|
+                    Api.sigint_unit_changelog ChangelogReturnedByApi
+                        { unitId = details.unit.id }
+
+              else
+                E.none
             )
 
 
 changeTab : Tab -> Model -> ( Model, Effect Msg )
 changeTab tab state =
-    if tab == ChildUnits && state.childUnits == Nothing && not state.childUnitsLoading then
+    if tab == Changelog && state.changelog == Nothing && not state.changelogLoading then
+        case state.unitId of
+            Just unitId ->
+                ( { state | activeTab = tab, changelogLoading = True }
+                , E.sendCmd <|
+                    Api.sigint_unit_changelog ChangelogReturnedByApi
+                        { unitId = unitId }
+                )
+
+            Nothing ->
+                ( { state | activeTab = tab }, E.none )
+
+    else if tab == ChildUnits && state.childUnits == Nothing && not state.childUnitsLoading then
         case state.unitId of
             Just unitId ->
                 ( { state | activeTab = tab, childUnitsLoading = True }
@@ -298,6 +329,23 @@ changeTab tab state =
 
     else
         ( { state | activeTab = tab }, E.none )
+
+
+updateChangelog : Result ApiError B.UnitChangelogRsp -> Model -> ( Model, Effect Msg )
+updateChangelog result state =
+    case result of
+        Err err ->
+            ( { state | changelogLoading = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка завантаження журналу змін" err
+            )
+
+        Ok changelog ->
+            ( { state
+                | changelog = Just changelog
+                , changelogLoading = False
+              }
+            , E.none
+            )
 
 
 updateChildUnits : Result ApiError B.UnitOrbitChildrenRsp -> Model -> ( Model, Effect Msg )
@@ -403,6 +451,7 @@ orbitUnitLinked model =
             ( { model
                 | orbitLinkDialogOpen = False
                 , detailsLoading = True
+                , changelog = Nothing
               }
             , loadDetails unitId
             )
@@ -442,6 +491,7 @@ orbitUnitUnlinked _ result model =
                     ( { model
                         | orbitUnitUnlinking = Nothing
                         , detailsLoading = True
+                        , changelog = Nothing
                       }
                     , loadDetails unitId
                     )
@@ -489,6 +539,7 @@ submitUnitEdit req model =
                         , army = req.army
                         , militaryDistrict = req.militaryDistrict
                         , armyRegion = req.armyRegion
+                        , name = Maybe.withDefault unit.name req.name
                         , active = req.active
                         , isDeduplicateCandidate = req.isDeduplicateCandidate
                         , comment = req.comment
@@ -518,6 +569,7 @@ unitEditUpdated result model =
                         | details = Just { details | unit = unit }
                         , unitUpdating = False
                         , unitEditDialogOpen = Nothing
+                        , changelog = Nothing
                       }
                     , E.none
                     )
@@ -562,6 +614,7 @@ unitActiveUpdated result model =
                     ( { model
                         | details = Just { details | unit = unit }
                         , unitUpdating = False
+                        , changelog = Nothing
                       }
                     , E.none
                     )
@@ -726,6 +779,9 @@ detailsView user shared model details =
 
             ChildUnits ->
                 childUnitsTab model
+
+            Changelog ->
+                changelogTab shared model
         ]
 
 
@@ -921,6 +977,7 @@ tabsView activeTab hasOrbitUnit showManagement =
         ]
         [ tabButton Overview "Огляд"
         , tabButton Files "Файли"
+        , tabButton Changelog "Журнал змін"
         , if showManagement then
             tabButton Management "Керування"
 
@@ -932,6 +989,196 @@ tabsView activeTab hasOrbitUnit showManagement =
           else
             text ""
         ]
+
+
+changelogTab : Shared.Model -> Model -> Html Msg
+changelogTab shared state =
+    div
+        [ class "flex flex-col gap-3"
+        , attribute "role" "tabpanel"
+        ]
+        [ case state.changelog of
+            Just changelog ->
+                if List.isEmpty changelog.entries then
+                    div [ class "border rounded p-4 bg-card text-secondary" ]
+                        [ text "Змін після запуску журналу ще немає." ]
+
+                else
+                    div [ class "d-flex flex-column gap-3" ]
+                        (List.map (changelogEntryView shared) changelog.entries)
+
+            Nothing ->
+                if state.changelogLoading then
+                    div [ class "flex justify-center py-8" ]
+                        [ Shared.Components.Spinner.loadingSpinner ]
+
+                else
+                    text ""
+        ]
+
+
+changelogEntryView : Shared.Model -> B.UnitChangelogEntry -> Html Msg
+changelogEntryView shared entry =
+    div [ class "border rounded p-4 bg-card" ]
+        [ div [ class "d-flex justify-content-between gap-3 flex-wrap mb-3" ]
+            [ div [ class "fw-semibold" ] [ text (changelogActionLabel entry.action) ]
+            , div [ class "text-secondary text-sm" ]
+                [ text
+                    (Utils.Time.renderDateTimeF1 shared.timeZone
+                        (Time.millisToPosix entry.createdAt)
+                        ++ " · "
+                        ++ changelogAuthor entry.author
+                    )
+                ]
+            ]
+        , if List.isEmpty entry.changes then
+            text ""
+
+          else
+            div [ class "table-responsive" ]
+                [ table [ class "table table-sm table-bordered align-middle mb-0" ]
+                    [ thead []
+                        [ tr []
+                            [ th [ scope "col" ] [ text "Поле" ]
+                            , th [ scope "col" ] [ text "Було" ]
+                            , th [ scope "col" ] [ text "Стало" ]
+                            ]
+                        ]
+                    , tbody [] (List.map changelogChangeRow entry.changes)
+                    ]
+                ]
+        ]
+
+
+changelogChangeRow : B.UnitChangelogChange -> Html Msg
+changelogChangeRow change =
+    tr []
+        [ th [ scope "row" ] [ text (changelogFieldLabel change.field) ]
+        , td [ style "white-space" "pre-wrap", style "overflow-wrap" "anywhere" ]
+            [ text (changelogValue change.field change.oldValue) ]
+        , td [ style "white-space" "pre-wrap", style "overflow-wrap" "anywhere" ]
+            [ text (changelogValue change.field change.newValue) ]
+        ]
+
+
+changelogActionLabel : String -> String
+changelogActionLabel action =
+    case action of
+        "create" ->
+            "Підрозділ створено"
+
+        "delete" ->
+            "Підрозділ видалено"
+
+        "orbit_links" ->
+            "Змінено прив’язку до Orbit"
+
+        _ ->
+            "Дані підрозділу змінено"
+
+
+changelogAuthor : String -> String
+changelogAuthor author =
+    if author == "system" then
+        "Система"
+
+    else
+        author
+
+
+changelogFieldLabel : String -> String
+changelogFieldLabel field =
+    case field of
+        "name" ->
+            "Назва"
+
+        "other" ->
+            "Інше"
+
+        "team_or_crew" ->
+            "Команда/Екіпаж"
+
+        "section" ->
+            "Секція"
+
+        "squad" ->
+            "Відділення"
+
+        "platoon" ->
+            "Взвод"
+
+        "company" ->
+            "Рота"
+
+        "battalion" ->
+            "Батальйон"
+
+        "regiment" ->
+            "Полк"
+
+        "brigade" ->
+            "Бригада"
+
+        "division" ->
+            "Дивізія"
+
+        "corps" ->
+            "Корпус"
+
+        "army" ->
+            "Армія"
+
+        "military_district" ->
+            "Група армій/Фронт/Види та роди ЗС"
+
+        "army_region" ->
+            "Регіон/ТВД/Збройні Сили"
+
+        "active" ->
+            "Статус"
+
+        "comment" ->
+            "Коментар"
+
+        "orbit_note" ->
+            "Примітка Orbit"
+
+        "is_deduplicate_candidate" ->
+            "Можливо дублікат"
+
+        "is_inconsistent" ->
+            "Неузгоджені дані"
+
+        "deleted" ->
+            "Видалено"
+
+        "orbit_units" ->
+            "Підрозділи Orbit"
+
+        _ ->
+            field
+
+
+changelogValue : String -> Maybe String -> String
+changelogValue field value =
+    case ( field, value ) of
+        ( "active", Just "true" ) ->
+            "Активний"
+
+        ( "active", Just "false" ) ->
+            "Неактивний"
+
+        ( _, Just "true" ) ->
+            "Так"
+
+        ( _, Just "false" ) ->
+            "Ні"
+
+        ( _, Just textValue ) ->
+            textValue
+
+        ( _, Nothing ) ->
+            "—"
 
 
 childUnitsTab : Model -> Html Msg
@@ -1158,11 +1405,19 @@ unitOverviewCard canEdit shared state details =
           else
             text ""
         , div [ class "row g-4" ]
-            [ overviewField "Рота, взвод" unit.company
+            [ overviewField "Назва" unit.name
+            , overviewField "Інше" unit.other
+            , overviewField "Команда/Екіпаж" unit.teamOrCrew
+            , overviewField "Секція" unit.section
+            , overviewField "Відділення" unit.squad
+            , overviewField "Взвод" unit.platoon
+            , overviewField "Рота" unit.company
             , overviewField "Батальйон" unit.battalion
-            , overviewField "Полк/Бригада" unit.regiment
+            , overviewField "Полк" unit.regiment
+            , overviewField "Бригада" unit.brigade
             , overviewField "Дивізія" unit.division
-            , overviewField "Корпус/Армія" unit.army
+            , overviewField "Корпус" unit.corps
+            , overviewField "Армія" unit.army
             , overviewField "Група армій/Фронт/Види та роди ЗС" unit.militaryDistrict
             , overviewField "Регіон/ТВД/Збройні Сили" unit.armyRegion
             , overviewField

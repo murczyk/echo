@@ -1,9 +1,20 @@
 use crate::config::{
-    DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_CANCELLED_ERROR_STATUS,
+    REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
     REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
-    REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GLOBAL_WORKER_COUNT,
+    REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GENERIC_ERROR_STATUS,
+    REPORT_HISTORY_GLOBAL_WORKER_COUNT,
     REPORT_HISTORY_IN_PROGRESS_TIMEOUT_SECS, REPORT_HISTORY_LIST_LIMIT,
+    REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS,
+    REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS, REPORT_HISTORY_RECORD_LIMIT,
+    REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS,
+    REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
     REPORT_HISTORY_TIMEOUT_WORKER_SLEEP_SECS,
+    REPORT_HISTORY_USER_RETRY_LOG_MESSAGE,
+    REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS,
+    REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE,
+    RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
+    RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
 };
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{
@@ -104,6 +115,7 @@ pub struct ReportHistoryRow {
     pub blocked_by_started_at: Option<String>,
     pub blocked_by_bgtask_id: Option<i64>,
     pub status: String,
+    pub error_status: String,
     pub completed_at: Option<String>,
     pub has_file: bool,
     pub file_name: Option<String>,
@@ -373,6 +385,7 @@ fn to_report_history_row(
         None => (None, None, None, None),
     };
     let is_cancelled = report_history_is_cancelled(&report_history);
+    let error_status = report_history_error_status(&report_history);
     let report_period = report_history_period(&report_history.request);
     ReportHistoryRow {
         id: report_history.id,
@@ -390,6 +403,7 @@ fn to_report_history_row(
         blocked_by_started_at,
         blocked_by_bgtask_id,
         status: report_history.status,
+        error_status,
         completed_at: report_history
             .completed_at
             .map(|completed_at| completed_at.to_string()),
@@ -415,8 +429,125 @@ fn report_history_is_cancelled(report_history: &report_history::Model) -> bool {
         && report_history
             .last_error
             .as_deref()
-            .map(|last_error| last_error.contains("Скасовано користувачем"))
+            .map(|last_error| {
+                last_error.contains(REPORT_HISTORY_CANCELLED_ERROR_STATUS)
+            })
             .unwrap_or(false)
+}
+
+fn report_history_error_status(
+    report_history: &report_history::Model,
+) -> String {
+    if report_history.status != STATUS_FAILED {
+        return String::new();
+    }
+    if report_history_is_cancelled(report_history) {
+        return REPORT_HISTORY_CANCELLED_ERROR_STATUS.to_string();
+    }
+
+    let last_error = report_history.last_error.as_deref().or_else(|| {
+        report_history.log.as_array().and_then(|entries| {
+            entries.iter().rev().find_map(|entry| {
+                entry.get("message").and_then(serde_json::Value::as_str)
+            })
+        })
+    });
+    last_error
+        .map(report_history_error_hint)
+        .unwrap_or_else(|| REPORT_HISTORY_GENERIC_ERROR_STATUS.to_string())
+}
+
+fn report_history_error_hint(error: &str) -> String {
+    if let Some(hint) = report_history_known_error_hint(error) {
+        return hint.to_string();
+    }
+
+    let message = debug_msg_values(error)
+        .last()
+        .cloned()
+        .or_else(|| nested_app_error_message(error));
+    let Some(message) = message else {
+        return REPORT_HISTORY_GENERIC_ERROR_STATUS.to_string();
+    };
+    report_history_known_error_hint(&message)
+        .unwrap_or(REPORT_HISTORY_GENERIC_ERROR_STATUS)
+        .to_string()
+}
+
+fn report_history_known_error_hint(error: &str) -> Option<&'static str> {
+    let normalized = error.to_lowercase();
+    if normalized.contains("mouse_report_message_limit")
+        || normalized.contains("summary_table_report_message_limit")
+    {
+        Some(REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS)
+    } else if error.contains(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS) {
+        Some(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS)
+    } else if normalized.contains("no default aor found") {
+        Some(REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS)
+    } else if normalized
+        .contains("report generation was interrupted while in progress")
+        && normalized.contains("report worker startup recovery")
+    {
+        Some(REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS)
+    } else if normalized.starts_with("report generation timed out after")
+        || normalized.contains("canceling statement due to statement timeout")
+        || normalized
+            .starts_with("аналітичний запит перевищив допустимий час виконання")
+    {
+        Some(REPORT_HISTORY_TIMEOUT_ERROR_STATUS)
+    } else {
+        None
+    }
+}
+
+fn debug_msg_values(error: &str) -> Vec<String> {
+    error
+        .match_indices("msg")
+        .filter_map(|(index, _)| {
+            let before = error[..index].chars().next_back();
+            if before.is_some_and(|character| {
+                character.is_ascii_alphanumeric() || character == '_'
+            }) {
+                return None;
+            }
+            let value = error[index + 3..].trim_start().strip_prefix(':')?;
+            parse_debug_string(value.trim_start())
+        })
+        .collect()
+}
+
+fn parse_debug_string(value: &str) -> Option<String> {
+    if !value.starts_with('"') {
+        return None;
+    }
+    let mut escaped = false;
+    for (index, character) in value.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            '"' => return serde_json::from_str(&value[..=index]).ok(),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn nested_app_error_message(error: &str) -> Option<String> {
+    const PREFIXES: [&str; 2] =
+        ["Business-logic error:", "Service unavailable:"];
+
+    error.lines().rev().find_map(|line| {
+        let line = line.trim().trim_end_matches(',');
+        PREFIXES.iter().find_map(|prefix| {
+            line.strip_prefix(prefix)
+                .map(str::trim)
+                .filter(|message| !message.is_empty())
+                .map(str::to_string)
+        })
+    })
 }
 
 async fn report_history_queue_meta(
@@ -662,9 +793,10 @@ fn report_history_error_log(
     report_history: &report_history::Model,
     expose_last_error: bool,
 ) -> Option<Vec<ReportHistoryLogEntry>> {
-    if !expose_last_error || report_history.last_error.is_none() {
+    if !expose_last_error {
         return None;
     }
+    let last_error = report_history.last_error.as_deref()?;
     let mut entries = report_history
         .log
         .as_array()
@@ -675,7 +807,7 @@ fn report_history_error_log(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    if entries.is_empty() {
+    if entries.last().map(|entry| entry.message.as_str()) != Some(last_error) {
         entries.push(ReportHistoryLogEntry {
             login: "system".to_string(),
             timestamp: report_history
@@ -683,7 +815,7 @@ fn report_history_error_log(
                 .or(report_history.started_at)
                 .unwrap_or(report_history.created_at)
                 .to_string(),
-            message: report_history.last_error.clone().unwrap_or_default(),
+            message: last_error.to_string(),
         });
     }
     Some(entries)
@@ -1495,7 +1627,7 @@ where
     let report_log = append_log_entry(
         report_history.log.clone(),
         &retried_by_login_id.to_string(),
-        "user requested another attempt for a failed task",
+        REPORT_HISTORY_USER_RETRY_LOG_MESSAGE,
     );
     let mut report_history = report_history.into_active_model();
     report_history.status = Set(STATUS_PLANNED.to_string());
@@ -2101,7 +2233,7 @@ pub async fn report_history_cancel(
     let report_history = find_report_for_user(&env.dbx, req.id, &user_login)
         .await?
         .ok_or(AppError::NotFound)?;
-    let reason = "Скасовано користувачем".to_string();
+    let reason = REPORT_HISTORY_CANCELLED_ERROR_STATUS.to_string();
     let txn = env.dbx.begin().await.c(h!())?;
     lock_report_request(
         &txn,
@@ -2267,54 +2399,67 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
         with recovered_report as (
             select
                 id,
-                least(retry_count + 1, $1) as attempt_count,
-                retry_count + 1 >= $1 as attempts_exhausted
+                (
+                    select count(*)::integer
+                    from jsonb_array_elements(
+                        coalesce(report_history.log, '[]'::jsonb)
+                    ) with ordinality as entry(value, position)
+                    where entry.value->>'message' = $1
+                      and entry.position > coalesce((
+                          select max(retry_entry.position)
+                          from jsonb_array_elements(
+                              coalesce(report_history.log, '[]'::jsonb)
+                          ) with ordinality as retry_entry(value, position)
+                          where retry_entry.value->>'message' = $2
+                      ), 0)
+                ) + 1 as recovery_count
             from report_history
-            where status = $5
+            where status = $7
         )
         update report_history
         set
             status = case
-                when recovered_report.attempts_exhausted then $2
-                else $3
+                when recovered_report.recovery_count >= $3 then $4
+                else $5
             end,
-            retry_count = recovered_report.attempt_count,
             planned_for_ts = case
-                when recovered_report.attempts_exhausted then null
+                when recovered_report.recovery_count >= $3 then null
                 else now() at time zone 'utc'
-                    + recovered_report.attempt_count * interval '5 minutes'
             end,
             started_at = case
-                when recovered_report.attempts_exhausted then report_history.started_at
+                when recovered_report.recovery_count >= $3
+                    then report_history.started_at
                 else null
             end,
             completed_at = case
-                when recovered_report.attempts_exhausted then now() at time zone 'utc'
+                when recovered_report.recovery_count >= $3
+                    then now() at time zone 'utc'
                 else null
             end,
             bgtask_id = null,
-            last_error = format(
-                'Report generation was interrupted while in progress; recorded attempt %s/%s during report worker startup recovery',
-                recovered_report.attempt_count,
-                $1
-            ),
+            last_error = case
+                when recovered_report.recovery_count >= $3 then format(
+                    'Report generation was interrupted while in progress; recorded recovery %s/%s during report worker startup recovery',
+                    recovered_report.recovery_count,
+                    $3
+                )
+                else null
+            end,
             log = coalesce(report_history.log, '[]'::jsonb)
                 || jsonb_build_array(jsonb_build_object(
                     'login',
-                    $4,
+                    $6,
                     'timestamp',
                     now() at time zone 'utc',
                     'message',
-                    format(
-                        'Report generation was interrupted while in progress; recorded attempt %s/%s during report worker startup recovery',
-                        recovered_report.attempt_count,
-                        $1
-                    )
+                    $1
                 ))
         from recovered_report
         where report_history.id = recovered_report.id
         "#,
         [
+            REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE.into(),
+            REPORT_HISTORY_USER_RETRY_LOG_MESSAGE.into(),
             REPORT_HISTORY_MAX_ATTEMPTS.into(),
             STATUS_FAILED.into(),
             STATUS_PLANNED.into(),
@@ -2848,6 +2993,17 @@ async fn generate_and_store_report(
     Ok(())
 }
 
+pub(crate) fn ensure_report_record_count(
+    record_count: usize,
+) -> Result<(), AppError> {
+    if record_count <= REPORT_HISTORY_RECORD_LIMIT {
+        return Ok(());
+    }
+    Err(AppError::BL {
+        msg: REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS.to_string(),
+    })
+}
+
 async fn generate_report(
     env: &Env,
     report_history: &report_history::Model,
@@ -3268,7 +3424,7 @@ async fn handle_report_failure(
     }
     let err_msg = format!("{err:#?}");
     let attempt_count =
-        (report_history.retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS);
+        report_failure_attempt_count(report_history.retry_count, &err_msg);
     let report_log = append_log_entry(report_history.log, "system", &err_msg);
     let now = Utc::now().naive_utc();
     if attempt_count < REPORT_HISTORY_MAX_ATTEMPTS {
@@ -3355,6 +3511,17 @@ async fn handle_report_failure(
     Ok(())
 }
 
+fn report_failure_attempt_count(retry_count: i32, error: &str) -> i32 {
+    if error.contains(REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS)
+        || error.contains(RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE)
+        || error.contains(RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE)
+    {
+        REPORT_HISTORY_MAX_ATTEMPTS
+    } else {
+        (retry_count + 1).min(REPORT_HISTORY_MAX_ATTEMPTS)
+    }
+}
+
 fn append_log_entry(
     log: serde_json::Value,
     login: &str,
@@ -3397,6 +3564,214 @@ mod tests {
             ),
             "{sql}"
         );
+    }
+
+    #[test]
+    fn report_error_hint_exposes_only_known_nested_messages() {
+        let cases = [
+            (
+                r#"BL { msg: "Оберіть інший період" }"#,
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                r#"Outer { msg: "зовнішня", source: BL { msg: "внутрішня" } }"#,
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                "AnyhowError { source: context\n\nCaused by:\n    Service unavailable: Сервіс тимчасово недоступний,\n}",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                r#"BL { msg: "geo-screenshot failed. Exit code: Some(1). Stdout: secret. Stderr: internal details" }"#,
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                r#"OuterError { source: "Коротке пояснення" }"#,
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                r#"DatabaseError { table: "report_history", constraint: "private_constraint" }"#,
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                "Report generation timed out after 3600 seconds",
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                r#"BL { msg: "Report generation timed out after 3600 seconds: id=8771, kind=reo, requested_by_login_id=019f9010-ba23-7d95-9905-c689dc4b17dc" }"#,
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                r#"AnyhowError { source: Query(SqlxError(Database(PgDatabaseError { code: "57014", message: "canceling statement due to statement timeout" }))) }"#,
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                "Service unavailable: Аналітичний запит перевищив допустимий час виконання. Спробуйте звузити параметри пошуку.",
+                REPORT_HISTORY_TIMEOUT_ERROR_STATUS,
+            ),
+            (
+                "Object storage upload timed out after 30 seconds",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                "AnyhowError { source: deadline has elapsed }",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+            (
+                r#"BL { msg: "summary_table_report_message_limit" }"#,
+                REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS,
+            ),
+            (
+                "Report generation was interrupted while in progress; recorded attempt 2/2 during report worker startup recovery",
+                REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS,
+            ),
+            (
+                "CustomInfrastructureError { source: DatabaseError }",
+                REPORT_HISTORY_GENERIC_ERROR_STATUS,
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(report_history_error_hint(error), expected);
+        }
+    }
+
+    #[test]
+    fn report_record_limit_fails_without_retry() {
+        assert!(ensure_report_record_count(REPORT_HISTORY_RECORD_LIMIT).is_ok());
+        let error = ensure_report_record_count(REPORT_HISTORY_RECORD_LIMIT + 1)
+            .unwrap_err();
+        let error = format!("{error:#?}");
+        assert_eq!(
+            report_history_error_hint(&error),
+            REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS
+        );
+        assert_eq!(
+            report_failure_attempt_count(0, &error),
+            REPORT_HISTORY_MAX_ATTEMPTS
+        );
+    }
+
+    #[test]
+    fn report_message_limits_fail_without_retry() {
+        for error in [
+            RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
+            RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE,
+        ] {
+            assert_eq!(
+                report_failure_attempt_count(0, error),
+                REPORT_HISTORY_MAX_ATTEMPTS
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn startup_recovery_uses_separate_bounded_attempts(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-history-startup-recovery",
+        )
+        .await
+        .c(h!())?;
+        let now = Utc::now().naive_utc();
+        let report = insert_report_history(
+            &env.dbx,
+            &login.login,
+            KIND_GOI,
+            STATUS_IN_PROGRESS,
+            now - Duration::minutes(1),
+            Some(now),
+            None,
+        )
+        .await
+        .c(h!())?;
+        let bgtask = create_running_bgtask(&env.dbx).await.c(h!())?;
+        let mut report = report.into_active_model();
+        report.retry_count = Set(1);
+        report.bgtask_id = Set(Some(bgtask.id));
+        report.last_error = Set(Some("previous attempt failed".to_string()));
+        let report = report.update(&env.dbx).await.c(h!())?;
+
+        recover_interrupted_reports(&env).await.c(h!())?;
+
+        let recovered = ReportHistory::find_by_id(report.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        assert_eq!(recovered.status, STATUS_PLANNED);
+        assert_eq!(recovered.retry_count, 1);
+        assert!(recovered.planned_for_ts.is_some());
+        assert_eq!(recovered.started_at, None);
+        assert_eq!(recovered.completed_at, None);
+        assert_eq!(recovered.bgtask_id, None);
+        assert_eq!(recovered.last_error, None);
+        assert_eq!(
+            recovered
+                .log
+                .as_array()
+                .and_then(|entries| entries.last())
+                .and_then(|entry| entry.get("message"))
+                .and_then(serde_json::Value::as_str),
+            Some(REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE)
+        );
+
+        let mut recovered = recovered.into_active_model();
+        recovered.status = Set(STATUS_IN_PROGRESS.to_string());
+        recovered.started_at = Set(Some(now));
+        let recovered = recovered.update(&env.dbx).await.c(h!())?;
+
+        recover_interrupted_reports(&env).await.c(h!())?;
+
+        let exhausted = ReportHistory::find_by_id(recovered.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        assert_eq!(exhausted.status, STATUS_FAILED);
+        assert_eq!(exhausted.retry_count, 1);
+        assert_eq!(exhausted.planned_for_ts, None);
+        assert!(exhausted.completed_at.is_some());
+        assert_eq!(
+            report_history_error_status(&exhausted),
+            REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS
+        );
+        let error_log = report_history_error_log(&exhausted, true)
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        assert_eq!(
+            error_log.last().map(|entry| entry.message.as_str()),
+            exhausted.last_error.as_deref()
+        );
+
+        let retried = reset_failed_report(&env.dbx, exhausted, &login.id)
+            .await
+            .c(h!())?;
+        let mut retried = retried.into_active_model();
+        retried.status = Set(STATUS_IN_PROGRESS.to_string());
+        retried.started_at = Set(Some(now));
+        let retried = retried.update(&env.dbx).await.c(h!())?;
+
+        recover_interrupted_reports(&env).await.c(h!())?;
+
+        let recovered_after_retry = ReportHistory::find_by_id(retried.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .c(h!())?;
+        assert_eq!(recovered_after_retry.status, STATUS_PLANNED);
+        assert_eq!(recovered_after_retry.retry_count, 0);
+        Ok(())
     }
 
     async fn insert_report_history(

@@ -15,6 +15,6 @@ CI: add repository secret ECHO_GITHUB_PACKAGES_TOKEN
 The workflow forwards that secret to echo-build-main as GITHUB_TOKEN for npm ci.
 The default github.token is usually insufficient when the package is published from another repo.
 
-Local: export GITHUB_TOKEN=ghp_... before npm ci (see README-NEWCOMERS.md).
+Local: export GITHUB_TOKEN=ghp_... before npm ci (see README_NEWCOMERS.md).
 EOF
 exit 1

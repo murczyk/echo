@@ -1,9 +1,12 @@
 use crate::users::login_id_from_identity;
 pub mod types;
 
-pub use types::{DutyTagsLayout, UserDutySettingsDto};
+pub use types::{DutyTagsLayout, MessageTextPreviewLines, UserDutySettingsDto};
 
-use crate::entities::sea_orm_active_enums::UserSettingsTagsLayout as DbTagsLayout;
+use crate::entities::sea_orm_active_enums::{
+    UserSettingsMessageTextPreviewLines as DbMessageTextPreviewLines,
+    UserSettingsTagsLayout as DbTagsLayout,
+};
 use crate::entities::{login, user_settings};
 use crate::error::AppError;
 use crate::h;
@@ -23,6 +26,13 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
             DbTagsLayout::Full => DutyTagsLayout::Full,
             DbTagsLayout::Compact => DutyTagsLayout::Compact,
             DbTagsLayout::Hidden => DutyTagsLayout::Hidden,
+        },
+        message_text_preview_lines: match m.message_text_preview_lines {
+            DbMessageTextPreviewLines::Twenty => {
+                MessageTextPreviewLines::Twenty
+            }
+            DbMessageTextPreviewLines::Forty => MessageTextPreviewLines::Forty,
+            DbMessageTextPreviewLines::Off => MessageTextPreviewLines::Off,
         },
         disable_auto_scroll: m.disable_auto_scroll,
         analysis_map_in_sidebar: m.analysis_map_in_sidebar,
@@ -75,6 +85,13 @@ pub async fn user_settings_put(
             DutyTagsLayout::Compact => DbTagsLayout::Compact,
             DutyTagsLayout::Hidden => DbTagsLayout::Hidden,
         }),
+        message_text_preview_lines: Set(match dto.message_text_preview_lines {
+            MessageTextPreviewLines::Twenty => {
+                DbMessageTextPreviewLines::Twenty
+            }
+            MessageTextPreviewLines::Forty => DbMessageTextPreviewLines::Forty,
+            MessageTextPreviewLines::Off => DbMessageTextPreviewLines::Off,
+        }),
         disable_auto_scroll: Set(dto.disable_auto_scroll),
         analysis_map_in_sidebar: Set(dto.analysis_map_in_sidebar),
         duty_audio_transcription_collapsed: Set(
@@ -96,6 +113,7 @@ pub async fn user_settings_put(
         OnConflict::column(user_settings::Column::LoginId)
             .update_columns([
                 user_settings::Column::TagsLayout,
+                user_settings::Column::MessageTextPreviewLines,
                 user_settings::Column::DisableAutoScroll,
                 user_settings::Column::AnalysisMapInSidebar,
                 user_settings::Column::DutyAudioTranscriptionCollapsed,

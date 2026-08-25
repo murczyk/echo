@@ -430,7 +430,7 @@ function MainSettingsSection({
       />
       {form.enableAudioTranscription && !audioTranscriptionSaved ? (
         <PowerAlert severity="info">
-          Збережіть налаштування, щоб відкрити «Echo GPU сервери» в меню «Адмін».
+          Збережіть налаштування, щоб відкрити «Транскрибація» в меню «Адмін».
         </PowerAlert>
       ) : null}
 

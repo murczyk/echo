@@ -30,10 +30,33 @@ pub enum DutyTagsLayout {
     PartialEq,
     Eq,
     Clone,
+    Copy,
+    Default,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageTextPreviewLines {
+    #[default]
+    Twenty,
+    Forty,
+    Off,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct UserDutySettingsDto {
     pub tags_layout: DutyTagsLayout,
+    #[serde(default)]
+    pub message_text_preview_lines: MessageTextPreviewLines,
     #[serde(default)]
     pub disable_auto_scroll: bool,
     #[serde(default)]
@@ -66,6 +89,7 @@ impl Default for UserDutySettingsDto {
     fn default() -> Self {
         Self {
             tags_layout: DutyTagsLayout::Compact,
+            message_text_preview_lines: MessageTextPreviewLines::Twenty,
             disable_auto_scroll: false,
             analysis_map_in_sidebar: false,
             duty_audio_transcription_collapsed: false,

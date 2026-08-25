@@ -193,6 +193,11 @@ pub const ECHO_AUDIO_TRANSCRIPTION_HEARTBEAT_SECS: u64 = 15;
 pub const ECHO_AUDIO_TRANSCRIPTION_STALE_SECS: i64 = 120;
 pub const ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS: u64 = 120;
 pub const ECHO_AUDIO_TRANSCRIPTION_STATUS_LOG_INTERVAL_SECS: u64 = 60;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_LIST_LIMIT: u64 = 100;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_ROW_LIMIT: u64 = 10_000;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_MAX_CHARS: usize = 200;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_COLUMN_FILTER_MAX_COUNT: usize = 8;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_VALUE_MAX_COUNT: usize = 10;
 pub const ECHO_AUDIO_TRANSCRIPTION_BGWORKER_SERVICE: &str =
     "wdintel-rs-bgworker.service";
 pub const OCR_SETTINGS_ID: i16 = 1;
@@ -361,6 +366,25 @@ pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT: usize = 32_000;
 pub const RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR: &str = ", ";
 pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
+pub const REPORT_HISTORY_CANCELLED_ERROR_STATUS: &str =
+    "Скасовано користувачем";
+pub const REPORT_HISTORY_TIMEOUT_ERROR_STATUS: &str =
+    "Обраний період звіту завеликий. Оберіть вужчий період і повторіть спробу.";
+pub const REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS: &str =
+    "Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.";
+pub const REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS: &str =
+    "Не знайдено AOR за замовчуванням для формування цього звіту.";
+pub const REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS: &str =
+    "Формування звіту було перервано через перезапуск сервісу. Спробуйте сформувати звіт повторно.";
+pub const REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE: &str =
+    "Report generation was interrupted by report worker restart and requeued without consuming an attempt";
+pub const REPORT_HISTORY_USER_RETRY_LOG_MESSAGE: &str =
+    "user requested another attempt for a failed task";
+pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
+    "Не вдалося сформувати звіт. Спробуйте ще раз.";
+pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
+pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
+    "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
@@ -392,6 +416,8 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_CHANGELOG_LIMIT: u64 = 200;
+pub const SIGINT_UNIT_NAME_REVIEW_PAGE_SIZE: usize = 200;
 pub const SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK: &str =
     "Кілька прив’язок ORBIT";
 pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
@@ -709,6 +735,9 @@ pub const INBOX_SETTLEMENT_ONEOFF_TRANSACTION_BATCH_SIZE: usize = 50;
 pub const INBOX_SETTLEMENT_WORKER_SLEEP_SECS: u64 = 5;
 pub const INBOX_MAP_SETTLEMENT_MESSAGES_PAGE_SIZE: u64 = 20;
 pub const BATTLE_LINE_ADMIN_PAGE_SIZE: u64 = 10;
+pub const BATTLE_LINE_NETWORKS_PAGE_SIZE: u64 = 5;
+pub const BATTLE_LINE_NETWORKS_LOOKBACK_DAYS: i64 = 7;
+pub const BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT: i64 = 100;
 pub const PALITRA_DOWNLOAD_MAX_FILES: usize = 50;
 pub const PALITRA_RESOLVE_NAMES_MAX_IDS: usize = 500;
 pub const PALITRA_DOWNLOAD_MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;

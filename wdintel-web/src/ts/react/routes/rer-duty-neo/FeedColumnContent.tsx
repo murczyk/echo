@@ -32,6 +32,7 @@ import { PowerChip } from '../../components/PowerChip';
 import { DutyMessageCard } from '../shared/message-card/MessageCard';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import { buildMessageCardDisplayLabels } from '../shared/message-card/message-card-labels';
 import {
   buildCopyTextWithNetworkAndNote,
@@ -98,6 +99,7 @@ type DutyMessageCardItemProps = {
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
   onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
@@ -137,6 +139,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   tagsLayout,
   collapseMediaPreviews = false,
   mediaSummaryEnabled = true,
+  messageTextPreviewLines,
   botTagAction,
   onCancelBotTagAction,
   onMarkBotTagWrong,
@@ -189,6 +192,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       tagsLayout={tagsLayout}
       collapseMediaPreviews={collapseMediaPreviews}
       mediaSummaryEnabled={mediaSummaryEnabled}
+      messageTextPreviewLines={messageTextPreviewLines}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
       onMarkBotTagWrong={onMarkBotTagWrong}
@@ -275,6 +279,7 @@ type DutyMessageListProps = {
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction: () => void;
   onMarkBotTagWrong: (messageId: number, tagId: number) => void | Promise<void>;
@@ -319,6 +324,7 @@ const DutyMessageList = memo(
     tagsLayout,
     collapseMediaPreviews = false,
     mediaSummaryEnabled = true,
+    messageTextPreviewLines,
     botTagAction,
     onCancelBotTagAction,
     onMarkBotTagWrong,
@@ -374,6 +380,7 @@ const DutyMessageList = memo(
                   tagsLayout={tagsLayout}
                   collapseMediaPreviews={collapseMediaPreviews}
                   mediaSummaryEnabled={mediaSummaryEnabled}
+                  messageTextPreviewLines={messageTextPreviewLines}
                   botTagAction={botTagAction}
                   onCancelBotTagAction={onCancelBotTagAction}
                   onMarkBotTagWrong={onMarkBotTagWrong}
@@ -423,6 +430,7 @@ const DutyMessageList = memo(
     prev.feedCount === next.feedCount &&
     prev.tagsLayout === next.tagsLayout &&
     prev.collapseMediaPreviews === next.collapseMediaPreviews &&
+    prev.messageTextPreviewLines === next.messageTextPreviewLines &&
     prev.botTagAction === next.botTagAction &&
     prev.onCancelBotTagAction === next.onCancelBotTagAction &&
     prev.onMarkBotTagWrong === next.onMarkBotTagWrong &&
@@ -619,6 +627,7 @@ export const FeedColumnContent = memo(
       tagsLayout,
       collapseMediaPreviews = false,
       mediaSummaryEnabled = true,
+      messageTextPreviewLines,
       tagsMap,
       tagsOrder,
       botTagAction,
@@ -748,6 +757,7 @@ export const FeedColumnContent = memo(
           tagsLayout={tagsLayout}
           collapseMediaPreviews={collapseMediaPreviews}
           mediaSummaryEnabled={mediaSummaryEnabled}
+          messageTextPreviewLines={messageTextPreviewLines}
           botTagAction={botTagAction}
           onCancelBotTagAction={stableOnCancelBotTagAction}
           onMarkBotTagWrong={stableOnMarkBotTagWrong}
@@ -896,6 +906,7 @@ export const FeedColumnContent = memo(
       prevCard.featureStrictNetworks !== nextCard.featureStrictNetworks ||
       prevCard.tagsLayout !== nextCard.tagsLayout ||
       prevCard.collapseMediaPreviews !== nextCard.collapseMediaPreviews ||
+      prevCard.messageTextPreviewLines !== nextCard.messageTextPreviewLines ||
       prevCard.tagsMap !== nextCard.tagsMap ||
       prevCard.tagsOrder !== nextCard.tagsOrder ||
       prevCard.botTagAction !== nextCard.botTagAction ||

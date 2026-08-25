@@ -2,6 +2,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Collapse, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
 function MessageCardTagsPreviewMock({ tagsLayout }: { tagsLayout: TagsLayoutVariant }) {
@@ -64,12 +65,16 @@ function MessageCardTagsPreviewMock({ tagsLayout }: { tagsLayout: TagsLayoutVari
 export type SettingsTagsLayoutCardProps = {
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
+  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
   loadInProgress: boolean;
 };
 
 export function SettingsTagsLayoutCard({
   tagsLayout,
   onTagsLayoutChange,
+  messageTextPreviewLines,
+  onMessageTextPreviewLinesChange,
   loadInProgress,
 }: SettingsTagsLayoutCardProps) {
   return (
@@ -104,6 +109,39 @@ export function SettingsTagsLayoutCard({
         </ToggleButtonGroup>
       </div>
       <MessageCardTagsPreviewMock tagsLayout={tagsLayout} />
+      <div className="flex flex-col gap-1.5 pt-2">
+        <span className="text-sm text-text-secondary">Згортати перегляд довгих повідомлень:</span>
+        <div>
+          <ToggleButtonGroup
+            value={messageTextPreviewLines === null ? 'off' : String(messageTextPreviewLines)}
+            exclusive
+            color="primary"
+            onChange={(_, value: '20' | '40' | 'off' | null) => {
+              if (value === null) return;
+              onMessageTextPreviewLinesChange(value === 'off' ? null : (Number(value) as 20 | 40));
+            }}
+            size="small"
+            disabled={loadInProgress}
+            sx={{
+              flexWrap: 'wrap',
+              '& .MuiToggleButton-root': {
+                textTransform: 'none',
+                fontSize: 14,
+                px: 2,
+                py: 1,
+                whiteSpace: 'nowrap',
+              },
+            }}
+          >
+            <ToggleButton value="20">20 рядків</ToggleButton>
+            <ToggleButton value="40">40 рядків</ToggleButton>
+            <ToggleButton value="off">Без скорочення</ToggleButton>
+          </ToggleButtonGroup>
+        </div>
+        <span className="text-xs text-text-secondary">
+          Визначає, коли з’являється кнопка «Показати більше».
+        </span>
+      </div>
     </div>
   );
 }

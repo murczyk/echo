@@ -271,6 +271,8 @@ vi.mock('./SettingsDutySection', () => ({
     onTagsLayoutChange: (layout: 'full' | 'compact' | 'hidden') => void;
     onDisableAutoScrollChange: (value: boolean) => void;
     onAudioTranscriptionCollapsedChange: (value: boolean) => void;
+    messageTextPreviewLines: 20 | 40 | null;
+    onMessageTextPreviewLinesChange: (value: 20 | 40 | null) => void;
     showAudioTranscriptionSettings: boolean;
   }) => (
     <div>
@@ -285,6 +287,24 @@ vi.mock('./SettingsDutySection', () => ({
           change-duty-transcription
         </button>
       ) : null}
+      <section aria-label="Картка повідомлення">
+        <h3>Картка повідомлення</h3>
+        <button type="button">Повний</button>
+        <button type="button">Щільний</button>
+        <button type="button">Без тегів</button>
+        <span>Згортати перегляд довгих повідомлень:</span>
+        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(20)}>
+          20 рядків
+        </button>
+        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(40)}>
+          40 рядків
+        </button>
+        <button type="button" onClick={() => props.onMessageTextPreviewLinesChange(null)}>
+          Без скорочення
+        </button>
+        <span>Визначає, коли з’являється кнопка «Показати більше».</span>
+        <p>Спільні налаштування для Оперативного та Аналізу.</p>
+      </section>
     </div>
   ),
 }));
@@ -343,6 +363,52 @@ describe('SettingsNeoPage', () => {
     container.remove();
   });
 
+  it('renders the shared preview control inside the message-card settings for general', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="general" />);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('20 рядків');
+    expect(container.textContent).toContain('40 рядків');
+    expect(container.textContent).toContain('Без скорочення');
+    expect(container.textContent).toContain('повний');
+    expect(container.textContent).toContain('щільний');
+    expect(container.textContent).toContain('без тегів');
+    expect(container.textContent).toContain('Згортати перегляд довгих повідомлень:');
+    expect(container.textContent).toContain('Визначає, коли з’являється кнопка «Показати більше».');
+
+    saveUserDutySettings.mockClear();
+    for (const [label, value] of [
+      ['20 рядків', 20],
+      ['40 рядків', 40],
+      ['Без скорочення', null],
+    ] as const) {
+      const button = Array.from(container.querySelectorAll('button')).find(
+        (candidate) => candidate.textContent === label,
+      );
+      expect(button).toBeTruthy();
+      await act(async () => {
+        button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        await Promise.resolve();
+      });
+      expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+        tagsLayout: 'compact',
+        messageTextPreviewLines: value,
+        disableAutoScroll: false,
+        analysisMapInSidebar: false,
+        dutyAudioTranscriptionCollapsed: false,
+        analysisAudioTranscriptionCollapsed: false,
+        showAnalysisCallsignAddForm: false,
+        showClassicDuty: false,
+        showClassicAnalysis: false,
+        dutyCollapseMediaPreviews: true,
+        mediaSummaryEnabled: true,
+      });
+    }
+  });
+
   it('drains queued duty saves after a transient failure', async () => {
     const firstSave = deferred<void>();
     const secondSave = deferred<void>();
@@ -392,6 +458,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
 
     await act(async () => {
@@ -435,6 +502,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -468,6 +536,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -501,6 +570,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
 
     saveUserDutySettings.mockClear();
@@ -531,6 +601,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -568,6 +639,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
 
     const hiddenButton = Array.from(container.querySelectorAll('button')).find(
@@ -591,6 +663,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -631,6 +704,7 @@ describe('SettingsNeoPage', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageTextPreviewLines: 20,
     });
   });
 

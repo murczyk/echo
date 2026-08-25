@@ -134,7 +134,7 @@ export function SettingsDutySection({
                 label={
                   <Stack spacing={0.75} sx={{ pt: 0.25 }}>
                     <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                      Автоматична прокрутка стрічок Оперативного
+                      Автоматична прокрутка стрічок
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
                       Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим

@@ -178,6 +178,7 @@ pub mod sigint_signal_changelog;
 pub mod sigint_unit;
 pub mod sigint_unit_attachment;
 pub mod sigint_unit_attachment_aor;
+pub mod sigint_unit_change;
 pub mod sigint_unit_changelog;
 pub mod sigint_unit_label;
 pub mod sigint_zone;

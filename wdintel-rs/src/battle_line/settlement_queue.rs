@@ -1197,10 +1197,11 @@ mod tests {
             ("earlier", "03:00:00"),
             ("same-time", "04:00:00"),
         ] {
-            let datetime = NaiveDateTime::parse_from_str(
-                &format!("2099-01-01 {time}"),
-                "%Y-%m-%d %H:%M:%S",
+            let datetime = crate::inbox::datetime::from_date_time_text(
+                Some("2099-01-01"),
+                Some(time),
             )
+            .unwrap()
             .unwrap();
             let message = signal_message::ActiveModel {
                 body: Set(Some(format!("#2287 oneoff order {suffix}"))),

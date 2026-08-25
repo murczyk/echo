@@ -88,6 +88,7 @@ export function RerDutyNeoPage({
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
   const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(true);
+  const [messageTextPreviewLines, setMessageTextPreviewLines] = useState<20 | 40 | null>(20);
   useEffect(() => {
     let cancelled = false;
     const loadLayout = async () => {
@@ -100,12 +101,14 @@ export function RerDutyNeoPage({
           prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
         );
         setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? true);
+        setMessageTextPreviewLines(prefs.messageTextPreviewLines);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
         setCollapseMediaPreviews(true);
         setMediaSummaryEnabled(true);
+        setMessageTextPreviewLines(20);
       }
     };
     loadLayout();
@@ -121,6 +124,7 @@ export function RerDutyNeoPage({
           dutyAudioTranscriptionCollapsed?: boolean;
           dutyCollapseMediaPreviews?: boolean;
           mediaSummaryEnabled?: boolean;
+          messageTextPreviewLines?: 20 | 40 | null;
         }>
       ).detail;
       if (detail?.tagsLayout) {
@@ -134,6 +138,13 @@ export function RerDutyNeoPage({
       }
       if (typeof detail?.mediaSummaryEnabled === 'boolean') {
         setMediaSummaryEnabled(detail.mediaSummaryEnabled);
+      }
+      if (
+        detail?.messageTextPreviewLines === 20 ||
+        detail?.messageTextPreviewLines === 40 ||
+        detail?.messageTextPreviewLines === null
+      ) {
+        setMessageTextPreviewLines(detail.messageTextPreviewLines);
       }
     };
 
@@ -472,6 +483,7 @@ export function RerDutyNeoPage({
       tagsLayout,
       collapseMediaPreviews,
       mediaSummaryEnabled,
+      messageTextPreviewLines,
       tagsMap,
       tagsOrder,
       botTagAction,

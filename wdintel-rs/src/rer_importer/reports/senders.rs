@@ -138,6 +138,15 @@ pub async fn report_xlsx_kind_senders(
         .sorted_by_key(|(_, date)| *date)
         .map(|(date_txt, _)| date_txt)
         .collect_vec();
+    let record_count = sender_stats.values().fold(0_usize, |count, stats| {
+        count.saturating_add(if advanced_freqs {
+            stats.freq_breakdown.len().max(1)
+        } else {
+            1
+        })
+    });
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     write_report_to_file(
         outpath,

@@ -14,6 +14,7 @@ import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
 import type { AddPointHighlightBlacklistRequest } from '../shared/message-card/point-highlight-blacklist';
 import type { DutyWorkspaceFabAvoidance } from './duty-scroll-fab-position';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 
 export type TailAvailability = 'unknown' | 'checking' | 'loading' | 'available' | 'exhausted';
 
@@ -63,6 +64,7 @@ export type FeedColumnModel = {
     /** When true, Duty cards hide heavy media behind reveal banners until opened. */
     collapseMediaPreviews?: boolean;
     mediaSummaryEnabled?: boolean;
+    messageTextPreviewLines: MessageTextPreviewLineLimit;
     tagsMap: Record<number, Tag>;
     tagsOrder: number[];
     botTagAction: MessageCardBotTagAction | null;

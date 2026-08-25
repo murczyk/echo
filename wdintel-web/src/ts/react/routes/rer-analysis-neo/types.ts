@@ -219,6 +219,7 @@ export type AnalysisPageState = {
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
   rightPanelOpen: boolean;
