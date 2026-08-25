@@ -35,21 +35,6 @@ export function useImageEditorSelectionStyle({
 }) {
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.isDrawingMode = tool === 'brush' || tool === 'highlight';
-    if (canvas.isDrawingMode && fabricRef.current) {
-      const brush = new fabricRef.current.PencilBrush(canvas);
-      brush.color =
-        tool === 'highlight' ? withHighlightAlpha(stroke) : normalizeEditorColor(stroke);
-      brush.width = strokeWidth;
-      canvas.freeDrawingBrush = brush;
-    }
-    canvas.defaultCursor = tool === 'pan' ? 'grab' : 'default';
-    canvas.selection = tool === 'select';
-  }, [canvasReady, canvasRef, fabricRef, stroke, strokeWidth, tool]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     const selected = canvas?.getActiveObject();
     if (!canvas || !fabric || !(selected instanceof fabric.IText)) return;

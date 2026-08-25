@@ -1,10 +1,13 @@
-export function lockImageEditorSource(source: import('fabric').FabricImage) {
+import type { MutableRefObject } from 'react';
+
+export function setImageEditorBackground({
+  canvas,
+  source,
+}: {
+  canvas: import('fabric').Canvas;
+  source: import('fabric').FabricImage;
+}) {
   source.set({
-    editorRole: 'source',
-    selectable: false,
-    evented: false,
-    hasControls: false,
-    hasBorders: false,
     left: 0,
     top: 0,
     originX: 'left',
@@ -12,9 +15,9 @@ export function lockImageEditorSource(source: import('fabric').FabricImage) {
     scaleX: 1,
     scaleY: 1,
     angle: 0,
-    lockMovementX: true,
-    lockMovementY: true,
   });
+  canvas.backgroundImage = source;
+  canvas.requestRenderAll();
 }
 
 export function restoreImageEditorCanvasReferences({
@@ -34,16 +37,12 @@ export function restoreImageEditorCanvasReferences({
     )
       object.set({ editorRole: 'arrow', selectable: true, evented: true });
   });
-  const source = canvas
-    .getObjects()
-    .find((object) => object.get('editorRole') === 'source') as import('fabric').FabricImage;
+  const source = canvas.backgroundImage as import('fabric').FabricImage | undefined;
   if (source) {
-    lockImageEditorSource(source);
-    canvas.sendObjectToBack(source);
+    setImageEditorBackground({ canvas, source });
     sourceRef.current = source;
   }
   cropRef.current = canvas
     .getObjects()
     .find((object) => object.get('editorRole') === 'crop') as import('fabric').Rect;
 }
-import type { MutableRefObject } from 'react';

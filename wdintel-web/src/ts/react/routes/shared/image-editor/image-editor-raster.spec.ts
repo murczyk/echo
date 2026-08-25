@@ -3,11 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  addMagnifier,
-  replaceConcealmentDraft,
-  updateMagnifierConnector,
-} from './image-editor-raster';
+import { addMagnifier, replaceConcealmentDraft } from './image-editor-raster';
 
 class FabricObject {
   values: Record<string, unknown>;
@@ -28,6 +24,7 @@ class FabricObject {
   }
 
   setCoords = vi.fn();
+  setSrc = vi.fn();
 }
 
 class FabricLine extends FabricObject {
@@ -44,6 +41,10 @@ const fabric = {
     constructor(objects: FabricObject[], values: Record<string, unknown>) {
       super(values);
       this.values.objects = objects;
+    }
+
+    getObjects() {
+      return this.values.objects as FabricObject[];
     }
   },
 };
@@ -64,6 +65,7 @@ function canvasFixture() {
     remove: vi.fn((object: FabricObject) => objects.splice(objects.indexOf(object), 1)),
     getObjects: () => objects,
     setActiveObject: vi.fn(),
+    discardActiveObject: vi.fn(),
     requestRenderAll: vi.fn(),
   } as never;
 }
@@ -71,8 +73,7 @@ function canvasFixture() {
 describe('image editor raster operations #3099', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('keeps magnifier source marker fixed while its callout connector moves', async () => {
-    vi.stubGlobal('crypto', { randomUUID: () => 'test-magnifier' });
+  it('creates an in-place magnifier without a source marker or connector', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       beginPath: vi.fn(),
       arc: vi.fn(),
@@ -85,25 +86,14 @@ describe('image editor raster operations #3099', () => {
       sourceImage: sourceImage(),
       fabric: fabric as never,
       magnification: 2,
-      stroke: '#f00',
-      strokeWidth: 4,
-      sourcePoint: { x: 12, y: 18 },
-      calloutPoint: { x: 60, y: 64 },
+      bounds: { left: 20, top: 24, width: 40, height: 40 },
     });
 
-    const [connector, marker, magnifier] = canvas.objects;
-    expect(marker.get('editorRole')).toBe('magnifier-source');
-    expect(marker.left).toBe(5);
-    expect(marker.top).toBe(11);
-    magnifier.set({ left: 100, top: 120 });
-    updateMagnifierConnector({ canvas, magnifier });
-
-    expect(connector.get('x1')).toBe(12);
-    expect(connector.get('y1')).toBe(18);
-    expect(connector.get('x2')).toBe(220);
-    expect(connector.get('y2')).toBe(240);
-    expect(marker.left).toBe(5);
-    expect(marker.top).toBe(11);
+    expect(canvas.objects).toHaveLength(1);
+    expect(canvas.objects[0].get('editorRole')).toBe('magnifier');
+    expect(canvas.objects[0].left).toBe(20);
+    expect(canvas.objects[0].top).toBe(24);
+    expect(canvas.setActiveObject).not.toHaveBeenCalled();
   });
 
   it('blurs an expanded source canvas and crops it back to selected native bounds', async () => {

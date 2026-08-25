@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ImageEditorToolbar } from './ImageEditorToolbar';
 import { ImageEditorFooter } from './ImageEditorFooter';
 import { ImageEditorDiscardAlert } from './ImageEditorDiscardAlert';
-import { ImageEditorStatus } from './ImageEditorStatus';
 import { ImageEditorWorkspace } from './ImageEditorWorkspace';
 import { addTextAnnotation, deleteSelectedAnnotations } from './image-editor-actions';
 import { exportEditedImage } from './image-editor-export';
 import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
+import { applyImageEditorInteractionMode } from './image-editor-interaction-mode';
 import {
   addMagnifier as createMagnifier,
   replaceConcealmentDraft as createConcealmentReplacement,
@@ -51,7 +51,7 @@ export function ImageEditor({
   const [applying, setApplying] = useState(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const [dash, setDash] = useState(false);
-  const [concealMode, setConcealMode] = useState<ConcealMode>('pixelate');
+  const [concealMode, setConcealMode] = useState<ConcealMode>('blur');
   const [magnification, setMagnification] = useState(2);
   const [fontSize, setFontSize] = useState(36);
   const [bold, setBold] = useState(false);
@@ -62,6 +62,22 @@ export function ImageEditor({
   useEffect(() => {
     toolRef.current = tool;
   }, [tool]);
+  const changeTool = useCallback(
+    (nextTool: ImageEditorTool) => {
+      const canvas = canvasRef.current;
+      toolRef.current = nextTool;
+      if (canvas)
+        applyImageEditorInteractionMode({
+          canvas,
+          tool: nextTool,
+          fabric: fabricRef.current,
+          stroke,
+          strokeWidth,
+        });
+      setTool(nextTool);
+    },
+    [stroke, strokeWidth],
+  );
   const {
     actualSize,
     centerViewport,
@@ -87,7 +103,16 @@ export function ImageEditor({
     undo,
   } = useImageEditorHistory({
     canvasRef,
-    onRestored: (canvas) => restoreImageEditorCanvasReferences({ canvas, sourceRef, cropRef }),
+    onRestored: (canvas) => {
+      restoreImageEditorCanvasReferences({ canvas, sourceRef, cropRef });
+      applyImageEditorInteractionMode({
+        canvas,
+        tool: toolRef.current,
+        fabric: fabricRef.current,
+        stroke,
+        strokeWidth,
+      });
+    },
     onRestoreError: (cause) =>
       setError(cause instanceof Error ? cause.message : 'Не вдалося відновити зміни'),
   });
@@ -113,8 +138,16 @@ export function ImageEditor({
       const sourceImage = sourceRef.current;
       const fabric = fabricRef.current;
       if (!canvas || !sourceImage || !fabric) return;
-      await createConcealmentReplacement({ canvas, sourceImage, fabric, draft, mode: concealMode });
-      saveHistory();
+      if (
+        await createConcealmentReplacement({
+          canvas,
+          sourceImage,
+          fabric,
+          draft,
+          mode: concealMode,
+        })
+      )
+        saveHistory();
     },
     [concealMode, saveHistory],
   );
@@ -135,11 +168,24 @@ export function ImageEditor({
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
+    applyImageEditorInteractionMode({
+      canvas,
+      tool: toolRef.current,
+      fabric: fabricRef.current,
+    });
+  }, [canvasReady]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     if (!canvas || !fabric) return;
     let start: { x: number; y: number } | null = null;
     let drawing: import('fabric').FabricObject | null = null;
-    const begin = (event: { scenePoint: { x: number; y: number }; e?: { altKey?: boolean } }) => {
+    let magnifierPoint: { x: number; y: number } | null = null;
+    let magnifierPreview: import('fabric').Circle | null = null;
+    const begin = (event: { scenePoint: { x: number; y: number } }) => {
+      if (toolRef.current !== tool) return;
       if (tool === 'text') {
         addTextAnnotation({
           canvas,
@@ -154,50 +200,20 @@ export function ImageEditor({
         return;
       }
       if (tool === 'magnifier') {
-        const selected = canvas.getActiveObject();
-        if (event.e?.altKey && selected?.get('editorRole') === 'magnifier' && sourceRef.current) {
-          const calloutPoint = {
-            x: (selected.left ?? 0) + 120,
-            y: (selected.top ?? 0) + 120,
-          };
-          const magnifierId = selected.get('magnifierId');
-          const previousMagnifier = canvas
-            .getObjects()
-            .filter((object) => object.get('magnifierId') === magnifierId);
-          void createMagnifier({
-            canvas,
-            sourceImage: sourceRef.current,
-            fabric,
-            magnification,
-            stroke,
-            strokeWidth,
-            sourcePoint: event.scenePoint,
-            calloutPoint,
-          })
-            .then(() => {
-              previousMagnifier.forEach((object) => canvas.remove(object));
-              saveHistory();
-            })
-            .catch((cause) =>
-              setError(cause instanceof Error ? cause.message : 'Не вдалося оновити лупу'),
-            );
-          return;
-        }
         start = event.scenePoint;
-        return;
-      }
-      if (tool === 'conceal' && concealMode === 'whole-blur' && sourceRef.current) {
-        const source = sourceRef.current;
-        const draft = new fabric.Rect({
-          left: 0,
-          top: 0,
-          width: source.width ?? canvas.width,
-          height: source.height ?? canvas.height,
-          editorRole: 'concealment',
+        magnifierPoint = event.scenePoint;
+        magnifierPreview = new fabric.Circle({
+          left: start.x,
+          top: start.y,
+          radius: 0,
+          fill: 'transparent',
+          stroke: 'currentColor',
+          strokeDashArray: [4, 4],
+          selectable: false,
+          evented: false,
+          editorRole: 'magnifier-preview',
         });
-        void replaceConcealmentDraft(draft).catch((cause) =>
-          setError(cause instanceof Error ? cause.message : 'Не вдалося розмити зображення'),
-        );
+        canvas.add(magnifierPreview);
         return;
       }
       if (!['crop', 'rectangle', 'ellipse', 'line', 'arrow', 'conceal'].includes(tool)) return;
@@ -210,6 +226,8 @@ export function ImageEditor({
         fill,
         editorRole: tool === 'conceal' ? 'concealment' : tool,
         strokeDashArray: dash && tool !== 'crop' ? [strokeWidth * 2, strokeWidth * 2] : undefined,
+        selectable: false,
+        evented: false,
       };
       drawing =
         tool === 'ellipse'
@@ -224,21 +242,31 @@ export function ImageEditor({
                   tool === 'crop'
                     ? 'rgba(59,130,246,0.15)'
                     : tool === 'conceal'
-                      ? concealMode === 'redact'
-                        ? '#000000'
-                        : concealMode === 'blur' || concealMode === 'whole-blur'
-                          ? 'rgba(148,163,184,0.75)'
-                          : 'rgba(82,82,82,0.85)'
+                      ? 'rgba(100,116,139,0.35)'
                       : fill,
                 strokeDashArray: tool === 'crop' ? [12, 8] : common.strokeDashArray,
-                selectable: true,
-                evented: true,
+                selectable: false,
+                evented: false,
               });
       if (tool === 'crop' && cropRef.current) canvas.remove(cropRef.current);
       canvas.add(drawing);
       if (tool === 'crop') cropRef.current = drawing as import('fabric').Rect;
     };
     const move = (event: { scenePoint: { x: number; y: number }; e?: { shiftKey?: boolean } }) => {
+      if (start && tool === 'magnifier') {
+        magnifierPoint = event.scenePoint;
+        const diameter = Math.max(
+          Math.abs(event.scenePoint.x - start.x),
+          Math.abs(event.scenePoint.y - start.y),
+        );
+        magnifierPreview?.set({
+          left: Math.min(start.x, event.scenePoint.x),
+          top: Math.min(start.y, event.scenePoint.y),
+          radius: diameter / 2,
+        });
+        canvas.requestRenderAll();
+        return;
+      }
       if (!start || !drawing) return;
       const x = Math.min(start.x, event.scenePoint.x);
       const y = Math.min(start.y, event.scenePoint.y);
@@ -283,28 +311,34 @@ export function ImageEditor({
         const arrow = new fabric.Group([shaft, arrowHead], { left: x1, top: y1 });
         arrow.set('editorRole' as never, 'arrow' as never);
         canvas.add(arrow);
-        canvas.setActiveObject(arrow);
         saveHistory();
-      } else if (drawing && tool === 'conceal' && concealMode !== 'redact') {
+      } else if (drawing && tool === 'conceal') {
         void replaceConcealmentDraft(drawing).catch((cause) => {
-          setError(
-            cause instanceof Error ? cause.message : 'Не вдалося приховати виділену область',
-          );
+          setError(cause instanceof Error ? cause.message : 'Не вдалося застосувати розмиття');
         });
       } else if (drawing) {
         if (tool === 'conceal') drawing.set({ selectable: false, evented: false });
         saveHistory();
       }
-      if (!drawing && start && tool === 'magnifier' && sourceRef.current) {
+      if (magnifierPreview) canvas.remove(magnifierPreview);
+      if (!drawing && start && tool === 'magnifier' && sourceRef.current && magnifierPoint) {
         void createMagnifier({
           canvas,
           sourceImage: sourceRef.current!,
           fabric,
           magnification,
-          stroke,
-          strokeWidth,
-          sourcePoint: start,
-          calloutPoint: { x: start.x + 160, y: start.y + 160 },
+          bounds: {
+            left: Math.min(start.x, magnifierPoint.x),
+            top: Math.min(start.y, magnifierPoint.y),
+            width: Math.max(
+              Math.abs(magnifierPoint.x - start.x),
+              Math.abs(magnifierPoint.y - start.y),
+            ),
+            height: Math.max(
+              Math.abs(magnifierPoint.x - start.x),
+              Math.abs(magnifierPoint.y - start.y),
+            ),
+          },
         })
           .then(() => saveHistory())
           .catch((cause) =>
@@ -313,6 +347,8 @@ export function ImageEditor({
       }
       start = null;
       drawing = null;
+      magnifierPoint = null;
+      magnifierPreview = null;
     };
     canvas.on('mouse:down', begin);
     canvas.on('mouse:move', move);
@@ -402,7 +438,7 @@ export function ImageEditor({
       }
       if (event.key === 'Enter' && tool === 'crop' && cropRef.current) {
         event.preventDefault();
-        setTool('select');
+        changeTool('select');
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
@@ -417,7 +453,7 @@ export function ImageEditor({
         deleteSelected();
       }
     },
-    [deleteSelected, redo, requestCancel, saveHistory, tool, undo],
+    [changeTool, deleteSelected, redo, requestCancel, saveHistory, tool, undo],
   );
 
   useEffect(() => {
@@ -425,15 +461,11 @@ export function ImageEditor({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onKeyDown]);
   return (
-    <section
-      className="flex min-h-0 flex-1 flex-col"
-      tabIndex={-1}
-      aria-label="Редактор зображення"
-    >
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="Редактор зображення">
       <ImageEditorToolbar
         disabled={!canvasReady || loading || applying}
         tool={tool}
-        onToolChange={setTool}
+        onToolChange={changeTool}
         stroke={stroke}
         onStrokeChange={setStroke}
         fill={fill}
@@ -472,7 +504,6 @@ export function ImageEditor({
       {confirmCancel ? (
         <ImageEditorDiscardAlert onContinue={() => setConfirmCancel(false)} onDiscard={onCancel} />
       ) : null}
-      <ImageEditorStatus tool={tool} />
       <ImageEditorWorkspace
         canvasElementRef={canvasElementRef}
         workspaceRef={workspaceRef}

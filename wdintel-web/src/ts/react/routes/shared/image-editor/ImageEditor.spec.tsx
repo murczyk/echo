@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  canvasAdd: vi.fn(),
   canvasOptions: undefined as Record<string, unknown> | undefined,
   exportEditedImage: vi.fn(),
   sourceImage: {
@@ -24,14 +25,15 @@ vi.mock('fabric', () => {
     height = 100;
     viewportTransform = [1, 0, 0, 1, 0, 0];
     upperCanvasEl = document.createElement('canvas');
+    backgroundImage: unknown;
     setDimensions = vi.fn();
-    add = vi.fn();
-    sendObjectToBack = vi.fn();
+    add = mocks.canvasAdd;
     on = vi.fn();
     off = vi.fn();
     dispose = vi.fn();
     getActiveObject = vi.fn();
-    getObjects = vi.fn(() => [mocks.sourceImage]);
+    getObjects = vi.fn(() => []);
+    discardActiveObject = vi.fn();
     requestRenderAll = vi.fn();
     setViewportTransform = vi.fn();
     setZoom = vi.fn();
@@ -100,19 +102,11 @@ describe('ImageEditor initialization', () => {
     expect(mocks.exportEditedImage).toHaveBeenCalledWith(
       expect.objectContaining({ sourceImage: mocks.sourceImage }),
     );
-    expect(mocks.canvasOptions).toMatchObject({ enableRetinaScaling: false });
     expect(mocks.sourceImage.set).toHaveBeenCalledWith(
-      expect.objectContaining({
-        evented: false,
-        hasBorders: false,
-        hasControls: false,
-        left: 0,
-        scaleX: 1,
-        scaleY: 1,
-        selectable: false,
-        top: 0,
-      }),
+      expect.objectContaining({ left: 0, scaleX: 1, scaleY: 1, top: 0 }),
     );
+    expect(mocks.canvasAdd).not.toHaveBeenCalled();
+    expect(mocks.canvasOptions).toMatchObject({ enableRetinaScaling: false });
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ file: expect.any(File) }));
 
     act(() => root.unmount());

@@ -55,15 +55,20 @@ function SelectObjectIcon() {
   return (
     <SvgIcon viewBox="0 0 24 24">
       <rect
-        x="3"
-        y="3"
-        width="12"
-        height="10"
+        x="3.25"
+        y="3.25"
+        width="12.5"
+        height="10.5"
         fill="none"
         stroke="currentColor"
-        strokeDasharray="2 2"
+        strokeDasharray="2.1 2.1"
+        strokeLinecap="round"
+        strokeWidth="1.6"
       />
-      <path d="m11 11 2 9 2.2-3.1 3.3 1.4.9-2.1-3.4-1.4L19 12z" fill="currentColor" />
+      <path
+        d="m11.2 10.2 2.35 9.15 2.12-3.08 3.36 1.43.84-1.96-3.36-1.43 2.1-3.05z"
+        fill="currentColor"
+      />
     </SvgIcon>
   );
 }
@@ -85,15 +90,22 @@ function DiagonalLineIcon() {
 function HighlighterIcon() {
   return (
     <SvgIcon viewBox="0 0 24 24">
+      <path d="m7.1 3.8 9.1 9.1-4.3 4.3-9.1-9.1z" fill="currentColor" />
       <path
-        d="m7.2 4.3 8.5 8.5-4.1 4.1-8.5-8.5z"
+        d="m2.7 8.1 4.3-4.3 9.1 9.1-4.3 4.3z"
         fill="none"
         stroke="currentColor"
         strokeLinejoin="round"
-        strokeWidth="1.8"
+        strokeWidth="1.5"
       />
-      <path d="m11.6 16.9 4.1-4.1 2.4 2.4-4.1 4.1H8z" fill="currentColor" />
-      <path d="M5 21h14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+      <path d="m11.8 17.2 4.3-4.3 2.9 2.9-4.3 4.3H8.9z" fill="currentColor" />
+      <path
+        d="M5 21h14"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.6"
+      />
     </SvgIcon>
   );
 }
@@ -153,7 +165,7 @@ export function ImageEditorToolRail(props: Props) {
               {toolButton('highlight', 'Маркер', <HighlighterIcon />)}
             </ToolGroup>
             <ToolGroup>
-              {toolButton('conceal', 'Приховати дані', <BlurOnIcon />)}
+              {toolButton('conceal', 'Розмиття', <BlurOnIcon />)}
               {toolButton('magnifier', 'Лупа', <RemoveRedEyeIcon />)}
             </ToolGroup>
             <ToolGroup>
@@ -202,7 +214,7 @@ export function ImageEditorToolRail(props: Props) {
             {toolButton('select', 'Вибрати об’єкт', <SelectObjectIcon />)}
             {toolButton('pan', 'Перемістити полотно', <PanToolIcon />)}
             {toolButton('text', 'Текст', <TextFieldsIcon />)}
-            {toolButton('conceal', 'Приховати дані', <BlurOnIcon />)}
+            {toolButton('conceal', 'Розмиття', <BlurOnIcon />)}
             {toolButton('magnifier', 'Лупа', <RemoveRedEyeIcon />)}
           </div>
           <PowerButton

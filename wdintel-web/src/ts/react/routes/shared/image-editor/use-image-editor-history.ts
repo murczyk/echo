@@ -30,9 +30,9 @@ export function useImageEditorHistory({
     return JSON.stringify(
       (canvas as unknown as { toJSON: (properties: string[]) => unknown }).toJSON([
         'editorRole',
-        'magnifierSourceX',
-        'magnifierSourceY',
-        'magnifierId',
+        'magnification',
+        'magnifierDiameter',
+        'magnifierSourceCenter',
       ]),
     );
   }, [canvasRef]);

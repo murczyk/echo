@@ -34,18 +34,8 @@ export function addTextAnnotation({
 export function deleteSelectedAnnotations(canvas: import('fabric').Canvas) {
   const selected = canvas
     .getActiveObjects()
-    .filter((object) => object.get('editorRole') !== 'source');
-  const magnifierIds = new Set(
-    selected
-      .filter((object) => object.get('editorRole') === 'magnifier')
-      .map((object) => object.get('magnifierId')),
-  );
+    .filter((object) => object.get('editorRole') !== 'concealment');
   selected.forEach((object) => canvas.remove(object));
-  if (magnifierIds.size)
-    canvas
-      .getObjects()
-      .filter((object) => magnifierIds.has(object.get('magnifierId')))
-      .forEach((object) => canvas.remove(object));
   canvas.discardActiveObject();
   canvas.requestRenderAll();
 }

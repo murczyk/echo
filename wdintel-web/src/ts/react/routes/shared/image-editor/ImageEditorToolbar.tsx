@@ -63,7 +63,7 @@ function ColorField({
       {label}
       <input
         aria-label={ariaLabel}
-        className="size-7 appearance-none rounded border border-echo-border p-0"
+        className="size-8 appearance-none rounded border border-echo-border p-0"
         type="color"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -103,13 +103,8 @@ export function ImageEditorToolbar(props: Props) {
       {shouldRenderContextualRow(props.tool, props.selection, context) ? (
         <div
           data-image-editor-contextual-row
-          className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto border-b border-echo-border px-2"
+          className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto border-b border-echo-border px-2 py-1"
         >
-          {props.tool === 'select' && !props.selection ? (
-            <span className="shrink-0 text-echo-sm text-echo-text">
-              Оберіть об’єкт для редагування
-            </span>
-          ) : null}
           {showText ? (
             <>
               <ColorField
@@ -171,7 +166,7 @@ export function ImageEditorToolbar(props: Props) {
                 Товщина
                 <Slider
                   aria-label="Товщина контуру"
-                  className="w-24"
+                  className="w-24 shrink-0"
                   min={1}
                   max={24}
                   value={props.strokeWidth}
@@ -195,34 +190,34 @@ export function ImageEditorToolbar(props: Props) {
           ) : null}
           {props.tool === 'conceal' ? (
             <label className="flex shrink-0 items-center gap-2 text-echo-sm">
-              Приховування
+              Режим
               <select
-                aria-label="Приховування"
+                aria-label="Режим розмиття"
                 className="h-8 rounded border border-echo-border bg-transparent px-2 text-echo-sm"
                 value={props.concealMode}
                 onChange={(event) => props.onConcealModeChange(event.target.value as ConcealMode)}
                 disabled={props.disabled}
               >
-                <option value="pixelate">Пікселізація</option>
                 <option value="blur">Розмиття</option>
-                <option value="whole-blur">Розмити все зображення</option>
-                <option value="redact">Редакція (рекомендовано)</option>
+                <option value="pixelate">Пікселізація</option>
+                <option value="redact">Затемнення</option>
               </select>
             </label>
           ) : null}
           {props.tool === 'magnifier' ? (
             <label className="flex shrink-0 items-center gap-2 text-echo-sm">
-              Лупа
+              Збільшення
               <Slider
-                aria-label="Збільшення лупи"
-                className="w-24"
-                min={1}
+                aria-label="Збільшення"
+                className="w-24 shrink-0"
+                min={2}
                 max={4}
                 step={1}
                 value={props.magnification}
                 onChange={(_, value) => props.onMagnificationChange(value as number)}
                 disabled={props.disabled}
               />
+              <span className="min-w-5 text-center tabular-nums">{props.magnification}×</span>
             </label>
           ) : null}
         </div>
@@ -237,7 +232,9 @@ function shouldRenderContextualRow(
   context: ImageEditorTool | ImageEditorSelectionDescriptor['kind'] | undefined,
 ) {
   if (tool === 'select')
-    return !selection || ['text', 'shape', 'line', 'brush', 'highlight'].includes(context ?? '');
+    return Boolean(
+      selection && ['text', 'shape', 'line', 'brush', 'highlight'].includes(context ?? ''),
+    );
   return [
     'text',
     'rectangle',

@@ -1,7 +1,7 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 
-import { updateMagnifierConnector } from './image-editor-raster';
-import { lockImageEditorSource } from './image-editor-canvas-references';
+import { setImageEditorBackground } from './image-editor-canvas-references';
+import { refreshMagnifier } from './image-editor-raster';
 import type { ImageEditorSource, ImageEditorTool } from './image-editor.types';
 
 const MAX_PIXELS = 24_000_000;
@@ -80,23 +80,50 @@ export function useImageEditorCanvas({
           selection: true,
         });
         canvas.setDimensions({ width: image.width, height: image.height });
-        lockImageEditorSource(image);
-        canvas.add(image);
-        canvas.sendObjectToBack(image);
+        setImageEditorBackground({ canvas, source: image });
         canvasRef.current = canvas;
         sourceRef.current = image;
-        const commit = () => saveHistory();
+        const commit = (event?: { target?: import('fabric').FabricObject }) => {
+          if (event?.target?.get('editorRole') === 'magnifier' && sourceRef.current) {
+            const diameter = event.target.get('magnifierDiameter');
+            const magnifierDiameter = typeof diameter === 'number' ? diameter : 32;
+            event.target.set({
+              left: Math.max(
+                0,
+                Math.min(
+                  (sourceRef.current.width ?? 0) - magnifierDiameter,
+                  event.target.left ?? 0,
+                ),
+              ),
+              top: Math.max(
+                0,
+                Math.min(
+                  (sourceRef.current.height ?? 0) - magnifierDiameter,
+                  event.target.top ?? 0,
+                ),
+              ),
+            });
+            void refreshMagnifier({
+              canvas,
+              magnifier: event.target,
+              sourceImage: sourceRef.current,
+            })
+              .then(saveHistory)
+              .catch((cause) =>
+                setError(cause instanceof Error ? cause.message : 'Не вдалося оновити лупу'),
+              );
+            return;
+          }
+          saveHistory();
+        };
         canvas.on('object:modified', commit);
-        canvas.on('object:moving', (event) => {
-          if (event.target?.get('editorRole') === 'magnifier')
-            updateMagnifierConnector({ canvas, magnifier: event.target });
-        });
         canvas.on('path:created', (event) => {
           const role =
             toolRef.current === 'brush' || toolRef.current === 'highlight'
               ? toolRef.current
               : undefined;
-          if (role && event.path) event.path.set('editorRole' as never, role as never);
+          if (role && event.path)
+            event.path.set({ editorRole: role, selectable: false, evented: false });
           commit();
         });
         canvas.on('text:editing:exited', commit);

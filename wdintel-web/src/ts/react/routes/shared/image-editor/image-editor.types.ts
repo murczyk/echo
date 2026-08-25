@@ -14,7 +14,7 @@ export type ImageEditorTool =
   | 'conceal'
   | 'magnifier';
 
-export type ConcealMode = 'pixelate' | 'blur' | 'whole-blur' | 'redact';
+export type ConcealMode = 'blur' | 'pixelate' | 'redact';
 
 export type ImageEditorSelectionDescriptor = {
   kind: 'text' | 'shape' | 'line' | 'brush' | 'highlight' | 'magnifier' | 'concealment';

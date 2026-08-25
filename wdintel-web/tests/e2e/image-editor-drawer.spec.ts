@@ -87,12 +87,33 @@ test.describe('image editor in editable message drawers #3099', () => {
       await editor.getByRole('button', { name: '1:1' }).click();
       await expect(editor.getByText('100%', { exact: true })).toBeVisible();
       const canvas = editor.locator('canvas[data-fabric="top"]');
-      const box = await canvas.boundingBox();
-      if (!box) throw new Error('Canvas редактора не має розмірів');
+      const scenePoint = async (left: number, top: number) => {
+        const box = await canvas.boundingBox();
+        if (!box) throw new Error('Canvas редактора не має розмірів');
+        return { x: box.x + left, y: box.y + top };
+      };
+      const canvasCorner = async () => {
+        const box = await canvas.boundingBox();
+        if (!box) throw new Error('Canvas редактора не має розмірів');
+        return { x: box.x + box.width - 4, y: box.y + box.height - 4 };
+      };
+      const clickScene = async (left: number, top: number) => {
+        const point = await scenePoint(left, top);
+        await page.mouse.click(point.x, point.y);
+      };
+      const moveScene = async (left: number, top: number) => {
+        const point = await scenePoint(left, top);
+        await page.mouse.move(point.x, point.y);
+      };
+      const clickCanvasCorner = async () => {
+        const point = await canvasCorner();
+        await page.mouse.click(point.x, point.y);
+      };
       await editor.getByRole('button', { name: 'Текст' }).click();
-      await page.mouse.click(box.x + 40, box.y + 40);
+      await clickScene(40, 40);
       await page.keyboard.type('контекст');
       await editor.getByRole('button', { name: 'Вибрати об’єкт' }).click();
+      await clickScene(40, 40);
       await expect(editor.getByLabel('Колір')).toBeVisible();
       await expect(editor.getByLabel('Розмір тексту')).toBeVisible();
       await expect(editor.getByRole('button', { name: 'Напівжирний текст' })).toHaveAttribute(
@@ -101,21 +122,21 @@ test.describe('image editor in editable message drawers #3099', () => {
       );
       await expect(editor.getByLabel('Пунктир')).toHaveCount(0);
       await editor.getByRole('button', { name: 'Прямокутник' }).click();
-      await page.mouse.move(box.x + 60, box.y + 60);
+      await moveScene(60, 60);
       await page.mouse.down();
-      await page.mouse.move(box.x + 100, box.y + 100);
+      await moveScene(100, 100);
       await page.mouse.up();
       await editor.getByRole('button', { name: 'Вибрати об’єкт' }).click();
-      await page.mouse.click(box.x + box.width - 4, box.y + box.height - 4);
-      await page.mouse.click(box.x + 60, box.y + 60);
+      await clickCanvasCorner();
+      await clickScene(60, 60);
       await expect(editor.getByLabel('Колір контуру')).toBeVisible();
       await expect(editor.getByLabel('Колір заливки')).toBeVisible();
       await expect(editor.getByLabel('Товщина контуру')).toBeVisible();
       await expect(editor.getByLabel('Пунктир')).toBeVisible();
       await editor.getByRole('button', { name: 'Стрілка' }).click();
-      await page.mouse.move(box.x + 130, box.y + 130);
+      await moveScene(130, 130);
       await page.mouse.down();
-      await page.mouse.move(box.x + 200, box.y + 130);
+      await moveScene(200, 130);
       await page.mouse.up();
       await expect(
         editor.getByLabel('Інструменти редактора').getByRole('button', { name: 'Скасувати' }),
@@ -125,10 +146,8 @@ test.describe('image editor in editable message drawers #3099', () => {
         'aria-pressed',
         'true',
       );
-      await page.mouse.click(box.x + box.width - 4, box.y + box.height - 4);
-      const arrowPosition = await documentShell.boundingBox();
-      if (!arrowPosition) throw new Error('Полотно редактора не має розмірів');
-      await page.mouse.click(arrowPosition.x + 125, arrowPosition.y + 105);
+      await clickCanvasCorner();
+      await clickScene(150, 130);
       await expect(editor.getByLabel('Товщина контуру')).toHaveValue('4');
       await editor.getByLabel('Товщина контуру').press('ArrowRight');
       await editor.getByLabel('Товщина контуру').press('ArrowRight');
@@ -143,8 +162,8 @@ test.describe('image editor in editable message drawers #3099', () => {
       await expect(
         editor.getByLabel('Інструменти редактора').getByRole('button', { name: 'Повторити' }),
       ).toBeEnabled();
-      await page.mouse.click(box.x + box.width - 4, box.y + box.height - 4);
-      await page.mouse.click(arrowPosition.x + 125, arrowPosition.y + 105);
+      await clickCanvasCorner();
+      await clickScene(150, 130);
       await expect(editor.getByLabel('Товщина контуру')).toHaveValue('4');
       await expect(editor.getByLabel('Колір контуру')).toHaveValue('#ef4444');
       await editor
@@ -154,8 +173,8 @@ test.describe('image editor in editable message drawers #3099', () => {
       await expect(
         editor.getByLabel('Інструменти редактора').getByRole('button', { name: 'Повторити' }),
       ).toBeDisabled();
-      await page.mouse.click(box.x + box.width - 4, box.y + box.height - 4);
-      await page.mouse.click(arrowPosition.x + 125, arrowPosition.y + 105);
+      await clickCanvasCorner();
+      await clickScene(150, 130);
       await expect(editor.getByLabel('Товщина контуру')).toHaveValue('7');
       await expect(editor.getByLabel('Колір контуру')).toHaveValue('#00ff00');
       await editor.getByRole('button', { name: 'Застосувати' }).click();
@@ -315,22 +334,23 @@ test.describe('image editor in editable message drawers #3099', () => {
         editor.locator('footer').getByRole('button', { name: 'Застосувати' }),
       ).toBeVisible();
       await expect.poll(async () => (await workspace.boundingBox())?.height).toBeGreaterThan(0);
-      await expect(editor.locator('[data-image-editor-contextual-row]')).toBeVisible();
-      const workspaceHeightWithContext = (await workspace.boundingBox())?.height;
-      if (!workspaceHeightWithContext) throw new Error('Робоча область редактора не має розмірів');
+      await expect(editor.locator('[data-image-editor-contextual-row]')).toHaveCount(0);
+      const workspaceHeightWithoutContext = (await workspace.boundingBox())?.height;
+      if (!workspaceHeightWithoutContext)
+        throw new Error('Робоча область редактора не має розмірів');
       await editor.getByRole('button', { name: 'Перемістити полотно' }).click();
       await expect(editor.locator('[data-image-editor-contextual-row]')).toHaveCount(0);
-      await expect
-        .poll(async () => (await workspace.boundingBox())?.height)
-        .toBeGreaterThan(workspaceHeightWithContext);
       await editor.getByRole('button', { name: 'Текст', exact: true }).click();
       await expect(editor.locator('[data-image-editor-contextual-row]')).toBeVisible();
+      await expect
+        .poll(async () => (await workspace.boundingBox())?.height)
+        .toBeLessThan(workspaceHeightWithoutContext);
       if (viewport.width < 1280) {
         await expect(editor.getByRole('button', { name: 'Більше' })).toBeVisible();
-        await editor.getByRole('button', { name: 'Приховати дані' }).click();
-        await expect(editor.getByLabel('Приховування')).toBeVisible();
+        await editor.getByRole('button', { name: 'Розмиття' }).click();
+        await expect(editor.getByLabel('Режим розмиття')).toBeVisible();
         await editor.getByRole('button', { name: 'Лупа' }).click();
-        await expect(editor.getByLabel('Збільшення лупи')).toBeVisible();
+        await expect(editor.getByLabel('Збільшення')).toBeVisible();
         await editor.getByRole('button', { name: 'Більше' }).click();
         await expect(page.getByRole('menu', { name: 'Більше' })).toBeVisible();
         await expect(page.getByRole('menuitem', { name: 'Обрізати' })).toBeFocused();
