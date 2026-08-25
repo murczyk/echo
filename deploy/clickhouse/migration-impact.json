@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260825_114553_add_settlement_geography_index": {
+      "changes": []
+    },
     "echo:m20260824_100228_add_media_summary_enabled_to_user_settings": {
       "changes": [
         {
