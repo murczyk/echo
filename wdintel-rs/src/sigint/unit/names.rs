@@ -131,6 +131,54 @@ async fn load_unit_name_reviews(
     })
 }
 
+pub(crate) async fn replace_all_eligible_unit_names(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+) -> Result<usize, AppError> {
+    let reviews = load_all_unit_name_reviews(dbx).await.c(h!())?;
+    let replacements = reviews
+        .into_iter()
+        .filter(unit_name_review_is_replaceable)
+        .collect::<Vec<_>>();
+    let replacement_count = replacements.len();
+    for review in replacements {
+        touch_unit_name(
+            dbx,
+            login,
+            review.sigint_unit_id,
+            Some(review.expected_name),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(replacement_count)
+}
+
+async fn load_all_unit_name_reviews(
+    dbx: &DatabaseConnection,
+) -> Result<Vec<UnitNameReview>, AppError> {
+    let mut reviews = Vec::new();
+    let mut after = None;
+    loop {
+        let page = load_unit_name_reviews(
+            dbx,
+            after.as_ref(),
+            SIGINT_UNIT_NAME_REVIEW_PAGE_SIZE,
+        )
+        .await
+        .c(h!())?;
+        reviews.extend(page.units);
+        let Some(next_cursor) = page.next_cursor else {
+            return Ok(reviews);
+        };
+        after = Some(next_cursor);
+    }
+}
+
+fn unit_name_review_is_replaceable(review: &UnitNameReview) -> bool {
+    !review.matches_expected && !review.expected_name.trim().is_empty()
+}
+
 #[post("/api/admin/unit-name/update")]
 pub async fn update_unit_name(
     user: actix_identity::Identity,
@@ -854,6 +902,101 @@ mod tests {
                 .await
                 .unwrap(),
             "1 мсб 380 мсп 47 тд 1 ТА"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bulk_replace_updates_only_clickable_reviews() {
+        let env = cleanup().await.unwrap();
+        let eligible = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("current".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let matching = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("matching".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let blank_expected = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("blank expected".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let eligible_orbit =
+            insert_orbit_unit(&env.dbx, "expected", "regiment", None, None)
+                .await;
+        let matching_orbit =
+            insert_orbit_unit(&env.dbx, "matching", "regiment", None, None)
+                .await;
+        let blank_echelon = orbit_echelon(&env.dbx, "regiment").await;
+        let blank_orbit = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_echelon_id: Set(Some(blank_echelon.id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, eligible_orbit.unit_id, eligible.id, false)
+            .await;
+        link_orbit_unit(&env.dbx, matching_orbit.unit_id, matching.id, false)
+            .await;
+        link_orbit_unit(
+            &env.dbx,
+            blank_orbit.unit_id,
+            blank_expected.id,
+            false,
+        )
+        .await;
+
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        assert_eq!(
+            replace_all_eligible_unit_names(&env.dbx, &login)
+                .await
+                .unwrap(),
+            1
+        );
+
+        let units = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in([
+                eligible.id,
+                matching.id,
+                blank_expected.id,
+            ]))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|unit| (unit.id, unit.name))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            units.get(&eligible.id).map(String::as_str),
+            Some("expected")
+        );
+        assert_eq!(
+            units.get(&matching.id).map(String::as_str),
+            Some("matching")
+        );
+        assert_eq!(
+            units.get(&blank_expected.id).map(String::as_str),
+            Some("blank expected")
         );
     }
 
