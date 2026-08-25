@@ -567,9 +567,9 @@ where
     let offset = page
         .saturating_sub(1)
         .saturating_mul(BATTLE_LINE_NETWORKS_PAGE_SIZE);
-    let total = live_units_query().count(dbx).await.c(h!())?;
-    let units = live_units_query()
-        .order_by_desc(sigint_unit::Column::CreatedAt)
+    let total = live_network_units_query(now).count(dbx).await.c(h!())?;
+    let units = live_network_units_query(now)
+        .order_by_desc(sigint_network::Column::CreatedAt.max())
         .order_by_desc(sigint_unit::Column::Id)
         .offset(offset)
         .limit(BATTLE_LINE_NETWORKS_PAGE_SIZE)
@@ -614,10 +614,26 @@ where
     })
 }
 
-fn live_units_query() -> Select<sigint_unit::Entity> {
+fn live_network_units_query(now: NaiveDateTime) -> Select<sigint_unit::Entity> {
     sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Relation::SigintNetworkUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintNetwork.def(),
+        )
         .filter(sigint_unit::Column::Active.eq(true))
         .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        )
+        .group_by(sigint_unit::Column::Id)
 }
 
 async fn load_network_settlement_points<C>(
@@ -769,6 +785,12 @@ fn network_point_query(
         )
         .filter(sigint_network_unit::Column::UnitId.is_in(unit_ids.to_vec()))
         .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        )
         .filter(sigint_inbox_item::Column::Datetime.gte(cutoff))
         .filter(sigint_inbox_item::Column::Datetime.lte(now))
         .filter(signal_message::Column::Deleted.eq(false))
@@ -2434,7 +2456,7 @@ values (
     // Regression: https://github.com/echoua/echo/issues/2287
     #[tokio::test]
     #[serial_test::serial]
-    async fn paginates_live_units_and_maps_distinct_accessible_recent_points() {
+    async fn paginates_units_by_newest_live_network_and_maps_live_points() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -2457,7 +2479,7 @@ values (
         .await
         .unwrap();
         let mut units = Vec::new();
-        for index in 0..6 {
+        for index in 0..7 {
             units.push(
                 crate::functest::tests::mk_sigint_unit(
                     &txn,
@@ -2482,16 +2504,61 @@ values (
         )
         .await
         .unwrap();
-        crate::functest::tests::mk_sigint_network_unit(
+        for unit in &units[..6] {
+            crate::functest::tests::mk_sigint_network_unit(
+                &txn,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(network.id),
+                    unit_id: Set(unit.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let newest_network = crate::functest::tests::mk_sigint_network(
             &txn,
-            sigint_network_unit::ActiveModel {
-                network_id: Set(network.id),
-                unit_id: Set(units[5].id),
+            sigint_network::ActiveModel {
+                name: Set("#2287 newest map network".to_string()),
+                created_at: Set(now + chrono::Duration::days(2)),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
+        crate::functest::tests::mk_sigint_network_unit(
+            &txn,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(newest_network.id),
+                unit_id: Set(units[0].id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let archived_network = crate::functest::tests::mk_sigint_network(
+            &txn,
+            sigint_network::ActiveModel {
+                name: Set("#2287 archived map network".to_string()),
+                created_at: Set(now + chrono::Duration::days(3)),
+                active_to: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for unit in [&units[0], &units[6]] {
+            crate::functest::tests::mk_sigint_network_unit(
+                &txn,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(archived_network.id),
+                    unit_id: Set(unit.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
         insert_test_settlement(&txn, 2_287_301, "Recent", 48.1, 35.2)
             .await
             .unwrap();
@@ -2505,6 +2572,9 @@ values (
             .await
             .unwrap();
         insert_test_settlement(&txn, 2_287_305, "Future", 45.1, 32.2)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_306, "Archived", 44.1, 31.2)
             .await
             .unwrap();
         insert_network_map_item(
@@ -2567,13 +2637,36 @@ values (
         )
         .await
         .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            archived_network.id,
+            2_287_306,
+            now - chrono::Duration::days(1),
+            (44.3, 31.4),
+        )
+        .await
+        .unwrap();
 
         let first = read_network_maps(&txn, &[group.master_key], 1, now)
             .await
             .unwrap();
         assert_eq!(first.page_size, 5);
         assert_eq!(first.items.len(), 5);
-        assert_eq!(first.items[0].unit_id, units[5].id);
+        assert_eq!(
+            first
+                .items
+                .iter()
+                .map(|item| item.unit_id)
+                .collect::<Vec<_>>(),
+            vec![
+                units[0].id,
+                units[5].id,
+                units[4].id,
+                units[3].id,
+                units[2].id,
+            ]
+        );
         assert_eq!(
             first.items[0].settlement_points,
             vec![BattleLineNetworkMapPoint {
@@ -2589,7 +2682,7 @@ values (
             }]
         );
         let second = read_network_maps(&txn, &[], 2, now).await.unwrap();
-        assert_eq!(second.items[0].unit_id, units[0].id);
+        assert_eq!(second.items[0].unit_id, units[1].id);
         assert!(second.total >= 6);
         txn.rollback().await.unwrap();
     }
