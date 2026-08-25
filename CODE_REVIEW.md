@@ -44,6 +44,13 @@ For `CREATE TABLE`, confirm whether the table belongs in
 PeerDB automatically after migration; exclusion changes remain an explicit
 deployment operation performed before migrations.
 
+Prefer nullable columns without a default on PeerDB-replicated tables when
+historical rows do not require a value. Do not add `NOT NULL` or a default only
+for application convenience: existing PostgreSQL rows then need an explicit
+ClickHouse backfill or mirror resync. When the field must be required, require
+the migration to justify the historical value and declare how it reaches
+ClickHouse.
+
 Flag `ALTER TABLE ... ADD COLUMN ... DEFAULT ...` on PeerDB-replicated tables.
 PeerDB propagates the column, but it does not populate existing ClickHouse rows
 with the PostgreSQL default. Require an explicit source-row backfill or a full
