@@ -2,6 +2,8 @@ import type {
   AreaOfResponsibility,
   ContentNode,
   GroupAdminData,
+  InboxItemContextReq,
+  InboxItemContextRsp,
   InboxMessage as InboxMessageType,
   InboxMessageMetadata,
   InboxMessageTag,
@@ -458,5 +460,33 @@ export async function fetchInboxCount(
   return {
     quantity: raw.quantity,
     firstElementTs: raw.first_element_ts ?? null,
+  };
+}
+
+export type InboxItemContextRaw = {
+  group_master_keys?: string[];
+  groupMasterKeys?: string[];
+  sigint_inbox_item_ids?: number[];
+  sigintInboxItemIds?: number[];
+  sinceTs?: number | null;
+  since_ts?: number | null;
+  tillTs?: number | null;
+  till_ts?: number | null;
+};
+
+export async function fetchInboxItemContext(
+  req: InboxItemContextReq,
+  options?: RequestOptions,
+): Promise<InboxItemContextRsp> {
+  const raw = await postJson<InboxItemContextRaw>(
+    '/api/rer-importer/inbox-item-context',
+    { message_uid: req.messageUid },
+    options,
+  );
+  return {
+    groupMasterKeys: raw.groupMasterKeys ?? raw.group_master_keys ?? [],
+    sigintInboxItemIds: raw.sigintInboxItemIds ?? raw.sigint_inbox_item_ids ?? [],
+    sinceTs: raw.sinceTs ?? raw.since_ts ?? null,
+    tillTs: raw.tillTs ?? raw.till_ts ?? null,
   };
 }

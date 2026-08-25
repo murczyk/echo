@@ -11,6 +11,7 @@ import { useRerDutyFeedState } from './useRerDutyFeedState';
 
 const dutyApiMocks = vi.hoisted(() => ({
   fetchInboxMessages: vi.fn(),
+  fetchMessagesByIds: vi.fn(),
   fetchInboxCount: vi.fn(),
   rerDutyShortStateCreate: vi.fn(),
   rerDutyShortStateGet: vi.fn(),
@@ -28,6 +29,10 @@ vi.mock('../../services/api/inbox', () => ({
   fetchInboxCount: dutyApiMocks.fetchInboxCount,
   rerDutyShortStateCreate: dutyApiMocks.rerDutyShortStateCreate,
   rerDutyShortStateGet: dutyApiMocks.rerDutyShortStateGet,
+}));
+
+vi.mock('../../services/api/inbox-messages', () => ({
+  fetchMessagesByIds: dutyApiMocks.fetchMessagesByIds,
 }));
 
 vi.mock('../../services/api/system-settings', () => ({
@@ -186,6 +191,7 @@ export function createDutyFeedStateFixture() {
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.clearAllMocks();
     dutyApiMocks.fetchInboxMessages.mockReset();
+    dutyApiMocks.fetchMessagesByIds.mockReset();
     dutyApiMocks.fetchInboxCount.mockReset();
     dutyApiMocks.notifyDutyNewMessages.mockReset();
     deferredRequests.clear();
@@ -194,6 +200,7 @@ export function createDutyFeedStateFixture() {
     dutyApiMocks.fetchInboxMessages.mockResolvedValue(
       inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]),
     );
+    dutyApiMocks.fetchMessagesByIds.mockResolvedValue([]);
     dutyApiMocks.systemSettingsCurrent.mockResolvedValue({
       id: 1,
       rerAnalysisUnitsExactMatchOnlyDefault: false,

@@ -148,16 +148,17 @@ function rect(top: number, height: number): DOMRect {
 function mockVerticalLayout(
   scroller: HTMLElement,
   layout: { items: Map<number, ItemLayout> },
+  scale = 1,
 ): void {
   const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function () {
-    if (this === scroller) return rect(0, scroller.clientHeight);
+    if (this === scroller) return rect(0, scroller.clientHeight * scale);
     const id = Number.parseInt(
       (this as HTMLElement).dataset.testid?.replace('item-', '') ?? '',
       10,
     );
     const item = layout.items.get(id);
-    if (item) return rect(item.top - scroller.scrollTop, item.height);
+    if (item) return rect((item.top - scroller.scrollTop) * scale, item.height * scale);
     return originalGetBoundingClientRect.call(this);
   });
 }
@@ -1185,6 +1186,50 @@ describe('useWindowedFeedScroll', () => {
     });
 
     expect(scroller.scrollTop).toBe(240);
+  });
+
+  it('scrolls directly to a message without enabling bottom follow', async () => {
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 200 });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+
+    const targetElement = container.querySelector('[data-testid="item-3"]') as HTMLElement;
+    const target = latestScrollHandle?.scrollToItem(3);
+
+    expect(target).toBe(targetElement);
+    expect(scroller.scrollTop).toBe(75);
+
+    scroller.scrollTop = 125;
+    await act(async () => {
+      await waitForAnimationFrame();
+    });
+    expect(scroller.scrollTop).toBe(75);
+  });
+
+  it('compensates the narrow-screen zoom when centering a message', async () => {
+    const ids = Array.from({ length: 30 }, (_, index) => index + 1);
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 1500 });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) }, 1.125);
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+
+    latestScrollHandle?.scrollToItem(21);
+
+    expect(scroller.scrollTop).toBe(975);
   });
 
   it('keeps the initial render pinned to bottom while layout height settles', async () => {

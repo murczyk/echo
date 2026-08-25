@@ -70,6 +70,42 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(hoisted.fetchInboxMessages.mock.calls[0][0].reportTagsOnlyThisUnit).toBeNull();
   });
 
+  it('loads a direct-link target with an exact pagination cursor', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    hoisted.fetchInboxMessages.mockClear();
+    hoisted.fetchMessagesByIds.mockClear();
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 40));
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(42, 81));
+    hoisted.fetchMessagesByIds.mockResolvedValueOnce([
+      [41, minimalInboxMessage({ timestamp: 4100, messageUid: 'target-uid' })],
+    ]);
+
+    await act(async () => {
+      apiRef.current!.setFeedInitialTarget('mf-0', {
+        beforeIdNoninclusive: 41,
+        messageIds: [41],
+      });
+      apiRef.current!.applyFilter('mf-0', apiRef.current!.messageFeeds[0].filter, true);
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ beforeIdNoninclusive: 41, loadLatest: false }),
+    );
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 41, loadLatest: false }),
+    );
+    expect(hoisted.fetchMessagesByIds).toHaveBeenCalledWith(
+      [41],
+      expect.objectContaining({ beforeIdNoninclusive: 41, loadLatest: false }),
+    );
+    const loadedIds = apiRef.current!.messageFeeds[0].items.map(([id]) => id);
+    expect(loadedIds).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+    expect(loadedIds.at(0)).toBe(21);
+    expect(loadedIds.indexOf(41)).toBe(20);
+    expect(loadedIds.at(-1)).toBe(60);
+  });
+
   it('preserves a follow generation until cancellation', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,

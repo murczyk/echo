@@ -21,7 +21,10 @@ import {
   queryStateUiComparisonKey,
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
+  parseMessageUidFromWindow,
 } from './helpers';
+import { APP_TIME_ZONE, formatDateTimeInputValueInTimeZone } from '../../utils/misc';
+import { fetchInboxItemContext } from '../../services/api/inbox-messages';
 import type { AnalysisCallsignFrequencyMatchesRsp, InboxMessage, User } from '../../../../Bindings';
 import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
 import { useAnalysisData } from './use-analysis-data';
@@ -75,9 +78,36 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [rightSidebarTab, setRightSidebarTab] = useState<AnalysisSidebarTab | null>(() =>
     initialPanelQueryState.rightPanelOpen ? 'stats' : null,
   );
+  const [targetMessageUid] = useState(parseMessageUidFromWindow);
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
+
+  useEffect(() => {
+    if (!targetMessageUid) return;
+    let cancelled = false;
+    void fetchInboxItemContext({ messageUid: targetMessageUid })
+      .then((res) => {
+        if (cancelled) return;
+        setQueryState((prev) => ({
+          ...prev,
+          groupsSelected:
+            res.groupMasterKeys.length > 0 ? res.groupMasterKeys : prev.groupsSelected,
+          fromDateTimeStr: res.sinceTs
+            ? formatDateTimeInputValueInTimeZone(new Date(res.sinceTs), APP_TIME_ZONE)
+            : prev.fromDateTimeStr,
+          toDateTimeStr: res.tillTs
+            ? formatDateTimeInputValueInTimeZone(new Date(res.tillTs), APP_TIME_ZONE)
+            : prev.toDateTimeStr,
+        }));
+      })
+      .catch((err) => {
+        console.error('Failed to load inbox item context:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [targetMessageUid]);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
     return false;

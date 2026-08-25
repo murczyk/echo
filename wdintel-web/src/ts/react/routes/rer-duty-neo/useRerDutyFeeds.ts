@@ -561,5 +561,6 @@ export function useRerDutyFeeds(
     handleEditedMessage: actions.handleEditedMessage,
     keywordSets,
     reloadKeywordSets,
+    setFeedInitialTarget: feedState.setFeedInitialTarget,
   };
 }

@@ -5,11 +5,13 @@ import type {
   CallsignInfoRes,
   InboxMessage,
   InboxMessagesReq,
+  InboxMessagesRsp,
   SignalGroupEntry,
   SignalProfileEntry,
 } from '../../../../Bindings';
 import { fetchInboxMessages } from '../../services/api/inbox';
-import { windowInitialMessageItems } from './utils';
+import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { DUTY_FEED_MESSAGE_WINDOW_LIMIT, windowInitialMessageItems } from './utils';
 import type { MessageFeedState } from './utils';
 import type { MessageCursor } from './utils';
 
@@ -39,7 +41,14 @@ type Params = {
   messageFeedsRef: MutableRefObject<MessageFeedState[]>;
   setMessageFeeds: Dispatch<SetStateAction<MessageFeedState[]>>;
   setError: Dispatch<SetStateAction<string | null>>;
-  buildReqForFeed: (feed: MessageFeedState, options: { loadLatest: boolean }) => InboxMessagesReq;
+  buildReqForFeed: (
+    feed: MessageFeedState,
+    options: {
+      loadLatest?: boolean;
+      beforeIdNoninclusive?: number | null;
+      sinceIdNoninclusive?: number | null;
+    },
+  ) => InboxMessagesReq;
   getFeedLoadGeneration: (feedId: string) => number;
   mergeInboxCallsigns: (
     feedId: string,
@@ -51,6 +60,9 @@ type Params = {
   clearFeedUnreadBaselines: (feedId: string) => void;
   completeFeedReload: (feedId: string) => void;
   setFeedUnreadCursor: (feedId: string, cursor: MessageCursor | null) => void;
+  feedInitialTargetByFeedIdRef?: MutableRefObject<
+    Record<string, { beforeIdNoninclusive: number; messageIds: number[] } | undefined>
+  >;
 };
 
 function preserveUnreadState(
@@ -70,6 +82,29 @@ function preserveUnreadState(
   return { readIds, windowedUnreadItems, unreadCount };
 }
 
+function windowInitialMessageItemsAroundTarget(
+  items: Array<[number, InboxMessage]>,
+  targetMessageIds: readonly number[],
+): Array<[number, InboxMessage]> {
+  const sortedItems = windowInitialMessageItems(items, Math.max(1, items.length));
+  const targetIds = new Set(targetMessageIds);
+  const targetIndex = sortedItems.findIndex(([id]) => targetIds.has(id));
+  if (targetIndex < 0) return windowInitialMessageItems(sortedItems);
+
+  const beforeTarget = Math.floor(DUTY_FEED_MESSAGE_WINDOW_LIMIT / 2);
+  let start = Math.max(0, targetIndex - beforeTarget);
+  const end = Math.min(sortedItems.length, start + DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+  start = Math.max(0, end - DUTY_FEED_MESSAGE_WINDOW_LIMIT);
+  return sortedItems.slice(start, end);
+}
+
+function mergeInitialLoadMetadata(responses: InboxMessagesRsp[]) {
+  const callsigns = responses.flatMap((response) => response.callsigns ?? []);
+  const signalProfiles = Object.assign({}, ...responses.map((response) => response.signalProfiles));
+  const signalGroups = responses.flatMap((response) => response.signalGroups ?? []);
+  return { callsigns, signalProfiles, signalGroups };
+}
+
 export function useRerDutyInitialLoad(params: Params) {
   const paramsRef = useRef(params);
   paramsRef.current = params;
@@ -80,6 +115,8 @@ export function useRerDutyInitialLoad(params: Params) {
       overrides?: {
         highlightSignalsEnabled?: boolean;
         preserveUnread?: boolean;
+        beforeIdNoninclusive?: number | null;
+        loadLatest?: boolean;
       },
     ) => {
       const current = paramsRef.current;
@@ -87,6 +124,14 @@ export function useRerDutyInitialLoad(params: Params) {
       if (!feed) return;
       const requestGeneration = current.getFeedLoadGeneration(feedId);
       const preserveUnread = overrides?.preserveUnread ?? false;
+      const initialTarget = current.feedInitialTargetByFeedIdRef?.current?.[feedId];
+      if (initialTarget != null && current.feedInitialTargetByFeedIdRef) {
+        delete current.feedInitialTargetByFeedIdRef.current[feedId];
+      }
+      const effectiveBeforeId =
+        overrides?.beforeIdNoninclusive ?? initialTarget?.beforeIdNoninclusive ?? null;
+      const effectiveLoadLatest =
+        overrides?.loadLatest ?? (effectiveBeforeId != null ? false : true);
       const effectiveFeed = overrides
         ? {
             ...feed,
@@ -102,12 +147,38 @@ export function useRerDutyInitialLoad(params: Params) {
       );
       current.setError(null);
       try {
-        const response = await fetchInboxMessages(
-          current.buildReqForFeed(effectiveFeed, { loadLatest: true }),
-        );
+        const inboxReq = current.buildReqForFeed(effectiveFeed, {
+          loadLatest: effectiveLoadLatest,
+          beforeIdNoninclusive: effectiveBeforeId,
+        });
+        let responses: InboxMessagesRsp[];
+        let targetItems: Array<[number, InboxMessage]> = [];
+        if (initialTarget) {
+          const newerReq = current.buildReqForFeed(effectiveFeed, {
+            loadLatest: false,
+            sinceIdNoninclusive: initialTarget.beforeIdNoninclusive,
+          });
+          const [olderResponse, newerResponse, loadedTargetItems] = await Promise.all([
+            fetchInboxMessages(inboxReq),
+            fetchInboxMessages(newerReq),
+            fetchMessagesByIds(initialTarget.messageIds, inboxReq),
+          ]);
+          responses = [olderResponse, newerResponse];
+          targetItems = loadedTargetItems;
+        } else {
+          responses = [await fetchInboxMessages(inboxReq)];
+        }
         if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
-        current.mergeInboxCallsigns(feedId, response.callsigns, { replace: true });
-        const items = windowInitialMessageItems(response.inboxItems);
+        const response = responses[0];
+        const metadata = mergeInitialLoadMetadata(responses);
+        current.mergeInboxCallsigns(feedId, metadata.callsigns, { replace: true });
+        const loadedItems = responses.flatMap((loadedResponse) => loadedResponse.inboxItems);
+        const items = initialTarget
+          ? windowInitialMessageItemsAroundTarget(
+              [...loadedItems, ...targetItems],
+              initialTarget.messageIds,
+            )
+          : windowInitialMessageItems(loadedItems);
         const previousFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
@@ -144,12 +215,12 @@ export function useRerDutyInitialLoad(params: Params) {
           ),
         );
         if (preserveUnread) current.completeFeedReload(feedId);
-        if (response.signalProfiles) {
-          current.setProfiles((previous) => ({ ...previous, ...response.signalProfiles }));
+        if (metadata.signalProfiles) {
+          current.setProfiles((previous) => ({ ...previous, ...metadata.signalProfiles }));
         }
-        if (response.signalGroups?.length) {
+        if (metadata.signalGroups.length) {
           const groups: Record<string, SignalGroupEntry> = {};
-          response.signalGroups.forEach((group) => {
+          metadata.signalGroups.forEach((group) => {
             groups[group.masterKey] = group;
           });
           current.setGroupInfos((previous) => ({ ...previous, ...groups }));

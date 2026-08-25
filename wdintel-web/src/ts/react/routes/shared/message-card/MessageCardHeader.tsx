@@ -20,6 +20,7 @@ import FlagIcon from '@mui/icons-material/Flag';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import LaunchIcon from '@mui/icons-material/Launch';
+import LinkIcon from '@mui/icons-material/Link';
 import MapIcon from '@mui/icons-material/Map';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PeopleIcon from '@mui/icons-material/People';
@@ -75,6 +76,7 @@ type ActionIconsRowProps = {
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
+  onCopyMessageLink?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onDelete?: () => void;
@@ -174,6 +176,7 @@ function ActionIconsRow({
   onCopyFreq,
   onCopyTextWithNetwork,
   onCopyTextWithNetworkAndNote,
+  onCopyMessageLink,
   onCopyEtalon,
   onCopyLocation,
   onDelete,
@@ -516,6 +519,13 @@ function ActionIconsRow({
           <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>Копіювати частоту</MenuRow>
         </MenuItem>
       ) : null}
+      {isPresent(onCopyMessageLink) ? (
+        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyMessageLink!)}>
+          <MenuRow icon={<LinkIcon fontSize="small" />}>
+            Копіювати посилання на повідомлення
+          </MenuRow>
+        </MenuItem>
+      ) : null}
       {canShowLocationCopy ? (
         <MenuItem onClick={() => handleCopyMenuItemClick(onCopyLocation!)}>
           <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
@@ -777,6 +787,7 @@ export type MessageCardHeaderProps = {
   onCopyFreq?: () => void;
   onCopyTextWithNetwork?: () => void;
   onCopyTextWithNetworkAndNote?: () => void;
+  onCopyMessageLink?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
   onAddFrequencyToFilter?: (freq: string) => void;
@@ -810,6 +821,7 @@ function MessageCardHeaderComponent({
   onCopyFreq,
   onCopyTextWithNetwork,
   onCopyTextWithNetworkAndNote,
+  onCopyMessageLink,
   onCopyEtalon,
   onCopyLocation,
   onAddFrequencyToFilter,
@@ -964,6 +976,7 @@ function MessageCardHeaderComponent({
             onCopyFreq={onCopyFreq}
             onCopyTextWithNetwork={onCopyTextWithNetwork}
             onCopyTextWithNetworkAndNote={onCopyTextWithNetworkAndNote}
+            onCopyMessageLink={onCopyMessageLink}
             onCopyEtalon={onCopyEtalon}
             onCopyLocation={onCopyLocation}
             onDelete={onDelete}

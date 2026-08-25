@@ -165,3 +165,29 @@ describe('fetchMessagesByIds', () => {
     ]);
   });
 });
+
+describe('fetchInboxItemContext', () => {
+  it('posts message uid to /api/rer-importer/inbox-item-context and normalizes response', async () => {
+    apiMocks.postJson.mockResolvedValueOnce({
+      group_master_keys: ['group-alpha', 'group-beta'],
+      sigint_inbox_item_ids: [101, 102],
+      sinceTs: 1700000000000,
+      tillTs: 1700001800000,
+    });
+
+    const { fetchInboxItemContext } = await import('./inbox-messages');
+    const result = await fetchInboxItemContext({ messageUid: 'uid-123' });
+
+    expect(apiMocks.postJson).toHaveBeenCalledWith(
+      '/api/rer-importer/inbox-item-context',
+      { message_uid: 'uid-123' },
+      undefined,
+    );
+    expect(result).toEqual({
+      groupMasterKeys: ['group-alpha', 'group-beta'],
+      sigintInboxItemIds: [101, 102],
+      sinceTs: 1700000000000,
+      tillTs: 1700001800000,
+    });
+  });
+});

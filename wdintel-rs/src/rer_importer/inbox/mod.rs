@@ -301,7 +301,7 @@ async fn load_inbox_item_context_rows(
     allowed_groups: &[String],
     message_uid: &str,
 ) -> Result<Vec<InboxItemContextRow>, AppError> {
-    Ok(SignalMessage::find()
+    let mut query = SignalMessage::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
@@ -315,11 +315,24 @@ async fn load_inbox_item_context_rows(
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message::Column::MessageUid.eq(message_uid))
         .filter(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(allowed_groups.to_vec()),
-        )
+        );
+
+    if let Ok(id) = message_uid.parse::<i64>() {
+        query = query.filter(
+            signal_message::Column::MessageUid
+                .eq(message_uid)
+                .or(sigint_inbox_item::Column::Id.eq(id))
+                .or(signal_message::Column::Id.eq(id)),
+        );
+    } else {
+        query =
+            query.filter(signal_message::Column::MessageUid.eq(message_uid));
+    }
+
+    Ok(query
         .into_model::<InboxItemContextRow>()
         .all(dbx)
         .await

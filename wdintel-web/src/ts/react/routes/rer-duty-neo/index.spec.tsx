@@ -9,6 +9,8 @@ import { minimalInboxMessage } from './inbox-message-mocks';
 
 const useRerDutyFeedsMock = vi.hoisted(() => vi.fn());
 const notifyMock = vi.hoisted(() => vi.fn());
+const fetchInboxItemContextMock = vi.hoisted(() => vi.fn());
+const fetchMessagesByIdsMock = vi.hoisted(() => vi.fn());
 const nextCreatedResponse = vi.hoisted(() => ({
   value: null as null | { signal_message_id: number },
 }));
@@ -24,6 +26,10 @@ vi.mock('../../services/api/system-settings', () => ({
   currentSystemSettings: vi
     .fn()
     .mockResolvedValue({ devicesSectionEnabled: false, enableAudioTranscription: true }),
+}));
+vi.mock('../../services/api/inbox-messages', () => ({
+  fetchInboxItemContext: fetchInboxItemContextMock,
+  fetchMessagesByIds: fetchMessagesByIdsMock,
 }));
 vi.mock('./useRerDutyFeeds', () => ({
   useRerDutyFeeds: useRerDutyFeedsMock,
@@ -287,6 +293,7 @@ function buildFeedsState() {
     reloadEditedFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
+    setFeedInitialTarget: vi.fn(),
     addFrequencyToFilter: vi.fn(),
     toggleGroup: vi.fn(),
     selectAllGroups: vi.fn(),
@@ -388,7 +395,10 @@ describe('RerDutyNeoPage creation workflow', () => {
   beforeEach(() => {
     useRerDutyFeedsMock.mockReset();
     notifyMock.mockReset();
+    fetchInboxItemContextMock.mockReset();
+    fetchMessagesByIdsMock.mockReset();
     nextCreatedResponse.value = null;
+    window.history.replaceState({}, '', '/rer-duty-neo');
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', undefined);
   });
@@ -425,6 +435,48 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => {
       root.unmount();
     });
+  });
+
+  it('keeps direct-link context loading alive across feed state updates', async () => {
+    window.history.replaceState({}, '', '/rer-duty-neo?m=target-uid');
+    let resolveContext!: (value: {
+      groupMasterKeys: string[];
+      sigintInboxItemIds: number[];
+      sinceTs: number | null;
+      tillTs: number | null;
+    }) => void;
+    fetchInboxItemContextMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveContext = resolve;
+      }),
+    );
+    const { root, state } = await renderPage();
+
+    state.messageFeeds = [...state.messageFeeds];
+    await act(async () => {
+      root.render(<RerDutyNeoPage authUserName="tester" />);
+    });
+    await act(async () => {
+      resolveContext({
+        groupMasterKeys: ['target-group'],
+        sigintInboxItemIds: [41],
+        sinceTs: null,
+        tillTs: null,
+      });
+      await Promise.resolve();
+    });
+
+    expect(state.setFeedInitialTarget).toHaveBeenCalledWith('feed-1', {
+      beforeIdNoninclusive: 41,
+      messageIds: [41],
+    });
+    expect(state.applyFilter).toHaveBeenCalledWith(
+      'feed-1',
+      expect.objectContaining({ groupsSelected: ['target-group'] }),
+      true,
+    );
+
+    root.unmount();
   });
 
   it('opens edit mode, submits the returned message, and closes the drawer', async () => {

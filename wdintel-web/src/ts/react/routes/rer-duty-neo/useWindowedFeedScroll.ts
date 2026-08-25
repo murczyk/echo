@@ -73,6 +73,7 @@ export type WindowedFeedScrollHandle = {
   handleScroll: UIEventHandler<HTMLDivElement>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
   scrollToBottom: (behavior?: ScrollBehavior) => void;
+  scrollToItem: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
 };
 
 const DEFAULT_TOP_LOAD_BUFFER_PX = 160;
@@ -80,6 +81,7 @@ const DEFAULT_BOTTOM_LOAD_BUFFER_PX = 320;
 const DEFAULT_AT_BOTTOM_THRESHOLD_PX = 25;
 const INITIAL_BOTTOM_SETTLE_FRAMES = 12;
 const INITIAL_BOTTOM_SETTLE_TIMEOUT_MS = 2000;
+const DIRECT_ITEM_SETTLE_FRAMES = 12;
 /** Wait for scroll to settle before prefetching newer — avoids mid-fling window commits. */
 const LOAD_NEWER_SCROLL_IDLE_MS = 140;
 /** Same idle gate: push buffered newer pages into the DOM only when the finger stops. */
@@ -87,6 +89,18 @@ const FLUSH_PENDING_SCROLL_IDLE_MS = LOAD_NEWER_SCROLL_IDLE_MS;
 
 function distanceToBottom(el: HTMLElement): number {
   return Math.max(0, el.scrollHeight - el.clientHeight - el.scrollTop);
+}
+
+function centeredItemScrollTop(scroller: HTMLElement, target: HTMLElement): number {
+  const scrollerRect = scroller.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const renderedScale =
+    scroller.clientHeight > 0 && scrollerRect.height > 0
+      ? scrollerRect.height / scroller.clientHeight
+      : 1;
+  const currentOffset = targetRect.top - scrollerRect.top;
+  const centeredOffset = (scrollerRect.height - targetRect.height) / 2;
+  return Math.max(0, scroller.scrollTop + (currentOffset - centeredOffset) / renderedScale);
 }
 
 /**
@@ -177,6 +191,7 @@ export function useWindowedFeedScroll({
   const bottomSettleRafRef = useRef<number | null>(null);
   const bottomSettleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bottomSettleResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const directItemSettleRafRef = useRef<number | null>(null);
   const liveBottomFollowRef = useRef(false);
   const isRestoringAnchorRef = useRef(false);
   const previousItemIdsRef = useRef<readonly number[]>([]);
@@ -496,6 +511,15 @@ export function useWindowedFeedScroll({
 
   useEffect(() => stopBottomSettle, [stopBottomSettle]);
 
+  const stopDirectItemSettle = useCallback(() => {
+    if (directItemSettleRafRef.current === null) return;
+    cancelAnimationFrame(directItemSettleRafRef.current);
+    directItemSettleRafRef.current = null;
+    recordDutyScrollDebugEvent(debugFeedId, 'item-settle:stop');
+  }, [debugFeedId]);
+
+  useEffect(() => stopDirectItemSettle, [stopDirectItemSettle]);
+
   const cancelPendingScrollProcessing = useCallback(() => {
     if (handleScrollRafRef.current !== null) {
       cancelAnimationFrame(handleScrollRafRef.current);
@@ -585,6 +609,7 @@ export function useWindowedFeedScroll({
       );
       cancelPendingScrollProcessing();
       stopBottomSettle();
+      stopDirectItemSettle();
       const { onAtBottomChange, onNearBottomChange, onPhysicalBottomChange } = callbacksRef.current;
       if (atBottomRef.current !== false) onAtBottomChange?.(false);
       if (nearBottomRef.current !== false) onNearBottomChange?.(false);
@@ -596,7 +621,7 @@ export function useWindowedFeedScroll({
       loadOlderTriggeredRef.current = false;
       loadNewerTriggeredRef.current = false;
     },
-    [cancelPendingScrollProcessing, debugFeedId, stopBottomSettle],
+    [cancelPendingScrollProcessing, debugFeedId, stopBottomSettle, stopDirectItemSettle],
   );
   const clearReportedScrollTrackingStateRef = useRef(clearReportedScrollTrackingState);
   clearReportedScrollTrackingStateRef.current = clearReportedScrollTrackingState;
@@ -865,6 +890,72 @@ export function useWindowedFeedScroll({
     [captureAnchorSnapshot, debugFeedId, updateScrollState],
   );
 
+  const scrollToItem = useCallback(
+    (id: number, behavior: ScrollBehavior = 'auto') => {
+      if (!enabledRef.current) return null;
+      const scroller = scrollerRef.current;
+      const target = itemRefsRef.current.get(id);
+      if (!scroller || !target) return null;
+
+      stopBottomSettle();
+      stopDirectItemSettle();
+      liveBottomFollowRef.current = false;
+      physicallyAtBottomRef.current = false;
+      callbacksRef.current.onPhysicalBottomChange?.(false);
+
+      const targetTop = centeredItemScrollTop(scroller, target);
+      if (behavior === 'smooth' && typeof scroller.scrollTo === 'function') {
+        scroller.scrollTo({ top: targetTop, behavior });
+      } else {
+        scroller.scrollTop = targetTop;
+      }
+      previousScrollTopRef.current = scroller.scrollTop;
+      updateScrollState({
+        allowLoadOlder: false,
+        allowLoadNewer: false,
+        allowTopReached: false,
+      });
+      captureAnchorSnapshot();
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'scroll-to-item',
+        `id=${id}; behavior=${behavior}; top=${scroller.scrollTop.toFixed(1)}`,
+      );
+
+      let framesRemaining = DIRECT_ITEM_SETTLE_FRAMES;
+      recordDutyScrollDebugEvent(
+        debugFeedId,
+        'item-settle:start',
+        `id=${id}; frames=${DIRECT_ITEM_SETTLE_FRAMES}`,
+      );
+      const settleFrame = () => {
+        const liveScroller = scrollerRef.current;
+        const liveTarget = itemRefsRef.current.get(id);
+        if (!enabledRef.current || !liveScroller || !liveTarget) {
+          directItemSettleRafRef.current = null;
+          return;
+        }
+        liveScroller.scrollTop = centeredItemScrollTop(liveScroller, liveTarget);
+        previousScrollTopRef.current = liveScroller.scrollTop;
+        captureAnchorSnapshot();
+        framesRemaining -= 1;
+        if (framesRemaining > 0) {
+          directItemSettleRafRef.current = requestAnimationFrame(settleFrame);
+          return;
+        }
+        directItemSettleRafRef.current = null;
+        recordDutyScrollDebugEvent(
+          debugFeedId,
+          'item-settle:complete',
+          `id=${id}; top=${liveScroller.scrollTop.toFixed(1)}`,
+        );
+      };
+      directItemSettleRafRef.current = requestAnimationFrame(settleFrame);
+      return target;
+    },
+    [captureAnchorSnapshot, debugFeedId, stopBottomSettle, stopDirectItemSettle, updateScrollState],
+  );
+
   const startBottomSettle = useCallback(() => {
     if (!enabledRef.current) return;
     stopBottomSettle();
@@ -1009,9 +1100,11 @@ export function useWindowedFeedScroll({
     }
 
     if (!hasInitialScrolledRef.current) {
-      scrollToBottom('auto', 'initial render');
-      startBottomSettle();
-      liveBottomFollowRef.current = true;
+      if (isWatchModeRef.current !== false) {
+        scrollToBottom('auto', 'initial render');
+        startBottomSettle();
+        liveBottomFollowRef.current = true;
+      }
       hasInitialScrolledRef.current = true;
       previousItemIdsRef.current = currentItemIds;
       return;
@@ -1212,5 +1305,6 @@ export function useWindowedFeedScroll({
     handleScroll,
     setItemRef,
     scrollToBottom,
+    scrollToItem,
   };
 }

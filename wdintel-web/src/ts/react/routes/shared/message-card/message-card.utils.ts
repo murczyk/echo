@@ -438,3 +438,66 @@ export function resolveMessageCardEtalonDisplayModel(
     locationDisplayValue: null,
   };
 }
+
+export function buildMessageLinkHref(
+  msg: Pick<InboxMessage, 'messageUid'> | { messageUid?: string | null },
+  feature: 'duty' | 'analysis',
+  id?: number,
+): string {
+  const targetPath = feature === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo';
+  const uid = msg.messageUid?.trim();
+  const identifier =
+    feature === 'duty' && id != null ? String(id) : uid && uid !== '' ? uid : String(id ?? '');
+  const params = new URLSearchParams();
+  if (identifier) {
+    params.set('m', identifier);
+  }
+  const qs = params.toString();
+  return qs ? `${targetPath}?${qs}` : targetPath;
+}
+
+export function buildMessageLinkFullUrl(
+  msg: Pick<InboxMessage, 'messageUid'> | { messageUid?: string | null },
+  feature: 'duty' | 'analysis',
+  id?: number,
+): string {
+  const href = buildMessageLinkHref(msg, feature, id);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}${href}`;
+}
+
+export function scrollToAndHighlightMessage(
+  targetElement: HTMLElement,
+  options: { scroll?: boolean } = {},
+) {
+  if (options.scroll !== false) {
+    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  const cardRoot = (
+    targetElement.matches?.('[data-message-card-root]')
+      ? targetElement
+      : targetElement.querySelector?.('[data-message-card-root], .message-card-root') ||
+        targetElement.firstElementChild ||
+        targetElement
+  ) as HTMLElement;
+
+  const originalOutline = cardRoot.style.outline;
+  const originalOutlineOffset = cardRoot.style.outlineOffset;
+  const originalTransition = cardRoot.style.transition;
+
+  cardRoot.style.transition = 'none';
+  cardRoot.style.outline = '2px solid var(--color-primary, #3b82f6)';
+  cardRoot.style.outlineOffset = '-2px';
+
+  setTimeout(() => {
+    cardRoot.style.transition = 'outline-color 0.7s ease-out';
+    cardRoot.style.outlineColor = 'transparent';
+  }, 1000);
+
+  setTimeout(() => {
+    cardRoot.style.outline = originalOutline;
+    cardRoot.style.outlineOffset = originalOutlineOffset;
+    cardRoot.style.transition = originalTransition;
+  }, 1800);
+}

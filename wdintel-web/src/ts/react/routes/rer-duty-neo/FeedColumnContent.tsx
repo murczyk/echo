@@ -37,6 +37,7 @@ import { buildMessageCardDisplayLabels } from '../shared/message-card/message-ca
 import {
   buildCopyTextWithNetworkAndNote,
   buildCopyTextWithNetworkName,
+  buildMessageLinkFullUrl,
   resolveMessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
@@ -75,6 +76,7 @@ export type FeedColumnContentScrollOptions = {
 
 export type FeedColumnContentHandle = {
   scrollToBottom: (behavior?: ScrollBehavior, options?: FeedColumnContentScrollOptions) => void;
+  scrollToMessage: (id: number, behavior?: ScrollBehavior) => HTMLElement | null;
 };
 
 function useStableCallback<T extends (...args: any[]) => any>(callback: T | undefined): T {
@@ -213,6 +215,9 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onImportant={() => onMessageImportant(id, msg.important)}
       onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
       onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
+      onCopyMessageLink={() =>
+        onMessageCopy(buildMessageLinkFullUrl(msg, 'duty', id), `link-${id}`)
+      }
       onCopyTextWithNetwork={
         etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
           ? () =>
@@ -725,8 +730,14 @@ export const FeedColumnContent = memo(
           }
           scroll.scrollToBottom(behavior);
         },
+        scrollToMessage: (id: number, behavior: ScrollBehavior = 'auto') => {
+          flushSync(() => {
+            idleOffload.wakeFromOffload();
+          });
+          return scroll.scrollToItem(id, behavior);
+        },
       }),
-      [idleOffload.wakeFromOffload, scroll.scrollToBottom],
+      [idleOffload.wakeFromOffload, scroll.scrollToBottom, scroll.scrollToItem],
     );
 
     if (feed.loading && feed.items.length === 0) {

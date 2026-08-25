@@ -1043,3 +1043,23 @@ export function toQueryState(messageFeeds: MessageFeedState[]): RerDutyState {
     messageFeeds: messageFeeds.map((f) => [f.id, f.filter]),
   };
 }
+
+export function parseDutyMessageUidFromWindow(): string | null {
+  if (typeof window === 'undefined') return null;
+  const url = new URL(window.location.href);
+  const param =
+    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
+  const trimmed = param?.trim();
+  return trimmed && trimmed !== '' ? trimmed : null;
+}
+
+export function resolveDutyTargetMessageIds(
+  identifier: string,
+  contextMessageIds: number[],
+): number[] {
+  if (!/^\d+$/.test(identifier)) return contextMessageIds;
+  const exactId = Number(identifier);
+  return Number.isSafeInteger(exactId) && contextMessageIds.includes(exactId)
+    ? [exactId]
+    : contextMessageIds;
+}

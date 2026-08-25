@@ -627,6 +627,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     };
   }, []);
 
+  const feedInitialTargetByFeedIdRef = useRef<
+    Record<string, { beforeIdNoninclusive: number; messageIds: number[] } | undefined>
+  >({});
+  const setFeedInitialTarget = useCallback(
+    (feedId: string, target: { beforeIdNoninclusive: number; messageIds: number[] }) => {
+      feedInitialTargetByFeedIdRef.current[feedId] = target;
+    },
+    [],
+  );
+
   const loadFeedInitialMessages = useRerDutyInitialLoad({
     messageFeeds,
     messageFeedsRef,
@@ -640,6 +650,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     clearFeedUnreadBaselines,
     completeFeedReload,
     setFeedUnreadCursor,
+    feedInitialTargetByFeedIdRef,
   });
 
   const {
@@ -1119,5 +1130,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setLoadingNewerFeedIds,
     arrowResultByFeedId,
     showArrowResult,
+    setFeedInitialTarget,
   };
 }

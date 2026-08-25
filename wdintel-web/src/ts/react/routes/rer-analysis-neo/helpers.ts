@@ -147,6 +147,15 @@ export function parseAnalysisPanelQueryStateFromWindow(): AnalysisPanelQueryStat
   };
 }
 
+export function parseMessageUidFromWindow(): string | null {
+  if (typeof window === 'undefined') return null;
+  const url = new URL(window.location.href);
+  const param =
+    url.searchParams.get('m') || url.searchParams.get('mid') || url.searchParams.get('messageUid');
+  const trimmed = param?.trim();
+  return trimmed && trimmed !== '' ? trimmed : null;
+}
+
 export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),

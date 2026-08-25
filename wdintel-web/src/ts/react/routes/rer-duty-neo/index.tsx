@@ -12,6 +12,8 @@ import {
   feedIndicatorUnreadCount,
   feedNeedsUnreadPrefetch,
   excludeMessageEntityFromFilters,
+  parseDutyMessageUidFromWindow,
+  resolveDutyTargetMessageIds,
   type MessageFeedState,
   type TagsLayoutVariant,
 } from './utils';
@@ -27,9 +29,10 @@ import { currentSystemSettings } from '../../services/api/system-settings';
 import type { InboxMessage, User } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
-import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { fetchInboxItemContext, fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
+import { scrollToAndHighlightMessage } from '../shared/message-card/message-card.utils';
 
 export type RerDutyNeoPageProps = {
   /** Auth user display name from the host page (avoids duplicate /api/user request). */
@@ -323,7 +326,8 @@ export function RerDutyNeoPage({
       feedCount: messageFeeds.length,
       canRemove: messageFeeds.length > 1,
       maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, narrowScreen),
-      isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
+      isWatchMode:
+        !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? (targetMessageUid ? false : true)),
       loadingNewer: loadingNewerFeedIds.has(feed.id),
       arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
       bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
@@ -565,7 +569,124 @@ export function RerDutyNeoPage({
     keywordSets,
     reloadKeywordSets,
     applyFilter,
+    setFeedInitialTarget,
   } = useRerDutyFeeds(authUserName, currentUser?.organismId ?? null);
+  const [targetMessageUid] = useState(parseDutyMessageUidFromWindow);
+  const [targetMessageIds, setTargetMessageIds] = useState<number[]>([]);
+  const [targetNavigationState, setTargetNavigationState] = useState<
+    'idle' | 'loading-context' | 'reloading-feed' | 'done'
+  >(targetMessageUid ? 'loading-context' : 'idle');
+  const messageFeedsRef = useRef(messageFeeds);
+  const applyFilterRef = useRef(applyFilter);
+  const notifyRef = useRef(notify);
+  messageFeedsRef.current = messageFeeds;
+  applyFilterRef.current = applyFilter;
+  notifyRef.current = notify;
+  const targetFeedId = messageFeeds[0]?.id ?? null;
+  const targetReloadObservedRef = useRef(false);
+  const hasScrolledTargetRef = useRef(false);
+
+  useEffect(() => {
+    if (!targetMessageUid || !targetFeedId) return;
+    let cancelled = false;
+    setTargetNavigationState('loading-context');
+    targetReloadObservedRef.current = false;
+    hasScrolledTargetRef.current = false;
+    setActiveFeedId(targetFeedId);
+    setWatchModeByFeedId((prev) => ({ ...prev, [targetFeedId]: false }));
+    cancelFollowTail(targetFeedId);
+
+    void fetchInboxItemContext({ messageUid: targetMessageUid })
+      .then((res) => {
+        if (cancelled) return;
+        const messageIds = resolveDutyTargetMessageIds(
+          targetMessageUid,
+          res.sigintInboxItemIds ?? [],
+        );
+        const currentFeed = messageFeedsRef.current.find((feed) => feed.id === targetFeedId);
+        if (!currentFeed || messageIds.length === 0) {
+          setTargetNavigationState('done');
+          notifyRef.current({
+            message: 'Не вдалося знайти повідомлення за посиланням.',
+            severity: 'error',
+          });
+          return;
+        }
+        setTargetMessageIds(messageIds);
+        setFeedInitialTarget(targetFeedId, {
+          beforeIdNoninclusive: messageIds[0],
+          messageIds,
+        });
+        const nextFilter = {
+          ...currentFeed.filter,
+          groupsSelected:
+            res.groupMasterKeys.length > 0
+              ? res.groupMasterKeys
+              : currentFeed.filter.groupsSelected,
+        };
+        setTargetNavigationState('reloading-feed');
+        applyFilterRef.current(targetFeedId, nextFilter, true);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setTargetNavigationState('done');
+        console.error('Failed to load duty inbox item context:', err);
+        notifyRef.current({
+          message: 'Не вдалося відкрити повідомлення за посиланням.',
+          severity: 'error',
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    targetMessageUid,
+    targetFeedId,
+    setFeedInitialTarget,
+    setWatchModeByFeedId,
+    cancelFollowTail,
+  ]);
+
+  useEffect(() => {
+    if (
+      !targetMessageUid ||
+      !targetFeedId ||
+      targetNavigationState !== 'reloading-feed' ||
+      hasScrolledTargetRef.current ||
+      targetMessageIds.length === 0
+    ) {
+      return;
+    }
+    const targetFeed = messageFeeds.find((feed) => feed.id === targetFeedId);
+    if (!targetFeed) return;
+    if (targetFeed.loading) {
+      targetReloadObservedRef.current = true;
+      return;
+    }
+    if (!targetReloadObservedRef.current) return;
+
+    for (const messageId of targetMessageIds) {
+      const targetEl = columnRefsRef.current[targetFeedId]?.scrollToMessage?.(messageId, 'auto');
+      if (!targetEl) continue;
+      hasScrolledTargetRef.current = true;
+      setTargetNavigationState('done');
+      scrollToAndHighlightMessage(targetEl, { scroll: false });
+      return;
+    }
+    setTargetNavigationState('done');
+    notifyRef.current({
+      message: 'Повідомлення за посиланням відсутнє у стрічці.',
+      severity: 'error',
+    });
+  }, [
+    columnRefsRef,
+    messageFeeds,
+    targetFeedId,
+    targetMessageIds,
+    targetMessageUid,
+    targetNavigationState,
+  ]);
+
   const activeFeedIdSafe = messageFeeds.some((feed) => feed.id === activeFeedId)
     ? activeFeedId
     : (messageFeeds[0]?.id ?? null);
@@ -626,13 +747,16 @@ export function RerDutyNeoPage({
     setActiveFeedId((current) => {
       const currentExists = isPresent(current) && messageFeeds.some((feed) => feed.id === current);
       if (messageFeeds.length > previousFeedCountRef.current) {
+        if (targetMessageUid && previousFeedCountRef.current === 0) {
+          return messageFeeds[0].id;
+        }
         return messageFeeds[messageFeeds.length - 1].id;
       }
       if (currentExists) return current;
       return messageFeeds[0].id;
     });
     previousFeedCountRef.current = messageFeeds.length;
-  }, [messageFeeds]);
+  }, [messageFeeds, targetMessageUid]);
 
   const dutyTabUnreadTotal = useMemo(
     () =>

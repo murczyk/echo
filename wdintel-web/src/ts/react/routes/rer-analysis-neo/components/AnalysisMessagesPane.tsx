@@ -21,7 +21,10 @@ import {
   resolveMessageCardEtalonDisplayModel,
   buildCopyTextWithNetworkAndNote,
   buildCopyTextWithNetworkName,
+  buildMessageLinkFullUrl,
+  scrollToAndHighlightMessage,
 } from '../../shared/message-card/message-card.utils';
+import { parseMessageUidFromWindow } from '../helpers';
 import { buildMessageCardDisplayLabels } from '../../shared/message-card/message-card-labels';
 import { blurActiveElement } from '../../../utils/focus';
 import { copyMessageValue } from '../message-utils';
@@ -292,6 +295,11 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
           onCopyFeedback(`freq-${id}`);
         });
       }}
+      onCopyMessageLink={() => {
+        void copyMessageValue(buildMessageLinkFullUrl(message, 'analysis', id)).then(() => {
+          onCopyFeedback(`link-${id}`);
+        });
+      }}
       onCopyTextWithNetwork={
         etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
           ? () => {
@@ -461,6 +469,24 @@ function AnalysisMessagesPaneComponent({
       }
     };
   }, []);
+
+  const [targetMessageUid] = useState(parseMessageUidFromWindow);
+  const hasScrolledTargetRef = useRef(false);
+
+  useEffect(() => {
+    if (!targetMessageUid || hasScrolledTargetRef.current || loading || messages.length === 0) {
+      return;
+    }
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const targetEl = container.querySelector<HTMLElement>(
+      `[data-message-uid="${targetMessageUid}"], [data-message-id="${targetMessageUid}"]`,
+    );
+    if (targetEl) {
+      hasScrolledTargetRef.current = true;
+      scrollToAndHighlightMessage(targetEl);
+    }
+  }, [targetMessageUid, messages, loading]);
 
   const showCopiedFeedback = useCallback((value: string) => {
     if (isPresent(copyFeedbackTimerRef.current)) {

@@ -165,3 +165,31 @@ describe('buildCopyTextWithNetworkAndNote', () => {
     );
   });
 });
+
+describe('buildMessageLinkHref', () => {
+  it('builds short duty link with messageUid', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: 'uid-abc-123' }, 'duty')).toBe(
+      '/rer-duty-neo?m=uid-abc-123',
+    );
+  });
+
+  it('prefers the exact numeric id for a duty card', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: 'shared-uid' }, 'duty', 456)).toBe(
+      '/rer-duty-neo?m=456',
+    );
+  });
+
+  it('builds short analysis link with messageUid', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: 'uid-abc-123' }, 'analysis')).toBe(
+      '/rer-analysis-neo?m=uid-abc-123',
+    );
+  });
+
+  it('falls back to numeric id if messageUid is missing', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    expect(buildMessageLinkHref({ messageUid: null }, 'duty', 456)).toBe('/rer-duty-neo?m=456');
+  });
+});
