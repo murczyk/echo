@@ -52,19 +52,24 @@ async function expectPreviewCounter(dialog: Locator, value: string) {
   await expect(counter).toHaveText(value);
 }
 
-async function verifyFullscreenEscape(page: Page, dialog: Locator) {
-  const toggle = dialog.getByRole('button', {
-    name: /^(Повноекранний режим|Вийти з повноекранного режиму)$/,
-  });
-  const initialLabel = await toggle.getAttribute('aria-label');
-  const alternateLabel =
-    initialLabel === 'Повноекранний режим'
-      ? 'Вийти з повноекранного режиму'
-      : 'Повноекранний режим';
-  await toggle.click();
-  await expect(dialog.getByRole('button', { name: alternateLabel })).toBeVisible();
+async function makeWindowed(dialog: Locator) {
+  const exitFullscreen = dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' });
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
+  await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
+}
+
+async function verifyFullscreenEscape(page: Page, dialog: Locator, reopen: () => Promise<Locator>) {
+  await makeWindowed(dialog);
   await page.keyboard.press('Escape');
-  await expect(dialog.getByRole('button', { name: initialLabel ?? '' })).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+
+  dialog = await reopen();
+  await makeWindowed(dialog);
+  await dialog.getByRole('button', { name: 'Повноекранний режим' }).click();
+  await expect(dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 }
@@ -162,7 +167,7 @@ test.describe('message card media preview contract', () => {
     await page.keyboard.press('ArrowLeft');
     await expectPreviewCounter(imageDialog, '1 / 6');
 
-    await verifyFullscreenEscape(page, imageDialog);
+    await verifyFullscreenEscape(page, imageDialog, () => openImagePreview(page));
   });
 
   test('video previews preserve carousel controls, info, and download', async ({ page }) => {
@@ -191,7 +196,7 @@ test.describe('message card media preview contract', () => {
     await page.keyboard.press('ArrowLeft');
     await expectPreviewCounter(videoDialog, '3 / 6');
 
-    await verifyFullscreenEscape(page, videoDialog);
+    await verifyFullscreenEscape(page, videoDialog, () => openVideoPreview(page));
   });
 
   test('txt and markdown previews preserve source text, mixed carousel order, and normal escape close', async ({

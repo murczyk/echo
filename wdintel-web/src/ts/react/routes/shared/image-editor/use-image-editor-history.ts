@@ -19,7 +19,9 @@ export function useImageEditorHistory({
   const cleanSnapshotRef = useRef<string | null>(null);
   const restoringRef = useRef(false);
   const timerRef = useRef<number | null>(null);
+  const pendingSnapshotRef = useRef<string | null>(null);
   const [state, setState] = useState({ index: -1, length: 0 });
+  const [pendingSnapshot, setPendingSnapshot] = useState<string | null>(null);
   const [hasEdits, setHasEdits] = useState(false);
 
   const snapshot = useCallback(() => {
@@ -35,9 +37,7 @@ export function useImageEditorHistory({
     );
   }, [canvasRef]);
 
-  const saveHistory = useCallback(() => {
-    const nextSnapshot = snapshot();
-    if (nextSnapshot == null) return;
+  const commitSnapshot = useCallback((nextSnapshot: string) => {
     if (cleanSnapshotRef.current == null) cleanSnapshotRef.current = nextSnapshot;
     if (snapshotsRef.current[indexRef.current] === nextSnapshot) {
       setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
@@ -49,30 +49,62 @@ export function useImageEditorHistory({
     indexRef.current = snapshotsRef.current.length - 1;
     setState({ index: indexRef.current, length: snapshotsRef.current.length });
     setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
-  }, [snapshot]);
+  }, []);
 
   const cancelScheduledHistory = useCallback(() => {
     if (timerRef.current != null) window.clearTimeout(timerRef.current);
     timerRef.current = null;
   }, []);
 
-  const flushScheduledHistory = useCallback(() => {
-    if (timerRef.current == null) return;
+  const discardPendingHistory = useCallback(() => {
     cancelScheduledHistory();
-    saveHistory();
-  }, [cancelScheduledHistory, saveHistory]);
+    pendingSnapshotRef.current = null;
+    setPendingSnapshot(null);
+  }, [cancelScheduledHistory]);
+
+  const flushScheduledHistory = useCallback(() => {
+    const scheduledSnapshot = pendingSnapshotRef.current;
+    if (scheduledSnapshot == null) return;
+    discardPendingHistory();
+    commitSnapshot(scheduledSnapshot);
+  }, [commitSnapshot, discardPendingHistory]);
+
+  const saveHistory = useCallback(() => {
+    const liveSnapshot = snapshot();
+    if (liveSnapshot == null) return;
+    const scheduledSnapshot = pendingSnapshotRef.current;
+    if (scheduledSnapshot != null) {
+      discardPendingHistory();
+      commitSnapshot(scheduledSnapshot);
+    }
+    commitSnapshot(liveSnapshot);
+  }, [commitSnapshot, discardPendingHistory, snapshot]);
 
   const scheduleHistory = useCallback(() => {
     cancelScheduledHistory();
+    const nextSnapshot = snapshot();
+    if (nextSnapshot == null) return;
+    const committedSnapshot = snapshotsRef.current[indexRef.current];
+    if (nextSnapshot === committedSnapshot) {
+      pendingSnapshotRef.current = null;
+      setPendingSnapshot(null);
+      setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
+      return;
+    }
+    pendingSnapshotRef.current = nextSnapshot;
+    setPendingSnapshot(nextSnapshot);
+    setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
-      saveHistory();
+      const scheduledSnapshot = pendingSnapshotRef.current;
+      pendingSnapshotRef.current = null;
+      setPendingSnapshot(null);
+      if (scheduledSnapshot != null) commitSnapshot(scheduledSnapshot);
     }, HISTORY_DELAY_MS);
-  }, [cancelScheduledHistory, saveHistory]);
+  }, [cancelScheduledHistory, commitSnapshot, snapshot]);
 
   const restore = useCallback(
     async (nextIndex: number) => {
-      flushScheduledHistory();
       const canvas = canvasRef.current;
       if (!canvas || nextIndex < 0 || nextIndex >= snapshotsRef.current.length) return;
       restoringRef.current = true;
@@ -89,11 +121,21 @@ export function useImageEditorHistory({
         restoringRef.current = false;
       }
     },
-    [canvasRef, flushScheduledHistory, onRestoreError, onRestored],
+    [canvasRef, onRestoreError, onRestored],
   );
 
+  const undo = useCallback(async () => {
+    flushScheduledHistory();
+    await restore(indexRef.current - 1);
+  }, [flushScheduledHistory, restore]);
+
+  const redo = useCallback(async () => {
+    flushScheduledHistory();
+    await restore(indexRef.current + 1);
+  }, [flushScheduledHistory, restore]);
+
   const reset = useCallback(async () => {
-    cancelScheduledHistory();
+    discardPendingHistory();
     const canvas = canvasRef.current;
     const cleanSnapshot = cleanSnapshotRef.current;
     if (!canvas || cleanSnapshot == null) return;
@@ -111,29 +153,37 @@ export function useImageEditorHistory({
     } finally {
       restoringRef.current = false;
     }
-  }, [cancelScheduledHistory, canvasRef, onRestoreError, onRestored]);
+  }, [canvasRef, discardPendingHistory, onRestoreError, onRestored]);
 
   const clear = useCallback(() => {
-    cancelScheduledHistory();
+    discardPendingHistory();
     snapshotsRef.current = [];
     indexRef.current = -1;
     cleanSnapshotRef.current = null;
     setState({ index: -1, length: 0 });
     setHasEdits(false);
-  }, [cancelScheduledHistory]);
+  }, [discardPendingHistory]);
 
-  useEffect(() => cancelScheduledHistory, [cancelScheduledHistory]);
+  useEffect(() => discardPendingHistory, [discardPendingHistory]);
+
+  const canUndo = pendingSnapshot != null ? state.index >= 0 : state.index > 0;
+  const canRedo = pendingSnapshot == null && state.index >= 0 && state.index < state.length - 1;
 
   return {
     cancelScheduledHistory,
+    canRedo,
+    canUndo,
     clear,
+    commitSnapshot,
+    discardPendingHistory,
     flushScheduledHistory,
     hasEdits,
     historyState: state,
     historyIndexRef: indexRef,
     reset,
-    restore,
+    redo,
     saveHistory,
     scheduleHistory,
+    undo,
   };
 }

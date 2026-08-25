@@ -126,6 +126,7 @@ export function AttachmentsSection({
       return rankA - rankB;
     });
   }, [uppyFiles]);
+  const replacementFiles = [...replacementByMediaId.values()];
 
   const previewFiles = useMemo(
     () =>
@@ -139,7 +140,6 @@ export function AttachmentsSection({
     [uppyFiles],
   );
   const { urls, failPreview } = useLocalMediaPreviewUrls(previewFiles);
-  const replacementFiles = [...replacementByMediaId.values()];
   const totalFiles =
     visibleMedia.length + uppyFiles.filter((file) => !replacementFiles.includes(file)).length;
 
@@ -208,6 +208,57 @@ export function AttachmentsSection({
 
   const previewAttachments = useMemo<MessageCardPreviewItem[]>(() => {
     const items: MessageCardPreviewItem[] = [];
+    const appendUppyPreview = (file: UppyFile<any, any>) => {
+      const previewUrl = urls.get(file.id)?.url;
+      const kind = mediaKind(file.type, file.name);
+      if (kind === 'image' && previewUrl) {
+        items.push({
+          type: 'image',
+          value: {
+            id: file.id,
+            href: previewUrl,
+            fileName: file.name ?? '',
+            sizeBytes: file.size ?? null,
+            contentType: file.type ?? null,
+          },
+        });
+      } else if (kind === 'video') {
+        items.push({
+          type: 'video',
+          value: {
+            id: file.id,
+            name: file.name ?? 'video',
+            source: file.data instanceof Blob ? file.data : (previewUrl ?? ''),
+            mimeType: file.type ?? undefined,
+            sizeBytes: file.size ?? undefined,
+          },
+        });
+      } else if (previewUrl) {
+        const docKind = getDocumentKind({
+          id: file.id,
+          contentType: file.type ?? '',
+          fileName: file.name ?? null,
+          sizeBytes: file.size ?? 0,
+          transcription: null,
+          ocr: null,
+          summary: null,
+          href: previewUrl,
+        });
+        if (docKind !== 'unsupported') {
+          items.push({
+            type: 'document',
+            value: {
+              id: file.id,
+              href: previewUrl,
+              fileName: file.name ?? '',
+              sizeBytes: file.size ?? null,
+              contentType: file.type ?? null,
+              kind: docKind,
+            },
+          });
+        }
+      }
+    };
 
     for (const media of sortedVisibleMedia) {
       const rawMedia = media as MessageMediaInfo & {
@@ -220,7 +271,11 @@ export function AttachmentsSection({
       const contentType = media.contentType ?? rawMedia.content_type ?? undefined;
       const sizeBytes = media.sizeBytes ?? rawMedia.size_bytes ?? undefined;
       const href = media.href || (id ? `/api/messenger/media/${id}` : undefined);
-      if (replacementByMediaId.has(id)) continue;
+      const replacement = replacementByMediaId.get(id);
+      if (replacement) {
+        appendUppyPreview(replacement);
+        continue;
+      }
       if (failedExistingMediaIds.has(id) || !href) continue;
       const kind = mediaKind(contentType, fileName ?? '');
       if (
@@ -269,59 +324,8 @@ export function AttachmentsSection({
       }
     }
 
-    for (const file of sortedUppyFiles) {
-      const preview = urls.get(file.id);
-      const previewUrl = preview?.url;
-      const kind = mediaKind(file.type, file.name);
-      if (kind === 'image' && previewUrl) {
-        items.push({
-          type: 'image',
-          value: {
-            id: file.id,
-            href: previewUrl,
-            fileName: file.name ?? '',
-            sizeBytes: file.size ?? null,
-            contentType: file.type ?? null,
-          },
-        });
-      } else if (kind === 'video') {
-        items.push({
-          type: 'video',
-          value: {
-            id: file.id,
-            name: file.name ?? 'video',
-            source: file.data instanceof Blob ? file.data : (previewUrl ?? ''),
-            mimeType: file.type ?? undefined,
-            sizeBytes: file.size ?? undefined,
-          },
-        });
-      } else if (previewUrl) {
-        const href = previewUrl;
-        const docKind = getDocumentKind({
-          id: file.id,
-          contentType: file.type ?? '',
-          fileName: file.name ?? null,
-          sizeBytes: file.size ?? 0,
-          transcription: null,
-          ocr: null,
-          summary: null,
-          href,
-        });
-        if (docKind !== 'unsupported') {
-          items.push({
-            type: 'document',
-            value: {
-              id: file.id,
-              href,
-              fileName: file.name ?? '',
-              sizeBytes: file.size ?? null,
-              contentType: file.type ?? null,
-              kind: docKind,
-            },
-          });
-        }
-      }
-    }
+    for (const file of sortedUppyFiles)
+      if (!replacementFiles.includes(file)) appendUppyPreview(file);
 
     return items;
   }, [sortedUppyFiles, urls, sortedVisibleMedia, failedExistingMediaIds, replacementByMediaId]);

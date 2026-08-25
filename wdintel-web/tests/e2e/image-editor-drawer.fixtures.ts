@@ -56,8 +56,19 @@ export const IMAGE_EDITOR_DRAWER_PNG = {
   buffer: createEditorFixturePng(),
 };
 
+export function parseTusMetadata(value: string | undefined): Record<string, string> {
+  if (!value) return {};
+  return Object.fromEntries(
+    value.split(',').flatMap((entry) => {
+      const [key, encoded] = entry.trim().split(/\s+/, 2);
+      if (!key || !encoded) return [];
+      return [[key, Buffer.from(encoded, 'base64').toString('utf8')]];
+    }),
+  );
+}
+
 export async function observeImageEditorSubmission(page: Page) {
-  const uploads: Array<{ bytes: Buffer; metadata: string | undefined }> = [];
+  const uploads: Array<{ bytes: Buffer; metadata: Record<string, string> }> = [];
   const submissions: unknown[] = [];
   let uploadMetadata: string | undefined;
   await page.route('**/api/sigint/file-upload/tus', async (route) => {
@@ -77,7 +88,7 @@ export async function observeImageEditorSubmission(page: Page) {
     if (request.method() === 'PATCH') {
       uploads.push({
         bytes: request.postDataBuffer() ?? Buffer.alloc(0),
-        metadata: uploadMetadata,
+        metadata: parseTusMetadata(uploadMetadata),
       });
     }
     await route.fulfill({

@@ -84,8 +84,11 @@ test.describe('image editor in editable message drawers #3099', () => {
       await expect.poll(() => submitted.submissions.length).toBe(1);
       expect(submitted.uploads).toHaveLength(1);
       expect(submitted.uploads[0]?.bytes.equals(IMAGE_EDITOR_DRAWER_PNG.buffer)).toBe(false);
-      expect(submitted.uploads[0]?.metadata).toContain('filename');
-      expect(submitted.uploads[0]?.metadata).toContain('filetype');
+      expect(submitted.uploads[0]?.bytes.length).toBeGreaterThan(0);
+      expect(submitted.uploads[0]?.metadata).toMatchObject({
+        filename: IMAGE_EDITOR_DRAWER_PNG.name,
+        filetype: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+      });
       expect(submitted.submissions[0]).toMatchObject({
         upload_urls: ['/api/sigint/file-upload/tus/editor-upload'],
       });
@@ -185,6 +188,11 @@ test.describe('image editor in editable message drawers #3099', () => {
     await page.getByRole('button', { name: 'Зберегти' }).click();
     await expect.poll(() => submitted.submissions.length).toBe(1);
     expect(submitted.uploads).toHaveLength(1);
+    expect(submitted.uploads[0]?.bytes.equals(IMAGE_EDITOR_DRAWER_PNG.buffer)).toBe(false);
+    expect(submitted.uploads[0]?.metadata).toMatchObject({
+      filename: IMAGE_EDITOR_DRAWER_PNG.name,
+      filetype: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+    });
     expect(submitted.submissions[0]).toMatchObject({
       deleted_media_ids: ['existing-editor-image'],
       upload_urls: ['/api/sigint/file-upload/tus/editor-upload'],
@@ -220,6 +228,10 @@ test.describe('image editor in editable message drawers #3099', () => {
     await expect.poll(() => submitted.submissions.length).toBe(1);
     expect(submitted.uploads).toHaveLength(1);
     expect(submitted.uploads[0]?.bytes.equals(IMAGE_EDITOR_DRAWER_PNG.buffer)).toBe(false);
+    expect(submitted.uploads[0]?.metadata).toMatchObject({
+      filename: IMAGE_EDITOR_DRAWER_PNG.name,
+      filetype: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+    });
     expect(submitted.submissions[0]).toMatchObject({
       upload_urls: ['/api/sigint/file-upload/tus/editor-upload'],
     });
@@ -253,6 +265,11 @@ test.describe('image editor in editable message drawers #3099', () => {
     await page.getByRole('button', { name: 'Зберегти' }).click();
     await expect.poll(() => submitted.submissions.length).toBe(1);
     expect(submitted.uploads).toHaveLength(1);
+    expect(submitted.uploads[0]?.bytes.equals(IMAGE_EDITOR_DRAWER_PNG.buffer)).toBe(false);
+    expect(submitted.uploads[0]?.metadata).toMatchObject({
+      filename: IMAGE_EDITOR_DRAWER_PNG.name,
+      filetype: IMAGE_EDITOR_DRAWER_PNG.mimeType,
+    });
     expect(submitted.submissions[0]).toMatchObject({
       deleted_media_ids: ['existing-editor-image'],
       upload_urls: ['/api/sigint/file-upload/tus/editor-upload'],

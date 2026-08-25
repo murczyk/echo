@@ -55,15 +55,16 @@ export function ImageEditor({
     useImageEditorViewport({ canvasRef, viewportRef, canvasReady });
 
   const {
+    canRedo,
+    canUndo,
     clear: clearHistory,
     flushScheduledHistory,
     hasEdits,
-    historyIndexRef,
-    historyState,
     reset: resetEdits,
-    restore: restoreHistory,
+    redo,
     saveHistory,
     scheduleHistory,
+    undo,
   } = useImageEditorHistory({
     canvasRef,
     onRestored: (canvas) => restoreImageEditorCanvasReferences({ canvas, sourceRef, cropRef }),
@@ -284,7 +285,7 @@ export function ImageEditor({
           sourcePoint: start,
           calloutPoint: { x: start.x + 160, y: start.y + 160 },
         })
-          .then(saveHistory)
+          .then(() => saveHistory())
           .catch((cause) =>
             setError(cause instanceof Error ? cause.message : 'Не вдалося створити лупу'),
           );
@@ -373,19 +374,17 @@ export function ImageEditor({
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
-        void restoreHistory(
-          event.shiftKey ? historyIndexRef.current + 1 : historyIndexRef.current - 1,
-        );
+        void (event.shiftKey ? redo() : undo());
       }
       if (event.key === 'y' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
-        void restoreHistory(historyIndexRef.current + 1);
+        void redo();
       } else if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
         deleteSelected();
       }
     },
-    [deleteSelected, requestCancel, restoreHistory, saveHistory, tool],
+    [deleteSelected, redo, requestCancel, saveHistory, tool, undo],
   );
 
   useEffect(() => {
@@ -419,15 +418,15 @@ export function ImageEditor({
         magnification={magnification}
         onMagnificationChange={setMagnification}
         zoom={zoom}
-        canUndo={historyState.index > 0}
-        canRedo={historyState.index >= 0 && historyState.index < historyState.length - 1}
+        canUndo={canUndo}
+        canRedo={canRedo}
         onDeleteSelected={deleteSelected}
         onZoomChange={setViewportZoom}
         onFitViewport={fitViewport}
         onActualSize={actualSize}
         onResetViewport={resetViewport}
-        onUndo={() => void restoreHistory(historyIndexRef.current - 1)}
-        onRedo={() => void restoreHistory(historyIndexRef.current + 1)}
+        onUndo={() => void undo()}
+        onRedo={() => void redo()}
         onResetEdits={() => void resetEdits()}
       />
       {error ? (

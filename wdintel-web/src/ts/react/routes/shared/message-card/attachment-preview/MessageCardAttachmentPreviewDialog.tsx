@@ -53,7 +53,6 @@ export function MessageCardAttachmentPreviewDialog({
   const [isEditing, setIsEditing] = useState(false);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
-  const [fullscreenEscapeHandled, setFullscreenEscapeHandled] = useState(false);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
   const dialogIsFullscreen = isFullscreen && previewConfig.supportsFullscreen;
 
@@ -67,13 +66,8 @@ export function MessageCardAttachmentPreviewDialog({
           setDismissChildOverlay((value) => value + 1);
           return;
         }
-        if (
-          previewConfig.layout === 'media' &&
-          previewConfig.supportsFullscreen &&
-          !fullscreenEscapeHandled
-        ) {
-          setIsFullscreen((value) => !value);
-          setFullscreenEscapeHandled(true);
+        if (previewConfig.layout === 'media' && dialogIsFullscreen) {
+          setIsFullscreen(false);
           return;
         }
         closeDialog();
@@ -95,7 +89,7 @@ export function MessageCardAttachmentPreviewDialog({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [childOverlayOpen, fullscreenEscapeHandled, isEditing, navigation, previewConfig]);
+  }, [childOverlayOpen, dialogIsFullscreen, isEditing, navigation, previewConfig]);
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
@@ -115,10 +109,7 @@ export function MessageCardAttachmentPreviewDialog({
   const rendererProps = {
     navigation,
     isFullscreen: dialogIsFullscreen,
-    onFullscreenChange: (value: boolean) => {
-      setFullscreenEscapeHandled(false);
-      setIsFullscreen(value);
-    },
+    onFullscreenChange: setIsFullscreen,
     onClose: closeDialog,
     isDownloadStarting,
     onDownloadStart,

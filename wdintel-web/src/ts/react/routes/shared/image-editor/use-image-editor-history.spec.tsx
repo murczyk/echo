@@ -53,7 +53,9 @@ describe('image editor history #3099', () => {
     act(() => harness.history().saveHistory());
     fabricCanvas.value = 'changed';
     act(() => harness.history().scheduleHistory());
-    await act(async () => harness.history().restore(0));
+    expect(harness.history().hasEdits).toBe(true);
+    expect(harness.history().canUndo).toBe(true);
+    await act(async () => harness.history().undo());
     expect(fabricCanvas.value).toBe('clean');
     expect(harness.history().hasEdits).toBe(false);
   });
@@ -69,13 +71,14 @@ describe('image editor history #3099', () => {
     act(() => harness.history().scheduleHistory());
     await act(async () => vi.advanceTimersByTimeAsync(150));
     expect(harness.history().historyState.length).toBe(2);
-    await act(async () => harness.history().restore(0));
+    await act(async () => harness.history().undo());
     await act(async () => vi.advanceTimersByTimeAsync(200));
     expect(fabricCanvas.value).toBe('clean');
     expect(harness.history().historyState.length).toBe(2);
   });
 
   it('truncates redo after a new edit following undo', async () => {
+    vi.useFakeTimers();
     const fabricCanvas = canvas();
     const harness = renderHistory(fabricCanvas);
     act(() => harness.history().saveHistory());
@@ -83,12 +86,110 @@ describe('image editor history #3099', () => {
     act(() => harness.history().saveHistory());
     fabricCanvas.value = 'two';
     act(() => harness.history().saveHistory());
-    await act(async () => harness.history().restore(1));
+    await act(async () => harness.history().undo());
     fabricCanvas.value = 'replacement';
+    act(() => harness.history().scheduleHistory());
+    expect(harness.history().canRedo).toBe(false);
+    await act(async () => harness.history().flushScheduledHistory());
+    expect(harness.history().historyState).toEqual({ index: 2, length: 3 });
+    await act(async () => harness.history().redo());
+    expect(fabricCanvas.value).toBe('replacement');
+  });
+
+  it('commits a pending style before a later direct canvas mutation', async () => {
+    vi.useFakeTimers();
+    const fabricCanvas = canvas();
+    const harness = renderHistory(fabricCanvas);
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = 'style';
+    act(() => harness.history().scheduleHistory());
+    fabricCanvas.value = 'deleted';
     act(() => harness.history().saveHistory());
     expect(harness.history().historyState).toEqual({ index: 2, length: 3 });
-    await act(async () => harness.history().restore(3));
-    expect(fabricCanvas.value).toBe('replacement');
+    expect(harness.history().canUndo).toBe(true);
+    expect(harness.history().canRedo).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(harness.history().historyState).toEqual({ index: 2, length: 3 });
+    await act(async () => harness.history().undo());
+    expect(fabricCanvas.value).toBe('style');
+    await act(async () => harness.history().undo());
+    expect(fabricCanvas.value).toBe('clean');
+  });
+
+  it('deduplicates an identical pending and direct snapshot', async () => {
+    vi.useFakeTimers();
+    const fabricCanvas = canvas();
+    const harness = renderHistory(fabricCanvas);
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = 'changed';
+    act(() => harness.history().scheduleHistory());
+    act(() => harness.history().saveHistory());
+    expect(harness.history().historyState).toEqual({ index: 1, length: 2 });
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(harness.history().historyState).toEqual({ index: 1, length: 2 });
+    await act(async () => harness.history().undo());
+    expect(fabricCanvas.value).toBe('clean');
+  });
+
+  it('replaces a redo branch with ordered pending and direct snapshots', async () => {
+    vi.useFakeTimers();
+    const fabricCanvas = canvas();
+    const harness = renderHistory(fabricCanvas);
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = 'one';
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = 'two';
+    act(() => harness.history().saveHistory());
+    await act(async () => harness.history().undo());
+    fabricCanvas.value = 'styled-one';
+    act(() => harness.history().scheduleHistory());
+    expect(harness.history().canRedo).toBe(false);
+    fabricCanvas.value = 'direct-after-style';
+    act(() => harness.history().saveHistory());
+    expect(harness.history().historyState).toEqual({ index: 3, length: 4 });
+    await act(async () => harness.history().undo());
+    expect(fabricCanvas.value).toBe('styled-one');
+    await act(async () => harness.history().undo());
+    expect(fabricCanvas.value).toBe('one');
+    await act(async () => harness.history().redo());
+    expect(fabricCanvas.value).toBe('styled-one');
+  });
+
+  it('clears pending dirty state without adding a duplicate when the canvas returns to clean', async () => {
+    vi.useFakeTimers();
+    const fabricCanvas = canvas();
+    const harness = renderHistory(fabricCanvas);
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = 'changed';
+    act(() => harness.history().scheduleHistory());
+    expect(harness.history().hasEdits).toBe(true);
+    fabricCanvas.value = 'clean';
+    act(() => harness.history().scheduleHistory());
+    expect(harness.history().hasEdits).toBe(false);
+    expect(harness.history().canUndo).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(harness.history().historyState).toEqual({ index: 0, length: 1 });
+  });
+
+  it('clears pending history on reset and clear', async () => {
+    vi.useFakeTimers();
+    const fabricCanvas = canvas();
+    const harness = renderHistory(fabricCanvas);
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = 'changed';
+    act(() => harness.history().scheduleHistory());
+    await act(async () => harness.history().reset());
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(harness.history().historyState).toEqual({ index: 0, length: 1 });
+    expect(harness.history().hasEdits).toBe(false);
+
+    fabricCanvas.value = 'changed-again';
+    act(() => harness.history().scheduleHistory());
+    act(() => harness.history().clear());
+    await act(async () => vi.advanceTimersByTimeAsync(200));
+    expect(harness.history().historyState).toEqual({ index: -1, length: 0 });
+    expect(harness.history().canUndo).toBe(false);
+    expect(harness.history().canRedo).toBe(false);
   });
 
   it('keeps restoration enabled after a failed load', async () => {
@@ -98,8 +199,8 @@ describe('image editor history #3099', () => {
     act(() => harness.history().saveHistory());
     fabricCanvas.value = 'changed';
     act(() => harness.history().saveHistory());
-    await act(async () => harness.history().restore(0));
-    await act(async () => harness.history().restore(0));
+    await act(async () => harness.history().undo());
+    await act(async () => harness.history().undo());
     expect(harness.onRestoreError).toHaveBeenCalledOnce();
     expect(fabricCanvas.loadFromJSON).toHaveBeenCalledTimes(2);
   });
