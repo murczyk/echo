@@ -1084,24 +1084,24 @@ mod tests {
             &env.dbx,
             "корпус",
             "corps",
-            Some(army.unit_id),
             None,
+            Some(army.unit_id),
         )
         .await;
         let company = insert_orbit_unit(
             &env.dbx,
             "рота",
             "company",
-            Some(corps.unit_id),
             None,
+            Some(corps.unit_id),
         )
         .await;
         let crew = insert_orbit_unit(
             &env.dbx,
             "екіпаж",
             "teamOrCrew",
-            Some(company.unit_id),
             None,
+            Some(company.unit_id),
         )
         .await;
         link_orbit_unit(&env.dbx, crew.unit_id, first.id, false).await;
