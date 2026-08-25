@@ -3,8 +3,7 @@ import { Box, Stack, Typography } from '@mui/material';
 import { PowerAlert } from '../../components/PowerAlert';
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
-import { SettingsMediaSummaryCard } from './SettingsMediaSummaryCard';
-import { SettingsTagsLayoutCard } from './SettingsTagsLayoutCard';
+import { SettingsMessageCard } from './SettingsMessageCard';
 
 export type SettingsGeneralSectionProps = {
   loadInProgress: boolean;
@@ -49,15 +48,11 @@ export function SettingsGeneralSection({
         {saveError ? <PowerAlert severity="error">{saveError}</PowerAlert> : null}
 
         <Stack spacing={3} sx={{ minWidth: 0 }}>
-          <SettingsTagsLayoutCard
+          <SettingsMessageCard
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
             messageTextPreviewLines={messageTextPreviewLines}
             onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
-            loadInProgress={loadInProgress}
-          />
-
-          <SettingsMediaSummaryCard
             mediaSummaryEnabled={mediaSummaryEnabled}
             onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
             loadInProgress={loadInProgress}
