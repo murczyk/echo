@@ -41,11 +41,13 @@ export function MessageCardAttachmentPreviewDialog({
   isDownloadStarting = isDownloadIdle,
   onDownloadStart = allowDownloadStart,
   imageEditing,
+  initialAction,
 }: {
   item: MessageCardPreviewItem;
   navigation: MessageCardPreviewNavigation;
   onClose: () => void;
   imageEditing?: ImageEditingCapability;
+  initialAction?: 'edit-image';
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
   const dialogLabel = getPreviewDialogLabel(previewKind);
@@ -141,6 +143,7 @@ export function MessageCardAttachmentPreviewDialog({
         <ImageAttachmentPreviewRenderer
           image={item.value}
           imageEditing={imageEditing}
+          initialAction={initialAction}
           onEditModeChange={setIsEditing}
           onChildOverlayChange={setChildOverlayOpen}
           dismissChildOverlay={dismissChildOverlay}

@@ -94,6 +94,32 @@ describe('AttachmentsSection media previews', () => {
     act(() => root.unmount());
   });
 
+  it('offers image editing before download but omits it for non-image rows', async () => {
+    const image = await renderSection([pendingFile('image', 'photo.png', 'image/png')]);
+    await act(async () => {
+      image.container
+        .querySelector('button[aria-label="Більше дій для photo.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(
+      Array.from(document.body.querySelectorAll('li[role="menuitem"]')).map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(['Редагувати', 'Завантажити']);
+    act(() => image.root.unmount());
+
+    const documentRow = await renderSection([
+      pendingFile('document', 'report.pdf', 'application/pdf'),
+    ]);
+    await act(async () => {
+      documentRow.container
+        .querySelector('button[aria-label="Більше дій для report.pdf"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(window.document.body.textContent).not.toContain('Редагувати');
+    act(() => documentRow.root.unmount());
+  });
+
   it('keeps the icon in the start slot for non-media files and broken previews', async () => {
     const unknown = await renderSection([pendingFile('unknown', 'data.bin', '')]);
     expect(unknown.container.querySelector('img')).toBeNull();

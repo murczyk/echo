@@ -30,11 +30,11 @@ test.describe('image editor in editable message drawers #3099', () => {
       await expect(page.getByText('Вкладення (1)')).toBeVisible();
 
       await page
-        .getByRole('button', { name: `Переглянути ${IMAGE_EDITOR_DRAWER_PNG.name}` })
+        .getByRole('button', { name: `Більше дій для ${IMAGE_EDITOR_DRAWER_PNG.name}` })
         .click();
+      await page.getByRole('menuitem', { name: 'Редагувати' }).click();
       const preview = page.getByRole('dialog', { name: 'Перегляд зображення' });
-      await expect(preview.getByRole('button', { name: 'Редагувати зображення' })).toBeVisible();
-      await preview.getByRole('button', { name: 'Редагувати зображення' }).click();
+      await expect(preview).toBeVisible();
       await page.waitForTimeout(250);
       expect(browserErrors).toEqual([]);
 
@@ -57,6 +57,12 @@ test.describe('image editor in editable message drawers #3099', () => {
 
       await expect(editor).toHaveCount(0);
       await expect(preview).toBeVisible();
+      await expect(preview.locator('[data-attachment-preview-counter]')).toHaveText('1 / 1');
+      await preview.getByRole('button', { name: 'Закрити' }).click();
+      await expect(page.getByText('Вкладення (1)')).toBeVisible();
+      await expect(
+        page.getByRole('button', { name: `Видалити ${IMAGE_EDITOR_DRAWER_PNG.name}` }),
+      ).toHaveCount(1);
     });
   }
 

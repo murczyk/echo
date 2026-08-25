@@ -1,6 +1,7 @@
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
+import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import {
@@ -258,6 +259,7 @@ type FileRowProps = {
   busy: boolean;
   onRemove: () => void;
   onDownload?: () => void;
+  onEdit?: () => void;
   previewUrl?: string;
   onPreviewError?: () => void;
   onPreviewClick?: () => void;
@@ -269,6 +271,7 @@ export function AttachmentFileRow({
   busy,
   onRemove,
   onDownload,
+  onEdit,
   previewUrl,
   onPreviewError,
   onPreviewClick,
@@ -296,14 +299,20 @@ export function AttachmentFileRow({
     onDownload?.();
   };
 
+  const handleEditClick = () => {
+    const menuAnchor = menuAnchorEl;
+    handleMenuClose();
+    menuAnchor?.blur();
+    window.setTimeout(() => onEdit?.(), 0);
+  };
+
   return (
     <Box
       sx={{
         display: 'flex',
         flexDirection: 'column',
         gap: 0.5,
-        py: 0.5,
-        px: 1,
+        p: 0.5,
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 1,
@@ -377,8 +386,8 @@ export function AttachmentFileRow({
             {meta}
           </Typography>
         ) : null}
-        {onDownload ? (
-          <>
+        {onDownload || onEdit ? (
+          <span className="flex shrink-0 items-center gap-0">
             <IconButton
               size="small"
               aria-label={`Більше дій для ${file.name}`}
@@ -397,23 +406,43 @@ export function AttachmentFileRow({
               transformOrigin={{ horizontal: 'right', vertical: 'top' }}
               anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
             >
-              <MenuItem onClick={handleDownloadClick}>
-                <ListItemIcon>
-                  <DownloadIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Завантажити</ListItemText>
-              </MenuItem>
+              {onEdit ? (
+                <MenuItem onClick={handleEditClick}>
+                  <ListItemIcon>
+                    <EditIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Редагувати</ListItemText>
+                </MenuItem>
+              ) : null}
+              {onDownload ? (
+                <MenuItem onClick={handleDownloadClick}>
+                  <ListItemIcon>
+                    <DownloadIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Завантажити</ListItemText>
+                </MenuItem>
+              ) : null}
             </Menu>
-          </>
+            <IconButton
+              size="small"
+              aria-label={`Видалити ${file.name}`}
+              onClick={onRemove}
+              disabled={busy}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </span>
         ) : null}
-        <IconButton
-          size="small"
-          aria-label={`Видалити ${file.name}`}
-          onClick={onRemove}
-          disabled={busy}
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
+        {!onDownload && !onEdit ? (
+          <IconButton
+            size="small"
+            aria-label={`Видалити ${file.name}`}
+            onClick={onRemove}
+            disabled={busy}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        ) : null}
       </Box>
       {upload ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pl: '60px' }}>

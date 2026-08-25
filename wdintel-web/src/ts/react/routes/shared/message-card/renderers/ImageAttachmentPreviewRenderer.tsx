@@ -235,6 +235,7 @@ export function ImageAttachmentPreviewRenderer({
   isDownloadStarting,
   onDownloadStart,
   imageEditing,
+  initialAction,
   onEditModeChange,
   onChildOverlayChange,
   dismissChildOverlay,
@@ -245,6 +246,7 @@ export function ImageAttachmentPreviewRenderer({
   isFullscreen: boolean;
   onFullscreenChange: (isFullscreen: boolean) => void;
   imageEditing?: ImageEditingCapability;
+  initialAction?: 'edit-image';
   onEditModeChange?: (editing: boolean) => void;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
@@ -288,6 +290,7 @@ export function ImageAttachmentPreviewRenderer({
     end: (event: PointerEvent) => void;
   } | null>(null);
   const editorAbortRef = useRef<AbortController | null>(null);
+  const initialActionConsumedRef = useRef(false);
   const infoOpen = infoAnchorEl !== null;
   useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
   useEffect(() => {
@@ -601,6 +604,12 @@ export function ImageAttachmentPreviewRenderer({
       if (editorAbortRef.current === controller) setEditorLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (initialAction !== 'edit-image' || initialActionConsumedRef.current) return;
+    initialActionConsumedRef.current = true;
+    void openEditor();
+  }, [initialAction]);
 
   useEffect(() => () => editorAbortRef.current?.abort(), []);
 

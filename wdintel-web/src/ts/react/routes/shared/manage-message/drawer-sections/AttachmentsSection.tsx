@@ -151,6 +151,7 @@ export function AttachmentsSection({
   }, []);
 
   const [previewDialogIndex, setPreviewDialogIndex] = useState<number | null>(null);
+  const [previewInitialAction, setPreviewInitialAction] = useState<'edit-image' | null>(null);
   const imageEditing = useMemo<ImageEditingCapability>(
     () => ({
       canEdit: (image) =>
@@ -331,15 +332,26 @@ export function AttachmentsSection({
   }, [sortedUppyFiles, urls, sortedVisibleMedia, failedExistingMediaIds, replacementByMediaId]);
 
   const openPreviewForId = useCallback(
-    (id: string) => {
+    (id: string, initialAction: 'edit-image' | null = null) => {
       const idx = previewAttachments.findIndex((item) =>
         item.type === 'coordinate' ? false : item.value.id === id,
       );
       if (idx !== -1) {
+        setPreviewInitialAction(initialAction);
         setPreviewDialogIndex(idx);
       }
     },
     [previewAttachments],
+  );
+  const canEditPreviewAttachment = useCallback(
+    (id: string) => {
+      const item = previewAttachments.find(
+        (candidate): candidate is Extract<MessageCardPreviewItem, { type: 'image' }> =>
+          candidate.type === 'image' && candidate.value.id === id,
+      );
+      return item != null && imageEditing.canEdit(item.value);
+    },
+    [imageEditing, previewAttachments],
   );
 
   const downloadUppyFile = useCallback((file: UppyFile<any, any>) => {
@@ -446,6 +458,11 @@ export function AttachmentsSection({
                   replacement ? failPreview(replacement.id) : failExistingMedia(id)
                 }
                 onPreviewClick={() => openPreviewForId(replacement?.id ?? id)}
+                onEdit={
+                  canEditPreviewAttachment(replacement?.id ?? id)
+                    ? () => openPreviewForId(replacement?.id ?? id, 'edit-image')
+                    : undefined
+                }
                 upload={replacement ? fileUploadPresentation(replacement, busy) : undefined}
               />
             );
@@ -472,6 +489,11 @@ export function AttachmentsSection({
                   previewUrl={preview?.url}
                   onPreviewError={() => failPreview(file.id)}
                   onPreviewClick={() => openPreviewForId(file.id)}
+                  onEdit={
+                    canEditPreviewAttachment(file.id)
+                      ? () => openPreviewForId(file.id, 'edit-image')
+                      : undefined
+                  }
                   upload={fileUploadPresentation(file, busy)}
                 />
               );
@@ -483,8 +505,12 @@ export function AttachmentsSection({
         <MessageCardAttachmentPreviewProvider
           attachments={previewAttachments}
           initialIndex={previewDialogIndex}
-          onClose={() => setPreviewDialogIndex(null)}
+          onClose={() => {
+            setPreviewInitialAction(null);
+            setPreviewDialogIndex(null);
+          }}
           imageEditing={imageEditing}
+          initialAction={previewInitialAction ?? undefined}
         />
       ) : null}
     </FormSectionWrapper>

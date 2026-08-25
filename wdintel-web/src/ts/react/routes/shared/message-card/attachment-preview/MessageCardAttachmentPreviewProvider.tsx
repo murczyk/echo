@@ -16,12 +16,14 @@ export function MessageCardAttachmentPreviewProvider({
   isDownloadStarting,
   onDownloadStart,
   imageEditing,
+  initialAction,
 }: {
   attachments: MessageCardPreviewItem[];
   initialIndex: number;
   onClose: () => void;
   onIndexChange?: (index: number) => void;
   imageEditing?: ImageEditingCapability;
+  initialAction?: 'edit-image';
 } & Partial<MessageCardDownloadGuardProps>) {
   const [currentIndex, setCurrentIndex] = useState(() =>
     normalizePreviewIndex(initialIndex, attachments.length),
@@ -64,6 +66,7 @@ export function MessageCardAttachmentPreviewProvider({
       isDownloadStarting={isDownloadStarting}
       onDownloadStart={onDownloadStart}
       imageEditing={imageEditing}
+      initialAction={initialAction}
     />
   );
 }
