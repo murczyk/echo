@@ -467,7 +467,7 @@ async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
     )
     .await
     .c(h!())?;
-    let Some(accepted_sigint_unit_ids) =
+    let Some(accepted_changes) =
         review_sigint_unit_hierarchy_changes(&changes).c(h!())?
     else {
         return Ok(());
@@ -477,7 +477,7 @@ async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
         crate::sigint::unit::orbit::reconcile_selected_orbit_hierarchy_changes(
             &db,
             &login,
-            &accepted_sigint_unit_ids,
+            &accepted_changes,
         )
         .await
         .c(h!())?;
@@ -495,9 +495,12 @@ async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
 
 fn review_sigint_unit_hierarchy_changes(
     changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
-) -> Result<Option<BTreeSet<i64>>, AppError> {
+) -> Result<
+    Option<Vec<crate::sigint::unit::orbit::OrbitUnitHierarchyChange>>,
+    AppError,
+> {
     if changes.is_empty() {
-        return Ok(Some(BTreeSet::new()));
+        return Ok(Some(Vec::new()));
     }
     let mut terminal = tui::setup_terminal().c(h!())?;
     let result =
@@ -509,8 +512,11 @@ fn review_sigint_unit_hierarchy_changes(
 fn review_sigint_unit_hierarchy_changes_inner(
     terminal: &mut tui::OrbitTerminal,
     changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
-) -> Result<Option<BTreeSet<i64>>, AppError> {
-    let mut accepted_sigint_unit_ids = BTreeSet::new();
+) -> Result<
+    Option<Vec<crate::sigint::unit::orbit::OrbitUnitHierarchyChange>>,
+    AppError,
+> {
+    let mut accepted_changes = Vec::new();
     for (index, change) in changes.iter().enumerate() {
         let lines = change
             .attributes
@@ -542,20 +548,18 @@ fn review_sigint_unit_hierarchy_changes_inner(
         .c(h!())?;
         match decision {
             tui::EnrichmentDecision::Confirm => {
-                accepted_sigint_unit_ids.insert(change.sigint_unit_id);
+                accepted_changes.push(change.clone());
             }
             tui::EnrichmentDecision::Deny => {}
             tui::EnrichmentDecision::ConfirmAll => {
-                accepted_sigint_unit_ids.extend(
-                    changes[index..].iter().map(|change| change.sigint_unit_id),
-                );
+                accepted_changes.extend_from_slice(&changes[index..]);
                 break;
             }
             tui::EnrichmentDecision::DenyAll => break,
             tui::EnrichmentDecision::Quit => return Ok(None),
         }
     }
-    Ok(Some(accepted_sigint_unit_ids))
+    Ok(Some(accepted_changes))
 }
 
 fn display_or_empty(value: &str) -> &str {

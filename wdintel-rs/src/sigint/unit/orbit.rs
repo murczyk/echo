@@ -371,6 +371,44 @@ pub(crate) async fn reconcile_sigint_unit_orbit<C>(
 where
     C: ConnectionTrait,
 {
+    reconcile_sigint_unit_orbit_inner(
+        dbx,
+        login,
+        sigint_unit_id,
+        propagate_hierarchy,
+        None,
+    )
+    .await
+}
+
+async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
+    dbx: &C,
+    login: &Uuid,
+    change: &OrbitUnitHierarchyChange,
+) -> Result<UnitOrbitReconcileOutcome, AppError>
+where
+    C: ConnectionTrait,
+{
+    reconcile_sigint_unit_orbit_inner(
+        dbx,
+        login,
+        change.sigint_unit_id,
+        false,
+        Some(change),
+    )
+    .await
+}
+
+async fn reconcile_sigint_unit_orbit_inner<C>(
+    dbx: &C,
+    login: &Uuid,
+    sigint_unit_id: i64,
+    propagate_hierarchy: bool,
+    reviewed_change: Option<&OrbitUnitHierarchyChange>,
+) -> Result<UnitOrbitReconcileOutcome, AppError>
+where
+    C: ConnectionTrait,
+{
     super::changelog::set_author(dbx, login).await.c(h!())?;
     let mut unit = sigint_unit::Entity::find_by_id(sigint_unit_id)
         .filter(sigint_unit::Column::Deleted.eq(false))
@@ -382,10 +420,14 @@ where
         .c(h!())?;
     let previous_unit = unit.clone();
     let orbit_units = linked_orbit_units(dbx, sigint_unit_id).await.c(h!())?;
-    let hierarchy_updated = propagate_hierarchy
-        && propagate_single_orbit_hierarchy(dbx, &orbit_units, &mut unit)
-            .await
-            .c(h!())?;
+    let hierarchy_updated = if let Some(change) = reviewed_change {
+        apply_reviewed_orbit_hierarchy_change(&mut unit, change)
+    } else {
+        propagate_hierarchy
+            && propagate_single_orbit_hierarchy(dbx, &orbit_units, &mut unit)
+                .await
+                .c(h!())?
+    };
     let details =
         unit_inconsistency_details_for_links(dbx, &unit, &orbit_units)
             .await
@@ -434,6 +476,40 @@ where
         hierarchy_updated,
         orbit_link_count: orbit_units.len(),
     })
+}
+
+fn apply_reviewed_orbit_hierarchy_change(
+    unit: &mut sigint_unit::Model,
+    change: &OrbitUnitHierarchyChange,
+) -> bool {
+    let mut updated = false;
+    for attribute in &change.attributes {
+        let current = match attribute.attribute {
+            "name" => &mut unit.name,
+            "other" => &mut unit.other,
+            "team_or_crew" => &mut unit.team_or_crew,
+            "section" => &mut unit.section,
+            "squad" => &mut unit.squad,
+            "platoon" => &mut unit.platoon,
+            "company" => &mut unit.company,
+            "battalion" => &mut unit.battalion,
+            "regiment" => &mut unit.regiment,
+            "brigade" => &mut unit.brigade,
+            "division" => &mut unit.division,
+            "corps" => &mut unit.corps,
+            "army" => &mut unit.army,
+            "military_district" => &mut unit.military_district,
+            "army_region" => &mut unit.army_region,
+            attribute => {
+                unreachable!("unknown reviewed unit attribute {attribute}")
+            }
+        };
+        if *current != attribute.proposed {
+            current.clone_from(&attribute.proposed);
+            updated = true;
+        }
+    }
+    updated
 }
 
 async fn propagate_single_orbit_hierarchy<C>(
@@ -1684,17 +1760,22 @@ fn named_unit_attributes(
 pub(crate) async fn reconcile_selected_orbit_hierarchy_changes(
     dbx: &DatabaseConnection,
     login: &Uuid,
-    accepted_sigint_unit_ids: &BTreeSet<i64>,
+    accepted_changes: &[OrbitUnitHierarchyChange],
 ) -> Result<OrbitUnitReconcileStats, AppError> {
-    reconcile_orbit_linked_units(dbx, login, Some(accepted_sigint_unit_ids))
-        .await
+    reconcile_orbit_linked_units(dbx, login, Some(accepted_changes)).await
 }
 
 async fn reconcile_orbit_linked_units(
     dbx: &DatabaseConnection,
     login: &Uuid,
-    accepted_sigint_unit_ids: Option<&BTreeSet<i64>>,
+    accepted_changes: Option<&[OrbitUnitHierarchyChange]>,
 ) -> Result<OrbitUnitReconcileStats, AppError> {
+    let accepted_changes = accepted_changes.map(|changes| {
+        changes
+            .iter()
+            .map(|change| (change.sigint_unit_id, change))
+            .collect::<BTreeMap<_, _>>()
+    });
     let sigint_unit_ids = sigint_unit_ids_requiring_reconciliation(dbx)
         .await
         .c(h!())?;
@@ -1703,14 +1784,34 @@ async fn reconcile_orbit_linked_units(
         ..Default::default()
     };
     for sigint_unit_id in sigint_unit_ids {
-        let outcome = reconcile_sigint_unit_orbit_committed(
-            dbx,
-            login,
-            sigint_unit_id,
-            accepted_sigint_unit_ids
-                .is_none_or(|unit_ids| unit_ids.contains(&sigint_unit_id)),
-        )
-        .await
+        let outcome = match &accepted_changes {
+            None => {
+                reconcile_sigint_unit_orbit_committed(
+                    dbx,
+                    login,
+                    sigint_unit_id,
+                    true,
+                )
+                .await
+            }
+            Some(changes) => match changes.get(&sigint_unit_id) {
+                Some(change) => {
+                    reconcile_reviewed_sigint_unit_orbit_committed(
+                        dbx, login, change,
+                    )
+                    .await
+                }
+                None => {
+                    reconcile_sigint_unit_orbit_committed(
+                        dbx,
+                        login,
+                        sigint_unit_id,
+                        false,
+                    )
+                    .await
+                }
+            },
+        }
         .c(h!())?;
         stats.hierarchy_updated += usize::from(outcome.hierarchy_updated);
         stats.multiple_links_skipped +=
@@ -1762,6 +1863,23 @@ async fn reconcile_sigint_unit_orbit_committed(
         login,
         sigint_unit_id,
         update_hierarchy,
+    )
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(outcome)
+}
+
+async fn reconcile_reviewed_sigint_unit_orbit_committed(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+    change: &OrbitUnitHierarchyChange,
+) -> Result<UnitOrbitReconcileOutcome, AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let outcome = reconcile_sigint_unit_orbit_with_reviewed_change(
+        &transaction,
+        login,
+        change,
     )
     .await
     .c(h!())?;
@@ -3249,7 +3367,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn reconciliation_ignores_operational_hierarchy() {
+    async fn reviewed_reconciliation_applies_only_displayed_changes() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -3317,7 +3435,7 @@ mod tests {
         let stats = reconcile_selected_orbit_hierarchy_changes(
             &env.dbx,
             &login.id,
-            &BTreeSet::new(),
+            &[],
         )
         .await
         .unwrap();
@@ -3329,10 +3447,15 @@ mod tests {
             .unwrap();
         assert!(unchanged.brigade.is_empty());
 
+        let mut edited = unchanged.into_active_model();
+        edited.platoon = Set("Edited platoon".to_string());
+        edited.company = Set(String::new());
+        edited.update(&env.dbx).await.unwrap();
+
         let stats = reconcile_selected_orbit_hierarchy_changes(
             &env.dbx,
             &login.id,
-            &BTreeSet::from([sigint_unit.id]),
+            std::slice::from_ref(change),
         )
         .await
         .unwrap();
@@ -3343,7 +3466,8 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(unit.company, "Existing company");
+        assert_eq!(unit.platoon, "Edited platoon");
+        assert!(unit.company.is_empty());
         assert_eq!(unit.brigade, "Generative brigade");
         assert!(unit.division.is_empty());
     }
