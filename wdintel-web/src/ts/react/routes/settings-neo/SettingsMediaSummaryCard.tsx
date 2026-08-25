@@ -1,6 +1,14 @@
 import DescriptionIcon from '@mui/icons-material/Description';
 import ImageIcon from '@mui/icons-material/Image';
-import { Collapse, FormControlLabel, Switch } from '@mui/material';
+import { Box, Collapse, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
+
+const cardSx = {
+  border: 1,
+  borderColor: 'divider',
+  borderRadius: 2,
+  bgcolor: 'background.paper',
+  p: { xs: 2, sm: 2.5 },
+};
 
 function MessageCardSummaryPreviewMock({ mediaSummaryEnabled }: { mediaSummaryEnabled: boolean }) {
   return (
@@ -71,37 +79,39 @@ export function SettingsMediaSummaryCard({
   loadInProgress,
 }: SettingsMediaSummaryCardProps) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-divider bg-background-paper p-4 sm:p-5">
-      <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
-        Стислий опис файлів
-      </span>
-      <FormControlLabel
-        sx={{
-          alignItems: 'flex-start',
-          m: 0,
-          gap: 1.5,
-          '& .MuiFormControlLabel-label': { width: '100%' },
-        }}
-        control={
-          <Switch
-            checked={mediaSummaryEnabled}
-            onChange={(_, checked) => onMediaSummaryEnabledChange(checked)}
-            disabled={loadInProgress}
-          />
-        }
-        label={
-          <div className="flex flex-col gap-1 pt-0.5">
-            <span className="text-base font-semibold leading-tight text-text-primary">
-              Стислий опис файлів у картках
-            </span>
-            <span className="text-sm leading-relaxed text-text-secondary">
-              Відображати блок стислого опису для зображень та документів у картках повідомлень
-              стрічки.
-            </span>
-          </div>
-        }
-      />
-      <MessageCardSummaryPreviewMock mediaSummaryEnabled={mediaSummaryEnabled} />
-    </div>
+    <Box sx={cardSx}>
+      <Stack spacing={1.5}>
+        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+          Стислий опис файлів
+        </Typography>
+        <FormControlLabel
+          sx={{
+            alignItems: 'flex-start',
+            m: 0,
+            gap: 1.5,
+            '& .MuiFormControlLabel-label': { width: '100%' },
+          }}
+          control={
+            <Switch
+              checked={mediaSummaryEnabled}
+              onChange={(_, checked) => onMediaSummaryEnabledChange(checked)}
+              disabled={loadInProgress}
+            />
+          }
+          label={
+            <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+              <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                Стислий опис файлів у картках
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                Відображати блок стислого опису для зображень та документів у картках повідомлень
+                стрічки.
+              </Typography>
+            </Stack>
+          }
+        />
+        <MessageCardSummaryPreviewMock mediaSummaryEnabled={mediaSummaryEnabled} />
+      </Stack>
+    </Box>
   );
 }

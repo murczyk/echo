@@ -1,9 +1,17 @@
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { Collapse, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { Box, Collapse, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 
 import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
+
+const cardSx = {
+  border: 1,
+  borderColor: 'divider',
+  borderRadius: 2,
+  bgcolor: 'background.paper',
+  p: { xs: 2, sm: 2.5 },
+};
 
 function MessageCardTagsPreviewMock({ tagsLayout }: { tagsLayout: TagsLayoutVariant }) {
   return (
@@ -78,40 +86,42 @@ export function SettingsTagsLayoutCard({
   loadInProgress,
 }: SettingsTagsLayoutCardProps) {
   return (
-    <div className="flex flex-col gap-4 rounded-2xl border border-divider bg-background-paper p-4 sm:p-5">
-      <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
-        Картка повідомлення
-      </span>
-      <div>
-        <ToggleButtonGroup
-          value={tagsLayout}
-          exclusive
-          color="primary"
-          onChange={(_, v: TagsLayoutVariant | null) => {
-            if (isPresent(v)) onTagsLayoutChange(v);
-          }}
-          size="small"
-          disabled={loadInProgress}
-          sx={{
-            flexWrap: 'wrap',
-            '& .MuiToggleButton-root': {
-              textTransform: 'none',
-              fontSize: 14,
-              px: 2,
-              py: 1,
-              whiteSpace: 'nowrap',
-            },
-          }}
-        >
-          <ToggleButton value="full">повний</ToggleButton>
-          <ToggleButton value="compact">щільний</ToggleButton>
-          <ToggleButton value="hidden">без тегів</ToggleButton>
-        </ToggleButtonGroup>
-      </div>
-      <MessageCardTagsPreviewMock tagsLayout={tagsLayout} />
-      <div className="flex flex-col gap-1.5 pt-2">
-        <span className="text-sm text-text-secondary">Згортати перегляд довгих повідомлень:</span>
-        <div>
+    <Box sx={cardSx}>
+      <Stack spacing={1.5}>
+        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
+          Картка повідомлення
+        </Typography>
+        <Box>
+          <ToggleButtonGroup
+            value={tagsLayout}
+            exclusive
+            color="primary"
+            onChange={(_, v: TagsLayoutVariant | null) => {
+              if (isPresent(v)) onTagsLayoutChange(v);
+            }}
+            size="small"
+            disabled={loadInProgress}
+            sx={{
+              flexWrap: 'wrap',
+              '& .MuiToggleButton-root': {
+                textTransform: 'none',
+                fontSize: 14,
+                px: 2,
+                py: 1,
+                whiteSpace: 'nowrap',
+              },
+            }}
+          >
+            <ToggleButton value="full">повний</ToggleButton>
+            <ToggleButton value="compact">щільний</ToggleButton>
+            <ToggleButton value="hidden">без тегів</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+        <MessageCardTagsPreviewMock tagsLayout={tagsLayout} />
+        <Typography variant="body2" sx={{ color: 'text.secondary', pt: 0.5 }}>
+          Згортати перегляд довгих повідомлень:
+        </Typography>
+        <Box>
           <ToggleButtonGroup
             value={messageTextPreviewLines === null ? 'off' : String(messageTextPreviewLines)}
             exclusive
@@ -137,11 +147,11 @@ export function SettingsTagsLayoutCard({
             <ToggleButton value="40">40 рядків</ToggleButton>
             <ToggleButton value="off">Без скорочення</ToggleButton>
           </ToggleButtonGroup>
-        </div>
-        <span className="text-xs text-text-secondary">
+        </Box>
+        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           Визначає, коли з’являється кнопка «Показати більше».
-        </span>
-      </div>
-    </div>
+        </Typography>
+      </Stack>
+    </Box>
   );
 }
