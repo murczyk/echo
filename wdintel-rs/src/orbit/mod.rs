@@ -462,12 +462,25 @@ async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
     }
     let db = connect_database(mode).await.c(h!())?;
     let import_lock = acquire_import_lock(&db).await.c(h!())?;
-    let login = crate::users::system_login_id(&db).await.c(h!())?;
-    let stats = crate::sigint::unit::orbit::reconcile_all_orbit_linked_units(
-        &db, &login,
+    let changes = crate::sigint::unit::orbit::proposed_orbit_hierarchy_changes(
+        &import_lock,
     )
     .await
     .c(h!())?;
+    let Some(accepted_sigint_unit_ids) =
+        review_sigint_unit_hierarchy_changes(&changes).c(h!())?
+    else {
+        return Ok(());
+    };
+    let login = crate::users::system_login_id(&db).await.c(h!())?;
+    let stats =
+        crate::sigint::unit::orbit::reconcile_selected_orbit_hierarchy_changes(
+            &db,
+            &login,
+            &accepted_sigint_unit_ids,
+        )
+        .await
+        .c(h!())?;
     import_lock.commit().await.c(h!())?;
     println!(
         "Reconciled {} linked SIGINT units: {} hierarchies updated, {} inconsistent, {} multiple-link hierarchies skipped, {} duplicates merged.",
@@ -478,6 +491,79 @@ async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
         stats.merged,
     );
     Ok(())
+}
+
+fn review_sigint_unit_hierarchy_changes(
+    changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
+) -> Result<Option<BTreeSet<i64>>, AppError> {
+    if changes.is_empty() {
+        return Ok(Some(BTreeSet::new()));
+    }
+    let mut terminal = tui::setup_terminal().c(h!())?;
+    let result =
+        review_sigint_unit_hierarchy_changes_inner(&mut terminal, changes);
+    tui::restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+fn review_sigint_unit_hierarchy_changes_inner(
+    terminal: &mut tui::OrbitTerminal,
+    changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
+) -> Result<Option<BTreeSet<i64>>, AppError> {
+    let mut accepted_sigint_unit_ids = BTreeSet::new();
+    for (index, change) in changes.iter().enumerate() {
+        let lines = change
+            .attributes
+            .iter()
+            .flat_map(|attribute| {
+                [
+                    attribute.attribute.to_string(),
+                    format!(
+                        "  current:  {}",
+                        display_or_empty(&attribute.current)
+                    ),
+                    format!(
+                        "  proposed: {}",
+                        display_or_empty(&attribute.proposed)
+                    ),
+                ]
+            })
+            .collect::<Vec<_>>();
+        let decision = tui::review_sigint_unit_enrichment(
+            terminal,
+            &format!(
+                "Enrich SIGINT unit {}: {}?",
+                change.sigint_unit_id,
+                display_or_empty(&change.sigint_unit_name)
+            ),
+            &lines,
+            &format!("SIGINT unit {}/{}", index + 1, changes.len()),
+        )
+        .c(h!())?;
+        match decision {
+            tui::EnrichmentDecision::Confirm => {
+                accepted_sigint_unit_ids.insert(change.sigint_unit_id);
+            }
+            tui::EnrichmentDecision::Deny => {}
+            tui::EnrichmentDecision::ConfirmAll => {
+                accepted_sigint_unit_ids.extend(
+                    changes[index..].iter().map(|change| change.sigint_unit_id),
+                );
+                break;
+            }
+            tui::EnrichmentDecision::DenyAll => break,
+            tui::EnrichmentDecision::Quit => return Ok(None),
+        }
+    }
+    Ok(Some(accepted_sigint_unit_ids))
+}
+
+fn display_or_empty(value: &str) -> &str {
+    if value.is_empty() {
+        "<empty>"
+    } else {
+        value
+    }
 }
 
 async fn run_import(mode: Mode) -> anyhow::Result<()> {
