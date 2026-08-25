@@ -6,6 +6,8 @@ use crate::config::{
     BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT,
     BATTLE_LINE_NETWORKS_PAGE_SIZE,
     BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
+    BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS,
+    BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS,
     BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD, BATTLE_LINE_SOURCE_KIND_DELTA_KML,
     BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
 };
@@ -139,6 +141,7 @@ struct AorGeometryRow {
 struct MatchRow {
     candidate_index: i64,
     distance_m: f64,
+    is_west: bool,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -163,6 +166,7 @@ struct UnitMapPointRow {
 struct BattleLineCandidateDistance {
     candidate_index: usize,
     distance_m: f64,
+    is_west: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -175,7 +179,7 @@ struct BattleLineRankOutcome {
 struct LocationResolutionDraft {
     location: String,
     candidates: Vec<BattleLineSettlementCandidate>,
-    battle_line_distances: BTreeMap<usize, f64>,
+    battle_line_distances: BTreeMap<usize, BattleLineCandidateDistance>,
     chosen_candidate_index: Option<usize>,
     invalid_aor_ids: Vec<i64>,
 }
@@ -1368,7 +1372,10 @@ components as (
     from selected
     cross join lateral ST_Dump(selected.geometry) as dumped
 ), candidates as (
-    select candidate_index, lon, lat
+    select
+        candidate_index,
+        lon,
+        ST_SetSRID(ST_MakePoint(lon, lat), 4326) as geometry
     from unnest(
         ${candidate_indices_placeholder}::bigint[],
         ${longitudes_placeholder}::double precision[],
@@ -1377,13 +1384,22 @@ components as (
 )
 select
     candidates.candidate_index,
-    min(ST_Distance(
-        ST_SetSRID(ST_MakePoint(candidates.lon, candidates.lat), 4326)::geography,
-        components.geometry::geography
-    )) as distance_m
+    matched.distance_m,
+    candidates.lon < matched.closest_lon as is_west
 from candidates
-cross join components
-group by candidates.candidate_index
+cross join lateral (
+    select
+        ST_Distance(
+            candidates.geometry::geography,
+            components.geometry::geography
+        ) as distance_m,
+        ST_X(
+            ST_ClosestPoint(components.geometry, candidates.geometry)
+        ) as closest_lon
+    from components
+    order by distance_m, ST_AsEWKB(components.geometry)
+    limit 1
+) matched
 order by distance_m, candidates.candidate_index
         "#
     );
@@ -1400,6 +1416,7 @@ order by distance_m, candidates.candidate_index
         .map(|row| BattleLineCandidateDistance {
             candidate_index: row.candidate_index as usize,
             distance_m: row.distance_m,
+            is_west: row.is_west,
         })
         .collect())
 }
@@ -1815,7 +1832,7 @@ where
         let draft = drafts.get_mut(*location_index).c(h!())?;
         draft
             .battle_line_distances
-            .insert(*candidate_index, distance.distance_m);
+            .insert(*candidate_index, distance);
         if draft.chosen_candidate_index.is_none() {
             draft.chosen_candidate_index = Some(*candidate_index);
         }
@@ -1829,12 +1846,23 @@ fn location_result_from_draft(
     let (chosen_settlement_id, distance_m) = draft
         .chosen_candidate_index
         .and_then(|candidate_index| {
-            draft.candidates.get(candidate_index).map(|candidate| {
-                (
-                    Some(candidate.settlement_id),
-                    draft.battle_line_distances.get(&candidate_index).copied(),
-                )
-            })
+            let candidate = draft.candidates.get(candidate_index)?;
+            let matched = draft.battle_line_distances.get(&candidate_index)?;
+            let max_distance_m = settlement_max_distance_m(matched.is_west);
+            if matched.distance_m > max_distance_m {
+                warn!(
+                    "Skipping incorrect inbox settlement mapping: location={:?}, settlement_id={}, settlement={:?}, region={:?}, side={}, distance_m={:.0}, max_distance_m={:.0}",
+                    draft.location,
+                    candidate.settlement_id,
+                    candidate.name,
+                    candidate.region,
+                    if matched.is_west { "west" } else { "east" },
+                    matched.distance_m,
+                    max_distance_m,
+                );
+                return Some((None, Some(matched.distance_m)));
+            }
+            Some((Some(candidate.settlement_id), Some(matched.distance_m)))
         })
         .unwrap_or((None, None));
     BattleLineLocationResult {
@@ -1843,6 +1871,14 @@ fn location_result_from_draft(
         chosen_settlement_id,
         distance_m,
         invalid_aor_ids: draft.invalid_aor_ids,
+    }
+}
+
+fn settlement_max_distance_m(is_west: bool) -> f64 {
+    if is_west {
+        BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS
+    } else {
+        BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
     }
 }
 
@@ -2916,6 +2952,70 @@ values (
         assert_eq!(results[1].chosen_settlement_id, Some(2_287_212));
         assert!(
             results[1].distance_m.unwrap() < results[0].distance_m.unwrap()
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_distant_settlements_by_battle_line_side_2287() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
+        let suffix = uuid::Uuid::now_v7();
+        let west_name = format!("#2287 WEST {suffix}");
+        let east_name = format!("#2287 EAST {suffix}");
+        let far_east_name = format!("#2287 FAR EAST {suffix}");
+        let test_settlements = [
+            (2_287_216, &west_name, 0.0, -0.7),
+            (2_287_217, &east_name, 0.0, 10.7),
+            (2_287_218, &far_east_name, 0.0, 11.4),
+        ];
+        for (id, name, lat, lon) in &test_settlements {
+            insert_test_settlement(&txn, *id, name, *lat, *lon)
+                .await
+                .unwrap();
+        }
+        let settlements = test_settlements_for_aor(
+            aor_id,
+            test_settlements
+                .into_iter()
+                .map(|(id, name, lat, lon)| {
+                    crate::location::types::SettlementDetails {
+                        id: Some(id),
+                        name: name.to_uppercase(),
+                        coords: Some((lat, lon)),
+                        ..Default::default()
+                    }
+                })
+                .collect(),
+        );
+
+        let results = resolve_locations_to_settlements_with_db(
+            &txn,
+            settlements,
+            vec![west_name, east_name, far_east_name],
+            &[aor_id],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(results[0].chosen_settlement_id, None);
+        assert!(
+            results[0].distance_m.unwrap()
+                > BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS
+        );
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_217));
+        assert!(
+            results[1].distance_m.unwrap()
+                < BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
+        );
+        assert_eq!(results[2].chosen_settlement_id, None);
+        assert!(
+            results[2].distance_m.unwrap()
+                > BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
         );
         txn.rollback().await.unwrap();
     }
