@@ -1,44 +1,83 @@
-import { Box, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
-import type { ReactNode } from 'react';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { Collapse, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { isPresent } from '../../utils/misc';
 
-import { PowerAlert } from '../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 
-const cardSx = {
-  border: 1,
-  borderColor: 'divider',
-  borderRadius: 2,
-  bgcolor: 'background.paper',
-  p: { xs: 2, sm: 2.5 },
-};
+function MessageCardTagsPreviewMock({ tagsLayout }: { tagsLayout: TagsLayoutVariant }) {
+  return (
+    <div
+      data-message-card-tags-mock="true"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      className="flex max-w-105 cursor-default flex-col gap-2 rounded-xl border border-echo-divider bg-black/2 p-3 dark:bg-white/2"
+    >
+      {/* Header skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <div className="h-2.25 w-20 rounded-sm bg-echo-text-muted/40" />
+          <div className="h-2.25 w-10 rounded-sm bg-echo-text-muted/25" />
+        </div>
+        <div className="h-2.25 w-6.5 rounded-sm bg-echo-text-muted/25" />
+      </div>
+
+      {/* Message body skeleton */}
+      <div className="flex flex-col gap-1 pt-0.5">
+        <div className="h-1.75 w-[85%] rounded-sm bg-echo-text-muted/30" />
+        <div className="h-1.75 w-[50%] rounded-sm bg-echo-text-muted/25" />
+      </div>
+
+      {/* Tags skeleton with animated layout changes */}
+      <Collapse in={tagsLayout !== 'hidden'} timeout={250} unmountOnExit={false}>
+        <div data-tags-mock="true" className="pt-0.5">
+          <div className="flex flex-col gap-1.5">
+            {/* Row 1 - fills the full line */}
+            <div className="flex w-full items-center gap-1.5">
+              <div className="h-3.5 flex-1 rounded-sm bg-echo-primary/35" />
+              <div className="h-3.5 flex-[1.25] rounded-sm bg-echo-primary/35" />
+              <div className="h-3.5 flex-[0.95] rounded-sm bg-echo-primary/35" />
+              {tagsLayout === 'full' ? (
+                <div className="h-3.5 flex-[1.15] rounded-sm bg-echo-primary/35" />
+              ) : (
+                <div className="flex h-3.5 flex-[1.15] items-center justify-center gap-1 rounded-sm border border-echo-primary/30 bg-echo-primary/10">
+                  <div className="h-1.5 w-9.5 rounded-sm bg-echo-primary/60" />
+                  <ExpandMoreIcon sx={{ fontSize: 10 }} className="text-echo-primary/80" />
+                </div>
+              )}
+            </div>
+
+            {/* Row 2 (animated collapse for full mode - exactly 1 tag) */}
+            <Collapse in={tagsLayout === 'full'} timeout={250} unmountOnExit={false}>
+              <div className="flex gap-1.5">
+                <div className="h-3.5 w-[26%] rounded-sm bg-echo-primary/35" />
+              </div>
+            </Collapse>
+          </div>
+        </div>
+      </Collapse>
+    </div>
+  );
+}
 
 export type SettingsTagsLayoutCardProps = {
-  title: string;
-  description?: ReactNode;
-  note?: string;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   loadInProgress: boolean;
 };
 
 export function SettingsTagsLayoutCard({
-  title,
-  description,
-  note,
   tagsLayout,
   onTagsLayoutChange,
   loadInProgress,
 }: SettingsTagsLayoutCardProps) {
   return (
-    <Box sx={cardSx}>
-      <Stack spacing={1.5}>
-        <Typography variant="overline" sx={{ color: 'text.secondary', letterSpacing: 0.8 }}>
-          {title}
-        </Typography>
-        <Stack spacing={0.5}>
-          {description ? <Box sx={{ color: 'text.secondary' }}>{description}</Box> : null}
-        </Stack>
+    <div className="flex flex-col gap-4 rounded-2xl border border-divider bg-background-paper p-4 sm:p-5">
+      <span className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
+        Картка повідомлення
+      </span>
+      <div>
         <ToggleButtonGroup
           value={tagsLayout}
           exclusive
@@ -63,29 +102,8 @@ export function SettingsTagsLayoutCard({
           <ToggleButton value="compact">щільний</ToggleButton>
           <ToggleButton value="hidden">без тегів</ToggleButton>
         </ToggleButtonGroup>
-        {note ? (
-          <PowerAlert
-            severity="info"
-            sx={{
-              mt: 0.25,
-              alignItems: 'center',
-              '& .MuiAlert-message': {
-                py: 0,
-                display: 'flex',
-                alignItems: 'center',
-              },
-              '& .MuiAlert-icon': {
-                py: 0,
-                alignItems: 'center',
-              },
-            }}
-          >
-            <Typography variant="body2" sx={{ lineHeight: 1.45 }}>
-              {note}
-            </Typography>
-          </PowerAlert>
-        ) : null}
-      </Stack>
-    </Box>
+      </div>
+      <MessageCardTagsPreviewMock tagsLayout={tagsLayout} />
+    </div>
   );
 }

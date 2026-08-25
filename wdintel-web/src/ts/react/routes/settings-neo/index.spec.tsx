@@ -72,6 +72,37 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   TextField: ({ label }: { label?: ReactNode }) => <label>{label}</label>,
+  ToggleButtonGroup: ({
+    value,
+    onChange,
+    children,
+  }: {
+    value?: unknown;
+    onChange?: (_event: unknown, val: unknown) => void;
+    children?: ReactNode;
+  }) => (
+    <div data-toggle-group={String(value)}>
+      {React.Children.map(children, (child) => {
+        if (!React.isValidElement(child)) return child;
+        return React.cloneElement(child as any, {
+          onClick: () => onChange?.(new Event('click'), child.props.value),
+        });
+      })}
+    </div>
+  ),
+  ToggleButton: ({
+    value,
+    children,
+    onClick,
+  }: {
+    value?: unknown;
+    children?: ReactNode;
+    onClick?: (event: unknown) => void;
+  }) => (
+    <button type="button" data-toggle-value={String(value)} onClick={onClick}>
+      {children}
+    </button>
+  ),
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -258,10 +289,6 @@ vi.mock('./SettingsDutySection', () => ({
   ),
 }));
 
-vi.mock('./SettingsSharedTagsLayoutCard', () => ({
-  SettingsSharedTagsLayoutCard: () => <div />,
-}));
-
 vi.mock('./SettingsMyOrganismSection', () => ({
   SettingsMyOrganismSection: () => <div>my-organism-active</div>,
 }));
@@ -332,16 +359,18 @@ describe('SettingsNeoPage', () => {
     });
 
     const buttons = Array.from(container.querySelectorAll('button'));
-    const changeLayout = buttons.find((button) => button.textContent?.includes('change-layout'));
     const changeScroll = buttons.find((button) => button.textContent?.includes('change-scroll'));
-    expect(changeLayout).toBeTruthy();
+    const changeTranscription = buttons.find((button) =>
+      button.textContent?.includes('change-duty-transcription'),
+    );
     expect(changeScroll).toBeTruthy();
+    expect(changeTranscription).toBeTruthy();
 
     await act(async () => {
-      changeLayout?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      changeScroll?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await act(async () => {
-      changeScroll?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      changeTranscription?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(saveUserDutySettings).toHaveBeenCalledTimes(1);
@@ -353,10 +382,10 @@ describe('SettingsNeoPage', () => {
 
     expect(saveUserDutySettings).toHaveBeenCalledTimes(2);
     expect(saveUserDutySettings.mock.calls[1]?.[0]).toEqual({
-      tagsLayout: 'full',
+      tagsLayout: 'compact',
       disableAutoScroll: true,
       analysisMapInSidebar: false,
-      dutyAudioTranscriptionCollapsed: false,
+      dutyAudioTranscriptionCollapsed: true,
       analysisAudioTranscriptionCollapsed: false,
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
@@ -505,9 +534,69 @@ describe('SettingsNeoPage', () => {
     });
   });
 
-  it('saves media summary preference from the ai settings tab', async () => {
+  it('saves tags layout preference from the general settings tab', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="ai" />);
+      root.render(<SettingsNeoPage section="general" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Картка повідомлення');
+    expect(container.querySelector('[data-message-card-tags-mock="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-tags-mock="true"]')).not.toBeNull();
+
+    const fullButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'повний',
+    );
+    expect(fullButton).toBeTruthy();
+
+    await act(async () => {
+      fullButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'full',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+    });
+
+    const hiddenButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'без тегів',
+    );
+    expect(hiddenButton).toBeTruthy();
+
+    await act(async () => {
+      hiddenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'hidden',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+    });
+  });
+
+  it('saves media summary preference from the general settings tab', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="general" />);
     });
     await act(async () => {
       await Promise.resolve();
@@ -576,7 +665,7 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('#settings-neo-panel-ai')).not.toBeNull();
+    expect(container.querySelector('#settings-neo-panel-general')).not.toBeNull();
     expect(container.textContent).toContain('Загальні');
     expect(container.textContent).toContain('Стислий опис файлів у картках');
   });
@@ -631,7 +720,7 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(container.textContent).toContain('Мої групи');
-    expect(container.textContent).toContain('change-layout');
+    expect(container.textContent).toContain('change-scroll');
   });
 
   it('shows the my groups tab when groups exist', async () => {
@@ -661,7 +750,7 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(container.textContent).toContain('Мої групи');
-    expect(container.textContent).toContain('change-layout');
+    expect(container.textContent).toContain('change-scroll');
     expect(container.textContent).not.toContain('Group 1');
   });
 

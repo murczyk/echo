@@ -1,9 +1,7 @@
 import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
-import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
-import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 
 const cardSx = {
   border: 1,
@@ -17,8 +15,6 @@ export type SettingsDutySectionProps = {
   loadInProgress: boolean;
   prefsLoadError: string | null;
   saveError: string | null;
-  tagsLayout: TagsLayoutVariant;
-  onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
@@ -36,8 +32,6 @@ export function SettingsDutySection({
   loadInProgress,
   prefsLoadError,
   saveError,
-  tagsLayout,
-  onTagsLayoutChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
   audioTranscriptionCollapsed,
@@ -82,12 +76,6 @@ export function SettingsDutySection({
               />
             </Box>
           ) : null}
-
-          <SettingsSharedTagsLayoutCard
-            tagsLayout={tagsLayout}
-            onTagsLayoutChange={onTagsLayoutChange}
-            loadInProgress={loadInProgress}
-          />
 
           {showAudioTranscriptionSettings ? (
             <SettingsAudioTranscriptionCard

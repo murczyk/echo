@@ -8,17 +8,16 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { PageHeader } from '../../components/PageHeader';
 import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
-import { SettingsAiSection } from './SettingsAiSection';
+import { SettingsGeneralSection } from './SettingsGeneralSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
-import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import type { UserDutySettings } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 
 export type SettingsSection =
-  'general' | 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'ai' | 'myReports';
+  'general' | 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
 
 type SettingsNeoPageProps = {
   section?: string;
@@ -31,7 +30,6 @@ function serializeSettingsSection(section: SettingsSection): string {
   if (section === 'myGroups') return 'my-groups';
   if (section === 'myOrganism') return 'my-organism';
   if (section === 'myReports') return 'my-reports';
-  if (section === 'ai') return 'general';
   return section;
 }
 
@@ -48,10 +46,7 @@ function parseSettingsSection(section: string | null | undefined): SettingsSecti
   if (section === 'duty' || section === 'analysis') {
     return section;
   }
-  if (section === 'general' || section === 'ai') {
-    return 'ai';
-  }
-  return 'ai';
+  return 'general';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -221,10 +216,10 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             }}
           >
             <Tab
-              value="ai"
+              value="general"
               label="Загальні"
-              id="settings-neo-tab-ai"
-              aria-controls="settings-neo-panel-ai"
+              id="settings-neo-tab-general"
+              aria-controls="settings-neo-panel-general"
             />
             <Tab
               value="myGroups"
@@ -257,11 +252,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           </Tabs>
 
-          {settingsSection === 'ai' ? (
-            <SettingsAiSection
+          {settingsSection === 'general' ? (
+            <SettingsGeneralSection
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
               saveError={dutySettings.saveError}
+              tagsLayout={dutySettings.tagsLayout}
+              onTagsLayoutChange={(layout) => {
+                dutySettings.setTagsLayout(layout);
+                scheduleDutySettingsSave({ tagsLayout: layout });
+              }}
               mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
               onMediaSummaryEnabledChange={(value) => {
                 dutySettings.setMediaSummaryEnabled(value);
@@ -287,11 +287,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
               prefsLoadError={dutySettings.loadError}
               saveError={dutySettings.saveError}
-              tagsLayout={dutySettings.tagsLayout}
-              onTagsLayoutChange={(layout) => {
-                dutySettings.setTagsLayout(layout);
-                scheduleDutySettingsSave({ tagsLayout: layout });
-              }}
               disableAutoScroll={dutySettings.disableAutoScroll}
               onDisableAutoScrollChange={(value) => {
                 dutySettings.setDisableAutoScroll(value);
@@ -332,14 +327,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                   >
                     Аналіз
                   </Typography>
-                  <SettingsSharedTagsLayoutCard
-                    tagsLayout={dutySettings.tagsLayout}
-                    onTagsLayoutChange={(layout) => {
-                      dutySettings.setTagsLayout(layout);
-                      scheduleDutySettingsSave({ tagsLayout: layout });
-                    }}
-                    loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
-                  />
                   {!globalSettings.showClassicAnalysis ? (
                     <Box
                       sx={{
