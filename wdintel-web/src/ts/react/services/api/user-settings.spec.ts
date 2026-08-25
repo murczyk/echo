@@ -191,6 +191,7 @@ describe('user-settings api', () => {
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
       mediaSummaryEnabled: false,
+      messageTextPreviewLines: 20,
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
