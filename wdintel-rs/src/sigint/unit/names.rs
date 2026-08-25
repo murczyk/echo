@@ -3,7 +3,7 @@ use super::types::{
     UnitNameReview, UnitNameReviewCursor, UpdateUnitNameReq,
 };
 use crate::config::SIGINT_UNIT_NAME_REVIEW_PAGE_SIZE;
-use crate::entities::sigint_unit;
+use crate::entities::{orbit_unit, orbit_unit_echelon, sigint_unit};
 use crate::error::AppError;
 use crate::types::*;
 use crate::users::{
@@ -12,26 +12,22 @@ use crate::users::{
 use actix_web::post;
 use actix_web::web::{Data, Json};
 use chrono::{NaiveDateTime, Utc};
-use sea_orm::sea_query::Expr;
 use sea_orm::*;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 #[derive(FromQueryResult)]
 struct UnitNameReviewRow {
     id: i64,
     name: String,
-    team_or_crew: String,
-    section: String,
-    squad: String,
-    platoon: String,
-    company: String,
-    battalion: String,
-    regiment: String,
-    brigade: String,
-    division: String,
-    corps: String,
-    army: String,
     updated_at: NaiveDateTime,
+    orbit_unit_id: Uuid,
+}
+
+#[derive(FromQueryResult)]
+struct SingleOrbitLinkRow {
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
 }
 
 #[post("/api/admin/unit-names")]
@@ -58,27 +54,8 @@ async fn load_unit_name_reviews(
     after: Option<&UnitNameReviewCursor>,
     page_size: usize,
 ) -> Result<ListUnitNameReviewsRsp, AppError> {
-    let mut units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Active.eq(true))
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .select_only()
-        .columns([
-            sigint_unit::Column::Id,
-            sigint_unit::Column::Name,
-            sigint_unit::Column::TeamOrCrew,
-            sigint_unit::Column::Section,
-            sigint_unit::Column::Squad,
-            sigint_unit::Column::Platoon,
-            sigint_unit::Column::Company,
-            sigint_unit::Column::Battalion,
-            sigint_unit::Column::Regiment,
-            sigint_unit::Column::Brigade,
-            sigint_unit::Column::Division,
-            sigint_unit::Column::Corps,
-            sigint_unit::Column::Army,
-            sigint_unit::Column::UpdatedAt,
-        ]);
-    if let Some(after) = after {
+    let mut values: Vec<Value> = Vec::new();
+    let cursor_filter = if let Some(after) = after {
         let updated_at =
             chrono::DateTime::from_timestamp_micros(after.updated_at_micros)
                 .map(|updated_at| updated_at.naive_utc())
@@ -87,28 +64,51 @@ async fn load_unit_name_reviews(
                         .to_string(),
                 })
                 .c(h!())?;
-        units = units.filter(
-            Expr::tuple([
-                Expr::col((
-                    sigint_unit::Entity,
-                    sigint_unit::Column::UpdatedAt,
-                )),
-                Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
-            ])
-            .gt(Expr::tuple([
-                Expr::val(updated_at),
-                Expr::val(after.sigint_unit_id),
-            ])),
-        );
-    }
-    let mut units = units
-        .order_by_asc(sigint_unit::Column::UpdatedAt)
-        .order_by_asc(sigint_unit::Column::Id)
-        .limit(u64::try_from(page_size.saturating_add(1)).c(h!())?)
-        .into_model::<UnitNameReviewRow>()
-        .all(dbx)
-        .await
-        .c(h!())?;
+        values.push(updated_at.into());
+        values.push(after.sigint_unit_id.into());
+        r#"and (sigint.updated_at, sigint.id) > ($1::timestamp, $2::bigint)"#
+    } else {
+        ""
+    };
+    let limit = i64::try_from(page_size.saturating_add(1)).c(h!())?;
+    let limit_param = values.len() + 1;
+    values.push(limit.into());
+    let sql = format!(
+        r#"
+        with valid_links as (
+            select link.sigint_unit_id, link.orbit_unit_id
+            from orbit_unit_sigint_unit link
+            inner join orbit_unit orbit on orbit.unit_id = link.orbit_unit_id
+            where link.is_suppressed = false
+                and orbit.deleted = false
+        ), single_links as (
+            select
+                sigint_unit_id,
+                (array_agg(orbit_unit_id))[1] as orbit_unit_id
+            from valid_links
+            group by sigint_unit_id
+            having count(*) = 1
+        )
+        select
+            sigint.id,
+            sigint.name,
+            sigint.updated_at,
+            single_links.orbit_unit_id
+        from sigint_unit sigint
+        inner join single_links on single_links.sigint_unit_id = sigint.id
+        where sigint.active = true
+            and sigint.deleted = false
+            {cursor_filter}
+        order by sigint.updated_at, sigint.id
+        limit ${limit_param}::bigint
+        "#,
+    );
+    let mut units = UnitNameReviewRow::find_by_statement(
+        Statement::from_sql_and_values(dbx.get_database_backend(), sql, values),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
     let has_more = units.len() > page_size;
     if has_more {
         units.pop();
@@ -117,7 +117,7 @@ async fn load_unit_name_reviews(
         .then(|| units.last().map(unit_name_review_cursor))
         .flatten();
     Ok(ListUnitNameReviewsRsp {
-        units: units.into_iter().map(render_unit_name_review_row).collect(),
+        units: render_unit_name_review_rows(dbx, units).await.c(h!())?,
         next_cursor,
     })
 }
@@ -138,7 +138,7 @@ pub async fn update_unit_name(
     .await
     .c(h!())?;
     super::fanout_unit_changed_data(&env).await.c(h!())?;
-    Ok(Json(render_unit_name_review(unit)))
+    Ok(Json(render_unit_name_review(&env.dbx, unit).await.c(h!())?))
 }
 
 #[post("/api/admin/unit-name/confirm")]
@@ -152,7 +152,7 @@ pub async fn confirm_unit_name(
         .await
         .c(h!())?;
     super::fanout_unit_changed_data(&env).await.c(h!())?;
-    Ok(Json(render_unit_name_review(unit)))
+    Ok(Json(render_unit_name_review(&env.dbx, unit).await.c(h!())?))
 }
 
 async fn ensure_unit_name_editor(
@@ -206,38 +206,59 @@ async fn touch_unit_name(
     Ok(unit)
 }
 
-fn render_unit_name_review(unit: sigint_unit::Model) -> UnitNameReview {
-    let expected_name = expected_unit_name(&unit);
-    UnitNameReview {
+async fn render_unit_name_review(
+    dbx: &DatabaseConnection,
+    unit: sigint_unit::Model,
+) -> Result<UnitNameReview, AppError> {
+    let expected_name = expected_unit_name(dbx, unit.id).await.c(h!())?;
+    Ok(UnitNameReview {
         sigint_unit_id: unit.id,
         matches_expected: unit.name == expected_name,
         current_name: unit.name,
         expected_name,
         updated_at: unit.updated_at.and_utc().timestamp_millis(),
-    }
+    })
 }
 
-fn render_unit_name_review_row(unit: UnitNameReviewRow) -> UnitNameReview {
-    let expected_name = expected_unit_name_from_hierarchy([
-        unit.team_or_crew.as_str(),
-        unit.section.as_str(),
-        unit.squad.as_str(),
-        unit.platoon.as_str(),
-        unit.company.as_str(),
-        unit.battalion.as_str(),
-        unit.regiment.as_str(),
-        unit.brigade.as_str(),
-        unit.division.as_str(),
-        unit.corps.as_str(),
-        unit.army.as_str(),
-    ]);
-    UnitNameReview {
+async fn render_unit_name_review_rows(
+    dbx: &DatabaseConnection,
+    units: Vec<UnitNameReviewRow>,
+) -> Result<Vec<UnitNameReview>, AppError> {
+    let orbit_units = load_orbit_units(
+        dbx,
+        &units
+            .iter()
+            .map(|unit| unit.orbit_unit_id)
+            .collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?;
+    let mut reviews = Vec::with_capacity(units.len());
+    for unit in units {
+        reviews
+            .push(render_unit_name_review_row(dbx, &orbit_units, unit).await?);
+    }
+    Ok(reviews)
+}
+
+async fn render_unit_name_review_row(
+    dbx: &DatabaseConnection,
+    orbit_units: &HashMap<Uuid, orbit_unit::Model>,
+    unit: UnitNameReviewRow,
+) -> Result<UnitNameReview, AppError> {
+    let expected_name = match orbit_units.get(&unit.orbit_unit_id) {
+        Some(orbit_unit) => {
+            expected_unit_name_from_orbit(dbx, orbit_unit).await?
+        }
+        None => String::new(),
+    };
+    Ok(UnitNameReview {
         sigint_unit_id: unit.id,
         matches_expected: unit.name == expected_name,
         current_name: unit.name,
         expected_name,
         updated_at: unit.updated_at.and_utc().timestamp_millis(),
-    }
+    })
 }
 
 fn unit_name_review_cursor(unit: &UnitNameReviewRow) -> UnitNameReviewCursor {
@@ -247,27 +268,230 @@ fn unit_name_review_cursor(unit: &UnitNameReviewRow) -> UnitNameReviewCursor {
     }
 }
 
-fn expected_unit_name(unit: &sigint_unit::Model) -> String {
-    expected_unit_name_from_hierarchy([
-        unit.team_or_crew.as_str(),
-        unit.section.as_str(),
-        unit.squad.as_str(),
-        unit.platoon.as_str(),
-        unit.company.as_str(),
-        unit.battalion.as_str(),
-        unit.regiment.as_str(),
-        unit.brigade.as_str(),
-        unit.division.as_str(),
-        unit.corps.as_str(),
-        unit.army.as_str(),
-    ])
+async fn expected_unit_name(
+    dbx: &DatabaseConnection,
+    sigint_unit_id: i64,
+) -> Result<String, AppError> {
+    let orbit_units = load_single_linked_orbit_units(dbx, &[sigint_unit_id])
+        .await
+        .c(h!())?;
+    match orbit_units.get(&sigint_unit_id) {
+        Some(orbit_unit) => {
+            expected_unit_name_from_orbit(dbx, orbit_unit).await
+        }
+        None => Ok(String::new()),
+    }
 }
 
-fn expected_unit_name_from_hierarchy(hierarchy: [&str; 11]) -> String {
-    hierarchy
+async fn load_single_linked_orbit_units(
+    dbx: &DatabaseConnection,
+    sigint_unit_ids: &[i64],
+) -> Result<HashMap<i64, orbit_unit::Model>, AppError> {
+    let links = load_single_orbit_links(dbx, sigint_unit_ids)
+        .await
+        .c(h!())?;
+    let orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id)
+        .collect::<Vec<_>>();
+    let orbit_units = load_orbit_units(dbx, &orbit_unit_ids).await.c(h!())?;
+    Ok(links
         .into_iter()
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
+        .filter_map(|link| {
+            orbit_units
+                .get(&link.orbit_unit_id)
+                .cloned()
+                .map(|orbit_unit| (link.sigint_unit_id, orbit_unit))
+        })
+        .collect())
+}
+
+async fn load_orbit_units(
+    dbx: &DatabaseConnection,
+    orbit_unit_ids: &[Uuid],
+) -> Result<HashMap<Uuid, orbit_unit::Model>, AppError> {
+    if orbit_unit_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    Ok(orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::UnitId.is_in(orbit_unit_ids.to_vec()))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect())
+}
+
+async fn load_single_orbit_links(
+    dbx: &DatabaseConnection,
+    sigint_unit_ids: &[i64],
+) -> Result<Vec<SingleOrbitLinkRow>, AppError> {
+    if sigint_unit_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(
+        SingleOrbitLinkRow::find_by_statement(Statement::from_sql_and_values(
+            dbx.get_database_backend(),
+            r#"
+        with valid_links as (
+            select link.sigint_unit_id, link.orbit_unit_id
+            from orbit_unit_sigint_unit link
+            inner join orbit_unit orbit on orbit.unit_id = link.orbit_unit_id
+            where link.is_suppressed = false
+                and orbit.deleted = false
+                and link.sigint_unit_id = any($1::bigint[])
+        )
+        select
+            sigint_unit_id,
+            (array_agg(orbit_unit_id))[1] as orbit_unit_id
+        from valid_links
+        group by sigint_unit_id
+        having count(*) = 1
+        "#,
+            [sigint_unit_ids.to_vec().into()],
+        ))
+        .all(dbx)
+        .await
+        .c(h!())?,
+    )
+}
+
+async fn expected_unit_name_from_orbit(
+    dbx: &DatabaseConnection,
+    orbit_unit: &orbit_unit::Model,
+) -> Result<String, AppError> {
+    let mut hierarchy = std::array::from_fn(|_| None::<String>);
+    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy).await?;
+    fill_orbit_parent_chain(
+        dbx,
+        orbit_unit,
+        OrbitParentKind::Operational,
+        &mut hierarchy,
+    )
+    .await?;
+    fill_orbit_parent_chain(
+        dbx,
+        orbit_unit,
+        OrbitParentKind::Generative,
+        &mut hierarchy,
+    )
+    .await?;
+    Ok(expected_unit_name_from_orbit_hierarchy(&hierarchy))
+}
+
+#[derive(Clone, Copy)]
+enum OrbitParentKind {
+    Generative,
+    Operational,
+}
+
+impl OrbitParentKind {
+    fn parent_id(self, unit: &orbit_unit::Model) -> Option<Uuid> {
+        match self {
+            Self::Generative => unit.generative_parent_unit_id,
+            Self::Operational => unit.operational_parent_unit_id,
+        }
+    }
+}
+
+async fn fill_orbit_parent_chain(
+    dbx: &DatabaseConnection,
+    root: &orbit_unit::Model,
+    parent_kind: OrbitParentKind,
+    hierarchy: &mut [Option<String>; 14],
+) -> Result<(), AppError> {
+    let mut seen = HashSet::from([root.unit_id]);
+    let mut parent_id = parent_kind.parent_id(root);
+    while let Some(unit_id) = parent_id {
+        if !seen.insert(unit_id) {
+            return Err(AppError::BL {
+                msg: "ORBIT unit hierarchy contains a cycle".to_string(),
+            });
+        }
+        let parent = find_available_orbit_unit(dbx, unit_id).await.c(h!())?;
+        parent_id = parent_kind.parent_id(&parent);
+        fill_orbit_hierarchy_level(dbx, &parent, hierarchy).await?;
+    }
+    Ok(())
+}
+
+async fn find_available_orbit_unit(
+    dbx: &DatabaseConnection,
+    unit_id: Uuid,
+) -> Result<orbit_unit::Model, AppError> {
+    orbit_unit::Entity::find_by_id(unit_id)
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+async fn fill_orbit_hierarchy_level(
+    dbx: &DatabaseConnection,
+    unit: &orbit_unit::Model,
+    hierarchy: &mut [Option<String>; 14],
+) -> Result<(), AppError> {
+    let Some(echelon_id) = unit.unit_echelon_id else {
+        return Ok(());
+    };
+    let Some(echelon) = orbit_unit_echelon::Entity::find_by_id(echelon_id)
+        .one(dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(());
+    };
+    let Some(index) = unit_name_review_echelon_index(&echelon.key) else {
+        return Ok(());
+    };
+    let Some(name) = preferred_orbit_unit_name(unit) else {
+        return Ok(());
+    };
+    if hierarchy[index].is_none() {
+        hierarchy[index] = Some(name);
+    }
+    Ok(())
+}
+
+fn unit_name_review_echelon_index(key: &str) -> Option<usize> {
+    match key {
+        "teamOrCrew" => Some(1),
+        "section" => Some(2),
+        "squad" => Some(3),
+        "platoon" => Some(4),
+        "company" => Some(5),
+        "battalion" => Some(6),
+        "regiment" => Some(7),
+        "brigade" => Some(8),
+        "division" => Some(9),
+        "fieldArmy" => Some(11),
+        _ => None,
+    }
+}
+
+fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {
+    [
+        unit.unit_name_short.as_deref(),
+        unit.unit_name.as_deref(),
+        unit.unit_name_original.as_deref(),
+        unit.unit_number.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|name| !name.is_empty())
+    .map(ToString::to_string)
+}
+
+fn expected_unit_name_from_orbit_hierarchy(
+    hierarchy: &[Option<String>; 14],
+) -> String {
+    [1, 2, 3, 4, 5, 6, 7, 8, 9, 11]
+        .into_iter()
+        .filter_map(|index| hierarchy[index].as_deref())
         .collect::<Vec<_>>()
         .join(" ")
 }
@@ -275,10 +499,74 @@ fn expected_unit_name_from_hierarchy(hierarchy: [&str; 11]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::sigint_unit_change;
+    use crate::entities::{orbit_unit_sigint_unit, sigint_unit_change};
     use crate::functest::tests::{cleanup, mk_sigint_unit};
     use chrono::Duration;
     use serial_test::serial;
+
+    async fn orbit_echelon(
+        dbx: &DatabaseConnection,
+        key: &str,
+    ) -> orbit_unit_echelon::Model {
+        let name = format!("Unit name review test {key}");
+        if let Some(echelon) = orbit_unit_echelon::Entity::find()
+            .filter(orbit_unit_echelon::Column::Key.eq(key))
+            .filter(orbit_unit_echelon::Column::Name.eq(&name))
+            .one(dbx)
+            .await
+            .unwrap()
+        {
+            return echelon;
+        }
+        orbit_unit_echelon::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            key: Set(key.to_string()),
+            name: Set(name),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn insert_orbit_unit(
+        dbx: &DatabaseConnection,
+        name: &str,
+        echelon_key: &str,
+        operational_parent_unit_id: Option<Uuid>,
+        generative_parent_unit_id: Option<Uuid>,
+    ) -> orbit_unit::Model {
+        let echelon = orbit_echelon(dbx, echelon_key).await;
+        orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name: Set(Some(format!("Повна назва {name}"))),
+            unit_name_short: Set(Some(name.to_string())),
+            unit_echelon_id: Set(Some(echelon.id)),
+            generative_parent_unit_id: Set(generative_parent_unit_id),
+            operational_parent_unit_id: Set(operational_parent_unit_id),
+            ..Default::default()
+        }
+        .insert(dbx)
+        .await
+        .unwrap()
+    }
+
+    async fn link_orbit_unit(
+        dbx: &DatabaseConnection,
+        orbit_unit_id: Uuid,
+        sigint_unit_id: i64,
+        is_suppressed: bool,
+    ) {
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(sigint_unit_id),
+            is_manual: Set(true),
+            is_suppressed: Set(is_suppressed),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+    }
 
     #[tokio::test]
     #[serial]
@@ -291,9 +579,10 @@ mod tests {
             &env.dbx,
             sigint_unit::ActiveModel {
                 name: Set("custom".to_string()),
-                team_or_crew: Set("екіпаж".to_string()),
-                company: Set("рота".to_string()),
-                army: Set("армія".to_string()),
+                team_or_crew: Set("sigint crew".to_string()),
+                company: Set("sigint company".to_string()),
+                corps: Set("sigint corps".to_string()),
+                army: Set("sigint army".to_string()),
                 updated_at: Set(review_updated_at),
                 ..Default::default()
             },
@@ -310,7 +599,34 @@ mod tests {
         )
         .await
         .unwrap();
-        mk_sigint_unit(
+        let unlinked = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                updated_at: Set(now - Duration::days(3)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let multi_linked = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                updated_at: Set(now - Duration::days(3)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let only_suppressed = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                updated_at: Set(now - Duration::days(3)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let inactive = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
                 active: Set(false),
@@ -320,6 +636,66 @@ mod tests {
         )
         .await
         .unwrap();
+
+        let army =
+            insert_orbit_unit(&env.dbx, "армія", "fieldArmy", None, None).await;
+        let corps = insert_orbit_unit(
+            &env.dbx,
+            "корпус",
+            "corps",
+            Some(army.unit_id),
+            None,
+        )
+        .await;
+        let company = insert_orbit_unit(
+            &env.dbx,
+            "рота",
+            "company",
+            Some(corps.unit_id),
+            None,
+        )
+        .await;
+        let crew = insert_orbit_unit(
+            &env.dbx,
+            "екіпаж",
+            "teamOrCrew",
+            Some(company.unit_id),
+            None,
+        )
+        .await;
+        link_orbit_unit(&env.dbx, crew.unit_id, first.id, false).await;
+
+        let second_orbit =
+            insert_orbit_unit(&env.dbx, "second-orbit", "regiment", None, None)
+                .await;
+        link_orbit_unit(&env.dbx, second_orbit.unit_id, second.id, false).await;
+
+        for name in ["multi-a", "multi-b"] {
+            let orbit_unit =
+                insert_orbit_unit(&env.dbx, name, "regiment", None, None).await;
+            link_orbit_unit(
+                &env.dbx,
+                orbit_unit.unit_id,
+                multi_linked.id,
+                false,
+            )
+            .await;
+        }
+        let suppressed_orbit =
+            insert_orbit_unit(&env.dbx, "suppressed", "regiment", None, None)
+                .await;
+        link_orbit_unit(
+            &env.dbx,
+            suppressed_orbit.unit_id,
+            only_suppressed.id,
+            true,
+        )
+        .await;
+        let inactive_orbit =
+            insert_orbit_unit(&env.dbx, "inactive", "regiment", None, None)
+                .await;
+        link_orbit_unit(&env.dbx, inactive_orbit.unit_id, inactive.id, false)
+            .await;
 
         let first_page =
             load_unit_name_reviews(&env.dbx, None, 1).await.unwrap();
@@ -341,6 +717,18 @@ mod tests {
         );
         assert_eq!(first_page.units[0].expected_name, "екіпаж рота армія");
         assert!(!first_page.units[0].matches_expected);
+        assert!(!reviews
+            .iter()
+            .any(|review| review.sigint_unit_id == unlinked.id));
+        assert!(!reviews
+            .iter()
+            .any(|review| review.sigint_unit_id == multi_linked.id));
+        assert!(!reviews
+            .iter()
+            .any(|review| review.sigint_unit_id == only_suppressed.id));
+        assert!(!reviews
+            .iter()
+            .any(|review| review.sigint_unit_id == inactive.id));
 
         let change_count = sigint_unit_change::Entity::find()
             .filter(sigint_unit_change::Column::SigintUnitId.eq(first.id))
@@ -372,7 +760,12 @@ mod tests {
         .await
         .unwrap()
         .units;
-        assert_eq!(reviews[0].sigint_unit_id, second.id);
-        assert_eq!(reviews[1].sigint_unit_id, first.id);
+        assert_eq!(
+            reviews
+                .iter()
+                .map(|review| review.sigint_unit_id)
+                .collect::<Vec<_>>(),
+            vec![second.id, first.id]
+        );
     }
 }
