@@ -102,7 +102,7 @@ export function DocumentAttachmentPreviewRenderer({
   const [ocrVisible, setOcrVisible] = useState(false);
   const [ocrFullPane, setOcrFullPane] = useState(false);
   const [ocrStatus, setOcrStatus] = useState(currentDocument.ocr ?? null);
-  const [summaryVisible, setSummaryVisible] = useState(currentDocument.summary != null);
+  const [summaryVisible, setSummaryVisible] = useState(false);
   const [summaryStatus, setSummaryStatus] = useState(currentDocument.summary ?? null);
 
   const theme = useTheme();
@@ -134,7 +134,7 @@ export function DocumentAttachmentPreviewRenderer({
     setInfoAnchorEl(null);
     setOcrVisible(false);
     setOcrFullPane(false);
-    setSummaryVisible(currentDocument.summary != null);
+    setSummaryVisible(false);
     setSummaryStatus(currentDocument.summary ?? null);
     changeFullscreen(false);
   };
@@ -151,7 +151,7 @@ export function DocumentAttachmentPreviewRenderer({
     setOcrVisible(false);
     setOcrFullPane(false);
     setOcrStatus(currentDocument.ocr ?? null);
-    setSummaryVisible(currentDocument.summary != null);
+    setSummaryVisible(false);
     setSummaryStatus(currentDocument.summary ?? null);
   }, [currentDocument.href, currentDocument.ocr, currentDocument.summary, resolvedIndex]);
 

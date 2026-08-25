@@ -60,7 +60,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
 };
 
 const EXPECTED_NAME_EXPLAINER =
-  'Непорожні значення полів екіпаж/команда, відділення, ланка, взвод, рота, батальйон, полк, бригада, дивізія, корпус та армія, об’єднані пробілами в цьому порядку.';
+  'Значення береться з єдиного прив’язаного підрозділу ORBIT: непорожні сегменти ешелонів екіпаж/команда, відділення, ланка, взвод, рота, батальйон, полк, бригада, дивізія та армія, об’єднані пробілами в цьому порядку.';
 
 type AdminUnitNamesPageProps = {
   authUserRoles: string[];
@@ -131,13 +131,13 @@ export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUni
   }, []);
 
   const replaceName = useCallback(
-    async (unit: UnitNameReview, name: string, successMessage: string) => {
+    async (unit: UnitNameReview, name: string, successMessage?: string) => {
       setSubmittingUnitId(unit.sigintUnitId);
       setActionError(null);
       setStatus(null);
       try {
         applyReview(await updateUnitNameReview({ sigintUnitId: unit.sigintUnitId, name }));
-        setStatus(successMessage);
+        if (successMessage) setStatus(successMessage);
         return true;
       } catch (error) {
         setActionError(formatUnitError(error));
@@ -246,13 +246,7 @@ export function AdminUnitNamesPage({ authUserRoles, embedded = false }: AdminUni
               row.original.matchesExpected ||
               !row.original.expectedName.trim()
             }
-            onClick={() =>
-              void replaceName(
-                row.original,
-                row.original.expectedName,
-                'Назву підрозділу замінено на очікувану',
-              )
-            }
+            onClick={() => void replaceName(row.original, row.original.expectedName)}
           >
             Замінити
           </Button>

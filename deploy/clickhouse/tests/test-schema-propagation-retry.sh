@@ -13,7 +13,12 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$case_dir/bin"
-for command in refresh-current-views reconcile-schema check-analytics-health; do
+for command in \
+  refresh-current-views \
+  reconcile-schema \
+  reconcile-if-needed \
+  check-analytics-health
+do
   cat >"$case_dir/bin/$command.sh" <<'MOCK'
 #!/usr/bin/env bash
 printf '%s\n' "$(basename "$0" .sh)" >>"$ECHO_TEST_OPERATIONS"
@@ -39,7 +44,7 @@ MIRROR_TABLE_RECONCILE_SCHEMA_RETRY_TIMEOUT_SECONDS=300 \
   reconcile_analytics_schema_with_retry "$case_dir/bin"
 
 diff -u \
-  <(printf 'refresh-current-views\nrefresh-gateway\nrefresh-current-views\nrefresh-gateway\nreconcile-schema\ncheck-analytics-health\n') \
+  <(printf 'refresh-current-views\nrefresh-gateway\nrefresh-current-views\nrefresh-gateway\nreconcile-schema\nreconcile-if-needed\ncheck-analytics-health\n') \
   "$operations"
 
 : >"$gateway_attempts"

@@ -140,6 +140,7 @@ export type MessageCardProps = {
    * Defaults to true for `displayMode="duty"`.
    */
   collapseMediaPreviews?: boolean;
+  mediaSummaryEnabled?: boolean;
   messageTextPreviewLines?: MessageTextPreviewLineLimit;
 };
 
@@ -196,6 +197,7 @@ function MessageCardComponent({
   analysisCallsignActions,
   showCallsignAddForm = false,
   collapseMediaPreviews,
+  mediaSummaryEnabled = true,
   messageTextPreviewLines = 20,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
@@ -361,6 +363,7 @@ function MessageCardComponent({
           onOpenPointsOnMap={onOpenPointsOnMap}
           onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
           collapseMediaPreviews={collapseMediaPreviews ?? false}
+          mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
         />
       </MessageCardRoot>

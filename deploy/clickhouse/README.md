@@ -48,8 +48,8 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 
 - ClickHouse `26.3.12.3` LTS from its signed apt repository.
 - PeerDB `v0.37.1` at its release commit.
-- `pg_clickhouse` `v0.3.2`, built specifically for PostgreSQL 18 from the
-  temporary `agent/v0.3.2-analytics-backports` fork branch. The pinned commit
+- `pg_clickhouse` `v0.3.2-echo.1`, built specifically for PostgreSQL 18 from
+  the `codex/v0.3.2-search-backports` fork branch. The pinned commit
   includes the foreign-scan RTE fix from upstream PR #319, the concurrent
   binary-scan fix from upstream PR #296, local compatible `DISTINCT` pushdown,
   `UNION` plus grouped-set-operation pushdown from upstream PR #324, and
@@ -64,8 +64,12 @@ All pins and downloadable checksums live in [versions.env](versions.env):
   operation support keeps compatible unions and their final aggregation inside
   ClickHouse instead of transferring each arm to PostgreSQL. SubPlan support
   keeps compatible tag-filter `EXISTS`, `NOT EXISTS`, and scalar subqueries in
-  the same remote query. Return the source URL and commit pin to upstream after
-  these changes are released.
+  the same remote query. It additionally pushes constant PostgreSQL `tsquery`
+  matches against serialized `tsvector` columns, including Russian lexemes and
+  phrase operators, and text extraction from String-backed JSON/JSONB paths.
+  These search backports are proposed upstream in pg_clickhouse PRs #352 and
+  #353. Return the source URL and commit pin to upstream after all fork changes
+  are released.
 - Temporal Server `1.31.2` with PostgreSQL persistence and Temporal CLI
   `1.8.0`.
 - MinIO security release `RELEASE.2025-10-15T17-29-55Z`, built from its
@@ -186,7 +190,7 @@ four archives plus `SHA256SUMS`:
 
 ```text
 peerdb-v0.37.1-linux-amd64.tar.gz
-pg_clickhouse-v0.3.2-pg18-linux-amd64.tar.gz
+pg_clickhouse-v0.3.2-echo.1-pg18-linux-amd64.tar.gz
 minio-RELEASE.2025-10-15T17-29-55Z-linux-amd64.tar.gz
 mc-RELEASE.2025-08-13T08-35-41Z-linux-amd64.tar.gz
 ```
@@ -199,6 +203,58 @@ deploy/clickhouse/bin/copy-artifacts.sh
 
 Then copy the complete `deploy/clickhouse` directory, including
 `build/artifacts`, to the analytics host.
+
+### Existing gateway extension upgrade
+
+Upgrade `pg_clickhouse` on the canary gateway first. Preserve the currently
+deployed archive before copying artifacts because `copy-artifacts.sh` removes
+obsolete archive names from the local artifact directory:
+
+```bash
+old_archive=build/artifacts/pg_clickhouse-v0.3.2-pg18-linux-amd64.tar.gz
+old_backup=/var/backups/echo-analytics/$(basename "$old_archive")
+sudo install -d -m 0700 /var/backups/echo-analytics
+sudo install -m 0600 "$old_archive" "$old_backup"
+sudo sha256sum "$old_backup" | sudo tee "$old_backup.sha256"
+```
+
+After building, copying, and syncing the new complete artifact directory,
+verify and install it, restart the gateway so every backend loads one extension
+build, then compare the installed shared object with the archive:
+
+```bash
+new_archive=build/artifacts/pg_clickhouse-v0.3.2-echo.1-pg18-linux-amd64.tar.gz
+(cd build/artifacts && sha256sum --check SHA256SUMS)
+bin/install-artifacts.sh build/artifacts
+sudo systemctl restart postgresql@18-main.service
+
+expected_so_sha256=$(tar -xOf "$new_archive" \
+  ./usr/lib/postgresql/18/lib/pg_clickhouse.so | sha256sum | awk '{print $1}')
+installed_so_sha256=$(sudo sha256sum \
+  /usr/lib/postgresql/18/lib/pg_clickhouse.so | awk '{print $1}')
+test "$installed_so_sha256" = "$expected_so_sha256"
+sudo -u postgres psql -X -d echo_analytics_gateway \
+  -c 'SELECT pgch.pgch_version()'
+bin/status.sh
+```
+
+The SQL version remains `0.3.2`; the shared-object checksum identifies the
+exact fork build. If validation fails, restore the retained archive and restart
+the gateway before investigating:
+
+```bash
+sudo sha256sum --check "$old_backup.sha256"
+sudo tar --no-overwrite-dir --no-same-owner --no-same-permissions \
+  -xzf "$old_backup" -C /
+sudo systemctl restart postgresql@18-main.service
+sudo -u postgres psql -X -d echo_analytics_gateway \
+  -c 'SELECT pgch.pgch_version()'
+bin/status.sh
+```
+
+Do not promote beyond the canary until search parity, remote pushdown, gateway
+latency, application fallback, and HTTP error rates have passed the agreed soak
+and an operator explicitly approves production rollout.
 
 ## Installation order
 
@@ -558,8 +614,12 @@ analytical and PostgreSQL result sets.
 Existing five-minute aggregate generation remains intact. Count dimension totals use scalar
 `COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
 message-ID sets. Selected-callsign filters use pushed-down JSONB top-level
-existence predicates. Filter shapes without a verified ClickHouse pushdown,
-such as free-text search, use PostgreSQL directly.
+existence predicates. Free-text search uses the gateway for otherwise-supported
+analytical requests. The analytics pool forces PostgreSQL custom plans so
+prepared search parameters become constants that `pg_clickhouse` can safely
+translate. Serialized `tsvector` matching, String-backed JSON/JSONB body
+extraction, and Cyrillic `ILIKE` execute in ClickHouse; unsupported request
+shapes retain their existing PostgreSQL routing or whole-operation fallback.
 
 `/api/rer-importer/get-inbox` uses a stricter live-data policy than the
 eventually consistent endpoints below. RER analysis ranges shorter than 25

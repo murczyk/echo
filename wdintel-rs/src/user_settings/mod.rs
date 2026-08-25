@@ -44,6 +44,7 @@ fn model_to_dto(m: &user_settings::Model) -> UserDutySettingsDto {
         show_classic_duty: m.show_classic_duty,
         show_classic_analysis: m.show_classic_analysis,
         duty_collapse_media_previews: m.duty_collapse_media_previews,
+        media_summary_enabled: m.media_summary_enabled,
     }
 }
 
@@ -105,6 +106,7 @@ pub async fn user_settings_put(
         show_classic_duty: Set(dto.show_classic_duty),
         show_classic_analysis: Set(dto.show_classic_analysis),
         duty_collapse_media_previews: Set(dto.duty_collapse_media_previews),
+        media_summary_enabled: Set(dto.media_summary_enabled),
         updated_at: Set(now),
     })
     .on_conflict(
@@ -120,6 +122,7 @@ pub async fn user_settings_put(
                 user_settings::Column::ShowClassicDuty,
                 user_settings::Column::ShowClassicAnalysis,
                 user_settings::Column::DutyCollapseMediaPreviews,
+                user_settings::Column::MediaSummaryEnabled,
                 user_settings::Column::UpdatedAt,
             ])
             .to_owned(),

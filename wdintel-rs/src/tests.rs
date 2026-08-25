@@ -1,7 +1,10 @@
 #[cfg(test)]
 pub mod test {
     // use crate::entities::user;
-    use crate::config::{AnalyticsConfig, PostgresRuntimeConfig};
+    use crate::config::{
+        AnalyticsConfig, PostgresRuntimeConfig, DEFAULT_PG_DBNAME,
+        DEFAULT_PG_HOST, DEFAULT_PG_PASSWORD, DEFAULT_PG_USER,
+    };
     use crate::types::Mode;
     use crate::{
         mk_analytics_conn_string, mk_conn_string, new_pg_pool_from_analytics,
@@ -129,6 +132,40 @@ pub mod test {
         };
 
         assert!(new_pg_pool_from_analytics(&analytics).await.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn analytics_pool_forces_custom_query_plans() {
+        let config = crate::config::read_config(Mode::Test).unwrap();
+        let pg_dbname = std::env::var("TEST_DB_NAME")
+            .ok()
+            .filter(|pg_dbname| !pg_dbname.is_empty())
+            .or(config.pg_dbname)
+            .unwrap_or_else(|| DEFAULT_PG_DBNAME.to_string());
+        let analytics = AnalyticsConfig {
+            pg_host: config
+                .pg_host
+                .unwrap_or_else(|| DEFAULT_PG_HOST.to_string()),
+            pg_port: config.pg_port,
+            pg_user: config
+                .pg_user
+                .unwrap_or_else(|| DEFAULT_PG_USER.to_string()),
+            pg_password: config
+                .pg_password
+                .unwrap_or_else(|| DEFAULT_PG_PASSWORD.to_string()),
+            pg_dbname,
+            connect_timeout_ms: None,
+            query_timeout_ms: None,
+            freshness_max_age_ms: None,
+            retry_cooldown_ms: None,
+        };
+        let analytics = new_pg_pool_from_analytics(&analytics).await.unwrap();
+
+        assert_eq!(
+            postgres_setting(&analytics, "plan_cache_mode").await,
+            "force_custom_plan"
+        );
     }
 
     #[tokio::test]

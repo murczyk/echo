@@ -178,7 +178,7 @@ describe('menu-items', () => {
     expect(
       databaseGroup?.subs.flatMap((item) => (item.type === 'item' ? [item.label] : [])),
     ).toEqual([
-      'Echo GPU сервери',
+      'Транскрибація',
       'Аналіз пристроїв',
       'Всі звіти',
       'ГОІ',

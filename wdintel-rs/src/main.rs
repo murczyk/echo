@@ -1191,6 +1191,7 @@ async fn new_pg_pool_from_conn_string_with_runtime_config(
         None,
         false,
         pg_runtime_pool_options(postgres_runtime, role),
+        false,
     )
     .await
     .c(h!())?)
@@ -1207,6 +1208,7 @@ async fn new_pg_pool_from_conn_string_with_timeout(
         connect_timeout,
         connect_lazy,
         None,
+        true,
     )
     .await
     .c(h!())?)
@@ -1222,6 +1224,7 @@ pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
         None,
         false,
         None,
+        false,
     )
     .await
 }
@@ -1240,6 +1243,7 @@ pub(crate) async fn new_pg_runtime_pool_from_conn_string_with_max_connections(
             config.postgres_runtime.as_ref(),
             pg_runtime_pool_role(),
         ),
+        false,
     )
     .await
 }
@@ -1250,6 +1254,7 @@ async fn new_pg_pool_from_conn_string_with_options(
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
     runtime: Option<PgRuntimePoolOptions>,
+    force_custom_plan: bool,
 ) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
     opt.max_connections(max_connections)
@@ -1278,6 +1283,11 @@ async fn new_pg_pool_from_conn_string_with_options(
                     runtime.idle_in_transaction_session_timeout_ms,
                 ),
             ])
+        });
+    }
+    if force_custom_plan {
+        opt.map_sqlx_postgres_opts(|options| {
+            options.options([("plan_cache_mode", ANALYTICS_PLAN_CACHE_MODE)])
         });
     }
 

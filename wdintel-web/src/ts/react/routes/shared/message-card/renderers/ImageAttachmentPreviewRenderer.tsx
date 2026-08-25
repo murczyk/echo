@@ -274,7 +274,7 @@ export function ImageAttachmentPreviewRenderer({
   const [ocrVisible, setOcrVisible] = useState(false);
   const [ocrFullPane, setOcrFullPane] = useState(false);
   const [ocrStatus, setOcrStatus] = useState(currentImage.ocr ?? null);
-  const [summaryVisible, setSummaryVisible] = useState(currentImage.summary != null);
+  const [summaryVisible, setSummaryVisible] = useState(false);
   const [summaryStatus, setSummaryStatus] = useState(currentImage.summary ?? null);
   const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const theme = useTheme();
@@ -335,7 +335,7 @@ export function ImageAttachmentPreviewRenderer({
     setInfoAnchorEl(null);
     setOcrVisible(false);
     setOcrFullPane(false);
-    setSummaryVisible(currentImage.summary != null);
+    setSummaryVisible(false);
     setSummaryStatus(currentImage.summary ?? null);
     copyRequestKeyRef.current = null;
   }, [currentImage.summary, removePointerListeners]);

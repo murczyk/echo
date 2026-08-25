@@ -28,6 +28,7 @@ export type DutySettingsHook = DutySettingsValue & {
   setShowClassicDuty: (value: boolean) => void;
   setShowClassicAnalysis: (value: boolean) => void;
   setDutyCollapseMediaPreviews: (value: boolean) => void;
+  setMediaSummaryEnabled: (value: boolean) => void;
   setMessageTextPreviewLines: (value: MessageTextPreviewLineLimit) => void;
   scheduleSave: (nextSettings: DutySettingsSaveRequest) => void;
 };
@@ -49,6 +50,7 @@ function normalizeDutySettings(
     showClassicAnalysis: settings?.showClassicAnalysis ?? false,
     dutyCollapseMediaPreviews:
       settings?.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+    mediaSummaryEnabled: settings?.mediaSummaryEnabled ?? true,
   };
 }
 
@@ -168,6 +170,8 @@ export function useDutySettings(): DutySettingsHook {
       setSettings((current) => ({ ...current, showClassicAnalysis: value })),
     setDutyCollapseMediaPreviews: (value) =>
       setSettings((current) => ({ ...current, dutyCollapseMediaPreviews: value })),
+    setMediaSummaryEnabled: (value) =>
+      setSettings((current) => ({ ...current, mediaSummaryEnabled: value })),
     setMessageTextPreviewLines: (value) =>
       setSettings((current) => ({ ...current, messageTextPreviewLines: value })),
     scheduleSave,

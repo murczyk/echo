@@ -98,6 +98,7 @@ type DutyMessageCardItemProps = {
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews?: boolean;
+  mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction?: () => void;
@@ -137,6 +138,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   feedCount,
   tagsLayout,
   collapseMediaPreviews = false,
+  mediaSummaryEnabled = true,
   messageTextPreviewLines,
   botTagAction,
   onCancelBotTagAction,
@@ -189,6 +191,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       feedCount={feedCount}
       tagsLayout={tagsLayout}
       collapseMediaPreviews={collapseMediaPreviews}
+      mediaSummaryEnabled={mediaSummaryEnabled}
       messageTextPreviewLines={messageTextPreviewLines}
       botTagAction={botTagAction?.messageId === id ? botTagAction : null}
       onCancelBotTagAction={onCancelBotTagAction}
@@ -275,6 +278,7 @@ type DutyMessageListProps = {
   feedCount?: number;
   tagsLayout: TagsLayoutVariant;
   collapseMediaPreviews?: boolean;
+  mediaSummaryEnabled?: boolean;
   messageTextPreviewLines: MessageTextPreviewLineLimit;
   botTagAction: MessageCardBotTagAction | null;
   onCancelBotTagAction: () => void;
@@ -319,6 +323,7 @@ const DutyMessageList = memo(
     feedCount,
     tagsLayout,
     collapseMediaPreviews = false,
+    mediaSummaryEnabled = true,
     messageTextPreviewLines,
     botTagAction,
     onCancelBotTagAction,
@@ -374,6 +379,7 @@ const DutyMessageList = memo(
                   feedCount={feedCount}
                   tagsLayout={tagsLayout}
                   collapseMediaPreviews={collapseMediaPreviews}
+                  mediaSummaryEnabled={mediaSummaryEnabled}
                   messageTextPreviewLines={messageTextPreviewLines}
                   botTagAction={botTagAction}
                   onCancelBotTagAction={onCancelBotTagAction}
@@ -620,6 +626,7 @@ export const FeedColumnContent = memo(
       featureStrictNetworks,
       tagsLayout,
       collapseMediaPreviews = false,
+      mediaSummaryEnabled = true,
       messageTextPreviewLines,
       tagsMap,
       tagsOrder,
@@ -749,6 +756,7 @@ export const FeedColumnContent = memo(
           feedCount={feedCount}
           tagsLayout={tagsLayout}
           collapseMediaPreviews={collapseMediaPreviews}
+          mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
           botTagAction={botTagAction}
           onCancelBotTagAction={stableOnCancelBotTagAction}
