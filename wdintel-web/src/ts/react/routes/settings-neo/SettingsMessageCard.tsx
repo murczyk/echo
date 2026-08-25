@@ -162,9 +162,9 @@ export function SettingsMessageCard({
                 },
               }}
             >
-              <ToggleButton value="full">повний</ToggleButton>
-              <ToggleButton value="compact">щільний</ToggleButton>
-              <ToggleButton value="hidden">без тегів</ToggleButton>
+              <ToggleButton value="full">Повний</ToggleButton>
+              <ToggleButton value="compact">Щільний</ToggleButton>
+              <ToggleButton value="hidden">Без тегів</ToggleButton>
             </ToggleButtonGroup>
           </Box>
         </Stack>

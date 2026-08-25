@@ -358,9 +358,9 @@ describe('SettingsNeoPage', () => {
       expect(container.textContent).toContain('20 рядків');
       expect(container.textContent).toContain('40 рядків');
       expect(container.textContent).toContain('Без скорочення');
-      expect(container.textContent).toContain('повний');
-      expect(container.textContent).toContain('щільний');
-      expect(container.textContent).toContain('без тегів');
+      expect(container.textContent).toContain('Повний');
+      expect(container.textContent).toContain('Щільний');
+      expect(container.textContent).toContain('Без тегів');
       expect(container.textContent).toContain('Згортати перегляд довгих повідомлень:');
       expect(container.textContent).toContain(
         'Визначає, коли з’являється кнопка «Показати більше».',
@@ -608,7 +608,7 @@ describe('SettingsNeoPage', () => {
     expect(container.querySelector('[data-tags-mock="true"]')).not.toBeNull();
 
     const fullButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'повний',
+      (button) => button.textContent === 'Повний',
     );
     expect(fullButton).toBeTruthy();
 
@@ -632,7 +632,7 @@ describe('SettingsNeoPage', () => {
     });
 
     const hiddenButton = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'без тегів',
+      (button) => button.textContent === 'Без тегів',
     );
     expect(hiddenButton).toBeTruthy();
 
