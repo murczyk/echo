@@ -176,7 +176,6 @@ struct LocationResolutionDraft {
     location: String,
     candidates: Vec<BattleLineSettlementCandidate>,
     battle_line_distances: BTreeMap<usize, f64>,
-    battle_line_match: Option<BattleLineMatch>,
     chosen_candidate_index: Option<usize>,
     invalid_aor_ids: Vec<i64>,
 }
@@ -1552,7 +1551,6 @@ where
             location,
             candidates,
             battle_line_distances: BTreeMap::new(),
-            battle_line_match: None,
             chosen_candidate_index: None,
             invalid_aor_ids: vec![],
         })
@@ -1818,11 +1816,7 @@ where
         draft
             .battle_line_distances
             .insert(*candidate_index, distance.distance_m);
-        if draft.battle_line_match.is_none() {
-            draft.battle_line_match = Some(BattleLineMatch {
-                candidate_index: *candidate_index,
-                distance_m: distance.distance_m,
-            });
+        if draft.chosen_candidate_index.is_none() {
             draft.chosen_candidate_index = Some(*candidate_index);
         }
     }
@@ -2289,7 +2283,7 @@ insert into battle_line_version
     (geometry, source_file_name, uploaded_by_login_id, source_kind, source_sha256)
 select
     ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(0 0,10 0))', 4326),
-    'anchor-test.kml',
+    'independent-resolution-test.kml',
     id,
     'admin_upload',
     $1
@@ -2867,16 +2861,16 @@ values (
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn resolves_multiple_locations_independently() {
+    async fn resolves_ambiguous_locations_independently_2287() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
         let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
         let suffix = uuid::Uuid::now_v7();
-        let anchor_name = format!("#2287 ANCHOR {suffix}");
+        let unique_name = format!("#2287 UNIQUE {suffix}");
         let repeated_name = format!("#2287 SAME {suffix}");
-        insert_test_settlement(&txn, 2_287_211, &anchor_name, 0.10, 1.0)
+        insert_test_settlement(&txn, 2_287_211, &unique_name, 0.10, 1.0)
             .await
             .unwrap();
         insert_test_settlement(&txn, 2_287_212, &repeated_name, 0.01, 9.0)
@@ -2890,7 +2884,7 @@ values (
             vec![
                 crate::location::types::SettlementDetails {
                     id: Some(2_287_211),
-                    name: anchor_name.to_uppercase(),
+                    name: unique_name.to_uppercase(),
                     coords: Some((0.10, 1.0)),
                     ..Default::default()
                 },
@@ -2912,7 +2906,7 @@ values (
         let results = resolve_locations_to_settlements_with_db(
             &txn,
             settlements,
-            vec![anchor_name, repeated_name],
+            vec![unique_name, repeated_name],
             &[aor_id],
         )
         .await

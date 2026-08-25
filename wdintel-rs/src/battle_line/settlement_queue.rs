@@ -731,6 +731,60 @@ fn oneoff_bounds_at(
 mod tests {
     use super::*;
 
+    async fn insert_relink_test_settlement(
+        txn: &DatabaseTransaction,
+        id: i32,
+        name: &str,
+    ) -> anyhow::Result<()> {
+        crate::entities::settlement::ActiveModel {
+            id: Set(id),
+            kind: Set(
+                crate::entities::sea_orm_active_enums::SettlementKind::Village,
+            ),
+            name: Set(name.to_string()),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+
+    async fn insert_oneoff_relink_test_item(
+        txn: &DatabaseTransaction,
+        settlement_text: &str,
+        settlement_id: i32,
+    ) -> anyhow::Result<i64> {
+        let message = signal_message::ActiveModel {
+            body: Set(Some("#2287 settlement relinking".to_string())),
+            deleted: Set(false),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            parsed_unit_v2: Set(false),
+            location_v2: Set(Some(format!("|{settlement_text}|"))),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(message.id),
+            settlement_text: Set(settlement_text.to_string()),
+            settlement_id: Set(Some(settlement_id)),
+            is_undefined: Set(None),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        Ok(message.id)
+    }
+
     #[test]
     fn oneoff_bounds_are_local_half_open_and_reject_inversion() {
         let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 18).unwrap();
@@ -859,6 +913,70 @@ mod tests {
                 .await
                 .unwrap(),
             0
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn oneoff_relinks_existing_settlement_2287() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let old_settlement_id = 2_287_214;
+        let new_settlement_id = 2_287_215;
+        for (id, name) in [
+            (old_settlement_id, "#2287 OLD MATCH"),
+            (new_settlement_id, "#2287 NEW MATCH"),
+        ] {
+            insert_relink_test_settlement(&txn, id, name).await.unwrap();
+        }
+        let item_id = insert_oneoff_relink_test_item(
+            &txn,
+            "AMBIGUOUS",
+            old_settlement_id,
+        )
+        .await
+        .unwrap();
+        let request = OneoffItemResolutionRequest {
+            item_id,
+            location_v2: Some("|AMBIGUOUS|".to_string()),
+            settlement_texts: vec!["AMBIGUOUS".to_string()],
+        };
+        let resolutions = vec![BattleLineLocationResult {
+            location: "AMBIGUOUS".to_string(),
+            candidates: vec![],
+            chosen_settlement_id: Some(new_settlement_id),
+            distance_m: Some(1.0),
+            invalid_aor_ids: vec![],
+        }];
+        let mut stats = OneoffLinkInboxSettlementsStats::default();
+
+        process_oneoff_item_in_transaction(
+            &txn,
+            request,
+            resolutions,
+            &mut stats,
+        )
+        .await
+        .unwrap();
+
+        let row = sigint_inbox_item_settlement::Entity::find()
+            .filter(sigint_inbox_item_settlement::Column::ItemId.eq(item_id))
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.settlement_id, Some(new_settlement_id));
+        assert_eq!(row.is_undefined, None);
+        assert_eq!(
+            stats,
+            OneoffLinkInboxSettlementsStats {
+                processed: 1,
+                matched: 1,
+                ..Default::default()
+            }
         );
         txn.rollback().await.unwrap();
     }
