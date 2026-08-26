@@ -10,6 +10,6 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', '@mui/material', '@mui/icons-material'],
+    include: ['react', 'react-dom', '@mui/material', '@mui/icons-material', 'fabric'],
   },
 });
