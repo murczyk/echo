@@ -328,6 +328,7 @@ where
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(target_message_id),
+            signal_message_uuid: Set(group_entry.signal_message_uuid),
             group_master_key: Set(master_key.clone()),
             sender: Set(group_entry.sender.clone()),
             login_id: Set(group_entry.login_id),

@@ -3440,7 +3440,7 @@ where id = $1
         .await
         .unwrap();
         let item_id = signal_message.id;
-        sigint_inbox_item::ActiveModel {
+        let inbox_item = sigint_inbox_item::ActiveModel {
             id: Set(item_id),
             ..Default::default()
         }
@@ -3459,6 +3459,7 @@ where id = $1
         .unwrap();
         let settlement_link = sigint_inbox_item_settlement::ActiveModel {
             id: NotSet,
+            item_uuid: Set(inbox_item.id_uuid),
             created_at: NotSet,
             item_id: Set(item_id),
             settlement_text: Set(format!("test-{}", uuid::Uuid::now_v7())),

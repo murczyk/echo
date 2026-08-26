@@ -1199,6 +1199,7 @@ async fn set_message_callsigns(
     crate::inbox::callsigns::sync(
         db,
         inbox_item.id,
+        inbox_item.id_uuid,
         crate::inbox::callsigns::InboxItemCallsigns {
             primary: callsigns,
             alg2: Vec::new(),
@@ -5710,6 +5711,7 @@ async fn summary_table_chunked_collection_matches_single_window() {
     crate::inbox::callsigns::sync(
         db,
         geocoded_message.id,
+        geocoded_message.id_uuid,
         crate::inbox::callsigns::InboxItemCallsigns {
             primary: vec!["Geo".to_string()],
             alg2: Vec::new(),

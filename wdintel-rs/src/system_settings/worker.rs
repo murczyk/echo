@@ -162,29 +162,32 @@ async fn run_locked_replay_iteration(
             changed_message_ids: vec![],
         });
     };
-    let replayed_message_id =
+    let replayed_message =
         replay_source_message(config, &txn, &source, now).await?;
     sigint_comment::ActiveModel {
         id: NotSet,
         login_id: Set(crate::users::system_login_id(&txn).await.c(h!())?),
-        signal_message_id: Set(replayed_message_id),
+        signal_message_id: Set(replayed_message.id),
+        signal_message_uuid: Set(replayed_message.id_uuid),
         comment: Set(RER_DUTY_TEST_REPLAY_COMMENT.to_string()),
         created_at: Set(now),
         sigint_post_id: Set(None),
         migrated_signal_message_id: NotSet,
+        migrated_signal_message_uuid: NotSet,
     }
     .insert(&txn)
     .await
     .c(h!())?;
     txn.commit().await.c(h!())?;
     info!(
-        "rer_duty_historical_interceptions_worker replayed source {source_id} as {replayed_message_id}"
+        "rer_duty_historical_interceptions_worker replayed source {source_id} as {}",
+        replayed_message.id,
     );
     Ok(ReplayIteration {
         sleep_sec: responsive_sleep(replay_interval_sec(
             settings.rer_duty_test_replay_interval_sec,
         ) as u64),
-        changed_message_ids: vec![replayed_message_id],
+        changed_message_ids: vec![replayed_message.id],
     })
 }
 
@@ -559,7 +562,7 @@ async fn replay_source_message<C>(
     dbx: &C,
     source: &ReplaySource,
     replay_ts: NaiveDateTime,
-) -> Result<i64, AppError>
+) -> Result<signal_message::Model, AppError>
 where
     C: ConnectionTrait,
 {
@@ -571,6 +574,10 @@ where
 
     let inserted = signal_message::ActiveModel {
         id: NotSet,
+        id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+            Some(replay_ts),
+            replay_ts,
+        ))),
         body: Set(body),
         created_at: NotSet,
         timestamp: Set(Some(replay_ts)),
@@ -596,6 +603,7 @@ where
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(inserted.id),
+            signal_message_uuid: Set(inserted.id_uuid),
             group_master_key: Set(group.group_master_key.clone()),
             sender: Set(group.sender.clone()),
             login_id: Set(group.login_id),
@@ -612,6 +620,7 @@ where
 
     sigint_inbox_item::ActiveModel {
         id: Set(inserted.id),
+        id_uuid: Set(inserted.id_uuid),
         date: Set(Some(date)),
         time: Set(Some(time)),
         freq: Set(source.inbox_item.freq.clone()),
@@ -643,6 +652,7 @@ where
     crate::battle_line::settlement_queue::reconcile_item_locations(
         dbx,
         inserted.id,
+        inserted.id_uuid,
         source.inbox_item.location_v2.as_deref(),
     )
     .await
@@ -650,6 +660,7 @@ where
     crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
         dbx,
         inserted.id,
+        inserted.id_uuid,
         source.inbox_item.unit_v2.as_deref(),
         source.inbox_item.unit.as_deref(),
     )
@@ -661,14 +672,22 @@ where
             .remove(&source.inbox_item.id)
             .unwrap_or_default();
     let system_login_id = crate::users::system_login_id(dbx).await.c(h!())?;
-    crate::inbox::callsigns::sync(dbx, inserted.id, callsigns, system_login_id)
-        .await
-        .c(h!())?;
+    crate::inbox::callsigns::sync(
+        dbx,
+        inserted.id,
+        inserted.id_uuid,
+        callsigns,
+        system_login_id,
+    )
+    .await
+    .c(h!())?;
+    let inserted_inbox_item_uuid = inserted.id_uuid;
 
     for metadata in &source.metadata {
         sigint_inbox_item_metadata::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(inserted.id),
+            sigint_inbox_item_uuid: Set(inserted_inbox_item_uuid),
             color_code: Set(metadata.color_code.clone()),
             call_group_id: Set(metadata.call_group_id.clone()),
             call_group_name: Set(metadata.call_group_name.clone()),
@@ -701,6 +720,7 @@ where
             sigint_inbox_item_network::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(inserted.id),
+                sigint_inbox_item_uuid: Set(inserted_inbox_item_uuid),
                 sigint_network_id: Set(network.sigint_network_id),
                 created_at: Set(inserted.created_at),
             },
@@ -721,6 +741,7 @@ where
         sigint_inbox_item_tag::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(inserted.id),
+            sigint_inbox_item_uuid: Set(inserted_inbox_item_uuid),
             tag_id: Set(tag.tag_id),
             confidence: Set(tag.confidence),
             login_id: Set(tag.login_id),
@@ -735,6 +756,7 @@ where
         sigint_inbox_item_point_token::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(inserted.id),
+            sigint_inbox_item_uuid: Set(inserted_inbox_item_uuid),
             palitra_id: Set(point_token.palitra_id),
             point_tokens: Set(point_token.point_tokens.clone()),
         }
@@ -746,7 +768,7 @@ where
     crate::sigint::worker::incoming_message_after_insert(dbx, inserted.id)
         .await
         .c(h!())?;
-    Ok(inserted.id)
+    Ok(inserted)
 }
 
 fn build_replay_body(

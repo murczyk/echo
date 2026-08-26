@@ -2125,6 +2125,11 @@ async fn upsert_submit_signal_message_inner(
                 }
                 None if create_missing_uid => signal_message::ActiveModel {
                     id: NotSet,
+                    id_uuid: Set(Some(
+                        crate::sigint::message_id::signal_message_uuid_for_insert(
+                            timestamp,
+                        ),
+                    )),
                     body: Set(Some(message.text.clone())),
                     datasource_group_id: Set(datasource_group_id),
                     created_at: NotSet,
@@ -2147,6 +2152,11 @@ async fn upsert_submit_signal_message_inner(
         }
         None => signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(
+                crate::sigint::message_id::signal_message_uuid_for_insert(
+                    timestamp,
+                ),
+            )),
             body: Set(Some(message.text.clone())),
             datasource_group_id: Set(datasource_group_id),
             created_at: NotSet,
@@ -2206,6 +2216,7 @@ async fn ensure_submit_signal_message_groups(
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(signal_message.id),
+            signal_message_uuid: Set(signal_message.id_uuid),
             group_master_key: Set(Some(group_master_key.clone())),
             sender: Set(signal_message.sender.clone()),
             login_id: Set(signal_message.login_id),
@@ -4969,6 +4980,7 @@ mod tests {
         upsert_editable_sigint_comment(
             &env.dbx,
             message.id,
+            message.id_uuid,
             &login.id,
             &logins,
             "merged comment",
@@ -5565,6 +5577,7 @@ mod tests {
             crate::inbox::callsigns::sync(
                 &env.dbx,
                 inbox_item.id,
+                inbox_item.id_uuid,
                 crate::inbox::callsigns::InboxItemCallsigns {
                     primary: vec!["Alpha".to_string()],
                     alg2: Vec::new(),
@@ -5650,6 +5663,7 @@ mod tests {
             signal_message_media::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 signal_message_id: Set(message.id),
+                signal_message_uuid: Set(message.id_uuid),
                 content_type: Set(content_type.to_string()),
                 file_ext: Set(None),
                 file_name: Set(None),

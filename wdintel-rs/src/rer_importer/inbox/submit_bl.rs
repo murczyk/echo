@@ -10,6 +10,7 @@ use sea_orm::*;
 #[derive(Debug)]
 pub(crate) struct SubmittedInboxItem {
     pub(crate) signal_message_id: i64,
+    pub(crate) signal_message_uuid: Option<uuid::Uuid>,
     pub(crate) inbox_id: i64,
     pub(crate) warnings: Vec<InboxSubmitWarning>,
 }
@@ -308,6 +309,7 @@ async fn submit_inbox_item_with_groups_inner(
 
     Ok(SubmittedInboxItem {
         signal_message_id: signal_message.id,
+        signal_message_uuid: signal_message.id_uuid,
         inbox_id,
         warnings,
     })

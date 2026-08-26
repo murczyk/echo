@@ -308,6 +308,7 @@ mod tests {
         rows.push(signal_message_media::ActiveModel {
             id: Set(exact_id),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("audio/ogg".into()),
             file_ext: Set(Some("ogg".into())),
             file_name: Set(Some("exact.ogg".into())),
@@ -320,6 +321,7 @@ mod tests {
             rows.push(signal_message_media::ActiveModel {
                 id: Set(Uuid::now_v7()),
                 signal_message_id: Set(message.id),
+                signal_message_uuid: Set(message.id_uuid),
                 content_type: Set("audio/ogg".into()),
                 file_ext: Set(Some("ogg".into())),
                 file_name: Set(Some("batch.ogg".into())),
@@ -332,6 +334,7 @@ mod tests {
         rows.push(signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("audio/ogg".into()),
             file_ext: Set(Some("ogg".into())),
             file_name: Set(Some("large.ogg".into())),
@@ -343,6 +346,7 @@ mod tests {
         rows.push(signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("text/plain".into()),
             file_ext: Set(Some("txt".into())),
             file_name: Set(Some("note.txt".into())),
@@ -354,6 +358,7 @@ mod tests {
         rows.push(signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("audio/ogg".into()),
             file_ext: Set(Some("ogg".into())),
             file_name: Set(Some("old.ogg".into())),

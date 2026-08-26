@@ -1894,6 +1894,10 @@ mod tests {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+                Some(now),
+                now,
+            ))),
             body: Set(Some(String::new())),
             datasource_group_id: Set(Some(datasource_group_id)),
             created_at: Set(now),
@@ -1987,6 +1991,10 @@ mod tests {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+                Some(now),
+                now,
+            ))),
             body: Set(Some(body.clone())),
             datasource_group_id: Set(Some(datasource_group_id)),
             created_at: Set(now),
@@ -2820,6 +2828,10 @@ mod tests {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+                Some(now),
+                now,
+            ))),
             body: Set(Some(format!("existing {}", Uuid::new_v4()))),
             datasource_group_id: Set(Some(datasource_group_id)),
             created_at: Set(now),
@@ -2846,6 +2858,10 @@ mod tests {
         let now = Utc::now().naive_utc();
         signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+                Some(now),
+                now,
+            ))),
             body: Set(Some(format!("staged {}", Uuid::new_v4()))),
             datasource_group_id: Set(None),
             created_at: Set(now),

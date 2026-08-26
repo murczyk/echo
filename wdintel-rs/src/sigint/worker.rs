@@ -18,6 +18,7 @@ pub async fn unstage_message(
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(original.id_uuid),
             group_master_key: Set(Some(master_key.to_string())),
             sender: Set(message.sender.clone()),
             login_id: Set(message.login_id),
@@ -60,6 +61,7 @@ pub async fn unstage_message(
     signal_message_group::ActiveModel {
         id: NotSet,
         signal_message_id: Set(message.id),
+        signal_message_uuid: Set(message.id_uuid),
         group_master_key: Set(Some(master_key.to_string())),
         sender: Set(message.sender.clone()),
         login_id: Set(message.login_id),
