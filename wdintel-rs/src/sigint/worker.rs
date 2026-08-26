@@ -97,12 +97,13 @@ where
 {
     let statement = Statement::from_sql_and_values(
         DbBackend::Postgres,
-        r#"insert into sigint_search (id, search_tsv)
-                select sii.id, to_tsvector('russian', sii.body_noheader->>'body')
+        r#"insert into sigint_search (id, id_uuid, search_tsv)
+                select sii.id, sii.id_uuid, to_tsvector('russian', sii.body_noheader->>'body')
                 from sigint_inbox_item sii
                 where sii.id = $1
                 on conflict (id) do update
-                set search_tsv = excluded.search_tsv"#,
+                set id_uuid = excluded.id_uuid,
+                    search_tsv = excluded.search_tsv"#,
         [db_message_id.into()],
     );
     txn.execute_raw(statement).await.c(h!())?;
