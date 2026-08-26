@@ -12,6 +12,7 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique)]
     pub sigint_inbox_item_id: i64,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
     pub created_at: DateTime,
 }
 
