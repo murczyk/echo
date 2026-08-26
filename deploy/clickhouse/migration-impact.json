@@ -1,5 +1,30 @@
 {
   "migrations": {
+    "echo:m20260826_143520_signal_message_uuid_v7": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item", "strategy": "mirror_resync" },
+        { "table": "public.sigint_search", "strategy": "mirror_resync" },
+        { "table": "public.signal_message_group", "strategy": "mirror_resync" },
+        { "table": "public.signal_message_media", "strategy": "mirror_resync" },
+        { "table": "public.sigint_bookmark", "strategy": "mirror_resync" },
+        { "table": "public.sigint_important", "strategy": "mirror_resync" },
+        { "table": "public.sigint_comment", "strategy": "mirror_resync" },
+        { "table": "public.intel_product", "strategy": "mirror_resync" },
+        { "table": "public.ai_callsign_worker_job", "strategy": "excluded" },
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" },
+        { "table": "public.sigint_inbox_item_callsign", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_metadata", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_network", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_point_token", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_settlement", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_tag", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_unit", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_item_unit_tag_queue", "strategy": "mirror_resync" },
+        { "table": "public.sigint_inbox_tag_model_error", "strategy": "mirror_resync" },
+        { "table": "public.sigint_peleng", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260826_083256_sigint_peleng_battle_line_distance": {
       "changes": [
         {
