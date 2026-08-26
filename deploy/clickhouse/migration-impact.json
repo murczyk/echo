@@ -41,6 +41,12 @@
         { "table": "public.signal_message_queue", "strategy": "excluded" }
       ]
     },
+    "echo:m20260820_154719_signal_message_author_login": {
+      "changes": [
+        { "table": "public.signal_message", "strategy": "mirror_resync" },
+        { "table": "public.signal_message_group", "strategy": "mirror_resync" }
+      ]
+    },
     "echo:m20260813_181612_add_duty_collapse_media_previews": {
       "changes": [
         {
@@ -338,6 +344,7 @@
   },
   "dependencies": {
     "echo-im:8758373ccd6e914d68ef4c22dd40d364392074ee": { "changes": [] },
+    "echo-im:61af3aaaa15fea493cda880a6cb087b94ac75160": { "changes": [] },
     "echo-gpu:44990c61563f7232697cac4aeffd5294ef37e720": { "changes": [] }
   }
 }

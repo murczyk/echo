@@ -371,6 +371,44 @@ pub(crate) async fn reconcile_sigint_unit_orbit<C>(
 where
     C: ConnectionTrait,
 {
+    reconcile_sigint_unit_orbit_inner(
+        dbx,
+        login,
+        sigint_unit_id,
+        propagate_hierarchy,
+        None,
+    )
+    .await
+}
+
+async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
+    dbx: &C,
+    login: &Uuid,
+    change: &OrbitUnitHierarchyChange,
+) -> Result<UnitOrbitReconcileOutcome, AppError>
+where
+    C: ConnectionTrait,
+{
+    reconcile_sigint_unit_orbit_inner(
+        dbx,
+        login,
+        change.sigint_unit_id,
+        false,
+        Some(change),
+    )
+    .await
+}
+
+async fn reconcile_sigint_unit_orbit_inner<C>(
+    dbx: &C,
+    login: &Uuid,
+    sigint_unit_id: i64,
+    propagate_hierarchy: bool,
+    reviewed_change: Option<&OrbitUnitHierarchyChange>,
+) -> Result<UnitOrbitReconcileOutcome, AppError>
+where
+    C: ConnectionTrait,
+{
     super::changelog::set_author(dbx, login).await.c(h!())?;
     let mut unit = sigint_unit::Entity::find_by_id(sigint_unit_id)
         .filter(sigint_unit::Column::Deleted.eq(false))
@@ -382,10 +420,14 @@ where
         .c(h!())?;
     let previous_unit = unit.clone();
     let orbit_units = linked_orbit_units(dbx, sigint_unit_id).await.c(h!())?;
-    let hierarchy_updated = propagate_hierarchy
-        && propagate_single_orbit_hierarchy(dbx, &orbit_units, &mut unit)
-            .await
-            .c(h!())?;
+    let hierarchy_updated = if let Some(change) = reviewed_change {
+        apply_reviewed_orbit_hierarchy_change(&mut unit, change)
+    } else {
+        propagate_hierarchy
+            && propagate_single_orbit_hierarchy(dbx, &orbit_units, &mut unit)
+                .await
+                .c(h!())?
+    };
     let details =
         unit_inconsistency_details_for_links(dbx, &unit, &orbit_units)
             .await
@@ -434,6 +476,40 @@ where
         hierarchy_updated,
         orbit_link_count: orbit_units.len(),
     })
+}
+
+fn apply_reviewed_orbit_hierarchy_change(
+    unit: &mut sigint_unit::Model,
+    change: &OrbitUnitHierarchyChange,
+) -> bool {
+    let mut updated = false;
+    for attribute in &change.attributes {
+        let current = match attribute.attribute {
+            "name" => &mut unit.name,
+            "other" => &mut unit.other,
+            "team_or_crew" => &mut unit.team_or_crew,
+            "section" => &mut unit.section,
+            "squad" => &mut unit.squad,
+            "platoon" => &mut unit.platoon,
+            "company" => &mut unit.company,
+            "battalion" => &mut unit.battalion,
+            "regiment" => &mut unit.regiment,
+            "brigade" => &mut unit.brigade,
+            "division" => &mut unit.division,
+            "corps" => &mut unit.corps,
+            "army" => &mut unit.army,
+            "military_district" => &mut unit.military_district,
+            "army_region" => &mut unit.army_region,
+            attribute => {
+                unreachable!("unknown reviewed unit attribute {attribute}")
+            }
+        };
+        if *current != attribute.proposed {
+            current.clone_from(&attribute.proposed);
+            updated = true;
+        }
+    }
+    updated
 }
 
 async fn propagate_single_orbit_hierarchy<C>(
@@ -1543,27 +1619,17 @@ where
     C: ConnectionTrait,
 {
     let mut seen = HashSet::from([root.unit_id]);
-    let mut pending = [
-        root.generative_parent_unit_id,
-        root.operational_parent_unit_id,
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
+    let mut pending = root
+        .generative_parent_unit_id
+        .into_iter()
+        .collect::<Vec<_>>();
     let mut ancestors = Vec::new();
     while let Some(unit_id) = pending.pop() {
         if !seen.insert(unit_id) {
             continue;
         }
-        let ancestor = find_available_orbit_unit(dbx, unit_id).await?;
-        pending.extend(
-            [
-                ancestor.generative_parent_unit_id,
-                ancestor.operational_parent_unit_id,
-            ]
-            .into_iter()
-            .flatten(),
-        );
+        let ancestor = find_available_orbit_unit(dbx, unit_id).await.c(h!())?;
+        pending.extend(ancestor.generative_parent_unit_id);
         ancestors.push(ancestor);
     }
     Ok(ancestors)
@@ -1588,10 +1654,128 @@ pub(crate) struct OrbitUnitReconcileStats {
     pub merged: usize,
 }
 
-pub(crate) async fn reconcile_all_orbit_linked_units(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OrbitUnitAttributeChange {
+    pub attribute: &'static str,
+    pub current: String,
+    pub proposed: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OrbitUnitHierarchyChange {
+    pub sigint_unit_id: i64,
+    pub sigint_unit_name: String,
+    pub attributes: Vec<OrbitUnitAttributeChange>,
+}
+
+pub(crate) async fn proposed_orbit_hierarchy_changes<C>(
+    dbx: &C,
+) -> Result<Vec<OrbitUnitHierarchyChange>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let mut changes = Vec::new();
+    for sigint_unit_id in linked_sigint_unit_ids(dbx).await.c(h!())? {
+        if let Some(change) =
+            proposed_orbit_hierarchy_change(dbx, sigint_unit_id)
+                .await
+                .c(h!())?
+        {
+            changes.push(change);
+        }
+    }
+    Ok(changes)
+}
+
+async fn proposed_orbit_hierarchy_change<C>(
+    dbx: &C,
+    sigint_unit_id: i64,
+) -> Result<Option<OrbitUnitHierarchyChange>, AppError>
+where
+    C: ConnectionTrait,
+{
+    let Some(unit) = sigint_unit::Entity::find_by_id(sigint_unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+    else {
+        return Ok(None);
+    };
+    let orbit_units = linked_orbit_units(dbx, sigint_unit_id).await.c(h!())?;
+    let mut proposed = unit.clone();
+    if !propagate_single_orbit_hierarchy(dbx, &orbit_units, &mut proposed)
+        .await
+        .c(h!())?
+    {
+        return Ok(None);
+    }
+    Ok(Some(OrbitUnitHierarchyChange {
+        sigint_unit_id,
+        sigint_unit_name: unit.name.clone(),
+        attributes: changed_unit_attributes(&unit, &proposed),
+    }))
+}
+
+fn changed_unit_attributes(
+    current: &sigint_unit::Model,
+    proposed: &sigint_unit::Model,
+) -> Vec<OrbitUnitAttributeChange> {
+    named_unit_attributes(current)
+        .into_iter()
+        .zip(named_unit_attributes(proposed))
+        .filter(|((_, current), (_, proposed))| current != proposed)
+        .map(
+            |((attribute, current), (_, proposed))| OrbitUnitAttributeChange {
+                attribute,
+                current: current.to_string(),
+                proposed: proposed.to_string(),
+            },
+        )
+        .collect()
+}
+
+fn named_unit_attributes(
+    unit: &sigint_unit::Model,
+) -> [(&'static str, &str); 15] {
+    [
+        ("name", unit.name.as_str()),
+        ("other", unit.other.as_str()),
+        ("team_or_crew", unit.team_or_crew.as_str()),
+        ("section", unit.section.as_str()),
+        ("squad", unit.squad.as_str()),
+        ("platoon", unit.platoon.as_str()),
+        ("company", unit.company.as_str()),
+        ("battalion", unit.battalion.as_str()),
+        ("regiment", unit.regiment.as_str()),
+        ("brigade", unit.brigade.as_str()),
+        ("division", unit.division.as_str()),
+        ("corps", unit.corps.as_str()),
+        ("army", unit.army.as_str()),
+        ("military_district", unit.military_district.as_str()),
+        ("army_region", unit.army_region.as_str()),
+    ]
+}
+
+pub(crate) async fn reconcile_selected_orbit_hierarchy_changes(
     dbx: &DatabaseConnection,
     login: &Uuid,
+    accepted_changes: &[OrbitUnitHierarchyChange],
 ) -> Result<OrbitUnitReconcileStats, AppError> {
+    reconcile_orbit_linked_units(dbx, login, Some(accepted_changes)).await
+}
+
+async fn reconcile_orbit_linked_units(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+    accepted_changes: Option<&[OrbitUnitHierarchyChange]>,
+) -> Result<OrbitUnitReconcileStats, AppError> {
+    let accepted_changes = accepted_changes.map(|changes| {
+        changes
+            .iter()
+            .map(|change| (change.sigint_unit_id, change))
+            .collect::<BTreeMap<_, _>>()
+    });
     let sigint_unit_ids = sigint_unit_ids_requiring_reconciliation(dbx)
         .await
         .c(h!())?;
@@ -1600,13 +1784,34 @@ pub(crate) async fn reconcile_all_orbit_linked_units(
         ..Default::default()
     };
     for sigint_unit_id in sigint_unit_ids {
-        let outcome = reconcile_sigint_unit_orbit_committed(
-            dbx,
-            login,
-            sigint_unit_id,
-            true,
-        )
-        .await
+        let outcome = match &accepted_changes {
+            None => {
+                reconcile_sigint_unit_orbit_committed(
+                    dbx,
+                    login,
+                    sigint_unit_id,
+                    true,
+                )
+                .await
+            }
+            Some(changes) => match changes.get(&sigint_unit_id) {
+                Some(change) => {
+                    reconcile_reviewed_sigint_unit_orbit_committed(
+                        dbx, login, change,
+                    )
+                    .await
+                }
+                None => {
+                    reconcile_sigint_unit_orbit_committed(
+                        dbx,
+                        login,
+                        sigint_unit_id,
+                        false,
+                    )
+                    .await
+                }
+            },
+        }
         .c(h!())?;
         stats.hierarchy_updated += usize::from(outcome.hierarchy_updated);
         stats.multiple_links_skipped +=
@@ -1658,6 +1863,23 @@ async fn reconcile_sigint_unit_orbit_committed(
         login,
         sigint_unit_id,
         update_hierarchy,
+    )
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(outcome)
+}
+
+async fn reconcile_reviewed_sigint_unit_orbit_committed(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+    change: &OrbitUnitHierarchyChange,
+) -> Result<UnitOrbitReconcileOutcome, AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let outcome = reconcile_sigint_unit_orbit_with_reviewed_change(
+        &transaction,
+        login,
+        change,
     )
     .await
     .c(h!())?;
@@ -1952,27 +2174,17 @@ fn orbit_unit_and_ancestor_ids(
 ) -> HashSet<Uuid> {
     let parent_ids_by_unit_id = orbit_units
         .iter()
-        .map(|unit| {
-            (
-                unit.unit_id,
-                [
-                    unit.generative_parent_unit_id,
-                    unit.operational_parent_unit_id,
-                ],
-            )
-        })
+        .map(|unit| (unit.unit_id, unit.generative_parent_unit_id))
         .collect::<HashMap<_, _>>();
     let mut pending = unit_ids.iter().copied().collect::<Vec<_>>();
     while let Some(unit_id) = pending.pop() {
-        let Some(parent_ids) = parent_ids_by_unit_id.get(&unit_id) else {
+        let Some(Some(parent_id)) = parent_ids_by_unit_id.get(&unit_id) else {
             continue;
         };
-        for parent_id in parent_ids.iter().flatten() {
-            if parent_ids_by_unit_id.contains_key(parent_id)
-                && unit_ids.insert(*parent_id)
-            {
-                pending.push(*parent_id);
-            }
+        if parent_ids_by_unit_id.contains_key(parent_id)
+            && unit_ids.insert(*parent_id)
+        {
+            pending.push(*parent_id);
         }
     }
     unit_ids
@@ -2092,20 +2304,9 @@ where
                 .to_string(),
         });
     }
-    fill_orbit_parent_chain(
-        dbx,
-        orbit_unit,
-        OrbitParentKind::Operational,
-        &mut hierarchy,
-    )
-    .await?;
-    fill_orbit_parent_chain(
-        dbx,
-        orbit_unit,
-        OrbitParentKind::Generative,
-        &mut hierarchy,
-    )
-    .await?;
+    fill_generative_orbit_parent_chain(dbx, orbit_unit, &mut hierarchy)
+        .await
+        .c(h!())?;
     if hierarchy.iter().all(String::is_empty) {
         return Err(AppError::BL {
             msg: "ORBIT unit has no supported hierarchy levels".to_string(),
@@ -2152,26 +2353,27 @@ impl OrbitParentKind {
     }
 }
 
-async fn fill_orbit_parent_chain<C>(
+async fn fill_generative_orbit_parent_chain<C>(
     dbx: &C,
     root: &orbit_unit::Model,
-    parent_kind: OrbitParentKind,
     hierarchy: &mut [String; 14],
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
     let mut seen = HashSet::from([root.unit_id]);
-    let mut parent_id = parent_kind.parent_id(root);
+    let mut parent_id = root.generative_parent_unit_id;
     while let Some(unit_id) = parent_id {
         if !seen.insert(unit_id) {
             return Err(AppError::BL {
                 msg: "ORBIT unit hierarchy contains a cycle".to_string(),
             });
         }
-        let parent = find_available_orbit_unit(dbx, unit_id).await?;
-        parent_id = parent_kind.parent_id(&parent);
-        fill_orbit_hierarchy_level(dbx, &parent, hierarchy).await?;
+        let parent = find_available_orbit_unit(dbx, unit_id).await.c(h!())?;
+        parent_id = parent.generative_parent_unit_id;
+        fill_orbit_hierarchy_level(dbx, &parent, hierarchy)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }
@@ -2484,14 +2686,14 @@ mod tests {
         dbx: &DatabaseConnection,
         name: &str,
         echelon_id: Option<Uuid>,
-        operational_parent_unit_id: Option<Uuid>,
+        generative_parent_unit_id: Option<Uuid>,
     ) -> orbit_unit::Model {
         orbit_unit::ActiveModel {
             unit_id: Set(Uuid::new_v4()),
             unit_name: Set(Some(name.to_string())),
             unit_name_short: Set(Some(name.to_string())),
             unit_echelon_id: Set(echelon_id),
-            operational_parent_unit_id: Set(operational_parent_unit_id),
+            generative_parent_unit_id: Set(generative_parent_unit_id),
             ..Default::default()
         }
         .insert(dbx)
@@ -3023,7 +3225,8 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn materializing_parents_activates_an_inactive_linked_unit() {
+    async fn materializing_generative_parents_activates_an_inactive_linked_unit(
+    ) {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -3051,7 +3254,7 @@ mod tests {
         .unwrap();
         let root = orbit_unit::ActiveModel {
             unit_id: Set(Uuid::new_v4()),
-            operational_parent_unit_id: Set(Some(parent_id)),
+            generative_parent_unit_id: Set(Some(parent_id)),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3160,6 +3363,113 @@ mod tests {
                 .unwrap()
                 .active
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn reviewed_reconciliation_applies_only_displayed_changes() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login = create_login_with_roles(
+            &env.dbx,
+            "orbit-generative-propagation",
+            &[],
+        )
+        .await;
+        let company = orbit_echelon(&env.dbx, "company").await;
+        let brigade = orbit_echelon(&env.dbx, "brigade").await;
+        let division = orbit_echelon(&env.dbx, "division").await;
+        let generative_brigade = insert_orbit_unit(
+            &env.dbx,
+            "Generative brigade",
+            Some(brigade.id),
+            None,
+        )
+        .await;
+        let operational_division = insert_orbit_unit(
+            &env.dbx,
+            "Operational division",
+            Some(division.id),
+            None,
+        )
+        .await;
+        let root = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_name_short: Set(Some("ORBIT company".to_string())),
+            unit_echelon_id: Set(Some(company.id)),
+            generative_parent_unit_id: Set(Some(generative_brigade.unit_id)),
+            operational_parent_unit_id: Set(Some(operational_division.unit_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let sigint_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                company: Set("Existing company".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, root.unit_id, sigint_unit.id).await;
+
+        let changes = proposed_orbit_hierarchy_changes(&env.dbx).await.unwrap();
+        let change = changes
+            .iter()
+            .find(|change| change.sigint_unit_id == sigint_unit.id)
+            .unwrap();
+        assert!(change.attributes.iter().any(|attribute| {
+            attribute.attribute == "brigade"
+                && attribute.proposed == "Generative brigade"
+        }));
+        assert!(!change
+            .attributes
+            .iter()
+            .any(|attribute| attribute.attribute == "division"));
+
+        let stats = reconcile_selected_orbit_hierarchy_changes(
+            &env.dbx,
+            &login.id,
+            &[],
+        )
+        .await
+        .unwrap();
+        assert_eq!(stats.hierarchy_updated, 0);
+        let unchanged = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(unchanged.brigade.is_empty());
+
+        let mut edited = unchanged.into_active_model();
+        edited.platoon = Set("Edited platoon".to_string());
+        edited.company = Set(String::new());
+        edited.update(&env.dbx).await.unwrap();
+
+        let stats = reconcile_selected_orbit_hierarchy_changes(
+            &env.dbx,
+            &login.id,
+            std::slice::from_ref(change),
+        )
+        .await
+        .unwrap();
+        assert_eq!(stats.hierarchy_updated, 1);
+        let unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(unit.platoon, "Edited platoon");
+        assert!(unit.company.is_empty());
+        assert_eq!(unit.brigade, "Generative brigade");
+        assert!(unit.division.is_empty());
     }
 
     #[tokio::test]
@@ -3440,7 +3750,7 @@ mod tests {
             link_orbit_unit(&env.dbx, orbit_unit.unit_id, sigint_unit_id).await;
         }
 
-        let stats = reconcile_all_orbit_linked_units(&env.dbx, &login.id)
+        let stats = reconcile_orbit_linked_units(&env.dbx, &login.id, None)
             .await
             .unwrap();
 

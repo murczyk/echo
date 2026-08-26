@@ -127,10 +127,12 @@ where
         .into_iter()
         .filter_map(|link| {
             let message = messages.get(&link.intel_message_id)?;
-            let login_id = message
-                .sender
-                .as_deref()
-                .and_then(|sender| uuid::Uuid::parse_str(sender).ok());
+            let login_id = message.login_id.or_else(|| {
+                message
+                    .sender
+                    .as_deref()
+                    .and_then(|sender| uuid::Uuid::parse_str(sender).ok())
+            });
             Some(LinkedMessageComment {
                 source_message_id: link.source_message_id,
                 intel_message_id: message.id,
@@ -345,7 +347,8 @@ where
         body: Set(Some(comment.to_string())),
         created_at: Set(created_at),
         timestamp: Set(Some(created_at)),
-        sender: Set(Some(login.to_string())),
+        sender: Set(None),
+        login_id: Set(Some(*login)),
         format: Set(None),
         deleted: Set(false),
         external_id: Set(None),
@@ -506,31 +509,18 @@ async fn migrate_comment_batch(
     txn: &DatabaseTransaction,
     comments: Vec<sigint_comment::Model>,
 ) -> Result<(), AppError> {
-    let mut senders: HashMap<uuid::Uuid, String> = HashMap::new();
     let mut comments_by_marker = HashMap::with_capacity(comments.len());
     let mut signal_messages = Vec::with_capacity(comments.len());
 
     for comment in comments {
-        let sender = if let Some(sender) = senders.get(&comment.login_id) {
-            sender.clone()
-        } else {
-            let sender =
-                crate::sigint::direct_submit::query::ensure_current_user_sender(
-                    txn,
-                    &comment.login_id,
-                )
-                .await
-                .c(h!())?;
-            senders.insert(comment.login_id, sender.clone());
-            sender
-        };
         let marker = migrated_comment_message_marker(comment.id);
         signal_messages.push(signal_message::ActiveModel {
             id: NotSet,
             body: Set(Some(comment.comment.clone())),
             created_at: Set(comment.created_at),
             timestamp: Set(Some(comment.created_at)),
-            sender: Set(Some(sender)),
+            sender: Set(None),
+            login_id: Set(Some(comment.login_id)),
             format: Set(None),
             deleted: Set(false),
             external_id: Set(None),
