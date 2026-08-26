@@ -249,6 +249,7 @@ async fn promote_duplicate_trace_for_deleted_original(
     for (group_link, _) in duplicate_traces {
         let mut group_link = group_link.into_active_model();
         group_link.signal_message_id = Set(promoted_message.id);
+        group_link.signal_message_uuid = Set(promoted_message.id_uuid);
         group_link.message_uid = Set(promoted_message.message_uid.clone());
         group_link.update(txn).await.c(h!())?;
     }
@@ -256,6 +257,7 @@ async fn promote_duplicate_trace_for_deleted_original(
         txn,
         original_message.id,
         promoted_message.id,
+        promoted_message.id_uuid,
     )
     .await
     .c(h!())?;
@@ -632,6 +634,7 @@ async fn transfer_media_to_promoted_message(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let media_rows = signal_message_media::Entity::find()
         .filter(
@@ -644,6 +647,7 @@ async fn transfer_media_to_promoted_message(
     for media in media_rows {
         let mut media = media.into_active_model();
         media.signal_message_id = Set(promoted_message_id);
+        media.signal_message_uuid = Set(promoted_message_uuid);
         media.update(txn).await.c(h!())?;
     }
     Ok(())

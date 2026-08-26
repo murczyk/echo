@@ -1,3 +1,4 @@
+use crate::types::ShortContext;
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{ConnectionTrait, EntityTrait, QuerySelect};
 use uuid::{NoContext, Timestamp, Uuid};
@@ -21,27 +22,29 @@ pub fn signal_message_uuid_for_insert(
 pub async fn find_signal_message_uuid<C: ConnectionTrait>(
     db: &C,
     id: i64,
-) -> Result<Option<Uuid>, sea_orm::DbErr> {
-    crate::entities::signal_message::Entity::find_by_id(id)
+) -> anyhow::Result<Option<Uuid>> {
+    Ok(crate::entities::signal_message::Entity::find_by_id(id)
         .select_only()
         .column(crate::entities::signal_message::Column::IdUuid)
         .into_tuple::<Option<Uuid>>()
         .one(db)
         .await
-        .map(|uuid| uuid.flatten())
+        .c(crate::h!())?
+        .flatten())
 }
 
 pub async fn find_inbox_item_uuid<C: ConnectionTrait>(
     db: &C,
     id: i64,
-) -> Result<Option<Uuid>, sea_orm::DbErr> {
-    crate::entities::sigint_inbox_item::Entity::find_by_id(id)
+) -> anyhow::Result<Option<Uuid>> {
+    Ok(crate::entities::sigint_inbox_item::Entity::find_by_id(id)
         .select_only()
         .column(crate::entities::sigint_inbox_item::Column::IdUuid)
         .into_tuple::<Option<Uuid>>()
         .one(db)
         .await
-        .map(|uuid| uuid.flatten())
+        .c(crate::h!())?
+        .flatten())
 }
 
 pub fn uuid_v7_from_datetime(datetime: NaiveDateTime) -> Option<Uuid> {
