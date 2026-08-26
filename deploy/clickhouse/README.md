@@ -878,7 +878,10 @@ singleton. Additive columns on a table expected to remain empty may declare
 `empty_table_resnapshot`. After migrations, deployment validates that the table
 is still empty and has only source-side additive column drift, then uses
 PeerDB's paused-mirror table editing to remove and re-add only that preserved
-mapping. Drops, renames, type changes, and non-empty incompatible changes use
+mapping. Additive nullable columns on non-empty tables that require a targeted
+rebuild declare `replicated_snapshot` with `"targeted_resnapshot": true`; the
+same helper validates additive-only drift and rebuilds only the preserved table
+mapping. Drops, renames, type changes, and other incompatible changes use
 `mirror_resync`. Dependency revision changes for `echo-im` and `echo-gpu` must
 declare whether they contain schema changes. Deployment never starts a full
 mirror resync implicitly.
@@ -897,11 +900,13 @@ just analytics-resnapshot-table \
 
 The command streams the current helper through the source host, takes the same
 lock as table-selection reconciliation, preserves custom destination mapping
-names, snapshots only the empty table, refreshes current-state and gateway
+names, snapshots only the authorized table, refreshes current-state and gateway
 views, and requires the end-to-end analytics health check to pass. The source
 package installs the helper and manifest under `/opt/echo-peerdb` so the normal
 post-migration deployment verification can apply authorized repairs
-automatically.
+automatically. `empty_table_resnapshot` still refuses a non-empty source;
+targeted `replicated_snapshot` explicitly authorizes snapshotting one non-empty
+table.
 
 ```json
 {

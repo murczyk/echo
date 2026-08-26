@@ -1519,6 +1519,7 @@ where
             created_at: NotSet,
             updated_at: Set(peleng.updated_at),
             pelengation_object: Set(peleng.pelengation_object),
+            battle_line_distance: Set(None),
         })
         .collect::<Vec<_>>();
     if !peleng_models.is_empty() {
@@ -1526,6 +1527,12 @@ where
             .exec(dbx)
             .await
             .c(h!())?;
+        crate::battle_line::peleng_distance::fill_missing_inbox_peleng_distances(
+            dbx,
+            target_inbox_item_id,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }

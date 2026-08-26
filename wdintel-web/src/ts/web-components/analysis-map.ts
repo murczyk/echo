@@ -81,6 +81,7 @@ class AnalysisMap extends HTMLElement {
   private _canShowSettlements = false;
   private _showSettlements = false;
   private _messages: Message[] = [];
+  private _battleLineDistances = new Map<number, number>();
   private _networkUnits: NetworkUnit[] = [];
 
   private _markersGroup: Leaflet.MarkerClusterGroup | null = null;
@@ -778,6 +779,7 @@ class AnalysisMap extends HTMLElement {
       });
       marker.on('click', () => {
         this._clickedPoint = null;
+        this._battleLineDistances.clear();
         this._clickedLatLng = marker.getLatLng();
         this._clickedSettlementId = settlement.settlement_id;
         this._clickedSettlementLabel = [settlement.name, settlement.region]
@@ -811,6 +813,10 @@ class AnalysisMap extends HTMLElement {
       points,
       onPointClick: (point, circle) => {
         this._clickedPoint = circle;
+        this._battleLineDistances =
+          point.battle_line_distance == null
+            ? new Map()
+            : new Map([[point.message_id, point.battle_line_distance]]);
         this._clickedLatLng = circle.getLatLng();
         this._clickedSettlementId = null;
         this._clickedSettlementLabel = null;
@@ -821,13 +827,15 @@ class AnalysisMap extends HTMLElement {
         originalEvent?.preventDefault();
         originalEvent?.stopPropagation();
         this._clickedPoint = null;
+        this._battleLineDistances.clear();
         this._clickedLatLng = null;
         this._clickedSettlementId = null;
         this._clickedSettlementLabel = null;
         this._openPointContextMenu(target, latlng);
       },
-      onClusterClick: (messageIds, latlng, cluster) => {
+      onClusterClick: (messageIds, battleLineDistances, latlng, cluster) => {
         this._clickedPoint = null;
+        this._battleLineDistances = battleLineDistances;
         this._clickedLatLng = latlng;
         this._clickedSettlementId = null;
         this._clickedSettlementLabel = null;
@@ -1119,6 +1127,7 @@ class AnalysisMap extends HTMLElement {
       hasMoreMessages: this._clickedSettlementId !== null && this._settlementMessagesHasMore,
       onLoadMoreMessages: () => this._loadMoreSettlementMessages(),
       contextTitle: this._clickedSettlementLabel ?? undefined,
+      battleLineDistances: this._battleLineDistances,
       setClickedState: (clickedPoint, clickedLatLng) => {
         this._clickedPoint = clickedPoint;
         this._clickedLatLng = clickedLatLng;
@@ -1149,6 +1158,7 @@ class AnalysisMap extends HTMLElement {
     }
 
     this._clickedPoint = null;
+    this._battleLineDistances.clear();
     this._clickedLatLng = null;
     this._clickedSettlementId = null;
     this._clickedSettlementLabel = null;

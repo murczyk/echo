@@ -396,6 +396,7 @@ mod m20260824_120000_add_message_text_preview_lines;
 mod m20260824_124325_transcription_started_at;
 mod m20260825_114553_add_settlement_geography_index;
 mod m20260825_204254_ai_agent_engine_runtime_profile;
+mod m20260826_083256_sigint_peleng_battle_line_distance;
 
 pub struct Migrator;
 
@@ -924,6 +925,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260825_204254_ai_agent_engine_runtime_profile::Migration,
+            ),
+            Box::new(
+                m20260826_083256_sigint_peleng_battle_line_distance::Migration,
             ),
         ]
     }

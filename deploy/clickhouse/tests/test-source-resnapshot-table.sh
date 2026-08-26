@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+TEST_DIR=$(cd "$(dirname "$0")" && pwd)
+SCRIPT_DIR=$(cd "$TEST_DIR/../bin" && pwd)
+case_dir=$(mktemp -d /tmp/echo-source-resnapshot-test.XXXXXX)
+
+cleanup() {
+  rm -rf -- "$case_dir"
+}
+trap cleanup EXIT
+
+manifest=$case_dir/migration-impact.json
+cat >"$manifest" <<'JSON'
+{
+  "migrations": {
+    "echo:m1": {
+      "changes": [
+        { "table": "public.empty", "strategy": "empty_table_resnapshot" }
+      ]
+    },
+    "echo:m2": {
+      "changes": [
+        {
+          "table": "public.nonempty",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        },
+        { "table": "public.created", "strategy": "replicated_snapshot" }
+      ]
+    }
+  },
+  "dependencies": {}
+}
+JSON
+
+export ECHO_SOURCE_RESNAPSHOT_TEST_MODE=true
+export ECHO_PEERDB_MIGRATION_IMPACT_FILE=$manifest
+export ECHO_PEERDB_LIB=$SCRIPT_DIR/lib.sh
+# shellcheck disable=SC1090
+source "$SCRIPT_DIR/source-resnapshot-table.sh"
+
+expected=$'empty_table_resnapshot\tpublic.empty\nreplicated_snapshot\tpublic.nonempty'
+[[ $(manifest_resnapshot_entries) == "$expected" ]]
+[[ $(manifest_resnapshot_strategy public.empty) == empty_table_resnapshot ]]
+[[ $(manifest_resnapshot_strategy public.nonempty) == replicated_snapshot ]]
+if manifest_resnapshot_strategy public.created >/dev/null 2>&1; then
+  printf 'ordinary replicated snapshot unexpectedly received targeted authorization\n' >&2
+  exit 1
+fi
+if manifest_resnapshot_strategy public.unknown >/dev/null 2>&1; then
+  printf 'unknown table unexpectedly received resnapshot authorization\n' >&2
+  exit 1
+fi
+
+printf 'Source table resnapshot authorization tests passed\n'

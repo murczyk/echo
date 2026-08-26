@@ -16,47 +16,70 @@ validate_source_table() {
     || die "invalid source table: $1"
 }
 
-manifest_resnapshot_tables() {
+manifest_resnapshot_entries() {
   python3 - "$migration_impact_file" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as manifest_file:
     manifest = json.load(manifest_file)
-tables = {
-    change["table"]
+entries = {
+    (change["table"], change["strategy"])
     for section in ("migrations", "dependencies")
     for declaration in manifest[section].values()
     for change in declaration["changes"]
     if change["strategy"] == "empty_table_resnapshot"
+    or (
+        change["strategy"] == "replicated_snapshot"
+        and change.get("targeted_resnapshot") is True
+    )
 }
-print(*sorted(tables), sep="\n")
+strategies_by_table = {}
+for table, strategy in entries:
+    strategies_by_table.setdefault(table, set()).add(strategy)
+conflicts = {
+    table: strategies
+    for table, strategies in strategies_by_table.items()
+    if len(strategies) != 1
+}
+if conflicts:
+    raise SystemExit(f"conflicting resnapshot strategies: {conflicts}")
+for table in sorted(strategies_by_table):
+    print(next(iter(strategies_by_table[table])), table, sep="\t")
 PY
 }
 
-require_manifest_authorization() {
+manifest_resnapshot_strategy() {
   local source_table=$1
-  python3 - "$migration_impact_file" "$source_table" <<'PY' \
-    || die "$source_table is not authorized for empty_table_resnapshot"
+  python3 - "$migration_impact_file" "$source_table" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as manifest_file:
     manifest = json.load(manifest_file)
-authorized = any(
-    change.get("table") == sys.argv[2]
-    and change.get("strategy") == "empty_table_resnapshot"
+strategies = {
+    change.get("strategy")
     for section in ("migrations", "dependencies")
     for declaration in manifest[section].values()
     for change in declaration.get("changes", [])
-)
-raise SystemExit(0 if authorized else 1)
+    if change.get("table") == sys.argv[2]
+    and (
+        change.get("strategy") == "empty_table_resnapshot"
+        or (
+            change.get("strategy") == "replicated_snapshot"
+            and change.get("targeted_resnapshot") is True
+        )
+    )
+}
+if len(strategies) != 1:
+    raise SystemExit(1)
+print(next(iter(strategies)))
 PY
 }
 
 run_remote_resnapshot() {
-  local source_table=$1
-  log "Checking targeted empty-table resnapshot for $source_table on $analytics_ssh_target"
+  local strategy=$1 source_table=$2
+  log "Checking targeted $strategy repair for $source_table on $analytics_ssh_target"
   timeout --foreground "${remote_timeout}s" \
     ssh \
       -o BatchMode=yes \
@@ -64,12 +87,13 @@ run_remote_resnapshot() {
       -o ServerAliveInterval=15 \
       -o ServerAliveCountMax=3 \
       "$analytics_ssh_target" \
-      "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/resnapshot-table.sh $source_table"
+      "sudo -n env ECHO_ANALYTICS_EXPECTED_CONTROL_RELEASE=$control_release /opt/echo-analytics/current/bin/resnapshot-table.sh --strategy $strategy $source_table"
 }
 
 main() {
-  local mode=${1:-} source_table=${2:-}
+  local mode=${1:-} source_table=${2:-} strategy entry entries
   local -a source_tables=()
+  declare -A strategies_by_table=()
 
   case $mode in
     --table)
@@ -77,6 +101,9 @@ main() {
         || die "usage: $0 --table SCHEMA.TABLE|--manifest"
       validate_source_table "$source_table"
       source_tables+=("$source_table")
+      strategy=$(manifest_resnapshot_strategy "$source_table") \
+        || die "$source_table is not authorized for a targeted table resnapshot"
+      strategies_by_table["$source_table"]=$strategy
       ;;
     --manifest)
       [[ $# -eq 1 ]] || die "usage: $0 --table SCHEMA.TABLE|--manifest"
@@ -100,20 +127,30 @@ main() {
   control_release=$(require_paired_control_release "$analytics_ssh_target")
   acquire_source_reconcile_lock
 
-  if [[ "$mode" == --table ]]; then
-    require_manifest_authorization "$source_table"
-  else
-    mapfile -t source_tables < <(manifest_resnapshot_tables)
+  if [[ "$mode" == --manifest ]]; then
+    entries=$(manifest_resnapshot_entries)
+    while IFS= read -r entry; do
+      [[ -n "$entry" ]] || continue
+      IFS=$'\t' read -r strategy source_table <<<"$entry"
+      validate_source_table "$source_table"
+      [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot ]] \
+        || die "invalid resnapshot strategy for $source_table: $strategy"
+      source_tables+=("$source_table")
+      strategies_by_table["$source_table"]=$strategy
+    done <<<"$entries"
   fi
 
   if ((${#source_tables[@]} == 0)); then
-    log "No manifest-authorized empty-table resnapshots are configured"
+    log "No manifest-authorized targeted table resnapshots are configured"
     return 0
   fi
   for source_table in "${source_tables[@]}"; do
     validate_source_table "$source_table"
-    run_remote_resnapshot "$source_table"
+    strategy=${strategies_by_table["$source_table"]}
+    run_remote_resnapshot "$strategy" "$source_table"
   done
 }
 
-main "$@"
+if [[ ${ECHO_SOURCE_RESNAPSHOT_TEST_MODE:-false} != true ]]; then
+  main "$@"
+fi

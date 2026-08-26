@@ -33,6 +33,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod cleanup;
 pub mod oneoff;
+pub mod peleng_distance;
 pub mod settlement_queue;
 pub mod types;
 

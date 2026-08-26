@@ -1162,6 +1162,7 @@ export type FreqDetailedPoint = {
   mgrsCoords: string;
   sk42Coords: string;
   freq: string | null;
+  battleLineDistance: number | null;
 };
 
 export type InboxMapItem = {

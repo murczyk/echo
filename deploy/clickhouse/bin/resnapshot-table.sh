@@ -316,15 +316,26 @@ read_state_mapping() {
     || die "invalid targeted resnapshot state: $state_file"
 }
 
+read_state_strategy() {
+  local source_table=$1 state_file
+  state_file=$(state_file_for_table "$source_table")
+  [[ -f "$state_file" ]] || return 0
+  jq -er \
+    '.strategy // "empty_table_resnapshot"' \
+    "$state_file" \
+    || die "invalid targeted resnapshot state: $state_file"
+}
+
 write_state_mapping() {
-  local source_table=$1 mapping=$2 state_file temporary_file
+  local source_table=$1 strategy=$2 mapping=$3 state_file temporary_file
   ensure_state_dir
   state_file=$(state_file_for_table "$source_table")
   temporary_file=$(mktemp "$table_resnapshot_state_dir/.table-resnapshot.XXXXXX")
   jq -cn \
     --arg table "$source_table" \
+    --arg strategy "$strategy" \
     --argjson mapping "$mapping" \
-    '{sourceTableIdentifier: $table, mapping: $mapping}' \
+    '{sourceTableIdentifier: $table, strategy: $strategy, mapping: $mapping}' \
     >"$temporary_file"
   chmod 0600 "$temporary_file"
   mv -f -- "$temporary_file" "$state_file"
@@ -388,11 +399,12 @@ finish_repair() {
   refresh_analytics
   clear_state_mapping "$source_table"
   repair_complete=true
-  log "Targeted empty-table resnapshot completed for $source_table"
+  log "Targeted table resnapshot completed for $source_table"
 }
 
 resnapshot_table() {
-  local source_table=$1 current_mapping state_mapping mapping destination
+  local strategy=$1 source_table=$2 current_mapping state_mapping
+  local state_strategy mapping destination
   local source_schema raw_schema source_only raw_only
   local raw_exists=false
 
@@ -401,8 +413,12 @@ resnapshot_table() {
   stable_mirror_status >/dev/null
   current_mapping=$(current_mapping_json "$source_table")
   state_mapping=$(read_state_mapping "$source_table")
+  state_strategy=$(read_state_strategy "$source_table")
   [[ -n "$current_mapping" || -n "$state_mapping" ]] \
     || die "$source_table is not mapped in mirror $MIRROR_NAME"
+  if [[ -n "$state_strategy" && "$state_strategy" != "$strategy" ]]; then
+    die "the requested strategy for $source_table differs from the preserved retry state"
+  fi
 
   if [[ -n "$current_mapping" && -n "$state_mapping" ]] \
     && ! mappings_equal "$current_mapping" "$state_mapping"
@@ -439,13 +455,15 @@ resnapshot_table() {
   if [[ -z "$state_mapping" && "$raw_exists" != true ]]; then
     die "$CLICKHOUSE_RAW_DB.$destination is missing without recoverable resnapshot state"
   fi
-  source_table_has_rows "$source_table" \
-    && die "$source_table is not empty; refusing targeted resnapshot"
+  if [[ "$strategy" == empty_table_resnapshot ]]; then
+    source_table_has_rows "$source_table" \
+      && die "$source_table is not empty; refusing empty-table resnapshot"
+  fi
 
   if [[ -z "$state_mapping" ]]; then
     [[ -n "$current_mapping" ]] \
       || die "$source_table mapping disappeared before the repair started"
-    write_state_mapping "$source_table" "$mapping"
+    write_state_mapping "$source_table" "$strategy" "$mapping"
   fi
   mutation_started=true
 
@@ -504,8 +522,11 @@ handle_exit() {
 }
 
 main() {
-  local source_table=${1:-}
-  [[ -n "$source_table" && $# -eq 1 ]] || die "usage: $0 SCHEMA.TABLE"
+  local strategy=${2:-} source_table=${3:-}
+  [[ ${1:-} == --strategy && -n "$strategy" && -n "$source_table" && $# -eq 3 ]] \
+    || die "usage: $0 --strategy empty_table_resnapshot|replicated_snapshot SCHEMA.TABLE"
+  [[ "$strategy" == empty_table_resnapshot || "$strategy" == replicated_snapshot ]] \
+    || die "invalid resnapshot strategy: $strategy"
   [[ "$source_table" =~ ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$ ]] \
     || die "invalid source table: $source_table"
   [[ "$table_resnapshot_timeout" =~ ^[1-9][0-9]*$ ]] \
@@ -525,7 +546,7 @@ main() {
   trap handle_exit EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  resnapshot_table "$source_table"
+  resnapshot_table "$strategy" "$source_table"
 }
 
 if [[ ${ECHO_ANALYTICS_RESNAPSHOT_TEST_MODE:-false} != true ]]; then

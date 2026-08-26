@@ -1885,6 +1885,7 @@ pub fn collect_map_points(
                 id: point.id,
                 message_id: item_id,
                 message_uid: message_uid.clone(),
+                battle_line_distance: point.battle_line_distance,
             });
         }
     }

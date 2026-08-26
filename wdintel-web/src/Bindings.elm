@@ -2995,6 +2995,7 @@ type alias FreqDetailedPoint =
     , mgrsCoords : String
     , sk42Coords : String
     , freq : Maybe (String)
+    , battleLineDistance : Maybe (Int)
     }
 
 
@@ -3009,6 +3010,7 @@ freqDetailedPointEncoder struct =
         , ( "mgrs_coords", (Json.Encode.string) struct.mgrsCoords )
         , ( "sk42_coords", (Json.Encode.string) struct.sk42Coords )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
+        , ( "battle_line_distance", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.battleLineDistance )
         ]
 
 
@@ -15820,6 +15822,7 @@ freqDetailedPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mgrs_coords" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sk42_coords" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "battle_line_distance" (Json.Decode.nullable (Json.Decode.int))))
 
 
 mapPointsReqDecoder : Json.Decode.Decoder MapPointsReq

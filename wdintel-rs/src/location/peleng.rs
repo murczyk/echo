@@ -92,6 +92,9 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let coords = filter_allowed_peleng_coords(coords, txn).await.c(h!())?;
+    if coords.is_empty() {
+        return Ok(());
+    }
 
     for coord in coords {
         sigint_peleng::ActiveModel {
@@ -107,11 +110,18 @@ where
             deleted: NotSet,
             created_at: Set(ts),
             updated_at: NotSet,
+            battle_line_distance: NotSet,
         }
         .insert(txn)
         .await
         .c(h!())?;
     }
+    crate::battle_line::peleng_distance::fill_missing_inbox_peleng_distances(
+        txn,
+        inbox_item_id,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 

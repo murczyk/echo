@@ -167,6 +167,95 @@ alter table another add column enabled boolean;
         )
         self.assertTrue(any("without ADD COLUMN" in error for error in errors))
 
+    def test_targeted_replicated_snapshot_accepts_add_column(self) -> None:
+        contents = "alter table sample add column enabled boolean;"
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.sample",
+                        "strategy": "replicated_snapshot",
+                        "targeted_resnapshot": True,
+                    }
+                ]
+            },
+            set(),
+        )
+        self.assertEqual(errors, [])
+
+    def test_replicated_snapshot_rejects_alter_without_targeted_flag(
+        self,
+    ) -> None:
+        contents = "alter table sample add column enabled boolean;"
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.sample",
+                        "strategy": "replicated_snapshot",
+                    }
+                ]
+            },
+            set(),
+        )
+        self.assertTrue(any("without CREATE TABLE" in error for error in errors))
+
+    def test_targeted_replicated_snapshot_rejects_non_additive_change(
+        self,
+    ) -> None:
+        contents = "alter table sample alter column enabled type text;"
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.sample",
+                        "strategy": "replicated_snapshot",
+                        "targeted_resnapshot": True,
+                    }
+                ]
+            },
+            set(),
+        )
+        self.assertTrue(any("without ADD COLUMN" in error for error in errors))
+
+    def test_targeted_replicated_snapshot_rejects_add_and_alter_column(
+        self,
+    ) -> None:
+        contents = """
+async fn up() {
+    alter table sample add column enabled boolean;
+    alter table sample alter column label type text;
+}
+async fn down() {
+    alter table sample drop column enabled;
+}
+"""
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {
+                "changes": [
+                    {
+                        "table": "public.sample",
+                        "strategy": "replicated_snapshot",
+                        "targeted_resnapshot": True,
+                    }
+                ]
+            },
+            set(),
+        )
+        self.assertTrue(any("without ADD COLUMN" in error for error in errors))
+
     def test_catalog_comparison_returns_changed_tables(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             before = Path(directory) / "before.tsv"
@@ -179,6 +268,44 @@ alter table another add column enabled boolean;
 
             self.assertEqual(
                 MODULE.snapshot_changed_tables(before, after),
+                {"public.sample"},
+            )
+
+    def test_targeted_resnapshot_catalog_rejects_changed_existing_column(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.tsv"
+            after = Path(directory) / "after.tsv"
+            before.write_text("public.sample\tid\tbigint\tt\t\n")
+            after.write_text(
+                "public.sample\tid\tinteger\tt\t\n"
+                "public.sample\tenabled\tboolean\tf\t\n"
+            )
+
+            self.assertEqual(
+                MODULE.non_additive_catalog_tables(
+                    before, after, {"public.sample"}
+                ),
+                {"public.sample"},
+            )
+
+    def test_nonempty_resnapshot_catalog_rejects_non_nullable_added_column(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            before = Path(directory) / "before.tsv"
+            after = Path(directory) / "after.tsv"
+            before.write_text("public.sample\tid\tbigint\tt\t\n")
+            after.write_text(
+                "public.sample\tid\tbigint\tt\t\n"
+                "public.sample\tenabled\tboolean\tt\tfalse\n"
+            )
+
+            self.assertEqual(
+                MODULE.non_nullable_added_catalog_tables(
+                    before, after, {"public.sample"}
+                ),
                 {"public.sample"},
             )
 
