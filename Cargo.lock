@@ -4342,7 +4342,8 @@ dependencies = [
 [[package]]
 name = "iggy"
 version = "0.10.3-edge.3"
-source = "git+https://github.com/apache/iggy.git?branch=master#5ca0bbb4094c40a23f76190df984f74be5897964"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f00cf7f6379205c85ae97839b9fa0f0924fd3f9018329a930c775b091183d843"
 dependencies = [
  "async-broadcast",
  "async-dropper",
@@ -4375,7 +4376,8 @@ dependencies = [
 [[package]]
 name = "iggy_binary_protocol"
 version = "0.10.3-edge.3"
-source = "git+https://github.com/apache/iggy.git?branch=master#5ca0bbb4094c40a23f76190df984f74be5897964"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "255063fad530d8f71630003c10035ba4f340004662f840b8f10694c11c200fe5"
 dependencies = [
  "bytemuck",
  "bytes",
@@ -4387,7 +4389,8 @@ dependencies = [
 [[package]]
 name = "iggy_common"
 version = "0.10.3-edge.3"
-source = "git+https://github.com/apache/iggy.git?branch=master#5ca0bbb4094c40a23f76190df984f74be5897964"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7819664e8b98036acd05f3577d18c112bee2daf0eca29ff6ffd19ad5813d174"
 dependencies = [
  "aes-gcm 0.11.0",
  "async-broadcast",
