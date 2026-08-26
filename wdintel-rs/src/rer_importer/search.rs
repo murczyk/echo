@@ -27,7 +27,7 @@ pub async fn oneoff_reprocess_search_index(
     let pool = dbx.get_postgres_connection_pool();
 
     let delete_query = "DELETE FROM sigint_search ss WHERE ss.id IN (SELECT sii.id FROM sigint_inbox_item sii JOIN signal_message sm ON sii.id = sm.id";
-    let insert_query = "INSERT INTO sigint_search (id, search_tsv) SELECT sii.id, to_tsvector('russian', sii.body_noheader->>'body') FROM sigint_inbox_item sii JOIN signal_message sm ON sii.id = sm.id";
+    let insert_query = "INSERT INTO sigint_search (id, id_uuid, search_tsv) SELECT sii.id, sii.id_uuid, to_tsvector('russian', sii.body_noheader->>'body') FROM sigint_inbox_item sii JOIN signal_message sm ON sii.id = sm.id";
 
     let (where_clause, limit_clause) = match (start_dt, end_dt) {
         (Some(_), Some(_)) => (
