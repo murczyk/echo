@@ -416,7 +416,7 @@ values (
     // Regression: https://github.com/echoua/echo/issues/2287
     #[tokio::test]
     #[serial_test::serial]
-    async fn backfills_shortest_relevant_aor_distance_without_recalculation() {
+    async fn backfills_and_recomputes_shortest_relevant_aor_distance() {
         let config = read_config(Mode::Test).unwrap();
         let dbx = new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
@@ -475,7 +475,7 @@ values (
             &txn,
             signal_message_group::ActiveModel {
                 signal_message_id: Set(message.id),
-                group_master_key: Set(Some(group.master_key)),
+                group_master_key: Set(Some(group.master_key.clone())),
                 datasource_group_id: Set(None),
                 ..Default::default()
             },
@@ -565,6 +565,38 @@ values (
         );
         assert_eq!(existing.battle_line_distance, Some(7));
         assert_eq!(invalid.battle_line_distance, None);
+        assert_eq!(
+            crate::battle_line::peleng_distance::recompute_peleng_distances_for_aors(
+                &txn,
+                &[first_aor.id],
+            )
+            .await
+            .unwrap(),
+            3
+        );
+        let existing = sigint_peleng::Entity::find_by_id(existing.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            (27_000..29_000).contains(&existing.battle_line_distance.unwrap())
+        );
+        crate::messenger::bl::upsert_group_area_of_responsibility(
+            &txn,
+            &group.master_key,
+            Some(vec![second_aor.id]),
+        )
+        .await
+        .unwrap();
+        let existing = sigint_peleng::Entity::find_by_id(existing.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            (82_000..84_000).contains(&existing.battle_line_distance.unwrap())
+        );
         crate::location::peleng::insert_pelengs(
             vec![Coords {
                 lat: 0.75,
