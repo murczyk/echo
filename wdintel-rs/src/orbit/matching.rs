@@ -256,15 +256,10 @@ impl<'a> TestLinkMatcher<'a> {
                     .map(|rating| (candidate, rating))
             })
             .collect::<Vec<_>>();
-        let highest_echelon = matches
-            .iter()
-            .filter_map(|(candidate, _)| candidate.path.root_echelon)
-            .max_by_key(|echelon| echelon.index());
         matches
             .into_iter()
             .filter(|(candidate, _)| {
-                highest_echelon.is_none()
-                    || candidate.path.root_echelon == highest_echelon
+                candidate.path.root_echelon == Some(echelon)
             })
             .map(|(candidate, rating)| (candidate.orbit_unit, rating))
             .collect()
@@ -936,6 +931,10 @@ mod tests {
             TestLinkMatcher::new(&orbit_units).best_matches(&hierarchy),
             vec![(&battalion, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
         );
+
+        assert!(TestLinkMatcher::new(&orbit_units[..1])
+            .best_matches(&hierarchy)
+            .is_empty());
     }
 
     #[test]

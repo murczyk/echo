@@ -1250,7 +1250,8 @@ pub(super) async fn link_orbit_unit_for_login(
         sigint_unit_id,
         orbit_unit_id,
     )
-    .await?;
+    .await
+    .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }
@@ -1260,6 +1261,47 @@ pub(crate) async fn link_orbit_unit_in_transaction<C>(
     login: &Uuid,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(link_orbit_unit_in_transaction_inner(
+        dbx,
+        login,
+        sigint_unit_id,
+        orbit_unit_id,
+        true,
+    )
+    .await
+    .c(h!())?)
+}
+
+pub(crate) async fn link_orbit_unit_with_deferred_reconciliation<C>(
+    dbx: &C,
+    login: &Uuid,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(link_orbit_unit_in_transaction_inner(
+        dbx,
+        login,
+        sigint_unit_id,
+        orbit_unit_id,
+        false,
+    )
+    .await
+    .c(h!())?)
+}
+
+async fn link_orbit_unit_in_transaction_inner<C>(
+    dbx: &C,
+    login: &Uuid,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+    reconcile_deduplicate_candidates: bool,
 ) -> Result<sigint_unit::Model, AppError>
 where
     C: ConnectionTrait,
@@ -1281,9 +1323,11 @@ where
     import_missing_orbit_ancestors(dbx, login, &orbit_unit)
         .await
         .c(h!())?;
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
-        .await
-        .c(h!())?;
+    if reconcile_deduplicate_candidates {
+        crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+            .await
+            .c(h!())?;
+    }
     let sigint_unit =
         reconcile_sigint_unit_orbit(dbx, login, sigint_unit.id, true)
             .await
@@ -1383,7 +1427,8 @@ pub(super) async fn import_orbit_unit_for_login(
         unit.id,
         orbit_unit_id,
     )
-    .await?;
+    .await
+    .c(h!())?;
     transaction.commit().await.c(h!())?;
 
     let network_id = network.as_ref().map(|network| network.id);

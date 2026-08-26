@@ -3,10 +3,14 @@ use crate::config::{
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
 };
-use crate::entities::sigint_unit;
+use crate::entities::{orbit_unit_sigint_unit, sigint_unit};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
-use sea_orm::{ConnectionTrait, FromQueryResult, Statement};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter,
+    Statement,
+};
+use std::collections::BTreeSet;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ReviewMatch {
@@ -214,7 +218,12 @@ pub(super) async fn run_with_database(
         .await
         .c(h!())?;
     let matcher = matching::TestLinkMatcher::new(&orbit_units);
-    let review_units = prepare_review_units(&units, &matcher, link_mode);
+    let suppressed_links = match link_mode {
+        tui::LinkMode::Manual => BTreeSet::new(),
+        tui::LinkMode::Automatic => load_suppressed_links(dbx).await.c(h!())?,
+    };
+    let review_units =
+        prepare_review_units(&units, &matcher, link_mode, &suppressed_links);
     let (summary, links) = match link_mode {
         tui::LinkMode::Manual => review_manually(review_units).c(h!())?,
         tui::LinkMode::Automatic => approve_automatic(review_units),
@@ -222,6 +231,22 @@ pub(super) async fn run_with_database(
     let already_linked = persist_links(dbx, &links).await.c(h!())?;
     print_summary(summary, already_linked);
     Ok(())
+}
+
+async fn load_suppressed_links<C>(
+    dbx: &C,
+) -> anyhow::Result<BTreeSet<(i64, uuid::Uuid)>>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(true))
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|link| (link.sigint_unit_id, link.orbit_unit_id))
+        .collect())
 }
 
 async fn load_unlinked_sigint_units<C>(
@@ -302,6 +327,7 @@ async fn persist_links(
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
     let mut already_linked = 0;
+    let mut linked = false;
     for (sigint_unit_id, orbit_unit_id) in links {
         if super::sigint_unit_has_active_orbit_link(
             &transaction,
@@ -313,7 +339,7 @@ async fn persist_links(
             already_linked += 1;
             continue;
         }
-        crate::sigint::unit::orbit::link_orbit_unit_in_transaction(
+        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_reconciliation(
             &transaction,
             &login,
             *sigint_unit_id,
@@ -321,6 +347,12 @@ async fn persist_links(
         )
         .await
         .c(h!())?;
+        linked = true;
+    }
+    if linked {
+        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+            .await
+            .c(h!())?;
     }
     transaction.commit().await.c(h!())?;
     Ok(already_linked)
@@ -330,10 +362,13 @@ fn prepare_review_units(
     units: &[sigint_unit::Model],
     matcher: &matching::TestLinkMatcher<'_>,
     link_mode: tui::LinkMode,
+    suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> Vec<ReviewUnit> {
     let mut review_units = units
         .iter()
-        .filter_map(|unit| prepare_review_unit(unit, matcher, link_mode))
+        .filter_map(|unit| {
+            prepare_review_unit(unit, matcher, link_mode, suppressed_links)
+        })
         .collect::<Vec<_>>();
     sort_review_units(&mut review_units);
     review_units
@@ -354,6 +389,7 @@ fn prepare_review_unit(
     unit: &sigint_unit::Model,
     matcher: &matching::TestLinkMatcher<'_>,
     link_mode: tui::LinkMode,
+    suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> Option<ReviewUnit> {
     let hierarchy = matching::sigint_hierarchy(unit);
     let echelons = hierarchy
@@ -365,7 +401,13 @@ fn prepare_review_unit(
     let sigint_full_name = echelons.join(" / ");
     let candidates = match link_mode {
         tui::LinkMode::Manual => matcher.potential_matches(&hierarchy),
-        tui::LinkMode::Automatic => matcher.best_matches(&hierarchy),
+        tui::LinkMode::Automatic => matcher
+            .best_matches(&hierarchy)
+            .into_iter()
+            .filter(|(orbit_unit, _)| {
+                !suppressed_links.contains(&(unit.id, orbit_unit.unit_id))
+            })
+            .collect(),
     };
     let mut matches = candidates
         .into_iter()
@@ -455,10 +497,13 @@ mod tests {
         let units = [sigint_unit("3 мсб")];
         let matcher = matching::TestLinkMatcher::new(&[]);
 
-        assert!(
-            prepare_review_units(&units, &matcher, tui::LinkMode::Manual)
-                .is_empty()
-        );
+        assert!(prepare_review_units(
+            &units,
+            &matcher,
+            tui::LinkMode::Manual,
+            &BTreeSet::new(),
+        )
+        .is_empty());
     }
 
     #[test]
@@ -469,14 +514,35 @@ mod tests {
         )];
         let matcher = matching::TestLinkMatcher::new(&orbit_units);
 
-        let review_units =
-            prepare_review_units(&units, &matcher, tui::LinkMode::Manual);
+        let review_units = prepare_review_units(
+            &units,
+            &matcher,
+            tui::LinkMode::Manual,
+            &BTreeSet::new(),
+        );
 
         assert_eq!(review_units.len(), 1);
         assert!(
             review_units[0].matches[0].distance
                 > ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE
         );
+    }
+
+    #[test]
+    fn automatic_mode_excludes_suppressed_links() {
+        let units = [sigint_unit("3 мсб")];
+        let orbit_units = [orbit_unit("3 мсб")];
+        let matcher = matching::TestLinkMatcher::new(&orbit_units);
+        let suppressed_links =
+            BTreeSet::from([(units[0].id, orbit_units[0].unit_id)]);
+
+        assert!(prepare_review_units(
+            &units,
+            &matcher,
+            tui::LinkMode::Automatic,
+            &suppressed_links,
+        )
+        .is_empty());
     }
 
     #[test]
@@ -641,8 +707,12 @@ mod tests {
         ];
         let matcher = matching::TestLinkMatcher::new(&orbit_units);
 
-        let review_units =
-            prepare_review_units(&[unit], &matcher, tui::LinkMode::Automatic);
+        let review_units = prepare_review_units(
+            &[unit],
+            &matcher,
+            tui::LinkMode::Automatic,
+            &BTreeSet::new(),
+        );
 
         assert_eq!(review_units.len(), 1);
         assert_eq!(review_units[0].matches.len(), 1);

@@ -807,7 +807,11 @@ pub async fn replace_sigint_unit_link(
         sigint_unit_id,
         orbit_unit_id,
     )
-    .await?;
+    .await
+    .c(h!())?;
+    super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await
+        .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }
@@ -844,7 +848,6 @@ where
     .exec(db)
     .await
     .c(h!())?;
-    super::reconcile_sigint_unit_deduplicate_candidates(db).await?;
     Ok(())
 }
 
