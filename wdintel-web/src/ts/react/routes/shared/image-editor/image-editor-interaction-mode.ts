@@ -1,4 +1,5 @@
 import type { ImageEditorTool } from './image-editor.types';
+import { withHighlightAlpha } from './image-editor-selection-style';
 
 const CREATION_TOOLS = new Set<ImageEditorTool>([
   'text',
@@ -19,12 +20,14 @@ export function applyImageEditorInteractionMode({
   fabric,
   stroke,
   strokeWidth,
+  highlightOpacity,
 }: {
   canvas: import('fabric').Canvas;
   tool: ImageEditorTool;
   fabric?: typeof import('fabric') | null;
   stroke?: string;
   strokeWidth?: number;
+  highlightOpacity?: number;
 }) {
   const selecting = tool === 'select' || tool === 'crop';
   const creationTool = CREATION_TOOLS.has(tool);
@@ -41,7 +44,7 @@ export function applyImageEditorInteractionMode({
   canvas.isDrawingMode = tool === 'brush' || tool === 'highlight';
   if (canvas.isDrawingMode && fabric && stroke != null && strokeWidth != null) {
     const brush = new fabric.PencilBrush(canvas);
-    brush.color = tool === 'highlight' ? `${stroke}66` : stroke;
+    brush.color = tool === 'highlight' ? withHighlightAlpha(stroke, highlightOpacity) : stroke;
     brush.width = strokeWidth;
     canvas.freeDrawingBrush = brush;
   }

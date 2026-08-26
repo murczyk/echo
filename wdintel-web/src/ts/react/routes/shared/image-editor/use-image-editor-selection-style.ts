@@ -19,6 +19,7 @@ export function useImageEditorSelectionStyle({
   dash,
   fontSize,
   bold,
+  highlightOpacity,
   scheduleHistory,
 }: {
   canvasRef: MutableRefObject<import('fabric').Canvas | null>;
@@ -31,6 +32,7 @@ export function useImageEditorSelectionStyle({
   dash: boolean;
   fontSize: number;
   bold: boolean;
+  highlightOpacity: number;
   scheduleHistory: () => void;
 }) {
   useEffect(() => {
@@ -61,7 +63,9 @@ export function useImageEditorSelectionStyle({
     const isShape = role === 'rectangle' || role === 'ellipse';
     const supportsDash = isShape || role === 'line' || role === 'arrow';
     const selectedStroke =
-      role === 'highlight' ? withHighlightAlpha(stroke) : normalizeEditorColor(stroke);
+      role === 'highlight'
+        ? withHighlightAlpha(stroke, highlightOpacity)
+        : normalizeEditorColor(stroke);
     if (role === 'arrow') {
       if (!applyArrowStyle({ selected, fabric, stroke: selectedStroke, strokeWidth, dash })) return;
       canvas.requestRenderAll();
@@ -85,5 +89,15 @@ export function useImageEditorSelectionStyle({
     selected.set(properties);
     canvas.requestRenderAll();
     scheduleHistory();
-  }, [canvasReady, canvasRef, dash, fabricRef, fill, scheduleHistory, stroke, strokeWidth]);
+  }, [
+    canvasReady,
+    canvasRef,
+    dash,
+    fabricRef,
+    fill,
+    highlightOpacity,
+    scheduleHistory,
+    stroke,
+    strokeWidth,
+  ]);
 }

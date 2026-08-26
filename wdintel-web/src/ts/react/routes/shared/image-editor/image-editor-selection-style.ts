@@ -25,8 +25,10 @@ export function normalizeEditorColor(value: unknown) {
   return FALLBACK_EDITOR_COLOR;
 }
 
-export function withHighlightAlpha(baseColor: string) {
-  return `${normalizeEditorColor(baseColor)}88`;
+export function withHighlightAlpha(baseColor: string, opacity = 0.4) {
+  return `${normalizeEditorColor(baseColor)}${Math.round(Math.max(0, Math.min(1, opacity)) * 255)
+    .toString(16)
+    .padStart(2, '0')}`;
 }
 
 function dashEnabled(value: unknown) {

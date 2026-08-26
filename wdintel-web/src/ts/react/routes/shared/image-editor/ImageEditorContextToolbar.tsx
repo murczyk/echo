@@ -27,6 +27,8 @@ export type ImageEditorContextToolbarProps = {
   onFontSizeChange: (value: number) => void;
   bold: boolean;
   onBoldChange: () => void;
+  highlightOpacity: number;
+  onHighlightOpacityChange: (value: number) => void;
   concealMode: ConcealMode;
   onConcealModeChange: (value: ConcealMode) => void;
   magnification: number;
@@ -74,10 +76,10 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
   const showStroke = showShape || showLine || showBrush;
   const showDash = showShape || showLine;
   return (
-    <div className="absolute left-2 right-2 top-2 z-30">
+    <div className="absolute left-1/2 top-2 z-30 max-w-[calc(100%-24px)] -translate-x-1/2">
       <div
         data-image-editor-contextual-row
-        className="flex h-12 items-center gap-3 overflow-x-auto overflow-y-hidden border border-echo-border bg-echo-surface px-2 shadow-echo-lg"
+        className="flex h-12 max-w-full items-center gap-3 overflow-x-auto overflow-y-hidden rounded-lg border border-echo-border bg-echo-surface px-3 shadow-echo-lg"
       >
         {showText ? (
           <>
@@ -160,6 +162,22 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
                 />
                 Пунктир
               </label>
+            ) : null}
+            {context === 'highlight' ? (
+              <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-echo-sm">
+                <span id="image-editor-highlight-opacity">Прозорість</span>
+                <Slider
+                  aria-labelledby="image-editor-highlight-opacity"
+                  className="w-20 shrink-0"
+                  min={0.1}
+                  max={0.8}
+                  step={0.1}
+                  value={props.highlightOpacity}
+                  onChange={(_, value) => props.onHighlightOpacityChange(value as number)}
+                  disabled={props.disabled}
+                />
+                <span className="tabular-nums">{Math.round(props.highlightOpacity * 100)}%</span>
+              </div>
             ) : null}
           </>
         ) : null}

@@ -26,9 +26,7 @@ export function addTextAnnotation({
     editorRole: 'text',
   });
   canvas.add(text);
-  canvas.setActiveObject(text);
-  text.enterEditing();
-  text.selectAll();
+  return text;
 }
 
 export function deleteSelectedAnnotations(canvas: import('fabric').Canvas) {

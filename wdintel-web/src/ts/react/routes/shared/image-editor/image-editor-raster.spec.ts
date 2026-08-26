@@ -33,8 +33,12 @@ class FabricLine extends FabricObject {
   }
 }
 
+class FabricImage extends FabricObject {
+  static fromURL = vi.fn().mockResolvedValue(new FabricObject());
+}
+
 const fabric = {
-  FabricImage: { fromURL: vi.fn().mockResolvedValue(new FabricObject()) },
+  FabricImage,
   Circle: class extends FabricObject {},
   Line: FabricLine,
   Group: class extends FabricObject {

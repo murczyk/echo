@@ -31,10 +31,12 @@ function addCropMask({
   canvas,
   fabric,
   bounds,
+  maskColor,
 }: {
   canvas: Canvas;
   fabric: typeof import('fabric');
   bounds: ReturnType<typeof cropBounds>;
+  maskColor: string;
 }) {
   const masks = [
     { left: 0, top: 0, width: canvas.width, height: bounds.top },
@@ -58,7 +60,7 @@ function addCropMask({
       canvas.add(
         new fabric.Rect({
           ...mask,
-          fill: 'rgba(0, 0, 0, 0.38)',
+          fill: maskColor,
           selectable: false,
           evented: false,
           editorRole: CROP_MASK_ROLE,
@@ -73,11 +75,13 @@ export function startCrop({
   fabric,
   cropRef,
   stroke,
+  maskColor,
 }: {
   canvas: Canvas;
   fabric: typeof import('fabric');
   cropRef: { current: Rect | null };
   stroke: string;
+  maskColor: string;
 }) {
   if (cropRef.current) return cropRef.current;
   const inset = Math.min(8, Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) / 10)));
@@ -96,7 +100,8 @@ export function startCrop({
     hasRotatingPoint: false,
   });
   crop.setControlsVisibility({ mtr: false });
-  addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop) });
+  crop.set({ cornerColor: stroke, cornerStrokeColor: stroke, transparentCorners: false });
+  addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop), maskColor });
   canvas.add(crop);
   canvas.setActiveObject(crop);
   cropRef.current = crop;
@@ -121,10 +126,12 @@ export function refreshCropMask({
   canvas,
   fabric,
   cropRef,
+  maskColor,
 }: {
   canvas: Canvas;
   fabric: typeof import('fabric');
   cropRef: { current: Rect | null };
+  maskColor: string;
 }) {
   const crop = cropRef.current;
   if (!crop) return;
@@ -139,7 +146,8 @@ export function refreshCropMask({
     top: Math.max(0, Math.min(canvas.height - height, crop.top ?? 0)),
   });
   removeCropMasks(canvas);
-  addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop) });
+  crop.setCoords();
+  addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop), maskColor });
   canvas.bringObjectToFront(crop);
   canvas.requestRenderAll();
 }

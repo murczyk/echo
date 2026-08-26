@@ -1,4 +1,4 @@
-import { Alert, useTheme } from '@mui/material';
+import { Alert, alpha, useTheme } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ImageEditorToolbar } from './ImageEditorToolbar';
@@ -11,7 +11,8 @@ import { exportEditedImage } from './image-editor-export';
 import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
 import { applyCrop, cancelCrop, refreshCropMask, startCrop } from './image-editor-crop';
 import { applyImageEditorInteractionMode } from './image-editor-interaction-mode';
-import { replaceConcealmentDraft as createConcealmentReplacement } from './image-editor-raster';
+import { replaceConcealmentArea as createConcealmentReplacement } from './image-editor-raster';
+import type { ImageEditorBounds } from './image-editor-pointer';
 import { useImageEditorCanvas } from './use-image-editor-canvas';
 import { useImageEditorDrawingGestures } from './use-image-editor-drawing-gestures';
 import { useImageEditorHistory } from './use-image-editor-history';
@@ -58,10 +59,13 @@ export function ImageEditor({
   const [magnification, setMagnification] = useState(2);
   const [fontSize, setFontSize] = useState(36);
   const [bold, setBold] = useState(false);
+  const [highlightOpacity, setHighlightOpacity] = useState(0.4);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
-  const cropStroke = useTheme().palette.primary.main;
+  const theme = useTheme();
+  const cropStroke = theme.palette.primary.main;
+  const cropMaskColor = alpha(theme.palette.text.primary, 0.38);
   const toolRef = useRef(tool);
   const {
     enqueue: enqueueRaster,
@@ -86,13 +90,14 @@ export function ImageEditor({
           fabric: fabricRef.current,
           stroke,
           strokeWidth,
+          highlightOpacity,
         });
       const fabric = fabricRef.current;
       if (canvas && fabric && nextTool === 'crop')
-        startCrop({ canvas, fabric, cropRef, stroke: cropStroke });
+        startCrop({ canvas, fabric, cropRef, stroke: cropStroke, maskColor: cropMaskColor });
       setTool(nextTool);
     },
-    [cropStroke, isInteractionLocked, stroke, strokeWidth],
+    [cropMaskColor, cropStroke, highlightOpacity, isInteractionLocked, stroke, strokeWidth],
   );
   const {
     actualSize,
@@ -129,6 +134,7 @@ export function ImageEditor({
         fabric: fabricRef.current,
         stroke,
         strokeWidth,
+        highlightOpacity,
       });
     },
     onRestoreError: (cause) =>
@@ -161,8 +167,8 @@ export function ImageEditor({
     onDocumentResized: syncDocumentDimensions,
   });
 
-  const replaceConcealmentDraft = useCallback(
-    async (draft: import('fabric').FabricObject) => {
+  const replaceConcealmentArea = useCallback(
+    async (bounds: ImageEditorBounds) => {
       const canvas = canvasRef.current;
       const sourceImage = sourceRef.current;
       const fabric = fabricRef.current;
@@ -172,7 +178,7 @@ export function ImageEditor({
           canvas,
           sourceImage,
           fabric,
-          draft,
+          bounds,
           mode: concealMode,
         });
         return changed;
@@ -195,6 +201,7 @@ export function ImageEditor({
     dash,
     fontSize,
     bold,
+    highlightOpacity,
     scheduleHistory,
   });
 
@@ -205,6 +212,9 @@ export function ImageEditor({
       canvas,
       tool: toolRef.current,
       fabric: fabricRef.current,
+      stroke,
+      strokeWidth,
+      highlightOpacity,
     });
   }, [canvasReady]);
 
@@ -219,9 +229,10 @@ export function ImageEditor({
     dash,
     fontSize,
     bold,
+    highlightOpacity,
     isInteractionLocked,
     saveHistory,
-    replaceConcealmentDraft,
+    replaceConcealmentArea,
     cancelGestureRef,
     setError,
   });
@@ -245,8 +256,9 @@ export function ImageEditor({
       fabric: fabricRef.current,
       stroke,
       strokeWidth,
+      highlightOpacity,
     });
-  }, [applying, rasterPending, stroke, strokeWidth]);
+  }, [applying, highlightOpacity, rasterPending, stroke, strokeWidth]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -254,7 +266,7 @@ export function ImageEditor({
     if (!canvas || !fabric) return;
     const updateCropMask = (event: { target?: import('fabric').FabricObject }) => {
       if (event.target !== cropRef.current) return;
-      refreshCropMask({ canvas, fabric, cropRef });
+      refreshCropMask({ canvas, fabric, cropRef, maskColor: cropMaskColor });
     };
     canvas.on('object:moving', updateCropMask);
     canvas.on('object:scaling', updateCropMask);
@@ -262,7 +274,7 @@ export function ImageEditor({
       canvas.off('object:moving', updateCropMask);
       canvas.off('object:scaling', updateCropMask);
     };
-  }, [canvasReady]);
+  }, [canvasReady, cropMaskColor]);
 
   useImageEditorSelection({
     canvasRef,
@@ -418,6 +430,8 @@ export function ImageEditor({
     onFontSizeChange: setFontSize,
     bold,
     onBoldChange: () => setBold((value) => !value),
+    highlightOpacity,
+    onHighlightOpacityChange: setHighlightOpacity,
     concealMode,
     onConcealModeChange: setConcealMode,
     magnification,

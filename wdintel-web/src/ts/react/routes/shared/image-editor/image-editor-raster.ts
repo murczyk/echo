@@ -165,21 +165,20 @@ async function pixelatedPatch({
   return patch;
 }
 
-export async function replaceConcealmentDraft({
+export async function replaceConcealmentArea({
   canvas,
   sourceImage,
   fabric,
-  draft,
+  bounds: requestedBounds,
   mode,
 }: {
   canvas: import('fabric').Canvas;
   sourceImage: import('fabric').FabricImage;
   fabric: FabricModule;
-  draft: import('fabric').FabricObject;
+  bounds: { left: number; top: number; width: number; height: number };
   mode: ConcealMode;
 }) {
-  const bounds = nativeBounds({ sourceImage, bounds: draft.getBoundingRect() });
-  canvas.remove(draft);
+  const bounds = nativeBounds({ sourceImage, bounds: requestedBounds });
   const safe = buildSafeRaster({ canvas, sourceImage });
   if (bounds.width < 3 || bounds.height < 3) {
     canvas.requestRenderAll();
@@ -194,12 +193,10 @@ export async function replaceConcealmentDraft({
           selectable: false,
           evented: false,
         })
-      : await fabric.FabricImage.fromURL(
-          (
-            await (mode === 'blur'
-              ? blurredPatch({ source: safe, bounds })
-              : pixelatedPatch({ source: safe, bounds }))
-          ).toDataURL('image/png'),
+      : new fabric.FabricImage(
+          await (mode === 'blur'
+            ? blurredPatch({ source: safe, bounds })
+            : pixelatedPatch({ source: safe, bounds })),
         );
   replacement.set({
     ...bounds,
@@ -213,3 +210,10 @@ export async function replaceConcealmentDraft({
   canvas.requestRenderAll();
   return true;
 }
+
+export const replaceConcealmentDraft = async ({
+  draft,
+  ...args
+}: Omit<Parameters<typeof replaceConcealmentArea>[0], 'bounds'> & {
+  draft: import('fabric').FabricObject;
+}) => replaceConcealmentArea({ ...args, bounds: draft.getBoundingRect() });

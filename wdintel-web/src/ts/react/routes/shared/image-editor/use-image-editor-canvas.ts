@@ -99,7 +99,14 @@ export function useImageEditorCanvas({
             event.path.set({ editorRole: role, selectable: false, evented: false });
           commit();
         });
-        canvas.on('text:editing:exited', commit);
+        canvas.on('text:editing:exited', (event) => {
+          const text = event.target as import('fabric').IText | undefined;
+          if (text?.text?.trim()) commit(event);
+          else if (text) {
+            canvas.remove(text);
+            canvas.requestRenderAll();
+          }
+        });
         saveHistory();
         onDocumentResized();
         setCanvasReady(true);
