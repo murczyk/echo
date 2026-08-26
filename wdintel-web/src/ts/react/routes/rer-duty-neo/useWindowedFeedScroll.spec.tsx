@@ -1195,7 +1195,7 @@ describe('useWindowedFeedScroll', () => {
     });
 
     const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
-    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 200 });
+    setClampedScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 200 });
     mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
     await act(async () => {
       root.render(<TestScroller ids={ids} isWatchMode={false} />);
@@ -1212,6 +1212,75 @@ describe('useWindowedFeedScroll', () => {
       await waitForAnimationFrame();
     });
     expect(scroller.scrollTop).toBe(75);
+  });
+
+  it('does not center a fully visible tail message', async () => {
+    const ids = [1, 2, 3, 4];
+    const onPhysicalBottomChange = vi.fn();
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={[]}
+          isWatchMode={false}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+        />,
+      );
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    const list = container.querySelector('[data-testid="list"]') as HTMLElement;
+    setClampedScrollMetrics(scroller, {
+      scrollTop: 100,
+      clientHeight: 100,
+      scrollHeight: 200,
+    });
+    mockVerticalLayout(scroller, { items: createItemLayouts(ids) });
+    await act(async () => {
+      root.render(
+        <TestScroller
+          ids={ids}
+          isWatchMode={false}
+          onPhysicalBottomChange={onPhysicalBottomChange}
+        />,
+      );
+    });
+    onPhysicalBottomChange.mockClear();
+
+    const targetElement = container.querySelector('[data-testid="item-4"]') as HTMLElement;
+    const target = latestScrollHandle?.scrollToItem(4);
+
+    expect(target).toBe(targetElement);
+    expect(scroller.scrollTop).toBe(100);
+    expect(list.style.paddingBottom).toBe('');
+    expect(onPhysicalBottomChange).not.toHaveBeenCalled();
+  });
+
+  it('recenters the linked message after a late card resize', async () => {
+    const triggerResize = installResizeObserverMock();
+    const ids = [1, 2, 3, 4];
+    await act(async () => {
+      root.render(<TestScroller ids={[]} isWatchMode={false} />);
+    });
+
+    const scroller = container.querySelector('[data-testid="scroller"]') as HTMLElement;
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 100, scrollHeight: 250 });
+    const layout = { items: createItemLayouts(ids) };
+    mockVerticalLayout(scroller, layout);
+    await act(async () => {
+      root.render(<TestScroller ids={ids} isWatchMode={false} />);
+    });
+    latestScrollHandle?.scrollToItem(3);
+    expect(scroller.scrollTop).toBe(75);
+
+    layout.items = new Map([
+      [1, { top: 0, height: 50 }],
+      [2, { top: 50, height: 100 }],
+      [3, { top: 150, height: 50 }],
+      [4, { top: 200, height: 50 }],
+    ]);
+    act(() => triggerResize(container.querySelector('[data-testid="list"]')!));
+
+    expect(scroller.scrollTop).toBe(125);
   });
 
   it('compensates the narrow-screen zoom when centering a message', async () => {

@@ -27,7 +27,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use sea_orm::*;
 use sea_query::Query;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -242,52 +242,79 @@ async fn inbox_item_context(
     env: actix_web::web::Data<Env>,
     req: Json<InboxItemContextReq>,
 ) -> Result<Json<InboxItemContextRsp>, AppError> {
-    has_any_role(
-        &env.dbx,
-        &login_id_from_identity(&user)?,
-        vec!["Rer", "ApiAgent"],
-    )
-    .await
-    .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).context(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
     let Some(message_uid) =
         normalized_optional_string(Some(req.message_uid.as_str()))
     else {
         return Ok(Json(InboxItemContextRsp::default()));
     };
 
-    let res = inbox_item_context_bl(&env.dbx, &login, &message_uid).await?;
+    let res = inbox_item_context_bl(&env, &login, &message_uid)
+        .await
+        .context(h!())?;
     Ok(Json(res))
 }
 
 async fn inbox_item_context_bl(
-    dbx: &DatabaseConnection,
+    env: &Env,
     login: &uuid::Uuid,
-    message_uid: &str,
+    message_identifier: &str,
 ) -> Result<InboxItemContextRsp, AppError> {
-    let allowed_groups =
-        crate::messenger::group::get_identity_sigint_groups(dbx, login)
-            .await
-            .c(h!())?;
-    if allowed_groups.is_empty() {
+    let mut rows = load_inbox_item_context_rows(&env.dbx, message_identifier)
+        .await
+        .context(h!())?;
+    if rows.is_empty() {
         return Ok(InboxItemContextRsp::default());
     }
 
-    let mut rows =
-        load_inbox_item_context_rows(dbx, &allowed_groups, message_uid).await?;
+    let candidate_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let organism_logins =
+        crate::users::get_organism_login_ids_by_id(&env.dbx, login)
+            .await
+            .c(h!())?;
+    let access_req = InboxMessagesReq {
+        skip_group_stats: Some(true),
+        ..Default::default()
+    };
+    let accessible_ids = messages_by_id_bl(
+        login,
+        &organism_logins,
+        env,
+        &candidate_ids,
+        &access_req,
+    )
+    .await
+    .context(h!())?
+    .into_iter()
+    .map(|(id, _)| id)
+    .collect::<HashSet<_>>();
+    rows.retain(|row| accessible_ids.contains(&row.id));
     if rows.is_empty() {
         return Ok(InboxItemContextRsp::default());
     }
     rows.sort_by_key(|row| row.id);
 
+    let allowed_groups =
+        crate::messenger::group::get_identity_sigint_groups(&env.dbx, login)
+            .await
+            .c(h!())?;
+
     let sigint_inbox_item_ids =
         rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let group_master_keys = load_inbox_item_context_group_keys(
-        dbx,
-        &allowed_groups,
-        &sigint_inbox_item_ids,
-    )
-    .await?;
+    let group_master_keys = if allowed_groups.is_empty() {
+        vec![]
+    } else {
+        load_inbox_item_context_group_keys(
+            &env.dbx,
+            &allowed_groups,
+            &sigint_inbox_item_ids,
+        )
+        .await
+        .context(h!())?
+    };
 
     Ok(build_inbox_item_context_rsp(
         rows,
@@ -298,38 +325,23 @@ async fn inbox_item_context_bl(
 
 async fn load_inbox_item_context_rows(
     dbx: &DatabaseConnection,
-    allowed_groups: &[String],
-    message_uid: &str,
+    message_identifier: &str,
 ) -> Result<Vec<InboxItemContextRow>, AppError> {
     let mut query = SignalMessage::find()
         .join(
             JoinType::InnerJoin,
             signal_message::Relation::SigintInboxItem.def(),
         )
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::SignalMessageGroup.def(),
-        )
         .select_only()
-        .distinct()
         .column_as(sigint_inbox_item::Column::Id, "id")
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .eq_any(allowed_groups.to_vec()),
-        );
+        .filter(signal_message::Column::Deleted.eq(false));
 
-    if let Ok(id) = message_uid.parse::<i64>() {
-        query = query.filter(
-            signal_message::Column::MessageUid
-                .eq(message_uid)
-                .or(sigint_inbox_item::Column::Id.eq(id))
-                .or(signal_message::Column::Id.eq(id)),
-        );
+    if let Ok(id) = message_identifier.parse::<i64>() {
+        query = query.filter(signal_message::Column::Id.eq(id));
     } else {
-        query =
-            query.filter(signal_message::Column::MessageUid.eq(message_uid));
+        query = query
+            .filter(signal_message::Column::MessageUid.eq(message_identifier));
     }
 
     Ok(query
@@ -4200,6 +4212,60 @@ mod tests {
             highlight_points: Some(true),
             ..Default::default()
         }
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn inbox_item_context_includes_owner_message_without_group_row() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let message = mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("owner direct link".to_string())),
+                created_at: Set(now),
+                timestamp: Set(Some(now)),
+                sender: Set(Some(login.id.to_string())),
+                message_uid: Set(Some(format!(
+                    "owner-direct-link-{}",
+                    Uuid::new_v4()
+                ))),
+                datasource_group_id: Set(None),
+                deleted: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_sigint_inbox_item(
+            &env.dbx,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(now)),
+                reviewed: Set(Some(true)),
+                parsed_unit_v2: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let context =
+            inbox_item_context_bl(&env, &login.id, &message.id.to_string())
+                .await
+                .unwrap();
+
+        assert_eq!(context.sigint_inbox_item_ids, vec![message.id]);
+        assert!(context.group_master_keys.is_empty());
+        assert_eq!(
+            context.since_ts,
+            Some((now - Duration::minutes(15)).and_utc().timestamp_millis())
+        );
+        assert_eq!(
+            context.till_ts,
+            Some((now + Duration::minutes(15)).and_utc().timestamp_millis())
+        );
     }
 
     fn generic_submit_req() -> InboxSubmitItem {

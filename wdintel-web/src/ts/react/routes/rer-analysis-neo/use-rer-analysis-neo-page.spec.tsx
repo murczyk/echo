@@ -15,6 +15,9 @@ const userSettingsMock = vi.hoisted(() => ({
 const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
+const inboxMessagesMock = vi.hoisted(() => ({
+  fetchInboxItemContext: vi.fn(),
+}));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
 const useAnalysisSavedFiltersMock = vi.hoisted(() => vi.fn());
@@ -51,6 +54,10 @@ vi.mock('../../services/api/user-settings', () => ({
 
 vi.mock('../../services/api/system-settings', () => ({
   currentSystemSettings: systemSettingsMock.currentSystemSettings,
+}));
+
+vi.mock('../../services/api/inbox-messages', () => ({
+  fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
 }));
 
 vi.mock('./use-analysis-data', () => ({
@@ -292,6 +299,13 @@ describe('useRerAnalysisNeoPage', () => {
       rerDutyPollIntervalSec: 1,
       rerShortUrlEnabled: false,
       enableAudioTranscription: true,
+    });
+    inboxMessagesMock.fetchInboxItemContext.mockReset();
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
+      groupMasterKeys: [],
+      sigintInboxItemIds: [],
+      sinceTs: null,
+      tillTs: null,
     });
 
     useAnalysisDataMock.mockReset();
@@ -768,6 +782,25 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.error).toBe('Не вдалося завантажити системні налаштування.');
+  });
+
+  it('shows an error when a direct-link message is missing', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=missing-uid`);
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.error).toBe('Не вдалося знайти повідомлення за посиланням.');
+  });
+
+  it('shows direct-link context request errors', async () => {
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxItemContext.mockRejectedValueOnce(new Error('boom'));
+
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.error).toBe('Не вдалося відкрити повідомлення за посиланням: boom');
   });
 
   it('exposes the callsign graph load error in the page view model', async () => {

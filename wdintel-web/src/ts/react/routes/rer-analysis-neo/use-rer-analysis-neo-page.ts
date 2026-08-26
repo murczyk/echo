@@ -89,6 +89,10 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     void fetchInboxItemContext({ messageUid: targetMessageUid })
       .then((res) => {
         if (cancelled) return;
+        if (res.sigintInboxItemIds.length === 0) {
+          setPageError('Не вдалося знайти повідомлення за посиланням.');
+          return;
+        }
         setQueryState((prev) => ({
           ...prev,
           groupsSelected:
@@ -102,12 +106,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         }));
       })
       .catch((err) => {
-        console.error('Failed to load inbox item context:', err);
+        if (cancelled) return;
+        setPageError(`Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`);
       });
     return () => {
       cancelled = true;
     };
-  }, [targetMessageUid]);
+  }, [setPageError, targetMessageUid]);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
     return false;
