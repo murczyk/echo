@@ -15,7 +15,6 @@ use sea_orm::sea_query::{
     WithQuery,
 };
 use sea_orm::FromQueryResult;
-use sea_orm::*;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::error::Error as StdError;
