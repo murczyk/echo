@@ -494,7 +494,8 @@ async fn backfill_signal_messages<C: ConnectionTrait>(
         signal_message::Column::IdUuid,
         &rows,
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok((rows.len(), rows.last().map_or(cursor, |row| row.0)))
 }
 
@@ -540,7 +541,8 @@ async fn backfill_inbox_items<C: ConnectionTrait>(
         inbox_item::Column::IdUuid,
         &rows,
     )
-    .await?;
+    .await
+    .c(h!())?;
     Ok((
         rows.len(),
         items.last().map_or(cursor, |item| item.legacy_id),
@@ -642,7 +644,9 @@ where
         .all(db)
         .await
         .c(h!())?;
-    update_uuid_column(db, entity, legacy_column, uuid_column, &rows).await?;
+    update_uuid_column(db, entity, legacy_column, uuid_column, &rows)
+        .await
+        .c(h!())?;
     Ok((rows.len(), last_id))
 }
 
