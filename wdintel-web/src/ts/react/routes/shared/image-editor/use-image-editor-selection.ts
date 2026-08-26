@@ -29,6 +29,7 @@ export function useImageEditorSelection({
   onDashChange,
   onFontSizeChange,
   onBoldChange,
+  onHighlightOpacityChange,
   onSelectionChange,
 }: {
   canvasRef: MutableRefObject<import('fabric').Canvas | null>;
@@ -41,6 +42,7 @@ export function useImageEditorSelection({
   onDashChange: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
   onBoldChange: (value: boolean) => void;
+  onHighlightOpacityChange: (value: number) => void;
   onSelectionChange: (value: ImageEditorSelectionDescriptor | undefined) => void;
 }) {
   useEffect(() => {
@@ -75,6 +77,7 @@ export function useImageEditorSelection({
       if (style.fill) onFillChange(style.fill);
       onStrokeWidthChange(style.strokeWidth);
       onDashChange(style.dash);
+      if (style.opacity != null) onHighlightOpacityChange(style.opacity);
     };
     canvas.on('selection:created', sync);
     canvas.on('selection:updated', sync);
@@ -90,6 +93,7 @@ export function useImageEditorSelection({
     canvasRef,
     fabricRef,
     onBoldChange,
+    onHighlightOpacityChange,
     onCanDeleteChange,
     onDashChange,
     onFillChange,

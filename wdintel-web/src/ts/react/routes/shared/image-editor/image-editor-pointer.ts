@@ -22,17 +22,34 @@ export function imageEditorBounds(
   start: { x: number; y: number },
   end: { x: number; y: number },
   square = false,
+  canvas?: { width: number; height: number },
 ): ImageEditorBounds {
   const dx = end.x - start.x,
     dy = end.y - start.y,
     size = Math.max(Math.abs(dx), Math.abs(dy));
+  if (square && canvas) {
+    const horizontalSpace = dx < 0 ? start.x : canvas.width - start.x;
+    const verticalSpace = dy < 0 ? start.y : canvas.height - start.y;
+    const constrainedSize = Math.max(0, Math.min(size, horizontalSpace, verticalSpace));
+    return {
+      left: dx < 0 ? start.x - constrainedSize : start.x,
+      top: dy < 0 ? start.y - constrainedSize : start.y,
+      width: constrainedSize,
+      height: constrainedSize,
+    };
+  }
   const width = square ? size : Math.abs(dx),
     height = square ? size : Math.abs(dy);
+  const left = dx < 0 ? start.x - width : start.x;
+  const top = dy < 0 ? start.y - height : start.y;
+  if (!canvas) return { left, top, width, height };
+  const constrainedLeft = Math.max(0, Math.min(left, canvas.width));
+  const constrainedTop = Math.max(0, Math.min(top, canvas.height));
   return {
-    left: dx < 0 ? start.x - width : start.x,
-    top: dy < 0 ? start.y - height : start.y,
-    width,
-    height,
+    left: constrainedLeft,
+    top: constrainedTop,
+    width: Math.max(0, Math.min(width, canvas.width - constrainedLeft)),
+    height: Math.max(0, Math.min(height, canvas.height - constrainedTop)),
   };
 }
 

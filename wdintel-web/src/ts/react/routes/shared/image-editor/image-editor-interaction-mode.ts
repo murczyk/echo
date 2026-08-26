@@ -32,13 +32,16 @@ export function applyImageEditorInteractionMode({
   const selecting = tool === 'select' || tool === 'crop';
   const creationTool = CREATION_TOOLS.has(tool);
   const activeObject = canvas.getActiveObject();
+  const preserveTextEditing =
+    tool === 'text' && (activeObject as import('fabric').IText | undefined)?.isEditing === true;
   if (
+    !preserveTextEditing &&
     activeObject &&
     'exitEditing' in activeObject &&
     typeof activeObject.exitEditing === 'function'
   )
     activeObject.exitEditing();
-  canvas.discardActiveObject();
+  if (!preserveTextEditing) canvas.discardActiveObject();
   canvas.selection = selecting;
   canvas.skipTargetFind = !selecting;
   canvas.isDrawingMode = tool === 'brush' || tool === 'highlight';

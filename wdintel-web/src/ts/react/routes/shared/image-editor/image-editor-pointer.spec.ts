@@ -28,4 +28,23 @@ describe('image editor native pointer geometry #3099', () => {
       height: 400,
     });
   });
+
+  it('keeps a constrained shape square while clamping it to image bounds', () => {
+    const bounds = imageEditorBounds({ x: 950, y: 950 }, { x: 700, y: 600 }, true, {
+      width: 1000,
+      height: 1000,
+    });
+    expect(bounds.width).toBe(bounds.height);
+    expect(bounds.left + bounds.width).toBeLessThanOrEqual(1000);
+    expect(bounds.top + bounds.height).toBeLessThanOrEqual(1000);
+  });
+
+  it('uses the limiting edge as one shared size for asymmetric Shift drags', () => {
+    expect(
+      imageEditorBounds({ x: 900, y: 500 }, { x: 1000, y: 900 }, true, {
+        width: 1000,
+        height: 1000,
+      }),
+    ).toEqual({ left: 900, top: 500, width: 100, height: 100 });
+  });
 });

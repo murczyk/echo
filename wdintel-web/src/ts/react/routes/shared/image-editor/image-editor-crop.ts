@@ -5,6 +5,40 @@ const CROP_ROLE = 'crop';
 const CROP_MASK_ROLE = 'crop-mask';
 const MIN_CROP_SIZE = 8;
 
+export function normalizedCropFrame({
+  left,
+  top,
+  width,
+  height,
+  scaleX,
+  scaleY,
+  canvasWidth,
+  canvasHeight,
+}: {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  scaleX: number;
+  scaleY: number;
+  canvasWidth: number;
+  canvasHeight: number;
+}) {
+  const normalizedWidth = Math.max(MIN_CROP_SIZE, Math.min(canvasWidth, width * Math.abs(scaleX)));
+  const normalizedHeight = Math.max(
+    MIN_CROP_SIZE,
+    Math.min(canvasHeight, height * Math.abs(scaleY)),
+  );
+  return {
+    left: Math.max(0, Math.min(canvasWidth - normalizedWidth, left)),
+    top: Math.max(0, Math.min(canvasHeight - normalizedHeight, top)),
+    width: normalizedWidth,
+    height: normalizedHeight,
+    scaleX: 1,
+    scaleY: 1,
+  };
+}
+
 function cropBounds(canvas: Canvas, crop: Rect) {
   const bounds = crop.getBoundingRect();
   const left = Math.max(0, Math.min(canvas.width, Math.round(bounds.left)));
@@ -60,6 +94,8 @@ function addCropMask({
       canvas.add(
         new fabric.Rect({
           ...mask,
+          originX: 'left',
+          originY: 'top',
           fill: maskColor,
           selectable: false,
           evented: false,
@@ -84,10 +120,16 @@ export function startCrop({
   maskColor: string;
 }) {
   if (cropRef.current) return cropRef.current;
-  const inset = Math.min(8, Math.max(1, Math.floor(Math.min(canvas.width, canvas.height) / 10)));
+  const displayedWidth = canvas.upperCanvasEl.getBoundingClientRect().width;
+  const inset = Math.max(
+    1,
+    Math.min(canvas.width / 4, (8 * canvas.width) / Math.max(1, displayedWidth)),
+  );
   const crop = new fabric.Rect({
     left: inset,
     top: inset,
+    originX: 'left',
+    originY: 'top',
     width: Math.max(MIN_CROP_SIZE, canvas.width - inset * 2),
     height: Math.max(MIN_CROP_SIZE, canvas.height - inset * 2),
     fill: 'transparent',
@@ -97,10 +139,12 @@ export function startCrop({
     editorRole: CROP_ROLE,
     excludeFromExport: true,
     lockRotation: true,
+    lockScalingFlip: true,
     hasRotatingPoint: false,
   });
   crop.setControlsVisibility({ mtr: false });
   crop.set({ cornerColor: stroke, cornerStrokeColor: stroke, transparentCorners: false });
+  crop.setCoords();
   addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop), maskColor });
   canvas.add(crop);
   canvas.setActiveObject(crop);
@@ -135,16 +179,51 @@ export function refreshCropMask({
 }) {
   const crop = cropRef.current;
   if (!crop) return;
-  const scaleX = Math.min(crop.scaleX ?? 1, canvas.width / Math.max(1, crop.width ?? 1));
-  const scaleY = Math.min(crop.scaleY ?? 1, canvas.height / Math.max(1, crop.height ?? 1));
-  const width = (crop.width ?? 0) * scaleX;
-  const height = (crop.height ?? 0) * scaleY;
+  const width = Math.max(0, (crop.width ?? 0) * Math.abs(crop.scaleX ?? 1));
+  const height = Math.max(0, (crop.height ?? 0) * Math.abs(crop.scaleY ?? 1));
+  const scaleX = Math.min(Math.abs(crop.scaleX ?? 1), canvas.width / Math.max(1, crop.width ?? 1));
+  const scaleY = Math.min(
+    Math.abs(crop.scaleY ?? 1),
+    canvas.height / Math.max(1, crop.height ?? 1),
+  );
   crop.set({
     scaleX,
     scaleY,
-    left: Math.max(0, Math.min(canvas.width - width, crop.left ?? 0)),
-    top: Math.max(0, Math.min(canvas.height - height, crop.top ?? 0)),
+    left: Math.max(0, Math.min(Math.max(0, canvas.width - width), crop.left ?? 0)),
+    top: Math.max(0, Math.min(Math.max(0, canvas.height - height), crop.top ?? 0)),
   });
+  removeCropMasks(canvas);
+  crop.setCoords();
+  addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop), maskColor });
+  canvas.bringObjectToFront(crop);
+  canvas.requestRenderAll();
+}
+
+export function normalizeCrop({
+  canvas,
+  fabric,
+  cropRef,
+  maskColor,
+}: {
+  canvas: Canvas;
+  fabric: typeof import('fabric');
+  cropRef: { current: Rect | null };
+  maskColor: string;
+}) {
+  const crop = cropRef.current;
+  if (!crop) return;
+  crop.set(
+    normalizedCropFrame({
+      left: crop.left ?? 0,
+      top: crop.top ?? 0,
+      width: crop.width ?? 0,
+      height: crop.height ?? 0,
+      scaleX: crop.scaleX ?? 1,
+      scaleY: crop.scaleY ?? 1,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+    }),
+  );
   removeCropMasks(canvas);
   crop.setCoords();
   addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop), maskColor });

@@ -6,6 +6,21 @@ import type { ImageEditorSource, ImageEditorTool } from './image-editor.types';
 const MAX_PIXELS = 24_000_000;
 const MAX_SIDE = 8_192;
 
+export function finalizeImageEditorText(
+  canvas: import('fabric').Canvas,
+  text: import('fabric').IText | undefined,
+  saveHistory: () => void,
+) {
+  if (!text) return false;
+  if (text.text?.trim()) {
+    saveHistory();
+    return true;
+  }
+  canvas.remove(text);
+  canvas.requestRenderAll();
+  return false;
+}
+
 async function isAnimatedWebp(source: ImageEditorSource) {
   if (source.mimeType !== 'image/webp') return false;
   const header = new Uint8Array(await source.blob.slice(0, 128 * 1024).arrayBuffer());
@@ -99,14 +114,11 @@ export function useImageEditorCanvas({
             event.path.set({ editorRole: role, selectable: false, evented: false });
           commit();
         });
-        canvas.on('text:editing:exited', (event) => {
+        const commitText = (event: { target?: import('fabric').FabricObject }) => {
           const text = event.target as import('fabric').IText | undefined;
-          if (text?.text?.trim()) commit(event);
-          else if (text) {
-            canvas.remove(text);
-            canvas.requestRenderAll();
-          }
-        });
+          finalizeImageEditorText(canvas, text, () => commit(event));
+        };
+        canvas.on('text:editing:exited', commitText);
         saveHistory();
         onDocumentResized();
         setCanvasReady(true);

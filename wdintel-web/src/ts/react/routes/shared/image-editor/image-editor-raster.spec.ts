@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildSafeRaster, replaceConcealmentDraft } from './image-editor-raster';
+import { buildSafeRaster, replaceConcealmentArea } from './image-editor-raster';
 
 class FabricObject {
   values: Record<string, unknown>;
@@ -94,15 +94,11 @@ describe('image editor raster operations #3099', () => {
       return element;
     });
     const canvas = canvasFixture();
-    const draft = {
-      getBoundingRect: () => ({ left: 20, top: 10, width: 30, height: 20 }),
-    } as never;
-
-    await replaceConcealmentDraft({
+    await replaceConcealmentArea({
       canvas,
       sourceImage: sourceImage(),
       fabric: fabric as never,
-      draft,
+      bounds: { left: 20, top: 10, width: 30, height: 20 },
       mode: 'blur',
     });
 

@@ -25,11 +25,27 @@ function renderHistory(canvas: any, onRestoreError = vi.fn()) {
 
 function canvas() {
   let value = 'clean';
+  const metadata: Record<string, unknown> = {};
   return {
-    toJSON: vi.fn(() => ({ value })),
+    width: 100,
+    height: 100,
+    backgroundImage: {
+      width: 100,
+      height: 100,
+      left: 0,
+      top: 0,
+      originX: 'left',
+      originY: 'top',
+      scaleX: 1,
+      scaleY: 1,
+      get: () => 0,
+    },
+    toJSON: vi.fn(() => ({ value, ...metadata })),
+    set: vi.fn((values: Record<string, unknown>) => Object.assign(metadata, values)),
     loadFromJSON: vi.fn(async (snapshot: string) => {
       value = JSON.parse(snapshot).value;
     }),
+    setDimensions: vi.fn(),
     requestRenderAll: vi.fn(),
     set value(next: string) {
       value = next;
@@ -203,5 +219,23 @@ describe('image editor history #3099', () => {
     await act(async () => harness.history().undo());
     expect(harness.onRestoreError).toHaveBeenCalledOnce();
     expect(fabricCanvas.loadFromJSON).toHaveBeenCalledTimes(2);
+  });
+
+  it('restores crop document metadata on reset', async () => {
+    const fabricCanvas = Object.assign(canvas(), {
+      width: 400,
+      height: 300,
+      backgroundImage: {
+        width: 400,
+        height: 300,
+        get: (key: string) => (key === 'cropX' ? 12 : key === 'cropY' ? 34 : undefined),
+      },
+    });
+    const harness = renderHistory(fabricCanvas);
+    act(() => harness.history().saveHistory());
+    expect(fabricCanvas.toJSON).toHaveBeenCalledWith(['editorRole']);
+    fabricCanvas.value = 'cropped';
+    await act(async () => harness.history().reset());
+    expect(fabricCanvas.value).toBe('clean');
   });
 });

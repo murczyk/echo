@@ -9,7 +9,13 @@ import { ImageEditorWorkspace } from './ImageEditorWorkspace';
 import { deleteSelectedAnnotations } from './image-editor-actions';
 import { exportEditedImage } from './image-editor-export';
 import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
-import { applyCrop, cancelCrop, refreshCropMask, startCrop } from './image-editor-crop';
+import {
+  applyCrop,
+  cancelCrop,
+  normalizeCrop,
+  refreshCropMask,
+  startCrop,
+} from './image-editor-crop';
 import { applyImageEditorInteractionMode } from './image-editor-interaction-mode';
 import { replaceConcealmentArea as createConcealmentReplacement } from './image-editor-raster';
 import type { ImageEditorBounds } from './image-editor-pointer';
@@ -44,7 +50,8 @@ export function ImageEditor({
   const canvasRef = useRef<import('fabric').Canvas | null>(null);
   const sourceRef = useRef<import('fabric').FabricImage | null>(null);
   const cropRef = useRef<import('fabric').Rect | null>(null);
-  const cancelGestureRef = useRef<() => void>(() => {});
+  const hiddenTextareaContainerRef = useRef<HTMLDivElement | null>(null);
+  const cancelGestureRef = useRef<() => boolean>(() => false);
   const [tool, setTool] = useState<ImageEditorTool>('select');
   const [stroke, setStroke] = useState('#ef4444');
   const [fill, setFill] = useState('transparent');
@@ -65,7 +72,11 @@ export function ImageEditor({
   const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
   const theme = useTheme();
   const cropStroke = theme.palette.primary.main;
-  const cropMaskColor = alpha(theme.palette.text.primary, 0.38);
+  const cropMaskColor = alpha(theme.palette.common.black, 0.38);
+  const concealmentMarquee = {
+    stroke: theme.palette.primary.main,
+    fill: alpha(theme.palette.primary.main, 0.16),
+  };
   const toolRef = useRef(tool);
   const {
     enqueue: enqueueRaster,
@@ -80,6 +91,7 @@ export function ImageEditor({
   const changeTool = useCallback(
     (nextTool: ImageEditorTool) => {
       if (isInteractionLocked()) return;
+      cancelGestureRef.current();
       const canvas = canvasRef.current;
       toolRef.current = nextTool;
       if (canvas && nextTool !== 'crop' && cropRef.current) cancelCrop({ canvas, cropRef });
@@ -125,12 +137,20 @@ export function ImageEditor({
     undo,
   } = useImageEditorHistory({
     canvasRef,
-    onRestored: async (canvas) => {
-      restoreImageEditorCanvasReferences({ canvas, sourceRef, cropRef });
-      syncDocumentDimensions();
+    onRestored: async (canvas, snapshot) => {
+      restoreImageEditorCanvasReferences({
+        canvas,
+        sourceRef,
+        cropRef,
+        snapshot,
+        hiddenTextareaContainer: hiddenTextareaContainerRef.current,
+      });
+      toolRef.current = 'select';
+      setTool('select');
+      syncDocumentDimensions({ fit: true });
       applyImageEditorInteractionMode({
         canvas,
-        tool: toolRef.current,
+        tool: 'select',
         fabric: fabricRef.current,
         stroke,
         strokeWidth,
@@ -142,14 +162,29 @@ export function ImageEditor({
   });
 
   const queuedUndo = useCallback(() => {
-    if (!isInteractionLocked()) void enqueueRaster(undo);
+    if (!isInteractionLocked()) {
+      cancelGestureRef.current();
+      void enqueueRaster(undo);
+    }
   }, [enqueueRaster, isInteractionLocked, undo]);
   const queuedRedo = useCallback(() => {
-    if (!isInteractionLocked()) void enqueueRaster(redo);
+    if (!isInteractionLocked()) {
+      cancelGestureRef.current();
+      void enqueueRaster(redo);
+    }
   }, [enqueueRaster, isInteractionLocked, redo]);
   const queuedReset = useCallback(() => {
-    if (!isInteractionLocked()) void enqueueRaster(resetEdits);
-  }, [enqueueRaster, isInteractionLocked, resetEdits]);
+    if (isInteractionLocked()) return;
+    void enqueueRaster(async () => {
+      cancelGestureRef.current();
+      await resetEdits();
+      const canvas = canvasRef.current;
+      if (canvas) cancelCrop({ canvas, cropRef });
+      toolRef.current = 'select';
+      setTool('select');
+      syncDocumentDimensions({ fit: true });
+    });
+  }, [enqueueRaster, isInteractionLocked, resetEdits, syncDocumentDimensions]);
 
   useImageEditorCanvas({
     source,
@@ -168,7 +203,7 @@ export function ImageEditor({
   });
 
   const replaceConcealmentArea = useCallback(
-    async (bounds: ImageEditorBounds) => {
+    async (bounds: ImageEditorBounds, mode: ConcealMode) => {
       const canvas = canvasRef.current;
       const sourceImage = sourceRef.current;
       const fabric = fabricRef.current;
@@ -179,7 +214,7 @@ export function ImageEditor({
           sourceImage,
           fabric,
           bounds,
-          mode: concealMode,
+          mode,
         });
         return changed;
       });
@@ -187,7 +222,7 @@ export function ImageEditor({
         saveHistory();
       }
     },
-    [concealMode, enqueueRaster, saveHistory],
+    [enqueueRaster, saveHistory],
   );
 
   useImageEditorSelectionStyle({
@@ -221,6 +256,7 @@ export function ImageEditor({
   useImageEditorDrawingGestures({
     canvasRef,
     fabricRef,
+    canvasReady,
     tool,
     toolRef,
     stroke,
@@ -229,12 +265,14 @@ export function ImageEditor({
     dash,
     fontSize,
     bold,
-    highlightOpacity,
+    concealMode,
     isInteractionLocked,
     saveHistory,
     replaceConcealmentArea,
+    concealmentMarquee,
     cancelGestureRef,
     setError,
+    hiddenTextareaContainer: hiddenTextareaContainerRef,
   });
 
   useEffect(() => {
@@ -270,9 +308,15 @@ export function ImageEditor({
     };
     canvas.on('object:moving', updateCropMask);
     canvas.on('object:scaling', updateCropMask);
+    const normalizeCropFrame = (event: { target?: import('fabric').FabricObject }) => {
+      if (event.target === cropRef.current)
+        normalizeCrop({ canvas, fabric, cropRef, maskColor: cropMaskColor });
+    };
+    canvas.on('object:modified', normalizeCropFrame);
     return () => {
       canvas.off('object:moving', updateCropMask);
       canvas.off('object:scaling', updateCropMask);
+      canvas.off('object:modified', normalizeCropFrame);
     };
   }, [canvasReady, cropMaskColor]);
 
@@ -287,6 +331,7 @@ export function ImageEditor({
     onDashChange: setDash,
     onFontSizeChange: setFontSize,
     onBoldChange: setBold,
+    onHighlightOpacityChange: setHighlightOpacity,
     onSelectionChange: setSelection,
   });
 
@@ -319,6 +364,7 @@ export function ImageEditor({
     const canvas = canvasRef.current;
     const sourceImage = sourceRef.current;
     if (!canvas || !sourceImage || isInteractionLocked()) return;
+    cancelGestureRef.current();
     if (cropRef.current) {
       setError('Спочатку застосуйте або скасуйте обрізання');
       return;
@@ -350,6 +396,11 @@ export function ImageEditor({
     (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const active = canvasRef.current?.getActiveObject() as import('fabric').IText | undefined;
+      if (event.key === 'Escape' && active?.isEditing) {
+        event.preventDefault();
+        active.exitEditing();
+        return;
+      }
       const typing =
         target?.matches('input, textarea, select, [contenteditable="true"]') ||
         active?.isEditing === true;
@@ -358,6 +409,8 @@ export function ImageEditor({
         event.preventDefault();
         if (cropRef.current && tool === 'crop') {
           cancelCropOperation();
+        } else if (cancelGestureRef.current()) {
+          return;
         } else {
           requestCancel();
         }
@@ -443,7 +496,10 @@ export function ImageEditor({
   };
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Редактор зображення">
-      <ImageEditorToolbar {...primaryToolbarProps} />
+      <ImageEditorToolbar
+        {...primaryToolbarProps}
+        contextualControls={<ImageEditorContextToolbar {...contextualToolbarProps} embedded />}
+      />
       {error ? (
         <Alert severity="error" className="m-2">
           {error}
@@ -464,7 +520,6 @@ export function ImageEditor({
         magnification={magnification}
         onPan={panBy}
         onZoom={zoomAtPoint}
-        contextualToolbar={<ImageEditorContextToolbar {...contextualToolbarProps} />}
       />
       <ImageEditorFooter
         applying={applying}
@@ -474,6 +529,7 @@ export function ImageEditor({
         onCancel={requestCancel}
         onApply={() => void apply()}
       />
+      <div ref={hiddenTextareaContainerRef} data-image-editor-textarea-container />
     </section>
   );
 }

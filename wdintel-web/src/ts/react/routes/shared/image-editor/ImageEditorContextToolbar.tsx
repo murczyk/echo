@@ -1,10 +1,15 @@
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
-import { Slider } from '@mui/material';
 
 import { PowerButton } from '../../../components/PowerButton';
 import { ImageEditorIconButton } from './ImageEditorIconButton';
+import {
+  ImageEditorColorControl,
+  ImageEditorContextGroup,
+  ImageEditorSegmentedControl,
+  ImageEditorSliderControl,
+} from './ImageEditorContextControls';
 import type {
   ConcealMode,
   ImageEditorSelectionDescriptor,
@@ -36,35 +41,8 @@ export type ImageEditorContextToolbarProps = {
   cropActive: boolean;
   onApplyCrop: () => void;
   onCancelCrop: () => void;
+  embedded?: boolean;
 };
-
-function ColorField({
-  label,
-  ariaLabel = label,
-  value,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  ariaLabel?: string;
-  value: string;
-  onChange: (value: string) => void;
-  disabled: boolean;
-}) {
-  return (
-    <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-echo-sm">
-      {label}
-      <input
-        aria-label={ariaLabel}
-        className="size-8 appearance-none rounded border border-echo-border p-0"
-        type="color"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        disabled={disabled}
-      />
-    </label>
-  );
-}
 
 export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps) {
   const context = props.tool === 'select' ? props.selection?.kind : props.tool;
@@ -76,14 +54,24 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
   const showStroke = showShape || showLine || showBrush;
   const showDash = showShape || showLine;
   return (
-    <div className="absolute left-1/2 top-2 z-30 max-w-[calc(100%-24px)] -translate-x-1/2">
+    <div
+      className={
+        props.embedded
+          ? 'min-w-0 flex-1 overflow-x-auto'
+          : 'absolute left-1/2 top-2 z-30 max-w-[calc(100%-24px)] -translate-x-1/2'
+      }
+    >
       <div
         data-image-editor-contextual-row
-        className="flex h-12 max-w-full items-center gap-3 overflow-x-auto overflow-y-hidden rounded-lg border border-echo-border bg-echo-surface px-3 shadow-echo-lg"
+        className={
+          props.embedded
+            ? 'flex h-12 min-w-max items-center gap-3 px-3'
+            : 'flex h-12 max-w-full items-center gap-3 overflow-x-auto overflow-y-hidden rounded-lg border border-echo-border bg-echo-surface px-3 shadow-echo-lg'
+        }
       >
         {showText ? (
           <>
-            <ColorField
+            <ImageEditorColorControl
               label="Колір"
               value={props.stroke}
               onChange={props.onStrokeChange}
@@ -114,18 +102,16 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
         ) : null}
         {showStroke ? (
           <>
-            <ColorField
+            <ImageEditorColorControl
               label={showBrush ? 'Колір' : 'Контур'}
-              ariaLabel={showBrush ? 'Колір' : 'Колір контуру'}
               value={props.stroke}
               onChange={props.onStrokeChange}
               disabled={props.disabled}
             />
             {showShape ? (
               <>
-                <ColorField
+                <ImageEditorColorControl
                   label="Заливка"
-                  ariaLabel="Колір заливки"
                   value={props.fill === 'transparent' ? '#ffffff' : props.fill}
                   onChange={props.onFillChange}
                   disabled={props.disabled}
@@ -139,18 +125,15 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
                 </PowerButton>
               </>
             ) : null}
-            <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-echo-sm">
-              <span id="image-editor-stroke-width">Товщина</span>
-              <Slider
-                aria-labelledby="image-editor-stroke-width"
-                className="w-24 shrink-0"
-                min={1}
-                max={24}
-                value={props.strokeWidth}
-                onChange={(_, value) => props.onStrokeWidthChange(value as number)}
-                disabled={props.disabled}
-              />
-            </div>
+            <ImageEditorSliderControl
+              label="Товщина"
+              value={props.strokeWidth}
+              display={String(props.strokeWidth)}
+              min={1}
+              max={24}
+              onChange={props.onStrokeWidthChange}
+              disabled={props.disabled}
+            />
             {showDash ? (
               <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-echo-sm">
                 <input
@@ -164,54 +147,41 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
               </label>
             ) : null}
             {context === 'highlight' ? (
-              <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-echo-sm">
-                <span id="image-editor-highlight-opacity">Прозорість</span>
-                <Slider
-                  aria-labelledby="image-editor-highlight-opacity"
-                  className="w-20 shrink-0"
-                  min={0.1}
-                  max={0.8}
-                  step={0.1}
-                  value={props.highlightOpacity}
-                  onChange={(_, value) => props.onHighlightOpacityChange(value as number)}
-                  disabled={props.disabled}
-                />
-                <span className="tabular-nums">{Math.round(props.highlightOpacity * 100)}%</span>
-              </div>
+              <ImageEditorSliderControl
+                label="Прозорість"
+                value={props.highlightOpacity}
+                display={`${Math.round(props.highlightOpacity * 100)}%`}
+                min={0.1}
+                max={0.8}
+                step={0.1}
+                onChange={props.onHighlightOpacityChange}
+                disabled={props.disabled}
+              />
             ) : null}
           </>
         ) : null}
         {props.tool === 'conceal' ? (
-          <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-echo-sm">
-            Режим
-            <select
-              aria-label="Режим розмиття"
-              className="h-8 rounded border border-echo-border bg-transparent px-2 text-echo-sm"
-              value={props.concealMode}
-              onChange={(event) => props.onConcealModeChange(event.target.value as ConcealMode)}
-              disabled={props.disabled}
-            >
-              <option value="blur">Розмиття</option>
-              <option value="pixelate">Пікселізація</option>
-              <option value="redact">Затемнення</option>
-            </select>
-          </label>
+          <ImageEditorSegmentedControl
+            value={props.concealMode}
+            choices={[
+              { value: 'blur', label: 'Розмиття' },
+              { value: 'pixelate', label: 'Пікселізація' },
+              { value: 'redact', label: 'Затемнення' },
+            ]}
+            onChange={props.onConcealModeChange}
+            disabled={props.disabled}
+          />
         ) : null}
         {props.tool === 'magnifier' ? (
-          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-echo-sm">
-            <span id="image-editor-magnification">Збільшення</span>
-            <Slider
-              aria-labelledby="image-editor-magnification"
-              className="w-24 shrink-0"
-              min={2}
-              max={4}
-              step={1}
-              value={props.magnification}
-              onChange={(_, value) => props.onMagnificationChange(value as number)}
-              disabled={props.disabled}
-            />
-            <span className="min-w-5 text-center tabular-nums">{props.magnification}×</span>
-          </div>
+          <ImageEditorSliderControl
+            label="Збільшення"
+            value={props.magnification}
+            display={`${props.magnification}×`}
+            min={2}
+            max={4}
+            onChange={props.onMagnificationChange}
+            disabled={props.disabled}
+          />
         ) : null}
         {props.tool === 'crop' && props.cropActive ? (
           <>

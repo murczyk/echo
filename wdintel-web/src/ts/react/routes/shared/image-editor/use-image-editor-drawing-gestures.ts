@@ -1,14 +1,49 @@
-import { useEffect, type MutableRefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 
 import { addTextAnnotation } from './image-editor-actions';
 import { createArrow } from './image-editor-arrow';
 import { imageEditorBounds, imageEditorPointer, minimumGestureSize } from './image-editor-pointer';
 import type { ImageEditorBounds } from './image-editor-pointer';
-import type { ImageEditorTool } from './image-editor.types';
+import type { ConcealMode, ImageEditorTool } from './image-editor.types';
+
+type Point = { x: number; y: number };
+type Config = {
+  tool: ImageEditorTool;
+  stroke: string;
+  fill: string;
+  strokeWidth: number;
+  dash: boolean;
+  fontSize: number;
+  bold: boolean;
+  concealMode: ConcealMode;
+  concealmentMarquee: { stroke: string; fill: string };
+};
+type Session =
+  | { kind: 'idle' }
+  | { kind: 'text'; point: Point; config: Config }
+  | {
+      kind: 'shape';
+      tool: 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'conceal';
+      start: Point;
+      object: import('fabric').FabricObject;
+      config: Config;
+    };
+
+export function finalizeGestureSession(session: Session) {
+  return { completed: session, next: { kind: 'idle' } as Session };
+}
+
+export function cancelGestureSession(session: Session) {
+  return {
+    next: { kind: 'idle' } as Session,
+    transient: session.kind === 'shape' ? session.object : null,
+  };
+}
 
 export function useImageEditorDrawingGestures({
   canvasRef,
   fabricRef,
+  canvasReady,
   tool,
   toolRef,
   stroke,
@@ -17,15 +52,18 @@ export function useImageEditorDrawingGestures({
   dash,
   fontSize,
   bold,
-  highlightOpacity: _highlightOpacity,
+  concealMode,
   isInteractionLocked,
   saveHistory,
   replaceConcealmentArea,
+  concealmentMarquee,
   cancelGestureRef,
   setError,
+  hiddenTextareaContainer,
 }: {
   canvasRef: MutableRefObject<import('fabric').Canvas | null>;
   fabricRef: MutableRefObject<typeof import('fabric') | null>;
+  canvasReady: boolean;
   tool: ImageEditorTool;
   toolRef: MutableRefObject<ImageEditorTool>;
   stroke: string;
@@ -34,159 +72,247 @@ export function useImageEditorDrawingGestures({
   dash: boolean;
   fontSize: number;
   bold: boolean;
-  highlightOpacity: number;
+  concealMode: ConcealMode;
   isInteractionLocked: () => boolean;
   saveHistory: () => void;
-  replaceConcealmentArea: (bounds: ImageEditorBounds) => Promise<void>;
-  cancelGestureRef: MutableRefObject<() => void>;
+  replaceConcealmentArea: (bounds: ImageEditorBounds, mode: ConcealMode) => Promise<void>;
+  concealmentMarquee: { stroke: string; fill: string };
+  cancelGestureRef: MutableRefObject<() => boolean>;
   setError: (error: string) => void;
+  hiddenTextareaContainer: MutableRefObject<HTMLElement | null>;
 }) {
+  const configRef = useRef<Config>({
+    tool,
+    stroke,
+    fill,
+    strokeWidth,
+    dash,
+    fontSize,
+    bold,
+    concealMode,
+    concealmentMarquee,
+  });
+  const operationsRef = useRef({
+    isInteractionLocked,
+    saveHistory,
+    replaceConcealmentArea,
+    setError,
+  });
+  configRef.current = {
+    tool,
+    stroke,
+    fill,
+    strokeWidth,
+    dash,
+    fontSize,
+    bold,
+    concealMode,
+    concealmentMarquee,
+  };
+  operationsRef.current = { isInteractionLocked, saveHistory, replaceConcealmentArea, setError };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const fabric = fabricRef.current;
-    if (!canvas || !fabric) return;
-    let start: { x: number; y: number } | null = null;
-    let drawing: import('fabric').FabricObject | null = null;
-    const clearGesture = () => {
-      if (drawing) canvas.remove(drawing);
-      start = null;
-      drawing = null;
+    if (!canvasReady || !canvas || !fabric) return;
+    let session: Session = { kind: 'idle' };
+    let textFrame: number | null = null;
+    let finalBounds: ImageEditorBounds | null = null;
+    const reset = () => {
+      const consumed = session.kind !== 'idle' || textFrame != null;
+      const cancelled = cancelGestureSession(session);
+      if (cancelled.transient) canvas.remove(cancelled.transient);
+      session = cancelled.next;
+      finalBounds = null;
+      if (textFrame != null) cancelAnimationFrame(textFrame);
+      textFrame = null;
       canvas.requestRenderAll();
+      return consumed;
     };
-    cancelGestureRef.current = clearGesture;
-    const nativePoint = (event: { e?: unknown }) => {
-      const pointer = event.e as { clientX?: number; clientY?: number } | undefined;
-      if (pointer?.clientX == null || pointer.clientY == null) return null;
-      return imageEditorPointer(canvas, pointer as { clientX: number; clientY: number });
+    cancelGestureRef.current = reset;
+    const pointer = (event: { e?: unknown }) => {
+      const source = event.e as { clientX?: number; clientY?: number } | undefined;
+      return source?.clientX == null || source.clientY == null
+        ? null
+        : imageEditorPointer(canvas, source as { clientX: number; clientY: number });
     };
-    const begin = (event: { scenePoint: { x: number; y: number }; e?: unknown }) => {
-      if (isInteractionLocked() || toolRef.current !== tool) return;
-      const point = nativePoint(event);
+    const down = (event: { e?: unknown }) => {
+      const config = configRef.current;
+      if (session.kind !== 'idle' || operationsRef.current.isInteractionLocked()) return;
+      const point = pointer(event);
       if (!point) return;
-      if (tool === 'text') {
-        const text = addTextAnnotation({
-          canvas,
-          fabric,
-          stroke,
-          fontSize,
-          bold,
-          left: point.x,
-          top: point.y,
-        });
-        requestAnimationFrame(() => {
-          canvas.setActiveObject(text);
-          text.enterEditing();
-          text.hiddenTextarea?.focus();
-          text.selectAll();
-          canvas.requestRenderAll();
-        });
+      if (config.tool === 'text') {
+        session = { kind: 'text', point, config };
         return;
       }
-      if (!['rectangle', 'ellipse', 'line', 'arrow', 'conceal'].includes(tool)) return;
-      start = point;
+      if (!['rectangle', 'ellipse', 'line', 'arrow', 'conceal'].includes(config.tool)) return;
+      const tool = config.tool as 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'conceal';
       const common = {
-        left: point.x,
-        top: point.y,
-        stroke,
-        strokeWidth,
-        fill,
-        editorRole: tool === 'conceal' ? 'concealment-draft' : tool,
-        strokeDashArray: dash ? [strokeWidth * 2, strokeWidth * 2] : undefined,
+        originX: 'left' as const,
+        originY: 'top' as const,
         selectable: false,
         evented: false,
+        editorRole: tool === 'conceal' ? 'concealment-draft' : tool,
       };
-      drawing =
+      const object =
         tool === 'ellipse'
-          ? new fabric.Ellipse({ ...common, rx: 1, ry: 1 })
+          ? new fabric.Ellipse({
+              ...common,
+              left: point.x,
+              top: point.y,
+              rx: 1,
+              ry: 1,
+              stroke: config.stroke,
+              strokeWidth: config.strokeWidth,
+              strokeDashArray: config.dash
+                ? [config.strokeWidth * 2, config.strokeWidth * 2]
+                : undefined,
+              fill: config.fill,
+            })
           : tool === 'line' || tool === 'arrow'
-            ? new fabric.Line([point.x, point.y, point.x, point.y], { ...common, fill: undefined })
+            ? new fabric.Line([point.x, point.y, point.x, point.y], {
+                stroke: config.stroke,
+                strokeWidth: config.strokeWidth,
+                strokeDashArray: config.dash
+                  ? [config.strokeWidth * 2, config.strokeWidth * 2]
+                  : undefined,
+                selectable: false,
+                evented: false,
+                editorRole: tool,
+              })
             : new fabric.Rect({
                 ...common,
+                left: point.x,
+                top: point.y,
                 width: 1,
                 height: 1,
-                fill: tool === 'conceal' ? 'transparent' : fill,
+                stroke: tool === 'conceal' ? config.concealmentMarquee.stroke : config.stroke,
+                strokeWidth: tool === 'conceal' ? 1 : config.strokeWidth,
+                strokeDashArray:
+                  tool === 'conceal'
+                    ? undefined
+                    : config.dash
+                      ? [config.strokeWidth * 2, config.strokeWidth * 2]
+                      : undefined,
+                fill: tool === 'conceal' ? config.concealmentMarquee.fill : config.fill,
+                excludeFromExport: tool === 'conceal',
               });
-      canvas.add(drawing);
+      canvas.add(object);
+      finalBounds = null;
+      session = { kind: 'shape', tool, start: point, object, config };
     };
-    const move = (event: { scenePoint: { x: number; y: number }; e?: unknown }) => {
-      if (isInteractionLocked()) return clearGesture();
-      if (!start || !drawing) return;
-      const point = nativePoint(event);
+    const move = (event: { e?: unknown }) => {
+      if (operationsRef.current.isInteractionLocked()) return reset();
+      if (session.kind !== 'shape') return;
+      const point = pointer(event);
       if (!point) return;
-      const shiftKey = (event.e as { shiftKey?: boolean } | undefined)?.shiftKey;
-      const bounds = imageEditorBounds(start, point, Boolean(shiftKey));
-      if (drawing instanceof fabric.Line) drawing.set({ x2: point.x, y2: point.y });
-      else if (drawing instanceof fabric.Ellipse)
-        drawing.set({
+      const square = Boolean((event.e as { shiftKey?: boolean })?.shiftKey);
+      const bounds = imageEditorBounds(session.start, point, square, canvas);
+      finalBounds = bounds;
+      if (session.object instanceof fabric.Line) session.object.set({ x2: point.x, y2: point.y });
+      else if (session.object instanceof fabric.Ellipse)
+        session.object.set({
           left: bounds.left,
           top: bounds.top,
           rx: bounds.width / 2,
           ry: bounds.height / 2,
         });
-      else drawing.set(bounds);
-      drawing.setCoords();
+      else session.object.set(bounds);
+      session.object.setCoords();
       canvas.requestRenderAll();
     };
-    const end = (event: { e?: unknown }) => {
-      if (isInteractionLocked()) return clearGesture();
-      if (drawing instanceof fabric.Line && tool === 'arrow' && start) {
-        const arrow = createArrow({
-          fabric,
-          start: { x: drawing.x1 ?? start.x, y: drawing.y1 ?? start.y },
-          end: { x: drawing.x2 ?? start.x, y: drawing.y2 ?? start.y },
-          stroke,
-          strokeWidth,
-          dash,
-        });
-        canvas.remove(drawing);
-        if (arrow) {
-          canvas.add(arrow);
-          saveHistory();
-        }
-      } else if (drawing && tool === 'conceal' && start) {
-        const point = nativePoint(event);
-        const bounds = point ? imageEditorBounds(start, point) : undefined;
-        canvas.remove(drawing);
-        if (bounds && Math.max(bounds.width, bounds.height) >= minimumGestureSize(canvas))
-          replaceConcealmentArea(bounds).catch((cause) =>
-            setError(cause instanceof Error ? cause.message : 'Не вдалося застосувати розмиття'),
-          );
-      } else if (
-        drawing &&
-        Math.max(drawing.width ?? 0, drawing.height ?? 0) >= minimumGestureSize(canvas)
-      ) {
-        saveHistory();
-      } else if (drawing) {
-        canvas.remove(drawing);
+    const up = (event: { e?: unknown }) => {
+      const finalized = finalizeGestureSession(session);
+      const completed = finalized.completed;
+      session = finalized.next;
+      if (completed.kind === 'idle') return;
+      if (operationsRef.current.isInteractionLocked()) {
+        if (completed.kind === 'shape') canvas.remove(completed.object);
+        return;
       }
-      start = null;
-      drawing = null;
+      if (completed.kind === 'text') {
+        const text = addTextAnnotation({
+          canvas,
+          fabric,
+          stroke: completed.config.stroke,
+          fontSize: completed.config.fontSize,
+          bold: completed.config.bold,
+          left: completed.point.x,
+          top: completed.point.y,
+          hiddenTextareaContainer: hiddenTextareaContainer.current,
+        });
+        textFrame = requestAnimationFrame(() => {
+          textFrame = null;
+          if (operationsRef.current.isInteractionLocked()) return canvas.remove(text);
+          canvas.setActiveObject(text);
+          text.enterEditing();
+          const textarea = text.hiddenTextarea;
+          const container = hiddenTextareaContainer.current;
+          if (!textarea?.isConnected || !container?.contains(textarea)) {
+            operationsRef.current.setError('Не вдалося активувати текстове поле');
+            return;
+          }
+          textarea.focus();
+          if (document.activeElement !== textarea) {
+            operationsRef.current.setError('Не вдалося сфокусувати текстове поле');
+            return;
+          }
+          text.selectAll();
+          canvas.requestRenderAll();
+        });
+        return;
+      }
+      const point = pointer(event);
+      const bounds = finalBounds;
+      finalBounds = null;
+      const threshold = minimumGestureSize(canvas);
+      try {
+        if (completed.tool === 'conceal') {
+          canvas.remove(completed.object);
+          if (bounds && bounds.width >= threshold && bounds.height >= threshold)
+            void operationsRef.current
+              .replaceConcealmentArea(bounds, completed.config.concealMode)
+              .catch((cause) =>
+                operationsRef.current.setError(
+                  cause instanceof Error ? cause.message : 'Не вдалося застосувати розмиття',
+                ),
+              );
+        } else if (completed.tool === 'arrow' && point) {
+          const arrow = createArrow({
+            fabric,
+            start: completed.start,
+            end: point,
+            stroke: completed.config.stroke,
+            strokeWidth: completed.config.strokeWidth,
+            dash: completed.config.dash,
+          });
+          canvas.remove(completed.object);
+          if (arrow) {
+            canvas.add(arrow);
+            operationsRef.current.saveHistory();
+          }
+        } else if (
+          completed.object instanceof fabric.Line
+            ? point &&
+              Math.hypot(point.x - completed.start.x, point.y - completed.start.y) >= threshold
+            : bounds && bounds.width >= threshold && bounds.height >= threshold
+        ) {
+          completed.object.setCoords();
+          operationsRef.current.saveHistory();
+        } else canvas.remove(completed.object);
+      } finally {
+        canvas.requestRenderAll();
+      }
     };
-    canvas.on('mouse:down', begin);
+    canvas.on('mouse:down', down);
     canvas.on('mouse:move', move);
-    canvas.on('mouse:up', end);
+    canvas.on('mouse:up', up);
     return () => {
-      clearGesture();
-      cancelGestureRef.current = () => {};
-      canvas.off('mouse:down', begin);
+      reset();
+      cancelGestureRef.current = () => false;
+      canvas.off('mouse:down', down);
       canvas.off('mouse:move', move);
-      canvas.off('mouse:up', end);
+      canvas.off('mouse:up', up);
     };
-  }, [
-    bold,
-    cancelGestureRef,
-    canvasRef,
-    dash,
-    fabricRef,
-    fill,
-    fontSize,
-    isInteractionLocked,
-    replaceConcealmentArea,
-    saveHistory,
-    setError,
-    stroke,
-    strokeWidth,
-    tool,
-    toolRef,
-  ]);
+  }, [canvasReady, canvasRef, fabricRef, cancelGestureRef, hiddenTextareaContainer]);
 }

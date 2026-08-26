@@ -1,5 +1,8 @@
 import type { MutableRefObject } from 'react';
 
+import type { ImageEditorDocumentSnapshot } from './image-editor-document-snapshot';
+import { assignImageEditorTextareaContainers } from './image-editor-text';
+
 export function setImageEditorBackground({
   canvas,
   source,
@@ -24,10 +27,14 @@ export function restoreImageEditorCanvasReferences({
   canvas,
   sourceRef,
   cropRef,
+  snapshot,
+  hiddenTextareaContainer,
 }: {
   canvas: import('fabric').Canvas;
   sourceRef: MutableRefObject<import('fabric').FabricImage | null>;
   cropRef: MutableRefObject<import('fabric').Rect | null>;
+  snapshot?: ImageEditorDocumentSnapshot;
+  hiddenTextareaContainer?: HTMLElement | null;
 }) {
   canvas.getObjects().forEach((object) => {
     const children = (object as import('fabric').Group).getObjects?.();
@@ -39,10 +46,16 @@ export function restoreImageEditorCanvasReferences({
   });
   const source = canvas.backgroundImage as import('fabric').FabricImage | undefined;
   if (source) {
-    setImageEditorBackground({ canvas, source });
+    const background = snapshot?.background;
+    if (background) {
+      source.set(background);
+      canvas.backgroundImage = source;
+    } else setImageEditorBackground({ canvas, source });
     sourceRef.current = source;
   }
-  cropRef.current = canvas
-    .getObjects()
-    .find((object) => object.get('editorRole') === 'crop') as import('fabric').Rect;
+  if (snapshot) canvas.setDimensions({ width: snapshot.width, height: snapshot.height });
+  cropRef.current = null;
+  if (hiddenTextareaContainer) assignImageEditorTextareaContainers(canvas, hiddenTextareaContainer);
+  canvas.discardActiveObject();
+  canvas.requestRenderAll();
 }

@@ -6,6 +6,7 @@ export type ImageEditorObjectStyle = {
   fill?: string;
   strokeWidth: number;
   dash: boolean;
+  opacity?: number;
 };
 
 const FALLBACK_EDITOR_COLOR = '#ef4444';
@@ -29,6 +30,12 @@ export function withHighlightAlpha(baseColor: string, opacity = 0.4) {
   return `${normalizeEditorColor(baseColor)}${Math.round(Math.max(0, Math.min(1, opacity)) * 255)
     .toString(16)
     .padStart(2, '0')}`;
+}
+
+function highlightOpacity(stroke: unknown) {
+  if (typeof stroke !== 'string') return 0.4;
+  const alpha = stroke.match(/^#[\da-f]{6}([\da-f]{2})$/i)?.[1];
+  return alpha ? Math.max(0.1, Math.min(0.8, parseInt(alpha, 16) / 255)) : 0.4;
 }
 
 function dashEnabled(value: unknown) {
@@ -79,6 +86,7 @@ export function readImageEditorObjectStyle(
     fill: typeof selected.fill === 'string' ? selected.fill : undefined,
     strokeWidth: selected.strokeWidth ?? 1,
     dash: dashEnabled(selected.strokeDashArray),
+    opacity: role === 'highlight' ? highlightOpacity(selected.stroke) : undefined,
   };
 }
 

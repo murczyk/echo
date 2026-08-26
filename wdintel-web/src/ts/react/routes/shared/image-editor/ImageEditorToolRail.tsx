@@ -51,6 +51,7 @@ type Props = {
   onFitViewport: () => void;
   onActualSize: () => void;
   onCenterViewport: () => void;
+  contextualControls?: ReactNode;
 };
 
 function DiagonalLineIcon() {
@@ -131,6 +132,7 @@ export function ImageEditorToolRail(props: Props) {
               {toolButton('conceal', 'Розмиття', <BlurOnIcon />)}
               {toolButton('magnifier', 'Лупа', <RemoveRedEyeIcon />)}
             </ToolGroup>
+            {props.contextualControls}
             <ToolGroup>
               <ImageEditorIconButton
                 label="Видалити вибране"

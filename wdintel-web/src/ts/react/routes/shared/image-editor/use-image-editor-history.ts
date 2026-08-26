@@ -1,22 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
+import {
+  captureImageEditorDocumentSnapshot,
+  type ImageEditorDocumentSnapshot,
+} from './image-editor-document-snapshot';
+
 const HISTORY_LIMIT = 30;
 const HISTORY_DELAY_MS = 150;
 
 type Canvas = import('fabric').Canvas;
-
-function withoutTransientCropUi(serialized: unknown) {
-  if (!serialized || typeof serialized !== 'object') return serialized;
-  const canvas = serialized as { objects?: unknown[] };
-  return {
-    ...canvas,
-    objects: canvas.objects?.filter((object) => {
-      if (!object || typeof object !== 'object') return true;
-      const role = (object as { editorRole?: unknown }).editorRole;
-      return role !== 'crop' && role !== 'crop-mask';
-    }),
-  };
-}
 
 export function useImageEditorHistory({
   canvasRef,
@@ -24,41 +16,34 @@ export function useImageEditorHistory({
   onRestoreError,
 }: {
   canvasRef: RefObject<Canvas | null>;
-  onRestored: (canvas: Canvas) => void | Promise<void>;
+  onRestored: (canvas: Canvas, snapshot: ImageEditorDocumentSnapshot) => void | Promise<void>;
   onRestoreError: (cause: unknown) => void;
 }) {
-  const snapshotsRef = useRef<string[]>([]);
+  const snapshotsRef = useRef<ImageEditorDocumentSnapshot[]>([]);
   const indexRef = useRef(-1);
-  const cleanSnapshotRef = useRef<string | null>(null);
+  const cleanSnapshotRef = useRef<ImageEditorDocumentSnapshot | null>(null);
   const restoringRef = useRef(false);
   const timerRef = useRef<number | null>(null);
-  const pendingSnapshotRef = useRef<string | null>(null);
+  const pendingSnapshotRef = useRef<ImageEditorDocumentSnapshot | null>(null);
   const [state, setState] = useState({ index: -1, length: 0 });
-  const [pendingSnapshot, setPendingSnapshot] = useState<string | null>(null);
+  const [pendingSnapshot, setPendingSnapshot] = useState<ImageEditorDocumentSnapshot | null>(null);
   const [hasEdits, setHasEdits] = useState(false);
 
   const snapshot = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || restoringRef.current) return null;
-    const serializableCanvas = canvas as unknown as {
-      set?: (properties: Record<string, unknown>) => void;
-      toJSON: (properties: string[]) => unknown;
-    };
-    serializableCanvas.set?.({
-      editorDocumentWidth: canvas.width,
-      editorDocumentHeight: canvas.height,
-    });
-    return JSON.stringify(
-      withoutTransientCropUi(
-        serializableCanvas.toJSON(['editorRole', 'editorDocumentWidth', 'editorDocumentHeight']),
-      ),
-    );
+    return captureImageEditorDocumentSnapshot(canvas);
   }, [canvasRef]);
 
-  const commitSnapshot = useCallback((nextSnapshot: string) => {
+  const matches = (
+    first: ImageEditorDocumentSnapshot | null,
+    second: ImageEditorDocumentSnapshot,
+  ) => first != null && JSON.stringify(first) === JSON.stringify(second);
+
+  const commitSnapshot = useCallback((nextSnapshot: ImageEditorDocumentSnapshot) => {
     if (cleanSnapshotRef.current == null) cleanSnapshotRef.current = nextSnapshot;
-    if (snapshotsRef.current[indexRef.current] === nextSnapshot) {
-      setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
+    if (matches(snapshotsRef.current[indexRef.current] ?? null, nextSnapshot)) {
+      setHasEdits(!matches(cleanSnapshotRef.current, nextSnapshot));
       return;
     }
     const snapshots = snapshotsRef.current.slice(0, indexRef.current + 1);
@@ -66,7 +51,7 @@ export function useImageEditorHistory({
     snapshotsRef.current = snapshots.slice(-HISTORY_LIMIT);
     indexRef.current = snapshotsRef.current.length - 1;
     setState({ index: indexRef.current, length: snapshotsRef.current.length });
-    setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
+    setHasEdits(!matches(cleanSnapshotRef.current, nextSnapshot));
   }, []);
 
   const cancelScheduledHistory = useCallback(() => {
@@ -103,15 +88,15 @@ export function useImageEditorHistory({
     const nextSnapshot = snapshot();
     if (nextSnapshot == null) return;
     const committedSnapshot = snapshotsRef.current[indexRef.current];
-    if (nextSnapshot === committedSnapshot) {
+    if (matches(committedSnapshot ?? null, nextSnapshot)) {
       pendingSnapshotRef.current = null;
       setPendingSnapshot(null);
-      setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
+      setHasEdits(!matches(cleanSnapshotRef.current, nextSnapshot));
       return;
     }
     pendingSnapshotRef.current = nextSnapshot;
     setPendingSnapshot(nextSnapshot);
-    setHasEdits(nextSnapshot !== cleanSnapshotRef.current);
+    setHasEdits(!matches(cleanSnapshotRef.current, nextSnapshot));
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
       const scheduledSnapshot = pendingSnapshotRef.current;
@@ -127,21 +112,13 @@ export function useImageEditorHistory({
       if (!canvas || nextIndex < 0 || nextIndex >= snapshotsRef.current.length) return;
       restoringRef.current = true;
       try {
-        const serializedSnapshot = snapshotsRef.current[nextIndex] ?? '{}';
-        const snapshot = JSON.parse(serializedSnapshot) as {
-          editorDocumentWidth?: number;
-          editorDocumentHeight?: number;
-        };
-        await canvas.loadFromJSON(serializedSnapshot);
-        if (snapshot.editorDocumentWidth && snapshot.editorDocumentHeight)
-          canvas.setDimensions({
-            width: snapshot.editorDocumentWidth,
-            height: snapshot.editorDocumentHeight,
-          });
+        const snapshot = snapshotsRef.current[nextIndex];
+        if (!snapshot) return;
+        await canvas.loadFromJSON(snapshot.serializedCanvas);
         indexRef.current = nextIndex;
         setState({ index: nextIndex, length: snapshotsRef.current.length });
-        setHasEdits(snapshotsRef.current[nextIndex] !== cleanSnapshotRef.current);
-        await onRestored(canvas);
+        setHasEdits(!matches(cleanSnapshotRef.current, snapshot));
+        await onRestored(canvas, snapshot);
         canvas.requestRenderAll();
       } catch (cause) {
         onRestoreError(cause);
@@ -169,21 +146,12 @@ export function useImageEditorHistory({
     if (!canvas || cleanSnapshot == null) return;
     restoringRef.current = true;
     try {
-      const snapshot = JSON.parse(cleanSnapshot) as {
-        editorDocumentWidth?: number;
-        editorDocumentHeight?: number;
-      };
-      await canvas.loadFromJSON(cleanSnapshot);
-      if (snapshot.editorDocumentWidth && snapshot.editorDocumentHeight)
-        canvas.setDimensions({
-          width: snapshot.editorDocumentWidth,
-          height: snapshot.editorDocumentHeight,
-        });
+      await canvas.loadFromJSON(cleanSnapshot.serializedCanvas);
       snapshotsRef.current = [cleanSnapshot];
       indexRef.current = 0;
       setState({ index: 0, length: 1 });
       setHasEdits(false);
-      await onRestored(canvas);
+      await onRestored(canvas, cleanSnapshot);
       canvas.requestRenderAll();
     } catch (cause) {
       onRestoreError(cause);

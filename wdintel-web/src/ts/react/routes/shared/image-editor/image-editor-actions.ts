@@ -1,5 +1,7 @@
 type FabricModule = typeof import('fabric');
 
+import { assignImageEditorTextareaContainer } from './image-editor-text';
+
 export function addTextAnnotation({
   canvas,
   fabric,
@@ -8,6 +10,7 @@ export function addTextAnnotation({
   bold,
   left,
   top,
+  hiddenTextareaContainer,
 }: {
   canvas: import('fabric').Canvas;
   fabric: FabricModule;
@@ -16,15 +19,19 @@ export function addTextAnnotation({
   bold: boolean;
   left: number;
   top: number;
+  hiddenTextareaContainer: HTMLElement | null;
 }) {
   const text = new fabric.IText('', {
     left,
     top,
+    originX: 'left',
+    originY: 'top',
     fill: stroke,
     fontSize,
     fontWeight: bold ? 'bold' : 'normal',
     editorRole: 'text',
   });
+  assignImageEditorTextareaContainer(text, hiddenTextareaContainer);
   canvas.add(text);
   return text;
 }

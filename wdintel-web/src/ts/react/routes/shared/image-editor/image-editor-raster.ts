@@ -188,6 +188,8 @@ export async function replaceConcealmentArea({
     mode === 'redact'
       ? new fabric.Rect({
           ...bounds,
+          originX: 'left',
+          originY: 'top',
           fill: '#1f2937',
           editorRole: 'concealment',
           selectable: false,
@@ -200,6 +202,8 @@ export async function replaceConcealmentArea({
         );
   replacement.set({
     ...bounds,
+    originX: 'left',
+    originY: 'top',
     editorRole: 'concealment',
     objectCaching: false,
     selectable: false,
@@ -210,10 +214,3 @@ export async function replaceConcealmentArea({
   canvas.requestRenderAll();
   return true;
 }
-
-export const replaceConcealmentDraft = async ({
-  draft,
-  ...args
-}: Omit<Parameters<typeof replaceConcealmentArea>[0], 'bounds'> & {
-  draft: import('fabric').FabricObject;
-}) => replaceConcealmentArea({ ...args, bounds: draft.getBoundingRect() });
