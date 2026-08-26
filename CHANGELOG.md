@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#2726](https://github.com/echoua/echo/issues/2726) 👷🚨 Дані: для `signal_message`, `sigint_inbox_item` та пов’язаних таблиць додано підготовку UUIDv7-ідентифікаторів із датою з `signal_message.timestamp`; після міграції обов’язково виконати `sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-signal-message-uuid` до переходу застосунку на UUID-посилання, а на інстансах із ClickHouse після завершення one-off виконати повний resync уражених дзеркал. Старі числові ідентифікатори тимчасово зберігаються.
 - [#2701](https://github.com/echoua/echo/issues/2701) ✅🛡️🚨👷 Автентифікація: вхід по логіну/паролю тепер вимагає налаштування другого фактору (застосунок-автентифікатор); TOTP-секрети шифруються окремим `totp_strongbox_key` у `config.toml` (згенерувати через `oneoff-generate-strongbox-key`, не перевикористовувати S3 `strongbox_key`); роль `No2FA` дозволяє пропустити 2FA; на інстансах із ClickHouse перед `m20260827_180023_add_login_totp_secret` виконати `just setup-analytics-reconcile-tables` (або `/opt/echo-peerdb/bin/source-sync-exclusions.sh --yes`), щоб виключити `public.login_totp`, а після міграції перевірити analytics health check і відсутність raw/gateway об'єктів для `login_totp`.
 - [#3357](https://github.com/echoua/echo/issues/3357) ✅ Оперативний, Аналіз: вимкнено відображення саммарі за замовчуванням.
 - [#3313](https://github.com/echoua/echo/issues/3313) ✅ Оперативний, Аналіз: додано можливість писати розвіддонесення з перегляду документів.
