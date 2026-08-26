@@ -184,6 +184,44 @@ pid_cwd() {
     fi
 }
 
+pid_parent() {
+    local pid="$1"
+
+    if [ -r "/proc/$pid/stat" ]; then
+        awk '{ print $4 }' "/proc/$pid/stat" 2>/dev/null || true
+        return 0
+    fi
+
+    ps -p "$pid" -o ppid= 2>/dev/null | tr -d '[:space:]'
+}
+
+is_orphaned_server_log_tail() {
+    local pid="$1"
+    local cmdline
+
+    pid_exists "$pid" || return 1
+    [ "$(pid_parent "$pid")" = "1" ] || return 1
+
+    cmdline="$(pid_cmdline "$pid")"
+    case " $cmdline " in
+        *" tail -n +1 -f ${server_logfile} "*)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
+stop_orphaned_server_log_tails() {
+    local pid
+
+    for pid in $(pgrep -f 'tail -n +1 -f' 2>/dev/null || true); do
+        if is_orphaned_server_log_tail "$pid"; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+}
+
 is_expected_process() {
     local pid="$1"
     local cwd cmdline
@@ -255,6 +293,7 @@ stop_existing_server() {
 
     stop_port_listener_fallback
     stop_orphaned_expected_processes
+    stop_orphaned_server_log_tails
 }
 
 server_is_ready() {
