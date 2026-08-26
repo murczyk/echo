@@ -55,20 +55,17 @@ function SelectObjectIcon() {
   return (
     <SvgIcon viewBox="0 0 24 24">
       <rect
-        x="3.25"
-        y="3.25"
-        width="12.5"
-        height="10.5"
+        x="3"
+        y="3"
+        width="13"
+        height="11"
         fill="none"
         stroke="currentColor"
-        strokeDasharray="2.1 2.1"
+        strokeDasharray="2 2"
         strokeLinecap="round"
-        strokeWidth="1.6"
+        strokeWidth="1.5"
       />
-      <path
-        d="m11.2 10.2 2.35 9.15 2.12-3.08 3.36 1.43.84-1.96-3.36-1.43 2.1-3.05z"
-        fill="currentColor"
-      />
+      <path d="m11 10 2.5 9 2.1-3 3.4 1.4.8-2-3.4-1.4 2-3z" fill="currentColor" />
     </SvgIcon>
   );
 }
@@ -90,22 +87,9 @@ function DiagonalLineIcon() {
 function HighlighterIcon() {
   return (
     <SvgIcon viewBox="0 0 24 24">
-      <path d="m7.1 3.8 9.1 9.1-4.3 4.3-9.1-9.1z" fill="currentColor" />
-      <path
-        d="m2.7 8.1 4.3-4.3 9.1 9.1-4.3 4.3z"
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.5"
-      />
-      <path d="m11.8 17.2 4.3-4.3 2.9 2.9-4.3 4.3H8.9z" fill="currentColor" />
-      <path
-        d="M5 21h14"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.6"
-      />
+      <path d="M7 3h7l4 4-8 8-4-4z" fill="currentColor" />
+      <path d="m6 14 4 4-5 2z" fill="currentColor" />
+      <path d="M5 21h14" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
     </SvgIcon>
   );
 }
@@ -113,13 +97,19 @@ function HighlighterIcon() {
 export function ImageEditorToolRail(props: Props) {
   const desktop = useMediaQuery('(min-width: 1280px)', { noSsr: true });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
-  const toolButton = (value: ImageEditorTool, label: string, icon: ReactNode) => (
+  const toolButton = (
+    value: ImageEditorTool,
+    label: string,
+    icon: ReactNode,
+    iconSize?: number,
+  ) => (
     <ImageEditorIconButton
       label={label}
       icon={icon}
       onClick={() => props.onToolChange(value)}
       disabled={props.disabled}
       active={props.tool === value}
+      iconSize={iconSize}
     />
   );
   const selectTool = (value: ImageEditorTool) => {
@@ -152,7 +142,7 @@ export function ImageEditorToolRail(props: Props) {
           <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
             <ToolGroup>
               {toolButton('select', 'Вибрати об’єкт', <SelectObjectIcon />)}
-              {toolButton('pan', 'Перемістити полотно', <PanToolIcon />)}
+              {toolButton('pan', 'Перемістити полотно', <PanToolIcon />, 20)}
               {toolButton('crop', 'Обрізати', <CropIcon />)}
             </ToolGroup>
             <ToolGroup>
@@ -212,7 +202,7 @@ export function ImageEditorToolRail(props: Props) {
         <>
           <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
             {toolButton('select', 'Вибрати об’єкт', <SelectObjectIcon />)}
-            {toolButton('pan', 'Перемістити полотно', <PanToolIcon />)}
+            {toolButton('pan', 'Перемістити полотно', <PanToolIcon />, 20)}
             {toolButton('text', 'Текст', <TextFieldsIcon />)}
             {toolButton('conceal', 'Розмиття', <BlurOnIcon />)}
             {toolButton('magnifier', 'Лупа', <RemoveRedEyeIcon />)}

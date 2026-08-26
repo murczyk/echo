@@ -11,12 +11,16 @@ import { restoreImageEditorCanvasReferences } from './image-editor-canvas-refere
 import { applyImageEditorInteractionMode } from './image-editor-interaction-mode';
 import {
   addMagnifier as createMagnifier,
+  magnifierGeometry,
+  refreshMagnifier,
+  refreshMagnifiers,
   replaceConcealmentDraft as createConcealmentReplacement,
 } from './image-editor-raster';
 import { useImageEditorCanvas } from './use-image-editor-canvas';
 import { useImageEditorHistory } from './use-image-editor-history';
 import { useImageEditorSelectionStyle } from './use-image-editor-selection-style';
 import { useImageEditorSelection } from './use-image-editor-selection';
+import { useImageEditorRasterQueue } from './use-image-editor-raster-queue';
 import { useImageEditorViewport } from './use-image-editor-viewport';
 import type {
   ConcealMode,
@@ -42,6 +46,7 @@ export function ImageEditor({
   const canvasRef = useRef<import('fabric').Canvas | null>(null);
   const sourceRef = useRef<import('fabric').FabricImage | null>(null);
   const cropRef = useRef<import('fabric').Rect | null>(null);
+  const cancelGestureRef = useRef<() => void>(() => {});
   const [tool, setTool] = useState<ImageEditorTool>('select');
   const [stroke, setStroke] = useState('#ef4444');
   const [fill, setFill] = useState('transparent');
@@ -49,6 +54,7 @@ export function ImageEditor({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
+  const applyingRef = useRef(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const [dash, setDash] = useState(false);
   const [concealMode, setConcealMode] = useState<ConcealMode>('blur');
@@ -59,11 +65,19 @@ export function ImageEditor({
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
   const toolRef = useRef(tool);
+  const {
+    enqueue: enqueueRaster,
+    flush: flushRaster,
+    isBusy,
+    pending: rasterPending,
+  } = useImageEditorRasterQueue();
+  const isInteractionLocked = useCallback(() => applyingRef.current || isBusy(), [isBusy]);
   useEffect(() => {
     toolRef.current = tool;
   }, [tool]);
   const changeTool = useCallback(
     (nextTool: ImageEditorTool) => {
+      if (isInteractionLocked()) return;
       const canvas = canvasRef.current;
       toolRef.current = nextTool;
       if (canvas)
@@ -76,7 +90,7 @@ export function ImageEditor({
         });
       setTool(nextTool);
     },
-    [stroke, strokeWidth],
+    [isInteractionLocked, stroke, strokeWidth],
   );
   const {
     actualSize,
@@ -103,7 +117,7 @@ export function ImageEditor({
     undo,
   } = useImageEditorHistory({
     canvasRef,
-    onRestored: (canvas) => {
+    onRestored: async (canvas) => {
       restoreImageEditorCanvasReferences({ canvas, sourceRef, cropRef });
       applyImageEditorInteractionMode({
         canvas,
@@ -112,10 +126,35 @@ export function ImageEditor({
         stroke,
         strokeWidth,
       });
+      if (sourceRef.current) await refreshMagnifiers({ canvas, sourceImage: sourceRef.current });
     },
     onRestoreError: (cause) =>
       setError(cause instanceof Error ? cause.message : 'Не вдалося відновити зміни'),
   });
+
+  const handleMagnifierModified = useCallback(
+    (magnifier: import('fabric').FabricObject) => {
+      if (isInteractionLocked()) return;
+      const canvas = canvasRef.current;
+      const sourceImage = sourceRef.current;
+      if (!canvas || !sourceImage) return;
+      enqueueRaster(() => refreshMagnifier({ canvas, magnifier, sourceImage }))
+        .then(saveHistory)
+        .catch((cause) =>
+          setError(cause instanceof Error ? cause.message : 'Не вдалося оновити лупу'),
+        );
+    },
+    [enqueueRaster, isInteractionLocked, saveHistory],
+  );
+  const queuedUndo = useCallback(() => {
+    if (!isInteractionLocked()) void enqueueRaster(undo);
+  }, [enqueueRaster, isInteractionLocked, undo]);
+  const queuedRedo = useCallback(() => {
+    if (!isInteractionLocked()) void enqueueRaster(redo);
+  }, [enqueueRaster, isInteractionLocked, redo]);
+  const queuedReset = useCallback(() => {
+    if (!isInteractionLocked()) void enqueueRaster(resetEdits);
+  }, [enqueueRaster, isInteractionLocked, resetEdits]);
 
   useImageEditorCanvas({
     source,
@@ -130,6 +169,7 @@ export function ImageEditor({
     setLoading,
     setError,
     toolRef,
+    onMagnifierModified: handleMagnifierModified,
   });
 
   const replaceConcealmentDraft = useCallback(
@@ -138,18 +178,22 @@ export function ImageEditor({
       const sourceImage = sourceRef.current;
       const fabric = fabricRef.current;
       if (!canvas || !sourceImage || !fabric) return;
-      if (
-        await createConcealmentReplacement({
+      const created = await enqueueRaster(async () => {
+        const changed = await createConcealmentReplacement({
           canvas,
           sourceImage,
           fabric,
           draft,
           mode: concealMode,
-        })
-      )
+        });
+        if (changed) await refreshMagnifiers({ canvas, sourceImage });
+        return changed;
+      });
+      if (created) {
         saveHistory();
+      }
     },
-    [concealMode, saveHistory],
+    [concealMode, enqueueRaster, saveHistory],
   );
 
   useImageEditorSelectionStyle({
@@ -178,14 +222,54 @@ export function ImageEditor({
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (rasterPending || applying) {
+      cancelGestureRef.current();
+      canvas.selection = false;
+      canvas.skipTargetFind = true;
+      canvas.isDrawingMode = false;
+      canvas.discardActiveObject();
+      canvas.getObjects().forEach((object) => object.set({ selectable: false, evented: false }));
+      canvas.requestRenderAll();
+      return;
+    }
+    applyImageEditorInteractionMode({
+      canvas,
+      tool: toolRef.current,
+      fabric: fabricRef.current,
+      stroke,
+      strokeWidth,
+    });
+  }, [applying, rasterPending, stroke, strokeWidth]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     if (!canvas || !fabric) return;
     let start: { x: number; y: number } | null = null;
     let drawing: import('fabric').FabricObject | null = null;
     let magnifierPoint: { x: number; y: number } | null = null;
     let magnifierPreview: import('fabric').Circle | null = null;
+    const clearGesture = () => {
+      let removed = false;
+      if (drawing) {
+        canvas.remove(drawing);
+        if (cropRef.current === drawing) cropRef.current = null;
+        removed = true;
+      }
+      if (magnifierPreview) {
+        canvas.remove(magnifierPreview);
+        removed = true;
+      }
+      start = null;
+      drawing = null;
+      magnifierPoint = null;
+      magnifierPreview = null;
+      if (removed) canvas.requestRenderAll();
+    };
+    cancelGestureRef.current = clearGesture;
     const begin = (event: { scenePoint: { x: number; y: number } }) => {
-      if (toolRef.current !== tool) return;
+      if (isInteractionLocked() || toolRef.current !== tool) return;
       if (tool === 'text') {
         addTextAnnotation({
           canvas,
@@ -207,7 +291,7 @@ export function ImageEditor({
           top: start.y,
           radius: 0,
           fill: 'transparent',
-          stroke: 'currentColor',
+          stroke: getComputedStyle(canvas.upperCanvasEl ?? document.documentElement).color,
           strokeDashArray: [4, 4],
           selectable: false,
           evented: false,
@@ -224,7 +308,7 @@ export function ImageEditor({
         stroke,
         strokeWidth,
         fill,
-        editorRole: tool === 'conceal' ? 'concealment' : tool,
+        editorRole: tool === 'conceal' ? 'concealment-draft' : tool,
         strokeDashArray: dash && tool !== 'crop' ? [strokeWidth * 2, strokeWidth * 2] : undefined,
         selectable: false,
         evented: false,
@@ -253,17 +337,26 @@ export function ImageEditor({
       if (tool === 'crop') cropRef.current = drawing as import('fabric').Rect;
     };
     const move = (event: { scenePoint: { x: number; y: number }; e?: { shiftKey?: boolean } }) => {
+      if (isInteractionLocked()) {
+        clearGesture();
+        return;
+      }
       if (start && tool === 'magnifier') {
         magnifierPoint = event.scenePoint;
-        const diameter = Math.max(
-          Math.abs(event.scenePoint.x - start.x),
-          Math.abs(event.scenePoint.y - start.y),
-        );
-        magnifierPreview?.set({
-          left: Math.min(start.x, event.scenePoint.x),
-          top: Math.min(start.y, event.scenePoint.y),
-          radius: diameter / 2,
-        });
+        const sourceImage = sourceRef.current;
+        const geometry = sourceImage
+          ? magnifierGeometry({
+              start,
+              end: event.scenePoint,
+              size: { width: sourceImage.width ?? 0, height: sourceImage.height ?? 0 },
+            })
+          : null;
+        if (geometry)
+          magnifierPreview?.set({
+            left: geometry.left,
+            top: geometry.top,
+            radius: geometry.diameter / 2,
+          });
         canvas.requestRenderAll();
         return;
       }
@@ -283,6 +376,10 @@ export function ImageEditor({
       canvas.requestRenderAll();
     };
     const end = () => {
+      if (isInteractionLocked()) {
+        clearGesture();
+        return;
+      }
       if (drawing instanceof fabric.Line && tool === 'arrow') {
         const x1 = drawing.x1 ?? 0;
         const y1 = drawing.y1 ?? 0;
@@ -313,7 +410,7 @@ export function ImageEditor({
         canvas.add(arrow);
         saveHistory();
       } else if (drawing && tool === 'conceal') {
-        void replaceConcealmentDraft(drawing).catch((cause) => {
+        replaceConcealmentDraft(drawing).catch((cause) => {
           setError(cause instanceof Error ? cause.message : 'Не вдалося застосувати розмиття');
         });
       } else if (drawing) {
@@ -322,25 +419,25 @@ export function ImageEditor({
       }
       if (magnifierPreview) canvas.remove(magnifierPreview);
       if (!drawing && start && tool === 'magnifier' && sourceRef.current && magnifierPoint) {
-        void createMagnifier({
-          canvas,
-          sourceImage: sourceRef.current!,
-          fabric,
-          magnification,
-          bounds: {
-            left: Math.min(start.x, magnifierPoint.x),
-            top: Math.min(start.y, magnifierPoint.y),
-            width: Math.max(
-              Math.abs(magnifierPoint.x - start.x),
-              Math.abs(magnifierPoint.y - start.y),
-            ),
-            height: Math.max(
-              Math.abs(magnifierPoint.x - start.x),
-              Math.abs(magnifierPoint.y - start.y),
-            ),
-          },
-        })
-          .then(() => saveHistory())
+        const magnifierStart = start;
+        const magnifierEnd = magnifierPoint;
+        enqueueRaster(() =>
+          createMagnifier({
+            canvas,
+            sourceImage: sourceRef.current!,
+            fabric,
+            magnification,
+            bounds: {
+              left: magnifierStart.x,
+              top: magnifierStart.y,
+              width: magnifierEnd.x - magnifierStart.x,
+              height: magnifierEnd.y - magnifierStart.y,
+            },
+          }),
+        )
+          .then((created) => {
+            if (created) saveHistory();
+          })
           .catch((cause) =>
             setError(cause instanceof Error ? cause.message : 'Не вдалося створити лупу'),
           );
@@ -354,6 +451,8 @@ export function ImageEditor({
     canvas.on('mouse:move', move);
     canvas.on('mouse:up', end);
     return () => {
+      clearGesture();
+      cancelGestureRef.current = () => {};
       canvas.off('mouse:down', begin);
       canvas.off('mouse:move', move);
       canvas.off('mouse:up', end);
@@ -371,6 +470,7 @@ export function ImageEditor({
     fontSize,
     bold,
     magnification,
+    isInteractionLocked,
   ]);
 
   useImageEditorSelection({
@@ -387,20 +487,23 @@ export function ImageEditor({
     onSelectionChange: setSelection,
   });
 
-  const deleteSelected = () => {
+  const deleteSelected = useCallback(() => {
+    if (isInteractionLocked()) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     deleteSelectedAnnotations(canvas);
     saveHistory();
-  };
+  }, [isInteractionLocked, saveHistory]);
   const apply = async () => {
     const canvas = canvasRef.current;
     const sourceImage = sourceRef.current;
-    if (!canvas || !sourceImage || applying) return;
+    if (!canvas || !sourceImage || isInteractionLocked()) return;
     flushScheduledHistory();
+    applyingRef.current = true;
     setApplying(true);
     setError(null);
     try {
+      await flushRaster();
       const file = await exportEditedImage({
         canvas,
         source,
@@ -410,13 +513,15 @@ export function ImageEditor({
       await onApply({ file });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не вдалося застосувати зміни');
+      applyingRef.current = false;
       setApplying(false);
     }
   };
-  const requestCancel = () => {
+  const requestCancel = useCallback(() => {
+    if (isInteractionLocked()) return;
     if (hasEdits) setConfirmCancel(true);
     else onCancel();
-  };
+  }, [hasEdits, isInteractionLocked, onCancel]);
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -424,7 +529,7 @@ export function ImageEditor({
       const typing =
         target?.matches('input, textarea, select, [contenteditable="true"]') ||
         active?.isEditing === true;
-      if (typing) return;
+      if (typing || isInteractionLocked()) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         if (cropRef.current && tool === 'crop') {
@@ -443,17 +548,26 @@ export function ImageEditor({
       }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
         event.preventDefault();
-        void (event.shiftKey ? redo() : undo());
+        event.shiftKey ? queuedRedo() : queuedUndo();
       }
       if (event.key === 'y' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
-        void redo();
+        queuedRedo();
       } else if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
         deleteSelected();
       }
     },
-    [changeTool, deleteSelected, redo, requestCancel, saveHistory, tool, undo],
+    [
+      changeTool,
+      deleteSelected,
+      isInteractionLocked,
+      queuedRedo,
+      queuedUndo,
+      requestCancel,
+      saveHistory,
+      tool,
+    ],
   );
 
   useEffect(() => {
@@ -463,7 +577,7 @@ export function ImageEditor({
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Редактор зображення">
       <ImageEditorToolbar
-        disabled={!canvasReady || loading || applying}
+        disabled={!canvasReady || loading || applying || rasterPending}
         tool={tool}
         onToolChange={changeTool}
         stroke={stroke}
@@ -492,9 +606,9 @@ export function ImageEditor({
         onFitViewport={fitViewport}
         onActualSize={actualSize}
         onCenterViewport={centerViewport}
-        onUndo={() => void undo()}
-        onRedo={() => void redo()}
-        onResetEdits={() => void resetEdits()}
+        onUndo={queuedUndo}
+        onRedo={queuedRedo}
+        onResetEdits={queuedReset}
       />
       {error ? (
         <Alert severity="error" className="m-2">
@@ -511,12 +625,14 @@ export function ImageEditor({
         view={view}
         ready={viewportReady}
         loading={loading}
+        busy={rasterPending || applying}
         onPan={panBy}
         onZoom={zoomAtPoint}
       />
       <ImageEditorFooter
         applying={applying}
-        ready={canvasReady && !loading}
+        disabled={applying || rasterPending}
+        ready={canvasReady && !loading && !rasterPending}
         onCancel={requestCancel}
         onApply={() => void apply()}
       />

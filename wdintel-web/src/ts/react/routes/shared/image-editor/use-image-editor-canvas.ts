@@ -1,7 +1,6 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 
 import { setImageEditorBackground } from './image-editor-canvas-references';
-import { refreshMagnifier } from './image-editor-raster';
 import type { ImageEditorSource, ImageEditorTool } from './image-editor.types';
 
 const MAX_PIXELS = 24_000_000;
@@ -36,6 +35,7 @@ export function useImageEditorCanvas({
   setLoading,
   setError,
   toolRef,
+  onMagnifierModified,
 }: {
   source: ImageEditorSource;
   canvasElementRef: RefObject<HTMLCanvasElement | null>;
@@ -49,6 +49,7 @@ export function useImageEditorCanvas({
   setLoading: (loading: boolean) => void;
   setError: (error: string) => void;
   toolRef: MutableRefObject<ImageEditorTool>;
+  onMagnifierModified: (magnifier: import('fabric').FabricObject) => void;
 }) {
   useEffect(() => {
     let disposed = false;
@@ -103,15 +104,7 @@ export function useImageEditorCanvas({
                 ),
               ),
             });
-            void refreshMagnifier({
-              canvas,
-              magnifier: event.target,
-              sourceImage: sourceRef.current,
-            })
-              .then(saveHistory)
-              .catch((cause) =>
-                setError(cause instanceof Error ? cause.message : 'Не вдалося оновити лупу'),
-              );
+            onMagnifierModified(event.target);
             return;
           }
           saveHistory();
@@ -161,5 +154,6 @@ export function useImageEditorCanvas({
     setLoading,
     source,
     sourceRef,
+    onMagnifierModified,
   ]);
 }

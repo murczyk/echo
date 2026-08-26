@@ -103,7 +103,7 @@ export function ImageEditorToolbar(props: Props) {
       {shouldRenderContextualRow(props.tool, props.selection, context) ? (
         <div
           data-image-editor-contextual-row
-          className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto border-b border-echo-border px-2 py-1"
+          className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto overflow-y-hidden border-b border-echo-border px-2"
         >
           {showText ? (
             <>
@@ -132,6 +132,7 @@ export function ImageEditorToolbar(props: Props) {
                 onClick={props.onBoldChange}
                 disabled={props.disabled}
                 active={props.bold}
+                compact
               />
             </>
           ) : null}

@@ -1,8 +1,10 @@
 import type { ConcealMode } from './image-editor.types';
 
 type FabricModule = typeof import('fabric');
+type RasterSource = { element: CanvasImageSource; width: number; height: number };
 
 const MIN_MAGNIFIER_DIAMETER = 32;
+const MIN_MAGNIFIER_DRAG = 5;
 
 function nativeBounds({
   sourceImage,
@@ -26,11 +28,50 @@ function sourceElement(sourceImage: import('fabric').FabricImage) {
   return element;
 }
 
-async function blurredPatch({
+function rasterSource(sourceImage: import('fabric').FabricImage): RasterSource {
+  return {
+    element: sourceElement(sourceImage),
+    width: sourceImage.width ?? 0,
+    height: sourceImage.height ?? 0,
+  };
+}
+
+export function buildSafeRaster({
+  canvas,
   sourceImage,
+}: {
+  canvas: import('fabric').Canvas;
+  sourceImage: import('fabric').FabricImage;
+}) {
+  const source = rasterSource(sourceImage);
+  const safe = document.createElement('canvas');
+  safe.width = source.width;
+  safe.height = source.height;
+  const context = safe.getContext('2d');
+  if (!context) throw new Error('Не вдалося підготувати безпечне зображення');
+  context.drawImage(source.element, 0, 0, source.width, source.height);
+  canvas.getObjects().forEach((object) => {
+    if (object.get('editorRole') !== 'concealment') return;
+    const left = object.left ?? 0;
+    const top = object.top ?? 0;
+    const width = (object.width ?? 0) * (object.scaleX ?? 1);
+    const height = (object.height ?? 0) * (object.scaleY ?? 1);
+    if (object.type === 'rect' || object.type === 'Rect') {
+      context.fillStyle = typeof object.fill === 'string' ? object.fill : '#1f2937';
+      context.fillRect(left, top, width, height);
+      return;
+    }
+    const element = (object as import('fabric').FabricImage).getElement?.();
+    if (element) context.drawImage(element, left, top, width, height);
+  });
+  return { element: safe, width: safe.width, height: safe.height } satisfies RasterSource;
+}
+
+async function blurredPatch({
+  source,
   bounds,
 }: {
-  sourceImage: import('fabric').FabricImage;
+  source: RasterSource;
   bounds: { left: number; top: number; width: number; height: number };
 }) {
   const patch = document.createElement('canvas');
@@ -38,10 +79,9 @@ async function blurredPatch({
   patch.height = bounds.height;
   const context = patch.getContext('2d');
   if (!context) throw new Error('Не вдалося розмити виділену область');
-  const element = sourceElement(sourceImage);
   const bleed = 16;
-  const imageWidth = sourceImage.width ?? 0;
-  const imageHeight = sourceImage.height ?? 0;
+  const imageWidth = source.width;
+  const imageHeight = source.height;
   const expandedLeft = Math.max(0, bounds.left - bleed);
   const expandedTop = Math.max(0, bounds.top - bleed);
   const expandedRight = Math.min(imageWidth, bounds.left + bounds.width + bleed);
@@ -55,7 +95,7 @@ async function blurredPatch({
   if (!expandedContext) throw new Error('Не вдалося розмити виділену область');
   expandedContext.filter = 'blur(18px)';
   expandedContext.drawImage(
-    element,
+    source.element,
     expandedLeft,
     expandedTop,
     expandedWidth,
@@ -80,10 +120,10 @@ async function blurredPatch({
 }
 
 async function pixelatedPatch({
-  sourceImage,
+  source,
   bounds,
 }: {
-  sourceImage: import('fabric').FabricImage;
+  source: RasterSource;
   bounds: { left: number; top: number; width: number; height: number };
 }) {
   const patch = document.createElement('canvas');
@@ -97,7 +137,7 @@ async function pixelatedPatch({
   const reducedContext = reduced.getContext('2d');
   if (!reducedContext) throw new Error('Не вдалося пікселізувати виділену область');
   reducedContext.drawImage(
-    sourceElement(sourceImage),
+    source.element,
     bounds.left,
     bounds.top,
     bounds.width,
@@ -137,6 +177,7 @@ export async function replaceConcealmentDraft({
 }) {
   const bounds = nativeBounds({ sourceImage, bounds: draft.getBoundingRect() });
   canvas.remove(draft);
+  const safe = buildSafeRaster({ canvas, sourceImage });
   if (bounds.width < 3 || bounds.height < 3) {
     canvas.requestRenderAll();
     return false;
@@ -153,8 +194,8 @@ export async function replaceConcealmentDraft({
       : await fabric.FabricImage.fromURL(
           (
             await (mode === 'blur'
-              ? blurredPatch({ sourceImage, bounds })
-              : pixelatedPatch({ sourceImage, bounds }))
+              ? blurredPatch({ source: safe, bounds })
+              : pixelatedPatch({ source: safe, bounds }))
           ).toDataURL('image/png'),
         );
   replacement.set({
@@ -171,19 +212,19 @@ export async function replaceConcealmentDraft({
 }
 
 function magnifierSample({
-  sourceImage,
+  source,
   magnification,
   center,
   diameter,
 }: {
-  sourceImage: import('fabric').FabricImage;
+  source: RasterSource;
   magnification: number;
   center: { x: number; y: number };
   diameter: number;
 }) {
   const sampleSize = Math.max(1, Math.round(diameter / magnification));
-  const imageWidth = sourceImage.width ?? 0;
-  const imageHeight = sourceImage.height ?? 0;
+  const imageWidth = source.width;
+  const imageHeight = source.height;
   const sampleLeft = Math.max(
     0,
     Math.min(imageWidth - sampleSize, Math.round(center.x - sampleSize / 2)),
@@ -201,7 +242,7 @@ function magnifierSample({
   context.arc(diameter / 2, diameter / 2, diameter / 2, 0, Math.PI * 2);
   context.clip();
   context.drawImage(
-    sourceElement(sourceImage),
+    source.element,
     sampleLeft,
     sampleTop,
     sampleSize,
@@ -228,16 +269,33 @@ function constrainedMagnifierBounds({
   sourceImage: import('fabric').FabricImage;
   bounds: { left: number; top: number; width: number; height: number };
 }) {
-  const maximum = Math.min(sourceImage.width ?? 0, sourceImage.height ?? 0);
-  const diameter = Math.min(
-    maximum,
-    Math.max(MIN_MAGNIFIER_DIAMETER, Math.max(bounds.width, bounds.height)),
-  );
+  return magnifierGeometry({
+    start: { x: bounds.left, y: bounds.top },
+    end: { x: bounds.left + bounds.width, y: bounds.top + bounds.height },
+    size: { width: sourceImage.width ?? 0, height: sourceImage.height ?? 0 },
+  });
+}
+
+export function magnifierGeometry({
+  start,
+  end,
+  size,
+}: {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  size: { width: number; height: number };
+}) {
+  const rawWidth = Math.abs(end.x - start.x);
+  const rawHeight = Math.abs(end.y - start.y);
+  if (Math.max(rawWidth, rawHeight) < MIN_MAGNIFIER_DRAG) return null;
+  const maximum = Math.min(size.width, size.height);
+  const diameter = Math.min(maximum, Math.max(MIN_MAGNIFIER_DIAMETER, rawWidth, rawHeight));
   if (diameter < MIN_MAGNIFIER_DIAMETER) return null;
+  const center = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
   return {
     diameter,
-    left: Math.max(0, Math.min((sourceImage.width ?? 0) - diameter, bounds.left)),
-    top: Math.max(0, Math.min((sourceImage.height ?? 0) - diameter, bounds.top)),
+    left: Math.max(0, Math.min(size.width - diameter, center.x - diameter / 2)),
+    top: Math.max(0, Math.min(size.height - diameter, center.y - diameter / 2)),
   };
 }
 
@@ -261,7 +319,12 @@ export async function addMagnifier({
     y: geometry.top + geometry.diameter / 2,
   };
   const image = await fabric.FabricImage.fromURL(
-    magnifierSample({ sourceImage, magnification, center, diameter: geometry.diameter }),
+    magnifierSample({
+      source: buildSafeRaster({ canvas, sourceImage }),
+      magnification,
+      center,
+      diameter: geometry.diameter,
+    }),
   );
   image.set({ left: 0, top: 0, selectable: false, evented: false, editorRole: 'magnifier-image' });
   const border = new fabric.Circle({
@@ -299,10 +362,12 @@ export async function refreshMagnifier({
   canvas,
   magnifier,
   sourceImage,
+  source,
 }: {
   canvas: import('fabric').Canvas;
   magnifier: import('fabric').FabricObject;
   sourceImage: import('fabric').FabricImage;
+  source?: RasterSource;
 }) {
   const image = (magnifier as import('fabric').Group)
     .getObjects()
@@ -316,7 +381,7 @@ export async function refreshMagnifier({
   magnifier.set('magnifierSourceCenter' as never, center as never);
   await image.setSrc(
     magnifierSample({
-      sourceImage,
+      source: source ?? buildSafeRaster({ canvas, sourceImage }),
       magnification: typeof magnification === 'number' ? magnification : 2,
       center,
       diameter: magnifierDiameter,
@@ -325,4 +390,18 @@ export async function refreshMagnifier({
   magnifier.set({ dirty: true });
   magnifier.setCoords();
   canvas.requestRenderAll();
+}
+
+export async function refreshMagnifiers({
+  canvas,
+  sourceImage,
+}: {
+  canvas: import('fabric').Canvas;
+  sourceImage: import('fabric').FabricImage;
+}) {
+  const source = buildSafeRaster({ canvas, sourceImage });
+  for (const magnifier of canvas.getObjects()) {
+    if (magnifier.get('editorRole') === 'magnifier')
+      await refreshMagnifier({ canvas, magnifier, sourceImage, source });
+  }
 }

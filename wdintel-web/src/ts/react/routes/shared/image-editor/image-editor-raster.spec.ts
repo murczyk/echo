@@ -125,9 +125,9 @@ describe('image editor raster operations #3099', () => {
       mode: 'blur',
     });
 
-    expect(created).toHaveLength(2);
+    expect(created).toHaveLength(3);
     expect(drawImage).toHaveBeenCalledWith(
-      expect.any(HTMLImageElement),
+      expect.any(HTMLCanvasElement),
       4,
       0,
       62,

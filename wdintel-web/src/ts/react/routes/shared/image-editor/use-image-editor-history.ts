@@ -11,7 +11,7 @@ export function useImageEditorHistory({
   onRestoreError,
 }: {
   canvasRef: RefObject<Canvas | null>;
-  onRestored: (canvas: Canvas) => void;
+  onRestored: (canvas: Canvas) => void | Promise<void>;
   onRestoreError: (cause: unknown) => void;
 }) {
   const snapshotsRef = useRef<string[]>([]);
@@ -113,7 +113,7 @@ export function useImageEditorHistory({
         indexRef.current = nextIndex;
         setState({ index: nextIndex, length: snapshotsRef.current.length });
         setHasEdits(snapshotsRef.current[nextIndex] !== cleanSnapshotRef.current);
-        onRestored(canvas);
+        await onRestored(canvas);
         canvas.requestRenderAll();
       } catch (cause) {
         onRestoreError(cause);
@@ -146,7 +146,7 @@ export function useImageEditorHistory({
       indexRef.current = 0;
       setState({ index: 0, length: 1 });
       setHasEdits(false);
-      onRestored(canvas);
+      await onRestored(canvas);
       canvas.requestRenderAll();
     } catch (cause) {
       onRestoreError(cause);

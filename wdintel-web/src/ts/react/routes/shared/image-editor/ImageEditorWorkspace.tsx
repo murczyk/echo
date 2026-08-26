@@ -11,6 +11,7 @@ export function ImageEditorWorkspace({
   view,
   ready,
   loading,
+  busy,
   onPan,
   onZoom,
 }: {
@@ -20,6 +21,7 @@ export function ImageEditorWorkspace({
   view: EditorViewState;
   ready: boolean;
   loading: boolean;
+  busy: boolean;
   onPan: (delta: { x: number; y: number }) => void;
   onZoom: (point: { x: number; y: number }, scale: number) => void;
 }) {
@@ -44,8 +46,12 @@ export function ImageEditorWorkspace({
       window.removeEventListener('keyup', up);
     };
   }, []);
+  useEffect(() => {
+    if (busy) dragRef.current = null;
+  }, [busy]);
 
   const beginPan = (event: PointerEvent<HTMLDivElement>) => {
+    if (busy) return;
     if (tool !== 'pan' && !spaceDownRef.current && event.button !== 1) return;
     event.preventDefault();
     event.stopPropagation();
@@ -53,6 +59,10 @@ export function ImageEditorWorkspace({
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const movePan = (event: PointerEvent<HTMLDivElement>) => {
+    if (busy) {
+      dragRef.current = null;
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
@@ -71,12 +81,14 @@ export function ImageEditorWorkspace({
     <div
       ref={workspaceRef as RefObject<HTMLDivElement>}
       data-image-editor-workspace
+      aria-busy={busy}
       className="relative min-h-0 flex-1 overflow-hidden bg-echo-surface touch-none"
       onPointerDownCapture={beginPan}
       onPointerMoveCapture={movePan}
       onPointerUpCapture={endPan}
       onPointerCancelCapture={endPan}
       onWheelCapture={(event) => {
+        if (busy) return;
         event.preventDefault();
         event.stopPropagation();
         const rect = event.currentTarget.getBoundingClientRect();
