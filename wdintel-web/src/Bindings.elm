@@ -11707,6 +11707,7 @@ type alias SystemSettingsCurrentRsp =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , showPelengDistanceToBattleline : Bool
     , hideOrbitData : Bool
     }
 
@@ -11740,6 +11741,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "hide_orbit_data", (Json.Encode.bool) struct.hideOrbitData )
         ]
 
@@ -11776,6 +11778,7 @@ type alias SystemSettingsItem =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , showPelengDistanceToBattleline : Bool
     }
 
 
@@ -11813,6 +11816,7 @@ systemSettingsItemEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         ]
 
 
@@ -11855,6 +11859,7 @@ type alias CreateSystemSettingsReq =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , showPelengDistanceToBattleline : Bool
     }
 
 
@@ -11887,6 +11892,7 @@ createSystemSettingsReqEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         ]
 
 
@@ -21526,6 +21532,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_orbit_data" (Json.Decode.bool)))
 
 
@@ -21563,6 +21570,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -21600,6 +21608,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq

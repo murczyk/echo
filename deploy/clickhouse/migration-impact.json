@@ -6,6 +6,10 @@
           "table": "public.sigint_peleng",
           "strategy": "replicated_snapshot",
           "targeted_resnapshot": true
+        },
+        {
+          "table": "public.system_settings",
+          "strategy": "cdc_backfill"
         }
       ]
     },

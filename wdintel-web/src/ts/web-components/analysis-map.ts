@@ -66,6 +66,7 @@ class AnalysisMap extends HTMLElement {
     'search',
     'palitras-load-state',
     'overlay-controls-collapsed',
+    'show-peleng-distance-to-battleline',
   ];
 
   private _map: L.Map | null = null;
@@ -82,6 +83,7 @@ class AnalysisMap extends HTMLElement {
   private _showSettlements = false;
   private _messages: Message[] = [];
   private _battleLineDistances = new Map<number, number>();
+  private _showPelengDistanceToBattleline = false;
   private _networkUnits: NetworkUnit[] = [];
 
   private _markersGroup: Leaflet.MarkerClusterGroup | null = null;
@@ -321,6 +323,9 @@ class AnalysisMap extends HTMLElement {
         break;
       case 'overlay-controls-collapsed':
         this._handleOverlayControlsCollapsedAttributeChanged(newValue);
+        break;
+      case 'show-peleng-distance-to-battleline':
+        this._showPelengDistanceToBattleline = this._parseBooleanAttribute(newValue);
         break;
       default:
         break;
@@ -1127,7 +1132,9 @@ class AnalysisMap extends HTMLElement {
       hasMoreMessages: this._clickedSettlementId !== null && this._settlementMessagesHasMore,
       onLoadMoreMessages: () => this._loadMoreSettlementMessages(),
       contextTitle: this._clickedSettlementLabel ?? undefined,
-      battleLineDistances: this._battleLineDistances,
+      battleLineDistances: this._showPelengDistanceToBattleline
+        ? this._battleLineDistances
+        : undefined,
       setClickedState: (clickedPoint, clickedLatLng) => {
         this._clickedPoint = clickedPoint;
         this._clickedLatLng = clickedLatLng;

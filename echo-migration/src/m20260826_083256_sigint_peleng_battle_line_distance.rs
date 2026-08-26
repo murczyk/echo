@@ -19,6 +19,16 @@ impl MigrationTrait for Migration {
 alter table sigint_peleng
     add column battle_line_distance integer;
 
+alter table system_settings
+    add column show_peleng_distance_to_battleline boolean;
+
+update system_settings
+set show_peleng_distance_to_battleline = false;
+
+alter table system_settings
+    alter column show_peleng_distance_to_battleline set default false,
+    alter column show_peleng_distance_to_battleline set not null;
+
 create index sigint_peleng_pending_battle_line_distance_idx
     on sigint_peleng (source_inbox_item_id, id)
     where battle_line_distance is null and not deleted;
@@ -34,10 +44,13 @@ create index sigint_peleng_pending_battle_line_distance_idx
             .get_connection()
             .execute_unprepared(
                 r#"
-drop index sigint_peleng_pending_battle_line_distance_idx;
+drop index if exists sigint_peleng_pending_battle_line_distance_idx;
 
 alter table sigint_peleng
-    drop column battle_line_distance;
+    drop column if exists battle_line_distance;
+
+alter table system_settings
+    drop column if exists show_peleng_distance_to_battleline;
                 "#,
             )
             .await

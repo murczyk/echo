@@ -204,6 +204,7 @@ export function AnalysisMapPane({
         'messages-loading': messagesLoading ? 'true' : 'false',
         'messages-load-serial': String(messagesLoadSerial),
         'overlay-controls-collapsed': visible ? 'true' : 'false',
+        'show-peleng-distance-to-battleline': mapAttrs.showPelengDistanceToBattleline ?? 'false',
         visibility: renderedVisible ? 'true' : 'false',
         search,
       })}
