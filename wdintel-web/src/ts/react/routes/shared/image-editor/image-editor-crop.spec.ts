@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { applyCrop, cancelCrop, normalizedCropFrame, startCrop } from './image-editor-crop';
 
@@ -20,6 +20,16 @@ describe('image editor crop bounds #3099', () => {
 
   it('uses free crop scaling until Shift and restores canvas scaling on exit', () => {
     class Rect {
+      controls = {
+        tl: {},
+        mt: {},
+        tr: {},
+        ml: {},
+        mr: {},
+        bl: {},
+        mb: {},
+        br: {},
+      };
       constructor(options: Record<string, unknown>) {
         Object.assign(this, options);
       }
@@ -32,7 +42,12 @@ describe('image editor crop bounds #3099', () => {
       setControlsVisibility() {}
       setCoords() {}
       getBoundingRect() {
-        return { left: 8, top: 8, width: 184, height: 84 };
+        return {
+          left: Number(this.left ?? 0),
+          top: Number(this.top ?? 0),
+          width: Number(this.width ?? 0),
+          height: Number(this.height ?? 0),
+        };
       }
     }
     const objects: Rect[] = [];
@@ -51,9 +66,17 @@ describe('image editor crop bounds #3099', () => {
       setDimensions() {},
     } as never;
     const cropRef = { current: null } as { current: import('fabric').Rect | null };
-    const fabric = { Rect } as never;
+    const fabric = {
+      Rect,
+      Control: class Control {
+        constructor(options: Record<string, unknown>) {
+          Object.assign(this, options);
+        }
+      },
+    } as never;
 
     startCrop({ canvas, fabric, cropRef, stroke: '#fff', maskColor: '#000' });
+    expect(cropRef.current).toMatchObject({ left: 0, top: 0, width: 200, height: 100 });
     expect(canvas.uniformScaling).toBe(false);
     expect(canvas.uniScaleKey).toBe('shiftKey');
 
@@ -61,9 +84,12 @@ describe('image editor crop bounds #3099', () => {
     expect(canvas.uniformScaling).toBe(true);
     expect(canvas.uniScaleKey).toBe('altKey');
 
-    const sourceImage = { get: () => 0, set() {} } as never;
+    const sourceImage = { get: () => 0, set: vi.fn() } as never;
     startCrop({ canvas, fabric, cropRef, stroke: '#fff', maskColor: '#000' });
     expect(applyCrop({ canvas, sourceImage, cropRef })).toBe(true);
+    expect(sourceImage.set).toHaveBeenCalledWith(
+      expect.objectContaining({ cropX: 0, cropY: 0, width: 200, height: 100 }),
+    );
     expect(canvas.uniformScaling).toBe(true);
     expect(canvas.uniScaleKey).toBe('altKey');
   });

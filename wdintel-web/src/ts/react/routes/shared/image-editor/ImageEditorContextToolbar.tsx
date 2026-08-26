@@ -3,6 +3,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
 
 import FormatColorResetIcon from '@mui/icons-material/FormatColorReset';
+import { ToggleButton } from '@mui/material';
 
 import { ImageEditorIconButton } from './ImageEditorIconButton';
 import {
@@ -126,14 +127,16 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
               disabled={props.disabled}
             />
             {showDash ? (
-              <ImageEditorIconButton
-                label="Пунктир"
-                icon={<ImageEditorDashedLineIcon />}
-                onClick={() => props.onDashChange(!props.dash)}
+              <ToggleButton
+                value="dash"
+                selected={props.dash}
+                onChange={() => props.onDashChange(!props.dash)}
                 disabled={props.disabled}
-                active={props.dash}
-                compact
-              />
+                aria-label="Пунктир"
+                className="h-8 shrink-0 gap-1 whitespace-nowrap px-2 text-echo-sm"
+              >
+                <ImageEditorDashedLineIcon /> Пунктир
+              </ToggleButton>
             ) : null}
             {context === 'highlight' ? (
               <ImageEditorSliderControl
@@ -176,7 +179,7 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
         ) : null}
         {props.tool === 'crop' && props.cropActive ? (
           <ImageEditorContextGroup>
-            <span className="shrink-0 whitespace-nowrap text-echo-sm">
+            <span className="shrink-0 whitespace-nowrap pl-1.5 text-echo-sm">
               Перетягніть рамку, щоб обрізати
             </span>
             <span className="flex items-center gap-0">

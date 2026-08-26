@@ -14,6 +14,7 @@ import BorderColorIcon from '@mui/icons-material/BorderColor';
 import RectangleOutlinedIcon from '@mui/icons-material/RectangleOutlined';
 import RedoIcon from '@mui/icons-material/Redo';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import SearchIcon from '@mui/icons-material/Search';
 import TextFieldsIcon from '@mui/icons-material/TextFields';
 import UndoIcon from '@mui/icons-material/Undo';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
@@ -67,7 +68,7 @@ const TOOLS: Record<ImageEditorTool, { label: string; icon: ReactNode; iconSize?
   brush: { label: 'Пензель', icon: <BrushIcon /> },
   highlight: { label: 'Маркер', icon: <BorderColorIcon /> },
   conceal: { label: 'Розмиття', icon: <BlurOnIcon /> },
-  magnifier: { label: 'Лупа', icon: <ZoomInIcon /> },
+  magnifier: { label: 'Лупа', icon: <SearchIcon /> },
 };
 
 const TABLET_VISIBLE_TOOLS: readonly ImageEditorTool[] = [

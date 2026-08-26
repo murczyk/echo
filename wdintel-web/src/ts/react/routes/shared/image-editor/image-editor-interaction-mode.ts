@@ -14,6 +14,21 @@ const CREATION_TOOLS = new Set<ImageEditorTool>([
   'magnifier',
 ]);
 
+export function imageEditorCursor(tool: ImageEditorTool) {
+  if (tool === 'pan') return 'grab';
+  if (tool === 'text') return 'text';
+  if (tool === 'magnifier') return 'zoom-in';
+  if (tool === 'select') return 'default';
+  return 'crosshair';
+}
+
+export function applyImageEditorSurfaceCursor(
+  canvas: import('fabric').Canvas | null,
+  cursor: string,
+) {
+  if (canvas) canvas.upperCanvasEl.style.cursor = cursor;
+}
+
 export function applyImageEditorInteractionMode({
   canvas,
   tool,
@@ -51,7 +66,8 @@ export function applyImageEditorInteractionMode({
     brush.width = strokeWidth;
     canvas.freeDrawingBrush = brush;
   }
-  canvas.defaultCursor = tool === 'pan' ? 'grab' : 'default';
+  canvas.defaultCursor = imageEditorCursor(tool);
+  canvas.freeDrawingCursor = imageEditorCursor(tool);
   canvas.getObjects().forEach((object) => {
     const role = object.get('editorRole');
     if (role === 'concealment' || role === 'crop-mask') return;

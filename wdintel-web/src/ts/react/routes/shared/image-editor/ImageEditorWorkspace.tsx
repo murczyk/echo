@@ -10,6 +10,7 @@ import {
 
 import type { EditorViewState } from './image-editor-viewport';
 import { calculateMagnifierSample } from './image-editor-magnifier';
+import { applyImageEditorSurfaceCursor, imageEditorCursor } from './image-editor-interaction-mode';
 import type { ImageEditorTool } from './image-editor.types';
 
 export function ImageEditorWorkspace({
@@ -45,7 +46,27 @@ export function ImageEditorWorkspace({
   const lensFrameRef = useRef<number | null>(null);
   const lensPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const [lens, setLens] = useState<{ left: number; top: number } | null>(null);
+  const [panDragging, setPanDragging] = useState(false);
   const lensDiameter = 144;
+  const zoomRef = useRef({ busy, onZoom, scale: view.scale });
+  zoomRef.current = { busy, onZoom, scale: view.scale };
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const zoom = (event: WheelEvent) => {
+      const current = zoomRef.current;
+      if (current.busy) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const rect = workspace.getBoundingClientRect();
+      current.onZoom(
+        { x: event.clientX - rect.left, y: event.clientY - rect.top },
+        current.scale * (event.deltaY > 0 ? 0.9 : 1.1),
+      );
+    };
+    workspace.addEventListener('wheel', zoom, { passive: false });
+    return () => workspace.removeEventListener('wheel', zoom);
+  }, [workspaceRef]);
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -66,8 +87,14 @@ export function ImageEditorWorkspace({
     };
   }, []);
   useEffect(() => {
-    if (busy) dragRef.current = null;
+    if (busy) {
+      dragRef.current = null;
+      setPanDragging(false);
+    }
   }, [busy]);
+  useEffect(() => {
+    applyImageEditorSurfaceCursor(canvasRef.current, busy ? 'wait' : imageEditorCursor(tool));
+  }, [busy, canvasRef, tool]);
   const hideLens = () => {
     lensPointerRef.current = null;
     if (lensFrameRef.current != null) cancelAnimationFrame(lensFrameRef.current);
@@ -151,6 +178,8 @@ export function ImageEditorWorkspace({
     event.preventDefault();
     event.stopPropagation();
     dragRef.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+    setPanDragging(true);
+    applyImageEditorSurfaceCursor(canvasRef.current, 'grabbing');
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const movePan = (event: PointerEvent<HTMLDivElement>) => {
@@ -169,6 +198,8 @@ export function ImageEditorWorkspace({
     if (!dragRef.current) return;
     event.stopPropagation();
     dragRef.current = null;
+    setPanDragging(false);
+    applyImageEditorSurfaceCursor(canvasRef.current, busy ? 'wait' : imageEditorCursor(tool));
     event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
@@ -178,22 +209,13 @@ export function ImageEditorWorkspace({
       data-image-editor-workspace
       aria-busy={busy}
       className="relative min-h-0 flex-1 overflow-hidden bg-echo-surface touch-none"
+      style={{ cursor: busy ? 'wait' : panDragging ? 'grabbing' : imageEditorCursor(tool) }}
       onPointerDownCapture={beginPan}
       onPointerMoveCapture={movePan}
       onPointerMove={updateLens}
       onPointerUpCapture={endPan}
       onPointerCancelCapture={endPan}
       onPointerLeave={hideLens}
-      onWheelCapture={(event) => {
-        if (busy) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const rect = event.currentTarget.getBoundingClientRect();
-        onZoom(
-          { x: event.clientX - rect.left, y: event.clientY - rect.top },
-          view.scale * (event.deltaY > 0 ? 0.9 : 1.1),
-        );
-      }}
     >
       {contextualToolbar}
       {loading ? (

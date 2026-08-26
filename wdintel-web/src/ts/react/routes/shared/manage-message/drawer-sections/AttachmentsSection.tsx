@@ -20,6 +20,7 @@ import { MessageCardAttachmentPreviewProvider } from '../../message-card/attachm
 import type { MessageCardPreviewItem } from '../../message-card/attachment-preview/message-card-preview.types';
 import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
 import { replacePendingImageFile } from '../../image-editor/image-editor-upload';
+import { blurActiveElement } from '../../../../utils/focus';
 import { MAX_MESSAGE_ATTACHMENTS } from '../useMessageUppy';
 import { FormSectionWrapper } from './FormSectionWrapper';
 import type { MessageFormData } from '../manage-message-drawer.schema';
@@ -337,6 +338,7 @@ export function AttachmentsSection({
         item.type === 'coordinate' ? false : item.value.id === id,
       );
       if (idx !== -1) {
+        blurActiveElement();
         setPreviewInitialAction(initialAction);
         setPreviewDialogIndex(idx);
       }
@@ -506,6 +508,7 @@ export function AttachmentsSection({
           attachments={previewAttachments}
           initialIndex={previewDialogIndex}
           onClose={() => {
+            blurActiveElement();
             setPreviewInitialAction(null);
             setPreviewDialogIndex(null);
           }}

@@ -4,6 +4,7 @@ type Rect = import('fabric').Rect;
 const CROP_ROLE = 'crop';
 const CROP_MASK_ROLE = 'crop-mask';
 const MIN_CROP_SIZE = 8;
+const CROP_CONTROL_INSET = 8;
 const cropScalingByCanvas = new WeakMap<
   Canvas,
   { uniformScaling: boolean; uniScaleKey: Canvas['uniScaleKey'] }
@@ -128,6 +129,24 @@ function addCropMask({
     });
 }
 
+function insetCropControls(fabric: typeof import('fabric'), crop: Rect) {
+  if (!crop.controls || !fabric.Control) return;
+  const offsets = {
+    tl: [CROP_CONTROL_INSET, CROP_CONTROL_INSET],
+    mt: [0, CROP_CONTROL_INSET],
+    tr: [-CROP_CONTROL_INSET, CROP_CONTROL_INSET],
+    ml: [CROP_CONTROL_INSET, 0],
+    mr: [-CROP_CONTROL_INSET, 0],
+    bl: [CROP_CONTROL_INSET, -CROP_CONTROL_INSET],
+    mb: [0, -CROP_CONTROL_INSET],
+    br: [-CROP_CONTROL_INSET, -CROP_CONTROL_INSET],
+  } as const;
+  for (const [key, [offsetX, offsetY]] of Object.entries(offsets)) {
+    const control = crop.controls[key];
+    if (control) crop.controls[key] = new fabric.Control({ ...control, offsetX, offsetY });
+  }
+}
+
 export function startCrop({
   canvas,
   fabric,
@@ -143,18 +162,13 @@ export function startCrop({
 }) {
   if (cropRef.current) return cropRef.current;
   configureCropScaling(canvas);
-  const displayedWidth = canvas.upperCanvasEl.getBoundingClientRect().width;
-  const inset = Math.max(
-    1,
-    Math.min(canvas.width / 4, (8 * canvas.width) / Math.max(1, displayedWidth)),
-  );
   const crop = new fabric.Rect({
-    left: inset,
-    top: inset,
+    left: 0,
+    top: 0,
     originX: 'left',
     originY: 'top',
-    width: Math.max(MIN_CROP_SIZE, canvas.width - inset * 2),
-    height: Math.max(MIN_CROP_SIZE, canvas.height - inset * 2),
+    width: canvas.width,
+    height: canvas.height,
     fill: 'transparent',
     stroke,
     strokeDashArray: [8, 6],
@@ -166,6 +180,7 @@ export function startCrop({
     hasRotatingPoint: false,
   });
   crop.setControlsVisibility({ mtr: false });
+  insetCropControls(fabric, crop);
   crop.set({ cornerColor: stroke, cornerStrokeColor: stroke, transparentCorners: false });
   crop.setCoords();
   addCropMask({ canvas, fabric, bounds: cropBounds(canvas, crop), maskColor });
