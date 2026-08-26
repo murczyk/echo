@@ -7,6 +7,7 @@ use crate::config::{
     FAILED_INBOX_UNIT_WORKER_SLEEP_SECS, INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE,
     INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE,
     INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE,
+    INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT,
 };
 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 use crate::entities::{
@@ -24,9 +25,9 @@ use log::{debug, info, warn};
 use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
 use sea_orm::{
     ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, ConnectionTrait,
-    DatabaseConnection, EntityTrait, JoinType, ModelTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, QueryTrait, RelationTrait,
-    TransactionTrait,
+    DatabaseConnection, EntityTrait, ExprTrait, JoinType, ModelTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, QueryTrait,
+    RelationTrait, TransactionTrait,
 };
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration as StdDuration;
@@ -390,21 +391,40 @@ where
     if normalized.is_empty() {
         return Ok(None);
     }
+    let name_variants = std::iter::once(normalize_unit_label(value))
+        .chain(
+            normalized
+                .split_whitespace()
+                .map(|word| {
+                    crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
+                        .iter()
+                        .find_map(|(canonical, aliases)| {
+                            (*canonical == word).then_some(aliases.to_vec())
+                        })
+                        .unwrap_or_else(|| vec![word])
+                })
+                .multi_cartesian_product()
+                .map(|words| words.join(" ")),
+        )
+        .unique()
+        .take(INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT)
+        .collect_vec();
     let sigint_unit_ids = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(
+            Expr::cust(
+                "lower(regexp_replace(btrim(sigint_unit.name), '[[:space:]]+', ' ', 'g'))",
+            )
+            .is_in(name_variants),
+        )
         .select_only()
-        .columns([sigint_unit::Column::Id, sigint_unit::Column::Name])
-        .into_tuple::<(i64, String)>()
+        .column(sigint_unit::Column::Id)
+        .distinct()
+        .limit(2)
+        .into_tuple::<i64>()
         .all(db)
         .await
-        .context(h!())?
-        .into_iter()
-        .filter_map(|(sigint_unit_id, name)| {
-            (crate::unit::normalize_unit_formation_name(&name) == normalized)
-                .then_some(sigint_unit_id)
-        })
-        .take(2)
-        .collect_vec();
+        .context(h!())?;
     if sigint_unit_ids.len() > 1 {
         warn!("Multiple equivalent SIGINT unit names match value={value:?}");
         return Ok(None);

@@ -3046,37 +3046,6 @@ export type ListInconsistentUnitsRsp = {
   units: Array<InconsistentUnit>;
 };
 
-export type UnitNameReview = {
-  sigintUnitId: number;
-  currentName: string;
-  expectedName: string;
-  matchesExpected: boolean;
-  updatedAt: number;
-};
-
-export type UnitNameReviewCursor = {
-  updatedAtMicros: number;
-  sigintUnitId: number;
-};
-
-export type ListUnitNameReviewsReq = {
-  after: UnitNameReviewCursor | null;
-};
-
-export type ListUnitNameReviewsRsp = {
-  units: Array<UnitNameReview>;
-  nextCursor: UnitNameReviewCursor | null;
-};
-
-export type UpdateUnitNameReq = {
-  sigintUnitId: number;
-  name: string;
-};
-
-export type ConfirmUnitNameReq = {
-  sigintUnitId: number;
-};
-
 export type CreateUnitReq = {
   name: string | null;
   other: string;

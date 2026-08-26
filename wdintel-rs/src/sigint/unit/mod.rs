@@ -22,7 +22,6 @@ use std::collections::{BTreeSet, HashMap};
 pub mod attachment;
 pub mod changelog;
 pub mod labels;
-pub mod names;
 pub mod orbit;
 pub mod types;
 
