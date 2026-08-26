@@ -1,5 +1,4 @@
 import { ImageEditorToolRail } from './ImageEditorToolRail';
-import type { ReactNode } from 'react';
 import type { ImageEditorTool } from './image-editor.types';
 
 export type ImageEditorToolbarProps = {
@@ -18,7 +17,6 @@ export type ImageEditorToolbarProps = {
   onUndo: () => void;
   onRedo: () => void;
   onResetEdits: () => void;
-  contextualControls?: ReactNode;
 };
 
 export function ImageEditorToolbar(props: ImageEditorToolbarProps) {

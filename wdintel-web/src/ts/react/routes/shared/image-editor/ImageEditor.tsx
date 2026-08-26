@@ -496,10 +496,7 @@ export function ImageEditor({
   };
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Редактор зображення">
-      <ImageEditorToolbar
-        {...primaryToolbarProps}
-        contextualControls={<ImageEditorContextToolbar {...contextualToolbarProps} embedded />}
-      />
+      <ImageEditorToolbar {...primaryToolbarProps} />
       {error ? (
         <Alert severity="error" className="m-2">
           {error}
@@ -520,6 +517,7 @@ export function ImageEditor({
         magnification={magnification}
         onPan={panBy}
         onZoom={zoomAtPoint}
+        contextualToolbar={<ImageEditorContextToolbar {...contextualToolbarProps} />}
       />
       <ImageEditorFooter
         applying={applying}

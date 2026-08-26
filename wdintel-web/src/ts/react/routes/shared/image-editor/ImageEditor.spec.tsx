@@ -135,9 +135,9 @@ describe('ImageEditor initialization', () => {
       (button) => button.textContent === 'Застосувати',
     ) as HTMLButtonElement;
     expect(apply.disabled).toBe(true);
-    expect(
-      (container.querySelector('button[aria-label="Лупа"]') as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect((container.querySelector('button[aria-label="Ще"]') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     act(() => root.unmount());
   });
 

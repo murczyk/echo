@@ -23,7 +23,7 @@ export function ImageEditorViewControls({
 }) {
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1">
-      <span className="min-w-12 text-center text-echo-sm">{zoom}%</span>
+      <span className="min-w-12 text-center text-echo-sm tabular-nums">{zoom}%</span>
       <ImageEditorIconButton
         label="Зменшити масштаб"
         icon={<RemoveIcon />}

@@ -2,14 +2,18 @@ import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
 
-import { PowerButton } from '../../../components/PowerButton';
+import FormatColorResetIcon from '@mui/icons-material/FormatColorReset';
+
 import { ImageEditorIconButton } from './ImageEditorIconButton';
 import {
+  ImageEditorCompactNumericControl,
   ImageEditorColorControl,
   ImageEditorContextGroup,
   ImageEditorSegmentedControl,
   ImageEditorSliderControl,
 } from './ImageEditorContextControls';
+import { ImageEditorContextInspector } from './ImageEditorContextInspector';
+import { ImageEditorDashedLineIcon } from './ImageEditorIcons';
 import type {
   ConcealMode,
   ImageEditorSelectionDescriptor,
@@ -41,7 +45,6 @@ export type ImageEditorContextToolbarProps = {
   cropActive: boolean;
   onApplyCrop: () => void;
   onCancelCrop: () => void;
-  embedded?: boolean;
 };
 
 export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps) {
@@ -54,42 +57,24 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
   const showStroke = showShape || showLine || showBrush;
   const showDash = showShape || showLine;
   return (
-    <div
-      className={
-        props.embedded
-          ? 'min-w-0 flex-1 overflow-x-auto'
-          : 'absolute left-1/2 top-2 z-30 max-w-[calc(100%-24px)] -translate-x-1/2'
-      }
-    >
-      <div
-        data-image-editor-contextual-row
-        className={
-          props.embedded
-            ? 'flex h-12 min-w-max items-center gap-3 px-3'
-            : 'flex h-12 max-w-full items-center gap-3 overflow-x-auto overflow-y-hidden rounded-lg border border-echo-border bg-echo-surface px-3 shadow-echo-lg'
-        }
-      >
+    <ImageEditorContextInspector>
+      <div data-image-editor-contextual-row className="flex h-12 min-w-max items-center gap-3">
         {showText ? (
-          <>
+          <ImageEditorContextGroup>
             <ImageEditorColorControl
               label="Колір"
               value={props.stroke}
               onChange={props.onStrokeChange}
               disabled={props.disabled}
             />
-            <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-echo-sm">
-              Розмір
-              <input
-                aria-label="Розмір тексту"
-                className="h-8 w-16 rounded border border-echo-border bg-transparent px-1 text-echo-sm"
-                type="number"
-                min={10}
-                max={160}
-                value={props.fontSize}
-                onChange={(event) => props.onFontSizeChange(Number(event.target.value))}
-                disabled={props.disabled}
-              />
-            </label>
+            <ImageEditorCompactNumericControl
+              label="Розмір тексту"
+              value={props.fontSize}
+              min={10}
+              max={160}
+              onChange={props.onFontSizeChange}
+              disabled={props.disabled}
+            />
             <ImageEditorIconButton
               label="Напівжирний текст"
               icon={<FormatBoldIcon />}
@@ -98,10 +83,10 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
               active={props.bold}
               compact
             />
-          </>
+          </ImageEditorContextGroup>
         ) : null}
         {showStroke ? (
-          <>
+          <ImageEditorContextGroup>
             <ImageEditorColorControl
               label={showBrush ? 'Колір' : 'Контур'}
               value={props.stroke}
@@ -116,13 +101,16 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
                   onChange={props.onFillChange}
                   disabled={props.disabled}
                 />
-                <PowerButton
-                  size="small"
-                  onClick={() => props.onFillChange('transparent')}
+                <ImageEditorIconButton
+                  label="Без заливки"
+                  icon={<FormatColorResetIcon />}
+                  onClick={() =>
+                    props.onFillChange(props.fill === 'transparent' ? props.stroke : 'transparent')
+                  }
                   disabled={props.disabled}
-                >
-                  Без заливки
-                </PowerButton>
+                  active={props.fill === 'transparent'}
+                  compact
+                />
               </>
             ) : null}
             <ImageEditorSliderControl
@@ -135,16 +123,14 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
               disabled={props.disabled}
             />
             {showDash ? (
-              <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-echo-sm">
-                <input
-                  aria-label="Пунктир"
-                  checked={props.dash}
-                  type="checkbox"
-                  onChange={(event) => props.onDashChange(event.target.checked)}
-                  disabled={props.disabled}
-                />
-                Пунктир
-              </label>
+              <ImageEditorIconButton
+                label="Пунктир"
+                icon={<ImageEditorDashedLineIcon />}
+                onClick={() => props.onDashChange(!props.dash)}
+                disabled={props.disabled}
+                active={props.dash}
+                compact
+              />
             ) : null}
             {context === 'highlight' ? (
               <ImageEditorSliderControl
@@ -158,7 +144,7 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
                 disabled={props.disabled}
               />
             ) : null}
-          </>
+          </ImageEditorContextGroup>
         ) : null}
         {props.tool === 'conceal' ? (
           <ImageEditorSegmentedControl
@@ -184,7 +170,7 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
           />
         ) : null}
         {props.tool === 'crop' && props.cropActive ? (
-          <>
+          <ImageEditorContextGroup>
             <span className="shrink-0 whitespace-nowrap text-echo-sm">
               Перетягніть рамку, щоб обрізати
             </span>
@@ -202,10 +188,10 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
               disabled={props.disabled}
               compact
             />
-          </>
+          </ImageEditorContextGroup>
         ) : null}
       </div>
-    </div>
+    </ImageEditorContextInspector>
   );
 }
 
