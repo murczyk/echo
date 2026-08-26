@@ -10,6 +10,7 @@ use echo_im::types::{MessageAttachmentF1, MessageF1};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use sea_orm::*;
+use std::collections::HashMap;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -343,6 +344,21 @@ async fn copy_manual_annotations_from_messages_to_promoted_messages(
     original_message_ids: &[i64],
     promoted_message_ids: &[i64],
 ) -> anyhow::Result<()> {
+    let promoted_message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(
+            signal_message::Column::Id
+                .is_in(promoted_message_ids.iter().copied()),
+        )
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
     for original_message_id in original_message_ids.iter().copied().unique() {
         for promoted_message_id in promoted_message_ids.iter().copied().unique()
         {
@@ -353,6 +369,10 @@ async fn copy_manual_annotations_from_messages_to_promoted_messages(
                 txn,
                 original_message_id,
                 promoted_message_id,
+                promoted_message_uuids
+                    .get(&promoted_message_id)
+                    .copied()
+                    .flatten(),
             )
             .await
             .c(h!())?;
@@ -365,15 +385,18 @@ async fn copy_manual_annotations_to_promoted_message(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
 ) -> anyhow::Result<()> {
     copy_annotation_rows(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_comment (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 comment,
                 created_at,
                 sigint_post_id
@@ -381,6 +404,7 @@ async fn copy_manual_annotations_to_promoted_message(
             select
                 c.login_id,
                 $2,
+                $3,
                 c.comment,
                 c.created_at,
                 c.sigint_post_id
@@ -403,16 +427,19 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_bookmark (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 created_at,
                 deleted
             )
             select
                 b.login_id,
                 $2,
+                $3,
                 b.created_at,
                 b.deleted
             from sigint_bookmark b
@@ -433,16 +460,19 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_important (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 created_at,
                 deleted
             )
             select
                 i.login_id,
                 $2,
+                $3,
                 i.created_at,
                 i.deleted
             from sigint_important i
@@ -464,9 +494,11 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_inbox_item_tag (
                 sigint_inbox_item_id,
+                sigint_inbox_item_uuid,
                 tag_id,
                 confidence,
                 login_id,
@@ -474,6 +506,7 @@ async fn copy_manual_annotations_to_promoted_message(
             )
             select
                 $2,
+                $3,
                 t.tag_id,
                 t.confidence,
                 t.login_id,
@@ -493,7 +526,7 @@ async fn copy_manual_annotations_to_promoted_message(
     )
     .await
     .c(h!())?;
-    copy_annotation_rows(
+    copy_annotation_rows_without_uuid(
         txn,
         original_message_id,
         promoted_message_id,
@@ -513,6 +546,27 @@ async fn copy_manual_annotations_to_promoted_message(
 }
 
 async fn copy_annotation_rows(
+    txn: &DatabaseTransaction,
+    original_message_id: i64,
+    promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
+    sql: &str,
+) -> anyhow::Result<()> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        [
+            original_message_id.into(),
+            promoted_message_id.into(),
+            promoted_message_uuid.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn copy_annotation_rows_without_uuid(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
@@ -1010,6 +1064,7 @@ pub async fn reconcile_active_message_with_staged_media(
                 txn,
                 source_message_id,
                 unstage_result.message.id,
+                unstage_result.message.id_uuid,
             )
             .await
             .c(h!())?;
@@ -2279,6 +2334,7 @@ mod tests {
             &txn,
             original.id,
             promoted.id,
+            promoted.id_uuid,
         )
         .await
         .unwrap();
