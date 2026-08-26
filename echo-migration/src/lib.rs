@@ -409,6 +409,7 @@ mod m20260901_130526_add_callsign_changelog_created_at_index;
 mod m20260902_131822_signal_message_group_access_index;
 mod m20260902_155137_remove_group_stats_pending_unique;
 mod m20260903_105929_disable_media_summary_for_all_users;
+mod m20260903_180415_add_failed_unit_label_inbox_uuid;
 
 pub struct Migrator;
 
@@ -966,6 +967,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260903_105929_disable_media_summary_for_all_users::Migration,
+            ),
+            Box::new(
+                m20260903_180415_add_failed_unit_label_inbox_uuid::Migration,
             ),
         ]
     }

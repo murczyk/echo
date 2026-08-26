@@ -955,6 +955,7 @@ async fn finish_direct_submit(
     let upload_result = crate::messenger::media::store_media_attachments(
         uploads,
         signal_message_id,
+        submitted.signal_message_uuid,
         &env.config,
         &env.s3,
         &txn,
@@ -995,6 +996,7 @@ async fn finish_direct_submit(
         query::copy_signal_message_media(
             &txn,
             signal_message_id,
+            submitted.signal_message_uuid,
             &source_media,
         )
         .await
@@ -1022,6 +1024,7 @@ async fn finish_direct_submit(
         query::insert_intel_product_links(
             &txn,
             signal_message_id,
+            submitted.signal_message_uuid,
             parent_signal_message_ids,
         )
         .await
@@ -1375,6 +1378,7 @@ mod tests {
         crate::inbox::callsigns::sync(
             &env.dbx,
             inbox_item.id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: vec!["OLD_CALLSIGN_1".to_string()],
                 alg2: vec!["OLD_CALLSIGN_2".to_string()],
@@ -1607,6 +1611,14 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(report.signal_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &env.dbx,
+                    report.signal_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
             content_type: Set("image/png".into()),
             file_ext: Set(Some("png".into())),
             file_name: Set(Some("report.png".into())),
@@ -1801,6 +1813,14 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(created.signal_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &env.dbx,
+                    created.signal_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
             content_type: Set("audio/ogg".into()),
             file_ext: Set(Some("ogg".into())),
             file_name: Set(Some("recording.ogg".into())),

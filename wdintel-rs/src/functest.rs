@@ -1243,6 +1243,21 @@ pub mod tests {
             .context(h!())?;
             inp.signal_message_id = Set(signal_message.id);
         }
+        if inp.signal_message_uuid == NotSet {
+            let signal_message_id = match &inp.signal_message_id {
+                Set(id) | Unchanged(id) => Some(*id),
+                _ => None,
+            };
+            if let Some(signal_message_id) = signal_message_id {
+                inp.signal_message_uuid =
+                    Set(crate::sigint::message_id::find_signal_message_uuid(
+                        txn,
+                        signal_message_id,
+                    )
+                    .await
+                    .context(h!())?);
+            }
+        }
         if inp.group_master_key == NotSet {
             let signal_group = mk_signal_group(
                 txn,
@@ -1292,6 +1307,17 @@ pub mod tests {
         }
         if out.timestamp == NotSet {
             out.timestamp = Set(Some(chrono::Utc::now().naive_utc()));
+        }
+        if out.id_uuid == NotSet {
+            let timestamp = match &out.timestamp {
+                Set(timestamp) => *timestamp,
+                _ => None,
+            };
+            out.id_uuid = Set(Some(
+                crate::sigint::message_id::signal_message_uuid_for_insert(
+                    timestamp,
+                ),
+            ));
         }
         if out.sender == NotSet {
             out.sender =
@@ -1687,7 +1713,7 @@ pub mod tests {
         C: ConnectionTrait + 'async_trait,
     {
         let mut inp = inp.clone();
-        if inp.source_inbox_item_id == NotSet {
+        let generated_inbox_item_uuid = if inp.source_inbox_item_id == NotSet {
             let inbox_item = mk_sigint_inbox_item(
                 txn,
                 sigint_inbox_item::ActiveModel {
@@ -1697,6 +1723,26 @@ pub mod tests {
             .await
             .context(h!())?;
             inp.source_inbox_item_id = Set(inbox_item.id);
+            inbox_item.id_uuid
+        } else {
+            None
+        };
+        if inp.source_inbox_item_uuid == NotSet {
+            inp.source_inbox_item_uuid = Set(match generated_inbox_item_uuid {
+                Some(uuid) => Some(uuid),
+                None => {
+                    let inbox_item_id = match &inp.source_inbox_item_id {
+                        Set(id) | Unchanged(id) => *id,
+                        _ => return Err(AppError::NotFound),
+                    };
+                    crate::sigint::message_id::find_inbox_item_uuid(
+                        txn,
+                        inbox_item_id,
+                    )
+                    .await
+                    .context(h!())?
+                }
+            });
         }
         let out = build_sigint_peleng(inp)
             .context(h!())?
@@ -1786,6 +1832,21 @@ pub mod tests {
                 .context(h!())?;
             inp.signal_message_id = Set(signal_message.id);
         }
+        if inp.signal_message_uuid == NotSet {
+            let signal_message_id = match &inp.signal_message_id {
+                Set(id) | Unchanged(id) => Some(*id),
+                _ => None,
+            };
+            if let Some(signal_message_id) = signal_message_id {
+                inp.signal_message_uuid =
+                    Set(crate::sigint::message_id::find_signal_message_uuid(
+                        txn,
+                        signal_message_id,
+                    )
+                    .await
+                    .context(h!())?);
+            }
+        }
         if inp.login_id == NotSet {
             inp.login_id =
                 Set(crate::users::login_id_by_name(txn, TEST_LOGIN).await?);
@@ -1833,6 +1894,21 @@ pub mod tests {
                 .await
                 .context(h!())?;
             inp.signal_message_id = Set(signal_message.id);
+        }
+        if inp.signal_message_uuid == NotSet {
+            let signal_message_id = match &inp.signal_message_id {
+                Set(id) | Unchanged(id) => Some(*id),
+                _ => None,
+            };
+            if let Some(signal_message_id) = signal_message_id {
+                inp.signal_message_uuid =
+                    Set(crate::sigint::message_id::find_signal_message_uuid(
+                        txn,
+                        signal_message_id,
+                    )
+                    .await
+                    .context(h!())?);
+            }
         }
         let out = build_sigint_important(inp)
             .context(h!())?
@@ -1918,11 +1994,31 @@ pub mod tests {
         C: ConnectionTrait + 'async_trait,
     {
         let mut inp = inp.clone();
-        if inp.sigint_inbox_item_id == NotSet {
+        let generated_inbox_item_uuid = if inp.sigint_inbox_item_id == NotSet {
             let inbox_item = mk_sigint_inbox_item(txn, Default::default())
                 .await
                 .context(h!())?;
             inp.sigint_inbox_item_id = Set(inbox_item.id);
+            inbox_item.id_uuid
+        } else {
+            None
+        };
+        if inp.sigint_inbox_item_uuid == NotSet {
+            inp.sigint_inbox_item_uuid = Set(match generated_inbox_item_uuid {
+                Some(uuid) => Some(uuid),
+                None => {
+                    let inbox_item_id = match &inp.sigint_inbox_item_id {
+                        Set(id) | Unchanged(id) => *id,
+                        _ => return Err(AppError::NotFound),
+                    };
+                    crate::sigint::message_id::find_inbox_item_uuid(
+                        txn,
+                        inbox_item_id,
+                    )
+                    .await
+                    .context(h!())?
+                }
+            });
         }
         let out = build_sigint_inbox_item_metadata(inp)
             .context(h!())?
@@ -2085,11 +2181,31 @@ pub mod tests {
         C: ConnectionTrait + 'async_trait,
     {
         let mut inp = inp.clone();
-        if inp.sigint_inbox_item_id == NotSet {
+        let generated_inbox_item_uuid = if inp.sigint_inbox_item_id == NotSet {
             let inbox_item = mk_sigint_inbox_item(txn, Default::default())
                 .await
                 .context(h!())?;
             inp.sigint_inbox_item_id = Set(inbox_item.id);
+            inbox_item.id_uuid
+        } else {
+            None
+        };
+        if inp.sigint_inbox_item_uuid == NotSet {
+            inp.sigint_inbox_item_uuid = Set(match generated_inbox_item_uuid {
+                Some(uuid) => Some(uuid),
+                None => {
+                    let inbox_item_id = match &inp.sigint_inbox_item_id {
+                        Set(id) | Unchanged(id) => *id,
+                        _ => return Err(AppError::NotFound),
+                    };
+                    crate::sigint::message_id::find_inbox_item_uuid(
+                        txn,
+                        inbox_item_id,
+                    )
+                    .await
+                    .context(h!())?
+                }
+            });
         }
         if inp.tag_id == NotSet {
             let tag = mk_tag(txn, Default::default()).await.context(h!())?;
@@ -2172,6 +2288,21 @@ pub mod tests {
             .await
             .context(h!())?;
             inp.id = Set(msg.id);
+        }
+        if inp.id_uuid == NotSet {
+            let signal_message_id = match &inp.id {
+                Set(id) | Unchanged(id) => Some(*id),
+                _ => None,
+            };
+            if let Some(signal_message_id) = signal_message_id {
+                inp.id_uuid =
+                    Set(crate::sigint::message_id::find_signal_message_uuid(
+                        txn,
+                        signal_message_id,
+                    )
+                    .await
+                    .context(h!())?);
+            }
         }
         let out = build_sigint_inbox_item(inp)
             .context(h!())?

@@ -1875,6 +1875,7 @@ async fn replace_media_if_changed(
     let uploaded_media = crate::messenger::media::persist_staged_media(
         staged_media,
         signal_message.id,
+        signal_message.id_uuid,
         txn,
     )
     .await
@@ -2064,15 +2065,16 @@ async fn reset_machine_derived_inbox_data(
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
     let system_login_id = crate::users::system_login_id(txn).await?;
-    if sigint_inbox_item::Entity::find_by_id(signal_message_id)
-        .one(txn)
-        .await
-        .c(h!())?
-        .is_some()
+    if let Some(inbox_item) =
+        sigint_inbox_item::Entity::find_by_id(signal_message_id)
+            .one(txn)
+            .await
+            .c(h!())?
     {
         crate::inbox::callsigns::sync(
             txn,
             signal_message_id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns::default(),
             system_login_id,
         )
@@ -2190,6 +2192,14 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    txn,
+                    original_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
             group_master_key: Set(Some(group_id.to_string())),
             sender: Set(trace.sender.clone()),
             login_id: Set(None),
@@ -2638,6 +2648,14 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &txn,
+                    original.id,
+                )
+                .await
+                .unwrap(),
+            ),
             group_master_key: Set(Some(group_id.clone())),
             sender: Set(trace.sender.clone()),
             login_id: Set(None),
@@ -2759,6 +2777,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(original.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("original.txt".to_string())),
@@ -3981,6 +4000,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -4095,6 +4115,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("image/jpeg".to_string()),
             file_ext: Set(Some("jpg".to_string())),
             file_name: Set(Some("a.jpg".to_string())),
@@ -4845,6 +4866,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5059,6 +5081,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5190,6 +5213,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5466,6 +5490,7 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             group_master_key: Set(Some(group_id.clone())),
             sender: Set(source_message.sender.clone()),
             login_id: Set(source_message.login_id),
@@ -5612,6 +5637,7 @@ mod tests {
             sigint_important::ActiveModel {
                 id: NotSet,
                 signal_message_id: Set(signal_message.id),
+                signal_message_uuid: NotSet,
                 login_id: Set(None),
                 created_at: NotSet,
                 deleted: Set(false),
@@ -5624,6 +5650,7 @@ mod tests {
             sigint_important::ActiveModel {
                 id: NotSet,
                 signal_message_id: Set(signal_message.id),
+                signal_message_uuid: NotSet,
                 login_id: Set(Some(login.id)),
                 created_at: NotSet,
                 deleted: Set(false),

@@ -1496,6 +1496,7 @@ pub async fn oneoff_reprocess_unit_names(
                 crate::battle_line::settlement_queue::reconcile_item_locations(
                     &txn,
                     item.id,
+                    item.id_uuid,
                     location_v2.as_deref(),
                 )
                 .await
@@ -1503,6 +1504,7 @@ pub async fn oneoff_reprocess_unit_names(
                 crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
                     &txn,
                     item.id,
+                    item.id_uuid,
                     item.unit_v2.as_deref(),
                     item.unit.as_deref(),
                 )
@@ -1962,6 +1964,7 @@ mod messenger_media_tests {
         let media = iter::once(signal_message_media::Model {
             id: uuid::Uuid::nil(),
             signal_message_id: 1,
+            signal_message_uuid: Some(uuid::Uuid::now_v7()),
             content_type: "text/plain".to_string(),
             file_ext: Some("txt".to_string()),
             file_name: Some("negative.txt".to_string()),

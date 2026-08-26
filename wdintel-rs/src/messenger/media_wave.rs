@@ -233,6 +233,7 @@ mod tests {
         signal_message_media::Model {
             id: uuid::Uuid::nil(),
             signal_message_id: 1,
+            signal_message_uuid: Some(uuid::Uuid::now_v7()),
             content_type: content_type.to_string(),
             file_ext: file_ext.map(str::to_string),
             file_name: file_name.map(str::to_string),

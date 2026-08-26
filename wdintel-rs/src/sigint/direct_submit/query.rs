@@ -940,6 +940,7 @@ where
 pub async fn copy_signal_message_media<C>(
     dbx: &C,
     signal_message_id: i64,
+    signal_message_uuid: Option<Uuid>,
     source_media: &[signal_message_media::Model],
 ) -> Result<(), AppError>
 where
@@ -954,6 +955,7 @@ where
             signal_message_media::ActiveModel {
                 id: Set(Uuid::now_v7()),
                 signal_message_id: Set(signal_message_id),
+                signal_message_uuid: Set(signal_message_uuid),
                 content_type: Set(media.content_type.clone()),
                 file_ext: Set(media.file_ext.clone()),
                 file_name: Set(media.file_name.clone()),
@@ -1065,17 +1067,6 @@ pub async fn copy_signal_message_relations<C>(
 where
     C: ConnectionTrait,
 {
-    copy_matching_tags(dbx, source_signal_message_ids, target_inbox_item_id)
-        .await
-        .c(h!())?;
-    copy_matching_callsigns(
-        dbx,
-        source_signal_message_ids,
-        target_inbox_item_id,
-        actor_id,
-    )
-    .await
-    .c(h!())?;
     let target_inbox_item =
         sigint_inbox_item::Entity::find_by_id(target_inbox_item_id)
             .one(dbx)
@@ -1083,6 +1074,24 @@ where
             .c(h!())?
             .ok_or(AppError::NotFound)
             .c(h!())?;
+    let target_inbox_item_uuid = target_inbox_item.id_uuid;
+    copy_matching_tags(
+        dbx,
+        source_signal_message_ids,
+        target_inbox_item_id,
+        target_inbox_item_uuid,
+    )
+    .await
+    .c(h!())?;
+    copy_matching_callsigns(
+        dbx,
+        source_signal_message_ids,
+        target_inbox_item_id,
+        target_inbox_item_uuid,
+        actor_id,
+    )
+    .await
+    .c(h!())?;
     let mut unit_source_ids = Vec::new();
     let mut peleng_source_ids = Vec::new();
     let mut network_source_ids = Vec::new();
@@ -1135,24 +1144,44 @@ where
         }
     }
     if !unit_source_ids.is_empty() {
-        copy_inbox_units(dbx, &unit_source_ids, target_inbox_item_id)
-            .await
-            .c(h!())?;
+        copy_inbox_units(
+            dbx,
+            &unit_source_ids,
+            target_inbox_item_id,
+            target_inbox_item_uuid,
+        )
+        .await
+        .c(h!())?;
     }
     if !peleng_source_ids.is_empty() {
-        copy_pelengs(dbx, &peleng_source_ids, target_inbox_item_id)
-            .await
-            .c(h!())?;
+        copy_pelengs(
+            dbx,
+            &peleng_source_ids,
+            target_inbox_item_id,
+            target_inbox_item_uuid,
+        )
+        .await
+        .c(h!())?;
     }
     if !network_source_ids.is_empty() {
-        copy_inbox_networks(dbx, &network_source_ids, target_inbox_item_id)
-            .await
-            .c(h!())?;
+        copy_inbox_networks(
+            dbx,
+            &network_source_ids,
+            target_inbox_item_id,
+            target_inbox_item_uuid,
+        )
+        .await
+        .c(h!())?;
     }
     if !metadata_source_ids.is_empty() {
-        copy_metadata(dbx, &metadata_source_ids, target_inbox_item_id)
-            .await
-            .c(h!())?;
+        copy_metadata(
+            dbx,
+            &metadata_source_ids,
+            target_inbox_item_id,
+            target_inbox_item_uuid,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
@@ -1160,17 +1189,37 @@ where
 pub async fn insert_intel_product_links<C>(
     dbx: &C,
     signal_message_id: i64,
+    intel_message_uuid: Option<Uuid>,
     parent_signal_message_ids: &[i64],
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
 {
+    let source_message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(
+            signal_message::Column::Id
+                .is_in(parent_signal_message_ids.to_vec()),
+        )
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
     let links = parent_signal_message_ids
         .iter()
         .map(|parent_signal_message_id| {
             crate::entities::intel_product::ActiveModel {
                 intel_message_id: Set(signal_message_id),
+                intel_message_uuid: Set(intel_message_uuid),
                 source_message_id: Set(*parent_signal_message_id),
+                source_message_uuid: Set(source_message_uuids
+                    .get(parent_signal_message_id)
+                    .copied()
+                    .flatten()),
                 relation_kind: Set(
                     crate::entities::intel_product::RELATION_KIND_REPORT,
                 ),
@@ -1191,6 +1240,7 @@ async fn copy_matching_tags<C>(
     dbx: &C,
     source_signal_message_ids: &[i64],
     target_inbox_item_id: i64,
+    target_inbox_item_uuid: Option<Uuid>,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -1263,6 +1313,7 @@ where
         .map(|tag| crate::entities::sigint_inbox_item_tag::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(target_inbox_item_id),
+            sigint_inbox_item_uuid: Set(target_inbox_item_uuid),
             tag_id: Set(tag.tag_id),
             confidence: Set(tag.confidence),
             login_id: Set(tag.login_id),
@@ -1282,6 +1333,7 @@ async fn copy_matching_callsigns<C>(
     dbx: &C,
     source_signal_message_ids: &[i64],
     target_inbox_item_id: i64,
+    target_inbox_item_uuid: Option<Uuid>,
     actor_id: &uuid::Uuid,
 ) -> Result<(), AppError>
 where
@@ -1373,6 +1425,7 @@ where
                 crate::entities::sigint_inbox_item_callsign::ActiveModel {
                     id: NotSet,
                     sigint_inbox_item_id: Set(target_inbox_item_id),
+                    sigint_inbox_item_uuid: Set(target_inbox_item_uuid),
                     callsign: Set(callsign.callsign),
                     source: Set(callsign.source),
                     ordering: Set(callsign.ordering),
@@ -1409,6 +1462,7 @@ async fn copy_inbox_units<C>(
     dbx: &C,
     source_inbox_item_ids: &[i64],
     target_inbox_item_id: i64,
+    target_inbox_item_uuid: Option<Uuid>,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -1444,6 +1498,7 @@ where
         .map(
             |unit| crate::entities::sigint_inbox_item_unit::ActiveModel {
                 id: NotSet,
+                item_uuid: Set(target_inbox_item_uuid),
                 created_at: NotSet,
                 item_id: Set(target_inbox_item_id),
                 unit_id: Set(unit.unit_id),
@@ -1466,6 +1521,7 @@ async fn copy_pelengs<C>(
     dbx: &C,
     source_inbox_item_ids: &[i64],
     target_inbox_item_id: i64,
+    target_inbox_item_uuid: Option<Uuid>,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -1509,6 +1565,7 @@ where
         .map(|peleng| crate::entities::sigint_peleng::ActiveModel {
             id: NotSet,
             source_inbox_item_id: Set(target_inbox_item_id),
+            source_inbox_item_uuid: Set(target_inbox_item_uuid),
             lat: Set(peleng.lat),
             lng: Set(peleng.lng),
             settlement: Set(peleng.settlement),
@@ -1545,6 +1602,7 @@ async fn copy_inbox_networks<C>(
     dbx: &C,
     source_inbox_item_ids: &[i64],
     target_inbox_item_id: i64,
+    target_inbox_item_uuid: Option<Uuid>,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -1581,6 +1639,7 @@ where
             crate::entities::sigint_inbox_item_network::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(target_inbox_item_id),
+                sigint_inbox_item_uuid: Set(target_inbox_item_uuid),
                 sigint_network_id: Set(network.sigint_network_id),
                 created_at: NotSet,
             }
@@ -1601,6 +1660,7 @@ async fn copy_metadata<C>(
     dbx: &C,
     source_inbox_item_ids: &[i64],
     target_inbox_item_id: i64,
+    target_inbox_item_uuid: Option<Uuid>,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -1669,6 +1729,7 @@ where
             crate::entities::sigint_inbox_item_metadata::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(target_inbox_item_id),
+                sigint_inbox_item_uuid: Set(target_inbox_item_uuid),
                 color_code: Set(metadata.color_code),
                 sender_id: Set(metadata.sender_id),
                 sender_name: Set(metadata.sender_name),

@@ -1923,6 +1923,7 @@ mod tests {
             crate::inbox::callsigns::sync(
                 &env.dbx,
                 inbox_item.id,
+                inbox_item.id_uuid,
                 crate::inbox::callsigns::InboxItemCallsigns {
                     primary: vec![format!("Mouse{index}")],
                     alg2: Vec::new(),

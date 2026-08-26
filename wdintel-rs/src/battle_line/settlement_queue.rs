@@ -39,6 +39,7 @@ struct PendingItemLock {
 
 struct OneoffItemResolutionRequest {
     item_id: i64,
+    item_uuid: Option<uuid::Uuid>,
     location_v2: Option<String>,
     settlement_texts: Vec<String>,
 }
@@ -122,12 +123,13 @@ impl OneoffLinkInboxSettlementsStats {
 pub async fn reconcile_item_locations<C>(
     dbx: &C,
     item_id: i64,
+    item_uuid: Option<uuid::Uuid>,
     location_v2: Option<&str>,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    if reconcile_item_location_rows(dbx, item_id, location_v2)
+    if reconcile_item_location_rows(dbx, item_id, item_uuid, location_v2)
         .await
         .c(h!())?
     {
@@ -145,6 +147,7 @@ where
 async fn reconcile_item_location_rows<C>(
     dbx: &C,
     item_id: i64,
+    item_uuid: Option<uuid::Uuid>,
     location_v2: Option<&str>,
 ) -> anyhow::Result<bool>
 where
@@ -181,6 +184,7 @@ where
         sigint_inbox_item_settlement::Entity::insert(
             sigint_inbox_item_settlement::ActiveModel {
                 id: NotSet,
+                item_uuid: Set(item_uuid),
                 created_at: NotSet,
                 item_id: Set(item_id),
                 settlement_text: Set(settlement_text.clone()),
@@ -631,13 +635,14 @@ async fn process_oneoff_batch(
 async fn group_oneoff_resolution_requests(
     txn: &DatabaseTransaction,
     items: &[(NaiveDateTime, i64)],
-    item_locations: &BTreeMap<i64, Option<String>>,
+    item_locations: &BTreeMap<i64, (Option<String>, Option<uuid::Uuid>)>,
 ) -> anyhow::Result<(BTreeMap<Vec<i64>, Vec<OneoffItemResolutionRequest>>, usize)>
 {
     let mut request_groups = BTreeMap::new();
     let mut skipped = 0;
     for (_, item_id) in items {
-        let location_v2 = item_locations.get(item_id).c(h!())?.clone();
+        let (location_v2, item_uuid) =
+            item_locations.get(item_id).c(h!())?.clone();
         let settlement_texts = location_texts(location_v2.as_deref())
             .into_iter()
             .collect::<Vec<_>>();
@@ -652,6 +657,7 @@ async fn group_oneoff_resolution_requests(
             .or_insert_with(Vec::new)
             .push(OneoffItemResolutionRequest {
                 item_id: *item_id,
+                item_uuid,
                 location_v2,
                 settlement_texts,
             });
@@ -708,7 +714,7 @@ async fn process_oneoff_request_groups(
 async fn lock_oneoff_item_locations(
     txn: &DatabaseTransaction,
     items: &[(NaiveDateTime, i64)],
-) -> anyhow::Result<BTreeMap<i64, Option<String>>> {
+) -> anyhow::Result<BTreeMap<i64, (Option<String>, Option<uuid::Uuid>)>> {
     sigint_inbox_item::Entity::find()
         .filter(
             sigint_inbox_item::Column::Id
@@ -718,13 +724,20 @@ async fn lock_oneoff_item_locations(
         .select_only()
         .columns([
             sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::IdUuid,
             sigint_inbox_item::Column::LocationV2,
         ])
-        .into_tuple::<(i64, Option<String>)>()
+        .into_tuple::<(i64, Option<uuid::Uuid>, Option<String>)>()
         .all(txn)
         .await
         .c(h!())
-        .map(|rows| rows.into_iter().collect())
+        .map(|rows| {
+            rows.into_iter()
+                .map(|(id, item_uuid, location_v2)| {
+                    (id, (location_v2, item_uuid))
+                })
+                .collect()
+        })
 }
 
 fn print_oneoff_progress(stats: &OneoffLinkInboxSettlementsStats, total: u64) {
@@ -746,6 +759,7 @@ async fn process_oneoff_item_in_transaction(
     reconcile_item_location_rows(
         txn,
         request.item_id,
+        request.item_uuid,
         request.location_v2.as_deref(),
     )
     .await
@@ -950,7 +964,7 @@ mod tests {
         txn: &DatabaseTransaction,
         settlement_text: &str,
         settlement_id: i32,
-    ) -> anyhow::Result<i64> {
+    ) -> anyhow::Result<(i64, Option<uuid::Uuid>)> {
         let message = signal_message::ActiveModel {
             body: Set(Some("#2287 settlement relinking".to_string())),
             deleted: Set(false),
@@ -959,7 +973,7 @@ mod tests {
         .insert(txn)
         .await
         .c(h!())?;
-        sigint_inbox_item::ActiveModel {
+        let item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
             parsed_unit_v2: Set(false),
             location_v2: Set(Some(format!("|{settlement_text}|"))),
@@ -969,6 +983,7 @@ mod tests {
         .await
         .c(h!())?;
         sigint_inbox_item_settlement::ActiveModel {
+            item_uuid: Set(item.id_uuid),
             item_id: Set(message.id),
             settlement_text: Set(settlement_text.to_string()),
             settlement_id: Set(Some(settlement_id)),
@@ -978,7 +993,7 @@ mod tests {
         .insert(txn)
         .await
         .c(h!())?;
-        Ok(message.id)
+        Ok((message.id, item.id_uuid))
     }
 
     async fn insert_settlement_stats_test_fixture(
@@ -1008,7 +1023,7 @@ mod tests {
         .insert(txn)
         .await
         .c(h!())?;
-        sigint_inbox_item::ActiveModel {
+        let item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
             parsed_unit_v2: Set(false),
             ..Default::default()
@@ -1041,6 +1056,7 @@ mod tests {
         .await
         .c(h!())?;
         let row = sigint_inbox_item_settlement::ActiveModel {
+            item_uuid: Set(item.id_uuid),
             item_id: Set(message.id),
             settlement_text: Set("STATS INVALIDATION".to_string()),
             settlement_id: Set(None),
@@ -1176,17 +1192,17 @@ returning id
         .insert(&txn)
         .await
         .unwrap();
-        let item_id = sigint_inbox_item::ActiveModel {
+        let item = sigint_inbox_item::ActiveModel {
             id: Set(message.id),
             parsed_unit_v2: Set(false),
             ..Default::default()
         }
         .insert(&txn)
         .await
-        .unwrap()
-        .id;
+        .unwrap();
+        let item_id = item.id;
 
-        reconcile_item_locations(&txn, item_id, Some("|A|B|A|"))
+        reconcile_item_locations(&txn, item_id, item.id_uuid, Some("|A|B|A|"))
             .await
             .unwrap();
         let rows = sigint_inbox_item_settlement::Entity::find()
@@ -1207,7 +1223,7 @@ returning id
             .await
             .unwrap();
 
-        reconcile_item_locations(&txn, item_id, Some("|A|C|"))
+        reconcile_item_locations(&txn, item_id, item.id_uuid, Some("|A|C|"))
             .await
             .unwrap();
         let rows = sigint_inbox_item_settlement::Entity::find()
@@ -1223,7 +1239,9 @@ returning id
         assert_eq!(rows[1].settlement_id, None);
         assert_eq!(rows[1].is_undefined, None);
 
-        reconcile_item_locations(&txn, item_id, None).await.unwrap();
+        reconcile_item_locations(&txn, item_id, item.id_uuid, None)
+            .await
+            .unwrap();
         assert_eq!(
             sigint_inbox_item_settlement::Entity::find()
                 .filter(
@@ -1252,7 +1270,7 @@ returning id
         ] {
             insert_relink_test_settlement(&txn, id, name).await.unwrap();
         }
-        let item_id = insert_oneoff_relink_test_item(
+        let (item_id, item_uuid) = insert_oneoff_relink_test_item(
             &txn,
             "AMBIGUOUS",
             old_settlement_id,
@@ -1261,6 +1279,7 @@ returning id
         .unwrap();
         let request = OneoffItemResolutionRequest {
             item_id,
+            item_uuid,
             location_v2: Some("|AMBIGUOUS|".to_string()),
             settlement_texts: vec!["AMBIGUOUS".to_string()],
         };
@@ -1312,6 +1331,7 @@ returning id
         let (row, group_master_key, settlement_id) =
             insert_settlement_stats_test_fixture(&setup).await.unwrap();
         let item_id = row.item_id;
+        let item_uuid = row.item_uuid;
         setup.commit().await.unwrap();
 
         let update = env.dbx.begin().await.unwrap();
@@ -1345,7 +1365,7 @@ returning id
             .unwrap();
         let removal = env.dbx.begin().await.unwrap();
         let requires_invalidation =
-            reconcile_item_location_rows(&removal, item_id, None)
+            reconcile_item_location_rows(&removal, item_id, item_uuid, None)
                 .await
                 .unwrap();
         assert!(requires_invalidation);
@@ -1541,6 +1561,7 @@ returning id
             .unwrap();
         }
         let mut item_ids = vec![];
+        let mut item_uuids = vec![];
         for suffix in ["one", "two"] {
             let message = signal_message::ActiveModel {
                 body: Set(Some(format!("#2287 map {suffix}"))),
@@ -1559,17 +1580,20 @@ returning id
             .await
             .unwrap();
             item_ids.push(item.id);
+            item_uuids.push(item.id_uuid);
         }
-        for (item_id, text, linked_settlement_id) in [
-            (item_ids[0], "MAP", settlement_id),
-            (item_ids[0], "MAP ALIAS", settlement_id),
-            (item_ids[1], "MAP", settlement_id),
-            (item_ids[1], "NO COORD", missing_coordinate_id),
-            (item_ids[0], "MAP SECOND", second_settlement_id),
-            (item_ids[1], "MAP SECOND", second_settlement_id),
+        for (item_index, text, linked_settlement_id) in [
+            (0, "MAP", settlement_id),
+            (0, "MAP ALIAS", settlement_id),
+            (1, "MAP", settlement_id),
+            (1, "NO COORD", missing_coordinate_id),
+            (0, "MAP SECOND", second_settlement_id),
+            (1, "MAP SECOND", second_settlement_id),
         ] {
+            let item_id = item_ids[item_index];
             sigint_inbox_item_settlement::ActiveModel {
                 id: NotSet,
+                item_uuid: Set(item_uuids[item_index]),
                 created_at: NotSet,
                 item_id: Set(item_id),
                 settlement_text: Set(text.to_string()),
@@ -1662,6 +1686,7 @@ returning id
             item_ids.push(item.id);
             let row = sigint_inbox_item_settlement::ActiveModel {
                 id: NotSet,
+                item_uuid: Set(item.id_uuid),
                 created_at: NotSet,
                 item_id: Set(item.id),
                 settlement_text: Set(format!("CLAIM {suffix}")),

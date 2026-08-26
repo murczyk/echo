@@ -83,6 +83,7 @@ pub fn sql_exists_condition(inbox_alias: &str) -> String {
 pub async fn sync<C>(
     dbx: &C,
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<Uuid>,
     callsigns: InboxItemCallsigns,
     actor_id: Uuid,
 ) -> Result<InboxItemCallsigns, AppError>
@@ -104,6 +105,7 @@ where
         dbx,
         actor_id,
         sigint_inbox_item_id,
+        sigint_inbox_item_uuid,
         SigintInboxItemCallsignSource::Primary,
         &callsigns.primary,
         &existing,
@@ -113,6 +115,7 @@ where
         dbx,
         actor_id,
         sigint_inbox_item_id,
+        sigint_inbox_item_uuid,
         SigintInboxItemCallsignSource::Alg2,
         &callsigns.alg2,
         &existing,
@@ -190,6 +193,7 @@ async fn sync_source<C>(
     dbx: &C,
     actor_id: Uuid,
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<Uuid>,
     source: SigintInboxItemCallsignSource,
     desired: &[String],
     existing: &[sigint_inbox_item_callsign::Model],
@@ -250,6 +254,7 @@ where
             sigint_inbox_item_callsign::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(sigint_inbox_item_id),
+                sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
                 callsign: Set(callsign),
                 source: Set(source.clone()),
                 ordering: Set(ordering),
