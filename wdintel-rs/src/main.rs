@@ -304,6 +304,16 @@ pub struct OneoffBackfillSignalMessageAuthorLoginPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillSignalMessageUuidPs {
+    /// Number of rows read in each batch.
+    #[arg(long, default_value_t = 10_000)]
+    pub batch_size: u64,
+    /// Start the UUID backfill from the beginning instead of the stored checkpoint.
+    #[arg(long, action)]
+    pub reset_checkpoint: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffPrepareInboxNetworkUniquenessPs {
     /// Confirm deletion of duplicate links and online unique-index creation.
     #[arg(long, action)]
@@ -1092,6 +1102,7 @@ enum Cmd {
     OneoffBackfillSignalMessageAuthorLogin(
         OneoffBackfillSignalMessageAuthorLoginPs,
     ),
+    OneoffBackfillSignalMessageUuid(OneoffBackfillSignalMessageUuidPs),
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
@@ -1861,6 +1872,12 @@ async fn async_main(
         Cmd::OneoffBackfillSignalMessageAuthorLogin(ps) => {
             sigint::oneoff::oneoff_backfill_signal_message_author_login(mode, &ps)
                 .await
+        }
+        Cmd::OneoffBackfillSignalMessageUuid(ps) => {
+            sigint::message_uuid_oneoff::oneoff_backfill_signal_message_uuid(
+                mode, &ps,
+            )
+            .await
         }
         Cmd::OneoffPrepareInboxNetworkUniqueness(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_prepare_inbox_network_uniqueness(
