@@ -626,6 +626,7 @@ where
         .select_only()
         .column(legacy_column)
         .filter(uuid_column.is_null())
+        .filter(legacy_column.is_not_null())
         .filter(legacy_column.gt(cursor))
         .order_by_asc(legacy_column)
         .limit(batch_size)
