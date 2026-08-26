@@ -1,4 +1,4 @@
-use crate::battle_line::peleng_distance::update_peleng_distances;
+use crate::battle_line::peleng_distance::fill_peleng_distances;
 use crate::battle_line::{
     activate_battle_line_import, ensure_active_battle_line,
     prepare_battle_line_import, BattleLineImportOutcome,
@@ -75,7 +75,7 @@ pub async fn oneoff_backfill_peleng_battle_line_distance(
         let peleng_ids =
             rows.iter().map(|row| row.peleng_id).collect::<Vec<_>>();
         let page_updated =
-            update_peleng_distances(&dbx, battle_line_version_id, &peleng_ids)
+            fill_peleng_distances(&dbx, battle_line_version_id, &peleng_ids)
                 .await
                 .c(h!())?;
         scanned += rows.len() as u64;
@@ -416,7 +416,7 @@ values (
     // Regression: https://github.com/echoua/echo/issues/2287
     #[tokio::test]
     #[serial_test::serial]
-    async fn backfills_and_recomputes_shortest_relevant_aor_distance() {
+    async fn calculates_new_pelengs_without_recomputing_existing_distances() {
         let config = read_config(Mode::Test).unwrap();
         let dbx = new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
@@ -516,6 +516,17 @@ values (
         )
         .await
         .unwrap();
+        let pending = crate::functest::tests::mk_sigint_peleng(
+            &txn,
+            sigint_peleng::ActiveModel {
+                source_inbox_item_id: Set(message.id),
+                lat: Set(0.25),
+                lng: Set(2.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let invalid = crate::functest::tests::mk_sigint_peleng(
             &txn,
             sigint_peleng::ActiveModel {
@@ -528,18 +539,18 @@ values (
         .await
         .unwrap();
         assert_eq!(
-            crate::battle_line::peleng_distance::fill_missing_inbox_peleng_distances(
+            crate::battle_line::peleng_distance::fill_new_peleng_distances(
                 &txn,
-                message.id,
+                &[peleng.id],
             )
-                .await
-                .unwrap(),
+            .await
+            .unwrap(),
             1
         );
         assert_eq!(
-            crate::battle_line::peleng_distance::fill_missing_inbox_peleng_distances(
+            crate::battle_line::peleng_distance::fill_new_peleng_distances(
                 &txn,
-                message.id,
+                &[peleng.id],
             )
             .await
             .unwrap(),
@@ -555,6 +566,11 @@ values (
             .await
             .unwrap()
             .unwrap();
+        let pending = sigint_peleng::Entity::find_by_id(pending.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
         let invalid = sigint_peleng::Entity::find_by_id(invalid.id)
             .one(&txn)
             .await
@@ -564,24 +580,8 @@ values (
             (27_000..29_000).contains(&peleng.battle_line_distance.unwrap())
         );
         assert_eq!(existing.battle_line_distance, Some(7));
+        assert_eq!(pending.battle_line_distance, None);
         assert_eq!(invalid.battle_line_distance, None);
-        assert_eq!(
-            crate::battle_line::peleng_distance::recompute_peleng_distances_for_aors(
-                &txn,
-                &[first_aor.id],
-            )
-            .await
-            .unwrap(),
-            3
-        );
-        let existing = sigint_peleng::Entity::find_by_id(existing.id)
-            .one(&txn)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(
-            (27_000..29_000).contains(&existing.battle_line_distance.unwrap())
-        );
         crate::messenger::bl::upsert_group_area_of_responsibility(
             &txn,
             &group.master_key,
@@ -589,14 +589,26 @@ values (
         )
         .await
         .unwrap();
+        let peleng = sigint_peleng::Entity::find_by_id(peleng.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
         let existing = sigint_peleng::Entity::find_by_id(existing.id)
             .one(&txn)
             .await
             .unwrap()
             .unwrap();
+        let pending = sigint_peleng::Entity::find_by_id(pending.id)
+            .one(&txn)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(
-            (82_000..84_000).contains(&existing.battle_line_distance.unwrap())
+            (27_000..29_000).contains(&peleng.battle_line_distance.unwrap())
         );
+        assert_eq!(existing.battle_line_distance, Some(7));
+        assert_eq!(pending.battle_line_distance, None);
         crate::location::peleng::insert_pelengs(
             vec![Coords {
                 lat: 0.75,

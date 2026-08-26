@@ -96,8 +96,9 @@ where
         return Ok(());
     }
 
+    let mut peleng_ids = Vec::with_capacity(coords.len());
     for coord in coords {
-        sigint_peleng::ActiveModel {
+        let peleng = sigint_peleng::ActiveModel {
             id: NotSet,
             source_inbox_item_id: Set(inbox_item_id),
             lat: Set(coord.lat),
@@ -115,10 +116,11 @@ where
         .insert(txn)
         .await
         .c(h!())?;
+        peleng_ids.push(peleng.id);
     }
-    crate::battle_line::peleng_distance::fill_missing_inbox_peleng_distances(
+    crate::battle_line::peleng_distance::fill_new_peleng_distances(
         txn,
-        inbox_item_id,
+        &peleng_ids,
     )
     .await
     .c(h!())?;

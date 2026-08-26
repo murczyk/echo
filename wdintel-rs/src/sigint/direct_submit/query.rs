@@ -1523,13 +1523,17 @@ where
         })
         .collect::<Vec<_>>();
     if !peleng_models.is_empty() {
-        crate::entities::sigint_peleng::Entity::insert_many(peleng_models)
-            .exec(dbx)
-            .await
-            .c(h!())?;
-        crate::battle_line::peleng_distance::fill_missing_inbox_peleng_distances(
+        let peleng_ids =
+            crate::entities::sigint_peleng::Entity::insert_many(peleng_models)
+                .exec_with_returning(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|peleng| peleng.id)
+                .collect::<Vec<_>>();
+        crate::battle_line::peleng_distance::fill_new_peleng_distances(
             dbx,
-            target_inbox_item_id,
+            &peleng_ids,
         )
         .await
         .c(h!())?;

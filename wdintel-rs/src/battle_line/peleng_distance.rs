@@ -5,37 +5,13 @@ use crate::config::{
     BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MAX,
     BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MIN,
 };
-use crate::entities::{sigint_peleng, signal_group_aor};
 use crate::h;
 use crate::types::ShortContext;
-use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, QueryFilter,
-    QuerySelect, Statement,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
-pub(super) async fn invalidate_peleng_distances<C>(
+pub async fn fill_new_peleng_distances<C>(
     dbx: &C,
-) -> anyhow::Result<()>
-where
-    C: ConnectionTrait,
-{
-    dbx.execute_unprepared(
-        r#"
-update sigint_peleng
-set
-    battle_line_distance = null,
-    updated_at = now() at time zone 'utc'
-where battle_line_distance is not null
-            "#,
-    )
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
-pub async fn fill_missing_inbox_peleng_distances<C>(
-    dbx: &C,
-    inbox_item_id: i64,
+    peleng_ids: &[i64],
 ) -> anyhow::Result<u64>
 where
     C: ConnectionTrait,
@@ -45,134 +21,10 @@ where
     else {
         return Ok(0);
     };
-    let peleng_ids = sigint_peleng::Entity::find()
-        .filter(sigint_peleng::Column::SourceInboxItemId.eq(inbox_item_id))
-        .filter(sigint_peleng::Column::BattleLineDistance.is_null())
-        .filter(sigint_peleng::Column::Deleted.eq(false))
-        .filter(sigint_peleng::Column::Lat.between(
-            BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MIN,
-            BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MAX,
-        ))
-        .filter(sigint_peleng::Column::Lng.between(
-            BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MIN,
-            BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MAX,
-        ))
-        .select_only()
-        .column(sigint_peleng::Column::Id)
-        .into_tuple::<i64>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-    update_peleng_distances(dbx, battle_line_version_id, &peleng_ids).await
+    fill_peleng_distances(dbx, battle_line_version_id, peleng_ids).await
 }
 
-pub(crate) async fn recompute_peleng_distances_for_aors<C>(
-    dbx: &C,
-    aor_ids: &[i64],
-) -> anyhow::Result<u64>
-where
-    C: ConnectionTrait,
-{
-    if aor_ids.is_empty() {
-        return Ok(0);
-    }
-    let group_master_keys = signal_group_aor::Entity::find()
-        .filter(signal_group_aor::Column::AorId.is_in(aor_ids.iter().copied()))
-        .select_only()
-        .column(signal_group_aor::Column::MasterKey)
-        .distinct()
-        .into_tuple::<String>()
-        .all(dbx)
-        .await
-        .c(h!())?;
-    recompute_peleng_distances_for_groups(dbx, &group_master_keys).await
-}
-
-pub(crate) async fn recompute_peleng_distances_for_group<C>(
-    dbx: &C,
-    group_master_key: &str,
-) -> anyhow::Result<u64>
-where
-    C: ConnectionTrait,
-{
-    recompute_peleng_distances_for_groups(dbx, &[group_master_key.to_string()])
-        .await
-}
-
-async fn recompute_peleng_distances_for_groups<C>(
-    dbx: &C,
-    group_master_keys: &[String],
-) -> anyhow::Result<u64>
-where
-    C: ConnectionTrait,
-{
-    if group_master_keys.is_empty() {
-        return Ok(0);
-    }
-    let battle_line_version_id = active_battle_line_id(dbx).await.c(h!())?;
-    let updated = dbx
-        .query_all_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            r#"
-with affected_peleng as (
-    select distinct peleng.id
-    from sigint_peleng peleng
-    join signal_message_group message_group
-        on message_group.signal_message_id = peleng.source_inbox_item_id
-    where message_group.group_master_key = any($1::text[])
-), peleng_distances as (
-    select
-        peleng.id,
-        min(ST_Distance(
-            ST_SetSRID(ST_MakePoint(peleng.lng, peleng.lat), 4326)::geography,
-            component.geom::geography
-        )) as distance_m
-    from affected_peleng affected
-    join sigint_peleng peleng on peleng.id = affected.id
-    join signal_message_group message_group
-        on message_group.signal_message_id = peleng.source_inbox_item_id
-    join signal_group_aor group_aor
-        on group_aor.master_key = message_group.group_master_key
-    join area_of_responsibility aor
-        on aor.id = group_aor.aor_id
-       and not aor.deleted
-    join battle_line_aor_geometry aor_geometry
-        on aor_geometry.aor_id = aor.id
-       and aor_geometry.version_id = $2
-    cross join lateral ST_Dump(
-        ST_CollectionExtract(aor_geometry.geometry, 2)
-    ) component
-    where not peleng.deleted
-      and peleng.lat between $3 and $4
-      and peleng.lng between $5 and $6
-    group by peleng.id
-), updated as (
-    update sigint_peleng peleng
-    set
-        battle_line_distance = ceil(peleng_distances.distance_m)::integer,
-        updated_at = now() at time zone 'utc'
-    from affected_peleng affected
-    left join peleng_distances on peleng_distances.id = affected.id
-    where peleng.id = affected.id
-    returning peleng.id
-)
-select id from updated
-            "#,
-            [
-                group_master_keys.to_vec().into(),
-                battle_line_version_id.into(),
-                BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MIN.into(),
-                BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MAX.into(),
-                BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MIN.into(),
-                BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MAX.into(),
-            ],
-        ))
-        .await
-        .c(h!())?;
-    Ok(updated.len() as u64)
-}
-
-pub async fn update_peleng_distances<C>(
+pub(super) async fn fill_peleng_distances<C>(
     dbx: &C,
     battle_line_version_id: i64,
     peleng_ids: &[i64],

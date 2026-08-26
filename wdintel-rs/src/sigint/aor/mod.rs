@@ -89,12 +89,6 @@ pub async fn update_aor(
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
         .await
         .c(h!())?;
-    crate::battle_line::peleng_distance::recompute_peleng_distances_for_aors(
-        &txn,
-        &[aor.id],
-    )
-    .await
-    .c(h!())?;
     crate::battle_line::requeue_settlement_links(&txn)
         .await
         .c(h!())?;
@@ -202,13 +196,6 @@ pub async fn update_aor_battle_line_boundaries(
         save_battle_line_boundaries(&txn, resolved, battle_line_active)
             .await
             .c(h!())?;
-    let updated_aor_ids = updated.iter().map(|aor| aor.id).collect::<Vec<_>>();
-    crate::battle_line::peleng_distance::recompute_peleng_distances_for_aors(
-        &txn,
-        &updated_aor_ids,
-    )
-    .await
-    .c(h!())?;
     if battle_line_active && !updated.is_empty() {
         crate::battle_line::requeue_settlement_links(&txn)
             .await
@@ -252,12 +239,6 @@ pub async fn delete_aor(
     crate::battle_line::refresh_aor_geometry(&txn, aor.id)
         .await
         .c(h!())?;
-    crate::battle_line::peleng_distance::recompute_peleng_distances_for_aors(
-        &txn,
-        &[aor.id],
-    )
-    .await
-    .c(h!())?;
     crate::battle_line::requeue_settlement_links(&txn)
         .await
         .c(h!())?;

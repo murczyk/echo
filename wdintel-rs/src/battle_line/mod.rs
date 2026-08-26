@@ -1029,11 +1029,6 @@ returning id
     for aor_id in aor_ids {
         refresh_aor_geometry(dbx, aor_id).await.c(h!())?;
     }
-    if previous_id.is_some() {
-        peleng_distance::invalidate_peleng_distances(dbx)
-            .await
-            .c(h!())?;
-    }
     Ok(BattleLineImportOutcome::Imported(version_id))
 }
 
@@ -3376,8 +3371,7 @@ where aor_id = $1
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn delta_force_import_invalidates_peleng_distances_and_keeps_settlements(
-    ) {
+    async fn delta_force_import_keeps_peleng_distances_and_settlements() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -3514,7 +3508,7 @@ where id = $1
                 .unwrap()
                 .unwrap()
                 .battle_line_distance,
-            None
+            Some(7)
         );
         assert!(battle_line_version::Entity::find_by_id(initial_version_id)
             .one(&txn)
