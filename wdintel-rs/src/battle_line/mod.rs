@@ -1029,6 +1029,11 @@ returning id
     for aor_id in aor_ids {
         refresh_aor_geometry(dbx, aor_id).await.c(h!())?;
     }
+    if previous_id.is_some() {
+        peleng_distance::invalidate_peleng_distances(dbx)
+            .await
+            .c(h!())?;
+    }
     Ok(BattleLineImportOutcome::Imported(version_id))
 }
 
@@ -3371,7 +3376,7 @@ where aor_id = $1
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn delta_force_always_imports_new_version_and_keeps_settlement_results(
+    async fn delta_force_import_invalidates_peleng_distances_and_keeps_settlements(
     ) {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
@@ -3448,6 +3453,16 @@ where id = $1
         .insert(&txn)
         .await
         .unwrap();
+        let peleng = crate::functest::tests::mk_sigint_peleng(
+            &txn,
+            sigint_peleng::ActiveModel {
+                source_inbox_item_id: Set(item_id),
+                battle_line_distance: Set(Some(7)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let settlement_link = sigint_inbox_item_settlement::ActiveModel {
             id: NotSet,
             created_at: NotSet,
@@ -3491,6 +3506,15 @@ where id = $1
         assert_eq!(
             active_battle_line_id(&txn).await.unwrap(),
             Some(version_id)
+        );
+        assert_eq!(
+            sigint_peleng::Entity::find_by_id(peleng.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .battle_line_distance,
+            None
         );
         assert!(battle_line_version::Entity::find_by_id(initial_version_id)
             .one(&txn)

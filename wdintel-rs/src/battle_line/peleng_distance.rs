@@ -13,6 +13,26 @@ use sea_orm::{
     QuerySelect, Statement,
 };
 
+pub(super) async fn invalidate_peleng_distances<C>(
+    dbx: &C,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_unprepared(
+        r#"
+update sigint_peleng
+set
+    battle_line_distance = null,
+    updated_at = now() at time zone 'utc'
+where battle_line_distance is not null
+            "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 pub async fn fill_missing_inbox_peleng_distances<C>(
     dbx: &C,
     inbox_item_id: i64,

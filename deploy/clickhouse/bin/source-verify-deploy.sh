@@ -108,11 +108,11 @@ reconcile_source_tables() {
   fi
 }
 
-log "Waiting for source table reconciliation"
-reconcile_source_tables
-
 log "Running manifest-authorized targeted table repairs"
 "$SCRIPT_DIR/source-resnapshot-table.sh" --manifest
+
+log "Waiting for source table reconciliation"
+reconcile_source_tables
 
 deadline=$((SECONDS + health_timeout))
 while ((SECONDS < deadline)); do

@@ -903,10 +903,10 @@ lock as table-selection reconciliation, preserves custom destination mapping
 names, snapshots only the authorized table, refreshes current-state and gateway
 views, and requires the end-to-end analytics health check to pass. The source
 package installs the helper and manifest under `/opt/echo-peerdb` so the normal
-post-migration deployment verification can apply authorized repairs
-automatically. `empty_table_resnapshot` still refuses a non-empty source;
-targeted `replicated_snapshot` explicitly authorizes snapshotting one non-empty
-table.
+post-migration deployment verification can apply authorized repairs before
+strict schema reconciliation. `empty_table_resnapshot` still refuses a
+non-empty source; targeted `replicated_snapshot` explicitly authorizes
+snapshotting one non-empty table.
 
 ```json
 {

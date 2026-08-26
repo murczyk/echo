@@ -116,7 +116,7 @@ test_transient_retry_succeeds() {
   [[ $(<"$case_dir/systemctl-count") == 2 ]]
   grep -q 'Transient reconciliation contention detected' "$case_dir/stdout"
   grep -q 'succeeded on attempt 2/3' "$case_dir/stdout"
-  grep -q '^resnapshot --manifest$' "$case_dir/operations"
+  [[ $(head -n 1 "$case_dir/operations") == 'resnapshot --manifest' ]]
 }
 
 test_permanent_failure_stops_immediately() {
@@ -126,7 +126,7 @@ test_permanent_failure_stops_immediately() {
   [[ $(<"$case_dir/systemctl-count") == 1 ]]
   grep -q 'SOURCE TABLE RECONCILIATION FAILED' "$case_dir/stderr"
   grep -q 'not recognized as transient' "$case_dir/stderr"
-  ! grep -q '^resnapshot ' "$case_dir/operations"
+  [[ $(head -n 1 "$case_dir/operations") == 'resnapshot --manifest' ]]
 }
 
 test_transient_retries_are_bounded() {
@@ -136,7 +136,7 @@ test_transient_retries_are_bounded() {
   [[ $(<"$case_dir/systemctl-count") == 3 ]]
   grep -q 'SOURCE TABLE RECONCILIATION IS STILL BLOCKED' "$case_dir/stderr"
   grep -q '3 transient attempts failed' "$case_dir/stderr"
-  ! grep -q '^resnapshot ' "$case_dir/operations"
+  [[ $(head -n 1 "$case_dir/operations") == 'resnapshot --manifest' ]]
 }
 
 test_transient_retry_succeeds
