@@ -25,6 +25,10 @@ import type {
 
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
+const consumeEvent = (event: KeyboardEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+};
 
 function getPreviewKind(item: MessageCardPreviewItem) {
   if (item.type === 'document') return item.value.kind;
@@ -69,14 +73,21 @@ export function MessageCardAttachmentPreviewDialog({
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
         if (childOverlayOpen) {
+          consumeEvent(event);
           setDismissChildOverlay((value) => value + 1);
           return;
         }
-        if (editorEscapeHandlerRef.current?.()) return;
-        if (isEditing) return;
+        const editorEscapeHandler = editorEscapeHandlerRef.current;
+        if (editorEscapeHandler) {
+          if (editorEscapeHandler(event)) consumeEvent(event);
+          return;
+        }
+        if (isEditing) {
+          consumeEvent(event);
+          return;
+        }
+        consumeEvent(event);
         if (previewKind !== 'image' && previewConfig.layout === 'media' && dialogIsFullscreen) {
           setIsFullscreen(false);
           return;

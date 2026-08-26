@@ -1,6 +1,6 @@
 import type { MessageCardImage } from '../message-card/message-card-image-utils';
 
-export type ImageEditorEscapeHandler = () => boolean;
+export type ImageEditorEscapeHandler = (event: globalThis.KeyboardEvent) => boolean;
 export type RegisterImageEditorEscapeHandler = (handler: ImageEditorEscapeHandler | null) => void;
 
 export type ImageEditorTool =

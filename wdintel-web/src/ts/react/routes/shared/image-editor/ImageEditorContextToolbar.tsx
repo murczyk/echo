@@ -57,8 +57,11 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
   const showStroke = showShape || showLine || showBrush;
   const showDash = showShape || showLine;
   return (
-    <ImageEditorContextInspector>
-      <div data-image-editor-contextual-row className="flex h-12 min-w-max items-center gap-3">
+    <ImageEditorContextInspector bordered={props.tool !== 'conceal'}>
+      <div
+        data-image-editor-contextual-row
+        className="flex min-w-0 max-w-full flex-wrap items-center gap-3"
+      >
         {showText ? (
           <ImageEditorContextGroup>
             <ImageEditorColorControl
@@ -147,16 +150,18 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
           </ImageEditorContextGroup>
         ) : null}
         {props.tool === 'conceal' ? (
-          <ImageEditorSegmentedControl
-            value={props.concealMode}
-            choices={[
-              { value: 'blur', label: 'Розмиття' },
-              { value: 'pixelate', label: 'Пікселізація' },
-              { value: 'redact', label: 'Затемнення' },
-            ]}
-            onChange={props.onConcealModeChange}
-            disabled={props.disabled}
-          />
+          <ImageEditorContextGroup>
+            <ImageEditorSegmentedControl
+              value={props.concealMode}
+              choices={[
+                { value: 'blur', label: 'Розмиття' },
+                { value: 'pixelate', label: 'Пікселізація' },
+                { value: 'redact', label: 'Затемнення' },
+              ]}
+              onChange={props.onConcealModeChange}
+              disabled={props.disabled}
+            />
+          </ImageEditorContextGroup>
         ) : null}
         {props.tool === 'magnifier' ? (
           <ImageEditorSliderControl
@@ -174,20 +179,22 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
             <span className="shrink-0 whitespace-nowrap text-echo-sm">
               Перетягніть рамку, щоб обрізати
             </span>
-            <ImageEditorIconButton
-              label="Застосувати обрізання"
-              icon={<CheckIcon />}
-              onClick={props.onApplyCrop}
-              disabled={props.disabled}
-              compact
-            />
-            <ImageEditorIconButton
-              label="Скасувати обрізання"
-              icon={<CloseIcon />}
-              onClick={props.onCancelCrop}
-              disabled={props.disabled}
-              compact
-            />
+            <span className="flex items-center gap-0">
+              <ImageEditorIconButton
+                label="Застосувати обрізання"
+                icon={<CheckIcon />}
+                onClick={props.onApplyCrop}
+                disabled={props.disabled}
+                compact
+              />
+              <ImageEditorIconButton
+                label="Скасувати обрізання"
+                icon={<CloseIcon />}
+                onClick={props.onCancelCrop}
+                disabled={props.disabled}
+                compact
+              />
+            </span>
           </ImageEditorContextGroup>
         ) : null}
       </div>

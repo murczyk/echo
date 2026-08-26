@@ -4,6 +4,28 @@ type Rect = import('fabric').Rect;
 const CROP_ROLE = 'crop';
 const CROP_MASK_ROLE = 'crop-mask';
 const MIN_CROP_SIZE = 8;
+const cropScalingByCanvas = new WeakMap<
+  Canvas,
+  { uniformScaling: boolean; uniScaleKey: Canvas['uniScaleKey'] }
+>();
+
+function configureCropScaling(canvas: Canvas) {
+  if (!cropScalingByCanvas.has(canvas))
+    cropScalingByCanvas.set(canvas, {
+      uniformScaling: canvas.uniformScaling,
+      uniScaleKey: canvas.uniScaleKey,
+    });
+  canvas.uniformScaling = false;
+  canvas.uniScaleKey = 'shiftKey';
+}
+
+function restoreCropScaling(canvas: Canvas) {
+  const previous = cropScalingByCanvas.get(canvas);
+  if (!previous) return;
+  canvas.uniformScaling = previous.uniformScaling;
+  canvas.uniScaleKey = previous.uniScaleKey;
+  cropScalingByCanvas.delete(canvas);
+}
 
 export function normalizedCropFrame({
   left,
@@ -120,6 +142,7 @@ export function startCrop({
   maskColor: string;
 }) {
   if (cropRef.current) return cropRef.current;
+  configureCropScaling(canvas);
   const displayedWidth = canvas.upperCanvasEl.getBoundingClientRect().width;
   const inset = Math.max(
     1,
@@ -162,6 +185,7 @@ export function cancelCrop({
 }) {
   removeCropUi(canvas);
   cropRef.current = null;
+  restoreCropScaling(canvas);
   canvas.discardActiveObject();
   canvas.requestRenderAll();
 }
@@ -264,6 +288,7 @@ export function applyCrop({
   });
   canvas.setDimensions({ width: bounds.width, height: bounds.height });
   cropRef.current = null;
+  restoreCropScaling(canvas);
   canvas.discardActiveObject();
   canvas.requestRenderAll();
   return true;

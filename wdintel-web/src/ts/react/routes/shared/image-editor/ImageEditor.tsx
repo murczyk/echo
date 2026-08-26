@@ -280,6 +280,14 @@ export function ImageEditor({
     hiddenTextareaContainer: hiddenTextareaContainerRef,
   });
 
+  useEffect(
+    () => () => {
+      const canvas = canvasRef.current;
+      if (canvas && cropRef.current) cancelCrop({ canvas, cropRef });
+    },
+    [],
+  );
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -397,44 +405,42 @@ export function ImageEditor({
     if (hasEdits) setConfirmCancel(true);
     else onCancel();
   }, [hasEdits, isInteractionLocked, onCancel]);
-  const handleEditorEscape = useCallback(() => {
-    if (loading || applying || rasterPending) return true;
-    if (confirmCancel) {
-      setConfirmCancel(false);
+  const handleEditorEscape = useCallback(
+    (event: KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-image-editor-local-escape]'))
+        return false;
+      if (loading || applying || rasterPending) return true;
+      if (confirmCancel) {
+        setConfirmCancel(false);
+        return true;
+      }
+      if (menuOpen) {
+        setMenuOpen(false);
+        setDismissMenu((value) => value + 1);
+        return true;
+      }
+      const canvas = canvasRef.current;
+      const active = canvas?.getActiveObject() as import('fabric').IText | undefined;
+      if (active?.isEditing) {
+        active.exitEditing();
+        canvas?.requestRenderAll();
+        return true;
+      }
+      if (cropRef.current) {
+        cancelCropOperation();
+        return true;
+      }
+      if (cancelGestureRef.current()) return true;
+      requestCancel();
       return true;
-    }
-    if (menuOpen) {
-      setMenuOpen(false);
-      setDismissMenu((value) => value + 1);
-      return true;
-    }
-    const canvas = canvasRef.current;
-    const active = canvas?.getActiveObject() as import('fabric').IText | undefined;
-    if (active?.isEditing) {
-      active.exitEditing();
-      canvas?.requestRenderAll();
-      return true;
-    }
-    if (cropRef.current) {
-      cancelCropOperation();
-      return true;
-    }
-    if (cancelGestureRef.current()) return true;
-    requestCancel();
-    return true;
-  }, [
-    applying,
-    cancelCropOperation,
-    confirmCancel,
-    loading,
-    menuOpen,
-    rasterPending,
-    requestCancel,
-  ]);
+    },
+    [applying, cancelCropOperation, confirmCancel, loading, menuOpen, rasterPending, requestCancel],
+  );
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (event.key === 'Escape' && !registerEscapeHandler && handleEditorEscape()) {
+      if (event.key === 'Escape' && !registerEscapeHandler && handleEditorEscape(event)) {
         event.preventDefault();
         event.stopPropagation();
         return;

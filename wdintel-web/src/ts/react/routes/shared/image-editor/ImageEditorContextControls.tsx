@@ -1,12 +1,8 @@
-import { Slider } from '@mui/material';
-import type { ReactNode } from 'react';
+import { Slider, TextField, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 export function ImageEditorContextGroup({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex shrink-0 items-center gap-2 border-r border-echo-border pr-3 last:border-r-0">
-      {children}
-    </div>
-  );
+  return <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{children}</div>;
 }
 
 export function ImageEditorCompactNumericControl({
@@ -24,15 +20,64 @@ export function ImageEditorCompactNumericControl({
   onChange: (value: number) => void;
   disabled: boolean;
 }) {
+  const [draft, setDraft] = useState(String(value));
+  const skipNextBlurCommitRef = useRef(false);
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const next = Number(draft);
+    if (!Number.isFinite(next)) return setDraft(String(value));
+    onChange(Math.max(min, Math.min(max, next)));
+  };
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.currentTarget.blur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setDraft(String(value));
+      skipNextBlurCommitRef.current = true;
+      event.stopPropagation();
+      event.currentTarget.blur();
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      const parsedDraft = Number(draft);
+      const basis = Number.isFinite(parsedDraft) ? parsedDraft : value;
+      const next = Math.max(min, Math.min(max, basis + (event.key === 'ArrowUp' ? 1 : -1)));
+      setDraft(String(next));
+      onChange(next);
+    }
+  };
   return (
-    <input
-      aria-label={label}
-      className="h-8 w-14 rounded-echo-sm border border-echo-border bg-transparent px-1 text-center text-echo-sm tabular-nums"
-      type="number"
-      min={min}
-      max={max}
-      value={value}
-      onChange={(event) => onChange(Number(event.target.value))}
+    <TextField
+      size="small"
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (skipNextBlurCommitRef.current) {
+          skipNextBlurCommitRef.current = false;
+          return;
+        }
+        commit();
+      }}
+      slotProps={{
+        htmlInput: {
+          'aria-label': label,
+          inputMode: 'numeric',
+          'data-image-editor-local-escape': true,
+          onKeyDown: handleKeyDown,
+        },
+      }}
+      sx={{
+        width: 56,
+        '& .MuiInputBase-root': { height: 32 },
+        '& .MuiInputBase-input': {
+          boxSizing: 'border-box',
+          height: 32,
+          padding: '0 6px',
+          textAlign: 'center',
+          fontVariantNumeric: 'tabular-nums',
+        },
+      }}
       disabled={disabled}
     />
   );
@@ -51,13 +96,15 @@ export function ImageEditorColorControl({
 }) {
   return (
     <label
-      className="flex size-8 shrink-0 items-center justify-center rounded-full border border-echo-border"
+      className={`relative flex size-8 shrink-0 overflow-hidden rounded-full border border-echo-border ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-echo-focus'}`}
       title={label}
+      aria-disabled={disabled}
     >
       <span className="sr-only">{label}</span>
+      <span className="absolute inset-0" style={{ backgroundColor: value }} />
       <input
         aria-label={label}
-        className="size-6 cursor-pointer rounded-full border-0 bg-transparent p-0"
+        className={`absolute inset-0 size-full opacity-0 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
         type="color"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -88,11 +135,13 @@ export function ImageEditorSliderControl({
 }) {
   const id = `image-editor-${label}`;
   return (
-    <div className="flex h-8 items-center gap-2 whitespace-nowrap text-echo-sm">
-      <span id={id}>{label}</span>
+    <div className="grid h-8 shrink-0 grid-cols-[max-content_80px_40px] items-center gap-2 whitespace-nowrap text-echo-sm">
+      <span id={id} className="min-w-0">
+        {label}
+      </span>
       <Slider
         aria-labelledby={id}
-        className="w-20 shrink-0"
+        className="w-20"
         min={min}
         max={max}
         step={step}
@@ -100,7 +149,7 @@ export function ImageEditorSliderControl({
         onChange={(_, next) => onChange(next as number)}
         disabled={disabled}
       />
-      <output className="min-w-8 text-right tabular-nums">{display}</output>
+      <output className="text-right tabular-nums">{display}</output>
     </div>
   );
 }
@@ -117,19 +166,23 @@ export function ImageEditorSegmentedControl<T extends string>({
   disabled: boolean;
 }) {
   return (
-    <div className="flex h-8 items-center rounded-md border border-echo-border p-0.5">
+    <ToggleButtonGroup
+      exclusive
+      size="small"
+      color="primary"
+      value={value}
+      onChange={(_, next) => next && onChange(next)}
+      disabled={disabled}
+    >
       {choices.map((choice) => (
-        <button
+        <ToggleButton
           key={choice.value}
-          type="button"
-          className="h-7 rounded px-2 text-echo-sm aria-pressed:bg-echo-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-echo-focus"
-          aria-pressed={value === choice.value}
-          onClick={() => onChange(choice.value)}
-          disabled={disabled}
+          value={choice.value}
+          className="whitespace-nowrap px-2 text-echo-sm"
         >
           {choice.label}
-        </button>
+        </ToggleButton>
       ))}
-    </div>
+    </ToggleButtonGroup>
   );
 }

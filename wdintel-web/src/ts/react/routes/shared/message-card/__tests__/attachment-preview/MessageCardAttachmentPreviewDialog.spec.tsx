@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import type { ReactNode } from 'react';
-import { act } from 'react';
+import { act, useLayoutEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,8 +14,24 @@ vi.mock('@mui/material', () => ({
     open ? <div role="dialog">{children}</div> : null,
 }));
 
+const imageEditorEscapeHandler = vi.fn(() => false);
+
 vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
-  ImageAttachmentPreviewRenderer: () => <div data-renderer="image" />,
+  ImageAttachmentPreviewRenderer: ({
+    registerEditorEscapeHandler,
+  }: {
+    registerEditorEscapeHandler?: (handler: (event: KeyboardEvent) => boolean) => void;
+  }) => {
+    useLayoutEffect(() => {
+      registerEditorEscapeHandler?.(imageEditorEscapeHandler);
+      return () => registerEditorEscapeHandler?.(null);
+    }, [registerEditorEscapeHandler]);
+    return (
+      <div data-renderer="image">
+        <input data-image-editor-local-escape onKeyDown={(event) => event.stopPropagation()} />
+      </div>
+    );
+  },
 }));
 
 vi.mock('../../renderers/VideoAttachmentPreviewRenderer', () => ({
@@ -49,6 +65,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     container?.remove();
     root = null;
     container = null;
+    imageEditorEscapeHandler.mockClear();
   });
 
   it.each(items)('renders the $type attachment renderer directly', async (item) => {
@@ -70,5 +87,30 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(container.querySelector('[data-renderer]')?.getAttribute('data-renderer')).toBe(
       item.type,
     );
+  });
+
+  it('defers a locally handled editor Escape without closing the preview', async () => {
+    const onClose = vi.fn();
+    const targetEscape = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
+          onClose={onClose}
+        />,
+      ),
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    input.addEventListener('keydown', targetEscape);
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    await act(async () => input.dispatchEvent(event));
+    expect(imageEditorEscapeHandler).toHaveBeenCalledWith(event);
+    expect(targetEscape).toHaveBeenCalledWith(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
