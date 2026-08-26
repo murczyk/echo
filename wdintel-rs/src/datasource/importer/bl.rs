@@ -6,6 +6,7 @@ use crate::types::*;
 use redis::aio::ConnectionManager;
 use reqwest::Client;
 use sea_orm::*;
+use uuid::Uuid;
 
 pub async fn upsert_datasource(
     db: &DatabaseConnection,
@@ -245,6 +246,7 @@ async fn insert_missing_message_groups<'a, 'async_trait, C>(
     txn: &'a C,
     source_message_id: i64,
     target_message_id: i64,
+    target_message_uuid: Option<Uuid>,
     message_groups: &[signal_message_group::Model],
     source_datasource_id: i64,
     target_datasource_id: i64,
@@ -328,7 +330,7 @@ where
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(target_message_id),
-            signal_message_uuid: Set(group_entry.signal_message_uuid),
+            signal_message_uuid: Set(target_message_uuid),
             group_master_key: Set(master_key.clone()),
             sender: Set(group_entry.sender.clone()),
             login_id: Set(group_entry.login_id),
@@ -424,6 +426,7 @@ pub async fn upsert_messages(
                         &txn,
                         source_message_id,
                         existing_message_id,
+                        existing_message.id_uuid,
                         &entry.message_groups,
                         source_datasource_id,
                         target_datasource_id,
@@ -476,8 +479,14 @@ pub async fn upsert_messages(
                 None
             };
 
+            let target_message_uuid =
+                crate::sigint::message_id::signal_message_uuid(
+                    new_message.timestamp,
+                    new_message.created_at,
+                );
             let mut rec = new_message.into_active_model();
             rec.id = NotSet;
+            rec.id_uuid = Set(Some(target_message_uuid));
             rec.datasource_group_id = Set(datasource_group_id);
             rec.external_id = Set(Some(source_message_id));
             rec.echo_inbox_message_id = Set(None);
@@ -490,6 +499,7 @@ pub async fn upsert_messages(
                 &txn,
                 source_message_id,
                 new_id,
+                Some(target_message_uuid),
                 &entry.message_groups,
                 source_datasource_id,
                 target_datasource_id,

@@ -639,6 +639,7 @@ async fn migrate_comment_batch(
         migrated_comments.push((
             comment.id,
             signal_message.id,
+            signal_message.id_uuid,
             comment.signal_message_id,
         ));
     }
@@ -655,11 +656,11 @@ async fn migrate_comment_batch(
         .c(h!())?;
     let linked_message_ids = migrated_comments
         .iter()
-        .map(|(_, signal_message_id, _)| *signal_message_id)
+        .map(|(_, signal_message_id, _, _)| *signal_message_id)
         .collect::<Vec<_>>();
     let parent_message_ids = migrated_comments
         .iter()
-        .map(|(_, _, parent_signal_message_id)| *parent_signal_message_id)
+        .map(|(_, _, _, parent_signal_message_id)| *parent_signal_message_id)
         .collect::<Vec<_>>();
     let message_uuids = signal_message::Entity::find()
         .select_only()
@@ -685,7 +686,7 @@ async fn migrate_comment_batch(
         .collect::<HashMap<_, _>>();
     let links = migrated_comments
         .iter()
-        .map(|(_, signal_message_id, parent_signal_message_id)| {
+        .map(|(_, signal_message_id, _, parent_signal_message_id)| {
             intel_product::ActiveModel {
                 intel_message_id: Set(*signal_message_id),
                 intel_message_uuid: Set(message_uuids
@@ -756,31 +757,49 @@ async fn update_migrated_comment_message_uids(
 
 async fn update_migrated_comment_markers(
     txn: &DatabaseTransaction,
-    migrated_comments: &[(i64, i64, i64)],
+    migrated_comments: &[(i64, i64, Option<Uuid>, i64)],
 ) -> Result<(), AppError> {
     if migrated_comments.is_empty() {
         return Ok(());
     }
 
-    let mut values = Vec::<Value>::with_capacity(migrated_comments.len() * 2);
+    let mut values = Vec::<Value>::with_capacity(migrated_comments.len() * 3);
     let cases = migrated_comments
         .iter()
         .enumerate()
-        .map(|(index, (comment_id, signal_message_id, _))| {
-            let comment_placeholder = index * 2 + 1;
-            let message_placeholder = comment_placeholder + 1;
-            values.push((*comment_id).into());
-            values.push((*signal_message_id).into());
-            format!("WHEN ${comment_placeholder} THEN ${message_placeholder}")
+        .map(
+            |(
+                index,
+                (comment_id, signal_message_id, signal_message_uuid, _),
+            )| {
+                let comment_placeholder = index * 3 + 1;
+                let message_placeholder = comment_placeholder + 1;
+                values.push((*comment_id).into());
+                values.push((*signal_message_id).into());
+                values.push((*signal_message_uuid).into());
+                format!(
+                    "WHEN ${comment_placeholder} THEN ${message_placeholder}"
+                )
+            },
+        )
+        .collect::<Vec<_>>();
+    let uuid_cases = migrated_comments
+        .iter()
+        .enumerate()
+        .map(|(index, (_, _, _, _))| {
+            let comment_placeholder = index * 3 + 1;
+            let uuid_placeholder = comment_placeholder + 2;
+            format!("WHEN ${comment_placeholder} THEN ${uuid_placeholder}")
         })
         .collect::<Vec<_>>();
     let ids = (0..migrated_comments.len())
-        .map(|index| format!("${}", index * 2 + 1))
+        .map(|index| format!("${}", index * 3 + 1))
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "UPDATE sigint_comment SET migrated_signal_message_id = CASE id {} ELSE migrated_signal_message_id END WHERE id IN ({ids})",
-        cases.join(" ")
+        "UPDATE sigint_comment SET migrated_signal_message_id = CASE id {} ELSE migrated_signal_message_id END, migrated_signal_message_uuid = CASE id {} ELSE migrated_signal_message_uuid END WHERE id IN ({ids})",
+        cases.join(" "),
+        uuid_cases.join(" "),
     );
     txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
