@@ -14,7 +14,6 @@ function selectionDescriptor(
   if (role === 'line' || role === 'arrow') return { kind: 'line', role };
   if (role === 'brush') return { kind: 'brush', role };
   if (role === 'highlight') return { kind: 'highlight', role };
-  if (role === 'magnifier') return { kind: 'magnifier', role };
   if (role === 'concealment') return { kind: 'concealment', role };
   return undefined;
 }

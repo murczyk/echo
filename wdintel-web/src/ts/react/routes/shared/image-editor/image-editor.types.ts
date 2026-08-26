@@ -17,7 +17,7 @@ export type ImageEditorTool =
 export type ConcealMode = 'blur' | 'pixelate' | 'redact';
 
 export type ImageEditorSelectionDescriptor = {
-  kind: 'text' | 'shape' | 'line' | 'brush' | 'highlight' | 'magnifier' | 'concealment';
+  kind: 'text' | 'shape' | 'line' | 'brush' | 'highlight' | 'concealment';
   role: string;
 };
 

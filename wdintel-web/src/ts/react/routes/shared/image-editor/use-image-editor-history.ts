@@ -27,13 +27,16 @@ export function useImageEditorHistory({
   const snapshot = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || restoringRef.current) return null;
+    const serializableCanvas = canvas as unknown as {
+      set?: (properties: Record<string, unknown>) => void;
+      toJSON: (properties: string[]) => unknown;
+    };
+    serializableCanvas.set?.({
+      editorDocumentWidth: canvas.width,
+      editorDocumentHeight: canvas.height,
+    });
     return JSON.stringify(
-      (canvas as unknown as { toJSON: (properties: string[]) => unknown }).toJSON([
-        'editorRole',
-        'magnification',
-        'magnifierDiameter',
-        'magnifierSourceCenter',
-      ]),
+      serializableCanvas.toJSON(['editorRole', 'editorDocumentWidth', 'editorDocumentHeight']),
     );
   }, [canvasRef]);
 
@@ -109,7 +112,17 @@ export function useImageEditorHistory({
       if (!canvas || nextIndex < 0 || nextIndex >= snapshotsRef.current.length) return;
       restoringRef.current = true;
       try {
-        await canvas.loadFromJSON(snapshotsRef.current[nextIndex] ?? '{}');
+        const serializedSnapshot = snapshotsRef.current[nextIndex] ?? '{}';
+        const snapshot = JSON.parse(serializedSnapshot) as {
+          editorDocumentWidth?: number;
+          editorDocumentHeight?: number;
+        };
+        await canvas.loadFromJSON(serializedSnapshot);
+        if (snapshot.editorDocumentWidth && snapshot.editorDocumentHeight)
+          canvas.setDimensions({
+            width: snapshot.editorDocumentWidth,
+            height: snapshot.editorDocumentHeight,
+          });
         indexRef.current = nextIndex;
         setState({ index: nextIndex, length: snapshotsRef.current.length });
         setHasEdits(snapshotsRef.current[nextIndex] !== cleanSnapshotRef.current);
@@ -141,7 +154,16 @@ export function useImageEditorHistory({
     if (!canvas || cleanSnapshot == null) return;
     restoringRef.current = true;
     try {
+      const snapshot = JSON.parse(cleanSnapshot) as {
+        editorDocumentWidth?: number;
+        editorDocumentHeight?: number;
+      };
       await canvas.loadFromJSON(cleanSnapshot);
+      if (snapshot.editorDocumentWidth && snapshot.editorDocumentHeight)
+        canvas.setDimensions({
+          width: snapshot.editorDocumentWidth,
+          height: snapshot.editorDocumentHeight,
+        });
       snapshotsRef.current = [cleanSnapshot];
       indexRef.current = 0;
       setState({ index: 0, length: 1 });

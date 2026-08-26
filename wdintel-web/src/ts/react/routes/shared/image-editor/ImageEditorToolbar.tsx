@@ -1,4 +1,6 @@
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
 import { Slider } from '@mui/material';
 
 import { PowerButton } from '../../../components/PowerButton';
@@ -43,6 +45,9 @@ type Props = {
   onUndo: () => void;
   onRedo: () => void;
   onResetEdits: () => void;
+  cropActive: boolean;
+  onApplyCrop: () => void;
+  onCancelCrop: () => void;
 };
 
 function ColorField({
@@ -103,7 +108,7 @@ export function ImageEditorToolbar(props: Props) {
       {shouldRenderContextualRow(props.tool, props.selection, context) ? (
         <div
           data-image-editor-contextual-row
-          className="flex h-12 shrink-0 items-center gap-3 overflow-x-auto overflow-y-hidden border-b border-echo-border px-2"
+          className="relative z-10 -mb-12 flex h-12 shrink-0 items-center gap-3 overflow-x-auto overflow-y-hidden border-b border-echo-border bg-echo-surface px-2"
         >
           {showText ? (
             <>
@@ -221,6 +226,27 @@ export function ImageEditorToolbar(props: Props) {
               <span className="min-w-5 text-center tabular-nums">{props.magnification}×</span>
             </label>
           ) : null}
+          {props.tool === 'crop' && props.cropActive ? (
+            <>
+              <span className="shrink-0 whitespace-nowrap text-echo-sm">
+                Перетягніть рамку, щоб обрізати
+              </span>
+              <ImageEditorIconButton
+                label="Застосувати обрізання"
+                icon={<CheckIcon />}
+                onClick={props.onApplyCrop}
+                disabled={props.disabled}
+                compact
+              />
+              <ImageEditorIconButton
+                label="Скасувати обрізання"
+                icon={<CloseIcon />}
+                onClick={props.onCancelCrop}
+                disabled={props.disabled}
+                compact
+              />
+            </>
+          ) : null}
         </div>
       ) : null}
     </>
@@ -246,5 +272,6 @@ function shouldRenderContextualRow(
     'highlight',
     'conceal',
     'magnifier',
+    'crop',
   ].includes(tool);
 }

@@ -22,7 +22,7 @@ export async function exportEditedImage({
   canvas: import('fabric').Canvas;
   source: ImageEditorSource;
   sourceImage: import('fabric').FabricImage;
-  crop: import('fabric').Rect | null;
+  crop?: import('fabric').Rect | null;
 }) {
   const viewport = [...(canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0])] as [
     number,
@@ -33,6 +33,10 @@ export async function exportEditedImage({
     number,
   ];
   canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+  const transient = canvas
+    .getObjects()
+    .filter((object) => ['crop', 'crop-mask'].includes(String(object.get('editorRole'))));
+  transient.forEach((object) => object.set({ visible: false }));
   const bounds = crop?.getBoundingRect();
   if (crop && (!bounds || bounds.width < 1 || bounds.height < 1)) {
     canvas.setViewportTransform(viewport);
@@ -43,8 +47,8 @@ export async function exportEditedImage({
     const element = canvas.toCanvasElement(1, {
       left: bounds?.left ?? 0,
       top: bounds?.top ?? 0,
-      width: bounds?.width ?? sourceImage.width,
-      height: bounds?.height ?? sourceImage.height,
+      width: bounds?.width ?? canvas.width ?? sourceImage.width,
+      height: bounds?.height ?? canvas.height ?? sourceImage.height,
     });
     const requestedType = outputMimeType(source);
     const blob = await new Promise<Blob>((resolve, reject) =>
@@ -58,6 +62,7 @@ export async function exportEditedImage({
     const type = blob.type || requestedType;
     return new File([blob], outputFileName(source.fileName, type), { type });
   } finally {
+    transient.forEach((object) => object.set({ visible: true }));
     if (crop) crop.visible = true;
     canvas.setViewportTransform(viewport);
   }

@@ -35,6 +35,16 @@ export function useImageEditorViewport({
     viewRef.current = view;
   }, [view]);
 
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width <= 0 || canvas.height <= 0) return;
+    canvas.setDimensions(
+      { width: canvas.width * view.scale, height: canvas.height * view.scale },
+      { cssOnly: true },
+    );
+    canvas.calcOffset();
+  }, [canvasRef, view.scale]);
+
   const getSizes = useCallback(() => {
     const canvas = canvasRef.current;
     const workspace = workspaceRef.current;

@@ -35,7 +35,6 @@ export function useImageEditorCanvas({
   setLoading,
   setError,
   toolRef,
-  onMagnifierModified,
 }: {
   source: ImageEditorSource;
   canvasElementRef: RefObject<HTMLCanvasElement | null>;
@@ -49,7 +48,6 @@ export function useImageEditorCanvas({
   setLoading: (loading: boolean) => void;
   setError: (error: string) => void;
   toolRef: MutableRefObject<ImageEditorTool>;
-  onMagnifierModified: (magnifier: import('fabric').FabricObject) => void;
 }) {
   useEffect(() => {
     let disposed = false;
@@ -85,28 +83,6 @@ export function useImageEditorCanvas({
         canvasRef.current = canvas;
         sourceRef.current = image;
         const commit = (event?: { target?: import('fabric').FabricObject }) => {
-          if (event?.target?.get('editorRole') === 'magnifier' && sourceRef.current) {
-            const diameter = event.target.get('magnifierDiameter');
-            const magnifierDiameter = typeof diameter === 'number' ? diameter : 32;
-            event.target.set({
-              left: Math.max(
-                0,
-                Math.min(
-                  (sourceRef.current.width ?? 0) - magnifierDiameter,
-                  event.target.left ?? 0,
-                ),
-              ),
-              top: Math.max(
-                0,
-                Math.min(
-                  (sourceRef.current.height ?? 0) - magnifierDiameter,
-                  event.target.top ?? 0,
-                ),
-              ),
-            });
-            onMagnifierModified(event.target);
-            return;
-          }
           saveHistory();
         };
         canvas.on('object:modified', commit);
@@ -154,6 +130,5 @@ export function useImageEditorCanvas({
     setLoading,
     source,
     sourceRef,
-    onMagnifierModified,
   ]);
 }

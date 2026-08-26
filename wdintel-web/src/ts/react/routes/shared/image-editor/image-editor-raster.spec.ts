@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { addMagnifier, replaceConcealmentDraft } from './image-editor-raster';
+import { replaceConcealmentDraft } from './image-editor-raster';
 
 class FabricObject {
   values: Record<string, unknown>;
@@ -72,29 +72,6 @@ function canvasFixture() {
 
 describe('image editor raster operations #3099', () => {
   afterEach(() => vi.restoreAllMocks());
-
-  it('creates an in-place magnifier without a source marker or connector', async () => {
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-      beginPath: vi.fn(),
-      arc: vi.fn(),
-      clip: vi.fn(),
-      drawImage: vi.fn(),
-    } as never);
-    const canvas = canvasFixture();
-    await addMagnifier({
-      canvas,
-      sourceImage: sourceImage(),
-      fabric: fabric as never,
-      magnification: 2,
-      bounds: { left: 20, top: 24, width: 40, height: 40 },
-    });
-
-    expect(canvas.objects).toHaveLength(1);
-    expect(canvas.objects[0].get('editorRole')).toBe('magnifier');
-    expect(canvas.objects[0].left).toBe(20);
-    expect(canvas.objects[0].top).toBe(24);
-    expect(canvas.setActiveObject).not.toHaveBeenCalled();
-  });
 
   it('blurs an expanded source canvas and crops it back to selected native bounds', async () => {
     const drawImage = vi.fn();

@@ -34,7 +34,9 @@ export function addTextAnnotation({
 export function deleteSelectedAnnotations(canvas: import('fabric').Canvas) {
   const selected = canvas
     .getActiveObjects()
-    .filter((object) => object.get('editorRole') !== 'concealment');
+    .filter(
+      (object) => !['concealment', 'crop', 'crop-mask'].includes(String(object.get('editorRole'))),
+    );
   selected.forEach((object) => canvas.remove(object));
   canvas.discardActiveObject();
   canvas.requestRenderAll();
