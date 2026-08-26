@@ -12,6 +12,7 @@ function canvasFixture() {
   const canvas = {
     viewportTransform: [2, 0, 0, 2, 12, 16],
     setViewportTransform: vi.fn(),
+    requestRenderAll: vi.fn(),
     toCanvasElement: vi.fn(() => ({ toBlob })),
   };
   return { canvas, toBlob };
@@ -62,5 +63,31 @@ describe('exportEditedImage', () => {
       height: 480,
     });
     expect(crop.visible).toBe(true);
+  });
+
+  it('restores transient visibility and viewport when crop validation fails', async () => {
+    const { canvas } = canvasFixture();
+    const crop = {
+      visible: false,
+      get: () => 'crop',
+      set(values: { visible: boolean }) {
+        this.visible = values.visible;
+      },
+      getBoundingRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
+    };
+    Object.assign(canvas, { getObjects: () => [crop] });
+
+    await expect(
+      exportEditedImage({
+        canvas: canvas as never,
+        source: { blob: new Blob(), fileName: 'source.png', mimeType: 'image/png' },
+        sourceImage: { width: 4000, height: 3000 } as never,
+        crop: crop as never,
+      }),
+    ).rejects.toThrow('Виберіть непорожню область для обрізання');
+
+    expect(crop.visible).toBe(false);
+    expect(canvas.setViewportTransform).toHaveBeenLastCalledWith([2, 0, 0, 2, 12, 16]);
+    expect(canvas.requestRenderAll).toHaveBeenCalledOnce();
   });
 });

@@ -31,19 +31,53 @@ export function useImageEditorViewport({
   const [view, setView] = useState(INITIAL_VIEW);
   const viewRef = useRef(view);
   const [ready, setReady] = useState(false);
+  const [documentSize, setDocumentSize] = useState<EditorSize>({ width: 0, height: 0 });
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || canvas.width <= 0 || canvas.height <= 0) return;
+    if (!canvas || documentSize.width <= 0 || documentSize.height <= 0) return;
     canvas.setDimensions(
-      { width: canvas.width * view.scale, height: canvas.height * view.scale },
+      { width: documentSize.width * view.scale, height: documentSize.height * view.scale },
       { cssOnly: true },
     );
-    canvas.calcOffset();
-  }, [canvasRef, view.scale]);
+    canvas.calcOffset?.();
+  }, [canvasRef, documentSize, view.scale]);
+
+  const syncDocumentDimensions = useCallback(
+    ({ fit = false }: { fit?: boolean } = {}) => {
+      const canvas = canvasRef.current;
+      if (!canvas || canvas.width <= 0 || canvas.height <= 0) return;
+      const document = { width: canvas.width, height: canvas.height };
+      setDocumentSize(document);
+      const workspace = workspaceRef.current;
+      if (!workspace) return;
+      const workspaceSize = sizeOf(workspace);
+      if (workspaceSize.width === 0 || workspaceSize.height === 0) return;
+      setView((current) => {
+        if (fit || current.mode === 'fit')
+          return {
+            scale: fitEditorScale(document, workspaceSize),
+            pan: { x: 0, y: 0 },
+            mode: 'fit',
+          };
+        if (current.mode === 'actual')
+          return {
+            scale: 1,
+            pan: clampEditorPan(current.pan, document, workspaceSize, 1),
+            mode: 'actual',
+          };
+        return {
+          ...current,
+          pan: clampEditorPan(current.pan, document, workspaceSize, current.scale),
+        };
+      });
+      setReady(true);
+    },
+    [canvasRef, workspaceRef],
+  );
 
   const getSizes = useCallback(() => {
     const canvas = canvasRef.current;
@@ -140,6 +174,7 @@ export function useImageEditorViewport({
     fitViewport,
     panBy,
     ready,
+    syncDocumentDimensions,
     setViewportZoom,
     view,
     zoomAtPoint,

@@ -35,6 +35,7 @@ export function useImageEditorCanvas({
   setLoading,
   setError,
   toolRef,
+  onDocumentResized,
 }: {
   source: ImageEditorSource;
   canvasElementRef: RefObject<HTMLCanvasElement | null>;
@@ -48,6 +49,7 @@ export function useImageEditorCanvas({
   setLoading: (loading: boolean) => void;
   setError: (error: string) => void;
   toolRef: MutableRefObject<ImageEditorTool>;
+  onDocumentResized: () => void;
 }) {
   useEffect(() => {
     let disposed = false;
@@ -83,6 +85,8 @@ export function useImageEditorCanvas({
         canvasRef.current = canvas;
         sourceRef.current = image;
         const commit = (event?: { target?: import('fabric').FabricObject }) => {
+          const role = event?.target?.get('editorRole');
+          if (role === 'crop' || role === 'crop-mask') return;
           saveHistory();
         };
         canvas.on('object:modified', commit);
@@ -97,6 +101,7 @@ export function useImageEditorCanvas({
         });
         canvas.on('text:editing:exited', commit);
         saveHistory();
+        onDocumentResized();
         setCanvasReady(true);
         setLoading(false);
       } catch (cause) {
@@ -130,5 +135,6 @@ export function useImageEditorCanvas({
     setLoading,
     source,
     sourceRef,
+    onDocumentResized,
   ]);
 }

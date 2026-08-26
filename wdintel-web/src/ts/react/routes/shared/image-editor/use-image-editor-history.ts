@@ -5,6 +5,19 @@ const HISTORY_DELAY_MS = 150;
 
 type Canvas = import('fabric').Canvas;
 
+function withoutTransientCropUi(serialized: unknown) {
+  if (!serialized || typeof serialized !== 'object') return serialized;
+  const canvas = serialized as { objects?: unknown[] };
+  return {
+    ...canvas,
+    objects: canvas.objects?.filter((object) => {
+      if (!object || typeof object !== 'object') return true;
+      const role = (object as { editorRole?: unknown }).editorRole;
+      return role !== 'crop' && role !== 'crop-mask';
+    }),
+  };
+}
+
 export function useImageEditorHistory({
   canvasRef,
   onRestored,
@@ -36,7 +49,9 @@ export function useImageEditorHistory({
       editorDocumentHeight: canvas.height,
     });
     return JSON.stringify(
-      serializableCanvas.toJSON(['editorRole', 'editorDocumentWidth', 'editorDocumentHeight']),
+      withoutTransientCropUi(
+        serializableCanvas.toJSON(['editorRole', 'editorDocumentWidth', 'editorDocumentHeight']),
+      ),
     );
   }, [canvasRef]);
 

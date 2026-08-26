@@ -25,14 +25,6 @@ function sourceElement(sourceImage: import('fabric').FabricImage) {
   return element;
 }
 
-function rasterSource(sourceImage: import('fabric').FabricImage): RasterSource {
-  return {
-    element: sourceElement(sourceImage),
-    width: sourceImage.width ?? 0,
-    height: sourceImage.height ?? 0,
-  };
-}
-
 export function buildSafeRaster({
   canvas,
   sourceImage,
@@ -40,13 +32,27 @@ export function buildSafeRaster({
   canvas: import('fabric').Canvas;
   sourceImage: import('fabric').FabricImage;
 }) {
-  const source = rasterSource(sourceImage);
+  const element = sourceElement(sourceImage);
+  const width = sourceImage.width ?? 0;
+  const height = sourceImage.height ?? 0;
+  const elementWidth =
+    Number((element as { naturalWidth?: number; width?: number }).naturalWidth) ||
+    Number((element as { width?: number }).width) ||
+    width;
+  const elementHeight =
+    Number((element as { naturalHeight?: number; height?: number }).naturalHeight) ||
+    Number((element as { height?: number }).height) ||
+    height;
+  const cropX = Math.max(0, Math.min(Number(sourceImage.get?.('cropX') ?? 0), elementWidth));
+  const cropY = Math.max(0, Math.min(Number(sourceImage.get?.('cropY') ?? 0), elementHeight));
+  const sourceWidth = Math.max(0, Math.min(width, elementWidth - cropX));
+  const sourceHeight = Math.max(0, Math.min(height, elementHeight - cropY));
   const safe = document.createElement('canvas');
-  safe.width = source.width;
-  safe.height = source.height;
+  safe.width = width;
+  safe.height = height;
   const context = safe.getContext('2d');
   if (!context) throw new Error('Не вдалося підготувати безпечне зображення');
-  context.drawImage(source.element, 0, 0, source.width, source.height);
+  context.drawImage(element, cropX, cropY, sourceWidth, sourceHeight, 0, 0, width, height);
   canvas.getObjects().forEach((object) => {
     if (object.get('editorRole') !== 'concealment') return;
     const left = object.left ?? 0;

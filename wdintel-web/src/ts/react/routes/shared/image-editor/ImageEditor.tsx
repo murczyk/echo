@@ -1,7 +1,8 @@
-import { Alert } from '@mui/material';
+import { Alert, useTheme } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { ImageEditorToolbar } from './ImageEditorToolbar';
+import { ImageEditorContextToolbar } from './ImageEditorContextToolbar';
 import { ImageEditorFooter } from './ImageEditorFooter';
 import { ImageEditorDiscardAlert } from './ImageEditorDiscardAlert';
 import { ImageEditorWorkspace } from './ImageEditorWorkspace';
@@ -60,6 +61,7 @@ export function ImageEditor({
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
+  const cropStroke = useTheme().palette.primary.main;
   const toolRef = useRef(tool);
   const {
     enqueue: enqueueRaster,
@@ -86,10 +88,11 @@ export function ImageEditor({
           strokeWidth,
         });
       const fabric = fabricRef.current;
-      if (canvas && fabric && nextTool === 'crop') startCrop({ canvas, fabric, cropRef, stroke });
+      if (canvas && fabric && nextTool === 'crop')
+        startCrop({ canvas, fabric, cropRef, stroke: cropStroke });
       setTool(nextTool);
     },
-    [isInteractionLocked, stroke, strokeWidth],
+    [cropStroke, isInteractionLocked, stroke, strokeWidth],
   );
   const {
     actualSize,
@@ -98,6 +101,7 @@ export function ImageEditor({
     panBy,
     ready: viewportReady,
     setViewportZoom,
+    syncDocumentDimensions,
     view,
     zoom,
     zoomAtPoint,
@@ -118,6 +122,7 @@ export function ImageEditor({
     canvasRef,
     onRestored: async (canvas) => {
       restoreImageEditorCanvasReferences({ canvas, sourceRef, cropRef });
+      syncDocumentDimensions();
       applyImageEditorInteractionMode({
         canvas,
         tool: toolRef.current,
@@ -153,6 +158,7 @@ export function ImageEditor({
     setLoading,
     setError,
     toolRef,
+    onDocumentResized: syncDocumentDimensions,
   });
 
   const replaceConcealmentDraft = useCallback(
@@ -286,10 +292,10 @@ export function ImageEditor({
     if (!canvas || !sourceImage) return;
     if (applyCrop({ canvas, sourceImage, cropRef })) {
       saveHistory();
-      fitViewport();
+      syncDocumentDimensions({ fit: true });
       changeTool('select');
     }
-  }, [changeTool, fitViewport, isInteractionLocked, saveHistory]);
+  }, [changeTool, isInteractionLocked, saveHistory, syncDocumentDimensions]);
   const cancelCropOperation = useCallback(() => {
     if (isInteractionLocked()) return;
     const canvas = canvasRef.current;
@@ -380,45 +386,50 @@ export function ImageEditor({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onKeyDown]);
+  const primaryToolbarProps = {
+    disabled: !canvasReady || loading || applying || rasterPending,
+    tool,
+    onToolChange: changeTool,
+    zoom,
+    canUndo,
+    canRedo,
+    canDeleteSelected,
+    onDeleteSelected: deleteSelected,
+    onZoomChange: setViewportZoom,
+    onFitViewport: fitViewport,
+    onActualSize: actualSize,
+    onCenterViewport: centerViewport,
+    onUndo: queuedUndo,
+    onRedo: queuedRedo,
+    onResetEdits: queuedReset,
+  };
+  const contextualToolbarProps = {
+    disabled: !canvasReady || loading || applying || rasterPending,
+    tool,
+    stroke,
+    onStrokeChange: setStroke,
+    fill,
+    onFillChange: setFill,
+    strokeWidth,
+    onStrokeWidthChange: setStrokeWidth,
+    dash,
+    onDashChange: setDash,
+    fontSize,
+    onFontSizeChange: setFontSize,
+    bold,
+    onBoldChange: () => setBold((value) => !value),
+    concealMode,
+    onConcealModeChange: setConcealMode,
+    magnification,
+    onMagnificationChange: setMagnification,
+    selection,
+    cropActive: tool === 'crop' && Boolean(cropRef.current),
+    onApplyCrop: applyCropOperation,
+    onCancelCrop: cancelCropOperation,
+  };
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Редактор зображення">
-      <ImageEditorToolbar
-        disabled={!canvasReady || loading || applying || rasterPending}
-        tool={tool}
-        onToolChange={changeTool}
-        stroke={stroke}
-        onStrokeChange={setStroke}
-        fill={fill}
-        onFillChange={setFill}
-        strokeWidth={strokeWidth}
-        onStrokeWidthChange={setStrokeWidth}
-        dash={dash}
-        onDashChange={setDash}
-        fontSize={fontSize}
-        onFontSizeChange={setFontSize}
-        bold={bold}
-        onBoldChange={() => setBold((value) => !value)}
-        concealMode={concealMode}
-        onConcealModeChange={setConcealMode}
-        magnification={magnification}
-        onMagnificationChange={setMagnification}
-        zoom={zoom}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        canDeleteSelected={canDeleteSelected}
-        selection={selection}
-        onDeleteSelected={deleteSelected}
-        onZoomChange={setViewportZoom}
-        onFitViewport={fitViewport}
-        onActualSize={actualSize}
-        onCenterViewport={centerViewport}
-        onUndo={queuedUndo}
-        onRedo={queuedRedo}
-        onResetEdits={queuedReset}
-        cropActive={tool === 'crop' && Boolean(cropRef.current)}
-        onApplyCrop={applyCropOperation}
-        onCancelCrop={cancelCropOperation}
-      />
+      <ImageEditorToolbar {...primaryToolbarProps} />
       {error ? (
         <Alert severity="error" className="m-2">
           {error}
@@ -439,6 +450,7 @@ export function ImageEditor({
         magnification={magnification}
         onPan={panBy}
         onZoom={zoomAtPoint}
+        contextualToolbar={<ImageEditorContextToolbar {...contextualToolbarProps} />}
       />
       <ImageEditorFooter
         applying={applying}

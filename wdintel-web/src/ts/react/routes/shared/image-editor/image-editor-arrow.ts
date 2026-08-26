@@ -42,6 +42,17 @@ export function createArrow({
     originX: 'left',
     originY: 'top',
   });
+  const linePoints = (
+    shaft as unknown as { calcLinePoints: () => { x1: number; y1: number } }
+  ).calcLinePoints();
+  const renderedStart = fabric.util.transformPoint(
+    new fabric.Point(linePoints.x1, linePoints.y1),
+    shaft.calcTransformMatrix(),
+  );
+  arrow.set({
+    left: (arrow.left ?? 0) + start.x - renderedStart.x,
+    top: (arrow.top ?? 0) + start.y - renderedStart.y,
+  });
   arrow.set({ editorRole: 'arrow', selectable: false, evented: false });
   return arrow;
 }

@@ -32,18 +32,21 @@ export async function exportEditedImage({
     number,
     number,
   ];
-  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-  const transient = canvas
-    .getObjects()
-    .filter((object) => ['crop', 'crop-mask'].includes(String(object.get('editorRole'))));
-  transient.forEach((object) => object.set({ visible: false }));
-  const bounds = crop?.getBoundingRect();
-  if (crop && (!bounds || bounds.width < 1 || bounds.height < 1)) {
-    canvas.setViewportTransform(viewport);
-    throw new Error('Виберіть непорожню область для обрізання');
-  }
-  if (crop) crop.visible = false;
+  const transient = (canvas.getObjects?.() ?? []).filter((object) =>
+    ['crop', 'crop-mask'].includes(String(object.get('editorRole'))),
+  );
+  const transientVisibility = transient.map((object) => ({
+    object,
+    visible: object.visible ?? true,
+  }));
+  const cropVisibility = crop && !transient.includes(crop) ? (crop.visible ?? true) : undefined;
   try {
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    transientVisibility.forEach(({ object }) => object.set({ visible: false }));
+    if (crop && !transient.includes(crop)) crop.visible = false;
+    const bounds = crop?.getBoundingRect();
+    if (crop && (!bounds || bounds.width < 1 || bounds.height < 1))
+      throw new Error('Виберіть непорожню область для обрізання');
     const element = canvas.toCanvasElement(1, {
       left: bounds?.left ?? 0,
       top: bounds?.top ?? 0,
@@ -62,8 +65,9 @@ export async function exportEditedImage({
     const type = blob.type || requestedType;
     return new File([blob], outputFileName(source.fileName, type), { type });
   } finally {
-    transient.forEach((object) => object.set({ visible: true }));
-    if (crop) crop.visible = true;
+    transientVisibility.forEach(({ object, visible }) => object.set({ visible }));
+    if (crop && cropVisibility !== undefined) crop.visible = cropVisibility;
     canvas.setViewportTransform(viewport);
+    canvas.requestRenderAll?.();
   }
 }

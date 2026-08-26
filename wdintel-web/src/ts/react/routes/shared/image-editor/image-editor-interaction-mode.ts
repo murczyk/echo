@@ -48,8 +48,8 @@ export function applyImageEditorInteractionMode({
   canvas.defaultCursor = tool === 'pan' ? 'grab' : 'default';
   canvas.getObjects().forEach((object) => {
     const role = object.get('editorRole');
-    if (role === 'concealment') return;
-    const editable = tool === 'select' || (tool === 'crop' && role === 'crop');
+    if (role === 'concealment' || role === 'crop-mask') return;
+    const editable = (tool === 'select' && role !== 'crop') || (tool === 'crop' && role === 'crop');
     object.set({ selectable: editable, evented: editable });
   });
   if (creationTool || tool === 'pan' || selecting) canvas.requestRenderAll();

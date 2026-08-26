@@ -49,7 +49,12 @@ export function useImageEditorSelection({
     if (!canvas) return;
     const sync = () => {
       const selected = canvas.getActiveObject();
-      onCanDeleteChange(Boolean(selected && selected.get('editorRole') !== 'concealment'));
+      onCanDeleteChange(
+        Boolean(
+          selected &&
+          !['concealment', 'crop', 'crop-mask'].includes(String(selected.get('editorRole'))),
+        ),
+      );
       if (!selected) {
         onSelectionChange(undefined);
         return;

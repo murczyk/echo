@@ -1,7 +1,15 @@
 import { CircularProgress } from '@mui/material';
-import { useEffect, useRef, useState, type PointerEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import type { EditorViewState } from './image-editor-viewport';
+import { calculateMagnifierSample } from './image-editor-magnifier';
 import type { ImageEditorTool } from './image-editor.types';
 
 export function ImageEditorWorkspace({
@@ -16,6 +24,7 @@ export function ImageEditorWorkspace({
   magnification,
   onPan,
   onZoom,
+  contextualToolbar,
 }: {
   canvasElementRef: RefObject<HTMLCanvasElement | null>;
   canvasRef: RefObject<import('fabric').Canvas | null>;
@@ -28,16 +37,14 @@ export function ImageEditorWorkspace({
   magnification: number;
   onPan: (delta: { x: number; y: number }) => void;
   onZoom: (point: { x: number; y: number }, scale: number) => void;
+  contextualToolbar?: ReactNode;
 }) {
   const dragRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
   const spaceDownRef = useRef(false);
-  const [lens, setLens] = useState<{
-    left: number;
-    top: number;
-    image: string;
-    backgroundSize: string;
-    backgroundPosition: string;
-  } | null>(null);
+  const lensCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lensFrameRef = useRef<number | null>(null);
+  const lensPointerRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const [lens, setLens] = useState<{ left: number; top: number } | null>(null);
   const lensDiameter = 144;
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -61,35 +68,80 @@ export function ImageEditorWorkspace({
   useEffect(() => {
     if (busy) dragRef.current = null;
   }, [busy]);
+  const hideLens = () => {
+    lensPointerRef.current = null;
+    if (lensFrameRef.current != null) cancelAnimationFrame(lensFrameRef.current);
+    lensFrameRef.current = null;
+    setLens(null);
+  };
+  useEffect(() => hideLens, []);
   useEffect(() => {
-    if (tool !== 'magnifier' || busy) setLens(null);
+    if (tool !== 'magnifier' || busy) hideLens();
   }, [busy, tool]);
 
   const updateLens = (event: PointerEvent<HTMLDivElement>) => {
     if (tool !== 'magnifier' || busy) return;
-    const canvas = canvasRef.current;
-    const workspace = workspaceRef.current;
-    const element = canvas?.lowerCanvasEl;
-    if (!canvas || !workspace || !element) return;
-    const imageBounds = element.getBoundingClientRect();
-    if (
-      event.clientX < imageBounds.left ||
-      event.clientX > imageBounds.right ||
-      event.clientY < imageBounds.top ||
-      event.clientY > imageBounds.bottom
-    ) {
-      setLens(null);
-      return;
-    }
-    const workspaceBounds = workspace.getBoundingClientRect();
-    const x = event.clientX - imageBounds.left;
-    const y = event.clientY - imageBounds.top;
-    setLens({
-      left: event.clientX - workspaceBounds.left - lensDiameter / 2,
-      top: event.clientY - workspaceBounds.top - lensDiameter / 2,
-      image: element.toDataURL('image/png'),
-      backgroundSize: `${imageBounds.width * magnification}px ${imageBounds.height * magnification}px`,
-      backgroundPosition: `${lensDiameter / 2 - x * magnification}px ${lensDiameter / 2 - y * magnification}px`,
+    lensPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
+    if (lensFrameRef.current != null) return;
+    lensFrameRef.current = requestAnimationFrame(() => {
+      lensFrameRef.current = null;
+      const pointer = lensPointerRef.current;
+      const workspace = workspaceRef.current;
+      const element = canvasRef.current?.lowerCanvasEl;
+      const lensCanvas = lensCanvasRef.current;
+      if (!pointer || !workspace || !element || !lensCanvas) return;
+      const imageBounds = element.getBoundingClientRect();
+      if (imageBounds.width <= 0 || imageBounds.height <= 0) {
+        setLens(null);
+        return;
+      }
+      if (
+        pointer.clientX < imageBounds.left ||
+        pointer.clientX > imageBounds.right ||
+        pointer.clientY < imageBounds.top ||
+        pointer.clientY > imageBounds.bottom
+      ) {
+        setLens(null);
+        return;
+      }
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const backingSize = lensDiameter * dpr;
+      if (lensCanvas.width !== backingSize || lensCanvas.height !== backingSize) {
+        lensCanvas.width = backingSize;
+        lensCanvas.height = backingSize;
+      }
+      const context = lensCanvas.getContext('2d');
+      if (!context) return;
+      const sample = calculateMagnifierSample({
+        canvasSize: { width: element.width, height: element.height },
+        displayedSize: { width: imageBounds.width, height: imageBounds.height },
+        pointer: { x: pointer.clientX - imageBounds.left, y: pointer.clientY - imageBounds.top },
+        lensDiameter,
+        magnification,
+      });
+      if (!sample) return;
+      context.clearRect(0, 0, backingSize, backingSize);
+      context.save();
+      context.beginPath();
+      context.arc(backingSize / 2, backingSize / 2, backingSize / 2, 0, Math.PI * 2);
+      context.clip();
+      context.drawImage(
+        element,
+        sample.left,
+        sample.top,
+        sample.width,
+        sample.height,
+        0,
+        0,
+        backingSize,
+        backingSize,
+      );
+      context.restore();
+      const workspaceBounds = workspace.getBoundingClientRect();
+      setLens({
+        left: pointer.clientX - workspaceBounds.left - lensDiameter / 2,
+        top: pointer.clientY - workspaceBounds.top - lensDiameter / 2,
+      });
     });
   };
 
@@ -131,7 +183,7 @@ export function ImageEditorWorkspace({
       onPointerMove={updateLens}
       onPointerUpCapture={endPan}
       onPointerCancelCapture={endPan}
-      onPointerLeave={() => setLens(null)}
+      onPointerLeave={hideLens}
       onWheelCapture={(event) => {
         if (busy) return;
         event.preventDefault();
@@ -143,6 +195,7 @@ export function ImageEditorWorkspace({
         );
       }}
     >
+      {contextualToolbar}
       {loading ? (
         <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 text-echo-text">
           <CircularProgress size={24} /> Завантаження зображення…
@@ -158,18 +211,18 @@ export function ImageEditorWorkspace({
       >
         <canvas ref={canvasElementRef as RefObject<HTMLCanvasElement>} />
       </div>
-      {lens ? (
+      {tool === 'magnifier' && !busy ? (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute z-20 size-36 rounded-full border-2 border-echo-border bg-echo-surface shadow-echo-lg"
           style={{
-            left: lens.left,
-            top: lens.top,
-            backgroundImage: `url(${lens.image})`,
-            backgroundSize: lens.backgroundSize,
-            backgroundPosition: lens.backgroundPosition,
+            left: lens?.left ?? 0,
+            top: lens?.top ?? 0,
+            visibility: lens ? 'visible' : 'hidden',
           }}
-        />
+        >
+          <canvas ref={lensCanvasRef} className="size-full rounded-full" />
+        </div>
       ) : null}
     </div>
   );

@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { replaceConcealmentDraft } from './image-editor-raster';
+import { buildSafeRaster, replaceConcealmentDraft } from './image-editor-raster';
 
 class FabricObject {
   values: Record<string, unknown>;
@@ -125,5 +125,29 @@ describe('image editor raster operations #3099', () => {
       30,
       20,
     );
+  });
+
+  it('uses the cumulative cropped source rectangle for subsequent concealment', () => {
+    const drawImage = vi.fn();
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = createElement(tagName) as HTMLCanvasElement;
+      if (tagName === 'canvas')
+        Object.defineProperty(element, 'getContext', { value: () => ({ drawImage }) });
+      return element;
+    });
+    const element = document.createElement('canvas');
+    element.width = 400;
+    element.height = 300;
+    buildSafeRaster({
+      canvas: canvasFixture(),
+      sourceImage: {
+        width: 120,
+        height: 80,
+        get: (key: string) => (key === 'cropX' ? 140 : key === 'cropY' ? 90 : undefined),
+        getElement: () => element,
+      } as never,
+    });
+    expect(drawImage).toHaveBeenCalledWith(element, 140, 90, 120, 80, 0, 0, 120, 80);
   });
 });
