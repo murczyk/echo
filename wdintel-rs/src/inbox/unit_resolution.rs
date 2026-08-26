@@ -413,7 +413,7 @@ where
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(
             Expr::cust(
-                "lower(regexp_replace(btrim(sigint_unit.name), '[[:space:]]+', ' ', 'g'))",
+                "lower(btrim(regexp_replace(sigint_unit.name, '[[:punct:][:space:]]+', ' ', 'g')))",
             )
             .is_in(name_variants),
         )
@@ -1595,7 +1595,7 @@ mod tests {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let unique = unique_unit_label();
-        let name = format!("{unique} 1 обБпС 2 ОА");
+        let name = format!("“{unique}” 1 (об БпС), 2 ЗВА");
         let unit = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
@@ -1606,7 +1606,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let unit_v2 = format!("“{unique}” 1 (об БпС), 2 ЗВА");
+        let unit_v2 = format!("{unique} 1 обБпС 2 ОА");
 
         assert_eq!(
             resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)

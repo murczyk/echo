@@ -1265,16 +1265,25 @@ where
     C: ConnectionTrait,
 {
     super::changelog::set_author(dbx, login).await.c(h!())?;
-    let sigint_unit = find_available_sigint_unit(dbx, sigint_unit_id).await?;
-    let orbit_unit = find_available_orbit_unit(dbx, orbit_unit_id).await?;
+    let sigint_unit = find_available_sigint_unit(dbx, sigint_unit_id)
+        .await
+        .c(h!())?;
+    let orbit_unit = find_available_orbit_unit(dbx, orbit_unit_id)
+        .await
+        .c(h!())?;
     crate::orbit::link_sigint_unit_if_unlinked(
         dbx,
         sigint_unit_id,
         orbit_unit_id,
     )
-    .await?;
-    import_missing_orbit_ancestors(dbx, login, &orbit_unit).await?;
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx).await?;
+    .await
+    .c(h!())?;
+    import_missing_orbit_ancestors(dbx, login, &orbit_unit)
+        .await
+        .c(h!())?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+        .await
+        .c(h!())?;
     let sigint_unit =
         reconcile_sigint_unit_orbit(dbx, login, sigint_unit.id, true)
             .await
@@ -1286,7 +1295,8 @@ where
             login,
             std::slice::from_ref(&sigint_unit),
         )
-        .await?;
+        .await
+        .c(h!())?;
     }
     Ok(sigint_unit)
 }
