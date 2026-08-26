@@ -1,4 +1,4 @@
-set positional-arguments := true
+set positional-arguments
 
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
@@ -35,8 +35,7 @@ ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 workspace_iggy := "~/workspace/iggy"
 local_assets_iggy := "echo-iggy/deploy"
-iggy_fork_remote := "https://github.com/k-bx/iggy.git"
-iggy_default_rev := "k-bx/2026-06-18-poll-option"
+iggy_default_rev := "0.10.3-edge.3"
 
 default:
     @just --list
@@ -2924,19 +2923,15 @@ _builder-build-iggy:
 switch-version-iggy rev=iggy_default_rev builder="echo-build-main":
     #!/usr/bin/env bash
     set -euo pipefail
-    ssh "{{ builder }}" bash -s -- "{{ rev }}" "{{ iggy_fork_remote }}" <<'REMOTE'
+    ssh "{{ builder }}" bash -s -- "{{ rev }}" <<'REMOTE'
     set -euo pipefail
     rev="$1"
-    fork_remote="$2"
     cd workspace/iggy
     git fetch --tags origin "+refs/heads/*:refs/remotes/origin/*"
-    git fetch --tags "$fork_remote" "+refs/heads/*:refs/remotes/k-bx/*"
     if git rev-parse --verify --quiet "$rev^{commit}" >/dev/null; then
         git checkout --detach "$rev"
     elif git rev-parse --verify --quiet "origin/$rev^{commit}" >/dev/null; then
         git checkout --detach "origin/$rev"
-    elif git rev-parse --verify --quiet "k-bx/$rev^{commit}" >/dev/null; then
-        git checkout --detach "k-bx/$rev"
     elif git rev-parse --verify --quiet "tags/iggy-$rev^{commit}" >/dev/null; then
         git checkout --detach "tags/iggy-$rev"
     else

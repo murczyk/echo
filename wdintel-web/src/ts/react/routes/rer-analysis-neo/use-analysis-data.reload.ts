@@ -110,6 +110,21 @@ function networkLabelWithUnits(network: Network, unitsMap: Record<number, Unit>)
   return createMasterUnitText(network, unitsMap).replace(/^р\/м\s*/, '');
 }
 
+async function loadMissingNetworkUnits(
+  networks: Network[],
+  unitsMap: Record<number, Unit>,
+  requestOptions?: { signal?: AbortSignal },
+): Promise<Record<number, Unit>> {
+  const missingUnitIds = Array.from(
+    new Set(networks.flatMap((network) => network.unitIds ?? [])),
+  ).filter((unitId) => unitsMap[unitId] == null);
+  const units = await getUnitsByIds(missingUnitIds, requestOptions);
+  return {
+    ...unitsMap,
+    ...Object.fromEntries(units.map((unit) => [unit.id, unit])),
+  };
+}
+
 function preferCompleteNetworkLabel(
   current: AnalysisFilterOption,
   next: AnalysisFilterOption,
@@ -547,6 +562,12 @@ export async function loadFilterSectionData(
       const networksById =
         networkIds.length > 0 ? await fetchNetworksByIds(networkIds, requestOptions) : [];
       if (isStale() || isAborted()) return;
+      const unitsMap = await loadMissingNetworkUnits(
+        networksById,
+        context.unitsMap,
+        requestOptions,
+      );
+      if (isStale() || isAborted()) return;
       const networkNamesById = Object.fromEntries(
         networksStatsRsp.networkNames.map((network) => [network.id, network.name]),
       );
@@ -563,7 +584,7 @@ export async function loadFilterSectionData(
               const network = hydratedNetworksById.get(item.networkId);
               return normalizeFilterLabel(
                 network
-                  ? networkLabelWithUnits(network, context.unitsMap)
+                  ? networkLabelWithUnits(network, unitsMap)
                   : (networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
               );
             },
