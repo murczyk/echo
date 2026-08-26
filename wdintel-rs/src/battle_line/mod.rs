@@ -2,11 +2,12 @@ use crate::battle_line::types::*;
 use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
     BATTLE_LINE_AOR_ANCHOR_LATITUDE, BATTLE_LINE_AOR_ANCHOR_LONGITUDE,
-    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_EARTH_RADIUS_METERS,
-    BATTLE_LINE_NETWORKS_LOOKBACK_DAYS,
+    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_NETWORKS_LOOKBACK_DAYS,
     BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT,
     BATTLE_LINE_NETWORKS_PAGE_SIZE,
     BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
+    BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS,
+    BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS,
     BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD, BATTLE_LINE_SOURCE_KIND_DELTA_KML,
     BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
 };
@@ -140,6 +141,7 @@ struct AorGeometryRow {
 struct MatchRow {
     candidate_index: i64,
     distance_m: f64,
+    is_west: bool,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -164,6 +166,7 @@ struct UnitMapPointRow {
 struct BattleLineCandidateDistance {
     candidate_index: usize,
     distance_m: f64,
+    is_west: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -176,8 +179,7 @@ struct BattleLineRankOutcome {
 struct LocationResolutionDraft {
     location: String,
     candidates: Vec<BattleLineSettlementCandidate>,
-    battle_line_distances: BTreeMap<usize, f64>,
-    battle_line_match: Option<BattleLineMatch>,
+    battle_line_distances: BTreeMap<usize, BattleLineCandidateDistance>,
     chosen_candidate_index: Option<usize>,
     invalid_aor_ids: Vec<i64>,
 }
@@ -565,9 +567,9 @@ where
     let offset = page
         .saturating_sub(1)
         .saturating_mul(BATTLE_LINE_NETWORKS_PAGE_SIZE);
-    let total = live_units_query().count(dbx).await.c(h!())?;
-    let units = live_units_query()
-        .order_by_desc(sigint_unit::Column::CreatedAt)
+    let total = live_network_units_query(now).count(dbx).await.c(h!())?;
+    let units = live_network_units_query(now)
+        .order_by_desc(sigint_network::Column::CreatedAt.max())
         .order_by_desc(sigint_unit::Column::Id)
         .offset(offset)
         .limit(BATTLE_LINE_NETWORKS_PAGE_SIZE)
@@ -612,10 +614,26 @@ where
     })
 }
 
-fn live_units_query() -> Select<sigint_unit::Entity> {
+fn live_network_units_query(now: NaiveDateTime) -> Select<sigint_unit::Entity> {
     sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Relation::SigintNetworkUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintNetwork.def(),
+        )
         .filter(sigint_unit::Column::Active.eq(true))
         .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        )
+        .group_by(sigint_unit::Column::Id)
 }
 
 async fn load_network_settlement_points<C>(
@@ -767,6 +785,12 @@ fn network_point_query(
         )
         .filter(sigint_network_unit::Column::UnitId.is_in(unit_ids.to_vec()))
         .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        )
         .filter(sigint_inbox_item::Column::Datetime.gte(cutoff))
         .filter(sigint_inbox_item::Column::Datetime.lte(now))
         .filter(signal_message::Column::Deleted.eq(false))
@@ -1370,7 +1394,10 @@ components as (
     from selected
     cross join lateral ST_Dump(selected.geometry) as dumped
 ), candidates as (
-    select candidate_index, lon, lat
+    select
+        candidate_index,
+        lon,
+        ST_SetSRID(ST_MakePoint(lon, lat), 4326) as geometry
     from unnest(
         ${candidate_indices_placeholder}::bigint[],
         ${longitudes_placeholder}::double precision[],
@@ -1379,13 +1406,22 @@ components as (
 )
 select
     candidates.candidate_index,
-    min(ST_Distance(
-        ST_SetSRID(ST_MakePoint(candidates.lon, candidates.lat), 4326)::geography,
-        components.geometry::geography
-    )) as distance_m
+    matched.distance_m,
+    candidates.lon < matched.closest_lon as is_west
 from candidates
-cross join components
-group by candidates.candidate_index
+cross join lateral (
+    select
+        ST_Distance(
+            candidates.geometry::geography,
+            components.geometry::geography
+        ) as distance_m,
+        ST_X(
+            ST_ClosestPoint(components.geometry, candidates.geometry)
+        ) as closest_lon
+    from components
+    order by distance_m, ST_AsEWKB(components.geometry)
+    limit 1
+) matched
 order by distance_m, candidates.candidate_index
         "#
     );
@@ -1402,6 +1438,7 @@ order by distance_m, candidates.candidate_index
         .map(|row| BattleLineCandidateDistance {
             candidate_index: row.candidate_index as usize,
             distance_m: row.distance_m,
+            is_west: row.is_west,
         })
         .collect())
 }
@@ -1523,10 +1560,11 @@ where
     Ok(group_lengths
         .into_iter()
         .map(|group_length| {
-            let mut group =
-                drafts.by_ref().take(group_length).collect::<Vec<_>>();
-            apply_anchor_resolution(&mut group);
-            group.into_iter().map(location_result_from_draft).collect()
+            drafts
+                .by_ref()
+                .take(group_length)
+                .map(location_result_from_draft)
+                .collect()
         })
         .collect())
 }
@@ -1552,7 +1590,6 @@ where
             location,
             candidates,
             battle_line_distances: BTreeMap::new(),
-            battle_line_match: None,
             chosen_candidate_index: None,
             invalid_aor_ids: vec![],
         })
@@ -1817,81 +1854,12 @@ where
         let draft = drafts.get_mut(*location_index).c(h!())?;
         draft
             .battle_line_distances
-            .insert(*candidate_index, distance.distance_m);
-        if draft.battle_line_match.is_none() {
-            draft.battle_line_match = Some(BattleLineMatch {
-                candidate_index: *candidate_index,
-                distance_m: distance.distance_m,
-            });
+            .insert(*candidate_index, distance);
+        if draft.chosen_candidate_index.is_none() {
             draft.chosen_candidate_index = Some(*candidate_index);
         }
     }
     Ok(())
-}
-
-fn apply_anchor_resolution(drafts: &mut [LocationResolutionDraft]) {
-    let Some((anchor_index, anchor_match)) = drafts
-        .iter()
-        .enumerate()
-        .filter_map(|(index, draft)| {
-            draft
-                .battle_line_match
-                .as_ref()
-                .map(|matched| (index, matched))
-        })
-        .max_by(|(left_index, left), (right_index, right)| {
-            left.distance_m.total_cmp(&right.distance_m).then_with(|| {
-                drafts[*right_index]
-                    .location
-                    .cmp(&drafts[*left_index].location)
-            })
-        })
-    else {
-        return;
-    };
-    let anchor_candidate_index = anchor_match.candidate_index;
-    let Some(anchor_coordinate) = drafts
-        .get(anchor_index)
-        .and_then(|draft| draft.candidates.get(anchor_candidate_index))
-        .map(|candidate| candidate.coordinate.clone())
-    else {
-        return;
-    };
-    for (index, draft) in drafts.iter_mut().enumerate() {
-        if index == anchor_index {
-            draft.chosen_candidate_index = Some(anchor_candidate_index);
-            continue;
-        }
-        draft.chosen_candidate_index =
-            closest_candidate_to_anchor(&draft.candidates, &anchor_coordinate);
-    }
-}
-
-fn closest_candidate_to_anchor(
-    candidates: &[BattleLineSettlementCandidate],
-    anchor_coordinate: &BattleLineCoordinate,
-) -> Option<usize> {
-    candidates
-        .iter()
-        .enumerate()
-        .map(|(index, candidate)| {
-            (
-                index,
-                candidate.settlement_id,
-                distance_between_coordinates_m(
-                    &candidate.coordinate,
-                    anchor_coordinate,
-                ),
-            )
-        })
-        .min_by(
-            |(_, left_id, left_distance), (_, right_id, right_distance)| {
-                left_distance
-                    .total_cmp(right_distance)
-                    .then_with(|| left_id.cmp(right_id))
-            },
-        )
-        .map(|(index, _, _)| index)
 }
 
 fn location_result_from_draft(
@@ -1900,12 +1868,23 @@ fn location_result_from_draft(
     let (chosen_settlement_id, distance_m) = draft
         .chosen_candidate_index
         .and_then(|candidate_index| {
-            draft.candidates.get(candidate_index).map(|candidate| {
-                (
-                    Some(candidate.settlement_id),
-                    draft.battle_line_distances.get(&candidate_index).copied(),
-                )
-            })
+            let candidate = draft.candidates.get(candidate_index)?;
+            let matched = draft.battle_line_distances.get(&candidate_index)?;
+            let max_distance_m = settlement_max_distance_m(matched.is_west);
+            if matched.distance_m > max_distance_m {
+                warn!(
+                    "Skipping incorrect inbox settlement mapping: location={:?}, settlement_id={}, settlement={:?}, region={:?}, side={}, distance_m={:.0}, max_distance_m={:.0}",
+                    draft.location,
+                    candidate.settlement_id,
+                    candidate.name,
+                    candidate.region,
+                    if matched.is_west { "west" } else { "east" },
+                    matched.distance_m,
+                    max_distance_m,
+                );
+                return Some((None, Some(matched.distance_m)));
+            }
+            Some((Some(candidate.settlement_id), Some(matched.distance_m)))
         })
         .unwrap_or((None, None));
     BattleLineLocationResult {
@@ -1917,22 +1896,16 @@ fn location_result_from_draft(
     }
 }
 
-fn normalize_settlement_name(name: &str) -> String {
-    name.trim().to_uppercase().replace(['\'', 'ʼ', '`'], "’")
+fn settlement_max_distance_m(is_west: bool) -> f64 {
+    if is_west {
+        BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS
+    } else {
+        BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
+    }
 }
 
-fn distance_between_coordinates_m(
-    left: &BattleLineCoordinate,
-    right: &BattleLineCoordinate,
-) -> f64 {
-    let left_lat = left.lat.to_radians();
-    let right_lat = right.lat.to_radians();
-    let lat_delta = (right.lat - left.lat).to_radians();
-    let lon_delta = (right.lon - left.lon).to_radians();
-    let haversine = (lat_delta / 2.0).sin().powi(2)
-        + left_lat.cos() * right_lat.cos() * (lon_delta / 2.0).sin().powi(2);
-    2.0 * BATTLE_LINE_EARTH_RADIUS_METERS
-        * haversine.clamp(0.0, 1.0).sqrt().asin()
+fn normalize_settlement_name(name: &str) -> String {
+    name.trim().to_uppercase().replace(['\'', 'ʼ', '`'], "’")
 }
 
 async fn read_battle_line_state<C>(dbx: &C) -> anyhow::Result<BattleLineState>
@@ -2368,7 +2341,7 @@ insert into battle_line_version
     (geometry, source_file_name, uploaded_by_login_id, source_kind, source_sha256)
 select
     ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(0 0,10 0))', 4326),
-    'anchor-test.kml',
+    'independent-resolution-test.kml',
     id,
     'admin_upload',
     $1
@@ -2483,7 +2456,7 @@ values (
     // Regression: https://github.com/echoua/echo/issues/2287
     #[tokio::test]
     #[serial_test::serial]
-    async fn paginates_live_units_and_maps_distinct_accessible_recent_points() {
+    async fn paginates_units_by_newest_live_network_and_maps_live_points() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -2506,7 +2479,7 @@ values (
         .await
         .unwrap();
         let mut units = Vec::new();
-        for index in 0..6 {
+        for index in 0..7 {
             units.push(
                 crate::functest::tests::mk_sigint_unit(
                     &txn,
@@ -2531,16 +2504,61 @@ values (
         )
         .await
         .unwrap();
-        crate::functest::tests::mk_sigint_network_unit(
+        for unit in &units[..6] {
+            crate::functest::tests::mk_sigint_network_unit(
+                &txn,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(network.id),
+                    unit_id: Set(unit.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let newest_network = crate::functest::tests::mk_sigint_network(
             &txn,
-            sigint_network_unit::ActiveModel {
-                network_id: Set(network.id),
-                unit_id: Set(units[5].id),
+            sigint_network::ActiveModel {
+                name: Set("#2287 newest map network".to_string()),
+                created_at: Set(now + chrono::Duration::days(2)),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
+        crate::functest::tests::mk_sigint_network_unit(
+            &txn,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(newest_network.id),
+                unit_id: Set(units[0].id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let archived_network = crate::functest::tests::mk_sigint_network(
+            &txn,
+            sigint_network::ActiveModel {
+                name: Set("#2287 archived map network".to_string()),
+                created_at: Set(now + chrono::Duration::days(3)),
+                active_to: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for unit in [&units[0], &units[6]] {
+            crate::functest::tests::mk_sigint_network_unit(
+                &txn,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(archived_network.id),
+                    unit_id: Set(unit.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
         insert_test_settlement(&txn, 2_287_301, "Recent", 48.1, 35.2)
             .await
             .unwrap();
@@ -2554,6 +2572,9 @@ values (
             .await
             .unwrap();
         insert_test_settlement(&txn, 2_287_305, "Future", 45.1, 32.2)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_306, "Archived", 44.1, 31.2)
             .await
             .unwrap();
         insert_network_map_item(
@@ -2616,13 +2637,36 @@ values (
         )
         .await
         .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            archived_network.id,
+            2_287_306,
+            now - chrono::Duration::days(1),
+            (44.3, 31.4),
+        )
+        .await
+        .unwrap();
 
         let first = read_network_maps(&txn, &[group.master_key], 1, now)
             .await
             .unwrap();
         assert_eq!(first.page_size, 5);
         assert_eq!(first.items.len(), 5);
-        assert_eq!(first.items[0].unit_id, units[5].id);
+        assert_eq!(
+            first
+                .items
+                .iter()
+                .map(|item| item.unit_id)
+                .collect::<Vec<_>>(),
+            vec![
+                units[0].id,
+                units[5].id,
+                units[4].id,
+                units[3].id,
+                units[2].id,
+            ]
+        );
         assert_eq!(
             first.items[0].settlement_points,
             vec![BattleLineNetworkMapPoint {
@@ -2638,7 +2682,7 @@ values (
             }]
         );
         let second = read_network_maps(&txn, &[], 2, now).await.unwrap();
-        assert_eq!(second.items[0].unit_id, units[0].id);
+        assert_eq!(second.items[0].unit_id, units[1].id);
         assert!(second.total >= 6);
         txn.rollback().await.unwrap();
     }
@@ -2946,16 +2990,16 @@ values (
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn resolves_multiple_locations_with_remote_battle_line_anchor() {
+    async fn resolves_ambiguous_locations_independently_2287() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
         let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
         let suffix = uuid::Uuid::now_v7();
-        let anchor_name = format!("#2287 ANCHOR {suffix}");
+        let unique_name = format!("#2287 UNIQUE {suffix}");
         let repeated_name = format!("#2287 SAME {suffix}");
-        insert_test_settlement(&txn, 2_287_211, &anchor_name, 0.10, 1.0)
+        insert_test_settlement(&txn, 2_287_211, &unique_name, 0.10, 1.0)
             .await
             .unwrap();
         insert_test_settlement(&txn, 2_287_212, &repeated_name, 0.01, 9.0)
@@ -2969,7 +3013,7 @@ values (
             vec![
                 crate::location::types::SettlementDetails {
                     id: Some(2_287_211),
-                    name: anchor_name.to_uppercase(),
+                    name: unique_name.to_uppercase(),
                     coords: Some((0.10, 1.0)),
                     ..Default::default()
                 },
@@ -2991,16 +3035,80 @@ values (
         let results = resolve_locations_to_settlements_with_db(
             &txn,
             settlements,
-            vec![anchor_name, repeated_name],
+            vec![unique_name, repeated_name],
             &[aor_id],
         )
         .await
         .unwrap();
 
         assert_eq!(results[0].chosen_settlement_id, Some(2_287_211));
-        assert_eq!(results[1].chosen_settlement_id, Some(2_287_213));
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_212));
         assert!(
-            results[1].distance_m.unwrap() > results[0].distance_m.unwrap()
+            results[1].distance_m.unwrap() < results[0].distance_m.unwrap()
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_distant_settlements_by_battle_line_side_2287() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
+        let suffix = uuid::Uuid::now_v7();
+        let west_name = format!("#2287 WEST {suffix}");
+        let east_name = format!("#2287 EAST {suffix}");
+        let far_east_name = format!("#2287 FAR EAST {suffix}");
+        let test_settlements = [
+            (2_287_216, &west_name, 0.0, -0.7),
+            (2_287_217, &east_name, 0.0, 10.7),
+            (2_287_218, &far_east_name, 0.0, 11.4),
+        ];
+        for (id, name, lat, lon) in &test_settlements {
+            insert_test_settlement(&txn, *id, name, *lat, *lon)
+                .await
+                .unwrap();
+        }
+        let settlements = test_settlements_for_aor(
+            aor_id,
+            test_settlements
+                .into_iter()
+                .map(|(id, name, lat, lon)| {
+                    crate::location::types::SettlementDetails {
+                        id: Some(id),
+                        name: name.to_uppercase(),
+                        coords: Some((lat, lon)),
+                        ..Default::default()
+                    }
+                })
+                .collect(),
+        );
+
+        let results = resolve_locations_to_settlements_with_db(
+            &txn,
+            settlements,
+            vec![west_name, east_name, far_east_name],
+            &[aor_id],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(results[0].chosen_settlement_id, None);
+        assert!(
+            results[0].distance_m.unwrap()
+                > BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS
+        );
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_217));
+        assert!(
+            results[1].distance_m.unwrap()
+                < BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
+        );
+        assert_eq!(results[2].chosen_settlement_id, None);
+        assert!(
+            results[2].distance_m.unwrap()
+                > BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
         );
         txn.rollback().await.unwrap();
     }

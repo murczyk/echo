@@ -40,11 +40,20 @@ function measureViewportOffload(
   return { visibleIds, heights };
 }
 
+function sameIdSet(previous: Set<number> | null, next: Set<number>): boolean {
+  if (!previous || previous.size !== next.size) return false;
+  for (const id of next) {
+    if (!previous.has(id)) return false;
+  }
+  return true;
+}
+
 /**
  * After {@link DUTY_FEED_IDLE_OFFLOAD_MS} without user interaction on a feed scroller,
  * keep only viewport(+overscan) MessageCards mounted; off-screen rows become height placeholders.
  * Pointer / wheel / touch wake the feed and remount the full window.
- * Programmatic scroll (follow / settle) does not count as interaction.
+ * Programmatic scroll (follow / settle) does not wake, but must still refresh which ids stay
+ * mounted — otherwise stick-bottom restore/ease leaves the viewport on placeholders (black gap).
  */
 export function useFeedIdleViewportOffload(options: {
   enabled: boolean;
@@ -65,7 +74,10 @@ export function useFeedIdleViewportOffload(options: {
   const heightByIdRef = useRef(new Map<number, number>());
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const offloadActiveRef = useRef(false);
+  const itemIdsRef = useRef(itemIds);
+  const scrollSyncRafRef = useRef<number | null>(null);
   offloadActiveRef.current = offloadActive;
+  itemIdsRef.current = itemIds;
 
   const clearIdleTimeout = useCallback(() => {
     if (idleTimeoutRef.current === null) return;
@@ -73,19 +85,25 @@ export function useFeedIdleViewportOffload(options: {
     idleTimeoutRef.current = null;
   }, []);
 
-  const applyOffloadSnapshot = useCallback(() => {
+  const syncMountedToViewport = useCallback(() => {
     const scroller = scrollerRef.current;
     if (!scroller || !enabled) return;
+    const ids = itemIdsRef.current;
     const { visibleIds, heights } = measureViewportOffload(scroller, overscanPx);
     for (const [id, height] of heights) heightByIdRef.current.set(id, height);
     // Always keep at least the tail when nothing intersects (empty metrics / mid-restore).
-    if (visibleIds.size === 0 && itemIds.length > 0) {
-      const tail = itemIds.at(-1);
+    if (visibleIds.size === 0 && ids.length > 0) {
+      const tail = ids.at(-1);
       if (tail != null) visibleIds.add(tail);
     }
-    setMountedItemIds(visibleIds);
+    setMountedItemIds((previous) => (sameIdSet(previous, visibleIds) ? previous : visibleIds));
+  }, [enabled, overscanPx, scrollerRef]);
+
+  const applyOffloadSnapshot = useCallback(() => {
+    if (!enabled) return;
+    syncMountedToViewport();
     setOffloadActive(true);
-  }, [enabled, itemIds, overscanPx, scrollerRef]);
+  }, [enabled, syncMountedToViewport]);
 
   const scheduleIdleOffload = useCallback(() => {
     clearIdleTimeout();
@@ -134,28 +152,31 @@ export function useFeedIdleViewportOffload(options: {
   // While offloaded, keep the mounted set aligned with the viewport after window trims / follow stick.
   useLayoutEffect(() => {
     if (!enabled || !offloadActive) return;
+    syncMountedToViewport();
+  }, [enabled, itemIds, offloadActive, syncMountedToViewport]);
+
+  // Programmatic follow/catch-up ease moves scrollTop without waking; refresh mounts on scroll.
+  useEffect(() => {
+    if (!enabled || !offloadActive) return;
     const scroller = scrollerRef.current;
     if (!scroller) return;
-    const { visibleIds, heights } = measureViewportOffload(scroller, overscanPx);
-    for (const [id, height] of heights) heightByIdRef.current.set(id, height);
-    if (visibleIds.size === 0 && itemIds.length > 0) {
-      const tail = itemIds.at(-1);
-      if (tail != null) visibleIds.add(tail);
-    }
-    setMountedItemIds((previous) => {
-      if (previous && previous.size === visibleIds.size) {
-        let same = true;
-        for (const id of visibleIds) {
-          if (!previous.has(id)) {
-            same = false;
-            break;
-          }
-        }
-        if (same) return previous;
+    const onScroll = () => {
+      if (scrollSyncRafRef.current !== null) return;
+      scrollSyncRafRef.current = requestAnimationFrame(() => {
+        scrollSyncRafRef.current = null;
+        if (!offloadActiveRef.current) return;
+        syncMountedToViewport();
+      });
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+      if (scrollSyncRafRef.current !== null) {
+        cancelAnimationFrame(scrollSyncRafRef.current);
+        scrollSyncRafRef.current = null;
       }
-      return visibleIds;
-    });
-  }, [enabled, itemIds, offloadActive, overscanPx, scrollerRef]);
+    };
+  }, [enabled, offloadActive, scrollerRef, syncMountedToViewport]);
 
   const placeholderHeightPx = useCallback((id: number) => {
     return heightByIdRef.current.get(id) ?? DUTY_FEED_IDLE_PLACEHOLDER_HEIGHT_PX;

@@ -16,6 +16,15 @@ use sea_orm::*;
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+const CORPS_INDEX: usize = 10;
+const FIELD_ARMY_INDEX: usize = 11;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OrbitHierarchyName {
+    preferred: String,
+    full: String,
+}
+
 #[derive(FromQueryResult)]
 struct UnitNameReviewRow {
     id: i64,
@@ -120,6 +129,54 @@ async fn load_unit_name_reviews(
         units: render_unit_name_review_rows(dbx, units).await.c(h!())?,
         next_cursor,
     })
+}
+
+pub(crate) async fn replace_all_eligible_unit_names(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+) -> Result<usize, AppError> {
+    let reviews = load_all_unit_name_reviews(dbx).await.c(h!())?;
+    let replacements = reviews
+        .into_iter()
+        .filter(unit_name_review_is_replaceable)
+        .collect::<Vec<_>>();
+    let replacement_count = replacements.len();
+    for review in replacements {
+        touch_unit_name(
+            dbx,
+            login,
+            review.sigint_unit_id,
+            Some(review.expected_name),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(replacement_count)
+}
+
+async fn load_all_unit_name_reviews(
+    dbx: &DatabaseConnection,
+) -> Result<Vec<UnitNameReview>, AppError> {
+    let mut reviews = Vec::new();
+    let mut after = None;
+    loop {
+        let page = load_unit_name_reviews(
+            dbx,
+            after.as_ref(),
+            SIGINT_UNIT_NAME_REVIEW_PAGE_SIZE,
+        )
+        .await
+        .c(h!())?;
+        reviews.extend(page.units);
+        let Some(next_cursor) = page.next_cursor else {
+            return Ok(reviews);
+        };
+        after = Some(next_cursor);
+    }
+}
+
+fn unit_name_review_is_replaceable(review: &UnitNameReview) -> bool {
+    !review.matches_expected && !review.expected_name.trim().is_empty()
 }
 
 #[post("/api/admin/unit-name/update")]
@@ -362,48 +419,43 @@ async fn expected_unit_name_from_orbit(
     dbx: &DatabaseConnection,
     orbit_unit: &orbit_unit::Model,
 ) -> Result<String, AppError> {
-    let mut hierarchy = std::array::from_fn(|_| None::<String>);
-    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy).await?;
-    fill_orbit_parent_chain(
+    let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+    fill_orbit_hierarchy_level(dbx, orbit_unit, &mut hierarchy)
+        .await
+        .c(h!())?;
+
+    let mut generative_hierarchy =
+        std::array::from_fn(|_| None::<OrbitHierarchyName>);
+    fill_generative_orbit_parent_chain(
         dbx,
         orbit_unit,
-        OrbitParentKind::Operational,
-        &mut hierarchy,
+        &mut generative_hierarchy,
     )
-    .await?;
-    fill_orbit_parent_chain(
-        dbx,
-        orbit_unit,
-        OrbitParentKind::Generative,
-        &mut hierarchy,
-    )
-    .await?;
+    .await
+    .c(h!())?;
+    merge_orbit_hierarchy(&mut hierarchy, generative_hierarchy);
+
     Ok(expected_unit_name_from_orbit_hierarchy(&hierarchy))
 }
 
-#[derive(Clone, Copy)]
-enum OrbitParentKind {
-    Generative,
-    Operational,
-}
-
-impl OrbitParentKind {
-    fn parent_id(self, unit: &orbit_unit::Model) -> Option<Uuid> {
-        match self {
-            Self::Generative => unit.generative_parent_unit_id,
-            Self::Operational => unit.operational_parent_unit_id,
+fn merge_orbit_hierarchy(
+    hierarchy: &mut [Option<OrbitHierarchyName>; 14],
+    fallback: [Option<OrbitHierarchyName>; 14],
+) {
+    for (name, fallback_name) in hierarchy.iter_mut().zip(fallback) {
+        if name.is_none() {
+            *name = fallback_name;
         }
     }
 }
 
-async fn fill_orbit_parent_chain(
+async fn fill_generative_orbit_parent_chain(
     dbx: &DatabaseConnection,
     root: &orbit_unit::Model,
-    parent_kind: OrbitParentKind,
-    hierarchy: &mut [Option<String>; 14],
+    hierarchy: &mut [Option<OrbitHierarchyName>; 14],
 ) -> Result<(), AppError> {
     let mut seen = HashSet::from([root.unit_id]);
-    let mut parent_id = parent_kind.parent_id(root);
+    let mut parent_id = root.generative_parent_unit_id;
     while let Some(unit_id) = parent_id {
         if !seen.insert(unit_id) {
             return Err(AppError::BL {
@@ -411,8 +463,10 @@ async fn fill_orbit_parent_chain(
             });
         }
         let parent = find_available_orbit_unit(dbx, unit_id).await.c(h!())?;
-        parent_id = parent_kind.parent_id(&parent);
-        fill_orbit_hierarchy_level(dbx, &parent, hierarchy).await?;
+        parent_id = parent.generative_parent_unit_id;
+        fill_orbit_hierarchy_level(dbx, &parent, hierarchy)
+            .await
+            .c(h!())?;
     }
     Ok(())
 }
@@ -432,7 +486,7 @@ async fn find_available_orbit_unit(
 async fn fill_orbit_hierarchy_level(
     dbx: &DatabaseConnection,
     unit: &orbit_unit::Model,
-    hierarchy: &mut [Option<String>; 14],
+    hierarchy: &mut [Option<OrbitHierarchyName>; 14],
 ) -> Result<(), AppError> {
     let Some(echelon_id) = unit.unit_echelon_id else {
         return Ok(());
@@ -447,13 +501,44 @@ async fn fill_orbit_hierarchy_level(
     let Some(index) = unit_name_review_echelon_index(&echelon.key) else {
         return Ok(());
     };
-    let Some(name) = preferred_orbit_unit_name(unit) else {
+    let Some(preferred_name) = preferred_orbit_unit_name(unit) else {
         return Ok(());
     };
-    if hierarchy[index].is_none() {
-        hierarchy[index] = Some(name);
-    }
+    set_orbit_hierarchy_name(
+        hierarchy,
+        index,
+        OrbitHierarchyName {
+            full: orbit_unit_full_name(unit, &preferred_name),
+            preferred: preferred_name,
+        },
+    );
     Ok(())
+}
+
+fn set_orbit_hierarchy_name(
+    hierarchy: &mut [Option<OrbitHierarchyName>; 14],
+    index: usize,
+    name: OrbitHierarchyName,
+) {
+    match &hierarchy[index] {
+        None => hierarchy[index] = Some(name),
+        Some(existing)
+            if should_replace_hierarchy_name(index, existing, &name) =>
+        {
+            hierarchy[index] = Some(name)
+        }
+        Some(_) => {}
+    }
+}
+
+fn should_replace_hierarchy_name(
+    index: usize,
+    existing: &OrbitHierarchyName,
+    candidate: &OrbitHierarchyName,
+) -> bool {
+    index == CORPS_INDEX
+        && !contains_word(&existing.full, "корпус")
+        && contains_word(&candidate.full, "корпус")
 }
 
 fn unit_name_review_echelon_index(key: &str) -> Option<usize> {
@@ -467,7 +552,8 @@ fn unit_name_review_echelon_index(key: &str) -> Option<usize> {
         "regiment" => Some(7),
         "brigade" => Some(8),
         "division" => Some(9),
-        "fieldArmy" => Some(11),
+        "corps" => Some(CORPS_INDEX),
+        "fieldArmy" => Some(FIELD_ARMY_INDEX),
         _ => None,
     }
 }
@@ -486,14 +572,64 @@ fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {
     .map(ToString::to_string)
 }
 
-fn expected_unit_name_from_orbit_hierarchy(
-    hierarchy: &[Option<String>; 14],
+fn orbit_unit_full_name(
+    unit: &orbit_unit::Model,
+    preferred_name: &str,
 ) -> String {
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 11]
+    unit.unit_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(preferred_name)
+        .to_string()
+}
+
+fn expected_unit_name_from_orbit_hierarchy(
+    hierarchy: &[Option<OrbitHierarchyName>; 14],
+) -> String {
+    let mut parts = [1, 2, 3, 4, 5, 6, 7, 8, 9]
         .into_iter()
-        .filter_map(|index| hierarchy[index].as_deref())
-        .collect::<Vec<_>>()
-        .join(" ")
+        .filter_map(|index| {
+            hierarchy[index]
+                .as_ref()
+                .map(|name| name.preferred.as_str())
+        })
+        .collect::<Vec<_>>();
+    if let Some(name) = field_army_or_corps_name(hierarchy) {
+        parts.push(name.preferred.as_str());
+    }
+    parts.join(" ")
+}
+
+fn field_army_or_corps_name(
+    hierarchy: &[Option<OrbitHierarchyName>; 14],
+) -> Option<&OrbitHierarchyName> {
+    let Some(field_army) = hierarchy[FIELD_ARMY_INDEX].as_ref() else {
+        return hierarchy[CORPS_INDEX]
+            .as_ref()
+            .filter(|corps| contains_word(&corps.full, "корпус"));
+    };
+    if !is_army_name(field_army) {
+        return hierarchy[CORPS_INDEX]
+            .as_ref()
+            .filter(|corps| contains_word(&corps.full, "корпус"));
+    }
+    Some(field_army)
+}
+
+fn is_army_name(name: &OrbitHierarchyName) -> bool {
+    contains_word(&name.full, "армія")
+        || ["а", "зва", "та"]
+            .into_iter()
+            .any(|abbreviation| contains_word(&name.preferred, abbreviation))
+}
+
+fn contains_word(value: &str, word: &str) -> bool {
+    let word = word.to_lowercase();
+    value
+        .to_lowercase()
+        .split(|ch: char| !ch.is_alphanumeric())
+        .any(|part| part == word)
 }
 
 #[cfg(test)]
@@ -566,6 +702,311 @@ mod tests {
         .insert(dbx)
         .await
         .unwrap();
+    }
+
+    fn hierarchy_name(preferred: &str, full: &str) -> OrbitHierarchyName {
+        OrbitHierarchyName {
+            preferred: preferred.to_string(),
+            full: full.to_string(),
+        }
+    }
+
+    #[test]
+    fn expected_name_uses_corps_when_field_army_is_not_an_army() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[7] = Some(hierarchy_name("9 мсп", "9 мотострілецький полк"));
+        hierarchy[9] =
+            Some(hierarchy_name("18 мсд", "18 мотострілецька дивізія"));
+        hierarchy[CORPS_INDEX] =
+            Some(hierarchy_name("11 АК", "11 армійський корпус"));
+        hierarchy[FIELD_ARMY_INDEX] =
+            Some(hierarchy_name("УВ “Курск”", "Угруповання військ “Курск”"));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "9 мсп 18 мсд 11 АК"
+        );
+    }
+
+    #[test]
+    fn expected_name_uses_corps_when_field_army_is_absent() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[7] =
+            Some(hierarchy_name("79 мсп", "79 мотострілецький полк"));
+        hierarchy[9] =
+            Some(hierarchy_name("18 мсд", "18 мотострілецька дивізія"));
+        hierarchy[CORPS_INDEX] =
+            Some(hierarchy_name("11 АК", "11 армійський корпус"));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "79 мсп 18 мсд 11 АК"
+        );
+    }
+
+    #[test]
+    fn expected_name_ignores_non_corps_when_field_army_is_absent() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[8] =
+            Some(hierarchy_name("83 одшбр", "83 десантно-штурмова бригада"));
+        hierarchy[CORPS_INDEX] =
+            Some(hierarchy_name("УВ “Курск”", "Угруповання військ “Курск”"));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "83 одшбр"
+        );
+    }
+
+    #[test]
+    fn expected_name_keeps_field_army_when_it_is_an_army() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[7] = Some(hierarchy_name("9 мсп", "9 мотострілецький полк"));
+        hierarchy[9] =
+            Some(hierarchy_name("18 мсд", "18 мотострілецька дивізія"));
+        hierarchy[CORPS_INDEX] =
+            Some(hierarchy_name("11 АК", "11 армійський корпус"));
+        hierarchy[FIELD_ARMY_INDEX] =
+            Some(hierarchy_name("18 ЗВА", "18 загальновійськова армія"));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "9 мсп 18 мсд 18 ЗВА"
+        );
+    }
+
+    #[test]
+    fn expected_name_keeps_abbreviated_field_army() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[6] =
+            Some(hierarchy_name("1 мсб", "1 мотострілецький батальйон"));
+        hierarchy[7] =
+            Some(hierarchy_name("380 мсп", "380 мотострілецький полк"));
+        hierarchy[9] = Some(hierarchy_name("47 тд", "47 танкова дивізія"));
+        hierarchy[FIELD_ARMY_INDEX] =
+            Some(hierarchy_name("1 ТА", "Повна назва 1 ТА"));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "1 мсб 380 мсп 47 тд 1 ТА"
+        );
+    }
+
+    #[test]
+    fn expected_name_omits_non_army_and_non_corps() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[7] = Some(hierarchy_name("9 мсп", "9 мотострілецький полк"));
+        hierarchy[CORPS_INDEX] = Some(hierarchy_name(
+            "ТН “Сумський”",
+            "Тактичний напрямок “Сумський”",
+        ));
+        hierarchy[FIELD_ARMY_INDEX] =
+            Some(hierarchy_name("УВ “Курск”", "Угруповання військ “Курск”"));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "9 мсп"
+        );
+    }
+
+    #[test]
+    fn expected_name_omits_non_army_without_corps() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        hierarchy[6] = Some(hierarchy_name(
+            "21 зсб",
+            "21 зведений стрілецький батальйон",
+        ));
+        hierarchy[7] = Some(hierarchy_name("6 тп", "6 танковий полк"));
+        hierarchy[9] = Some(hierarchy_name("90 тд", "90 танкова дивізія"));
+        hierarchy[FIELD_ARMY_INDEX] = Some(hierarchy_name(
+            "УВ \"Белгород\"",
+            "Угруповання військ \"Белгород\"",
+        ));
+
+        assert_eq!(
+            expected_unit_name_from_orbit_hierarchy(&hierarchy),
+            "21 зсб 6 тп 90 тд"
+        );
+    }
+
+    #[test]
+    fn corps_slot_prefers_real_corps_over_non_corps_parent() {
+        let mut hierarchy = std::array::from_fn(|_| None::<OrbitHierarchyName>);
+        set_orbit_hierarchy_name(
+            &mut hierarchy,
+            CORPS_INDEX,
+            hierarchy_name("ТН “Сумський”", "Тактичний напрямок “Сумський”"),
+        );
+        set_orbit_hierarchy_name(
+            &mut hierarchy,
+            CORPS_INDEX,
+            hierarchy_name("11 АК", "11 армійський корпус"),
+        );
+
+        assert_eq!(
+            hierarchy[CORPS_INDEX]
+                .as_ref()
+                .map(|name| name.preferred.as_str()),
+            Some("11 АК")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn expected_name_uses_only_generative_hierarchy() {
+        let env = cleanup().await.unwrap();
+        let operational_field_army = insert_orbit_unit(
+            &env.dbx,
+            "УВ \"Волчанск\"",
+            "fieldArmy",
+            None,
+            None,
+        )
+        .await;
+        let generative_field_army =
+            insert_orbit_unit(&env.dbx, "1 ТА", "fieldArmy", None, None).await;
+        let operational_division = insert_orbit_unit(
+            &env.dbx,
+            "оперативна дивізія",
+            "division",
+            Some(operational_field_army.unit_id),
+            None,
+        )
+        .await;
+        let operational_brigade = insert_orbit_unit(
+            &env.dbx,
+            "оперативна бригада",
+            "brigade",
+            Some(operational_division.unit_id),
+            None,
+        )
+        .await;
+        let division = insert_orbit_unit(
+            &env.dbx,
+            "47 тд",
+            "division",
+            None,
+            Some(generative_field_army.unit_id),
+        )
+        .await;
+        let regiment = insert_orbit_unit(
+            &env.dbx,
+            "380 мсп",
+            "regiment",
+            Some(operational_brigade.unit_id),
+            Some(division.unit_id),
+        )
+        .await;
+        let battalion = insert_orbit_unit(
+            &env.dbx,
+            "1 мсб",
+            "battalion",
+            Some(regiment.unit_id),
+            Some(regiment.unit_id),
+        )
+        .await;
+
+        assert_eq!(
+            expected_unit_name_from_orbit(&env.dbx, &battalion)
+                .await
+                .unwrap(),
+            "1 мсб 380 мсп 47 тд 1 ТА"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn bulk_replace_updates_only_clickable_reviews() {
+        let env = cleanup().await.unwrap();
+        let eligible = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("current".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let matching = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("matching".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let blank_expected = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("blank expected".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let eligible_orbit =
+            insert_orbit_unit(&env.dbx, "expected", "regiment", None, None)
+                .await;
+        let matching_orbit =
+            insert_orbit_unit(&env.dbx, "matching", "regiment", None, None)
+                .await;
+        let blank_echelon = orbit_echelon(&env.dbx, "regiment").await;
+        let blank_orbit = orbit_unit::ActiveModel {
+            unit_id: Set(Uuid::new_v4()),
+            unit_echelon_id: Set(Some(blank_echelon.id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        link_orbit_unit(&env.dbx, eligible_orbit.unit_id, eligible.id, false)
+            .await;
+        link_orbit_unit(&env.dbx, matching_orbit.unit_id, matching.id, false)
+            .await;
+        link_orbit_unit(
+            &env.dbx,
+            blank_orbit.unit_id,
+            blank_expected.id,
+            false,
+        )
+        .await;
+
+        let login = crate::users::login_id_by_name(&env.dbx, "Tester")
+            .await
+            .unwrap();
+        assert_eq!(
+            replace_all_eligible_unit_names(&env.dbx, &login)
+                .await
+                .unwrap(),
+            1
+        );
+
+        let units = sigint_unit::Entity::find()
+            .filter(sigint_unit::Column::Id.is_in([
+                eligible.id,
+                matching.id,
+                blank_expected.id,
+            ]))
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|unit| (unit.id, unit.name))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            units.get(&eligible.id).map(String::as_str),
+            Some("expected")
+        );
+        assert_eq!(
+            units.get(&matching.id).map(String::as_str),
+            Some("matching")
+        );
+        assert_eq!(
+            units.get(&blank_expected.id).map(String::as_str),
+            Some("blank expected")
+        );
     }
 
     #[tokio::test]
@@ -643,24 +1084,24 @@ mod tests {
             &env.dbx,
             "корпус",
             "corps",
-            Some(army.unit_id),
             None,
+            Some(army.unit_id),
         )
         .await;
         let company = insert_orbit_unit(
             &env.dbx,
             "рота",
             "company",
-            Some(corps.unit_id),
             None,
+            Some(corps.unit_id),
         )
         .await;
         let crew = insert_orbit_unit(
             &env.dbx,
             "екіпаж",
             "teamOrCrew",
-            Some(company.unit_id),
             None,
+            Some(company.unit_id),
         )
         .await;
         link_orbit_unit(&env.dbx, crew.unit_id, first.id, false).await;

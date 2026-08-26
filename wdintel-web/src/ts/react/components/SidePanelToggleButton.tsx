@@ -13,12 +13,12 @@ type SidePanelToggleButtonProps = {
   disabled?: boolean;
 };
 
-const INNER_X = 5;
-const INNER_Y = 5;
-const INNER_SIZE = 14;
+const INNER_X = 3;
+const INNER_Y = 3;
+const INNER_SIZE = 18;
 const INNER_RX = 2;
-const DIVIDER_LEFT_X = 10;
-const DIVIDER_RIGHT_X = 14;
+const DIVIDER_LEFT_X = 9;
+const DIVIDER_RIGHT_X = 15;
 
 function LeftPanelIcon(props: SvgIconProps) {
   return (
@@ -68,7 +68,7 @@ function LeftPanelActiveIcon(props: SvgIconProps) {
   );
 }
 
-const DIVIDER_BOTTOM_Y = 14;
+const DIVIDER_BOTTOM_Y = 15;
 
 export function BottomPanelIcon(props: SvgIconProps) {
   return (

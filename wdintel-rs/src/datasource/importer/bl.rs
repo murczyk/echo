@@ -330,6 +330,7 @@ where
             signal_message_id: Set(target_message_id),
             group_master_key: Set(master_key.clone()),
             sender: Set(group_entry.sender.clone()),
+            login_id: Set(group_entry.login_id),
             message_uid: Set(group_entry.message_uid.clone()),
             datasource_group_id: Set(target_group_id),
             created_at: Set(group_entry.created_at),

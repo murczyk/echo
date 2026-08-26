@@ -8,6 +8,9 @@ use crate::rer_importer::report_chunking::{
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
+use crate::sigint::sender::{
+    preferred_group_sender_expr, preferred_message_author_expr,
+};
 use crate::types::*;
 use crate::utils::*;
 use chrono::prelude::*;
@@ -1536,7 +1539,7 @@ fn apply_babak_analytics_access_filter(
         )));
     if let Some(selected_senders) = selected_senders {
         query = query.filter(
-            Expr::col((access_alias, signal_message_group::Column::Sender))
+            preferred_group_sender_expr(Some("babak_message_access"))
                 .is_in(selected_senders.clone()),
         );
     }
@@ -1594,7 +1597,7 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
                     )
                     .and_where(signal_message::Column::Deleted.eq(false))
                     .and_where(
-                        signal_message::Column::Sender.is_in(
+                        preferred_message_author_expr(None).is_in(
                             login_ids
                                 .iter()
                                 .map(ToString::to_string)
@@ -1722,7 +1725,7 @@ async fn load_babak_enrichment_batch(
                         linked.id,
                         linked.created_at,
                         linked.body as comment,
-                        linked.sender as author
+                        coalesce(linked.sender, linked.login_id::text) as author
                     from intel_product link
                     join signal_message linked
                       on linked.id = link.intel_message_id

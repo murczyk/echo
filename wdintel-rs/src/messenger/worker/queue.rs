@@ -1,4 +1,3 @@
-use crate::config::*;
 use crate::messenger::worker::pool::ProcessorPool;
 use crate::messenger::worker::*;
 use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};

@@ -18,6 +18,7 @@ export type UserDutySettings = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
+  mediaSummaryEnabled: boolean;
 };
 
 export type MessageTextPreviewLineLimit = 20 | 40 | null;
@@ -33,6 +34,7 @@ type UserDutySettingsWire = Omit<
   | 'showClassicDuty'
   | 'showClassicAnalysis'
   | 'dutyCollapseMediaPreviews'
+  | 'mediaSummaryEnabled'
 > & {
   messageTextPreviewLines?: string | null;
   tagsLayout: DutyTagsLayoutWire;
@@ -43,6 +45,7 @@ type UserDutySettingsWire = Omit<
   showClassicDuty?: boolean | null;
   showClassicAnalysis?: boolean | null;
   dutyCollapseMediaPreviews?: boolean | null;
+  mediaSummaryEnabled?: boolean | null;
 };
 
 function normalizeMessageTextPreviewLines(
@@ -110,6 +113,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     showClassicAnalysis: raw.showClassicAnalysis ?? false,
     dutyCollapseMediaPreviews:
       raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+    mediaSummaryEnabled: raw.mediaSummaryEnabled ?? true,
   };
 }
 
@@ -135,6 +139,7 @@ export async function saveUserSettings(
       showClassicDuty: body.showClassicDuty,
       showClassicAnalysis: body.showClassicAnalysis,
       dutyCollapseMediaPreviews: body.dutyCollapseMediaPreviews,
+      mediaSummaryEnabled: body.mediaSummaryEnabled,
     },
     { signal },
   );

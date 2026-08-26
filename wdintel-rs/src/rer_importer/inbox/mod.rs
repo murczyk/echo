@@ -16,6 +16,7 @@ use crate::rer_importer::analysis::{
 use crate::rer_importer::inbox::bl::*;
 use crate::rer_importer::inbox::query::*;
 use crate::session::record_page_visit;
+use crate::sigint::sender::preferred_message_author_expr;
 use crate::types::*;
 use crate::utils::dt_from_millis;
 use actix_identity::Identity;
@@ -520,7 +521,7 @@ pub(crate) async fn messages_by_id_bl(
         )
         .and_where(signal_message::Column::DatasourceGroupId.is_null())
         .and_where(
-            signal_message::Column::Sender.is_in(owner_sender_ids.clone()),
+            preferred_message_author_expr(None).is_in(owner_sender_ids.clone()),
         )
         .and_where(
             Expr::exists(
@@ -578,7 +579,7 @@ pub(crate) async fn messages_by_id_bl(
     let owner_access = Condition::all()
         .add(datasource_group::Column::GroupMasterKey.is_null())
         .add(Expr::exists(owner_access_query).not())
-        .add(signal_message::Column::Sender.is_in(owner_sender_ids));
+        .add(preferred_message_author_expr(None).is_in(owner_sender_ids));
     let signal_message_group_access_query =
         signal_message_group::Entity::find()
             .filter(
@@ -1108,10 +1109,15 @@ async fn query_inbox_digest(
         .await
         .c(h!())?
         .context(h!())?;
-    Ok((
-        query_res.try_get("", "count")?,
-        query_res.try_get("", "first_element_ts")?,
-    ))
+    let first_element_ts =
+        query_res.try_get("", "first_element_ts").or_else(|_| {
+            query_res
+                .try_get::<Option<DateTime<Utc>>>("", "first_element_ts")
+                .map(|timestamp| {
+                    timestamp.map(|timestamp| timestamp.naive_utc())
+                })
+        })?;
+    Ok((query_res.try_get("", "count")?, first_element_ts))
 }
 
 async fn query_inbox_candidate_ids(
@@ -2026,6 +2032,7 @@ async fn upsert_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
     datasource_id: Option<i64>,
+    login_id: &Uuid,
     message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
@@ -2036,6 +2043,7 @@ async fn upsert_submit_signal_message(
         txn,
         config,
         datasource_id,
+        login_id,
         message_uid,
         message,
         timestamp,
@@ -2050,6 +2058,7 @@ async fn update_submit_signal_message(
     txn: &DatabaseTransaction,
     config: &Config,
     signal_message_id: i64,
+    login_id: &Uuid,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
     operator_tags: Option<serde_json::Value>,
@@ -2062,11 +2071,15 @@ async fn update_submit_signal_message(
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)?;
+    let assign_author =
+        signal_message.login_id.is_none() && signal_message.sender.is_none();
     let mut signal_message = signal_message.into_active_model();
     signal_message.body = Set(Some(message.text.clone()));
     signal_message.datasource_group_id = Set(datasource_group_id);
     signal_message.timestamp = Set(timestamp);
-    signal_message.sender = Set(message.sender.clone());
+    if assign_author {
+        signal_message.login_id = Set(Some(*login_id));
+    }
     if operator_tags.is_some() {
         signal_message.operator_tags = Set(operator_tags);
     }
@@ -2083,6 +2096,7 @@ async fn upsert_submit_signal_message_inner(
     txn: &DatabaseTransaction,
     config: &Config,
     datasource_id: Option<i64>,
+    login_id: &Uuid,
     message_uid: Option<&str>,
     message: &InboxMessage,
     timestamp: Option<NaiveDateTime>,
@@ -2120,12 +2134,16 @@ async fn upsert_submit_signal_message_inner(
                 .c(h!())?;
             match signal_message {
                 Some(signal_message) => {
+                    let assign_author = signal_message.login_id.is_none()
+                        && signal_message.sender.is_none();
                     let mut signal_message = signal_message.into_active_model();
                     signal_message.body = Set(Some(message.text.clone()));
                     signal_message.datasource_group_id =
                         Set(datasource_group_id);
                     signal_message.timestamp = Set(timestamp);
-                    signal_message.sender = Set(message.sender.clone());
+                    if assign_author {
+                        signal_message.login_id = Set(Some(*login_id));
+                    }
                     signal_message.operator_tags = Set(operator_tags);
                     signal_message.deleted = Set(false);
                     signal_message.update(txn).await.c(h!())?
@@ -2136,7 +2154,8 @@ async fn upsert_submit_signal_message_inner(
                     datasource_group_id: Set(datasource_group_id),
                     created_at: NotSet,
                     timestamp: Set(timestamp),
-                    sender: Set(message.sender.clone()),
+                    sender: Set(None),
+                    login_id: Set(Some(*login_id)),
                     format: NotSet,
                     deleted: Set(false),
                     external_id: Set(None),
@@ -2157,7 +2176,8 @@ async fn upsert_submit_signal_message_inner(
             datasource_group_id: Set(datasource_group_id),
             created_at: NotSet,
             timestamp: Set(timestamp),
-            sender: Set(message.sender.clone()),
+            sender: Set(None),
+            login_id: Set(Some(*login_id)),
             format: NotSet,
             deleted: Set(false),
             external_id: Set(None),
@@ -2201,6 +2221,7 @@ async fn ensure_submit_signal_message_groups(
         if let Some(existing) = existing {
             let mut existing = existing.into_active_model();
             existing.sender = Set(signal_message.sender.clone());
+            existing.login_id = Set(signal_message.login_id);
             existing.message_uid = Set(signal_message.message_uid.clone());
             existing.datasource_group_id = Set(Some(*datasource_group_id));
             existing.update(txn).await.c(h!())?;
@@ -2212,6 +2233,7 @@ async fn ensure_submit_signal_message_groups(
             signal_message_id: Set(signal_message.id),
             group_master_key: Set(Some(group_master_key.clone())),
             sender: Set(signal_message.sender.clone()),
+            login_id: Set(signal_message.login_id),
             message_uid: Set(signal_message.message_uid.clone()),
             datasource_group_id: Set(Some(*datasource_group_id)),
             created_at: Set(signal_message.created_at),
@@ -2697,7 +2719,7 @@ async fn ensure_comment_save_access(
     let owner_access = Condition::all()
         .add(datasource_group::Column::GroupMasterKey.is_null())
         .add(Expr::exists(owner_access_query).not())
-        .add(signal_message::Column::Sender.is_in(owner_sender_ids));
+        .add(preferred_message_author_expr(None).is_in(owner_sender_ids));
     let message = SignalMessage::find_by_id(message_id)
         .join(
             JoinType::LeftJoin,
@@ -4181,6 +4203,33 @@ mod tests {
         assert_eq!(cached, (7, None));
     }
 
+    #[serial]
+    #[tokio::test]
+    async fn inbox_digest_accepts_timestamp_with_time_zone() {
+        let env = cleanup().await.unwrap();
+        let digest = query_inbox_digest(
+            env.dbx.clone(),
+            "SELECT 1::bigint AS count, \
+             TIMESTAMPTZ '2026-08-25 09:56:19+00' AS first_element_ts"
+                .to_string(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            digest,
+            (
+                1,
+                Some(
+                    NaiveDate::from_ymd_opt(2026, 8, 25)
+                        .unwrap()
+                        .and_hms_opt(9, 56, 19)
+                        .unwrap()
+                )
+            )
+        );
+    }
+
     fn submit_dmr_metadata(cc: Option<i32>) -> SubmitDmrMetadata {
         SubmitDmrMetadata {
             timestamp: "2026-06-25T12:34:56Z".to_string(),
@@ -5516,6 +5565,7 @@ mod tests {
             &txn,
             &env.config,
             Some(datasource.id),
+            &login.id,
             Some(&uid),
             &message,
             Some(now),

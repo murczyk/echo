@@ -1672,6 +1672,18 @@ fn analytics_networks_query_scopes_both_union_arms() {
     assert!(
         str::contains(
             &sql,
+            "JOIN \"sigint_network_freq\" AS \
+             \"analytics_frequency_network_freq\" ON"
+        ),
+        "{sql}"
+    );
+    assert!(
+        !str::contains(&sql, "JOIN (SELECT \"sigint_network_freq\""),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
             "JOIN \"signal_group\" AS \"analytics_linked_group\""
         ),
         "{sql}"

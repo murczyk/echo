@@ -2583,7 +2583,7 @@ mod tests {
                 unit_name: Set(Some(format!("Повна назва {name}"))),
                 unit_name_short: Set(Some((*name).to_string())),
                 unit_echelon_id: Set(Some(echelon_ids[index])),
-                operational_parent_unit_id: Set(
+                generative_parent_unit_id: Set(
                     unit_ids.get(index + 1).copied(),
                 ),
                 ..Default::default()
@@ -3126,20 +3126,31 @@ mod tests {
         .await;
     }
 
-    async fn assert_full_active_orbit_hierarchy(
+    async fn assert_only_active_orbit_hierarchy(
         dbx: &DatabaseConnection,
-        orbit_unit_ids: Vec<uuid::Uuid>,
+        orbit_unit_ids: &[uuid::Uuid],
+        expected_active_orbit_unit_ids: &[uuid::Uuid],
     ) {
         let links = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::OrbitUnitId
-                    .is_in(orbit_unit_ids),
+                    .is_in(orbit_unit_ids.iter().copied()),
             )
             .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
             .all(dbx)
             .await
             .unwrap();
-        assert_eq!(links.len(), 7);
+        assert_eq!(links.len(), expected_active_orbit_unit_ids.len());
+        assert_eq!(
+            links
+                .iter()
+                .map(|link| link.orbit_unit_id)
+                .collect::<BTreeSet<_>>(),
+            expected_active_orbit_unit_ids
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>()
+        );
         let linked_unit_ids = links
             .into_iter()
             .map(|link| link.sigint_unit_id)
@@ -3149,7 +3160,7 @@ mod tests {
             .all(dbx)
             .await
             .unwrap();
-        assert_eq!(linked_units.len(), 7);
+        assert_eq!(linked_units.len(), expected_active_orbit_unit_ids.len());
         assert!(linked_units.iter().all(|unit| unit.active));
         assert!(linked_units
             .iter()
@@ -3715,7 +3726,7 @@ mod tests {
             unit_id: Set(other_unit_id),
             unit_name_short: Set(Some("ВМФ".to_string())),
             unit_echelon_id: Set(Some(other_echelon_id)),
-            operational_parent_unit_id: Set(Some(orbit_fixture.unit_ids[5])),
+            generative_parent_unit_id: Set(Some(orbit_fixture.unit_ids[5])),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3724,8 +3735,8 @@ mod tests {
         update_orbit_parents(
             &env.dbx,
             orbit_fixture.unit_ids[4],
-            None,
             Some(other_unit_id),
+            None,
         )
         .await;
         orbit_fixture.unit_ids.push(other_unit_id);
@@ -4036,7 +4047,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn manual_orbit_link_creates_and_activates_both_parent_chains() {
+    async fn manual_orbit_link_creates_only_generative_parent_chain() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
@@ -4052,13 +4063,23 @@ mod tests {
         .await
         .unwrap();
 
-        assert_full_active_orbit_hierarchy(&env.dbx, orbit_fixture.unit_ids)
-            .await;
+        assert_only_active_orbit_hierarchy(
+            &env.dbx,
+            &orbit_fixture.unit_ids,
+            &[
+                orbit_fixture.unit_ids[0],
+                orbit_fixture.unit_ids[2],
+                orbit_fixture.unit_ids[3],
+                orbit_fixture.unit_ids[4],
+                orbit_fixture.unit_ids[6],
+            ],
+        )
+        .await;
     }
 
     #[tokio::test]
     #[serial]
-    async fn automatic_orbit_link_creates_and_activates_both_parent_chains() {
+    async fn automatic_orbit_link_creates_only_generative_parent_chain() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
@@ -4082,13 +4103,23 @@ mod tests {
         .await
         .unwrap();
 
-        assert_full_active_orbit_hierarchy(&env.dbx, orbit_fixture.unit_ids)
-            .await;
+        assert_only_active_orbit_hierarchy(
+            &env.dbx,
+            &orbit_fixture.unit_ids,
+            &[
+                orbit_fixture.unit_ids[0],
+                orbit_fixture.unit_ids[2],
+                orbit_fixture.unit_ids[3],
+                orbit_fixture.unit_ids[4],
+                orbit_fixture.unit_ids[6],
+            ],
+        )
+        .await;
     }
 
     #[tokio::test]
     #[serial]
-    async fn oneoff_activates_linked_orbit_ancestors_in_both_hierarchies() {
+    async fn oneoff_activates_only_linked_generative_ancestors() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -4153,9 +4184,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(links.len(), 7);
-        let linked_unit_ids = links
-            .into_iter()
-            .map(|link| link.sigint_unit_id)
+        let linked_units_by_orbit_id = links
+            .iter()
+            .map(|link| (link.orbit_unit_id, link.sigint_unit_id))
+            .collect::<HashMap<_, _>>();
+        let linked_unit_ids = linked_units_by_orbit_id
+            .values()
+            .copied()
             .collect::<Vec<_>>();
         let linked_units = sigint_unit::Entity::find()
             .filter(sigint_unit::Column::Id.is_in(linked_unit_ids))
@@ -4163,7 +4198,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(linked_units.len(), 7);
-        assert!(linked_units.iter().all(|unit| unit.active));
+        let operational_unit_id =
+            linked_units_by_orbit_id[&orbit_fixture.unit_ids[1]];
+        assert!(linked_units
+            .iter()
+            .all(|unit| { unit.active == (unit.id != operational_unit_id) }));
     }
 
     #[tokio::test]

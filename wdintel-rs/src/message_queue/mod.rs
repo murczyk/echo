@@ -159,6 +159,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         },
         timestamp: Set(Some(m.timestamp)),
         sender: Set(m.sender),
+        login_id: NotSet,
         format: NotSet,
         deleted: Set(true), // unstaged message
         external_id: Set(None),
