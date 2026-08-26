@@ -9,8 +9,25 @@ import type {
   ReactNode,
 } from 'react';
 import { createRoot } from 'react-dom/client';
-import { act, Children, forwardRef, isValidElement } from 'react';
+import { act, Children, forwardRef, isValidElement, useLayoutEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const imageEditorMocks = vi.hoisted(() => ({ handleEscape: vi.fn(() => true) }));
+
+vi.mock('../../../image-editor/ImageEditor', () => ({
+  ImageEditor: ({
+    registerEscapeHandler,
+  }: {
+    registerEscapeHandler?: (handler: (() => boolean) | null) => void;
+  }) => {
+    useLayoutEffect(() => {
+      if (!registerEscapeHandler) return;
+      registerEscapeHandler(imageEditorMocks.handleEscape);
+      return () => registerEscapeHandler(null);
+    }, [registerEscapeHandler]);
+    return <div data-testid="mock-image-editor" />;
+  },
+}));
 
 type DialogRecord = {
   disableRestoreFocus?: boolean;
@@ -25,7 +42,6 @@ let previewConfig = {
   layout: 'media' as const,
   disableRestoreFocus: true,
   supportsFullscreen: true,
-  disableEscapeKeyDownInFullscreen: true,
 };
 let latestActionProps: {
   copyStatus: 'idle' | 'copying' | 'copied' | 'error';
@@ -58,6 +74,7 @@ Object.defineProperty(loadedImage, 'naturalHeight', { value: 16 });
 
 vi.mock('@mui/material', () => ({
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  CircularProgress: () => <div data-loading-spinner />,
   Dialog: ({
     children,
     open,
@@ -283,6 +300,10 @@ vi.mock('../../copy-image-to-clipboard', () => ({
 import { MessageCardAttachmentPreviewProvider } from '../../attachment-preview/MessageCardAttachmentPreviewProvider';
 import { copyImageToClipboard } from '../../copy-image-to-clipboard';
 import { ImageAttachmentPreviewRenderer } from '../../renderers/ImageAttachmentPreviewRenderer';
+import type {
+  ImageEditingCapability,
+  ImageEditorSource,
+} from '../../../image-editor/image-editor.types';
 
 type TestImagePreviewDialogProps = {
   imageHrefs: ComponentProps<typeof ImageAttachmentPreviewRenderer>['image'][];
@@ -293,6 +314,8 @@ type TestImagePreviewDialogProps = {
   onIndexChange: (index: number) => void;
   isDownloadStarting?: (downloadKey: string) => boolean;
   onDownloadStart?: (downloadKey: string) => boolean;
+  imageEditing?: ImageEditingCapability;
+  initialAction?: 'edit-image';
 };
 
 function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
@@ -306,6 +329,8 @@ function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
       onIndexChange={props.onIndexChange}
       isDownloadStarting={props.isDownloadStarting}
       onDownloadStart={props.onDownloadStart}
+      imageEditing={props.imageEditing}
+      initialAction={props.initialAction}
     />
   );
 }
@@ -317,11 +342,11 @@ describe('ImageAttachmentPreviewRenderer', () => {
       layout: 'media',
       disableRestoreFocus: true,
       supportsFullscreen: true,
-      disableEscapeKeyDownInFullscreen: true,
     };
     latestActionProps = null;
     latestControlsProps = null;
     latestStageProps = null;
+    imageEditorMocks.handleEscape.mockClear();
     document.body.innerHTML = '';
     vi.mocked(copyImageToClipboard).mockReset();
     vi.mocked(copyImageToClipboard).mockResolvedValue(undefined);
@@ -345,7 +370,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
 
     const dialog = dialogProps.at(-1);
     expect(dialog?.disableRestoreFocus).toBe(true);
-    expect(dialog?.disableEscapeKeyDown).toBe(false);
+    expect(dialog?.disableEscapeKeyDown).toBe(true);
     expect(dialog?.fullScreen).toBe(true);
     expect(dialog?.paperSx).toMatchObject({
       width: '100vw',
@@ -376,7 +401,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('uses fullscreen geometry and exits fullscreen before closing on Escape', async () => {
+  it('uses fullscreen geometry and closes immediately on Escape', async () => {
     const onClose = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -394,7 +419,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     const fullscreenDialog = dialogProps.at(-1);
-    expect(fullscreenDialog?.disableEscapeKeyDown).toBe(false);
+    expect(fullscreenDialog?.disableEscapeKeyDown).toBe(true);
     expect(fullscreenDialog?.fullScreen).toBe(true);
     expect(fullscreenDialog?.paperSx).toMatchObject({
       width: '100vw',
@@ -407,12 +432,64 @@ describe('ImageAttachmentPreviewRenderer', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
 
-    expect(onClose).not.toHaveBeenCalled();
-    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(dialogProps.at(-1)?.fullScreen).toBe(true);
+    root.unmount();
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Escape in editor ownership while source and lazy editor loading complete', async () => {
+    const onClose = vi.fn();
+    const loadSource = vi.fn<(image: unknown, signal: AbortSignal) => Promise<ImageEditorSource>>();
+    let resolveSource: (source: ImageEditorSource) => void;
+    loadSource.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSource = resolve;
+        }),
+    );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={onClose}
+          onIndexChange={vi.fn()}
+          initialAction="edit-image"
+          imageEditing={{
+            canEdit: () => true,
+            loadSource,
+            applyReplacement: vi.fn(),
+          }}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(loadSource).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSource!({ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' });
+    });
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="mock-image-editor"]')).not.toBeNull(),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(imageEditorMocks.handleEscape).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
     root.unmount();
   });
 
@@ -421,7 +498,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
       layout: 'media',
       disableRestoreFocus: true,
       supportsFullscreen: false,
-      disableEscapeKeyDownInFullscreen: true,
     };
 
     const onClose = vi.fn();
@@ -443,7 +519,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     expect(latestActionProps?.canFullscreen).toBe(false);
     expect(document.body.querySelector('[aria-label="Повноекранний режим"]')).toBeNull();
     expect(dialogProps.at(-1)?.fullScreen).toBe(false);
-    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
+    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
     await act(async () => {

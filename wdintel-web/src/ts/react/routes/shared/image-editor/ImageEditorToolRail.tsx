@@ -19,7 +19,7 @@ import UndoIcon from '@mui/icons-material/Undo';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { ListItemIcon, ListSubheader, MenuItem, useMediaQuery } from '@mui/material';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { PowerMenu } from '../../../components/PowerMenu';
 import { ImageEditorIconButton } from './ImageEditorIconButton';
@@ -51,6 +51,8 @@ type Props = {
   onFitViewport: () => void;
   onActualSize: () => void;
   onCenterViewport: () => void;
+  onMenuOpenChange: (open: boolean) => void;
+  dismissMenu: number;
 };
 
 const TOOLS: Record<ImageEditorTool, { label: string; icon: ReactNode; iconSize?: number }> = {
@@ -85,6 +87,13 @@ export function ImageEditorToolRail(props: Props) {
   const desktop = useMediaQuery('(min-width: 1280px)', { noSsr: true });
   const tablet = useMediaQuery('(min-width: 768px)', { noSsr: true });
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (props.dismissMenu) setAnchor(null);
+  }, [props.dismissMenu]);
+  const closeMenu = () => {
+    setAnchor(null);
+    props.onMenuOpenChange(false);
+  };
   const toolButton = (value: ImageEditorTool) => {
     const { label, icon, iconSize } = TOOLS[value];
     return (
@@ -99,11 +108,11 @@ export function ImageEditorToolRail(props: Props) {
     );
   };
   const selectTool = (value: ImageEditorTool) => {
-    setAnchor(null);
+    closeMenu();
     props.onToolChange(value);
   };
   const action = (callback: () => void) => {
-    setAnchor(null);
+    closeMenu();
     callback();
   };
   const menuTool = (value: ImageEditorTool) => {
@@ -205,7 +214,10 @@ export function ImageEditorToolRail(props: Props) {
             ariaHaspopup="menu"
             label="Ще"
             icon={<MoreHorizIcon />}
-            onClick={(event) => setAnchor(event.currentTarget)}
+            onClick={(event) => {
+              setAnchor(event.currentTarget);
+              props.onMenuOpenChange(true);
+            }}
             disabled={props.disabled}
             active={moreIsActive}
           />
@@ -213,7 +225,7 @@ export function ImageEditorToolRail(props: Props) {
             id="image-editor-more-menu"
             anchorEl={anchor}
             open={Boolean(anchor)}
-            onClose={() => setAnchor(null)}
+            onClose={closeMenu}
             slotProps={{ list: { 'aria-labelledby': 'image-editor-more-button' } }}
           >
             <ListSubheader>Інші інструменти</ListSubheader>

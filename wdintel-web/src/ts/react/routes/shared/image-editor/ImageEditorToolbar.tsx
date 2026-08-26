@@ -17,6 +17,8 @@ export type ImageEditorToolbarProps = {
   onUndo: () => void;
   onRedo: () => void;
   onResetEdits: () => void;
+  onMenuOpenChange: (open: boolean) => void;
+  dismissMenu: number;
 };
 
 export function ImageEditorToolbar(props: ImageEditorToolbarProps) {

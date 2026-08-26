@@ -27,7 +27,6 @@ let previewConfig = {
   layout: 'media' as const,
   disableRestoreFocus: false,
   supportsFullscreen: true,
-  disableEscapeKeyDownInFullscreen: true,
 };
 let latestControlsProps: {
   playerState: VideoPlayerState;
@@ -310,7 +309,6 @@ describe('VideoAttachmentPreviewRenderer', () => {
       layout: 'media',
       disableRestoreFocus: false,
       supportsFullscreen: true,
-      disableEscapeKeyDownInFullscreen: true,
     };
     latestControlsProps = null;
     latestActionProps = null;
@@ -359,7 +357,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     });
 
     expect(dialogProps.at(-1)?.disableRestoreFocus).toBe(false);
-    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
+    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
     expect(dialogProps.at(-1)?.fullScreen).toBe(true);
     expect(dialogProps.at(-1)?.paperSx).toMatchObject({
       width: '100vw',
@@ -820,7 +818,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
       videos: [{ id: 'video-1', name: 'video.mp4', source: '/video.mp4' }],
     });
 
-    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
+    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
     expect(latestControlsProps?.playerState.isFullscreen).toBe(true);
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
@@ -843,7 +841,6 @@ describe('VideoAttachmentPreviewRenderer', () => {
       layout: 'media',
       disableRestoreFocus: false,
       supportsFullscreen: false,
-      disableEscapeKeyDownInFullscreen: true,
     };
 
     const onClose = vi.fn();
@@ -855,7 +852,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(latestControlsProps?.canFullscreen).toBe(false);
     expect(document.body.querySelector('[aria-label="fullscreen"]')).toBeNull();
     expect(dialogProps.at(-1)?.fullScreen).toBe(false);
-    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(false);
+    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
     await act(async () => {

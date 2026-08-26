@@ -1,5 +1,5 @@
 import { Alert, alpha, useTheme } from '@mui/material';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { ImageEditorToolbar } from './ImageEditorToolbar';
 import { ImageEditorContextToolbar } from './ImageEditorContextToolbar';
@@ -32,6 +32,7 @@ import type {
   ImageEditorSource,
   ImageEditorSelectionDescriptor,
   ImageEditorTool,
+  RegisterImageEditorEscapeHandler,
 } from './image-editor.types';
 type FabricModule = typeof import('fabric');
 
@@ -39,10 +40,12 @@ export function ImageEditor({
   source,
   onCancel,
   onApply,
+  registerEscapeHandler,
 }: {
   source: ImageEditorSource;
   onCancel: () => void;
   onApply: (result: EditedImageResult) => Promise<void> | void;
+  registerEscapeHandler?: RegisterImageEditorEscapeHandler;
 }) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
@@ -68,6 +71,8 @@ export function ImageEditor({
   const [bold, setBold] = useState(false);
   const [highlightOpacity, setHighlightOpacity] = useState(0.4);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [dismissMenu, setDismissMenu] = useState(0);
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
   const theme = useTheme();
@@ -392,30 +397,53 @@ export function ImageEditor({
     if (hasEdits) setConfirmCancel(true);
     else onCancel();
   }, [hasEdits, isInteractionLocked, onCancel]);
+  const handleEditorEscape = useCallback(() => {
+    if (loading || applying || rasterPending) return true;
+    if (confirmCancel) {
+      setConfirmCancel(false);
+      return true;
+    }
+    if (menuOpen) {
+      setMenuOpen(false);
+      setDismissMenu((value) => value + 1);
+      return true;
+    }
+    const canvas = canvasRef.current;
+    const active = canvas?.getActiveObject() as import('fabric').IText | undefined;
+    if (active?.isEditing) {
+      active.exitEditing();
+      canvas?.requestRenderAll();
+      return true;
+    }
+    if (cropRef.current) {
+      cancelCropOperation();
+      return true;
+    }
+    if (cancelGestureRef.current()) return true;
+    requestCancel();
+    return true;
+  }, [
+    applying,
+    cancelCropOperation,
+    confirmCancel,
+    loading,
+    menuOpen,
+    rasterPending,
+    requestCancel,
+  ]);
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const active = canvasRef.current?.getActiveObject() as import('fabric').IText | undefined;
-      if (event.key === 'Escape' && active?.isEditing) {
+      if (event.key === 'Escape' && !registerEscapeHandler && handleEditorEscape()) {
         event.preventDefault();
-        active.exitEditing();
+        event.stopPropagation();
         return;
       }
       const typing =
         target?.matches('input, textarea, select, [contenteditable="true"]') ||
-        active?.isEditing === true;
+        (canvasRef.current?.getActiveObject() as import('fabric').IText | undefined)?.isEditing ===
+          true;
       if (typing || isInteractionLocked()) return;
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        if (cropRef.current && tool === 'crop') {
-          cancelCropOperation();
-        } else if (cancelGestureRef.current()) {
-          return;
-        } else {
-          requestCancel();
-        }
-        return;
-      }
       if (event.key === 'Enter' && tool === 'crop' && cropRef.current) {
         event.preventDefault();
         applyCropOperation();
@@ -436,21 +464,25 @@ export function ImageEditor({
     [
       applyCropOperation,
       cancelCropOperation,
-      changeTool,
       deleteSelected,
+      handleEditorEscape,
       isInteractionLocked,
       queuedRedo,
       queuedUndo,
-      requestCancel,
-      saveHistory,
+      registerEscapeHandler,
       tool,
     ],
   );
 
   useEffect(() => {
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [onKeyDown]);
+  useLayoutEffect(() => {
+    if (!registerEscapeHandler) return;
+    registerEscapeHandler(handleEditorEscape);
+    return () => registerEscapeHandler(null);
+  }, [handleEditorEscape, registerEscapeHandler]);
   const primaryToolbarProps = {
     disabled: !canvasReady || loading || applying || rasterPending,
     tool,
@@ -467,6 +499,8 @@ export function ImageEditor({
     onUndo: queuedUndo,
     onRedo: queuedRedo,
     onResetEdits: queuedReset,
+    onMenuOpenChange: setMenuOpen,
+    dismissMenu,
   };
   const contextualToolbarProps = {
     disabled: !canvasReady || loading || applying || rasterPending,

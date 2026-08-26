@@ -1,5 +1,5 @@
 import { Dialog } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { shouldIgnoreArrowNavigation } from '../document-preview-utils';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
@@ -17,7 +17,11 @@ import { CoordinateAttachmentPreviewRenderer } from '../renderers/CoordinateAtta
 import { DocumentAttachmentPreviewRenderer } from '../renderers/DocumentAttachmentPreviewRenderer';
 import { ImageAttachmentPreviewRenderer } from '../renderers/ImageAttachmentPreviewRenderer';
 import { VideoAttachmentPreviewRenderer } from '../renderers/VideoAttachmentPreviewRenderer';
-import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
+import type {
+  ImageEditorEscapeHandler,
+  ImageEditingCapability,
+  RegisterImageEditorEscapeHandler,
+} from '../../image-editor/image-editor.types';
 
 const isDownloadIdle = () => false;
 const allowDownloadStart = () => true;
@@ -55,12 +59,15 @@ export function MessageCardAttachmentPreviewDialog({
   const [isEditing, setIsEditing] = useState(false);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
+  const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
   const dialogIsFullscreen = isFullscreen && previewConfig.supportsFullscreen;
+  const registerEditorEscapeHandler = useCallback<RegisterImageEditorEscapeHandler>((handler) => {
+    editorEscapeHandlerRef.current = handler;
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (isEditing) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -68,7 +75,9 @@ export function MessageCardAttachmentPreviewDialog({
           setDismissChildOverlay((value) => value + 1);
           return;
         }
-        if (previewConfig.layout === 'media' && dialogIsFullscreen) {
+        if (editorEscapeHandlerRef.current?.()) return;
+        if (isEditing) return;
+        if (previewKind !== 'image' && previewConfig.layout === 'media' && dialogIsFullscreen) {
           setIsFullscreen(false);
           return;
         }
@@ -91,7 +100,7 @@ export function MessageCardAttachmentPreviewDialog({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [childOverlayOpen, dialogIsFullscreen, isEditing, navigation, previewConfig]);
+  }, [childOverlayOpen, dialogIsFullscreen, isEditing, navigation, previewConfig, previewKind]);
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
@@ -125,7 +134,7 @@ export function MessageCardAttachmentPreviewDialog({
       }}
       maxWidth={false}
       fullScreen={dialogIsFullscreen}
-      disableEscapeKeyDown={false}
+      disableEscapeKeyDown
       disableRestoreFocus={previewConfig.disableRestoreFocus}
       PaperProps={{
         'aria-label': dialogLabel,
@@ -145,6 +154,7 @@ export function MessageCardAttachmentPreviewDialog({
           imageEditing={imageEditing}
           initialAction={initialAction}
           onEditModeChange={setIsEditing}
+          registerEditorEscapeHandler={registerEditorEscapeHandler}
           onChildOverlayChange={setChildOverlayOpen}
           dismissChildOverlay={dismissChildOverlay}
           {...rendererProps}

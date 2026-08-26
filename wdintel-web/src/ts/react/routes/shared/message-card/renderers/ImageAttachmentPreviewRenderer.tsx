@@ -58,7 +58,9 @@ import {
 import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
 import type {
   ImageEditingCapability,
+  ImageEditorEscapeHandler,
   ImageEditorSource,
+  RegisterImageEditorEscapeHandler,
 } from '../../image-editor/image-editor.types';
 
 const ImageEditor = lazy(() =>
@@ -66,6 +68,7 @@ const ImageEditor = lazy(() =>
     default: Component,
   })),
 );
+const consumeEditorLoadingEscape: ImageEditorEscapeHandler = () => true;
 
 type StageSize = {
   width: number;
@@ -237,6 +240,7 @@ export function ImageAttachmentPreviewRenderer({
   imageEditing,
   initialAction,
   onEditModeChange,
+  registerEditorEscapeHandler,
   onChildOverlayChange,
   dismissChildOverlay,
 }: {
@@ -248,6 +252,7 @@ export function ImageAttachmentPreviewRenderer({
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
   onEditModeChange?: (editing: boolean) => void;
+  registerEditorEscapeHandler?: RegisterImageEditorEscapeHandler;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
 } & MessageCardDownloadGuardProps) {
@@ -591,17 +596,23 @@ export function ImageAttachmentPreviewRenderer({
     editorAbortRef.current?.abort();
     const controller = new AbortController();
     editorAbortRef.current = controller;
+    registerEditorEscapeHandler?.(consumeEditorLoadingEscape);
     setEditorError(null);
     setEditorLoading(true);
+    let editorOpened = false;
     try {
       const source = await imageEditing.loadSource(currentImage, controller.signal);
       if (controller.signal.aborted) return;
+      editorOpened = true;
       setEditorSource(source);
     } catch (cause) {
       if (controller.signal.aborted) return;
       setEditorError(cause instanceof Error ? cause.message : 'Не вдалося завантажити зображення');
     } finally {
-      if (editorAbortRef.current === controller) setEditorLoading(false);
+      if (editorAbortRef.current === controller) {
+        setEditorLoading(false);
+        if (!editorOpened) registerEditorEscapeHandler?.(null);
+      }
     }
   };
 
@@ -611,7 +622,13 @@ export function ImageAttachmentPreviewRenderer({
     void openEditor();
   }, [initialAction]);
 
-  useEffect(() => () => editorAbortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      editorAbortRef.current?.abort();
+      registerEditorEscapeHandler?.(null);
+    },
+    [registerEditorEscapeHandler],
+  );
 
   const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
     setOcrStatus(nextOcr);
@@ -678,6 +695,7 @@ export function ImageAttachmentPreviewRenderer({
       >
         <ImageEditor
           source={editorSource}
+          registerEscapeHandler={registerEditorEscapeHandler}
           onCancel={() => setEditorSource(null)}
           onApply={async (result) => {
             await imageEditing?.applyReplacement(currentImage, result);

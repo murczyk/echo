@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   canvasAdd: vi.fn(),
   canvasOptions: undefined as Record<string, unknown> | undefined,
+  canvas: undefined as { getActiveObject: ReturnType<typeof vi.fn> } | undefined,
+  canvasSnapshot: 'initial',
   exportEditedImage: vi.fn(),
   sourceImage: {
     width: 200,
@@ -27,26 +29,57 @@ vi.mock('fabric', () => {
     upperCanvasEl = document.createElement('canvas');
     backgroundImage: unknown;
     setDimensions = vi.fn();
-    add = mocks.canvasAdd;
+    objects: unknown[] = [];
+    add = vi.fn((object: unknown) => {
+      this.objects.push(object);
+      mocks.canvasAdd(object);
+    });
     on = vi.fn();
     off = vi.fn();
     dispose = vi.fn();
     getActiveObject = vi.fn();
-    getObjects = vi.fn(() => []);
+    getObjects = vi.fn(() => this.objects as never[]);
+    remove = vi.fn((object: unknown) => {
+      this.objects = this.objects.filter((candidate) => candidate !== object);
+    });
+    setActiveObject = vi.fn();
     discardActiveObject = vi.fn();
     requestRenderAll = vi.fn();
     setViewportTransform = vi.fn();
     setZoom = vi.fn();
     getZoom = vi.fn(() => 1);
-    toJSON = vi.fn(() => ({}));
+    toJSON = vi.fn(() => ({ snapshot: mocks.canvasSnapshot }));
     constructor(_element: HTMLCanvasElement, options: Record<string, unknown>) {
       mocks.canvasOptions = options;
+      mocks.canvas = this;
+    }
+  }
+  class Rect {
+    constructor(options: Record<string, unknown>) {
+      Object.assign(this, options);
+    }
+    get(key: string) {
+      return this[key as keyof this];
+    }
+    set(options: Record<string, unknown>) {
+      Object.assign(this, options);
+    }
+    setControlsVisibility = vi.fn();
+    setCoords = vi.fn();
+    getBoundingRect() {
+      return {
+        left: Number(this.left ?? 0),
+        top: Number(this.top ?? 0),
+        width: Number(this.width ?? 0),
+        height: Number(this.height ?? 0),
+      };
     }
   }
   return {
     Canvas,
     FabricImage: { fromURL: mocks.fromURL },
     IText: class IText {},
+    Rect,
     Point: class Point {},
   };
 });
@@ -59,6 +92,7 @@ describe('ImageEditor initialization', () => {
   afterEach(() => {
     vi.clearAllMocks();
     mocks.fromURL.mockResolvedValue(mocks.sourceImage);
+    mocks.canvasSnapshot = 'initial';
     document.body.replaceChildren();
   });
 
@@ -138,6 +172,164 @@ describe('ImageEditor initialization', () => {
     expect((container.querySelector('button[aria-label="Ще"]') as HTMLButtonElement).disabled).toBe(
       true,
     );
+    act(() => root.unmount());
+  });
+
+  it('cancels an idle editor on Escape', async () => {
+    const onCancel = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={onCancel}
+          onApply={vi.fn()}
+        />,
+      );
+    });
+    await vi.waitFor(() =>
+      expect(
+        Array.from(container.querySelectorAll('button')).find(
+          (button) => button.textContent === 'Застосувати',
+        ),
+      ).toMatchObject({ disabled: false }),
+    );
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+  });
+
+  it('exits Fabric text editing on Escape without cancelling the editor', async () => {
+    const onCancel = vi.fn();
+    const exitEditing = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={onCancel}
+          onApply={vi.fn()}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(mocks.canvas).toBeDefined());
+    mocks.canvas?.getActiveObject.mockReturnValue({ isEditing: true, exitEditing });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+
+    expect(exitEditing).toHaveBeenCalledTimes(1);
+    expect(mocks.canvas?.requestRenderAll).toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    act(() => root.unmount());
+  });
+
+  it('cancels crop before cancelling the editor', async () => {
+    const onCancel = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={onCancel}
+          onApply={vi.fn()}
+        />,
+      );
+    });
+    const crop = container.querySelector('button[aria-label="Обрізати"]') as HTMLButtonElement;
+    await vi.waitFor(() => expect(crop.disabled).toBe(false));
+    await act(async () => crop.click());
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onCancel).not.toHaveBeenCalled();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    act(() => root.unmount());
+  });
+
+  it('dismisses the discard warning on a second Escape', async () => {
+    const onCancel = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+      },
+    );
+
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+          onCancel={onCancel}
+          onApply={vi.fn()}
+        />,
+      );
+    });
+    const crop = container.querySelector('button[aria-label="Обрізати"]') as HTMLButtonElement;
+    await vi.waitFor(() => expect(crop.disabled).toBe(false));
+    await act(async () => crop.click());
+    mocks.canvasSnapshot = 'crop';
+    await act(async () => {
+      (
+        container.querySelector('button[aria-label="Застосувати обрізання"]') as HTMLButtonElement
+      ).click();
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(container.textContent).toContain('Є незастосовані зміни');
+    expect(onCancel).not.toHaveBeenCalled();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(container.textContent).not.toContain('Є незастосовані зміни');
+    expect(onCancel).not.toHaveBeenCalled();
     act(() => root.unmount());
   });
 
