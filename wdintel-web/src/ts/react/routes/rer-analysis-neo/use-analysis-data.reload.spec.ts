@@ -340,6 +340,40 @@ describe('loadFilterSectionData', () => {
       { value: 'messenger-sender', label: 'Alpha Team', count: 2 },
     ]);
   });
+
+  it('loads missing units before building network filter labels', async () => {
+    mocks.fetchAnalysisNetworks.mockResolvedValue({
+      networks: [{ networkId: 12, count: 6 }],
+      networkNames: [{ id: 12, name: 'управління 23 сб' }],
+    });
+    mocks.fetchNetworksByIds.mockResolvedValue([
+      { id: 12, name: 'управління', location: 'Харків', unitIds: [23] },
+    ] as unknown as Network[]);
+    mocks.getUnitsByIds.mockResolvedValue([{ id: 23, name: '23 сб' }] as unknown as Unit[]);
+    let currentOptions = structuredClone(emptyOptions);
+
+    await loadFilterSectionData('networks', {
+      analysisReq: buildAnalysisReq(buildQueryState())!,
+      loadVersion: 0,
+      loadVersionRef: { current: 0 },
+      queryState: buildQueryState(),
+      setAorEntries: vi.fn(),
+      setGroupInfos: vi.fn(),
+      setNetworks: vi.fn(),
+      setOptions: (update) => {
+        currentOptions = typeof update === 'function' ? update(currentOptions) : update;
+      },
+      setProfiles: vi.fn(),
+      setTagsMap: vi.fn(),
+      setTagsOrder: vi.fn(),
+      unitsMap: {},
+    });
+
+    expect(mocks.getUnitsByIds).toHaveBeenCalledWith([23], undefined);
+    expect(currentOptions.networks).toEqual([
+      { value: '12', label: 'управління 23 сб (ХАРКІВ)', count: 6 },
+    ]);
+  });
 });
 
 describe('reloadAnalysisData', () => {
