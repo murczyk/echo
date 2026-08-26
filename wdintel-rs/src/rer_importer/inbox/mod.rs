@@ -1757,6 +1757,7 @@ fn submit_item_callsigns(item: &InboxSubmitItem) -> Vec<String> {
 async fn add_submit_tags(
     txn: &DatabaseTransaction,
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     login: &uuid::Uuid,
     tag_ids: Option<Vec<i64>>,
 ) -> Result<(), AppError> {
@@ -1781,6 +1782,7 @@ async fn add_submit_tags(
 
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(inbox_id),
+            sigint_inbox_item_uuid: Set(inbox_item_uuid),
             tag_id: Set(tag_id),
             confidence: Set(1.0),
             login_id: Set(Some(*login)),
@@ -1797,6 +1799,7 @@ async fn add_submit_tags(
 async fn replace_submit_tags(
     txn: &DatabaseTransaction,
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     login: &uuid::Uuid,
     tag_ids: Option<Vec<i64>>,
 ) -> Result<(), AppError> {
@@ -1810,7 +1813,7 @@ async fn replace_submit_tags(
         .exec(txn)
         .await
         .c(h!())?;
-    add_submit_tags(txn, inbox_id, login, Some(tag_ids)).await
+    add_submit_tags(txn, inbox_id, inbox_item_uuid, login, Some(tag_ids)).await
 }
 
 fn format_geo_coordinates(coords: &[GeoCoordinates]) -> Option<String> {
@@ -2262,6 +2265,7 @@ fn prepare_submit_body_for_coordinate_extraction(
 
 async fn save_submit_dmr_metadata(
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     network: Option<&SubmitNetwork>,
     dmr: Vec<SubmitDmrMetadata>,
     txn: &DatabaseTransaction,
@@ -2269,7 +2273,9 @@ async fn save_submit_dmr_metadata(
     let (dmr, warnings) = normalize_submit_dmr_metadata(network, dmr)?;
     let mut entries = dmr
         .iter()
-        .map(|metadata| submit_dmr_metadata_model(inbox_id, metadata))
+        .map(|metadata| {
+            submit_dmr_metadata_model(inbox_id, inbox_item_uuid, metadata)
+        })
         .collect::<Vec<_>>();
 
     if entries.is_empty() {
@@ -2277,6 +2283,7 @@ async fn save_submit_dmr_metadata(
             entries.push(sigint_inbox_item_metadata::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(inbox_id),
+                sigint_inbox_item_uuid: Set(inbox_item_uuid),
                 color_code: Set(Some(cc.to_string())),
                 created_at: NotSet,
                 ..Default::default()
@@ -2599,11 +2606,13 @@ fn matches_optional_value<T: PartialEq>(
 
 fn submit_dmr_metadata_model(
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     metadata: &SubmitDmrMetadata,
 ) -> sigint_inbox_item_metadata::ActiveModel {
     sigint_inbox_item_metadata::ActiveModel {
         id: NotSet,
         sigint_inbox_item_id: Set(inbox_id),
+        sigint_inbox_item_uuid: Set(inbox_item_uuid),
         color_code: Set(metadata.cc.map(|cc| cc.to_string())),
         call_group_id: Set(metadata.call_group_id.map(|id| id.to_string())),
         call_group_name: Set(metadata.call_group_name.clone()),
@@ -4324,7 +4333,7 @@ mod tests {
     fn submit_dmr_metadata_model_stringifies_numeric_ids_for_storage() {
         let metadata = submit_dmr_metadata(Some(5));
 
-        let metadata = submit_dmr_metadata_model(42, &metadata);
+        let metadata = submit_dmr_metadata_model(42, None, &metadata);
 
         assert_eq!(
             active_optional_string(&metadata.color_code).as_deref(),
@@ -5354,9 +5363,15 @@ mod tests {
         metadata.hash_id = Some("ABCDEF01".to_string());
         let txn = env.dbx.begin().await.unwrap();
 
-        save_submit_dmr_metadata(inbox_item.id, None, vec![metadata], &txn)
-            .await
-            .unwrap();
+        save_submit_dmr_metadata(
+            inbox_item.id,
+            inbox_item.id_uuid,
+            None,
+            vec![metadata],
+            &txn,
+        )
+        .await
+        .unwrap();
 
         txn.commit().await.unwrap();
         let metadata = sigint_inbox_item_metadata::Entity::find()

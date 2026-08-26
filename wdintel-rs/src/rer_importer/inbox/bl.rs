@@ -2123,9 +2123,15 @@ pub async fn submit_upsert_inbox_item(
     crate::rer_importer::inbox::metadata::refresh_metadata(inbox_id, txn)
         .await
         .c(h!())?;
-    crate::tags::modify::upsert_tags(login, inbox_id, message, txn)
-        .await
-        .c(h!())?;
+    crate::tags::modify::upsert_tags(
+        login,
+        inbox_id,
+        signal_message_uuid,
+        message,
+        txn,
+    )
+    .await
+    .c(h!())?;
     crate::location::peleng::delete_inbox_pelengs(inbox_id, txn)
         .await
         .c(h!())?;
