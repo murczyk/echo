@@ -3,11 +3,9 @@ import { useEffect, useState } from 'react';
 
 import { PageHeader } from '../../components/PageHeader';
 import { AdminUnitDuplicatesPage } from '../admin-unit-duplicates';
-import { AdminUnitInconsistentPage } from '../admin-unit-inconsistent';
-import { AdminUnitNamesPage } from '../admin-unit-names';
 import { AdminUnitUnparsedPage } from '../admin-unit-unparsed';
 
-type AdminUnitsTab = 'duplicates' | 'inconsistent' | 'names' | 'unparsed';
+type AdminUnitsTab = 'duplicates' | 'unparsed';
 
 type AdminUnitsPageProps = {
   authUserRoles: string[];
@@ -16,8 +14,6 @@ type AdminUnitsPageProps = {
 
 const TAB_PATHS: Record<AdminUnitsTab, string> = {
   duplicates: '/admin/units?tab=duplicates',
-  inconsistent: '/admin/units?tab=inconsistent',
-  names: '/admin/units?tab=names',
   unparsed: '/admin/units?tab=unparsed',
 };
 
@@ -27,7 +23,7 @@ function canonicalTabPath(tab: AdminUnitsTab): string {
 
 export function readAdminUnitsTab(search = window.location.search): AdminUnitsTab {
   const tab = new URLSearchParams(search).get('tab');
-  return tab === 'inconsistent' || tab === 'names' || tab === 'unparsed' ? tab : 'duplicates';
+  return tab === 'unparsed' ? tab : 'duplicates';
 }
 
 export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProps) {
@@ -38,13 +34,7 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
       window.history.replaceState(null, '', canonicalTabPath(initialTab));
     } else if (window.location.pathname === '/admin/units') {
       const rawTab = new URLSearchParams(window.location.search).get('tab');
-      if (
-        rawTab !== null &&
-        rawTab !== 'duplicates' &&
-        rawTab !== 'inconsistent' &&
-        rawTab !== 'names' &&
-        rawTab !== 'unparsed'
-      ) {
+      if (rawTab !== null && rawTab !== 'duplicates' && rawTab !== 'unparsed') {
         window.history.replaceState(null, '', canonicalTabPath('duplicates'));
       } else if (rawTab !== null && window.location.search !== `?tab=${rawTab}`) {
         window.history.replaceState(null, '', canonicalTabPath(readAdminUnitsTab()));
@@ -71,8 +61,6 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
             aria-label="Розділи адміністрування підрозділів"
           >
             <Tab value="duplicates" label="Дублікати підрозділів" />
-            <Tab value="inconsistent" label="Неконсистентні підрозділи" />
-            <Tab value="names" label="Назви підрозділів" />
             <Tab value="unparsed" label="Нерозпізнані підрозділи" />
           </Tabs>
         }
@@ -82,8 +70,6 @@ export function AdminUnitsPage({ authUserRoles, initialTab }: AdminUnitsPageProp
         {tab === 'duplicates' ? (
           <AdminUnitDuplicatesPage authUserRoles={authUserRoles} embedded />
         ) : null}
-        {tab === 'inconsistent' ? <AdminUnitInconsistentPage embedded /> : null}
-        {tab === 'names' ? <AdminUnitNamesPage authUserRoles={authUserRoles} embedded /> : null}
         {tab === 'unparsed' ? (
           <AdminUnitUnparsedPage authUserRoles={authUserRoles} embedded />
         ) : null}

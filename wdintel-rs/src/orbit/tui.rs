@@ -1,3 +1,6 @@
+use super::test_link::{
+    ReviewInput, ReviewMatch, ReviewSession, ReviewSummary, ReviewUnit,
+};
 use crate::config::ORBIT_TUI_EVENT_POLL_MS;
 use crate::error::AppError;
 use crate::h;
@@ -11,12 +14,14 @@ use crossterm::terminal::{
 };
 use crossterm::{cursor, execute};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, Borders, List, ListItem, ListState, Paragraph, Wrap,
 };
 use ratatui::{Frame, Terminal};
+use similar::{ChangeTag, TextDiff};
 use std::io::{self, Stdout};
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
@@ -63,19 +68,16 @@ impl Drop for OrbitTerminal {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartAction {
+    PrepareImport,
     Import,
-    FindMatch,
-    ReconcileSigintUnits,
-    RenameSigintUnits,
+    LinkUnits,
     Reimport,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MatchOption {
-    pub unit_id: uuid::Uuid,
-    pub operational_full_name: String,
-    pub generative_full_name: String,
-    pub original_name: String,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkMode {
+    Automatic,
+    Manual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,15 +85,6 @@ pub enum Decision {
     Accept,
     Skip,
     SkipAll,
-    Quit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnrichmentDecision {
-    Confirm,
-    Deny,
-    ConfirmAll,
-    DenyAll,
     Quit,
 }
 
@@ -121,21 +114,19 @@ pub fn prompt_start_action() -> Result<Option<StartAction>, AppError> {
     result
 }
 
-pub fn prompt_sigint_unit_name() -> Result<Option<String>, AppError> {
+pub fn prompt_link_mode() -> Result<Option<LinkMode>, AppError> {
     let mut terminal = setup_terminal().c(h!())?;
-    let result = run_text_prompt(
-        &mut terminal,
-        "Exact SIGINT unit full name (Enter: continue, Esc: quit)",
-    );
+    let result = run_link_mode_menu(&mut terminal);
     restore_terminal(&mut terminal).c(h!())?;
     result
 }
 
-pub fn select_match(
-    options: &[MatchOption],
-) -> Result<Option<usize>, AppError> {
+pub fn prompt_orbit_source_path() -> Result<Option<String>, AppError> {
     let mut terminal = setup_terminal().c(h!())?;
-    let result = run_match_selector(&mut terminal, options);
+    let result = run_text_prompt(
+        &mut terminal,
+        "Path to the new ORBIT JSON revision (Enter: import, Esc: quit)",
+    );
     restore_terminal(&mut terminal).c(h!())?;
     result
 }
@@ -164,74 +155,8 @@ pub fn confirm_reimport() -> Result<bool, AppError> {
     Ok(is_reimport_confirmed(result?.as_deref()))
 }
 
-pub fn confirm_sigint_unit_reconciliation() -> Result<bool, AppError> {
-    let mut terminal = setup_terminal().c(h!())?;
-    let result = run_text_prompt(
-        &mut terminal,
-        "Type RECONCILE to review hierarchy enrichments and merge exact duplicates (Esc: cancel)",
-    );
-    restore_terminal(&mut terminal).c(h!())?;
-    Ok(is_sigint_unit_reconciliation_confirmed(
-        result.c(h!())?.as_deref(),
-    ))
-}
-
-pub fn review_sigint_unit_enrichment(
-    terminal: &mut OrbitTerminal,
-    title: &str,
-    lines: &[String],
-    progress: &str,
-) -> Result<EnrichmentDecision, AppError> {
-    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
-    let mut scroll = 0_u16;
-    loop {
-        terminal
-            .draw(|frame| {
-                draw_sigint_unit_enrichment_review(
-                    frame, title, lines, progress, scroll,
-                )
-            })
-            .c(h!())?;
-        if !event::poll(poll).c(h!())? {
-            continue;
-        }
-        let Event::Key(key) = event::read().c(h!())? else {
-            continue;
-        };
-        if let Some(decision) = enrichment_decision_for_key(key) {
-            return Ok(decision);
-        }
-        match key.code {
-            KeyCode::Up => scroll = scroll.saturating_sub(1),
-            KeyCode::Down => scroll = scroll.saturating_add(1),
-            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
-            KeyCode::PageDown => scroll = scroll.saturating_add(10),
-            KeyCode::Home => scroll = 0,
-            _ => {}
-        }
-    }
-}
-
-pub fn confirm_sigint_unit_renames() -> Result<bool, AppError> {
-    let mut terminal = setup_terminal().c(h!())?;
-    let result = run_text_prompt(
-        &mut terminal,
-        "Type RENAME to apply every eligible ORBIT-derived SIGINT unit name (Esc: cancel)",
-    );
-    restore_terminal(&mut terminal).c(h!())?;
-    Ok(is_sigint_unit_rename_confirmed(result.c(h!())?.as_deref()))
-}
-
 fn is_reimport_confirmed(input: Option<&str>) -> bool {
     input == Some("REIMPORT")
-}
-
-fn is_sigint_unit_reconciliation_confirmed(input: Option<&str>) -> bool {
-    input == Some("RECONCILE")
-}
-
-fn is_sigint_unit_rename_confirmed(input: Option<&str>) -> bool {
-    input == Some("RENAME")
 }
 
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
@@ -264,6 +189,43 @@ pub fn setup_terminal() -> io::Result<OrbitTerminal> {
 
 pub fn restore_terminal(terminal: &mut OrbitTerminal) -> io::Result<()> {
     terminal.restore()
+}
+
+pub(super) fn run_test_link_review(
+    terminal: &mut OrbitTerminal,
+    session: &mut ReviewSession,
+) -> Result<ReviewSummary, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    loop {
+        if session.is_complete() {
+            return Ok(session.completed_summary());
+        }
+        let terminal_area = terminal.size().c(h!())?;
+        let maximum_scroll = test_link_maximum_scroll(terminal_area, session);
+        let page_size = test_link_page_size(terminal_area);
+        session.clamp_scroll(maximum_scroll);
+        terminal
+            .draw(|frame| draw_test_link_review(frame, session))
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        let Some(input) = test_link_input_for_key(key) else {
+            continue;
+        };
+        if input == ReviewInput::RequestExit {
+            if confirm_test_link_exit(terminal).c(h!())? {
+                return Ok(session.finish_early());
+            }
+            continue;
+        }
+        if let Some(summary) = session.apply(input, maximum_scroll, page_size) {
+            return Ok(summary);
+        }
+    }
 }
 
 fn restore_stdout_state() -> io::Result<()> {
@@ -352,10 +314,9 @@ fn run_start_menu(
 ) -> Result<Option<StartAction>, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
     let actions = [
+        StartAction::PrepareImport,
         StartAction::Import,
-        StartAction::FindMatch,
-        StartAction::ReconcileSigintUnits,
-        StartAction::RenameSigintUnits,
+        StartAction::LinkUnits,
         StartAction::Reimport,
     ];
     let mut selected = 0;
@@ -387,6 +348,46 @@ fn run_start_menu(
             }
             KeyCode::Down if key.modifiers.is_empty() => {
                 selected = (selected + 1).min(actions.len() - 1)
+            }
+            _ => {}
+        }
+    }
+}
+
+fn run_link_mode_menu(
+    terminal: &mut OrbitTerminal,
+) -> Result<Option<LinkMode>, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let modes = [LinkMode::Automatic, LinkMode::Manual];
+    let mut selected = 0;
+    loop {
+        terminal
+            .draw(|frame| draw_link_mode_menu(frame, selected))
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
+        }
+        match key.code {
+            KeyCode::Esc => return Ok(None),
+            KeyCode::Char('c')
+                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+            {
+                return Ok(None);
+            }
+            KeyCode::Enter if key.modifiers.is_empty() => {
+                return Ok(Some(modes[selected]));
+            }
+            KeyCode::Up if key.modifiers.is_empty() => {
+                selected = selected.saturating_sub(1)
+            }
+            KeyCode::Down if key.modifiers.is_empty() => {
+                selected = (selected + 1).min(modes.len() - 1)
             }
             _ => {}
         }
@@ -438,53 +439,6 @@ fn run_text_prompt(
     }
 }
 
-fn run_match_selector(
-    terminal: &mut OrbitTerminal,
-    options: &[MatchOption],
-) -> Result<Option<usize>, AppError> {
-    if options.is_empty() {
-        return Ok(None);
-    }
-    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
-    let mut selected = 0;
-    loop {
-        terminal
-            .draw(|frame| draw_match_selector(frame, options, selected))
-            .c(h!())?;
-        if !event::poll(poll).c(h!())? {
-            continue;
-        }
-        let Event::Key(key) = event::read().c(h!())? else {
-            continue;
-        };
-        if key.kind != KeyEventKind::Press {
-            continue;
-        }
-        match key.code {
-            KeyCode::Esc => return Ok(None),
-            KeyCode::Char('c')
-                if key.modifiers.contains(KeyModifiers::CONTROL) =>
-            {
-                return Ok(None);
-            }
-            KeyCode::Enter if key.modifiers.is_empty() => {
-                return Ok(Some(selected));
-            }
-            KeyCode::Up if key.modifiers.is_empty() => {
-                selected = selected.saturating_sub(1)
-            }
-            KeyCode::Down if key.modifiers.is_empty() => {
-                selected = (selected + 1).min(options.len() - 1)
-            }
-            KeyCode::Home if key.modifiers.is_empty() => selected = 0,
-            KeyCode::End if key.modifiers.is_empty() => {
-                selected = options.len() - 1
-            }
-            _ => {}
-        }
-    }
-}
-
 fn run_unchanged_archive_confirmation(
     terminal: &mut OrbitTerminal,
     archive_md5: &str,
@@ -523,13 +477,241 @@ fn run_unchanged_archive_confirmation(
     }
 }
 
+fn test_link_input_for_key(key: KeyEvent) -> Option<ReviewInput> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(ReviewInput::RequestExit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('y') => Some(ReviewInput::Accept(0)),
+        KeyCode::Char(option @ '1'..='5') => Some(ReviewInput::Accept(
+            option.to_digit(10).expect("digit key must be numeric") as usize
+                - 1,
+        )),
+        KeyCode::Char('0') | KeyCode::Char('n') => Some(ReviewInput::Deny),
+        KeyCode::Char('f') => Some(ReviewInput::NextMatchPage),
+        KeyCode::Char('b') => Some(ReviewInput::PreviousMatchPage),
+        KeyCode::Up => Some(ReviewInput::ScrollUp),
+        KeyCode::Down => Some(ReviewInput::ScrollDown),
+        KeyCode::PageUp => Some(ReviewInput::PageUp),
+        KeyCode::PageDown => Some(ReviewInput::PageDown),
+        KeyCode::Char('q') => Some(ReviewInput::RequestExit),
+        _ => None,
+    }
+}
+
+fn confirm_test_link_exit(
+    terminal: &mut OrbitTerminal,
+) -> Result<bool, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    loop {
+        terminal.draw(draw_test_link_exit_confirmation).c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(confirmed) = test_link_exit_confirmation_for_key(key) {
+            return Ok(confirmed);
+        }
+    }
+}
+
+fn test_link_exit_confirmation_for_key(key: KeyEvent) -> Option<bool> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Char('c')
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(true);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('q') => Some(true),
+        KeyCode::Esc | KeyCode::Char('n') => Some(false),
+        _ => None,
+    }
+}
+
+fn draw_test_link_review(frame: &mut Frame<'_>, session: &ReviewSession) {
+    let sections = test_link_sections(frame.size());
+    let (current, total) = session.progress();
+    frame.render_widget(
+        Paragraph::new(format!("Progress: {current} / {total}")),
+        sections[0],
+    );
+    frame.render_widget(
+        Paragraph::new(test_link_review_text(session))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("SIGINT–ORBIT match review"),
+            )
+            .scroll((session.scroll().min(u16::MAX as usize) as u16, 0))
+            .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "Enter/y/1–5: accept option | f/b: next/previous 5 | 0/n: deny\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        ),
+        sections[2],
+    );
+}
+
+fn draw_test_link_exit_confirmation(frame: &mut Frame<'_>) {
+    let area = centered_area(frame, 70, 7);
+    frame.render_widget(
+        Paragraph::new(
+            "Stop the review and leave all remaining units unreviewed?\n\nEnter/y/q/Ctrl-C: stop | n/Esc: continue",
+        )
+        .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .block(Block::default().borders(Borders::ALL).title("Confirm stop"))
+        .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn test_link_sections(area: Rect) -> std::rc::Rc<[Rect]> {
+    Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(3),
+            Constraint::Length(2),
+        ])
+        .split(area)
+}
+
+fn test_link_review_text(session: &ReviewSession) -> Text<'static> {
+    Text::from(test_link_review_lines(session))
+}
+
+fn test_link_review_lines(session: &ReviewSession) -> Vec<Line<'static>> {
+    let unit = session.current_unit().expect("review unit must exist");
+    let visible_matches = session.visible_matches();
+    let mut lines = vec![
+        Line::from(format!("SIGINT unit ID: {}", unit.sigint_unit_id)),
+        Line::from(format!("Name: {}", unit.sigint_unit_name)),
+        Line::from(format!("Echelons: ({})", unit.echelons.join(", "))),
+        Line::default(),
+        Line::styled(
+            format!("Potential ORBIT matches: {}", unit.matches.len()),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Line::from(test_link_match_page_label(session)),
+    ];
+    if unit.matches.is_empty() {
+        lines.push(Line::styled(
+            "No ORBIT matches exist.",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+        return lines;
+    }
+    for (option, candidate) in visible_matches.iter().enumerate() {
+        lines.extend(test_link_match_lines(option + 1, unit, candidate));
+        lines.push(Line::default());
+    }
+    lines
+}
+
+fn test_link_match_page_label(session: &ReviewSession) -> String {
+    let (match_page, match_page_count) = session.match_page_progress();
+    let first_match = session.first_visible_match_number();
+    let last_match =
+        first_match + session.visible_matches().len().saturating_sub(1);
+    format!(
+        "Showing options {first_match}–{last_match} (page {match_page}/{match_page_count})"
+    )
+}
+
+fn test_link_match_lines(
+    option: usize,
+    unit: &ReviewUnit,
+    candidate: &ReviewMatch,
+) -> Vec<Line<'static>> {
+    let sigint_name = unit.echelons.join(" / ");
+    let [sigint_diff, orbit_diff] =
+        test_link_name_diff_lines(&sigint_name, &candidate.generative_name);
+    vec![
+        Line::styled(
+            format!(
+                "[{option}] rating: {}, Levenshtein distance: {}",
+                candidate.rating, candidate.distance,
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::from(format!("ORBIT UUID: {}", candidate.unit_id)),
+        sigint_diff,
+        orbit_diff,
+    ]
+}
+
+fn test_link_name_diff_lines(
+    sigint_name: &str,
+    orbit_name: &str,
+) -> [Line<'static>; 2] {
+    let label_style = Style::default().add_modifier(Modifier::BOLD);
+    let matched_style = Style::default().fg(Color::Green);
+    let mismatched_style = Style::default().fg(Color::Red);
+    let mut sigint_spans = vec![Span::styled("SIGINT: ", label_style)];
+    let mut orbit_spans = vec![Span::styled(" ORBIT: ", label_style)];
+    for change in
+        TextDiff::from_words(sigint_name, orbit_name).iter_all_changes()
+    {
+        let value = change.value().to_string();
+        match change.tag() {
+            ChangeTag::Equal => {
+                sigint_spans.push(Span::styled(value.clone(), matched_style));
+                orbit_spans.push(Span::styled(value, matched_style));
+            }
+            ChangeTag::Delete => {
+                sigint_spans.push(Span::styled(value, mismatched_style));
+            }
+            ChangeTag::Insert => {
+                orbit_spans.push(Span::styled(value, mismatched_style));
+            }
+        }
+    }
+    [Line::from(sigint_spans), Line::from(orbit_spans)]
+}
+
+fn test_link_page_size(area: Rect) -> usize {
+    test_link_sections(area)[1].height.saturating_sub(2).max(1) as usize
+}
+
+fn test_link_maximum_scroll(area: Rect, session: &ReviewSession) -> usize {
+    let content_area = test_link_sections(area)[1];
+    let width = content_area.width.saturating_sub(2).max(1) as usize;
+    let line_count = test_link_review_lines(session)
+        .into_iter()
+        .map(|line| line.width().max(1).div_ceil(width))
+        .sum::<usize>();
+    line_count.saturating_sub(test_link_page_size(area))
+}
+
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 70, 8);
+    let area = centered_area(frame, 70, 7);
     let options = [
-        "Sync ORBIT units and rebuild SIGINT links",
-        "Search an ORBIT unit by SIGINT unit name",
-        "Review linked SIGINT unit enrichments and merge exact duplicates",
-        "Apply all eligible ORBIT-derived SIGINT unit names",
+        "IMPORT NEW ORBIT DATA REVISION",
+        "Sync ORBIT units",
+        "Link ORBIT units to SIGINT units",
         "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
@@ -551,6 +733,31 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
     frame.render_stateful_widget(list, area, &mut state);
 }
 
+fn draw_link_mode_menu(frame: &mut Frame<'_>, selected: usize) {
+    let area = centered_area(frame, 70, 6);
+    let options = [
+        "Automatic: link one exact-rating match with distance ≤ 10",
+        "Manual: review every potential match (no distance limit)",
+    ];
+    let items = options.into_iter().map(ListItem::new);
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Choose linking mode (↑/↓, Enter, Esc: quit)"),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("> ");
+    let mut state = ListState::default();
+    state.select(Some(selected));
+    frame.render_stateful_widget(list, area, &mut state);
+}
+
 fn draw_unchanged_archive_warning(
     frame: &mut Frame<'_>,
     archive_md5: &str,
@@ -558,7 +765,7 @@ fn draw_unchanged_archive_warning(
 ) {
     let area = centered_area(frame, 80, 9);
     let warning = Paragraph::new(format!(
-        "The latest ORBIT archive has not changed.\n\nMD5: {archive_md5}\nLast synchronized: {synced_at}\n\nProceed with database-only SIGINT linking? (Enter/y: proceed, n/Esc: cancel)"
+        "The latest ORBIT archive has not changed.\n\nMD5: {archive_md5}\nLast synchronized: {synced_at}\n\nProceed with database-only synchronization? (Enter/y: proceed, n/Esc: cancel)"
     ))
     .style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
     .block(Block::default().borders(Borders::ALL).title("Warning"))
@@ -572,47 +779,6 @@ fn draw_text_prompt(frame: &mut Frame<'_>, title: &str, input: &str) {
         .block(Block::default().borders(Borders::ALL).title(title))
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
-}
-
-fn draw_match_selector(
-    frame: &mut Frame<'_>,
-    options: &[MatchOption],
-    selected: usize,
-) {
-    let root = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(2)])
-        .split(frame.size());
-    let items = options.iter().enumerate().map(|(index, option)| {
-        ListItem::new(format!(
-            "{}. ORBIT unit ID: {}\n   Operational full name: {}\n   Generative full name: {}\n   Original name: {}",
-            index + 1,
-            option.unit_id,
-            option.operational_full_name,
-            option.generative_full_name,
-            option.original_name,
-        ))
-    });
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!("Closest ORBIT matches ({})", options.len())),
-        )
-        .highlight_style(
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("> ");
-    let mut state = ListState::default();
-    state.select(Some(selected));
-    frame.render_stateful_widget(list, root[0], &mut state);
-    frame.render_widget(
-        Paragraph::new("↑/↓/Home/End: select | Enter: link | Esc: quit"),
-        root[1],
-    );
 }
 
 fn draw_review(
@@ -656,42 +822,6 @@ fn draw_review(
     );
 }
 
-fn draw_sigint_unit_enrichment_review(
-    frame: &mut Frame<'_>,
-    title: &str,
-    lines: &[String],
-    progress: &str,
-    scroll: u16,
-) {
-    let root = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(1),
-            Constraint::Length(2),
-        ])
-        .split(frame.size());
-    frame
-        .render_widget(Paragraph::new(format!("{progress}\n{title}")), root[0]);
-    frame.render_widget(
-        Paragraph::new(lines.join("\n"))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Proposed changes"),
-            )
-            .scroll((scroll, 0))
-            .wrap(Wrap { trim: false }),
-        root[1],
-    );
-    frame.render_widget(
-        Paragraph::new(
-            "Enter/y: confirm | n: deny | a: confirm all | d: deny all | q/Esc: cancel",
-        ),
-        root[2],
-    );
-}
-
 fn decision_for_key(
     key: KeyEvent,
     action: Action,
@@ -717,31 +847,6 @@ fn decision_for_key(
         }
         KeyCode::Char('s') => Some(Decision::Skip),
         KeyCode::Char('a') if allow_skip_all => Some(Decision::SkipAll),
-        _ => None,
-    }
-}
-
-fn enrichment_decision_for_key(key: KeyEvent) -> Option<EnrichmentDecision> {
-    if key.kind != KeyEventKind::Press {
-        return None;
-    }
-    if key.code == KeyCode::Esc
-        || key.code == KeyCode::Char('c')
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-    {
-        return Some(EnrichmentDecision::Quit);
-    }
-    if !key.modifiers.is_empty() {
-        return None;
-    }
-    match key.code {
-        KeyCode::Enter | KeyCode::Char('y') => {
-            Some(EnrichmentDecision::Confirm)
-        }
-        KeyCode::Char('n') => Some(EnrichmentDecision::Deny),
-        KeyCode::Char('a') => Some(EnrichmentDecision::ConfirmAll),
-        KeyCode::Char('d') => Some(EnrichmentDecision::DenyAll),
-        KeyCode::Char('q') => Some(EnrichmentDecision::Quit),
         _ => None,
     }
 }
@@ -774,6 +879,117 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_link_match_lines_show_identity_and_generative_hierarchy() {
+        let unit = ReviewUnit {
+            sigint_unit_id: 273,
+            sigint_unit_name: "4 мсб (АТ)".to_string(),
+            echelons: vec![
+                "4 мсб (АТ)".to_string(),
+                "752 мсп".to_string(),
+                "3 мсд".to_string(),
+            ],
+            matches: Vec::new(),
+        };
+        let candidate = ReviewMatch {
+            unit_id: uuid::Uuid::nil(),
+            rating: 100,
+            distance: 2,
+            generative_name: "4 мсб (ат) / 752 мсп / 3 мсд".to_string(),
+        };
+
+        assert_eq!(
+            test_link_match_lines(1, &unit, &candidate)
+                .iter()
+                .map(line_text)
+                .collect::<Vec<_>>(),
+            vec![
+                "[1] rating: 100, Levenshtein distance: 2",
+                "ORBIT UUID: 00000000-0000-0000-0000-000000000000",
+                "SIGINT: 4 мсб (АТ) / 752 мсп / 3 мсд",
+                " ORBIT: 4 мсб (ат) / 752 мсп / 3 мсд",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_link_name_diff_colors_matching_and_mismatching_words() {
+        let [sigint, orbit] = test_link_name_diff_lines(
+            "3 мсб / 347 мсп / 47 тд / 1 ТА",
+            "3 мсб / 347 мсп / 47 тд / 1 ТА / МВО",
+        );
+
+        for line in [&sigint, &orbit] {
+            assert!(line
+                .spans
+                .iter()
+                .any(|span| span.style.fg == Some(Color::Green)));
+        }
+        assert!(orbit.spans.iter().any(|span| {
+            span.style.fg == Some(Color::Red) && span.content.contains("МВО")
+        }));
+    }
+
+    fn line_text(line: &Line<'_>) -> String {
+        line.spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect()
+    }
+
+    #[test]
+    fn test_link_keys_map_to_review_inputs() {
+        let plain = KeyModifiers::NONE;
+        for (key, expected) in [
+            (KeyCode::Enter, ReviewInput::Accept(0)),
+            (KeyCode::Char('y'), ReviewInput::Accept(0)),
+            (KeyCode::Char('1'), ReviewInput::Accept(0)),
+            (KeyCode::Char('2'), ReviewInput::Accept(1)),
+            (KeyCode::Char('5'), ReviewInput::Accept(4)),
+            (KeyCode::Char('0'), ReviewInput::Deny),
+            (KeyCode::Char('n'), ReviewInput::Deny),
+            (KeyCode::Char('f'), ReviewInput::NextMatchPage),
+            (KeyCode::Char('b'), ReviewInput::PreviousMatchPage),
+            (KeyCode::Up, ReviewInput::ScrollUp),
+            (KeyCode::Down, ReviewInput::ScrollDown),
+            (KeyCode::PageUp, ReviewInput::PageUp),
+            (KeyCode::PageDown, ReviewInput::PageDown),
+            (KeyCode::Char('q'), ReviewInput::RequestExit),
+            (KeyCode::Esc, ReviewInput::RequestExit),
+        ] {
+            assert_eq!(
+                test_link_input_for_key(KeyEvent::new(key, plain)),
+                Some(expected)
+            );
+        }
+        assert_eq!(
+            test_link_input_for_key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL
+            )),
+            Some(ReviewInput::RequestExit)
+        );
+    }
+
+    #[test]
+    fn test_link_exit_confirmation_keys_confirm_or_continue() {
+        let plain = KeyModifiers::NONE;
+        assert_eq!(
+            test_link_exit_confirmation_for_key(KeyEvent::new(
+                KeyCode::Enter,
+                plain
+            )),
+            Some(true)
+        );
+        assert_eq!(
+            test_link_exit_confirmation_for_key(KeyEvent::new(
+                KeyCode::Esc,
+                plain
+            )),
+            Some(false)
+        );
+    }
+
+    #[test]
     fn review_keys_only_accept_the_current_action() {
         let plain = KeyModifiers::NONE;
         assert_eq!(
@@ -803,34 +1019,9 @@ mod tests {
     }
 
     #[test]
-    fn enrichment_review_supports_individual_and_bulk_decisions() {
-        let plain = KeyModifiers::NONE;
-        for (key, expected) in [
-            (KeyCode::Enter, EnrichmentDecision::Confirm),
-            (KeyCode::Char('y'), EnrichmentDecision::Confirm),
-            (KeyCode::Char('n'), EnrichmentDecision::Deny),
-            (KeyCode::Char('a'), EnrichmentDecision::ConfirmAll),
-            (KeyCode::Char('d'), EnrichmentDecision::DenyAll),
-            (KeyCode::Char('q'), EnrichmentDecision::Quit),
-        ] {
-            assert_eq!(
-                enrichment_decision_for_key(KeyEvent::new(key, plain)),
-                Some(expected)
-            );
-        }
-    }
-
-    #[test]
     fn reimport_confirmation_requires_exact_confirmation_text() {
         assert!(is_reimport_confirmed(Some("REIMPORT")));
         assert!(!is_reimport_confirmed(Some("reimport")));
         assert!(!is_reimport_confirmed(None));
-    }
-
-    #[test]
-    fn sigint_unit_rename_confirmation_requires_exact_text() {
-        assert!(is_sigint_unit_rename_confirmed(Some("RENAME")));
-        assert!(!is_sigint_unit_rename_confirmed(Some("rename")));
-        assert!(!is_sigint_unit_rename_confirmed(None));
     }
 }

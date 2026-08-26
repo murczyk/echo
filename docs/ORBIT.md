@@ -2,13 +2,15 @@
 
 ORBIT unit ingestion has two separate stages:
 
-1. Normalize an ORBIT JSON export into a timestamped ZIP of Apache Parquet
-   files.
-2. Synchronize the latest normalized snapshot into PostgreSQL, then rebuild
-   SIGINT links from the synchronized database rows through the TUI.
+1. Normalize an ORBIT JSON export through the TUI into a timestamped ZIP of
+   Apache Parquet files.
+2. Synchronize the latest normalized snapshot into PostgreSQL.
 
-Do not run the TUI directly against a JSON export. It always reads the latest
-normalized snapshot from configured storage.
+Linking is a separate TUI action that reads both ORBIT and SIGINT units from
+PostgreSQL.
+
+The preparation action reads a JSON export. Synchronization actions always read
+the latest normalized snapshot from configured storage.
 
 ## Source JSON
 
@@ -43,22 +45,11 @@ also fail.
 
 ## Prepare a snapshot
 
-From a development checkout:
-
-```sh
-cargo run -p wdintel-rs -- --mode=debug oneoff-prepare-orbit-import \
-  --path /absolute/path/to/orbit-export.json
-```
-
-In production:
-
-```sh
-sudo wdintel-rs --mode=live oneoff-prepare-orbit-import \
-  --path /absolute/path/to/orbit-export.json
-```
+Run `tui-import-orbit-units` as described below and choose
+`IMPORT NEW ORBIT DATA REVISION`, then enter the path to the JSON export.
 
 The path is read by the process running `wdintel-rs`. Use an absolute path and
-make sure that user can read the file. The command validates the JSON and its
+make sure that user can read the file. The action validates the JSON and its
 hierarchies, collects dictionary values, writes the archive, and prints its
 final storage location.
 
@@ -95,16 +86,17 @@ In production:
 sudo wdintel-rs --mode=live tui-import-orbit-units
 ```
 
-The importer downloads and unpacks the newest timestamped snapshot. It fails
-before starting if no snapshot exists. Database-mutating import sessions are
+The synchronization actions download and unpack the newest timestamped
+snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. Linked-unit reconciliation keeps that advisory lock
-for the full run but commits each unit or duplicate component separately, so
-live message ingestion is not blocked behind the full reconciliation and an
-interrupted run can be restarted safely. The first screen offers three
-workflows.
+PostgreSQL advisory lock. The first screen offers four workflows.
 
-### Sync ORBIT units and rebuild links
+### IMPORT NEW ORBIT DATA REVISION
+
+Enter the path to an ORBIT JSON export. This prepares and stores the normalized
+snapshot without modifying PostgreSQL.
+
+### Sync ORBIT units
 
 This workflow first creates, updates, or reactivates every unit represented by
 the Parquet snapshot. Top-level roots and embedded ancestors are persisted
@@ -115,52 +107,74 @@ deletion.
 Each completed data phase writes the archive MD5 and its synchronization time
 to `orbit_sync`. When the latest archive MD5 is already recorded, the TUI warns
 the operator and asks whether to proceed. Proceeding skips all Parquet-to-table
-work and only rebuilds links from PostgreSQL; cancelling leaves data and links
-unchanged.
+work; cancelling leaves the database unchanged. This workflow does not create
+or replace SIGINT links.
 
-After synchronization, active `sigint_unit` rows are matched only against roots
-from the latest recorded database sync. Both generative and operational full
-paths contribute parent evidence.
-Root echelon, normalized army abbreviations, configured SIGINT-only name
-fragments, and hierarchy distance are considered when ranking candidates.
-Ambiguous candidates with divergent parent paths are skipped. Among equally
-close candidates whose paths are ordered extensions, only the shortest path is
-selected unless SIGINT parent evidence ranks a longer path higher.
-ORBIT-to-SIGINT links are replaced from those database-derived matches even
-when the stale-deletion review is quit.
+### Link ORBIT units to SIGINT units
 
-Missing SIGINT units created for the matched roots' operational and generative
-parent chains are active. Existing inactive SIGINT units reused for those
-parents are activated.
+This is the only automatic linking workflow. It reads active, non-deleted,
+unlinked SIGINT units and roots from the latest synchronized ORBIT revision
+from PostgreSQL. Choose a mode when the workflow starts:
 
-### Search by SIGINT unit name
+- automatic links a unit only when it has exactly one maximum-rated candidate,
+  the rating is exactly 100, and the Levenshtein distance is at most 10;
+- manual opens the interactive review for every structurally valid candidate,
+  without a Levenshtein-distance cutoff.
 
-Enter the exact full name assembled from the SIGINT unit's populated company,
-battalion, regiment, division, and army fields. If no active SIGINT unit has
-that normalized full name, the command reports it without searching ORBIT.
-
-The search reads roots and parent chains from the latest recorded database sync
-instead of reopening Parquet. The TUI displays all equally closest candidates
-with their ORBIT UUID, operational full name, generative full name, and original
-name. Select a result with Up/Down and Enter. That SIGINT unit's existing ORBIT
-links are replaced with the selected root; ORBIT unit data is not changed.
+Accepted links use the same transactional implementation as manual linking in
+`/rer-units` and `/rer-units/{id}`. That implementation validates both units,
+creates the link, imports missing ORBIT ancestors, reconciles the SIGINT
+hierarchy and duplicate-candidate state, and updates parent activity.
 
 ### Erase and reimport all ORBIT data
 
 After the operator types `REIMPORT`, this workflow atomically truncates all
 seven `orbit_*` tables, including synchronization history and ORBIT-to-SIGINT
-links, imports the latest snapshot, and rebuilds links as an initial
-synchronization. A failure rolls back the whole reimport. Existing SIGINT units
-are not deleted.
+links, then imports the latest snapshot. A failure rolls back the whole
+reimport. Existing SIGINT units are not deleted; run the linking workflow
+afterward.
 
 Common controls are:
 
 - Up/Down, Home/End: select an item;
-- Enter: accept or link;
+- Enter: accept;
 - `s`: skip;
 - `a`: skip all remaining stale deletions when offered;
 - Page Up/Page Down: scroll details;
 - `q`, Escape, or Ctrl-C: quit.
+
+## Link from the standalone command
+
+The same database-backed linking workflow remains available as a standalone
+one-off:
+
+```sh
+sudo wdintel-rs --mode=live oneoff-test-link-units
+```
+
+The command first asks for automatic or manual mode. Manual mode evaluates each
+unlinked database SIGINT unit against the latest synchronized ORBIT revision
+before opening one interactive review session. It shows each
+unit's non-empty echelons from smaller to larger. Every structurally valid
+candidate is shown regardless of its rating or Levenshtein distance; units
+without a match are skipped automatically. Each candidate shows the full
+SIGINT and ORBIT names as red and green word-level highlights for mismatched
+and matched text, along with
+their Levenshtein distance. The ORBIT UUID is shown to distinguish records
+sharing a generative hierarchy. Units with multiple
+matches are reviewed before units with a single match; each group and its
+candidates are ordered by distance from shortest to longest.
+
+At most five candidates are shown at once. Use Enter, `y`, or `1` to accept the
+first visible candidate, or `2` through `5` to accept another visible candidate.
+Use `f` and `b` to show the next or previous five candidates, `n` to deny all
+candidates (`0` does the same), and Up/Down or Page Up/Page Down to scroll. Use
+`q`, Escape, or Ctrl-C and confirm to stop early. The terminal is restored
+before the command prints the accepted, denied, and unreviewed counts.
+
+Accepted choices are written after the terminal is restored. Denied and
+unreviewed units remain unlinked. If an accepted unit became linked during the
+review, persistence skips it, reports it as already linked, and continues.
 
 ## PostgreSQL data model
 
@@ -214,8 +228,8 @@ Soft-deleted ORBIT units are neither marked nor rendered.
 - conflicting unit values or parents: inspect every occurrence of the reported
   UUID. A unit's own top-level object resolves conflicting embedded parent
   claims, but conflicting top-level objects are invalid.
-- unexpected matches: use the search workflow to inspect candidate UUIDs and
-  full paths before linking one manually.
+- unexpected matches: use manual linking mode to inspect candidate UUIDs and
+  full paths before accepting a link.
 
 The deployment-oriented checklist is in the
 [ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md).

@@ -11,14 +11,13 @@ use crate::orbit::types::SourceUnit;
 use crate::types::ShortContext;
 use chrono::{Duration, NaiveDateTime};
 use sea_orm::sea_query::Expr;
-#[cfg(test)]
-use sea_orm::DatabaseConnection;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
-    ConnectionTrait, EntityTrait, IntoActiveModel, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait, TransactionSession,
-    TransactionTrait,
+    ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
+    TransactionSession, TransactionTrait,
 };
+#[cfg(test)]
+use sea_orm::{DatabaseConnection, JoinType, QuerySelect, RelationTrait};
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
@@ -588,6 +587,7 @@ pub async fn replace_sigint_unit_links(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) async fn replace_sigint_unit_links_in_transaction<C>(
     db: &C,
     sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
@@ -647,6 +647,7 @@ pub async fn replace_automatic_sigint_unit_links(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) async fn replace_automatic_sigint_unit_links_in_transaction<C>(
     db: &C,
     sigint_unit_id: i64,
@@ -702,6 +703,7 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 async fn active_manually_linked_sigint_unit_ids<C>(
     db: &C,
 ) -> Result<BTreeSet<i64>, AppError>
@@ -724,6 +726,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 async fn suppressed_sigint_unit_links<C>(
     db: &C,
 ) -> Result<BTreeSet<(Uuid, i64)>, AppError>
@@ -740,6 +743,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 async fn active_orbit_unit_ids<C>(
     db: &C,
     orbit_unit_ids: &[Uuid],
@@ -761,6 +765,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 fn automatic_sigint_unit_links(
     sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
     active_orbit_unit_ids: &BTreeSet<Uuid>,

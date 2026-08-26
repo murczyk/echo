@@ -1,4 +1,7 @@
-use crate::config::ORBIT_MATCHING_SIGINT_NAME_BLACKLIST;
+use crate::config::{
+    ORBIT_MATCHING_SIGINT_NAME_BLACKLIST, ORBIT_TEST_LINK_UNITS_MAX_RATING,
+    ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY,
+};
 use crate::entities::sigint_unit;
 use crate::orbit::types::SourceUnit;
 use crate::orbit::{echo_echelon, EchoEchelon};
@@ -17,7 +20,9 @@ struct ComparablePath {
     root_echelon: Option<EchoEchelon>,
 }
 
-fn sigint_hierarchy(unit: &sigint_unit::Model) -> [(EchoEchelon, &str); 14] {
+pub(super) fn sigint_hierarchy(
+    unit: &sigint_unit::Model,
+) -> [(EchoEchelon, &str); 14] {
     [
         (EchoEchelon::Other, unit.other.as_str()),
         (EchoEchelon::TeamOrCrew, unit.team_or_crew.as_str()),
@@ -122,6 +127,7 @@ fn match_score(
     })
 }
 
+#[cfg(test)]
 pub fn matching_sigint_unit_ids(
     orbit_units: &[SourceUnit],
     sigint_units: &[sigint_unit::Model],
@@ -165,6 +171,181 @@ pub fn matching_orbit_unit_ids(
     )
     .into_iter()
     .collect()
+}
+
+struct TestLinkCandidate<'a> {
+    orbit_unit: &'a SourceUnit,
+    path: ComparablePath,
+}
+
+pub(super) struct TestLinkMatcher<'a> {
+    candidates: Vec<TestLinkCandidate<'a>>,
+    exact_index: HashMap<(EchoEchelon, String), Vec<usize>>,
+    number_index: HashMap<(EchoEchelon, String), Vec<usize>>,
+}
+
+impl<'a> TestLinkMatcher<'a> {
+    pub fn new(orbit_units: &'a [SourceUnit]) -> Self {
+        let mut candidates = Vec::new();
+        let mut exact_index = HashMap::new();
+        let mut number_index = HashMap::new();
+        for orbit_unit in orbit_units {
+            let Ok(path) = comparable_path(orbit_unit) else {
+                continue;
+            };
+            let candidate_index = candidates.len();
+            index_test_link_candidate(
+                candidate_index,
+                &path,
+                &mut exact_index,
+                &mut number_index,
+            );
+            candidates.push(TestLinkCandidate { orbit_unit, path });
+        }
+        Self {
+            candidates,
+            exact_index,
+            number_index,
+        }
+    }
+
+    pub fn best_matches(
+        &self,
+        sigint_hierarchy: &[(EchoEchelon, &str)],
+    ) -> Vec<(&'a SourceUnit, u8)> {
+        let matches = self.potential_matches(sigint_hierarchy);
+        let Some(max_rating) = matches.iter().map(|(_, rating)| *rating).max()
+        else {
+            return Vec::new();
+        };
+        matches
+            .into_iter()
+            .filter(|(_, rating)| *rating == max_rating)
+            .collect()
+    }
+
+    pub fn potential_matches(
+        &self,
+        sigint_hierarchy: &[(EchoEchelon, &str)],
+    ) -> Vec<(&'a SourceUnit, u8)> {
+        let Some((echelon, name)) = first_test_link_echelon(sigint_hierarchy)
+        else {
+            return Vec::new();
+        };
+        let mut candidate_indices = self
+            .exact_index
+            .get(&(echelon, name.clone()))
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        if let Some(number) = numbered_echelon_number(&name) {
+            candidate_indices.extend(
+                self.number_index
+                    .get(&(echelon, number.to_string()))
+                    .into_iter()
+                    .flatten()
+                    .copied(),
+            );
+        }
+        let matches = candidate_indices
+            .into_iter()
+            .filter_map(|index| {
+                let candidate = &self.candidates[index];
+                test_link_rating(&candidate.path, sigint_hierarchy)
+                    .map(|rating| (candidate, rating))
+            })
+            .collect::<Vec<_>>();
+        let highest_echelon = matches
+            .iter()
+            .filter_map(|(candidate, _)| candidate.path.root_echelon)
+            .max_by_key(|echelon| echelon.index());
+        matches
+            .into_iter()
+            .filter(|(candidate, _)| {
+                highest_echelon.is_none()
+                    || candidate.path.root_echelon == highest_echelon
+            })
+            .map(|(candidate, rating)| (candidate.orbit_unit, rating))
+            .collect()
+    }
+}
+
+fn index_test_link_candidate(
+    candidate_index: usize,
+    path: &ComparablePath,
+    exact_index: &mut HashMap<(EchoEchelon, String), Vec<usize>>,
+    number_index: &mut HashMap<(EchoEchelon, String), Vec<usize>>,
+) {
+    for (echelon, names) in &path.names_by_echelon {
+        for name in names {
+            exact_index
+                .entry((*echelon, name.clone()))
+                .or_default()
+                .push(candidate_index);
+            if let Some(number) = leading_number(name) {
+                number_index
+                    .entry((*echelon, number.to_string()))
+                    .or_default()
+                    .push(candidate_index);
+            }
+        }
+    }
+}
+
+fn first_test_link_echelon(
+    sigint_hierarchy: &[(EchoEchelon, &str)],
+) -> Option<(EchoEchelon, String)> {
+    sigint_hierarchy.iter().find_map(|(echelon, name)| {
+        let name = normalize_name(name);
+        (!name.is_empty()).then_some((*echelon, name))
+    })
+}
+
+fn test_link_rating(
+    path: &ComparablePath,
+    sigint_hierarchy: &[(EchoEchelon, &str)],
+) -> Option<u8> {
+    let mut rating = ORBIT_TEST_LINK_UNITS_MAX_RATING;
+    let mut has_echelon = false;
+    for (echelon, sigint_name) in sigint_hierarchy {
+        let sigint_name = normalize_name(sigint_name);
+        if sigint_name.is_empty() {
+            continue;
+        }
+        has_echelon = true;
+        let orbit_names = path.names_by_echelon.get(echelon)?;
+        if orbit_names.contains(&sigint_name) {
+            continue;
+        }
+        let number = numbered_echelon_number(&sigint_name)?;
+        if !orbit_names
+            .iter()
+            .filter_map(|name| leading_number(name))
+            .any(|orbit_number| orbit_number == number)
+        {
+            return None;
+        }
+        rating =
+            rating.saturating_sub(ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY);
+    }
+    has_echelon.then_some(rating)
+}
+
+fn numbered_echelon_number(value: &str) -> Option<&str> {
+    let mut parts = value.split_whitespace();
+    let number = parts.next()?;
+    let word = parts.next()?;
+    (number.chars().all(|character| character.is_ascii_digit())
+        && word.chars().any(char::is_alphabetic))
+    .then_some(number)
+}
+
+fn leading_number(value: &str) -> Option<&str> {
+    value
+        .split_whitespace()
+        .next()
+        .filter(|part| part.chars().all(|character| character.is_ascii_digit()))
 }
 
 pub fn closest_orbit_matches<'a>(
@@ -222,6 +403,7 @@ fn search_score(
     })
 }
 
+#[cfg(test)]
 fn best_matching_sigint_units(
     orbit_unit: &SourceUnit,
     sigint_units: &[sigint_unit::Model],
@@ -559,17 +741,13 @@ fn is_subsequence(shorter: &[String], longer: &[String]) -> bool {
 }
 
 fn normalize_name(value: &str) -> String {
-    value
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
+    crate::unit::normalize_unit_formation_name(value)
 }
 
 fn normalize_sigint_name(value: &str) -> String {
-    let mut value = normalize_name(value);
+    let mut value = value.to_lowercase();
     for blacklisted in ORBIT_MATCHING_SIGINT_NAME_BLACKLIST {
-        value = value.replace(&normalize_name(blacklisted), "");
+        value = value.replace(&blacklisted.to_lowercase(), "");
     }
     normalize_name(&value)
 }
@@ -621,6 +799,161 @@ mod tests {
     use chrono::Utc;
     use serde_json::json;
     use uuid::Uuid;
+
+    #[test]
+    fn test_link_rating_penalizes_number_only_echelon_matches() {
+        let orbit_unit = source_unit(
+            "2 батальйон / 45 мотострілецький полк / 45 армія",
+            vec![
+                ("battalion", "2 батальйон", 0),
+                ("regiment", "45 мотострілецький полк", 1),
+                ("fieldArmy", "45 армія", 2),
+            ],
+        );
+        let hierarchy = [
+            (EchoEchelon::Battalion, "2 мсб"),
+            (EchoEchelon::Regiment, "45 мсп"),
+            (EchoEchelon::Army, "45 армія"),
+        ];
+
+        assert_eq!(
+            test_link_rating(
+                &comparable_path(&orbit_unit).unwrap(),
+                &hierarchy
+            ),
+            Some(98)
+        );
+    }
+
+    #[test]
+    fn test_link_matches_keep_all_candidates_at_the_maximum_rating() {
+        let exact_first = source_unit(
+            "2 мсб / 45 мсп",
+            vec![("battalion", "2 мсб", 0), ("regiment", "45 мсп", 1)],
+        );
+        let exact_second = source_unit(
+            "2 мсб / 45 мсп alternative",
+            vec![("battalion", "2 мсб", 0), ("regiment", "45 мсп", 1)],
+        );
+        let number_only = source_unit(
+            "2 батальйон / 45 мсп",
+            vec![("battalion", "2 батальйон", 0), ("regiment", "45 мсп", 1)],
+        );
+        let hierarchy = [
+            (EchoEchelon::Battalion, "2 мсб"),
+            (EchoEchelon::Regiment, "45 мсп"),
+        ];
+
+        let orbit_units =
+            [number_only, exact_first.clone(), exact_second.clone()];
+        assert_eq!(
+            TestLinkMatcher::new(&orbit_units).best_matches(&hierarchy),
+            vec![
+                (&exact_first, ORBIT_TEST_LINK_UNITS_MAX_RATING),
+                (&exact_second, ORBIT_TEST_LINK_UNITS_MAX_RATING),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_link_potential_matches_keep_lower_rated_candidates() {
+        let exact = source_unit(
+            "2 мсб / 45 мсп",
+            vec![("battalion", "2 мсб", 0), ("regiment", "45 мсп", 1)],
+        );
+        let number_only = source_unit(
+            "2 батальйон / 45 мсп",
+            vec![("battalion", "2 батальйон", 0), ("regiment", "45 мсп", 1)],
+        );
+        let hierarchy = [
+            (EchoEchelon::Battalion, "2 мсб"),
+            (EchoEchelon::Regiment, "45 мсп"),
+        ];
+        let orbit_units = [exact.clone(), number_only.clone()];
+
+        assert_eq!(
+            TestLinkMatcher::new(&orbit_units).potential_matches(&hierarchy),
+            vec![
+                (&exact, ORBIT_TEST_LINK_UNITS_MAX_RATING),
+                (
+                    &number_only,
+                    ORBIT_TEST_LINK_UNITS_MAX_RATING
+                        - ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY,
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_link_matches_equivalent_punctuated_unit_notions_exactly() {
+        let orbit_unit = source_unit(
+            "обБпС / 2 ОА",
+            vec![("battalion", "обБпС", 0), ("fieldArmy", "2 ОА", 1)],
+        );
+        let hierarchy = [
+            (EchoEchelon::Battalion, "(об БпС)"),
+            (EchoEchelon::Army, "2 ЗВА"),
+        ];
+
+        assert_eq!(
+            TestLinkMatcher::new(std::slice::from_ref(&orbit_unit))
+                .best_matches(&hierarchy),
+            vec![(&orbit_unit, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
+        );
+    }
+
+    #[test]
+    fn test_link_matches_discard_descendants_of_highest_echelon() {
+        let battalion = source_unit(
+            "4 мсб / 752 мсп / 3 мсд / 20 ЗВА",
+            vec![
+                ("battalion", "4 мсб", 0),
+                ("regiment", "752 мсп", 1),
+                ("division", "3 мсд", 2),
+                ("fieldArmy", "20 ЗВА", 3),
+            ],
+        );
+        let company = source_unit(
+            "10 мср / 4 мсб / 752 мсп / 3 мсд / 20 ЗВА",
+            vec![
+                ("company", "10 мср", 0),
+                ("battalion", "4 мсб", 1),
+                ("regiment", "752 мсп", 2),
+                ("division", "3 мсд", 3),
+                ("fieldArmy", "20 ЗВА", 4),
+            ],
+        );
+        let hierarchy = [
+            (EchoEchelon::Battalion, "4 мсб"),
+            (EchoEchelon::Regiment, "752 мсп"),
+            (EchoEchelon::Division, "3 мсд"),
+            (EchoEchelon::Army, "20 ЗВА"),
+        ];
+
+        let orbit_units = [company, battalion.clone()];
+
+        assert_eq!(
+            TestLinkMatcher::new(&orbit_units).best_matches(&hierarchy),
+            vec![(&battalion, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
+        );
+    }
+
+    #[test]
+    fn test_link_rejects_non_numeric_echelon_mismatches() {
+        let orbit_unit = source_unit(
+            "перший батальйон",
+            vec![("battalion", "перший батальйон", 0)],
+        );
+        let hierarchy = [(EchoEchelon::Battalion, "другий батальйон")];
+
+        assert_eq!(
+            test_link_rating(
+                &comparable_path(&orbit_unit).unwrap(),
+                &hierarchy
+            ),
+            None
+        );
+    }
 
     #[test]
     fn sample_matches_collapsed_echo_echelons() {

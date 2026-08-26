@@ -379,6 +379,56 @@ where
     Ok(sigint_unit_ids.into_iter().next())
 }
 
+async fn resolve_by_equivalent_sigint_unit_name<C>(
+    db: &C,
+    value: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    let normalized = crate::unit::normalize_unit_formation_name(value);
+    if normalized.is_empty() {
+        return Ok(None);
+    }
+    let sigint_unit_ids = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .select_only()
+        .columns([sigint_unit::Column::Id, sigint_unit::Column::Name])
+        .into_tuple::<(i64, String)>()
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .filter_map(|(sigint_unit_id, name)| {
+            (crate::unit::normalize_unit_formation_name(&name) == normalized)
+                .then_some(sigint_unit_id)
+        })
+        .take(2)
+        .collect_vec();
+    if sigint_unit_ids.len() > 1 {
+        warn!("Multiple equivalent SIGINT unit names match value={value:?}");
+        return Ok(None);
+    }
+    Ok(sigint_unit_ids.into_iter().next())
+}
+
+async fn resolve_unit_v2_name_fallback<C>(
+    db: &C,
+    value: &str,
+) -> anyhow::Result<Option<i64>>
+where
+    C: ConnectionTrait,
+{
+    if let Some(sigint_unit_id) =
+        resolve_by_label(db, value).await.context(h!())?
+    {
+        return Ok(Some(sigint_unit_id));
+    }
+    resolve_by_equivalent_sigint_unit_name(db, value)
+        .await
+        .context(h!())
+}
+
 pub(crate) async fn resolve_sigint_unit_id<C>(
     db: &C,
     unit_v2: Option<&str>,
@@ -400,19 +450,24 @@ where
                 return Ok(Some(sigint_unit_id));
             }
             StructuralResolution::Blocked(reason) => {
-                let sigint_unit_id =
-                    resolve_by_label(db, unit_v2).await.context(h!())?;
+                let sigint_unit_id = resolve_unit_v2_name_fallback(db, unit_v2)
+                    .await
+                    .context(h!())?;
                 if let Some(sigint_unit_id) = sigint_unit_id {
                     debug!(
-                        "{reason}; resolved unit_v2={unit_v2:?} by SIGINT unit label to sigint_unit_id={sigint_unit_id}"
+                        "{reason}; resolved unit_v2={unit_v2:?} by SIGINT unit name/label fallback to sigint_unit_id={sigint_unit_id}"
                     );
                 } else {
-                    warn!("{reason}; no SIGINT unit label fallback matched");
+                    warn!(
+                        "{reason}; no SIGINT unit name/label fallback matched"
+                    );
                 }
                 return Ok(sigint_unit_id);
             }
             StructuralResolution::NoMatch => {
-                return resolve_by_label(db, unit_v2).await.context(h!());
+                return resolve_unit_v2_name_fallback(db, unit_v2)
+                    .await
+                    .context(h!());
             }
         }
     }
@@ -447,9 +502,18 @@ where
                 .context(h!())?
             {
                 Some(sigint_unit_id) => Some(sigint_unit_id),
-                None => {
-                    resolve_by_label(db, &candidate.text).await.context(h!())?
-                }
+                None => match candidate.source {
+                    UnitTextSource::UnitV2 => {
+                        resolve_unit_v2_name_fallback(db, &candidate.text)
+                            .await
+                            .context(h!())?
+                    }
+                    UnitTextSource::Unit => {
+                        resolve_by_label(db, &candidate.text)
+                            .await
+                            .context(h!())?
+                    }
+                },
             }
         } else {
             match candidate.source {
@@ -1499,6 +1563,33 @@ mod tests {
         );
         assert_eq!(
             resolve_sigint_unit_id(&env.dbx, None, Some(&search))
+                .await
+                .unwrap(),
+            Some(unit.id)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn equivalent_sigint_unit_name_matches_unit_v2_as_last_fallback() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let unique = unique_unit_label();
+        let name = format!("{unique} 1 обБпС 2 ОА");
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set(name),
+                active: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let unit_v2 = format!("“{unique}” 1 (об БпС), 2 ЗВА");
+
+        assert_eq!(
+            resolve_sigint_unit_id(&env.dbx, Some(&unit_v2), None)
                 .await
                 .unwrap(),
             Some(unit.id)

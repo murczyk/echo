@@ -979,6 +979,19 @@ pub const ORBIT_IMPORT_UNIT_ECHELON_FILE_NAME: &str =
     "orbit_unit_echelon.parquet";
 pub const ORBIT_MATCHING_SIGINT_NAME_BLACKLIST: &[&str] =
     &["ТерО", "ТрО", "(ат)"];
+pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
+    ("оббпс", &["об бпс", "оббпс"]),
+    ("а", &["а", "зва", "оа"]),
+    ("в", &["в", "b"]),
+    ("оптадн", &["оптадн", "оптдн"]),
+    ("габат", &["габат", "габатр"]),
+    ("шр", &["шр v", "шр", "шр в"]),
+    ("обреб", &["об реб", "обреб"]),
+];
+pub const ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE: usize = 10;
+pub const ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE: usize = 5;
+pub const ORBIT_TEST_LINK_UNITS_MAX_RATING: u8 = 100;
+pub const ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY: u8 = 1;
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
 pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
 pub const NETWORK_INBOX_OLD_WORKER_START_HOUR: u32 = 2;

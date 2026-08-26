@@ -876,19 +876,13 @@ async fn insert_merge_link_unit(
         )
         .await?;
     }
-    let mut unit = merge_requested_duplicate_units(
+    let unit = merge_requested_duplicate_units(
         *login,
         transaction,
         unit.id,
         duplicate_unit_ids,
     )
     .await?;
-    if unit.active {
-        crate::orbit::link_new_sigint_unit_in_transaction(transaction, unit.id)
-            .await
-            .c(h!())?;
-        unit = find_unit(transaction, unit.id).await.c(h!())?;
-    }
     Ok(unit)
 }
 
@@ -3869,7 +3863,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn oneoff_imports_every_unlinked_orbit_unit_as_inactive() {
+    async fn imports_every_unlinked_orbit_unit_as_inactive() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -3948,7 +3942,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn oneoff_imports_lower_orbit_echelon_using_unit_number() {
+    async fn imports_lower_orbit_echelon_using_unit_number() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -4000,7 +3994,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn oneoff_skips_unsupported_orbit_units_and_imports_later_units() {
+    async fn skips_unsupported_orbit_units_and_imports_later_units() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)

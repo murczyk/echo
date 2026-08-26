@@ -14,7 +14,9 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-use crate::types::{debug, warn, Env, Mode, ShortContext};
+#[cfg(test)]
+use crate::types::warn;
+use crate::types::{debug, Env, ShortContext};
 use crate::users::{
     ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
 };
@@ -23,7 +25,9 @@ use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use uuid::Uuid;
 
 const ORBIT_LINK_CANDIDATE_LIMIT: u64 = 100;
@@ -358,7 +362,9 @@ struct UnitInconsistencyDetails {
 
 pub(crate) struct UnitOrbitReconcileOutcome {
     pub unit: sigint_unit::Model,
+    #[cfg(test)]
     pub hierarchy_updated: bool,
+    #[cfg(test)]
     pub orbit_link_count: usize,
 }
 
@@ -381,6 +387,7 @@ where
     .await
 }
 
+#[cfg(test)]
 async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
     dbx: &C,
     login: &Uuid,
@@ -437,7 +444,9 @@ where
     if !hierarchy_updated && !inconsistency_updated {
         return Ok(UnitOrbitReconcileOutcome {
             unit,
+            #[cfg(test)]
             hierarchy_updated,
+            #[cfg(test)]
             orbit_link_count: orbit_units.len(),
         });
     }
@@ -473,7 +482,9 @@ where
     }
     Ok(UnitOrbitReconcileOutcome {
         unit,
+        #[cfg(test)]
         hierarchy_updated,
+        #[cfg(test)]
         orbit_link_count: orbit_units.len(),
     })
 }
@@ -1233,37 +1244,51 @@ pub(super) async fn link_orbit_unit_for_login(
     orbit_unit_id: Uuid,
 ) -> Result<(), AppError> {
     let transaction = crate::orbit::acquire_import_lock(dbx).await.c(h!())?;
-    super::changelog::set_author(&transaction, login)
-        .await
-        .c(h!())?;
-    let sigint_unit =
-        find_available_sigint_unit(&transaction, sigint_unit_id).await?;
-    let orbit_unit =
-        find_available_orbit_unit(&transaction, orbit_unit_id).await?;
-    crate::orbit::link_sigint_unit_if_unlinked(
+    link_orbit_unit_in_transaction(
         &transaction,
+        login,
         sigint_unit_id,
         orbit_unit_id,
     )
     .await?;
-    import_missing_orbit_ancestors(&transaction, login, &orbit_unit).await?;
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-        .await?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+pub(crate) async fn link_orbit_unit_in_transaction<C>(
+    dbx: &C,
+    login: &Uuid,
+    sigint_unit_id: i64,
+    orbit_unit_id: Uuid,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    super::changelog::set_author(dbx, login).await.c(h!())?;
+    let sigint_unit = find_available_sigint_unit(dbx, sigint_unit_id).await?;
+    let orbit_unit = find_available_orbit_unit(dbx, orbit_unit_id).await?;
+    crate::orbit::link_sigint_unit_if_unlinked(
+        dbx,
+        sigint_unit_id,
+        orbit_unit_id,
+    )
+    .await?;
+    import_missing_orbit_ancestors(dbx, login, &orbit_unit).await?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx).await?;
     let sigint_unit =
-        reconcile_sigint_unit_orbit(&transaction, login, sigint_unit.id, true)
+        reconcile_sigint_unit_orbit(dbx, login, sigint_unit.id, true)
             .await
             .c(h!())?
             .unit;
     if sigint_unit.active {
         super::reconcile_parent_unit_activity(
-            &transaction,
+            dbx,
             login,
             std::slice::from_ref(&sigint_unit),
         )
         .await?;
     }
-    transaction.commit().await.c(h!())?;
-    Ok(())
+    Ok(sigint_unit)
 }
 
 #[post("/api/sigint/unit/orbit-unlink")]
@@ -1333,7 +1358,6 @@ pub(super) async fn import_orbit_unit_for_login(
             msg: "ORBIT unit is already linked to a SIGINT unit".to_string(),
         });
     }
-    import_missing_orbit_ancestors(&transaction, login, &orbit_unit).await?;
     let unit_req =
         create_unit_req_from_orbit(&transaction, &orbit_unit, true).await?;
     let unit =
@@ -1343,25 +1367,11 @@ pub(super) async fn import_orbit_unit_for_login(
     let network =
         create_imported_unit_network(&transaction, login, &unit_req, unit.id)
             .await?;
-    orbit_unit_sigint_unit::ActiveModel {
-        orbit_unit_id: Set(orbit_unit_id),
-        sigint_unit_id: Set(unit.id),
-        is_manual: Set(true),
-        is_suppressed: Set(false),
-    }
-    .insert(&transaction)
-    .await
-    .c(h!())?;
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-        .await?;
-    let unit = reconcile_sigint_unit_orbit(&transaction, login, unit.id, true)
-        .await
-        .c(h!())?
-        .unit;
-    super::reconcile_parent_unit_activity(
+    let unit = link_orbit_unit_in_transaction(
         &transaction,
         login,
-        std::slice::from_ref(&unit),
+        unit.id,
+        orbit_unit_id,
     )
     .await?;
     transaction.commit().await.c(h!())?;
@@ -1553,6 +1563,7 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) async fn materialize_automatic_link_parent_chains<C>(
     dbx: &C,
     login: &Uuid,
@@ -1635,16 +1646,7 @@ where
     Ok(ancestors)
 }
 
-pub async fn oneoff_import_unlinked_orbit_units(
-    mode: Mode,
-) -> Result<(), AppError> {
-    let dbx = crate::new_pg_pool_from_mode(mode).await.c(h!())?;
-    let login = crate::users::system_login_id(&dbx).await.c(h!())?;
-    let imported = import_unlinked_orbit_units(&dbx, &login).await?;
-    println!("Imported {imported} unlinked ORBIT units.");
-    Ok(())
-}
-
+#[cfg(test)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OrbitUnitReconcileStats {
     pub scanned: usize,
@@ -1654,6 +1656,7 @@ pub(crate) struct OrbitUnitReconcileStats {
     pub merged: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OrbitUnitAttributeChange {
     pub attribute: &'static str,
@@ -1661,6 +1664,7 @@ pub(crate) struct OrbitUnitAttributeChange {
     pub proposed: String,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OrbitUnitHierarchyChange {
     pub sigint_unit_id: i64,
@@ -1668,6 +1672,7 @@ pub(crate) struct OrbitUnitHierarchyChange {
     pub attributes: Vec<OrbitUnitAttributeChange>,
 }
 
+#[cfg(test)]
 pub(crate) async fn proposed_orbit_hierarchy_changes<C>(
     dbx: &C,
 ) -> Result<Vec<OrbitUnitHierarchyChange>, AppError>
@@ -1687,6 +1692,7 @@ where
     Ok(changes)
 }
 
+#[cfg(test)]
 async fn proposed_orbit_hierarchy_change<C>(
     dbx: &C,
     sigint_unit_id: i64,
@@ -1717,6 +1723,7 @@ where
     }))
 }
 
+#[cfg(test)]
 fn changed_unit_attributes(
     current: &sigint_unit::Model,
     proposed: &sigint_unit::Model,
@@ -1735,6 +1742,7 @@ fn changed_unit_attributes(
         .collect()
 }
 
+#[cfg(test)]
 fn named_unit_attributes(
     unit: &sigint_unit::Model,
 ) -> [(&'static str, &str); 15] {
@@ -1757,6 +1765,7 @@ fn named_unit_attributes(
     ]
 }
 
+#[cfg(test)]
 pub(crate) async fn reconcile_selected_orbit_hierarchy_changes(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1765,6 +1774,7 @@ pub(crate) async fn reconcile_selected_orbit_hierarchy_changes(
     reconcile_orbit_linked_units(dbx, login, Some(accepted_changes)).await
 }
 
+#[cfg(test)]
 async fn reconcile_orbit_linked_units(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1851,6 +1861,7 @@ async fn reconcile_orbit_linked_units(
     Ok(stats)
 }
 
+#[cfg(test)]
 async fn reconcile_sigint_unit_orbit_committed(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1870,6 +1881,7 @@ async fn reconcile_sigint_unit_orbit_committed(
     Ok(outcome)
 }
 
+#[cfg(test)]
 async fn reconcile_reviewed_sigint_unit_orbit_committed(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1887,6 +1899,7 @@ async fn reconcile_reviewed_sigint_unit_orbit_committed(
     Ok(outcome)
 }
 
+#[cfg(test)]
 async fn reconcile_sigint_unit_deduplicate_candidates_committed(
     dbx: &DatabaseConnection,
 ) -> Result<(), AppError> {
@@ -1898,6 +1911,7 @@ async fn reconcile_sigint_unit_deduplicate_candidates_committed(
     Ok(())
 }
 
+#[cfg(test)]
 async fn sigint_unit_ids_requiring_reconciliation<C>(
     dbx: &C,
 ) -> Result<Vec<i64>, AppError>
@@ -1923,6 +1937,7 @@ where
     Ok(sigint_unit_ids.into_iter().collect())
 }
 
+#[cfg(test)]
 async fn linked_sigint_unit_ids<C>(dbx: &C) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait,
@@ -1949,6 +1964,7 @@ where
         .c(h!())?)
 }
 
+#[cfg(test)]
 async fn merge_identical_duplicate_candidates(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -2010,6 +2026,7 @@ async fn merge_identical_duplicate_candidates(
     Ok(merged)
 }
 
+#[cfg(test)]
 fn identical_duplicate_components(
     links: &[orbit_unit_sigint_unit::Model],
     units: &BTreeMap<i64, sigint_unit::Model>,
@@ -2063,11 +2080,14 @@ fn identical_duplicate_components(
     components
 }
 
-pub(super) async fn import_unlinked_orbit_units(
-    dbx: &DatabaseConnection,
+#[cfg(test)]
+pub(crate) async fn import_unlinked_orbit_units<C>(
+    dbx: &C,
     login: &Uuid,
-) -> Result<usize, AppError> {
-    let transaction = crate::orbit::acquire_import_lock(dbx).await.c(h!())?;
+) -> Result<usize, AppError>
+where
+    C: ConnectionTrait,
+{
     let active_linked_orbit_unit_ids = orbit_unit_sigint_unit::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -2084,7 +2104,7 @@ pub(super) async fn import_unlinked_orbit_units(
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .into_tuple::<Uuid>()
-        .all(&transaction)
+        .all(dbx)
         .await
         .c(h!())?
         .into_iter()
@@ -2099,7 +2119,7 @@ pub(super) async fn import_unlinked_orbit_units(
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(sigint_unit::Column::Deleted.eq(false))
         .into_tuple::<Uuid>()
-        .all(&transaction)
+        .all(dbx)
         .await
         .c(h!())?
         .into_iter()
@@ -2107,7 +2127,7 @@ pub(super) async fn import_unlinked_orbit_units(
     let orbit_units = orbit_unit::Entity::find()
         .filter(orbit_unit::Column::Deleted.eq(false))
         .order_by_asc(orbit_unit::Column::UnitId)
-        .all(&transaction)
+        .all(dbx)
         .await
         .c(h!())?;
     let orbit_unit_ids_to_activate =
@@ -2120,9 +2140,7 @@ pub(super) async fn import_unlinked_orbit_units(
             continue;
         }
         let unit_req =
-            match create_unit_req_from_orbit(&transaction, orbit_unit, false)
-                .await
-            {
+            match create_unit_req_from_orbit(dbx, orbit_unit, false).await {
                 Ok(unit_req) => unit_req,
                 Err(err @ (AppError::BL { .. } | AppError::NotFound)) => {
                     skipped += 1;
@@ -2133,20 +2151,19 @@ pub(super) async fn import_unlinked_orbit_units(
                 }
                 Err(err) => return Err(err),
             };
-        let unit =
-            super::insert_unit_with_changelog(&transaction, login, &unit_req)
-                .await
-                .c(h!())?;
+        let unit = super::insert_unit_with_changelog(dbx, login, &unit_req)
+            .await
+            .c(h!())?;
         orbit_unit_sigint_unit::ActiveModel {
             orbit_unit_id: Set(orbit_unit.unit_id),
             sigint_unit_id: Set(unit.id),
             is_manual: Set(true),
             is_suppressed: Set(false),
         }
-        .insert(&transaction)
+        .insert(dbx)
         .await
         .c(h!())?;
-        reconcile_sigint_unit_orbit(&transaction, login, unit.id, true)
+        reconcile_sigint_unit_orbit(dbx, login, unit.id, true)
             .await
             .c(h!())?;
         imported += 1;
@@ -2157,17 +2174,19 @@ pub(super) async fn import_unlinked_orbit_units(
         );
     }
     activate_sigint_units_linked_to_orbit_units(
-        &transaction,
+        dbx,
         login,
         &orbit_unit_ids_to_activate,
     )
-    .await?;
-    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-        .await?;
-    transaction.commit().await.c(h!())?;
+    .await
+    .c(h!())?;
+    crate::orbit::reconcile_sigint_unit_deduplicate_candidates(dbx)
+        .await
+        .c(h!())?;
     Ok(imported)
 }
 
+#[cfg(test)]
 fn orbit_unit_and_ancestor_ids(
     orbit_units: &[orbit_unit::Model],
     mut unit_ids: HashSet<Uuid>,
