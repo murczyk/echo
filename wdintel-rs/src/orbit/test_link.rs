@@ -212,7 +212,8 @@ pub async fn run(mode: Mode) -> anyhow::Result<()> {
         return Ok(());
     };
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    run_with_database(&dbx, link_mode).await
+    run_with_database(&dbx, link_mode).await.c(h!())?;
+    Ok(())
 }
 
 pub(super) async fn run_with_database(
