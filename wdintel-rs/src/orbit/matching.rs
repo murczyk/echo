@@ -898,7 +898,7 @@ mod tests {
     }
 
     #[test]
-    fn test_link_matches_discard_descendants_of_highest_echelon() {
+    fn test_link_matches_require_same_root_echelon() {
         let battalion = source_unit(
             "4 мсб / 752 мсп / 3 мсд / 20 ЗВА",
             vec![

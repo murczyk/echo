@@ -339,11 +339,8 @@ async fn persist_links(
             already_linked += 1;
             continue;
         }
-        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_reconciliation(
-            &transaction,
-            &login,
-            *sigint_unit_id,
-            *orbit_unit_id,
+        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+            &transaction, &login, *sigint_unit_id, *orbit_unit_id,
         )
         .await
         .c(h!())?;

@@ -1276,7 +1276,9 @@ where
     .c(h!())?)
 }
 
-pub(crate) async fn link_orbit_unit_with_deferred_reconciliation<C>(
+pub(crate) async fn link_orbit_unit_with_deferred_deduplicate_reconciliation<
+    C,
+>(
     dbx: &C,
     login: &Uuid,
     sigint_unit_id: i64,
