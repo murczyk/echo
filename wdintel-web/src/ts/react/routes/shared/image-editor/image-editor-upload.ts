@@ -1,18 +1,26 @@
 import type { Uppy, UppyFile } from '@uppy/core';
 
+import {
+  invalidateMessageTusResumeRecords,
+  type MessageTusUrlStorage,
+} from '../message-tus-resume';
+
 type PendingImageFile = Pick<UppyFile<any, any>, 'meta'>;
 
-export function replacePendingImageFile({
+export async function replacePendingImageFile({
   uppy,
   fileId,
   pending,
   replacement,
+  urlStorage,
 }: {
   uppy: Pick<Uppy, 'setFileState'>;
   fileId: string;
   pending: PendingImageFile;
   replacement: File;
-}) {
+  urlStorage?: MessageTusUrlStorage;
+}): Promise<void> {
+  await invalidateMessageTusResumeRecords(fileId, urlStorage);
   const extension = replacement.name.split('.').pop() ?? '';
   uppy.setFileState(fileId, {
     data: replacement,
@@ -31,6 +39,10 @@ export function replacePendingImageFile({
       extension,
     },
     error: null,
+    tus: undefined,
+    uploadURL: undefined,
+    response: undefined,
+    isPaused: false,
     progress: {
       percentage: 0,
       bytesTotal: replacement.size,

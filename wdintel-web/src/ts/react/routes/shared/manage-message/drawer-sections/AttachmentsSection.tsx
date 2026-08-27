@@ -195,7 +195,12 @@ export function AttachmentsSection({
         if (!imageId) throw new Error('Не вдалося визначити вкладення для заміни');
         const pending = uppy.getFile(imageId);
         if (pending) {
-          replacePendingImageFile({ uppy, fileId: imageId, pending, replacement: result.file });
+          await replacePendingImageFile({
+            uppy,
+            fileId: imageId,
+            pending,
+            replacement: result.file,
+          });
           return;
         }
         const pendingFiles = uppy.getFiles();
