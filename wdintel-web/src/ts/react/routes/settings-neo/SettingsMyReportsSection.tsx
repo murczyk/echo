@@ -579,6 +579,9 @@ export function ReportHistoryTableSection({
     try {
       const blob = await downloadReportHistory(row.id);
       downloadBlob(blob, row.fileName ?? `report-${row.id}`);
+      if (loadReportHistoryBatch) {
+        await loadRows(undefined, pageIndex * REPORT_HISTORY_BATCH_SIZE, true);
+      }
     } catch (downloadError) {
       setError(formatErrorMessage(downloadError));
     }
