@@ -850,25 +850,34 @@ pub(super) fn normalize_orbit_hierarchy_name(
     unit: &SourceUnit,
     value: &str,
 ) -> String {
-    let descriptor_names_by_echelon = std::iter::once(unit)
-        .chain(&unit.operational_parent_units)
-        .chain(&unit.generative_parent_units)
-        .filter_map(|descriptor| {
-            let echelon = descriptor
-                .unit_echelon
-                .as_ref()
-                .and_then(|value| value.key.as_str())
-                .and_then(echo_echelon)?;
-            Some((echelon, descriptor_names(descriptor)))
-        })
-        .collect::<Vec<_>>();
-    split_path(value)
+    let segments = split_path(value);
+    let mut names_by_echelon = HashMap::<EchoEchelon, HashSet<String>>::new();
+    for (full_name, parents) in [
+        (
+            &unit.operational_unit_name_full,
+            &unit.operational_parent_units,
+        ),
+        (
+            &unit.generative_unit_name_full,
+            &unit.generative_parent_units,
+        ),
+    ] {
+        if full_name.as_deref().map(split_path).as_ref() != Some(&segments) {
+            continue;
+        }
+        for (echelon, names) in
+            hierarchy_names_by_echelon(unit, parents, &segments)
+        {
+            names_by_echelon.entry(echelon).or_default().extend(names);
+        }
+    }
+    segments
         .into_iter()
         .map(|name| {
-            let echelon = descriptor_names_by_echelon.iter().find_map(
-                |(echelon, names)| names.contains(&name).then_some(*echelon),
-            );
-            if echelon == Some(EchoEchelon::Army) {
+            if names_by_echelon
+                .get(&EchoEchelon::Army)
+                .is_some_and(|names| names.contains(&name))
+            {
                 normalize_army_name(&name)
             } else {
                 name
@@ -904,7 +913,9 @@ fn normalize_army_name(value: &str) -> String {
         return value;
     };
     if number.chars().all(|character| character.is_ascii_digit())
-        && suffix.ends_with('а')
+        && (suffix.ends_with('а')
+            || suffix.ends_with("армія")
+            || suffix.ends_with("армия"))
     {
         format!("{number} а")
     } else {

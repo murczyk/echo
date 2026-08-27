@@ -2,6 +2,7 @@ use super::{matching, persistence, tui};
 use crate::config::{
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
+    ORBIT_TEST_LINK_UNITS_PERSIST_BATCH_SIZE,
 };
 use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
 use crate::types::{Mode, ShortContext};
@@ -343,7 +344,26 @@ async fn persist_links(
     link_mode: tui::LinkMode,
     review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> anyhow::Result<PersistSummary> {
-    if links.is_empty() && link_mode == tui::LinkMode::Manual {
+    match link_mode {
+        tui::LinkMode::Manual => {
+            persist_manual_link_batch(dbx, links, review_suppressed_links)
+                .await
+                .c(h!())
+        }
+        tui::LinkMode::Automatic => {
+            persist_automatic_link_batches(dbx, links, reviewed_sigint_unit_ids)
+                .await
+                .c(h!())
+        }
+    }
+}
+
+async fn persist_manual_link_batch(
+    dbx: &sea_orm::DatabaseConnection,
+    links: &[(i64, uuid::Uuid)],
+    review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+) -> anyhow::Result<PersistSummary> {
+    if links.is_empty() {
         return Ok(PersistSummary::default());
     }
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
@@ -357,34 +377,76 @@ async fn persist_links(
     let suppressed_links = suppressions_to_preserve(
         suppressed_links,
         review_suppressed_links,
-        link_mode,
+        tui::LinkMode::Manual,
     );
-    let (summary, links_changed) = match link_mode {
-        tui::LinkMode::Manual => persist_manual_links(
-            &transaction,
-            &login,
-            links,
-            &matcher,
-            &suppressed_links,
-        )
-        .await
-        .c(h!())?,
-        tui::LinkMode::Automatic => revalidate_automatic_links(
-            &transaction,
-            &login,
-            links,
-            reviewed_sigint_unit_ids,
-            &matcher,
-            &suppressed_links,
-        )
-        .await
-        .c(h!())?,
-    };
+    let (summary, links_changed) = persist_manual_links(
+        &transaction,
+        &login,
+        links,
+        &matcher,
+        &suppressed_links,
+    )
+    .await
+    .c(h!())?;
     if links_changed {
         super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
             .await
             .c(h!())?;
     }
+    transaction.commit().await.c(h!())?;
+    Ok(summary)
+}
+
+async fn persist_automatic_link_batches(
+    dbx: &sea_orm::DatabaseConnection,
+    links: &[(i64, uuid::Uuid)],
+    reviewed_sigint_unit_ids: &[i64],
+) -> anyhow::Result<PersistSummary> {
+    let mut summary = PersistSummary::default();
+    for sigint_unit_ids in reviewed_sigint_unit_ids
+        .chunks(ORBIT_TEST_LINK_UNITS_PERSIST_BATCH_SIZE)
+    {
+        let batch_summary =
+            persist_automatic_link_batch(dbx, links, sigint_unit_ids)
+                .await
+                .c(h!())?;
+        summary.already_linked += batch_summary.already_linked;
+        summary.suppressed += batch_summary.suppressed;
+        summary.no_longer_matching += batch_summary.no_longer_matching;
+    }
+    if !reviewed_sigint_unit_ids.is_empty() {
+        let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
+        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+            .await
+            .c(h!())?;
+        transaction.commit().await.c(h!())?;
+    }
+    Ok(summary)
+}
+
+async fn persist_automatic_link_batch(
+    dbx: &sea_orm::DatabaseConnection,
+    links: &[(i64, uuid::Uuid)],
+    reviewed_sigint_unit_ids: &[i64],
+) -> anyhow::Result<PersistSummary> {
+    let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
+    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    let orbit_units =
+        persistence::load_latest_synced_source_units(&transaction)
+            .await
+            .c(h!())?;
+    let matcher = matching::TestLinkMatcher::new(&orbit_units);
+    let suppressed_links = load_suppressed_links(&transaction).await.c(h!())?;
+    let (summary, _) = revalidate_automatic_links(
+        &transaction,
+        &login,
+        links,
+        reviewed_sigint_unit_ids,
+        &matcher,
+        &suppressed_links,
+    )
+    .await
+    .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(summary)
 }
@@ -883,6 +945,34 @@ mod tests {
                 ("militaryDistrict", "мво"),
             ],
         )];
+        let matcher = matching::TestLinkMatcher::new(&orbit_units);
+
+        let review_units = prepare_review_units(
+            &[unit],
+            &matcher,
+            tui::LinkMode::Automatic,
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(review_units[0].matches[0].rating, 100);
+        assert_eq!(review_units[0].matches[0].distance, 0);
+        assert_eq!(approve_automatic(review_units).1.len(), 1);
+    }
+
+    #[test]
+    fn automatic_mode_normalizes_descriptorless_army_parent() {
+        let mut unit = sigint_unit("3 мсб");
+        unit.army = "58 ЗВА".to_string();
+        let mut orbit_unit = orbit_hierarchy_unit(
+            uuid::Uuid::new_v4(),
+            "3 мсб / 58 загальновійськова армія",
+            &[("battalion", "3 мсб"), ("fieldArmy", "unused")],
+        );
+        let army = &mut orbit_unit.operational_parent_units[0];
+        army.unit_name = None;
+        army.unit_name_short = None;
+        army.unit_number = None;
+        let orbit_units = [orbit_unit];
         let matcher = matching::TestLinkMatcher::new(&orbit_units);
 
         let review_units = prepare_review_units(

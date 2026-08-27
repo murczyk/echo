@@ -989,6 +989,7 @@ pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
     ("обреб", &["об реб", "обреб"]),
 ];
 pub const ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE: usize = 10;
+pub const ORBIT_TEST_LINK_UNITS_PERSIST_BATCH_SIZE: usize = 100;
 pub const ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE: usize = 5;
 pub const ORBIT_TEST_LINK_UNITS_MAX_RATING: u8 = 100;
 pub const ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY: u8 = 1;
