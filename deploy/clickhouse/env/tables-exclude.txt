@@ -50,6 +50,7 @@ public.ai_callsign_parse_result
 public.ai_callsign_worker_job
 public.ai_intel_report_settings
 public.ai_intel_report_attempt
+public.report_download_history
 
 # OCR and media-summary settings, durable work queue, and encrypted OCR metadata.
 public.ocr_settings

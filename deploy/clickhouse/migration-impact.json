@@ -358,6 +358,11 @@
       "changes": [
         { "table": "public.ai_intel_report_attempt", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260827_074530_create_report_download_history": {
+      "changes": [
+        { "table": "public.report_download_history", "strategy": "excluded" }
+      ]
     }
   },
   "dependencies": {

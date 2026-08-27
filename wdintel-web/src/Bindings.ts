@@ -341,12 +341,20 @@ export type ReportHistoryRow = {
   reportPeriod: string | null;
   progress: number;
   errorLog: Array<ReportHistoryLogEntry> | null;
+  downloadAttempts: Array<ReportDownloadHistoryEntry>;
 };
 
 export type ReportHistoryLogEntry = {
   login: string;
   timestamp: string;
   message: string;
+};
+
+export type ReportDownloadHistoryEntry = {
+  login: string;
+  requestedAt: string;
+  durationMs: number | null;
+  successful: boolean | null;
 };
 
 export type ReportHistoryIdReq = {
