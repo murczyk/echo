@@ -537,31 +537,24 @@ where
             summary.already_linked += 1;
             continue;
         }
-        let orbit_unit_id = match proposed_links.get(sigint_unit_id).copied() {
+        let proposed_orbit_unit_id =
+            proposed_links.get(sigint_unit_id).copied();
+        let orbit_unit_id =
+            current_automatic_link(&sigint_unit, matcher, suppressed_links);
+        match proposed_orbit_unit_id {
             Some(orbit_unit_id)
                 if suppressed_links
                     .contains(&(*sigint_unit_id, orbit_unit_id)) =>
             {
                 summary.suppressed += 1;
-                None
             }
-            Some(orbit_unit_id)
-                if accepted_link_is_current_match(
-                    &sigint_unit,
-                    orbit_unit_id,
-                    matcher,
-                    tui::LinkMode::Automatic,
-                    suppressed_links,
-                ) =>
+            Some(proposed_orbit_unit_id)
+                if Some(proposed_orbit_unit_id) != orbit_unit_id =>
             {
-                Some(orbit_unit_id)
-            }
-            Some(_) => {
                 summary.no_longer_matching += 1;
-                None
             }
-            None => None,
-        };
+            _ => {}
+        }
         let removed =
             delete_automatic_links(dbx, *sigint_unit_id).await.c(h!())?;
         links_changed |= removed;
@@ -681,6 +674,22 @@ fn accepted_link_is_current_match(
                 == Some((sigint_unit.id, orbit_unit_id))
         }
     }
+}
+
+fn current_automatic_link(
+    sigint_unit: &sigint_unit::Model,
+    matcher: &matching::TestLinkMatcher<'_>,
+    suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+) -> Option<uuid::Uuid> {
+    prepare_review_unit(
+        sigint_unit,
+        matcher,
+        tui::LinkMode::Automatic,
+        suppressed_links,
+    )
+    .as_ref()
+    .and_then(automatically_approved_link)
+    .map(|(_, orbit_unit_id)| orbit_unit_id)
 }
 
 fn prepare_review_units(
@@ -1050,6 +1059,16 @@ mod tests {
         )
         .await
         .unwrap();
+        let newly_matchable_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login),
+                battalion: Set("3 мсб".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         for (sigint_unit_id, is_manual) in
             [(automatic_unit.id, false), (manual_unit.id, true)]
         {
@@ -1084,13 +1103,19 @@ mod tests {
         assert!(!manual_ids.contains(&automatic_unit.id));
         assert!(!manual_ids.contains(&manual_unit.id));
 
+        let current_orbit_units = [orbit_hierarchy_unit(
+            orbit_unit.unit_id,
+            "3 мсб",
+            &[("battalion", "3 мсб")],
+        )];
+        let matcher = matching::TestLinkMatcher::new(&current_orbit_units);
         let transaction = db.begin().await.unwrap();
         let (summary, links_changed) = revalidate_automatic_links(
             &transaction,
             &login,
             &[],
-            &[automatic_unit.id, manual_unit.id],
-            &matching::TestLinkMatcher::new(&[]),
+            &[automatic_unit.id, manual_unit.id, newly_matchable_unit.id],
+            &matcher,
             &BTreeSet::new(),
         )
         .await
@@ -1117,20 +1142,33 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(manual_link.is_manual);
-
-        orbit_unit_sigint_unit::Entity::delete_many()
+        let newly_created_link = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
-                    .is_in([automatic_unit.id, manual_unit.id]),
+                    .eq(newly_matchable_unit.id),
             )
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(newly_created_link.orbit_unit_id, orbit_unit.unit_id);
+        assert!(!newly_created_link.is_manual);
+
+        orbit_unit_sigint_unit::Entity::delete_many()
+            .filter(orbit_unit_sigint_unit::Column::SigintUnitId.is_in([
+                automatic_unit.id,
+                manual_unit.id,
+                newly_matchable_unit.id,
+            ]))
             .exec(&db)
             .await
             .unwrap();
         sigint_unit::Entity::delete_many()
-            .filter(
-                sigint_unit::Column::Id
-                    .is_in([automatic_unit.id, manual_unit.id]),
-            )
+            .filter(sigint_unit::Column::Id.is_in([
+                automatic_unit.id,
+                manual_unit.id,
+                newly_matchable_unit.id,
+            ]))
             .exec(&db)
             .await
             .unwrap();
