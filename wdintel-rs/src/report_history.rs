@@ -1,6 +1,7 @@
 use crate::config::{
     DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_CANCELLED_ERROR_STATUS,
     REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    REPORT_HISTORY_DOWNLOAD_ATTEMPTS_PER_REPORT_LIMIT,
     REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
     REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GENERIC_ERROR_STATUS,
     REPORT_HISTORY_GLOBAL_WORKER_COUNT,
@@ -18,7 +19,8 @@ use crate::config::{
 };
 use crate::delta::{bgtask_log, finish_bgtask};
 use crate::entities::{
-    area_of_responsibility, bgtask, login, prelude::*, report_history,
+    area_of_responsibility, bgtask, login, prelude::*, report_download_history,
+    report_history,
 };
 use crate::error::AppError;
 use crate::h;
@@ -36,6 +38,7 @@ use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::{post, HttpResponse};
+use anyhow::Context;
 use chrono::{Datelike, Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, info, warn};
@@ -44,7 +47,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel,
     JoinType, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    RelationTrait, Select, Set, Statement, TransactionTrait,
+    RelationTrait, Select, Set, Statement, TransactionTrait, Value,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -127,6 +130,7 @@ pub struct ReportHistoryRow {
     pub report_period: Option<String>,
     pub progress: i64,
     pub error_log: Option<Vec<ReportHistoryLogEntry>>,
+    pub download_attempts: Vec<ReportDownloadHistoryEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -134,6 +138,14 @@ pub struct ReportHistoryLogEntry {
     pub login: String,
     pub timestamp: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
+pub struct ReportDownloadHistoryEntry {
+    pub login: String,
+    pub requested_at: String,
+    pub duration_ms: Option<i64>,
+    pub successful: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Elm, ElmEncode, ElmDecode)]
@@ -302,6 +314,22 @@ async fn build_report_history_rows(
     report_histories: Vec<report_history::Model>,
     expose_last_error: bool,
 ) -> Result<Vec<ReportHistoryRow>, AppError> {
+    Ok(build_report_history_rows_with_options(
+        dbx,
+        report_histories,
+        expose_last_error,
+        false,
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn build_report_history_rows_with_options(
+    dbx: &DatabaseConnection,
+    report_histories: Vec<report_history::Model>,
+    expose_last_error: bool,
+    include_download_attempts: bool,
+) -> Result<Vec<ReportHistoryRow>, AppError> {
     let detail_refs = report_histories
         .iter()
         .map(|report_history| {
@@ -321,7 +349,14 @@ async fn build_report_history_rows(
             .collect(),
     )
     .await
-    .c(h!())?;
+    .context(h!())?;
+    let mut download_attempts_by_report_id = if include_download_attempts {
+        load_report_download_attempts(dbx, &report_histories)
+            .await
+            .context(h!())?
+    } else {
+        HashMap::new()
+    };
 
     Ok(report_histories
         .into_iter()
@@ -342,6 +377,9 @@ async fn build_report_history_rows(
                 progress,
                 queue_meta_by_id.get(&report_history_id).cloned(),
                 expose_last_error,
+                download_attempts_by_report_id
+                    .remove(&report_history_id)
+                    .unwrap_or_default(),
             )
         })
         .collect())
@@ -365,6 +403,7 @@ fn to_report_history_row(
     progress: i64,
     queue_meta: Option<ReportHistoryQueueMetaRow>,
     expose_last_error: bool,
+    download_attempts: Vec<ReportDownloadHistoryEntry>,
 ) -> ReportHistoryRow {
     let error_log =
         report_history_error_log(&report_history, expose_last_error);
@@ -421,7 +460,93 @@ fn to_report_history_row(
         report_period,
         progress,
         error_log,
+        download_attempts,
     }
+}
+
+async fn load_report_download_attempts(
+    dbx: &DatabaseConnection,
+    report_histories: &[report_history::Model],
+) -> Result<HashMap<i64, Vec<ReportDownloadHistoryEntry>>, AppError> {
+    if report_histories.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let report_history_ids = report_histories
+        .iter()
+        .map(|report_history| report_history.id)
+        .collect::<Vec<_>>();
+    let report_history_id_placeholders = (1..=report_history_ids.len())
+        .map(|index| format!("${index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let limit_placeholder = format!("${}", report_history_ids.len() + 1);
+    let values = report_history_ids
+        .into_iter()
+        .map(Value::from)
+        .chain(std::iter::once(Value::from(
+            REPORT_HISTORY_DOWNLOAD_ATTEMPTS_PER_REPORT_LIMIT,
+        )))
+        .collect::<Vec<_>>();
+    let report_download_histories =
+        report_download_history::Model::find_by_statement(
+            Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                format!(
+                    r#"
+                select report_download_history.*
+                from unnest(array[{report_history_id_placeholders}]::bigint[])
+                    as selected_report_history(id)
+                cross join lateral (
+                    select report_download_history.*
+                    from report_download_history
+                    where report_download_history.report_history_id =
+                        selected_report_history.id
+                    order by report_download_history.requested_at desc,
+                        report_download_history.id desc
+                    limit {limit_placeholder}
+                ) report_download_history
+                order by report_download_history.report_history_id,
+                    report_download_history.requested_at desc,
+                    report_download_history.id desc
+                "#,
+                ),
+                values,
+            ),
+        )
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let login_names_by_id = crate::users::login_names_by_ids(
+        dbx,
+        report_download_histories
+            .iter()
+            .map(|report_download_history| {
+                report_download_history.requested_by_login_id
+            })
+            .collect(),
+    )
+    .await
+    .context(h!())?;
+
+    let mut attempts_by_report_id = HashMap::new();
+    for report_download_history in report_download_histories {
+        let login = login_names_by_id
+            .get(&report_download_history.requested_by_login_id)
+            .cloned()
+            .unwrap_or_else(|| {
+                report_download_history.requested_by_login_id.to_string()
+            });
+        attempts_by_report_id
+            .entry(report_download_history.report_history_id)
+            .or_insert_with(Vec::new)
+            .push(ReportDownloadHistoryEntry {
+                login,
+                requested_at: report_download_history.requested_at.to_string(),
+                duration_ms: report_download_history.duration_ms,
+                successful: report_download_history.successful,
+            });
+    }
+    Ok(attempts_by_report_id)
 }
 
 fn report_history_is_cancelled(report_history: &report_history::Model) -> bool {
@@ -1358,10 +1483,17 @@ async fn list_admin_report_histories(
             .await
             .c(h!())?;
     let next_offset = offset + report_histories.len() as u64;
-    let report_histories =
-        reload_report_histories(detail_db, report_histories).await?;
-    let rows =
-        build_report_history_rows(detail_db, report_histories, true).await?;
+    let report_histories = reload_report_histories(detail_db, report_histories)
+        .await
+        .context(h!())?;
+    let rows = build_report_history_rows_with_options(
+        detail_db,
+        report_histories,
+        true,
+        true,
+    )
+    .await
+    .context(h!())?;
 
     Ok(ReportHistoryAdminListRsp {
         rows,
@@ -1437,6 +1569,31 @@ async fn record_failed_report(
     .c(h!())?)
 }
 
+async fn insert_report_download_attempt<C>(
+    dbx: &C,
+    report_history_id: i64,
+    requested_by_login_id: &uuid::Uuid,
+    started_at: Option<chrono::NaiveDateTime>,
+) -> Result<report_download_history::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    let requested_at = Utc::now().naive_utc();
+    Ok(report_download_history::ActiveModel {
+        id: NotSet,
+        report_history_id: Set(report_history_id),
+        requested_by_login_id: Set(*requested_by_login_id),
+        requested_at: Set(requested_at),
+        started_at: Set(started_at),
+        completed_at: Set(None),
+        duration_ms: Set(None),
+        successful: Set(None),
+    }
+    .insert(dbx)
+    .await
+    .c(h!())?)
+}
+
 pub async fn enqueue_report(
     dbx: &DatabaseConnection,
     requested_by_login_id: &uuid::Uuid,
@@ -1468,6 +1625,14 @@ pub async fn enqueue_report(
         let mut report_history = report_history.into_active_model();
         report_history.log = Set(report_log);
         let report_history = report_history.update(&txn).await.c(h!())?;
+        insert_report_download_attempt(
+            &txn,
+            report_history.id,
+            requested_by_login_id,
+            None,
+        )
+        .await
+        .context(h!())?;
         txn.commit().await.c(h!())?;
         info!("{message}");
         return Ok(report_history);
@@ -1484,6 +1649,14 @@ pub async fn enqueue_report(
         let report_history =
             reset_failed_report(&txn, report_history, requested_by_login_id)
                 .await?;
+        insert_report_download_attempt(
+            &txn,
+            report_history.id,
+            requested_by_login_id,
+            None,
+        )
+        .await
+        .context(h!())?;
         txn.commit().await.c(h!())?;
         return Ok(report_history);
     }
@@ -1511,6 +1684,14 @@ pub async fn enqueue_report(
     .insert(&txn)
     .await
     .c(h!())?;
+    insert_report_download_attempt(
+        &txn,
+        report_history.id,
+        requested_by_login_id,
+        None,
+    )
+    .await
+    .context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(report_history)
 }
@@ -1718,6 +1899,14 @@ async fn rerun_completed_report(
     )
     .await?
     {
+        insert_report_download_attempt(
+            &txn,
+            active_report.id,
+            rerun_by_login_id,
+            None,
+        )
+        .await
+        .context(h!())?;
         txn.commit().await.c(h!())?;
         return Ok(active_report);
     }
@@ -1727,6 +1916,14 @@ async fn rerun_completed_report(
             .insert(&txn)
             .await
             .c(h!())?;
+    insert_report_download_attempt(
+        &txn,
+        report_history.id,
+        rerun_by_login_id,
+        None,
+    )
+    .await
+    .context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(report_history)
 }
@@ -2216,6 +2413,9 @@ pub async fn report_history_retry(
         .ok_or(AppError::NotFound)?;
     let report_history =
         reset_failed_report(&txn, report_history, &user_login).await?;
+    insert_report_download_attempt(&txn, report_history.id, &user_login, None)
+        .await
+        .context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(
         build_report_history_row(&env.dbx, report_history, false).await?,
@@ -2283,7 +2483,17 @@ where
     report_history.completed_at = Set(Some(Utc::now().naive_utc()));
     report_history.planned_for_ts = Set(None);
     report_history.last_error = Set(Some(reason.to_string()));
-    Ok(report_history.update(dbx).await.c(h!())?)
+    let report_history = report_history.update(dbx).await.c(h!())?;
+    complete_pending_report_download_attempts(
+        dbx,
+        report_history.id,
+        report_history
+            .completed_at
+            .unwrap_or_else(|| Utc::now().naive_utc()),
+    )
+    .await
+    .context(h!())?;
+    Ok(report_history)
 }
 
 #[post("/api/report-history/download")]
@@ -2296,6 +2506,154 @@ pub async fn report_history_download(
     download_report_for_user_login(&env, &user_login, req.id).await
 }
 
+async fn claim_report_download_attempt(
+    dbx: &DatabaseConnection,
+    report_history_id: i64,
+    requested_by_login_id: &uuid::Uuid,
+) -> Result<report_download_history::Model, AppError> {
+    let started_at = Utc::now().naive_utc();
+    let stmt = Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update report_download_history
+        set started_at = $1
+        where id = (
+            select id
+            from report_download_history
+            where report_history_id = $2
+              and requested_by_login_id = $3
+              and started_at is null
+              and completed_at is null
+            order by requested_at, id
+            for update skip locked
+            limit 1
+        )
+        returning *
+        "#,
+        [
+            started_at.into(),
+            report_history_id.into(),
+            (*requested_by_login_id).into(),
+        ],
+    );
+    if let Some(report_download_history) =
+        report_download_history::Model::find_by_statement(stmt)
+            .one(dbx)
+            .await
+            .c(h!())?
+    {
+        return Ok(report_download_history);
+    }
+    Ok(insert_report_download_attempt(
+        dbx,
+        report_history_id,
+        requested_by_login_id,
+        Some(started_at),
+    )
+    .await
+    .context(h!())?)
+}
+
+async fn complete_report_download_attempt<C>(
+    dbx: &C,
+    report_download_history_id: i64,
+    successful: bool,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    let completed_at = Utc::now().naive_utc();
+    let result = dbx
+        .execute_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+            update report_download_history
+            set
+                completed_at = $1,
+                duration_ms = greatest(
+                    0,
+                    floor(extract(epoch from ($1 - requested_at)) * 1000)::bigint
+                ),
+                successful = $2
+            where id = $3
+              and completed_at is null
+            "#,
+            [
+                completed_at.into(),
+                successful.into(),
+                report_download_history_id.into(),
+            ],
+        ))
+        .await
+        .c(h!())?;
+    if result.rows_affected() == 0 {
+        warn!(
+            "report download attempt {} was already completed",
+            report_download_history_id
+        );
+    }
+    Ok(())
+}
+
+async fn complete_pending_report_download_attempts<C>(
+    dbx: &C,
+    report_history_id: i64,
+    completed_at: chrono::NaiveDateTime,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+        update report_download_history
+        set
+            completed_at = $1,
+            duration_ms = greatest(
+                0,
+                floor(extract(epoch from ($1 - requested_at)) * 1000)::bigint
+            ),
+            successful = false
+        where report_history_id = $2
+          and completed_at is null
+        "#,
+        [completed_at.into(), report_history_id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn complete_failed_pending_report_download_attempts<C>(
+    dbx: &C,
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_unprepared(
+        r#"
+        update report_download_history
+        set
+            completed_at = report_history.completed_at,
+            duration_ms = greatest(
+                0,
+                floor(extract(epoch from (
+                    report_history.completed_at - report_download_history.requested_at
+                )) * 1000)::bigint
+            ),
+            successful = false
+        from report_history
+        where report_download_history.report_history_id = report_history.id
+          and report_download_history.completed_at is null
+          and report_history.status = 'failed'
+          and report_history.completed_at is not null
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 pub async fn download_report_for_user_login(
     env: &Env,
     user_login: &uuid::Uuid,
@@ -2306,6 +2664,34 @@ pub async fn download_report_for_user_login(
         find_report_for_user(&env.dbx, report_history_id, user_login)
             .await?
             .ok_or(AppError::NotFound)?;
+    let report_download_history =
+        claim_report_download_attempt(&env.dbx, report_history_id, user_login)
+            .await
+            .context(h!())?;
+    let response = download_report(env, report_history).await;
+    if let Err(err) = complete_report_download_attempt(
+        &env.dbx,
+        report_download_history.id,
+        response.is_ok(),
+    )
+    .await
+    .context(h!())
+    {
+        error!(
+            "failed to complete report download history row {}: {err:?}",
+            report_download_history.id
+        );
+        if response.is_ok() {
+            return Err(err.into());
+        }
+    }
+    response
+}
+
+async fn download_report(
+    env: &Env,
+    report_history: report_history::Model,
+) -> Result<HttpResponse, AppError> {
     if report_history.status != STATUS_DONE {
         return Err(AppError::BL {
             msg: "Report is not ready".to_string(),
@@ -2468,6 +2854,9 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
         ],
     );
     env.dbx.execute_raw(stmt).await.c(h!())?;
+    complete_failed_pending_report_download_attempts(&env.dbx)
+        .await
+        .context(h!())?;
     Ok(())
 }
 
@@ -2792,10 +3181,22 @@ async fn fail_next_unknown_report(
             REPORT_TIMEOUT_LOGIN.into(),
         ],
     );
-    Ok(report_history::Model::find_by_statement(stmt)
+    let report_history = report_history::Model::find_by_statement(stmt)
         .one(&env.dbx)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    if let Some(report_history) = &report_history {
+        complete_pending_report_download_attempts(
+            &env.dbx,
+            report_history.id,
+            report_history
+                .completed_at
+                .unwrap_or_else(|| Utc::now().naive_utc()),
+        )
+        .await
+        .context(h!())?;
+    }
+    Ok(report_history)
 }
 
 async fn process_report(
@@ -3362,10 +3763,22 @@ async fn fail_in_progress_report(
             STATUS_IN_PROGRESS.into(),
         ],
     );
-    Ok(report_history::Model::find_by_statement(stmt)
+    let report_history = report_history::Model::find_by_statement(stmt)
         .one(&env.dbx)
         .await
-        .c(h!())?)
+        .c(h!())?;
+    if let Some(report_history) = &report_history {
+        complete_pending_report_download_attempts(
+            &env.dbx,
+            report_history.id,
+            report_history
+                .completed_at
+                .unwrap_or_else(|| Utc::now().naive_utc()),
+        )
+        .await
+        .context(h!())?;
+    }
+    Ok(report_history)
 }
 
 async fn notify_report_timeout_nofail(
@@ -3507,6 +3920,13 @@ async fn handle_report_failure(
             );
             return Ok(());
         }
+        complete_pending_report_download_attempts(
+            &env.dbx,
+            report_history_id,
+            now,
+        )
+        .await
+        .context(h!())?;
     }
     Ok(())
 }
@@ -3852,6 +4272,145 @@ mod tests {
             .count(dbx)
             .await
             .c(h!())?)
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/3279
+    #[tokio::test]
+    #[serial]
+    async fn download_attempt_includes_generation_wait_and_transfer(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.context(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let login = create_report_history_test_login(
+            &env.dbx,
+            "report-download-history",
+        )
+        .await
+        .context(h!())?;
+        let report_history = enqueue_report(
+            &env.dbx,
+            &login.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            Some("report.xlsx".to_string()),
+            Some("application/octet-stream".to_string()),
+        )
+        .await
+        .context(h!())?;
+
+        let pending = ReportDownloadHistory::find()
+            .filter(
+                report_download_history::Column::ReportHistoryId
+                    .eq(report_history.id),
+            )
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .context(h!())?;
+        assert_eq!(pending.started_at, None);
+        assert_eq!(pending.successful, None);
+
+        let claimed = claim_report_download_attempt(
+            &env.dbx,
+            report_history.id,
+            &login.id,
+        )
+        .await
+        .context(h!())?;
+        assert_eq!(claimed.id, pending.id);
+        assert!(claimed.started_at.is_some());
+        complete_report_download_attempt(&env.dbx, claimed.id, true)
+            .await
+            .context(h!())?;
+
+        let completed = ReportDownloadHistory::find_by_id(claimed.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or(AppError::NotFound)
+            .context(h!())?;
+        assert!(completed.completed_at.is_some());
+        assert!(completed.duration_ms.is_some_and(|duration| duration >= 0));
+        assert_eq!(completed.successful, Some(true));
+
+        let direct = claim_report_download_attempt(
+            &env.dbx,
+            report_history.id,
+            &login.id,
+        )
+        .await
+        .context(h!())?;
+        assert_ne!(direct.id, completed.id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn download_attempts_are_only_included_for_admin_rows(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.context(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let owner = create_report_history_test_login(
+            &env.dbx,
+            "report-download-history-owner",
+        )
+        .await
+        .context(h!())?;
+        let admin = create_report_history_test_login(
+            &env.dbx,
+            "report-download-history-admin",
+        )
+        .await
+        .context(h!())?;
+        let report_history = enqueue_report(
+            &env.dbx,
+            &owner.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            Some("report.xlsx".to_string()),
+            Some("application/octet-stream".to_string()),
+        )
+        .await
+        .context(h!())?;
+        insert_report_download_attempt(
+            &env.dbx,
+            report_history.id,
+            &admin.id,
+            None,
+        )
+        .await
+        .context(h!())?;
+
+        let ordinary_rows = build_report_history_rows(
+            &env.dbx,
+            vec![report_history.clone()],
+            false,
+        )
+        .await
+        .context(h!())?;
+        let admin_rows = build_report_history_rows_with_options(
+            &env.dbx,
+            vec![report_history],
+            true,
+            true,
+        )
+        .await
+        .context(h!())?;
+
+        assert!(ordinary_rows[0].download_attempts.is_empty());
+        assert_eq!(admin_rows[0].download_attempts.len(), 1);
+        assert_eq!(
+            admin_rows[0].download_attempts[0].login,
+            "report-download-history-admin"
+        );
+        Ok(())
     }
 
     #[tokio::test]

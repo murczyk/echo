@@ -909,6 +909,7 @@ type alias ReportHistoryRow =
     , reportPeriod : Maybe (String)
     , progress : Int
     , errorLog : Maybe (List (ReportHistoryLogEntry))
+    , downloadAttempts : List (ReportDownloadHistoryEntry)
     }
 
 
@@ -938,6 +939,7 @@ reportHistoryRowEncoder struct =
         , ( "report_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reportPeriod )
         , ( "progress", (Json.Encode.int) struct.progress )
         , ( "error_log", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (reportHistoryLogEntryEncoder))) struct.errorLog )
+        , ( "download_attempts", (Json.Encode.list (reportDownloadHistoryEntryEncoder)) struct.downloadAttempts )
         ]
 
 
@@ -954,6 +956,24 @@ reportHistoryLogEntryEncoder struct =
         [ ( "login", (Json.Encode.string) struct.login )
         , ( "timestamp", (Json.Encode.string) struct.timestamp )
         , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias ReportDownloadHistoryEntry =
+    { login : String
+    , requestedAt : String
+    , durationMs : Maybe (Int)
+    , successful : Maybe (Bool)
+    }
+
+
+reportDownloadHistoryEntryEncoder : ReportDownloadHistoryEntry -> Json.Encode.Value
+reportDownloadHistoryEntryEncoder struct =
+    Json.Encode.object
+        [ ( "login", (Json.Encode.string) struct.login )
+        , ( "requested_at", (Json.Encode.string) struct.requestedAt )
+        , ( "duration_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.durationMs )
+        , ( "successful", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.successful )
         ]
 
 

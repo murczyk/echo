@@ -126,6 +126,7 @@ pub use super::palitra_highlight_blacklist::Entity as PalitraHighlightBlacklist;
 pub use super::palitra_highlight_worker_job::Entity as PalitraHighlightWorkerJob;
 pub use super::palitra_point::Entity as PalitraPoint;
 pub use super::palitra_point_lexeme::Entity as PalitraPointLexeme;
+pub use super::report_download_history::Entity as ReportDownloadHistory;
 pub use super::report_history::Entity as ReportHistory;
 pub use super::rer_gdoc_callsign::Entity as RerGdocCallsign;
 pub use super::restream::Entity as Restream;
