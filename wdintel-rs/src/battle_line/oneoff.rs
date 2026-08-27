@@ -483,7 +483,7 @@ values (
         .await
         .unwrap();
         let datetime = Utc::now().naive_utc();
-        crate::functest::tests::mk_sigint_inbox_item(
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
             &txn,
             sigint_inbox_item::ActiveModel {
                 id: Set(message.id),
@@ -618,6 +618,7 @@ values (
                 capture: "0.75, 1.0".to_string(),
             }],
             message.id,
+            inbox_item.id_uuid,
             datetime,
             None,
             &txn,
