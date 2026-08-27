@@ -60,6 +60,7 @@ public.media_summary_settings
 # Per-user AI agent control plane, audit history, and operational state.
 public.ai_agent_settings
 public.ai_agent_allowed_engine
+public.ai_agent_engine_runtime_profile
 public.ai_agent_dispatcher
 public.ai_agent_echo_proxy
 public.ai_agent_user_link

@@ -1,5 +1,10 @@
 {
   "migrations": {
+    "echo:m20260825_204254_ai_agent_engine_runtime_profile": {
+      "changes": [
+        { "table": "public.ai_agent_engine_runtime_profile", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260825_114553_add_settlement_geography_index": {
       "changes": []
     },

@@ -6,6 +6,7 @@ pub use super::ai_agent_container::Entity as AiAgentContainer;
 pub use super::ai_agent_conversation::Entity as AiAgentConversation;
 pub use super::ai_agent_dispatcher::Entity as AiAgentDispatcher;
 pub use super::ai_agent_echo_proxy::Entity as AiAgentEchoProxy;
+pub use super::ai_agent_engine_runtime_profile::Entity as AiAgentEngineRuntimeProfile;
 pub use super::ai_agent_request::Entity as AiAgentRequest;
 pub use super::ai_agent_request_event::Entity as AiAgentRequestEvent;
 pub use super::ai_agent_security_review::Entity as AiAgentSecurityReview;

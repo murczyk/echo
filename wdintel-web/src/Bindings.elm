@@ -12444,6 +12444,26 @@ aiAgentRequestCancelRspEncoder struct =
         ]
 
 
+type alias AiAgentProviderRuntimeProfileItem =
+    { aiEngineId : String
+    , contextWindowTokens : Int
+    , maxOutputTokens : Int
+    , compactionReserveTokens : Int
+    , compactionKeepRecentTokens : Int
+    }
+
+
+aiAgentProviderRuntimeProfileItemEncoder : AiAgentProviderRuntimeProfileItem -> Json.Encode.Value
+aiAgentProviderRuntimeProfileItemEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "contextWindowTokens", (Json.Encode.int) struct.contextWindowTokens )
+        , ( "maxOutputTokens", (Json.Encode.int) struct.maxOutputTokens )
+        , ( "compactionReserveTokens", (Json.Encode.int) struct.compactionReserveTokens )
+        , ( "compactionKeepRecentTokens", (Json.Encode.int) struct.compactionKeepRecentTokens )
+        ]
+
+
 type alias AiAgentAdminSettingsItem =
     { featureEnabled : Bool
     , templateLoginId : String
@@ -12453,6 +12473,7 @@ type alias AiAgentAdminSettingsItem =
     , mattermostChatEnabled : Bool
     , hasMattermostWebhook : Bool
     , allowedAiEngineIds : List (String)
+    , providerRuntimeProfiles : List (AiAgentProviderRuntimeProfileItem)
     }
 
 
@@ -12467,6 +12488,7 @@ aiAgentAdminSettingsItemEncoder struct =
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "hasMattermostWebhook", (Json.Encode.bool) struct.hasMattermostWebhook )
         , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
+        , ( "providerRuntimeProfiles", (Json.Encode.list (aiAgentProviderRuntimeProfileItemEncoder)) struct.providerRuntimeProfiles )
         ]
 
 
@@ -12480,6 +12502,7 @@ type alias AiAgentAdminSettingsUpdateReq =
     , mattermostWebhookUrl : Maybe (String)
     , clearMattermostWebhook : Bool
     , allowedAiEngineIds : List (String)
+    , providerRuntimeProfiles : List (AiAgentProviderRuntimeProfileItem)
     }
 
 
@@ -12495,6 +12518,7 @@ aiAgentAdminSettingsUpdateReqEncoder struct =
         , ( "mattermostWebhookUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
         , ( "clearMattermostWebhook", (Json.Encode.bool) struct.clearMattermostWebhook )
         , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
+        , ( "providerRuntimeProfiles", (Json.Encode.list (aiAgentProviderRuntimeProfileItemEncoder)) struct.providerRuntimeProfiles )
         ]
 
 
@@ -21853,6 +21877,16 @@ aiAgentRequestCancelRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
 
 
+aiAgentProviderRuntimeProfileItemDecoder : Json.Decode.Decoder AiAgentProviderRuntimeProfileItem
+aiAgentProviderRuntimeProfileItemDecoder =
+    Json.Decode.succeed AiAgentProviderRuntimeProfileItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contextWindowTokens" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxOutputTokens" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "compactionReserveTokens" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "compactionKeepRecentTokens" (Json.Decode.int)))
+
+
 aiAgentAdminSettingsItemDecoder : Json.Decode.Decoder AiAgentAdminSettingsItem
 aiAgentAdminSettingsItemDecoder =
     Json.Decode.succeed AiAgentAdminSettingsItem
@@ -21864,6 +21898,7 @@ aiAgentAdminSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providerRuntimeProfiles" (Json.Decode.list (aiAgentProviderRuntimeProfileItemDecoder))))
 
 
 aiAgentAdminSettingsUpdateReqDecoder : Json.Decode.Decoder AiAgentAdminSettingsUpdateReq
@@ -21878,6 +21913,7 @@ aiAgentAdminSettingsUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostWebhookUrl" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearMattermostWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providerRuntimeProfiles" (Json.Decode.list (aiAgentProviderRuntimeProfileItemDecoder))))
 
 
 aiAgentDispatcherItemDecoder : Json.Decode.Decoder AiAgentDispatcherItem
@@ -22907,19 +22943,35 @@ type MessageTextPreviewLines
 
 messageTextPreviewLinesDecoder : Json.Decode.Decoder MessageTextPreviewLines
 messageTextPreviewLinesDecoder =
-    Json.Decode.string
-        |> Json.Decode.andThen
-            (\x ->
-                case x of
-                    "twenty" ->
-                        Json.Decode.succeed Twenty
-                    "forty" ->
-                        Json.Decode.succeed Forty
-                    "off" ->
-                        Json.Decode.succeed Off
-                    unexpected ->
-                        Json.Decode.fail <| "Unexpected variant " ++ unexpected
-            )
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "twenty" ->
+                            Json.Decode.succeed Twenty
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "forty" ->
+                            Json.Decode.succeed Forty
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "off" ->
+                            Json.Decode.succeed Off
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout

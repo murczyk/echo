@@ -27,6 +27,7 @@ import type {
   AiAgentIdReq,
   AiAgentMessageItem,
   AiAgentProviderItem,
+  AiAgentProviderRuntimeProfileItem,
   AiAgentRequestCancelRsp,
   AiAgentRequestCreateReq,
   AiAgentRequestCreateRsp,
@@ -124,6 +125,7 @@ export type AiAgentAuditRequest = {
   state: AiAgentRequestState;
   prompt: string;
   response: string | null;
+  error: string | null;
   progress: string[];
   toolActivity: string[];
   createdAt: number;
@@ -159,6 +161,7 @@ export type AiAgentSettings = {
   enabled: boolean;
   defaultProviderId: string | null;
   allowedProviderIds: string[];
+  providerRuntimeProfiles: AiAgentProviderRuntimeProfileItem[];
   templateLoginId: string | null;
   reviewerProviderId: string | null;
   reviewEnabled: boolean;
@@ -356,6 +359,7 @@ function normalizeAuditRequest(
     state: requestState(request.state),
     prompt: request.prompt,
     response: request.response,
+    error: request.error,
     progress: events
       .filter((event) => event.type === 'progress')
       .flatMap((event) => (event.text ? [event.text] : [])),
@@ -393,6 +397,7 @@ function normalizeSettings(value: AiAgentAdminSettingsItem): AiAgentSettings {
     enabled: value.featureEnabled,
     defaultProviderId: value.defaultAiEngineId,
     allowedProviderIds: value.allowedAiEngineIds,
+    providerRuntimeProfiles: value.providerRuntimeProfiles,
     templateLoginId: value.templateLoginId,
     reviewerProviderId: value.reviewerAiEngineId,
     reviewEnabled: value.securityReviewEnabled,
@@ -764,6 +769,9 @@ export async function saveAiAgentSettings(settings: AiAgentSettings): Promise<Ai
     featureEnabled: settings.enabled,
     defaultAiEngineId: settings.defaultProviderId,
     allowedAiEngineIds: settings.allowedProviderIds,
+    providerRuntimeProfiles: settings.providerRuntimeProfiles.filter((profile) =>
+      settings.allowedProviderIds.includes(profile.aiEngineId),
+    ),
     templateLoginId: settings.templateLoginId,
     reviewerAiEngineId: settings.reviewerProviderId,
     securityReviewEnabled: settings.reviewEnabled,

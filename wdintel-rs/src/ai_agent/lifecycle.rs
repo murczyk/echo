@@ -2,9 +2,10 @@ use super::access;
 use super::auth;
 use super::dispatcher::{DispatcherClient, DispatcherResponse};
 use crate::config::{
-    AI_AGENT_CONTAINER_NAME_PREFIX, AI_AGENT_LINKED_LOGIN_SUFFIX,
-    AI_AGENT_MAX_RUNNING_CONTAINERS, AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER,
-    AI_AGENT_ROLE_RER, AI_AGENT_TEMPLATE_LOGIN_NAME,
+    AI_AGENT_CONTAINER_NAME_PREFIX, AI_AGENT_HARNESS_RELEASE,
+    AI_AGENT_LINKED_LOGIN_SUFFIX, AI_AGENT_MAX_RUNNING_CONTAINERS,
+    AI_AGENT_ROLE_API, AI_AGENT_ROLE_CYBER, AI_AGENT_ROLE_RER,
+    AI_AGENT_TEMPLATE_LOGIN_NAME,
 };
 use crate::entities::sea_orm_active_enums::DeactivationReasonEnum;
 use crate::entities::{
@@ -550,23 +551,18 @@ async fn preflight_template_with_dispatcher(
             json!({ "template_id": template_login_id }),
         )
         .await?;
-    if !preflight_result_matches(
+    validate_preflight_result(
         &response.result,
         template_login_id,
         &expected_namespace,
-    ) {
-        return Err(AppError::BL {
-            msg: "Configured AI agent template is not ready".to_string(),
-        });
-    }
-    Ok(())
+    )
 }
 
-fn preflight_result_matches(
+fn validate_preflight_result(
     result: &serde_json::Value,
     template_login_id: Uuid,
     expected_namespace: &str,
-) -> bool {
+) -> Result<(), AppError> {
     let ready = result
         .get("template_ready")
         .and_then(|value| value.as_bool())
@@ -579,7 +575,12 @@ fn preflight_result_matches(
         .get("namespace")
         .and_then(|value| value.as_str())
         .is_some_and(|value| value == expected_namespace);
-    ready && selected_template_matches && namespace_matches
+    if !ready || !selected_template_matches || !namespace_matches {
+        return Err(AppError::BL {
+            msg: "Configured AI agent template is not ready".to_string(),
+        });
+    }
+    validate_harness_release(result)
 }
 
 async fn start_instance(
@@ -600,22 +601,44 @@ async fn start_instance(
                 "AI engine is not supported by the agent harness".to_string(),
             )
         })?;
-    if dispatcher
+    let status = dispatcher
         .call("status", Some(linked.login.id), json!({}))
-        .await
-        .is_err()
-    {
-        dispatcher
-            .call(
-                "clone",
-                Some(linked.login.id),
-                json!({ "template_id": template_login_id }),
-            )
-            .await?;
+        .await;
+    match status {
+        Ok(status) => validate_compatible_instance(
+            &status.result,
+            &linked.container.instance_name,
+            linked.login.id,
+            dispatcher.namespace(),
+            None,
+        )?,
+        Err(_) => {
+            let cloned = dispatcher
+                .call(
+                    "clone",
+                    Some(linked.login.id),
+                    json!({ "template_id": template_login_id }),
+                )
+                .await?;
+            validate_compatible_instance(
+                &cloned.result,
+                &linked.container.instance_name,
+                linked.login.id,
+                dispatcher.namespace(),
+                Some("stopped"),
+            )?;
+        }
     }
-    dispatcher
+    let started = dispatcher
         .call("start", Some(linked.login.id), json!({}))
         .await?;
+    validate_compatible_instance(
+        &started.result,
+        &linked.container.instance_name,
+        linked.login.id,
+        dispatcher.namespace(),
+        Some("running"),
+    )?;
     let mut proxy_config = json!({
         "echo_hostname": echo_proxy.hostname,
         "echo_upstream": format!("{}:{}", echo_proxy.upstream_host, echo_proxy.upstream_port),
@@ -632,6 +655,43 @@ async fn start_instance(
         .call("configure_proxies", Some(linked.login.id), proxy_config)
         .await?;
     test_connection_internal(env, linked).await?;
+    Ok(())
+}
+
+fn validate_compatible_instance(
+    result: &serde_json::Value,
+    instance_name: &str,
+    agent_login_id: Uuid,
+    namespace: &str,
+    expected_status: Option<&str>,
+) -> Result<(), AppError> {
+    let instance = result
+        .get("instance")
+        .ok_or_else(invalid_instance_inventory)?;
+    let status = validated_instance_status(
+        instance,
+        instance_name,
+        agent_login_id,
+        namespace,
+    )?;
+    if expected_status.is_some_and(|expected| status != expected) {
+        return Err(invalid_instance_inventory());
+    }
+    validate_harness_release(instance)
+}
+
+fn validate_harness_release(value: &serde_json::Value) -> Result<(), AppError> {
+    if value
+        .get("harness_release")
+        .and_then(|release| release.as_str())
+        != Some(AI_AGENT_HARNESS_RELEASE)
+    {
+        return Err(AppError::BL {
+            msg: format!(
+                "AI agent harness release is incompatible; expected {AI_AGENT_HARNESS_RELEASE}"
+            ),
+        });
+    }
     Ok(())
 }
 
@@ -1496,6 +1556,14 @@ mod tests {
     }
 
     #[test]
+    fn expected_harness_release_matches_bundle() {
+        let expected = format!("HARNESS_RELEASE={AI_AGENT_HARNESS_RELEASE}");
+        assert!(include_str!("../../../echo-ai-agent/versions.env")
+            .lines()
+            .any(|line| line == expected));
+    }
+
+    #[test]
     fn manual_start_rejects_active_requests_before_lifecycle_work() {
         assert!(manual_start_guard(false).is_ok());
         assert!(manual_start_guard(true).is_err());
@@ -1685,35 +1753,112 @@ mod tests {
     }
 
     #[test]
-    fn preflight_requires_exact_dispatcher_namespace() {
+    fn preflight_requires_exact_dispatcher_identity_and_release() {
         let template_login_id = Uuid::now_v7();
         let result = json!({
             "template_ready": true,
             "template_id": template_login_id,
             "namespace": "echo-staging",
+            "harness_release": AI_AGENT_HARNESS_RELEASE,
         });
 
-        assert!(preflight_result_matches(
+        assert!(validate_preflight_result(
             &result,
             template_login_id,
             "echo-staging"
-        ));
-        assert!(!preflight_result_matches(
+        )
+        .is_ok());
+        assert!(validate_preflight_result(
             &result,
             template_login_id,
             "echo-production"
-        ));
+        )
+        .is_err());
 
-        let mut missing_namespace = result;
+        let mut missing_namespace = result.clone();
         missing_namespace
             .as_object_mut()
             .unwrap()
             .remove("namespace");
-        assert!(!preflight_result_matches(
+        assert!(validate_preflight_result(
             &missing_namespace,
             template_login_id,
             "echo-staging"
-        ));
+        )
+        .is_err());
+
+        let mut missing_release = result.clone();
+        missing_release
+            .as_object_mut()
+            .unwrap()
+            .remove("harness_release");
+        assert!(validate_preflight_result(
+            &missing_release,
+            template_login_id,
+            "echo-staging"
+        )
+        .is_err());
+
+        let mut wrong_release = result;
+        wrong_release["harness_release"] = json!("2026.08.22.1");
+        assert!(validate_preflight_result(
+            &wrong_release,
+            template_login_id,
+            "echo-staging"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn started_instance_requires_exact_identity_state_and_release() {
+        let agent_login_id = Uuid::now_v7();
+        let instance_name = format!("echo-ai-agent-{agent_login_id}");
+        let result = json!({
+            "instance": {
+                "name": instance_name,
+                "status": "running",
+                "agent_id": agent_login_id,
+                "namespace": "echo-staging",
+                "harness_release": AI_AGENT_HARNESS_RELEASE,
+            }
+        });
+
+        assert!(validate_compatible_instance(
+            &result,
+            &instance_name,
+            agent_login_id,
+            "echo-staging",
+            Some("running")
+        )
+        .is_ok());
+
+        let mut wrong_release = result.clone();
+        wrong_release["instance"]["harness_release"] = json!("2026.08.22.1");
+        assert!(validate_compatible_instance(
+            &wrong_release,
+            &instance_name,
+            agent_login_id,
+            "echo-staging",
+            Some("running")
+        )
+        .is_err());
+
+        assert!(validate_compatible_instance(
+            &result,
+            &instance_name,
+            agent_login_id,
+            "echo-staging",
+            Some("stopped")
+        )
+        .is_err());
+        assert!(validate_compatible_instance(
+            &result,
+            &instance_name,
+            Uuid::now_v7(),
+            "echo-staging",
+            Some("running")
+        )
+        .is_err());
     }
 
     #[tokio::test]

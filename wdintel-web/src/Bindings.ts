@@ -4808,6 +4808,14 @@ export type AiAgentRequestCancelRsp = {
   state: string;
 };
 
+export type AiAgentProviderRuntimeProfileItem = {
+  aiEngineId: string;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
+  compactionReserveTokens: number;
+  compactionKeepRecentTokens: number;
+};
+
 export type AiAgentAdminSettingsItem = {
   featureEnabled: boolean;
   templateLoginId: string;
@@ -4817,6 +4825,7 @@ export type AiAgentAdminSettingsItem = {
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
   allowedAiEngineIds: Array<string>;
+  providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
 
 export type AiAgentAdminSettingsUpdateReq = {
@@ -4829,6 +4838,7 @@ export type AiAgentAdminSettingsUpdateReq = {
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;
   allowedAiEngineIds: Array<string>;
+  providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
 
 export type AiAgentDispatcherItem = {

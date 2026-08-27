@@ -395,6 +395,7 @@ mod m20260824_100228_add_media_summary_enabled_to_user_settings;
 mod m20260824_120000_add_message_text_preview_lines;
 mod m20260824_124325_transcription_started_at;
 mod m20260825_114553_add_settlement_geography_index;
+mod m20260825_204254_ai_agent_engine_runtime_profile;
 
 pub struct Migrator;
 
@@ -920,6 +921,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260824_124325_transcription_started_at::Migration),
             Box::new(
                 m20260825_114553_add_settlement_geography_index::Migration,
+            ),
+            Box::new(
+                m20260825_204254_ai_agent_engine_runtime_profile::Migration,
             ),
         ]
     }

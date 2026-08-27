@@ -33,6 +33,8 @@ pub enum Relation {
     AiAgentAllowedEngine,
     #[sea_orm(has_many = "super::ai_agent_conversation::Entity")]
     AiAgentConversation,
+    #[sea_orm(has_one = "super::ai_agent_engine_runtime_profile::Entity")]
+    AiAgentEngineRuntimeProfile,
     #[sea_orm(has_many = "super::ai_agent_request::Entity")]
     AiAgentRequest,
     #[sea_orm(has_many = "super::ai_agent_security_review::Entity")]
@@ -68,6 +70,12 @@ impl Related<super::ai_agent_allowed_engine::Entity> for Entity {
 impl Related<super::ai_agent_conversation::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiAgentConversation.def()
+    }
+}
+
+impl Related<super::ai_agent_engine_runtime_profile::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiAgentEngineRuntimeProfile.def()
     }
 }
 
