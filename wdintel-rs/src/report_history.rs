@@ -314,13 +314,14 @@ async fn build_report_history_rows(
     report_histories: Vec<report_history::Model>,
     expose_last_error: bool,
 ) -> Result<Vec<ReportHistoryRow>, AppError> {
-    build_report_history_rows_with_options(
+    Ok(build_report_history_rows_with_options(
         dbx,
         report_histories,
         expose_last_error,
         false,
     )
     .await
+    .context(h!())?)
 }
 
 async fn build_report_history_rows_with_options(
@@ -348,11 +349,11 @@ async fn build_report_history_rows_with_options(
             .collect(),
     )
     .await
-    .c(h!())?;
+    .context(h!())?;
     let mut download_attempts_by_report_id = if include_download_attempts {
         load_report_download_attempts(dbx, &report_histories)
             .await
-            .c(h!())?
+            .context(h!())?
     } else {
         HashMap::new()
     };
@@ -525,7 +526,7 @@ async fn load_report_download_attempts(
             .collect(),
     )
     .await
-    .c(h!())?;
+    .context(h!())?;
 
     let mut attempts_by_report_id = HashMap::new();
     for report_download_history in report_download_histories {
@@ -1482,15 +1483,17 @@ async fn list_admin_report_histories(
             .await
             .c(h!())?;
     let next_offset = offset + report_histories.len() as u64;
-    let report_histories =
-        reload_report_histories(detail_db, report_histories).await?;
+    let report_histories = reload_report_histories(detail_db, report_histories)
+        .await
+        .context(h!())?;
     let rows = build_report_history_rows_with_options(
         detail_db,
         report_histories,
         true,
         true,
     )
-    .await?;
+    .await
+    .context(h!())?;
 
     Ok(ReportHistoryAdminListRsp {
         rows,
@@ -1629,7 +1632,7 @@ pub async fn enqueue_report(
             None,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         txn.commit().await.c(h!())?;
         info!("{message}");
         return Ok(report_history);
@@ -1653,7 +1656,7 @@ pub async fn enqueue_report(
             None,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         txn.commit().await.c(h!())?;
         return Ok(report_history);
     }
@@ -1688,7 +1691,7 @@ pub async fn enqueue_report(
         None,
     )
     .await
-    .c(h!())?;
+    .context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(report_history)
 }
@@ -1903,7 +1906,7 @@ async fn rerun_completed_report(
             None,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         txn.commit().await.c(h!())?;
         return Ok(active_report);
     }
@@ -1920,7 +1923,7 @@ async fn rerun_completed_report(
         None,
     )
     .await
-    .c(h!())?;
+    .context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(report_history)
 }
@@ -2412,7 +2415,7 @@ pub async fn report_history_retry(
         reset_failed_report(&txn, report_history, &user_login).await?;
     insert_report_download_attempt(&txn, report_history.id, &user_login, None)
         .await
-        .c(h!())?;
+        .context(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(
         build_report_history_row(&env.dbx, report_history, false).await?,
@@ -2664,7 +2667,7 @@ pub async fn download_report_for_user_login(
     let report_download_history =
         claim_report_download_attempt(&env.dbx, report_history_id, user_login)
             .await
-            .c(h!())?;
+            .context(h!())?;
     let response = download_report(env, report_history).await;
     if let Err(err) = complete_report_download_attempt(
         &env.dbx,
@@ -2672,13 +2675,14 @@ pub async fn download_report_for_user_login(
         response.is_ok(),
     )
     .await
+    .context(h!())
     {
         error!(
             "failed to complete report download history row {}: {err:?}",
             report_download_history.id
         );
         if response.is_ok() {
-            return Err(err);
+            return Err(err.into());
         }
     }
     response
@@ -2852,7 +2856,7 @@ async fn recover_interrupted_reports(env: &Env) -> Result<(), AppError> {
     env.dbx.execute_raw(stmt).await.c(h!())?;
     complete_failed_pending_report_download_attempts(&env.dbx)
         .await
-        .c(h!())?;
+        .context(h!())?;
     Ok(())
 }
 
@@ -3190,7 +3194,7 @@ async fn fail_next_unknown_report(
                 .unwrap_or_else(|| Utc::now().naive_utc()),
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
     }
     Ok(report_history)
 }
@@ -3772,7 +3776,7 @@ async fn fail_in_progress_report(
                 .unwrap_or_else(|| Utc::now().naive_utc()),
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
     }
     Ok(report_history)
 }
@@ -3922,7 +3926,7 @@ async fn handle_report_failure(
             now,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
     }
     Ok(())
 }
@@ -4275,7 +4279,7 @@ mod tests {
     #[serial]
     async fn download_attempt_includes_generation_wait_and_transfer(
     ) -> Result<(), AppError> {
-        let env = cleanup().await.c(h!())?;
+        let env = cleanup().await.context(h!())?;
         report_history::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -4285,7 +4289,7 @@ mod tests {
             "report-download-history",
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         let report_history = enqueue_report(
             &env.dbx,
             &login.id,
@@ -4295,7 +4299,7 @@ mod tests {
             Some("application/octet-stream".to_string()),
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
 
         let pending = ReportDownloadHistory::find()
             .filter(
@@ -4306,7 +4310,7 @@ mod tests {
             .await
             .c(h!())?
             .ok_or(AppError::NotFound)
-            .c(h!())?;
+            .context(h!())?;
         assert_eq!(pending.started_at, None);
         assert_eq!(pending.successful, None);
 
@@ -4316,19 +4320,19 @@ mod tests {
             &login.id,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         assert_eq!(claimed.id, pending.id);
         assert!(claimed.started_at.is_some());
         complete_report_download_attempt(&env.dbx, claimed.id, true)
             .await
-            .c(h!())?;
+            .context(h!())?;
 
         let completed = ReportDownloadHistory::find_by_id(claimed.id)
             .one(&env.dbx)
             .await
             .c(h!())?
             .ok_or(AppError::NotFound)
-            .c(h!())?;
+            .context(h!())?;
         assert!(completed.completed_at.is_some());
         assert!(completed.duration_ms.is_some_and(|duration| duration >= 0));
         assert_eq!(completed.successful, Some(true));
@@ -4339,7 +4343,7 @@ mod tests {
             &login.id,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         assert_ne!(direct.id, completed.id);
         Ok(())
     }
@@ -4348,7 +4352,7 @@ mod tests {
     #[serial]
     async fn download_attempts_are_only_included_for_admin_rows(
     ) -> Result<(), AppError> {
-        let env = cleanup().await.c(h!())?;
+        let env = cleanup().await.context(h!())?;
         report_history::Entity::delete_many()
             .exec(&env.dbx)
             .await
@@ -4358,13 +4362,13 @@ mod tests {
             "report-download-history-owner",
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         let admin = create_report_history_test_login(
             &env.dbx,
             "report-download-history-admin",
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         let report_history = enqueue_report(
             &env.dbx,
             &owner.id,
@@ -4374,7 +4378,7 @@ mod tests {
             Some("application/octet-stream".to_string()),
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         insert_report_download_attempt(
             &env.dbx,
             report_history.id,
@@ -4382,7 +4386,7 @@ mod tests {
             None,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
 
         let ordinary_rows = build_report_history_rows(
             &env.dbx,
@@ -4390,7 +4394,7 @@ mod tests {
             false,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
         let admin_rows = build_report_history_rows_with_options(
             &env.dbx,
             vec![report_history],
@@ -4398,7 +4402,7 @@ mod tests {
             true,
         )
         .await
-        .c(h!())?;
+        .context(h!())?;
 
         assert!(ordinary_rows[0].download_attempts.is_empty());
         assert_eq!(admin_rows[0].download_attempts.len(), 1);
