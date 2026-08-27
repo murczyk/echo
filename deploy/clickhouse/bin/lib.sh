@@ -14,6 +14,7 @@ SOURCE_TABLE_EXCLUDE_REPO_FILE=$BUNDLE_DIR/env/tables-exclude.txt
 SOURCE_RECONCILE_STATE_DIR=${ECHO_PEERDB_RECONCILE_STATE_DIR:-/var/lib/echo-peerdb}
 SOURCE_RECONCILE_FINGERPRINT_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.sha256
 SOURCE_RECONCILE_LOCK_FILE=$SOURCE_RECONCILE_STATE_DIR/table-selection.lock
+SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE=${ECHO_PEERDB_DEPLOYMENT_BASELINE_MANIFEST_FILE:-$SOURCE_RECONCILE_STATE_DIR/deployment-baseline-migration-impact.json}
 SOURCE_RECONCILE_DDL_LOCK_TIMEOUT=2s
 ANALYTICS_RECONCILE_STATE_DIR=${ECHO_ANALYTICS_RECONCILE_STATE_DIR:-/var/lib/echo-analytics/reconcile}
 # shellcheck disable=SC2034
@@ -353,6 +354,25 @@ ensure_source_reconcile_state_dir() {
   [[ -d "$SOURCE_RECONCILE_STATE_DIR" ]] && return 0
   sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0750 \
     "$SOURCE_RECONCILE_STATE_DIR"
+}
+
+record_source_deployment_manifest_baseline() {
+  local active_manifest=$1 next_manifest=$2 baseline_manifest temporary_file
+  require_file "$next_manifest"
+  [[ -d "$SOURCE_RECONCILE_STATE_DIR" ]] \
+    || die "missing source reconciliation state directory: $SOURCE_RECONCILE_STATE_DIR"
+
+  baseline_manifest=$active_manifest
+  [[ -f "$baseline_manifest" ]] || baseline_manifest=$next_manifest
+  temporary_file=$(mktemp "$SOURCE_RECONCILE_STATE_DIR/.deployment-baseline.XXXXXX")
+  if cp -- "$baseline_manifest" "$temporary_file" \
+    && chmod 0644 "$temporary_file" \
+    && mv -f -- "$temporary_file" "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
+  then
+    return 0
+  fi
+  rm -f -- "$temporary_file"
+  return 1
 }
 
 acquire_source_reconcile_lock() {

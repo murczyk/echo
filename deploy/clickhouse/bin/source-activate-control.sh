@@ -38,6 +38,9 @@ archive_control_bundle "$BUNDLE_DIR" \
        tar -C \"\$temporary_dir\" -xf -
        sudo \"\$temporary_dir/bin/install-control-release.sh\" analytics '$release_id'"
 
+record_source_deployment_manifest_baseline \
+  /opt/echo-peerdb/current/migration-impact.json \
+  "$BUNDLE_DIR/migration-impact.json"
 sudo "$SCRIPT_DIR/install-control-release.sh" source "$release_id"
 
 remote_release=$(ssh \

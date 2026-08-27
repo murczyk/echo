@@ -9,6 +9,7 @@ SOURCE_LIB=${ECHO_PEERDB_LIB:-$SCRIPT_DIR/lib.sh}
 source "$SOURCE_LIB"
 
 migration_impact_file=${ECHO_PEERDB_MIGRATION_IMPACT_FILE:-$BUNDLE_DIR/migration-impact.json}
+deployment_baseline_manifest_file=$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE
 remote_timeout=${ANALYTICS_TABLE_RESNAPSHOT_REMOTE_TIMEOUT_SECONDS:-7500}
 
 validate_source_table() {
@@ -17,16 +18,21 @@ validate_source_table() {
 }
 
 manifest_resnapshot_entries() {
-  python3 - "$migration_impact_file" <<'PY'
+  python3 - \
+    "$migration_impact_file" \
+    "$deployment_baseline_manifest_file" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as manifest_file:
     manifest = json.load(manifest_file)
+with open(sys.argv[2], encoding="utf-8") as baseline_file:
+    baseline = json.load(baseline_file)
 entries = {
     (change["table"], change["strategy"])
     for section in ("migrations", "dependencies")
-    for declaration in manifest[section].values()
+    for key, declaration in manifest[section].items()
+    if baseline[section].get(key) != declaration
     for change in declaration["changes"]
     if change["strategy"] == "empty_table_resnapshot"
     or (
@@ -118,6 +124,9 @@ main() {
   require_cmd ssh
   require_cmd timeout
   require_file "$migration_impact_file"
+  if [[ "$mode" == --manifest ]]; then
+    require_file "$deployment_baseline_manifest_file"
+  fi
   [[ "$remote_timeout" =~ ^[1-9][0-9]*$ ]] \
     || die "ANALYTICS_TABLE_RESNAPSHOT_REMOTE_TIMEOUT_SECONDS must be a positive integer"
 
@@ -141,7 +150,7 @@ main() {
   fi
 
   if ((${#source_tables[@]} == 0)); then
-    log "No manifest-authorized targeted table resnapshots are configured"
+    log "No deployment-scoped targeted table resnapshots are configured"
     return 0
   fi
   for source_table in "${source_tables[@]}"; do

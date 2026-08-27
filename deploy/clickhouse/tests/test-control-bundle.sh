@@ -79,3 +79,19 @@ normalize_control_release_permissions "$archive_dir"
 [[ $(stat -c %a "$archive_dir/bin/command.sh") == 755 ]]
 
 printf 'Analytics control bundle tests passed\n'
+
+SOURCE_RECONCILE_STATE_DIR=$case_dir/source-state
+SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE=$SOURCE_RECONCILE_STATE_DIR/deployment-baseline-migration-impact.json
+mkdir "$SOURCE_RECONCILE_STATE_DIR"
+next_manifest=$case_dir/next-migration-impact.json
+active_manifest=$case_dir/active-migration-impact.json
+printf '{"migrations":{"echo:new":{}},"dependencies":{}}\n' >"$next_manifest"
+record_source_deployment_manifest_baseline \
+  "$active_manifest" "$next_manifest"
+cmp "$next_manifest" "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
+printf '{"migrations":{"echo:old":{}},"dependencies":{}}\n' >"$active_manifest"
+record_source_deployment_manifest_baseline \
+  "$active_manifest" "$next_manifest"
+cmp "$active_manifest" "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
+
+printf 'Source deployment manifest baseline tests passed\n'
