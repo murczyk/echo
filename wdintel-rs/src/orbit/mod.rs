@@ -356,7 +356,10 @@ async fn run_prepare_import(mode: Mode) -> anyhow::Result<()> {
     let Some(source_path) = tui::prompt_orbit_source_path().c(h!())? else {
         return Ok(());
     };
-    prepare_import_snapshot(mode, PathBuf::from(source_path)).await
+    prepare_import_snapshot(mode, PathBuf::from(source_path))
+        .await
+        .c(h!())?;
+    Ok(())
 }
 
 async fn run_import(mode: Mode) -> anyhow::Result<()> {

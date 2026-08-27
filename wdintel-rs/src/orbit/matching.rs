@@ -15,6 +15,7 @@ struct MatchScore {
 
 struct ComparablePath {
     names_by_echelon: HashMap<EchoEchelon, HashSet<String>>,
+    names_by_hierarchy: Vec<HashMap<EchoEchelon, HashSet<String>>>,
     all_names: HashSet<String>,
     root_names: HashSet<String>,
     root_echelon: Option<EchoEchelon>,
@@ -301,6 +302,18 @@ fn test_link_rating(
     path: &ComparablePath,
     sigint_hierarchy: &[(EchoEchelon, &str)],
 ) -> Option<u8> {
+    path.names_by_hierarchy
+        .iter()
+        .filter_map(|names_by_echelon| {
+            test_link_hierarchy_rating(names_by_echelon, sigint_hierarchy)
+        })
+        .max()
+}
+
+fn test_link_hierarchy_rating(
+    names_by_echelon: &HashMap<EchoEchelon, HashSet<String>>,
+    sigint_hierarchy: &[(EchoEchelon, &str)],
+) -> Option<u8> {
     let mut rating = ORBIT_TEST_LINK_UNITS_MAX_RATING;
     let mut has_echelon = false;
     for (echelon, sigint_name) in sigint_hierarchy {
@@ -310,7 +323,7 @@ fn test_link_rating(
             continue;
         }
         has_echelon = true;
-        let orbit_names = path.names_by_echelon.get(echelon)?;
+        let orbit_names = names_by_echelon.get(echelon)?;
         if names_match(*echelon, orbit_names, &sigint_name) {
             continue;
         }
@@ -607,37 +620,36 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
     if let Some(root_segment) = generative_segments.first() {
         root_names.insert(root_segment.clone());
     }
-    let mut descriptors = vec![unit];
-    let mut parents = unit
-        .operational_parent_units
-        .iter()
-        .chain(&unit.generative_parent_units)
-        .collect::<Vec<_>>();
-    parents.sort_by_key(|parent| std::cmp::Reverse(parent.path_level));
-    descriptors.extend(parents);
-    let mut result = HashMap::<EchoEchelon, HashSet<String>>::new();
+    let operational_names =
+        hierarchy_names_by_echelon(unit, &unit.operational_parent_units);
+    let generative_names =
+        hierarchy_names_by_echelon(unit, &unit.generative_parent_units);
+    let mut names_by_echelon = operational_names.clone();
+    for (echelon, names) in &generative_names {
+        names_by_echelon
+            .entry(*echelon)
+            .or_default()
+            .extend(names.iter().cloned());
+    }
     let mut all_names = operational_segments
         .into_iter()
         .chain(generative_segments)
         .collect::<HashSet<_>>();
-    for descriptor in descriptors {
-        let descriptor_names = descriptor_names(descriptor);
-        all_names.extend(descriptor_names.iter().cloned());
-        let Some(key) = descriptor
-            .unit_echelon
-            .as_ref()
-            .and_then(|value| value.key.as_str())
-        else {
-            continue;
-        };
-        let Some(echelon) = echo_echelon(key) else {
-            continue;
-        };
-        let names = result.entry(echelon).or_default();
-        names.extend(descriptor_names);
+    for descriptor in std::iter::once(unit)
+        .chain(&unit.operational_parent_units)
+        .chain(&unit.generative_parent_units)
+    {
+        all_names.extend(descriptor_names(descriptor));
+    }
+    let mut names_by_hierarchy = vec![operational_names];
+    if unit.generative_unit_name_full.is_some()
+        || !unit.generative_parent_units.is_empty()
+    {
+        names_by_hierarchy.push(generative_names);
     }
     Ok(ComparablePath {
-        names_by_echelon: result,
+        names_by_echelon,
+        names_by_hierarchy,
         all_names,
         root_names,
         root_echelon: unit
@@ -646,6 +658,26 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
             .and_then(|value| value.key.as_str())
             .and_then(echo_echelon),
     })
+}
+
+fn hierarchy_names_by_echelon(
+    unit: &SourceUnit,
+    parents: &[SourceUnit],
+) -> HashMap<EchoEchelon, HashSet<String>> {
+    std::iter::once(unit)
+        .chain(parents)
+        .filter_map(|descriptor| {
+            let echelon = descriptor
+                .unit_echelon
+                .as_ref()
+                .and_then(|value| value.key.as_str())
+                .and_then(echo_echelon)?;
+            Some((echelon, descriptor_names(descriptor)))
+        })
+        .fold(HashMap::new(), |mut result, (echelon, names)| {
+            result.entry(echelon).or_default().extend(names);
+            result
+        })
 }
 
 fn sigint_unit_echelon(unit: &sigint_unit::Model) -> Option<EchoEchelon> {
@@ -968,6 +1000,37 @@ mod tests {
             test_link_rating(
                 &comparable_path(&orbit_unit).unwrap(),
                 &hierarchy
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_link_rejects_mixed_parent_hierarchies() {
+        let mut orbit_unit = source_unit(
+            "1 мсб / 4 мсп / 20 ЗВА",
+            vec![
+                ("battalion", "1 мсб", 2),
+                ("regiment", "4 мсп", 1),
+                ("fieldArmy", "20 ЗВА", 0),
+            ],
+        );
+        orbit_unit.generative_unit_name_full =
+            Some("1 мсб / 5 мсп / 30 ЗВА".to_string());
+        orbit_unit.generative_parent_units = vec![
+            parent_unit("fieldArmy", "30 ЗВА", 0),
+            parent_unit("regiment", "5 мсп", 1),
+        ];
+        let mixed_hierarchy = [
+            (EchoEchelon::Battalion, "1 мсб"),
+            (EchoEchelon::Regiment, "4 мсп"),
+            (EchoEchelon::Army, "30 ЗВА"),
+        ];
+
+        assert_eq!(
+            test_link_rating(
+                &comparable_path(&orbit_unit).unwrap(),
+                &mixed_hierarchy,
             ),
             None
         );
