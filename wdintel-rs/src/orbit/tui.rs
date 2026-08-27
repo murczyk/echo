@@ -646,7 +646,7 @@ fn test_link_match_lines(
 ) -> Vec<Line<'static>> {
     let sigint_name = unit.echelons.join(" / ");
     let [sigint_diff, orbit_diff] =
-        test_link_name_diff_lines(&sigint_name, &candidate.generative_name);
+        test_link_name_diff_lines(&sigint_name, &candidate.orbit_name);
     vec![
         Line::styled(
             format!(
@@ -894,7 +894,7 @@ mod tests {
             unit_id: uuid::Uuid::nil(),
             rating: 100,
             distance: 2,
-            generative_name: "4 мсб (ат) / 752 мсп / 3 мсд".to_string(),
+            orbit_name: "4 мсб (ат) / 752 мсп / 3 мсд".to_string(),
         };
 
         assert_eq!(

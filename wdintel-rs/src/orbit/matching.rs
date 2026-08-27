@@ -292,7 +292,7 @@ fn first_test_link_echelon(
     sigint_hierarchy: &[(EchoEchelon, &str)],
 ) -> Option<(EchoEchelon, String)> {
     sigint_hierarchy.iter().find_map(|(echelon, name)| {
-        let name = normalize_name(name);
+        let name = normalize_sigint_name_for_echelon(*echelon, name);
         (!name.is_empty()).then_some((*echelon, name))
     })
 }
@@ -304,13 +304,14 @@ fn test_link_rating(
     let mut rating = ORBIT_TEST_LINK_UNITS_MAX_RATING;
     let mut has_echelon = false;
     for (echelon, sigint_name) in sigint_hierarchy {
-        let sigint_name = normalize_name(sigint_name);
+        let sigint_name =
+            normalize_sigint_name_for_echelon(*echelon, sigint_name);
         if sigint_name.is_empty() {
             continue;
         }
         has_echelon = true;
         let orbit_names = path.names_by_echelon.get(echelon)?;
-        if orbit_names.contains(&sigint_name) {
+        if names_match(*echelon, orbit_names, &sigint_name) {
             continue;
         }
         let number = numbered_echelon_number(&sigint_name)?;
@@ -888,6 +889,24 @@ mod tests {
         let hierarchy = [
             (EchoEchelon::Battalion, "(об БпС)"),
             (EchoEchelon::Army, "2 ЗВА"),
+        ];
+
+        assert_eq!(
+            TestLinkMatcher::new(std::slice::from_ref(&orbit_unit))
+                .best_matches(&hierarchy),
+            vec![(&orbit_unit, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
+        );
+    }
+
+    #[test]
+    fn test_link_removes_sigint_only_name_fragments() {
+        let orbit_unit = source_unit(
+            "1 рота / 1111 бр",
+            vec![("company", "1 рота", 0), ("brigade", "1111 бр", 1)],
+        );
+        let hierarchy = [
+            (EchoEchelon::Company, "1 рота (АТ)"),
+            (EchoEchelon::Brigade, "1111 бр ТрО"),
         ];
 
         assert_eq!(

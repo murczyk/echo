@@ -17,7 +17,13 @@ pub(super) struct ReviewMatch {
     pub unit_id: uuid::Uuid,
     pub rating: u8,
     pub distance: usize,
-    pub generative_name: String,
+    pub orbit_name: String,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct PersistSummary {
+    already_linked: usize,
+    suppressed: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -228,8 +234,9 @@ pub(super) async fn run_with_database(
         tui::LinkMode::Manual => review_manually(review_units).c(h!())?,
         tui::LinkMode::Automatic => approve_automatic(review_units),
     };
-    let already_linked = persist_links(dbx, &links).await.c(h!())?;
-    print_summary(summary, already_linked);
+    let persist_summary =
+        persist_links(dbx, &links, link_mode).await.c(h!())?;
+    print_summary(summary, persist_summary);
     Ok(())
 }
 
@@ -320,15 +327,26 @@ fn approve_automatic(
 async fn persist_links(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
-) -> anyhow::Result<usize> {
+    link_mode: tui::LinkMode,
+) -> anyhow::Result<PersistSummary> {
     if links.is_empty() {
-        return Ok(0);
+        return Ok(PersistSummary::default());
     }
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let mut already_linked = 0;
+    let suppressed_links = match link_mode {
+        tui::LinkMode::Manual => BTreeSet::new(),
+        tui::LinkMode::Automatic => {
+            load_suppressed_links(&transaction).await.c(h!())?
+        }
+    };
+    let mut summary = PersistSummary::default();
     let mut linked = false;
     for (sigint_unit_id, orbit_unit_id) in links {
+        if suppressed_links.contains(&(*sigint_unit_id, *orbit_unit_id)) {
+            summary.suppressed += 1;
+            continue;
+        }
         if super::sigint_unit_has_active_orbit_link(
             &transaction,
             *sigint_unit_id,
@@ -336,7 +354,7 @@ async fn persist_links(
         .await
         .c(h!())?
         {
-            already_linked += 1;
+            summary.already_linked += 1;
             continue;
         }
         crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
@@ -352,7 +370,7 @@ async fn persist_links(
             .c(h!())?;
     }
     transaction.commit().await.c(h!())?;
-    Ok(already_linked)
+    Ok(summary)
 }
 
 fn prepare_review_units(
@@ -409,18 +427,13 @@ fn prepare_review_unit(
     let mut matches = candidates
         .into_iter()
         .map(|(orbit_unit, rating)| {
-            let generative_name =
-                orbit_unit.generative_unit_name_full.clone().unwrap_or_else(
-                    || "<missing generative full name>".to_string(),
-                );
+            let (orbit_name, distance) =
+                closest_orbit_name(&sigint_full_name, orbit_unit);
             ReviewMatch {
                 unit_id: orbit_unit.unit_id,
                 rating,
-                distance: levenshtein::levenshtein(
-                    &sigint_full_name,
-                    &generative_name,
-                ),
-                generative_name,
+                distance,
+                orbit_name,
             }
         })
         .collect::<Vec<_>>();
@@ -433,18 +446,41 @@ fn prepare_review_unit(
     })
 }
 
+fn closest_orbit_name(
+    sigint_full_name: &str,
+    orbit_unit: &crate::orbit::types::SourceUnit,
+) -> (String, usize) {
+    orbit_unit
+        .operational_unit_name_full
+        .iter()
+        .chain(&orbit_unit.generative_unit_name_full)
+        .filter(|name| !name.trim().is_empty())
+        .map(|name| {
+            (
+                name.clone(),
+                levenshtein::levenshtein(sigint_full_name, name),
+            )
+        })
+        .min_by_key(|(_, distance)| *distance)
+        .expect("matched ORBIT unit must have a hierarchy name")
+}
+
 fn sort_review_matches(matches: &mut [ReviewMatch]) {
     matches.sort_by_key(|candidate| candidate.distance);
 }
 
-fn print_summary(summary: ReviewSummary, already_linked: usize) {
+fn print_summary(summary: ReviewSummary, persist_summary: PersistSummary) {
     let status = match summary.outcome {
         ReviewOutcome::Completed => "Review complete",
         ReviewOutcome::EarlyExit => "Review stopped early",
     };
     println!(
-        "{status}: accepted {}, denied {}, unreviewed {}, skipped {} already-linked.",
-        summary.accepted, summary.denied, summary.unreviewed, already_linked
+        "{status}: accepted {}, denied {}, unreviewed {}, skipped {} already-linked and {} suppressed.",
+        summary.accepted,
+        summary.denied,
+        summary.unreviewed,
+        persist_summary.already_linked,
+        persist_summary.suppressed,
     );
 }
 
@@ -464,7 +500,7 @@ mod tests {
                     unit_id: uuid::Uuid::from_u128(index as u128),
                     rating: 100,
                     distance: index,
-                    generative_name: format!("match {index}"),
+                    orbit_name: format!("match {index}"),
                 })
                 .collect(),
         }
@@ -523,6 +559,48 @@ mod tests {
             review_units[0].matches[0].distance
                 > ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE
         );
+    }
+
+    #[test]
+    fn automatic_mode_uses_operational_name_when_generative_name_is_missing() {
+        let units = [sigint_unit("3 мсб")];
+        let mut orbit_unit = orbit_unit("3 мсб");
+        orbit_unit.generative_unit_name_full = None;
+        let orbit_units = [orbit_unit];
+        let matcher = matching::TestLinkMatcher::new(&orbit_units);
+
+        let review_units = prepare_review_units(
+            &units,
+            &matcher,
+            tui::LinkMode::Automatic,
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(review_units[0].matches[0].distance, 0);
+        assert_eq!(review_units[0].matches[0].orbit_name, "3 мсб");
+        assert_eq!(approve_automatic(review_units).1.len(), 1);
+    }
+
+    #[test]
+    fn automatic_mode_uses_closest_available_hierarchy_name() {
+        let units = [sigint_unit("3 мсб")];
+        let mut orbit_unit = orbit_unit(
+            "3 мсб / a deliberately different generative parent hierarchy",
+        );
+        orbit_unit.operational_unit_name_full = Some("3 мсб".to_string());
+        let orbit_units = [orbit_unit];
+        let matcher = matching::TestLinkMatcher::new(&orbit_units);
+
+        let review_units = prepare_review_units(
+            &units,
+            &matcher,
+            tui::LinkMode::Automatic,
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(review_units[0].matches[0].distance, 0);
+        assert_eq!(review_units[0].matches[0].orbit_name, "3 мсб");
+        assert_eq!(approve_automatic(review_units).1.len(), 1);
     }
 
     #[test]
