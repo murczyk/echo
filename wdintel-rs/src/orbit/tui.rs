@@ -71,6 +71,7 @@ pub enum StartAction {
     PrepareImport,
     Import,
     LinkUnits,
+    ReconcileSigintUnits,
     Reimport,
 }
 
@@ -85,6 +86,15 @@ pub enum Decision {
     Accept,
     Skip,
     SkipAll,
+    Quit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnrichmentDecision {
+    Confirm,
+    Deny,
+    ConfirmAll,
+    DenyAll,
     Quit,
 }
 
@@ -155,8 +165,60 @@ pub fn confirm_reimport() -> Result<bool, AppError> {
     Ok(is_reimport_confirmed(result?.as_deref()))
 }
 
+pub fn confirm_sigint_unit_reconciliation() -> Result<bool, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_text_prompt(
+        &mut terminal,
+        "Type RECONCILE to review hierarchy enrichments and merge exact duplicates (Esc: cancel)",
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    Ok(is_sigint_unit_reconciliation_confirmed(
+        result.c(h!())?.as_deref(),
+    ))
+}
+
+pub fn review_sigint_unit_enrichment(
+    terminal: &mut OrbitTerminal,
+    title: &str,
+    lines: &[String],
+    progress: &str,
+) -> Result<EnrichmentDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_sigint_unit_enrichment_review(
+                    frame, title, lines, progress, scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) = enrichment_decision_for_key(key) {
+            return Ok(decision);
+        }
+        match key.code {
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
 fn is_reimport_confirmed(input: Option<&str>) -> bool {
     input == Some("REIMPORT")
+}
+
+fn is_sigint_unit_reconciliation_confirmed(input: Option<&str>) -> bool {
+    input == Some("RECONCILE")
 }
 
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
@@ -317,6 +379,7 @@ fn run_start_menu(
         StartAction::PrepareImport,
         StartAction::Import,
         StartAction::LinkUnits,
+        StartAction::ReconcileSigintUnits,
         StartAction::Reimport,
     ];
     let mut selected = 0;
@@ -707,11 +770,12 @@ fn test_link_maximum_scroll(area: Rect, session: &ReviewSession) -> usize {
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 70, 7);
+    let area = centered_area(frame, 70, 8);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
         "Link ORBIT units to SIGINT units",
+        "Reconcile linked SIGINT units and merge exact duplicates",
         "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
@@ -822,6 +886,42 @@ fn draw_review(
     );
 }
 
+fn draw_sigint_unit_enrichment_review(
+    frame: &mut Frame<'_>,
+    title: &str,
+    lines: &[String],
+    progress: &str,
+    scroll: u16,
+) {
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(1),
+            Constraint::Length(2),
+        ])
+        .split(frame.size());
+    frame
+        .render_widget(Paragraph::new(format!("{progress}\n{title}")), root[0]);
+    frame.render_widget(
+        Paragraph::new(lines.join("\n"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Proposed changes"),
+            )
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false }),
+        root[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "Enter/y: confirm | n: deny | a: confirm all | d: deny all | q/Esc: cancel",
+        ),
+        root[2],
+    );
+}
+
 fn decision_for_key(
     key: KeyEvent,
     action: Action,
@@ -847,6 +947,31 @@ fn decision_for_key(
         }
         KeyCode::Char('s') => Some(Decision::Skip),
         KeyCode::Char('a') if allow_skip_all => Some(Decision::SkipAll),
+        _ => None,
+    }
+}
+
+fn enrichment_decision_for_key(key: KeyEvent) -> Option<EnrichmentDecision> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(EnrichmentDecision::Quit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('y') => {
+            Some(EnrichmentDecision::Confirm)
+        }
+        KeyCode::Char('n') => Some(EnrichmentDecision::Deny),
+        KeyCode::Char('a') => Some(EnrichmentDecision::ConfirmAll),
+        KeyCode::Char('d') => Some(EnrichmentDecision::DenyAll),
+        KeyCode::Char('q') => Some(EnrichmentDecision::Quit),
         _ => None,
     }
 }

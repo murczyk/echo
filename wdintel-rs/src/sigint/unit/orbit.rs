@@ -25,9 +25,7 @@ use actix_web::web::{Data, Json};
 use sea_orm::sea_query::extension::postgres::PgExpr;
 use sea_orm::sea_query::{Expr, OnConflict, SimpleExpr};
 use sea_orm::*;
-#[cfg(test)]
-use std::collections::BTreeMap;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use uuid::Uuid;
 
 const ORBIT_LINK_CANDIDATE_LIMIT: u64 = 100;
@@ -362,9 +360,7 @@ struct UnitInconsistencyDetails {
 
 pub(crate) struct UnitOrbitReconcileOutcome {
     pub unit: sigint_unit::Model,
-    #[cfg(test)]
     pub hierarchy_updated: bool,
-    #[cfg(test)]
     pub orbit_link_count: usize,
 }
 
@@ -387,7 +383,6 @@ where
     .await
 }
 
-#[cfg(test)]
 async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
     dbx: &C,
     login: &Uuid,
@@ -444,9 +439,7 @@ where
     if !hierarchy_updated && !inconsistency_updated {
         return Ok(UnitOrbitReconcileOutcome {
             unit,
-            #[cfg(test)]
             hierarchy_updated,
-            #[cfg(test)]
             orbit_link_count: orbit_units.len(),
         });
     }
@@ -482,9 +475,7 @@ where
     }
     Ok(UnitOrbitReconcileOutcome {
         unit,
-        #[cfg(test)]
         hierarchy_updated,
-        #[cfg(test)]
         orbit_link_count: orbit_units.len(),
     })
 }
@@ -1708,7 +1699,6 @@ where
     Ok(ancestors)
 }
 
-#[cfg(test)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OrbitUnitReconcileStats {
     pub scanned: usize,
@@ -1734,7 +1724,6 @@ pub(crate) struct OrbitUnitHierarchyChange {
     pub attributes: Vec<OrbitUnitAttributeChange>,
 }
 
-#[cfg(test)]
 pub(crate) async fn proposed_orbit_hierarchy_changes<C>(
     dbx: &C,
 ) -> Result<Vec<OrbitUnitHierarchyChange>, AppError>
@@ -1754,7 +1743,6 @@ where
     Ok(changes)
 }
 
-#[cfg(test)]
 async fn proposed_orbit_hierarchy_change<C>(
     dbx: &C,
     sigint_unit_id: i64,
@@ -1785,7 +1773,6 @@ where
     }))
 }
 
-#[cfg(test)]
 fn changed_unit_attributes(
     current: &sigint_unit::Model,
     proposed: &sigint_unit::Model,
@@ -1804,7 +1791,6 @@ fn changed_unit_attributes(
         .collect()
 }
 
-#[cfg(test)]
 fn named_unit_attributes(
     unit: &sigint_unit::Model,
 ) -> [(&'static str, &str); 15] {
@@ -1827,7 +1813,6 @@ fn named_unit_attributes(
     ]
 }
 
-#[cfg(test)]
 pub(crate) async fn reconcile_selected_orbit_hierarchy_changes(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1836,7 +1821,6 @@ pub(crate) async fn reconcile_selected_orbit_hierarchy_changes(
     reconcile_orbit_linked_units(dbx, login, Some(accepted_changes)).await
 }
 
-#[cfg(test)]
 async fn reconcile_orbit_linked_units(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1923,7 +1907,6 @@ async fn reconcile_orbit_linked_units(
     Ok(stats)
 }
 
-#[cfg(test)]
 async fn reconcile_sigint_unit_orbit_committed(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1943,7 +1926,6 @@ async fn reconcile_sigint_unit_orbit_committed(
     Ok(outcome)
 }
 
-#[cfg(test)]
 async fn reconcile_reviewed_sigint_unit_orbit_committed(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -1961,7 +1943,6 @@ async fn reconcile_reviewed_sigint_unit_orbit_committed(
     Ok(outcome)
 }
 
-#[cfg(test)]
 async fn reconcile_sigint_unit_deduplicate_candidates_committed(
     dbx: &DatabaseConnection,
 ) -> Result<(), AppError> {
@@ -1973,7 +1954,6 @@ async fn reconcile_sigint_unit_deduplicate_candidates_committed(
     Ok(())
 }
 
-#[cfg(test)]
 async fn sigint_unit_ids_requiring_reconciliation<C>(
     dbx: &C,
 ) -> Result<Vec<i64>, AppError>
@@ -1999,7 +1979,6 @@ where
     Ok(sigint_unit_ids.into_iter().collect())
 }
 
-#[cfg(test)]
 async fn linked_sigint_unit_ids<C>(dbx: &C) -> Result<Vec<i64>, AppError>
 where
     C: ConnectionTrait,
@@ -2026,7 +2005,6 @@ where
         .c(h!())?)
 }
 
-#[cfg(test)]
 async fn merge_identical_duplicate_candidates(
     dbx: &DatabaseConnection,
     login: &Uuid,
@@ -2088,7 +2066,6 @@ async fn merge_identical_duplicate_candidates(
     Ok(merged)
 }
 
-#[cfg(test)]
 fn identical_duplicate_components(
     links: &[orbit_unit_sigint_unit::Model],
     units: &BTreeMap<i64, sigint_unit::Model>,

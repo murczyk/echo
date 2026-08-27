@@ -613,6 +613,11 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
         .as_deref()
         .map(split_path)
         .unwrap_or_default();
+    let root_echelon = unit
+        .unit_echelon
+        .as_ref()
+        .and_then(|value| value.key.as_str())
+        .and_then(echo_echelon);
     let mut root_names = descriptor_names(unit);
     if let Some(root_segment) = operational_segments.first() {
         root_names.insert(root_segment.clone());
@@ -620,10 +625,26 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
     if let Some(root_segment) = generative_segments.first() {
         root_names.insert(root_segment.clone());
     }
-    let operational_names =
+    let mut operational_names =
         hierarchy_names_by_echelon(unit, &unit.operational_parent_units);
-    let generative_names =
+    if let (Some(echelon), Some(root_segment)) =
+        (root_echelon, operational_segments.first())
+    {
+        operational_names
+            .entry(echelon)
+            .or_default()
+            .insert(root_segment.clone());
+    }
+    let mut generative_names =
         hierarchy_names_by_echelon(unit, &unit.generative_parent_units);
+    if let (Some(echelon), Some(root_segment)) =
+        (root_echelon, generative_segments.first())
+    {
+        generative_names
+            .entry(echelon)
+            .or_default()
+            .insert(root_segment.clone());
+    }
     let mut names_by_echelon = operational_names.clone();
     for (echelon, names) in &generative_names {
         names_by_echelon
@@ -652,11 +673,7 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
         names_by_hierarchy,
         all_names,
         root_names,
-        root_echelon: unit
-            .unit_echelon
-            .as_ref()
-            .and_then(|value| value.key.as_str())
-            .and_then(echo_echelon),
+        root_echelon,
     })
 }
 
@@ -941,6 +958,22 @@ mod tests {
                         - ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY,
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn test_link_indexes_root_full_name_without_optional_descriptors() {
+        let mut orbit_unit =
+            source_unit("2 мсб", vec![("battalion", "ignored descriptor", 0)]);
+        orbit_unit.unit_name = None;
+        orbit_unit.unit_name_short = None;
+        orbit_unit.unit_number = None;
+        let hierarchy = [(EchoEchelon::Battalion, "2 мсб")];
+
+        assert_eq!(
+            TestLinkMatcher::new(std::slice::from_ref(&orbit_unit))
+                .best_matches(&hierarchy),
+            vec![(&orbit_unit, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
         );
     }
 
