@@ -61,6 +61,7 @@ export function MessageCardAttachmentPreviewDialog({
   const dialogLabel = getPreviewDialogLabel(previewKind);
   const [isFullscreen, setIsFullscreen] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
@@ -69,6 +70,7 @@ export function MessageCardAttachmentPreviewDialog({
   const registerEditorEscapeHandler = useCallback<RegisterImageEditorEscapeHandler>((handler) => {
     editorEscapeHandlerRef.current = handler;
   }, []);
+  const consumeInitialAction = useCallback(() => setPendingInitialAction(undefined), []);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -168,7 +170,8 @@ export function MessageCardAttachmentPreviewDialog({
         <ImageAttachmentPreviewRenderer
           image={item.value}
           imageEditing={imageEditing}
-          initialAction={initialAction}
+          initialAction={pendingInitialAction}
+          onInitialActionConsumed={consumeInitialAction}
           onEditModeChange={setIsEditing}
           registerEditorEscapeHandler={registerEditorEscapeHandler}
           onChildOverlayChange={setChildOverlayOpen}

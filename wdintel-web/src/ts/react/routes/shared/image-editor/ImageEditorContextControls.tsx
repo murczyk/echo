@@ -1,5 +1,5 @@
-import { Slider, TextField, ToggleButton, ToggleButtonGroup } from '@mui/material';
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { Slider, TextField, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 export function ImageEditorContextGroup({ children }: { children: ReactNode }) {
   return <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{children}</div>;
@@ -12,6 +12,7 @@ export function ImageEditorCompactNumericControl({
   max,
   onChange,
   disabled,
+  tooltip,
 }: {
   label: string;
   value: number;
@@ -19,8 +20,10 @@ export function ImageEditorCompactNumericControl({
   max: number;
   onChange: (value: number) => void;
   disabled: boolean;
+  tooltip?: string;
 }) {
   const [draft, setDraft] = useState(String(value));
+  const tooltipId = useId();
   const skipNextBlurCommitRef = useRef(false);
   useEffect(() => setDraft(String(value)), [value]);
   const commit = () => {
@@ -47,7 +50,7 @@ export function ImageEditorCompactNumericControl({
       onChange(next);
     }
   };
-  return (
+  const control = (
     <TextField
       size="small"
       value={draft}
@@ -80,6 +83,24 @@ export function ImageEditorCompactNumericControl({
       }}
       disabled={disabled}
     />
+  );
+  return tooltip ? (
+    <Tooltip title={tooltip} describeChild>
+      <span
+        className="inline-flex"
+        tabIndex={disabled ? 0 : undefined}
+        aria-describedby={disabled ? tooltipId : undefined}
+      >
+        {disabled ? (
+          <span id={tooltipId} className="sr-only">
+            {tooltip}
+          </span>
+        ) : null}
+        {control}
+      </span>
+    </Tooltip>
+  ) : (
+    control
   );
 }
 

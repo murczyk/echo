@@ -1,6 +1,7 @@
 type FabricModule = typeof import('fabric');
 
 import { assignImageEditorTextareaContainer } from './image-editor-text';
+import { createPaddedTextAnnotation } from './image-editor-padded-text';
 
 export function addTextAnnotation({
   canvas,
@@ -8,6 +9,9 @@ export function addTextAnnotation({
   stroke,
   fontSize,
   bold,
+  backgroundColor = '#000000',
+  backgroundEnabled = false,
+  backgroundPadding = 6,
   left,
   top,
   hiddenTextareaContainer,
@@ -17,19 +21,29 @@ export function addTextAnnotation({
   stroke: string;
   fontSize: number;
   bold: boolean;
+  backgroundColor?: string;
+  backgroundEnabled?: boolean;
+  backgroundPadding?: number;
   left: number;
   top: number;
   hiddenTextareaContainer: HTMLElement | null;
 }) {
-  const text = new fabric.IText('', {
-    left,
-    top,
-    originX: 'left',
-    originY: 'top',
-    fill: stroke,
-    fontSize,
-    fontWeight: bold ? 'bold' : 'normal',
-    editorRole: 'text',
+  const text = createPaddedTextAnnotation({
+    fabric,
+    text: '',
+    options: {
+      left,
+      top,
+      originX: 'left',
+      originY: 'top',
+      fill: stroke,
+      fontSize,
+      fontWeight: bold ? 'bold' : 'normal',
+      editorRole: 'text',
+      annotationBackgroundColor: backgroundColor,
+      annotationBackgroundEnabled: backgroundEnabled,
+      annotationBackgroundPadding: backgroundPadding,
+    },
   });
   assignImageEditorTextareaContainer(text, hiddenTextareaContainer);
   canvas.add(text);

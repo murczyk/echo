@@ -29,6 +29,9 @@ export function useImageEditorSelection({
   onDashChange,
   onFontSizeChange,
   onBoldChange,
+  onTextBackgroundColorChange,
+  onTextBackgroundEnabledChange,
+  onTextBackgroundPaddingChange,
   onHighlightOpacityChange,
   onSelectionChange,
 }: {
@@ -42,6 +45,9 @@ export function useImageEditorSelection({
   onDashChange: (value: boolean) => void;
   onFontSizeChange: (value: number) => void;
   onBoldChange: (value: boolean) => void;
+  onTextBackgroundColorChange: (value: string) => void;
+  onTextBackgroundEnabledChange: (value: boolean) => void;
+  onTextBackgroundPaddingChange: (value: number) => void;
   onHighlightOpacityChange: (value: number) => void;
   onSelectionChange: (value: ImageEditorSelectionDescriptor | undefined) => void;
 }) {
@@ -68,6 +74,16 @@ export function useImageEditorSelection({
         if (typeof selected.fill === 'string') onStrokeChange(selected.fill);
         if (typeof selected.fontSize === 'number') onFontSizeChange(selected.fontSize);
         onBoldChange(selected.fontWeight === 'bold');
+        const text = selected as typeof selected & {
+          annotationBackgroundColor?: unknown;
+          annotationBackgroundEnabled?: unknown;
+          annotationBackgroundPadding?: unknown;
+        };
+        if (typeof text.annotationBackgroundColor === 'string')
+          onTextBackgroundColorChange(text.annotationBackgroundColor);
+        onTextBackgroundEnabledChange(text.annotationBackgroundEnabled === true);
+        if (typeof text.annotationBackgroundPadding === 'number')
+          onTextBackgroundPaddingChange(text.annotationBackgroundPadding);
         return;
       }
       if (!fabric) return;
@@ -93,6 +109,9 @@ export function useImageEditorSelection({
     canvasRef,
     fabricRef,
     onBoldChange,
+    onTextBackgroundColorChange,
+    onTextBackgroundEnabledChange,
+    onTextBackgroundPaddingChange,
     onHighlightOpacityChange,
     onCanDeleteChange,
     onDashChange,

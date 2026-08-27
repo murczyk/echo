@@ -1,7 +1,7 @@
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import FormatBoldIcon from '@mui/icons-material/FormatBold';
-
+import FormatColorFillIcon from '@mui/icons-material/FormatColorFill';
 import FormatColorResetIcon from '@mui/icons-material/FormatColorReset';
 import { ToggleButton } from '@mui/material';
 
@@ -37,6 +37,12 @@ export type ImageEditorContextToolbarProps = {
   onFontSizeChange: (value: number) => void;
   bold: boolean;
   onBoldChange: () => void;
+  textBackgroundColor: string;
+  onTextBackgroundColorChange: (value: string) => void;
+  textBackgroundEnabled: boolean;
+  onTextBackgroundEnabledChange: (value: boolean) => void;
+  textBackgroundPadding: number;
+  onTextBackgroundPaddingChange: (value: number) => void;
   highlightOpacity: number;
   onHighlightOpacityChange: (value: number) => void;
   concealMode: ConcealMode;
@@ -64,30 +70,59 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
         className="flex min-w-0 max-w-full flex-wrap items-center gap-3"
       >
         {showText ? (
-          <ImageEditorContextGroup>
-            <ImageEditorColorControl
-              label="Колір"
-              value={props.stroke}
-              onChange={props.onStrokeChange}
-              disabled={props.disabled}
-            />
-            <ImageEditorCompactNumericControl
-              label="Розмір тексту"
-              value={props.fontSize}
-              min={10}
-              max={160}
-              onChange={props.onFontSizeChange}
-              disabled={props.disabled}
-            />
-            <ImageEditorIconButton
-              label="Напівжирний текст"
-              icon={<FormatBoldIcon />}
-              onClick={props.onBoldChange}
-              disabled={props.disabled}
-              active={props.bold}
-              compact
-            />
-          </ImageEditorContextGroup>
+          <>
+            <ImageEditorContextGroup>
+              <ImageEditorColorControl
+                label="Колір тексту"
+                value={props.stroke}
+                onChange={props.onStrokeChange}
+                disabled={props.disabled}
+              />
+              <ImageEditorCompactNumericControl
+                label="Розмір тексту"
+                tooltip="Розмір тексту"
+                value={props.fontSize}
+                min={10}
+                max={160}
+                onChange={props.onFontSizeChange}
+                disabled={props.disabled}
+              />
+              <ImageEditorIconButton
+                label="Напівжирний текст"
+                icon={<FormatBoldIcon />}
+                onClick={props.onBoldChange}
+                disabled={props.disabled}
+                active={props.bold}
+                compact
+              />
+            </ImageEditorContextGroup>
+            <span aria-hidden="true" className="h-8 w-px shrink-0 bg-echo-border" />
+            <ImageEditorContextGroup>
+              <ImageEditorIconButton
+                label="Фон тексту"
+                icon={<FormatColorFillIcon />}
+                onClick={() => props.onTextBackgroundEnabledChange(!props.textBackgroundEnabled)}
+                disabled={props.disabled}
+                active={props.textBackgroundEnabled}
+                compact
+              />
+              <ImageEditorColorControl
+                label="Колір фону"
+                value={props.textBackgroundColor}
+                onChange={props.onTextBackgroundColorChange}
+                disabled={props.disabled || !props.textBackgroundEnabled}
+              />
+              <ImageEditorCompactNumericControl
+                label="Відступ фону"
+                tooltip="Відступ фону"
+                value={props.textBackgroundPadding}
+                min={0}
+                max={32}
+                onChange={props.onTextBackgroundPaddingChange}
+                disabled={props.disabled || !props.textBackgroundEnabled}
+              />
+            </ImageEditorContextGroup>
+          </>
         ) : null}
         {showStroke ? (
           <ImageEditorContextGroup>

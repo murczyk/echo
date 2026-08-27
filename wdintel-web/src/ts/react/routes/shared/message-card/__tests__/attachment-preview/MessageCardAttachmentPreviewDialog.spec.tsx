@@ -15,19 +15,30 @@ vi.mock('@mui/material', () => ({
 }));
 
 const imageEditorEscapeHandler = vi.fn(() => false);
+const consumeInitialAction = vi.fn();
 
 vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
   ImageAttachmentPreviewRenderer: ({
     registerEditorEscapeHandler,
     onEditModeChange,
+    initialAction,
+    onInitialActionConsumed,
   }: {
     registerEditorEscapeHandler?: (handler: (event: KeyboardEvent) => boolean) => void;
     onEditModeChange?: (editing: boolean) => void;
+    initialAction?: 'edit-image';
+    onInitialActionConsumed?: () => void;
   }) => {
     useLayoutEffect(() => {
       registerEditorEscapeHandler?.(imageEditorEscapeHandler);
       return () => registerEditorEscapeHandler?.(null);
     }, [registerEditorEscapeHandler]);
+    useLayoutEffect(() => {
+      if (initialAction === 'edit-image') {
+        consumeInitialAction();
+        onInitialActionConsumed?.();
+      }
+    }, [initialAction, onInitialActionConsumed]);
     return (
       <div data-renderer="image">
         <button aria-label="Почати редагування" onClick={() => onEditModeChange?.(true)} />
@@ -70,6 +81,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     root = null;
     container = null;
     imageEditorEscapeHandler.mockClear();
+    consumeInitialAction.mockClear();
   });
 
   it.each(items)('renders the $type attachment renderer directly', async (item) => {
@@ -152,5 +164,44 @@ describe('MessageCardAttachmentPreviewDialog', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
     );
     expect(onNext).toHaveBeenCalledOnce();
+  });
+
+  it('does not replay initial Edit after mixed-media navigation #3294', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const navigation = { index: 0, count: 3, onPrevious: vi.fn(), onNext: vi.fn() };
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={navigation}
+          onClose={vi.fn()}
+          initialAction="edit-image"
+        />,
+      ),
+    );
+    expect(consumeInitialAction).toHaveBeenCalledOnce();
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[1]!}
+          navigation={{ ...navigation, index: 1 }}
+          onClose={vi.fn()}
+          initialAction="edit-image"
+        />,
+      ),
+    );
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={navigation}
+          onClose={vi.fn()}
+          initialAction="edit-image"
+        />,
+      ),
+    );
+    expect(consumeInitialAction).toHaveBeenCalledOnce();
   });
 });

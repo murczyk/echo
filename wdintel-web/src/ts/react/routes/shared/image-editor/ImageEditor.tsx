@@ -69,6 +69,9 @@ export function ImageEditor({
   const [magnification, setMagnification] = useState(2);
   const [fontSize, setFontSize] = useState(36);
   const [bold, setBold] = useState(false);
+  const [textBackgroundColor, setTextBackgroundColor] = useState('#000000');
+  const [textBackgroundEnabled, setTextBackgroundEnabled] = useState(false);
+  const [textBackgroundPadding, setTextBackgroundPadding] = useState(6);
   const [highlightOpacity, setHighlightOpacity] = useState(0.4);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -241,6 +244,9 @@ export function ImageEditor({
     dash,
     fontSize,
     bold,
+    textBackgroundColor,
+    textBackgroundEnabled,
+    textBackgroundPadding,
     highlightOpacity,
     scheduleHistory,
   });
@@ -270,6 +276,9 @@ export function ImageEditor({
     dash,
     fontSize,
     bold,
+    textBackgroundColor,
+    textBackgroundEnabled,
+    textBackgroundPadding,
     concealMode,
     isInteractionLocked,
     saveHistory,
@@ -344,6 +353,9 @@ export function ImageEditor({
     onDashChange: setDash,
     onFontSizeChange: setFontSize,
     onBoldChange: setBold,
+    onTextBackgroundColorChange: setTextBackgroundColor,
+    onTextBackgroundEnabledChange: setTextBackgroundEnabled,
+    onTextBackgroundPaddingChange: setTextBackgroundPadding,
     onHighlightOpacityChange: setHighlightOpacity,
     onSelectionChange: setSelection,
   });
@@ -523,6 +535,15 @@ export function ImageEditor({
     onFontSizeChange: setFontSize,
     bold,
     onBoldChange: () => setBold((value) => !value),
+    textBackgroundColor,
+    onTextBackgroundColorChange: (value: string) => {
+      setTextBackgroundColor(value);
+      setTextBackgroundEnabled(true);
+    },
+    textBackgroundEnabled,
+    onTextBackgroundEnabledChange: setTextBackgroundEnabled,
+    textBackgroundPadding,
+    onTextBackgroundPaddingChange: setTextBackgroundPadding,
     highlightOpacity,
     onHighlightOpacityChange: setHighlightOpacity,
     concealMode,

@@ -1,6 +1,7 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 
 import { setImageEditorBackground } from './image-editor-canvas-references';
+import { registerPaddedTextAnnotation } from './image-editor-padded-text';
 import {
   MAX_IMAGE_EDITOR_PIXELS,
   MAX_IMAGE_EDITOR_SIDE,
@@ -62,6 +63,7 @@ export function useImageEditorCanvas({
         const fabric = await import('fabric');
         if (disposed || !canvasElementRef.current) return;
         fabricRef.current = fabric;
+        registerPaddedTextAnnotation(fabric);
         objectUrl = URL.createObjectURL(source.blob);
         const image = await fabric.FabricImage.fromURL(objectUrl);
         if (disposed) return;

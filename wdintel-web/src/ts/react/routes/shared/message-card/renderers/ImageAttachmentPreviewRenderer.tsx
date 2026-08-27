@@ -236,6 +236,7 @@ export function ImageAttachmentPreviewRenderer({
   onDownloadStart,
   imageEditing,
   initialAction,
+  onInitialActionConsumed,
   onEditModeChange,
   registerEditorEscapeHandler,
   onChildOverlayChange,
@@ -248,6 +249,7 @@ export function ImageAttachmentPreviewRenderer({
   onFullscreenChange: (isFullscreen: boolean) => void;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
+  onInitialActionConsumed?: () => void;
   onEditModeChange?: (editing: boolean) => void;
   registerEditorEscapeHandler?: RegisterImageEditorEscapeHandler;
   onChildOverlayChange?: (open: boolean) => void;
@@ -292,7 +294,6 @@ export function ImageAttachmentPreviewRenderer({
     move: (event: PointerEvent) => void;
     end: (event: PointerEvent) => void;
   } | null>(null);
-  const initialActionConsumedRef = useRef(false);
   const infoOpen = infoAnchorEl !== null;
   useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
   useEffect(() => {
@@ -589,10 +590,10 @@ export function ImageAttachmentPreviewRenderer({
   };
 
   useEffect(() => {
-    if (initialAction !== 'edit-image' || initialActionConsumedRef.current) return;
-    initialActionConsumedRef.current = true;
+    if (initialAction !== 'edit-image') return;
+    onInitialActionConsumed?.();
     void editor.open();
-  }, [editor.open, initialAction]);
+  }, [editor.open, initialAction, onInitialActionConsumed]);
 
   const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
     setOcrStatus(nextOcr);

@@ -15,6 +15,9 @@ type Config = {
   dash: boolean;
   fontSize: number;
   bold: boolean;
+  textBackgroundColor: string;
+  textBackgroundEnabled: boolean;
+  textBackgroundPadding: number;
   concealMode: ConcealMode;
   concealmentMarquee: { stroke: string; fill: string };
 };
@@ -52,6 +55,9 @@ export function useImageEditorDrawingGestures({
   dash,
   fontSize,
   bold,
+  textBackgroundColor,
+  textBackgroundEnabled,
+  textBackgroundPadding,
   concealMode,
   isInteractionLocked,
   saveHistory,
@@ -72,6 +78,9 @@ export function useImageEditorDrawingGestures({
   dash: boolean;
   fontSize: number;
   bold: boolean;
+  textBackgroundColor: string;
+  textBackgroundEnabled: boolean;
+  textBackgroundPadding: number;
   concealMode: ConcealMode;
   isInteractionLocked: () => boolean;
   saveHistory: () => void;
@@ -89,6 +98,9 @@ export function useImageEditorDrawingGestures({
     dash,
     fontSize,
     bold,
+    textBackgroundColor,
+    textBackgroundEnabled,
+    textBackgroundPadding,
     concealMode,
     concealmentMarquee,
   });
@@ -106,6 +118,9 @@ export function useImageEditorDrawingGestures({
     dash,
     fontSize,
     bold,
+    textBackgroundColor,
+    textBackgroundEnabled,
+    textBackgroundPadding,
     concealMode,
     concealmentMarquee,
   };
@@ -237,6 +252,9 @@ export function useImageEditorDrawingGestures({
           stroke: completed.config.stroke,
           fontSize: completed.config.fontSize,
           bold: completed.config.bold,
+          backgroundColor: completed.config.textBackgroundColor,
+          backgroundEnabled: completed.config.textBackgroundEnabled,
+          backgroundPadding: completed.config.textBackgroundPadding,
           left: completed.point.x,
           top: completed.point.y,
           hiddenTextareaContainer: hiddenTextareaContainer.current,

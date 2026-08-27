@@ -19,6 +19,9 @@ export function useImageEditorSelectionStyle({
   dash,
   fontSize,
   bold,
+  textBackgroundColor,
+  textBackgroundEnabled,
+  textBackgroundPadding,
   highlightOpacity,
   scheduleHistory,
 }: {
@@ -32,6 +35,9 @@ export function useImageEditorSelectionStyle({
   dash: boolean;
   fontSize: number;
   bold: boolean;
+  textBackgroundColor: string;
+  textBackgroundEnabled: boolean;
+  textBackgroundPadding: number;
   highlightOpacity: number;
   scheduleHistory: () => void;
 }) {
@@ -40,17 +46,43 @@ export function useImageEditorSelectionStyle({
     const fabric = fabricRef.current;
     const selected = canvas?.getActiveObject();
     if (!canvas || !fabric || !(selected instanceof fabric.IText)) return;
+    const text = selected as typeof selected & {
+      annotationBackgroundColor?: string;
+      annotationBackgroundEnabled?: boolean;
+      annotationBackgroundPadding?: number;
+    };
     const fontWeight = bold ? 'bold' : 'normal';
     if (
       selected.fill === stroke &&
       selected.fontSize === fontSize &&
-      selected.fontWeight === fontWeight
+      selected.fontWeight === fontWeight &&
+      text.annotationBackgroundColor === textBackgroundColor &&
+      text.annotationBackgroundEnabled === textBackgroundEnabled &&
+      text.annotationBackgroundPadding === textBackgroundPadding
     )
       return;
-    selected.set({ fill: stroke, fontSize, fontWeight });
+    selected.set({
+      fill: stroke,
+      fontSize,
+      fontWeight,
+      annotationBackgroundColor: textBackgroundColor,
+      annotationBackgroundEnabled: textBackgroundEnabled,
+      annotationBackgroundPadding: textBackgroundPadding,
+    } as never);
     canvas.requestRenderAll();
     scheduleHistory();
-  }, [bold, canvasReady, canvasRef, fabricRef, fontSize, scheduleHistory, stroke]);
+  }, [
+    bold,
+    canvasReady,
+    canvasRef,
+    fabricRef,
+    fontSize,
+    scheduleHistory,
+    stroke,
+    textBackgroundColor,
+    textBackgroundEnabled,
+    textBackgroundPadding,
+  ]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
