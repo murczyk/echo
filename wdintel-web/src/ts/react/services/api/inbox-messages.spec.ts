@@ -169,6 +169,15 @@ describe('fetchMessagesByIds', () => {
 describe('fetchInboxItemContext', () => {
   it('posts message uid to /api/rer-importer/inbox-item-context and normalizes response', async () => {
     apiMocks.postJson.mockResolvedValueOnce({
+      message: [
+        101,
+        {
+          text: 'target',
+          freq: '123.45',
+          group_master_key: 'group-alpha',
+          network_ids: [7],
+        },
+      ],
       group_master_keys: ['group-alpha', 'group-beta'],
       sigint_inbox_item_ids: [101, 102],
       sinceTs: 1700000000000,
@@ -184,6 +193,15 @@ describe('fetchInboxItemContext', () => {
       undefined,
     );
     expect(result).toEqual({
+      message: [
+        101,
+        expect.objectContaining({
+          text: 'target',
+          freq: '123.45',
+          groupMasterKey: 'group-alpha',
+          networkIds: [7],
+        }),
+      ],
       groupMasterKeys: ['group-alpha', 'group-beta'],
       sigintInboxItemIds: [101, 102],
       sinceTs: 1700000000000,

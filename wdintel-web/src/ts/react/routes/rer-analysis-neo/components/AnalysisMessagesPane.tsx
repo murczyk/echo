@@ -1,7 +1,16 @@
-import { Box, Button } from '@mui/material';
-import { CircularProgress } from '@mui/material';
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
+import {
+  Box,
+  Button,
+  ButtonGroup,
+  Checkbox,
+  CircularProgress,
+  ListItemText,
+  Menu,
+  MenuItem,
+} from '@mui/material';
 import { alpha, type Theme, useTheme } from '@mui/material/styles';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
 import type {
   CallsignInfoRes,
@@ -24,13 +33,13 @@ import {
   buildMessageLinkFullUrl,
   scrollToAndHighlightMessage,
 } from '../../shared/message-card/message-card.utils';
-import { parseMessageUidFromWindow } from '../helpers';
 import { buildMessageCardDisplayLabels } from '../../shared/message-card/message-card-labels';
 import { blurActiveElement } from '../../../utils/focus';
 import { copyMessageValue } from '../message-utils';
 import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import type { AddPointHighlightBlacklistRequest } from '../../shared/message-card/point-highlight-blacklist';
+import type { AnalysisDirectMessageNavigation } from '../types';
 
 type BotTagAction = {
   messageId: number;
@@ -140,6 +149,7 @@ type Props = {
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   pageIndex: number;
+  scrollResetKey: string;
   noMoreToLoad: boolean;
   onDeleteMessage: (messageId: number) => void;
   onCancelBotTagAction?: () => void;
@@ -170,7 +180,81 @@ type Props = {
   callsignInfoMap?: Record<string, CallsignInfoRes>;
   networks?: Network[];
   unitsMap?: Record<number, Unit>;
+  directMessageNavigation: AnalysisDirectMessageNavigation | null;
 };
+
+function getMissingBottomScrollSpace(container: HTMLElement): number {
+  const spacer = container.querySelector<HTMLElement>('[data-direct-message-anchor-spacer="true"]');
+  const bottomContent = spacer?.previousElementSibling ?? container.lastElementChild;
+  if (!(bottomContent instanceof HTMLElement)) return 0;
+  return Math.max(
+    0,
+    container.getBoundingClientRect().bottom - bottomContent.getBoundingClientRect().bottom,
+  );
+}
+
+function FocusedLoadMoreButton({
+  position,
+  navigation,
+  onBeforeLoad,
+}: {
+  position: 'above' | 'below';
+  navigation: AnalysisDirectMessageNavigation;
+  onBeforeLoad: (position: 'above' | 'below') => void;
+}) {
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const direction =
+    position === 'above'
+      ? navigation.newestFirst
+        ? 'later'
+        : 'earlier'
+      : navigation.newestFirst
+        ? 'earlier'
+        : 'later';
+  const canLoad = direction === 'earlier' ? navigation.canLoadEarlier : navigation.canLoadLater;
+  const load = direction === 'earlier' ? navigation.onLoadEarlier : navigation.onLoadLater;
+  if (!canLoad) return null;
+
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'center', my: 1 }}>
+      <ButtonGroup size="small" variant="outlined" aria-label="Показати ще повідомлення">
+        <Button
+          onClick={() => {
+            onBeforeLoad(position);
+            void load();
+          }}
+          disabled={navigation.loadingDirection !== null}
+          sx={{ minHeight: 28, px: 1, py: 0.25, fontSize: '0.75rem' }}
+        >
+          Показати ще
+        </Button>
+        {navigation.filterOptions.length > 0 ? (
+          <Button
+            aria-label="Опції фільтра для показу повідомлень"
+            aria-haspopup="menu"
+            aria-expanded={menuAnchor == null ? undefined : 'true'}
+            onClick={(event) => setMenuAnchor(event.currentTarget)}
+            disabled={navigation.loadingDirection !== null}
+            sx={{ minWidth: 28, px: 0.25 }}
+          >
+            <ArrowDropDownIcon />
+          </Button>
+        ) : null}
+      </ButtonGroup>
+      <Menu anchorEl={menuAnchor} open={menuAnchor != null} onClose={() => setMenuAnchor(null)}>
+        {navigation.filterOptions.map((option) => (
+          <MenuItem
+            key={`${option.kind}:${option.value}`}
+            onClick={() => navigation.onToggleFilter(option)}
+          >
+            <Checkbox checked={option.selected} />
+            <ListItemText primary={option.label} />
+          </MenuItem>
+        ))}
+      </Menu>
+    </Box>
+  );
+}
 
 type AnalysisMessageCardItemProps = {
   authUserName: string | null;
@@ -401,6 +485,7 @@ function AnalysisMessagesPaneComponent({
   messages,
   networkDisplayMap,
   pageIndex,
+  scrollResetKey,
   noMoreToLoad,
   onDeleteMessage,
   onCancelBotTagAction,
@@ -428,14 +513,18 @@ function AnalysisMessagesPaneComponent({
   callsignInfoMap,
   networks,
   unitsMap,
+  directMessageNavigation,
 }: Props) {
   const theme = useTheme();
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
+  const [bottomAnchorSpacerPx, setBottomAnchorSpacerPx] = useState(0);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const preserveScrollOnPageChangeRef = useRef(false);
+  const targetAnchorTopRef = useRef<number | null>(null);
+  const preserveTargetAnchorRef = useRef(false);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
 
   useEffect(() => {
@@ -456,6 +545,10 @@ function AnalysisMessagesPaneComponent({
     }
   }, [pageIndex]);
 
+  useEffect(() => {
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+  }, [scrollResetKey]);
+
   const handleLoadMoreMessages = useCallback(async () => {
     preserveScrollOnPageChangeRef.current = true;
     try {
@@ -475,23 +568,129 @@ function AnalysisMessagesPaneComponent({
     };
   }, []);
 
-  const [targetMessageUid] = useState(parseMessageUidFromWindow);
-  const hasScrolledTargetRef = useRef(false);
+  const highlightedTargetIdRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (!targetMessageUid || hasScrolledTargetRef.current || loading || messages.length === 0) {
+  const getTargetElement = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (container == null || directMessageNavigation == null) return null;
+    return container.querySelector<HTMLElement>(
+      `[data-message-id="${directMessageNavigation.targetMessageId}"]`,
+    );
+  }, [directMessageNavigation?.targetMessageId]);
+
+  const captureTargetAnchor = useCallback(() => {
+    const targetElement = getTargetElement();
+    if (targetElement != null)
+      targetAnchorTopRef.current = targetElement.getBoundingClientRect().top;
+  }, [getTargetElement]);
+
+  const restoreTargetAnchor = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const targetElement = getTargetElement();
+    if (container == null || targetElement == null || targetAnchorTopRef.current == null) return;
+    const offset = targetElement.getBoundingClientRect().top - targetAnchorTopRef.current;
+    if (Math.abs(offset) < 0.5) return;
+    container.scrollTop += offset;
+  }, [getTargetElement]);
+
+  const beginTargetAnchorRestoration = useCallback(
+    (position: 'above' | 'below') => {
+      captureTargetAnchor();
+      preserveTargetAnchorRef.current = true;
+      if (position !== 'above') return;
+      const container = scrollContainerRef.current;
+      if (container == null) return;
+      const missingContentBelow = getMissingBottomScrollSpace(container);
+      setBottomAnchorSpacerPx((current) => Math.max(current, Math.ceil(missingContentBelow)));
+    },
+    [captureTargetAnchor],
+  );
+
+  const reconcileBottomAnchorSpacer = useCallback(() => {
+    setBottomAnchorSpacerPx((current) => {
+      if (current === 0) return current;
+      const container = scrollContainerRef.current;
+      if (container == null) return current;
+      return Math.ceil(getMissingBottomScrollSpace(container));
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (directMessageNavigation == null) {
+      targetAnchorTopRef.current = null;
+      preserveTargetAnchorRef.current = false;
       return;
     }
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    const targetEl = container.querySelector<HTMLElement>(
-      `[data-message-uid="${targetMessageUid}"], [data-message-id="${targetMessageUid}"]`,
-    );
-    if (targetEl) {
-      hasScrolledTargetRef.current = true;
-      scrollToAndHighlightMessage(targetEl);
+    const targetElement = getTargetElement();
+    if (targetElement == null) return;
+    if (targetAnchorTopRef.current == null) {
+      targetAnchorTopRef.current = targetElement.getBoundingClientRect().top;
+      return;
     }
-  }, [targetMessageUid, messages, loading]);
+    restoreTargetAnchor();
+  }, [
+    bottomAnchorSpacerPx,
+    directMessageNavigation?.canLoadEarlier,
+    directMessageNavigation?.canLoadLater,
+    directMessageNavigation?.newestFirst,
+    getTargetElement,
+    messages,
+    restoreTargetAnchor,
+  ]);
+
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current;
+    const messageList = container?.querySelector('ul');
+    if (
+      directMessageNavigation == null ||
+      messageList == null ||
+      typeof ResizeObserver === 'undefined'
+    ) {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (preserveTargetAnchorRef.current) restoreTargetAnchor();
+    });
+    observer.observe(messageList);
+    for (const messageElement of messageList.children) observer.observe(messageElement);
+    return () => observer.disconnect();
+  }, [directMessageNavigation, messages, restoreTargetAnchor]);
+
+  useLayoutEffect(() => {
+    if (directMessageNavigation == null) {
+      setBottomAnchorSpacerPx(0);
+      return;
+    }
+    reconcileBottomAnchorSpacer();
+  }, [directMessageNavigation, messages, reconcileBottomAnchorSpacer]);
+
+  useEffect(() => {
+    if (
+      directMessageNavigation == null ||
+      !directMessageNavigation.focusActive ||
+      highlightedTargetIdRef.current === directMessageNavigation.targetMessageId ||
+      loading ||
+      messages.length === 0
+    ) {
+      return;
+    }
+    const targetElement = getTargetElement();
+    if (targetElement) {
+      highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
+      scrollToAndHighlightMessage(targetElement, { scroll: false });
+      captureTargetAnchor();
+    }
+  }, [captureTargetAnchor, directMessageNavigation, getTargetElement, loading, messages]);
+
+  const handleScroll = useCallback(() => {
+    reconcileBottomAnchorSpacer();
+    if (!preserveTargetAnchorRef.current) captureTargetAnchor();
+  }, [captureTargetAnchor, reconcileBottomAnchorSpacer]);
+
+  const clearFocusOnScrollStart = useCallback(() => {
+    preserveTargetAnchorRef.current = false;
+    if (directMessageNavigation?.focusActive) directMessageNavigation.onClearFocus();
+  }, [directMessageNavigation]);
 
   const showCopiedFeedback = useCallback((value: string) => {
     if (isPresent(copyFeedbackTimerRef.current)) {
@@ -546,14 +745,34 @@ function AnalysisMessagesPaneComponent({
     >
       <Box
         ref={scrollContainerRef}
+        tabIndex={directMessageNavigation?.focusActive ? 0 : undefined}
+        onScroll={handleScroll}
+        onWheel={clearFocusOnScrollStart}
+        onTouchMove={clearFocusOnScrollStart}
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) clearFocusOnScrollStart();
+        }}
+        onKeyDown={(event) => {
+          if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+            clearFocusOnScrollStart();
+          }
+        }}
         sx={{
           ...getAnalysisMessagesScrollSx(theme),
+          overflowAnchor: 'none',
           width: '100%',
           maxWidth: '100%',
           minWidth: 0,
         }}
       >
         <NarrowMessagesLoadingIndicator loading={loading} paginationLoading={paginationLoading} />
+        {directMessageNavigation ? (
+          <FocusedLoadMoreButton
+            position="above"
+            navigation={directMessageNavigation}
+            onBeforeLoad={beginTargetAnchorRestoration}
+          />
+        ) : null}
         <Box
           component="ul"
           sx={{
@@ -612,7 +831,13 @@ function AnalysisMessagesPaneComponent({
             />
           ))}
         </Box>
-        {!noMoreToLoad && messages.length > 0 ? (
+        {directMessageNavigation ? (
+          <FocusedLoadMoreButton
+            position="below"
+            navigation={directMessageNavigation}
+            onBeforeLoad={beginTargetAnchorRestoration}
+          />
+        ) : !noMoreToLoad && messages.length > 0 ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 2 }}>
             <Button
               variant="outlined"
@@ -622,6 +847,13 @@ function AnalysisMessagesPaneComponent({
               Завантажити ще
             </Button>
           </Box>
+        ) : null}
+        {directMessageNavigation != null && bottomAnchorSpacerPx > 0 ? (
+          <Box
+            aria-hidden="true"
+            data-direct-message-anchor-spacer="true"
+            style={{ height: bottomAnchorSpacerPx }}
+          />
         ) : null}
       </Box>
 

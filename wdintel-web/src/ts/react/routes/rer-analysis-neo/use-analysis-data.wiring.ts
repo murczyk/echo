@@ -114,6 +114,8 @@ export function buildAnalysisActionsParams({
 type BuildReloadParamsInput = {
   centerTab: UseAnalysisDataProps['centerTab'];
   deferInitialLoad: boolean;
+  focusedMessage: [number, InboxMessage] | null;
+  focusedMessageActive: boolean;
   leftPanelOpen: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
@@ -192,6 +194,8 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
   return {
     centerTab: input.centerTab,
     deferInitialLoad: input.deferInitialLoad,
+    focusedMessage: input.focusedMessage,
+    focusedMessageActive: input.focusedMessageActive,
     leftPanelOpen: input.leftPanelOpen,
     newestFirst: input.newestFirst,
     onError: input.onError,

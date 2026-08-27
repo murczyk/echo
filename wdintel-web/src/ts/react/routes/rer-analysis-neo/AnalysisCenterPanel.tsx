@@ -145,7 +145,7 @@ export function AnalysisCenterPanel({
             })}
           </Tabs>
         </Box>
-        {isNarrowLayout && centerTab === 'messages' ? (
+        {isNarrowLayout && centerTab === 'messages' && page.directMessageNavigation == null ? (
           <AnalysisPaginationControl
             centerTab={centerTab}
             pageIndex={page.pageIndex}
@@ -238,6 +238,7 @@ export function AnalysisCenterPanel({
             messages={page.messages}
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
+            scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}`}
             noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}
             onCancelBotTagAction={page.onCancelBotTagAction}
@@ -265,6 +266,7 @@ export function AnalysisCenterPanel({
             callsignInfoMap={page.summaryCallsignsInfo}
             networks={page.networks}
             unitsMap={page.unitsMap}
+            directMessageNavigation={page.directMessageNavigation}
           />
         </Box>
 

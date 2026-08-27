@@ -22,11 +22,27 @@ import {
   shouldOpenAnalysisMapFromSearchParams,
   parseNewestFirstFromWindow,
   parseMessageUidFromWindow,
+  removeMessageUidFromWindowUrl,
 } from './helpers';
-import { APP_TIME_ZONE, formatDateTimeInputValueInTimeZone } from '../../utils/misc';
 import { fetchInboxItemContext } from '../../services/api/inbox-messages';
-import type { AnalysisCallsignFrequencyMatchesRsp, InboxMessage, User } from '../../../../Bindings';
-import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
+import {
+  getGroupInfosBatch,
+  getSignalProfilesBatch,
+} from '../../services/api/inbox-reference-data';
+import type {
+  AnalysisCallsignFrequencyMatchesRsp,
+  InboxItemContextRsp,
+  InboxMessage,
+  SignalGroupEntry,
+  SignalProfileEntry,
+  User,
+} from '../../../../Bindings';
+import type {
+  AnalysisDirectMessageFilterOption,
+  AnalysisFilterSectionId,
+  AnalysisPageViewModel,
+  AnalysisQueryState,
+} from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
@@ -79,6 +95,22 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     initialPanelQueryState.rightPanelOpen ? 'stats' : null,
   );
   const [targetMessageUid] = useState(parseMessageUidFromWindow);
+  const [targetMessageContext, setTargetMessageContext] = useState<InboxItemContextRsp | null>(
+    null,
+  );
+  const [targetMessageGroupInfos, setTargetMessageGroupInfos] = useState<
+    Record<string, SignalGroupEntry>
+  >({});
+  const [targetMessageProfiles, setTargetMessageProfiles] = useState<
+    Record<string, SignalProfileEntry | null>
+  >({});
+  const [targetMessageLoading, setTargetMessageLoading] = useState(targetMessageUid !== null);
+  const [targetMessageContextActive, setTargetMessageContextActive] = useState(
+    targetMessageUid !== null,
+  );
+  const [targetMessageFocusActive, setTargetMessageFocusActive] = useState(
+    targetMessageUid !== null,
+  );
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
@@ -86,33 +118,82 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   useEffect(() => {
     if (!targetMessageUid) return;
     let cancelled = false;
+    setTargetMessageLoading(true);
     void fetchInboxItemContext({ messageUid: targetMessageUid })
-      .then((res) => {
+      .then(async (res) => {
         if (cancelled) return;
-        if (res.sigintInboxItemIds.length === 0) {
+        if (res.message == null) {
+          setTargetMessageContextActive(false);
           setPageError('Не вдалося знайти повідомлення за посиланням.');
           return;
         }
-        setQueryState((prev) => ({
-          ...prev,
-          groupsSelected:
-            res.groupMasterKeys.length > 0 ? res.groupMasterKeys : prev.groupsSelected,
-          fromDateTimeStr: res.sinceTs
-            ? formatDateTimeInputValueInTimeZone(new Date(res.sinceTs), APP_TIME_ZONE)
-            : prev.fromDateTimeStr,
-          toDateTimeStr: res.tillTs
-            ? formatDateTimeInputValueInTimeZone(new Date(res.tillTs), APP_TIME_ZONE)
-            : prev.toDateTimeStr,
-        }));
+        const groupKeys = Array.from(
+          new Set(
+            [...res.groupMasterKeys, res.message[1].groupMasterKey].filter(
+              (groupKey): groupKey is string => groupKey != null,
+            ),
+          ),
+        );
+        const sender = res.message[1].sender?.trim();
+        const [groupInfos, profilesRsp] = await Promise.all([
+          getGroupInfosBatch(groupKeys),
+          getSignalProfilesBatch(sender ? [sender] : []),
+        ]);
+        if (cancelled) return;
+        setTargetMessageGroupInfos(
+          Object.fromEntries(groupInfos.map((groupInfo) => [groupInfo.masterKey, groupInfo])),
+        );
+        setTargetMessageProfiles(profilesRsp.data);
+        setTargetMessageContext(res);
       })
       .catch((err) => {
         if (cancelled) return;
+        setTargetMessageContextActive(false);
         setPageError(`Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`);
+      })
+      .finally(() => {
+        if (!cancelled) setTargetMessageLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, [setPageError, targetMessageUid]);
+
+  const clearTargetMessageFocus = useCallback(() => {
+    setTargetMessageFocusActive(false);
+    removeMessageUidFromWindowUrl();
+  }, []);
+
+  const directQueryBoundaryRef = useRef({
+    fromDateTimeStr: initialQueryState.fromDateTimeStr,
+    toDateTimeStr: initialQueryState.toDateTimeStr,
+    search: initialQueryState.search,
+  });
+  useEffect(() => {
+    const nextBoundary = {
+      fromDateTimeStr: queryState.fromDateTimeStr,
+      toDateTimeStr: queryState.toDateTimeStr,
+      search: queryState.search,
+    };
+    const previousBoundary = directQueryBoundaryRef.current;
+    directQueryBoundaryRef.current = nextBoundary;
+    if (!targetMessageContextActive) return;
+    if (
+      previousBoundary.fromDateTimeStr === nextBoundary.fromDateTimeStr &&
+      previousBoundary.toDateTimeStr === nextBoundary.toDateTimeStr &&
+      previousBoundary.search === nextBoundary.search
+    ) {
+      return;
+    }
+    setTargetMessageContextActive(false);
+    clearTargetMessageFocus();
+  }, [
+    clearTargetMessageFocus,
+    queryState.fromDateTimeStr,
+    queryState.search,
+    queryState.toDateTimeStr,
+    targetMessageContextActive,
+  ]);
 
   const handleUnauthorized = useCallback((errorValue: unknown) => {
     return false;
@@ -122,6 +203,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     authUserName,
     currentUser,
     deferInitialLoad: !systemSettingsLoaded,
+    focusedMessage: targetMessageContext?.message ?? null,
+    focusedMessageActive: targetMessageContextActive,
     leftPanelOpen,
     centerTab,
     newestFirst,
@@ -530,6 +613,116 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     return queryStateKey !== lastResetStateKey;
   }, [lastResetState, queryState]);
 
+  const groupInfos = useMemo(
+    () => ({ ...data.groupInfos, ...targetMessageGroupInfos }),
+    [data.groupInfos, targetMessageGroupInfos],
+  );
+  const profiles = useMemo(
+    () => ({ ...targetMessageProfiles, ...data.profiles }),
+    [data.profiles, targetMessageProfiles],
+  );
+
+  const directMessageFilterOptions = useMemo<AnalysisDirectMessageFilterOption[]>(() => {
+    const context = targetMessageContext;
+    const message = context?.message?.[1];
+    if (context == null || message == null) return [];
+
+    const options: AnalysisDirectMessageFilterOption[] = context.groupMasterKeys.map(
+      (groupKey) => ({
+        kind: 'group',
+        value: groupKey,
+        label: `Група: ${groupInfos[groupKey]?.name ?? groupKey}`,
+        selected: queryState.groupsSelected.includes(groupKey),
+      }),
+    );
+    for (const networkId of message.networkIds ?? []) {
+      const value = String(networkId);
+      const networkName =
+        data.networkDisplayMap[networkId] ??
+        data.networks.find((network) => network.id === networkId)?.name ??
+        `#${networkId}`;
+      options.push({
+        kind: 'network',
+        value,
+        label: `Мережа: ${networkName}`,
+        selected: queryState.networksSelected.includes(value),
+      });
+    }
+    const frequency = message.freq?.trim();
+    if (frequency) {
+      options.push({
+        kind: 'frequency',
+        value: frequency,
+        label: `Частота: ${frequency}`,
+        selected: queryState.freqsSelected.includes(frequency),
+      });
+    }
+    return options;
+  }, [data.networkDisplayMap, data.networks, groupInfos, queryState, targetMessageContext]);
+
+  const toggleDirectMessageFilter = useCallback(
+    (option: AnalysisDirectMessageFilterOption) => {
+      const toggleValue = (values: string[]) =>
+        option.selected
+          ? values.filter((value) => value !== option.value)
+          : Array.from(new Set([...values, option.value]));
+      setRightPanelOpen(true);
+      setRightSidebarTab('stats');
+      if (option.kind === 'group') {
+        updateQueryState({ groupsSelected: toggleValue(queryState.groupsSelected) });
+        return;
+      }
+      if (option.kind === 'network') {
+        updateQueryState({
+          networksSelected: toggleValue(queryState.networksSelected),
+          withoutNetwork: false,
+        });
+        return;
+      }
+      updateQueryState({
+        freqsSelected: toggleValue(queryState.freqsSelected),
+        includeOnlyNewFreqs: false,
+      });
+    },
+    [
+      queryState.freqsSelected,
+      queryState.groupsSelected,
+      queryState.networksSelected,
+      updateQueryState,
+    ],
+  );
+
+  const directMessageNavigation = useMemo(() => {
+    const targetMessageId = targetMessageContext?.message?.[0];
+    if (!targetMessageContextActive || targetMessageId == null) return null;
+    return {
+      targetMessageId,
+      focusActive: targetMessageFocusActive,
+      newestFirst,
+      canLoadEarlier: data.focusedHasMoreEarlier,
+      canLoadLater: data.focusedHasMoreLater,
+      loadingDirection: data.focusedLoadingDirection,
+      filterOptions: directMessageFilterOptions,
+      onToggleFilter: toggleDirectMessageFilter,
+      onClearFocus: clearTargetMessageFocus,
+      onLoadEarlier: data.loadFocusedEarlier,
+      onLoadLater: data.loadFocusedLater,
+    };
+  }, [
+    clearTargetMessageFocus,
+    data.focusedHasMoreEarlier,
+    data.focusedHasMoreLater,
+    data.focusedLoadingDirection,
+    data.loadFocusedEarlier,
+    data.loadFocusedLater,
+    directMessageFilterOptions,
+    newestFirst,
+    targetMessageContext,
+    targetMessageContextActive,
+    targetMessageFocusActive,
+    toggleDirectMessageFilter,
+  ]);
+
   return {
     authUserName,
     aorEntries: data.aorEntries,
@@ -558,7 +751,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     isFilterSectionLoading: data.isFilterSectionLoading,
     isFilterSectionEmptyLoading: data.isFilterSectionEmptyLoading,
     isFilterSectionStale: data.isFilterSectionStale,
-    groupInfos: data.groupInfos,
+    groupInfos,
     groupsActivityPeriod: data.groupsActivityPeriod,
     groupsActivity: data.groupsActivity,
     groupsActivityLoadedFreq: data.groupsActivityLoadedFreq,
@@ -573,13 +766,14 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     mapAttrs: data.mapAttrs,
     messageActionLoading: data.messageActionLoading,
     botTagAction: data.botTagAction,
-    messagesLoading: data.messagesLoading,
+    messagesLoading: targetMessageLoading || data.messagesLoading,
     messagesOverallCount: data.messagesOverallCount,
     messagesPaging: data.messagesPaging,
     messagesTotalCount: data.messagesTotalCount,
     messagesTotalLoading: data.messagesTotalLoading,
     messageComments: data.messageComments,
     messages: data.messages,
+    directMessageNavigation,
     networkDisplayMap: data.networkDisplayMap,
     networks: data.networks,
     newCallsigns: data.newCallsigns,
@@ -601,7 +795,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     openEditor: editor.openEditor,
     openReportCreator: editor.openReportCreator,
     openReportEditor: editor.openReportEditor,
-    profiles: data.profiles,
+    profiles,
     queryState,
     tagsLayout: dutySettings.tagsLayout,
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,

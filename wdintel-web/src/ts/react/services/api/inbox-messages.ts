@@ -464,6 +464,7 @@ export async function fetchInboxCount(
 }
 
 export type InboxItemContextRaw = {
+  message?: [number, unknown] | null;
   group_master_keys?: string[];
   groupMasterKeys?: string[];
   sigint_inbox_item_ids?: number[];
@@ -484,6 +485,8 @@ export async function fetchInboxItemContext(
     options,
   );
   return {
+    message:
+      raw.message == null ? null : [raw.message[0], normalizeInboxMessageFromWire(raw.message[1])],
     groupMasterKeys: raw.groupMasterKeys ?? raw.group_master_keys ?? [],
     sigintInboxItemIds: raw.sigintInboxItemIds ?? raw.sigint_inbox_item_ids ?? [],
     sinceTs: raw.sinceTs ?? raw.since_ts ?? null,

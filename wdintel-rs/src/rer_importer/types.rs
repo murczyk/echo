@@ -509,6 +509,7 @@ pub struct InboxItemContextReq {
     Default,
 )]
 pub struct InboxItemContextRsp {
+    pub message: Option<(i64, InboxMessage)>,
     pub group_master_keys: Vec<String>,
     pub sigint_inbox_item_ids: Vec<i64>,
     #[serde(rename = "sinceTs")]

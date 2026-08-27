@@ -55,6 +55,27 @@ export type AnalysisFilterOption = {
   values?: string[];
 };
 
+export type AnalysisDirectMessageFilterOption = {
+  kind: 'group' | 'network' | 'frequency';
+  value: string;
+  label: string;
+  selected: boolean;
+};
+
+export type AnalysisDirectMessageNavigation = {
+  targetMessageId: number;
+  focusActive: boolean;
+  newestFirst: boolean;
+  canLoadEarlier: boolean;
+  canLoadLater: boolean;
+  loadingDirection: 'earlier' | 'later' | null;
+  filterOptions: AnalysisDirectMessageFilterOption[];
+  onToggleFilter: (option: AnalysisDirectMessageFilterOption) => void;
+  onClearFocus: () => void;
+  onLoadEarlier: () => Promise<boolean>;
+  onLoadLater: () => Promise<boolean>;
+};
+
 export type AnalysisAorEntry = {
   id: number;
   name: string;
@@ -203,6 +224,7 @@ export type AnalysisPageState = {
   messagesTotalCount: number | null;
   messagesTotalLoading: boolean;
   messages: Array<[number, InboxMessage]>;
+  directMessageNavigation: AnalysisDirectMessageNavigation | null;
   networkDisplayMap: Record<number, string>;
   networks: Network[];
   newCallsigns: NewCallsignsRes;

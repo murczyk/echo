@@ -156,6 +156,20 @@ export function parseMessageUidFromWindow(): string | null {
   return trimmed && trimmed !== '' ? trimmed : null;
 }
 
+export function removeMessageUidFromWindowUrl(): void {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('m');
+  url.searchParams.delete('mid');
+  url.searchParams.delete('messageUid');
+  const query = url.searchParams.toString();
+  window.history.replaceState(
+    {},
+    '',
+    `${url.pathname}${query === '' ? '' : `?${query}`}${url.hash}`,
+  );
+}
+
 export function createInitialQueryState(
   parsed: AnalysisQueryState,
   now: Date = new Date(),

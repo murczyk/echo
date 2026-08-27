@@ -1324,6 +1324,7 @@ export type InboxItemContextReq = {
 };
 
 export type InboxItemContextRsp = {
+  message: [number, InboxMessage] | null;
   groupMasterKeys: Array<string>;
   sigintInboxItemIds: Array<number>;
   sinceTs: number | null;

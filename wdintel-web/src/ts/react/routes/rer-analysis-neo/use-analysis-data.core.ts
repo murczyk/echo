@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { InboxMessage, InboxMessagesReq, InboxMessageTag } from '../../../../Bindings';
 import { fetchMessagesByIds } from '../../services/api/analysis';
@@ -295,6 +295,8 @@ export function useAnalysisData({
   authUserName,
   currentUser,
   deferInitialLoad = false,
+  focusedMessage = null,
+  focusedMessageActive = false,
   centerTab,
   leftPanelOpen = true,
   newestFirst,
@@ -312,8 +314,8 @@ export function useAnalysisData({
   );
   const reloadTriggerKey = useMemo(
     () =>
-      `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}`,
-    [newestFirst, optionsFreqValues, queryState],
+      `${queryStateReloadKey(queryState, optionsFreqValues) ?? 'invalid'}|${focusedMessageActive ? 'focused' : newestFirst ? 'desc' : 'asc'}|media=${queryState.onlyWithMedia ? 1 : 0}|focus=${focusedMessageActive ? (focusedMessage?.[0] ?? 'pending') : 'off'}`,
+    [focusedMessage, focusedMessageActive, newestFirst, optionsFreqValues, queryState],
   );
   const [filtersLoading, setFiltersLoading] = useState(false);
   const [countsLoading, setCountsLoading] = useState(false);
@@ -333,14 +335,23 @@ export function useAnalysisData({
 
   const messageList = useAnalysisMessageList({
     deferInitialLoad,
+    focusedMessageId: focusedMessage?.[0] ?? null,
+    focusedMessageActive,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
     onUnauthorized,
     optionsFreqValues,
     queryState,
+    setGroupInfos: referenceState.setGroupInfos,
+    setProfiles: referenceState.setProfiles,
     setSummaryCallsignsInfo: referenceState.setSummaryCallsignsInfo,
   });
+
+  useEffect(() => {
+    if (focusedMessage == null) return;
+    void loadMissingNetworksForMessages([focusedMessage]);
+  }, [focusedMessage, loadMissingNetworksForMessages]);
 
   const {
     filterSectionLoadStates,
@@ -544,6 +555,8 @@ export function useAnalysisData({
     buildReloadOrchestratorParams({
       centerTab,
       deferInitialLoad,
+      focusedMessage,
+      focusedMessageActive,
       leftPanelOpen,
       newestFirst,
       onError,
@@ -661,6 +674,8 @@ export function useAnalysisData({
     loadGroupsActivity: sidebarData.loadGroupsActivity,
     loadNewCallsigns: sidebarData.loadNewCallsigns,
     loadFirstPage: messageList.loadFirstPage,
+    loadFocusedEarlier: messageList.loadFocusedEarlier,
+    loadFocusedLater: messageList.loadFocusedLater,
     loadLastPage: messageList.loadLastPage,
     loadNextPage: messageList.loadNextPage,
     loadMoreMessages: messageList.loadMoreMessages,
@@ -676,6 +691,9 @@ export function useAnalysisData({
     messagesOverallCount: messageList.messagesOverallCount,
     messagesTotalCount: messageList.messagesTotalCount,
     messagesTotalLoading: messageList.messagesTotalLoading,
+    focusedHasMoreEarlier: messageList.focusedHasMoreEarlier,
+    focusedHasMoreLater: messageList.focusedHasMoreLater,
+    focusedLoadingDirection: messageList.focusedLoadingDirection,
     networkDisplayMap: referenceState.networkDisplayMap,
     networks: referenceState.networks,
     newCallsigns: sidebarData.newCallsigns,

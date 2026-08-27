@@ -28,7 +28,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use sea_orm::*;
 use sea_query::Query;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -280,7 +280,7 @@ async fn inbox_item_context_bl(
         skip_group_stats: Some(true),
         ..Default::default()
     };
-    let accessible_ids = messages_by_id_bl(
+    let mut accessible_messages = messages_by_id_bl(
         login,
         &organism_logins,
         env,
@@ -290,9 +290,8 @@ async fn inbox_item_context_bl(
     .await
     .context(h!())?
     .into_iter()
-    .map(|(id, _)| id)
-    .collect::<HashSet<_>>();
-    rows.retain(|row| accessible_ids.contains(&row.id));
+    .collect::<HashMap<_, _>>();
+    rows.retain(|row| accessible_messages.contains_key(&row.id));
     if rows.is_empty() {
         return Ok(InboxItemContextRsp::default());
     }
@@ -305,6 +304,11 @@ async fn inbox_item_context_bl(
 
     let sigint_inbox_item_ids =
         rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let message = rows.first().and_then(|row| {
+        accessible_messages
+            .remove(&row.id)
+            .map(|message| (row.id, message))
+    });
     let group_master_keys = if allowed_groups.is_empty() {
         vec![]
     } else {
@@ -319,6 +323,7 @@ async fn inbox_item_context_bl(
 
     Ok(build_inbox_item_context_rsp(
         rows,
+        message,
         group_master_keys,
         sigint_inbox_item_ids,
     ))
@@ -402,6 +407,7 @@ async fn load_inbox_item_context_group_keys(
 
 fn build_inbox_item_context_rsp(
     rows: Vec<InboxItemContextRow>,
+    message: Option<(i64, InboxMessage)>,
     group_master_keys: Vec<String>,
     sigint_inbox_item_ids: Vec<i64>,
 ) -> InboxItemContextRsp {
@@ -412,6 +418,7 @@ fn build_inbox_item_context_rsp(
     let earliest = datetimes.iter().min();
     let latest = datetimes.iter().max();
     InboxItemContextRsp {
+        message,
         group_master_keys,
         sigint_inbox_item_ids,
         since_ts: earliest.map(|ts| {
@@ -4306,6 +4313,17 @@ mod tests {
                 .unwrap();
 
         assert_eq!(context.sigint_inbox_item_ids, vec![message.id]);
+        assert_eq!(
+            context.message.as_ref().map(|(id, _)| *id),
+            Some(message.id)
+        );
+        assert_eq!(
+            context
+                .message
+                .as_ref()
+                .map(|(_, message)| message.text.as_str()),
+            Some("owner direct link")
+        );
         assert!(context.group_master_keys.is_empty());
         assert_eq!(
             context.since_ts,

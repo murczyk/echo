@@ -33,6 +33,8 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
+  focusedMessage?: [number, InboxMessage] | null;
+  focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
@@ -84,6 +86,8 @@ export type UseAnalysisDataResult = {
   loadGroupsActivity: (period?: AnalysisGroupsActivityPeriod) => Promise<void>;
   loadNewCallsigns: () => Promise<void>;
   loadFirstPage: () => Promise<void>;
+  loadFocusedEarlier: () => Promise<boolean>;
+  loadFocusedLater: () => Promise<boolean>;
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
   loadMoreMessages: () => Promise<boolean>;
@@ -100,6 +104,9 @@ export type UseAnalysisDataResult = {
   messagesPaging: boolean;
   messagesTotalCount: number | null;
   messagesTotalLoading: boolean;
+  focusedHasMoreEarlier: boolean;
+  focusedHasMoreLater: boolean;
+  focusedLoadingDirection: 'earlier' | 'later' | null;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;

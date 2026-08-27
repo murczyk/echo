@@ -3435,7 +3435,8 @@ inboxItemContextReqEncoder struct =
 
 
 type alias InboxItemContextRsp =
-    { groupMasterKeys : List (String)
+    { message : Maybe (( Int, InboxMessage ))
+    , groupMasterKeys : List (String)
     , sigintInboxItemIds : List (Int)
     , sinceTs : Maybe (Int)
     , tillTs : Maybe (Int)
@@ -3445,7 +3446,8 @@ type alias InboxItemContextRsp =
 inboxItemContextRspEncoder : InboxItemContextRsp -> Json.Encode.Value
 inboxItemContextRspEncoder struct =
     Json.Encode.object
-        [ ( "group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
+        [ ( "message", (Maybe.withDefault Json.Encode.null << Maybe.map (\( a, b) -> Json.Encode.list identity [ Json.Encode.int a, inboxMessageEncoder b ])) struct.message )
+        , ( "group_master_keys", (Json.Encode.list (Json.Encode.string)) struct.groupMasterKeys )
         , ( "sigint_inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.sigintInboxItemIds )
         , ( "sinceTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceTs )
         , ( "tillTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillTs )
@@ -22907,19 +22909,35 @@ type MessageTextPreviewLines
 
 messageTextPreviewLinesDecoder : Json.Decode.Decoder MessageTextPreviewLines
 messageTextPreviewLinesDecoder =
-    Json.Decode.string
-        |> Json.Decode.andThen
-            (\x ->
-                case x of
-                    "twenty" ->
-                        Json.Decode.succeed Twenty
-                    "forty" ->
-                        Json.Decode.succeed Forty
-                    "off" ->
-                        Json.Decode.succeed Off
-                    unexpected ->
-                        Json.Decode.fail <| "Unexpected variant " ++ unexpected
-            )
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "twenty" ->
+                            Json.Decode.succeed Twenty
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "forty" ->
+                            Json.Decode.succeed Forty
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "off" ->
+                            Json.Decode.succeed Off
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        ]
 
 type alias UserDutySettingsDto =
     { tagsLayout : DutyTagsLayout

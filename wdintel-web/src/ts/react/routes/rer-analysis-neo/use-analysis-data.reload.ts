@@ -2,6 +2,7 @@ import type {
   CallsignInfoRes,
   CountStatsRsp,
   InboxMessage,
+  InboxMessagesRsp,
   Network,
   NewCallsignsRes,
   SignalGroupEntry,
@@ -611,6 +612,20 @@ export async function loadFilterSectionData(
 
 type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 
+function buildFocusedInboxResponse(
+  focusedMessage: [number, InboxMessage] | null | undefined,
+): InboxMessagesRsp {
+  return {
+    inboxItems: focusedMessage == null ? [] : [focusedMessage],
+    pollCursorId: null,
+    callsigns: [],
+    signalProfiles: {},
+    signalGroups: [],
+    freqPelengsSummary: null,
+    pageLimit: null,
+  };
+}
+
 export function transformMessagePageResponse<
   T extends { inboxItems: Array<[number, InboxMessage]> },
 >(response: T, cursor: AnalysisMessagePageCursor | undefined): T {
@@ -626,6 +641,8 @@ export function transformMessagePageResponse<
 
 type ReloadParams = {
   clearAnalysisResults: () => void;
+  focusedMessage?: [number, InboxMessage] | null;
+  focusedMessageActive?: boolean;
   invalidateCorrelatedFreqsCache: () => void;
   invalidateCallsignGraph: (options?: { clearGraph?: boolean }) => void;
   invalidateMessagePaging: () => void;
@@ -765,17 +782,19 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       );
       countsPromise.catch(() => undefined);
       const messagePageCursor = params.messagePageCursor;
-      const inboxPromise = fetchInboxMessages(
-        {
-          ...messageInboxReq,
-          beforeIdNoninclusive:
-            messagePageCursor?.beforeIdNoninclusive ?? messageInboxReq.beforeIdNoninclusive,
-          sinceIdNoninclusive:
-            messagePageCursor?.sinceIdNoninclusive ?? messageInboxReq.sinceIdNoninclusive,
-          newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
-        },
-        params.signal ? { signal: params.signal } : undefined,
-      );
+      const inboxPromise = params.focusedMessageActive
+        ? Promise.resolve(buildFocusedInboxResponse(params.focusedMessage))
+        : fetchInboxMessages(
+            {
+              ...messageInboxReq,
+              beforeIdNoninclusive:
+                messagePageCursor?.beforeIdNoninclusive ?? messageInboxReq.beforeIdNoninclusive,
+              sinceIdNoninclusive:
+                messagePageCursor?.sinceIdNoninclusive ?? messageInboxReq.sinceIdNoninclusive,
+              newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
+            },
+            params.signal ? { signal: params.signal } : undefined,
+          );
       const freqsPromise = fetchAnalysisFreqs(
         analysisReq,
         params.signal ? { signal: params.signal } : undefined,
@@ -791,7 +810,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
       }
       if (isStaleReload() || params.signal?.aborted) return null;
 
-      const displayedMessages = inboxRsp.inboxItems ?? [];
+      const displayedMessages = params.focusedMessageActive
+        ? params.focusedMessage == null
+          ? []
+          : [params.focusedMessage]
+        : (inboxRsp.inboxItems ?? []);
       params.setMessages(displayedMessages);
       params.setProfiles((current) => mergeSignalProfiles(current, inboxRsp.signalProfiles ?? {}));
       params.setGroupInfos((current) =>
@@ -837,19 +860,21 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
           isPresent(rebuiltMessageInboxReq)
         ) {
           try {
-            const rebuiltInboxRsp = await fetchInboxMessages(
-              {
-                ...rebuiltMessageInboxReq,
-                beforeIdNoninclusive:
-                  messagePageCursor?.beforeIdNoninclusive ??
-                  rebuiltMessageInboxReq.beforeIdNoninclusive,
-                sinceIdNoninclusive:
-                  messagePageCursor?.sinceIdNoninclusive ??
-                  rebuiltMessageInboxReq.sinceIdNoninclusive,
-                newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
-              },
-              params.signal ? { signal: params.signal } : undefined,
-            );
+            const rebuiltInboxRsp = params.focusedMessageActive
+              ? buildFocusedInboxResponse(params.focusedMessage)
+              : await fetchInboxMessages(
+                  {
+                    ...rebuiltMessageInboxReq,
+                    beforeIdNoninclusive:
+                      messagePageCursor?.beforeIdNoninclusive ??
+                      rebuiltMessageInboxReq.beforeIdNoninclusive,
+                    sinceIdNoninclusive:
+                      messagePageCursor?.sinceIdNoninclusive ??
+                      rebuiltMessageInboxReq.sinceIdNoninclusive,
+                    newestFirst: messagePageCursor?.requestNewestFirst ?? params.newestFirst,
+                  },
+                  params.signal ? { signal: params.signal } : undefined,
+                );
             if (isStaleReload() || params.signal?.aborted) return null;
 
             const rebuiltMessagePageRsp = transformMessagePageResponse(
@@ -863,7 +888,11 @@ export async function reloadAnalysisData(params: ReloadParams): Promise<void> {
             if (isStaleReload() || params.signal?.aborted) return null;
             // Promote rebuilt req/rsp only after the rebuilt inbox succeeds so we never mix
             // rebuilt summary/count/map data with the old inbox response.
-            const displayedRebuiltMessages = rebuiltMessagePageRsp.inboxItems ?? [];
+            const displayedRebuiltMessages = params.focusedMessageActive
+              ? params.focusedMessage == null
+                ? []
+                : [params.focusedMessage]
+              : (rebuiltMessagePageRsp.inboxItems ?? []);
             params.setMessages(displayedRebuiltMessages);
             params.setProfiles((current) =>
               mergeSignalProfiles(current, rebuiltMessagePageRsp.signalProfiles ?? {}),

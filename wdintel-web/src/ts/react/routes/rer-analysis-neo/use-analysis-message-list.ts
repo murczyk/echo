@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   CallsignInfoRes,
   CountStatsRsp,
   InboxMessage,
+  InboxMessagesRsp,
   MessageComment,
+  SignalGroupEntry,
+  SignalProfileEntry,
 } from '../../../../Bindings';
 import { fetchAnalysisCallsignInfos, fetchInboxMessages } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
@@ -14,17 +17,22 @@ import { loadMissingMessageCommentsForMessages } from './use-analysis-data.comme
 import { mergeAnalysisCallsignInfoMap } from './use-analysis-data.callsigns';
 import { isAnalysisInboxPageExhausted, toErrorMessage } from './use-analysis-data.shared';
 import { useAnalysisMessageCounts } from './use-analysis-message-counts';
+import { mergeSignalProfiles } from './use-analysis-data.reload';
 import type { AnalysisAorEntry, AnalysisMessagePageCursor, AnalysisQueryState } from './types';
 import { isNullOrUndefined } from '../../utils/misc';
 
 type Params = {
   deferInitialLoad: boolean;
+  focusedMessageId?: number | null;
+  focusedMessageActive?: boolean;
   loadMissingNetworksForMessages: (messageItems: Array<[number, InboxMessage]>) => Promise<void>;
   newestFirst: boolean;
   onError: (message: string) => void;
   onUnauthorized: (error: unknown) => boolean;
   optionsFreqValues: string[];
   queryState: AnalysisQueryState;
+  setGroupInfos: React.Dispatch<React.SetStateAction<Record<string, SignalGroupEntry>>>;
+  setProfiles: React.Dispatch<React.SetStateAction<Record<string, SignalProfileEntry | null>>>;
   setSummaryCallsignsInfo: React.Dispatch<React.SetStateAction<Record<string, CallsignInfoRes>>>;
 };
 
@@ -43,12 +51,16 @@ function transformPageMessages(
 
 export function useAnalysisMessageList({
   deferInitialLoad,
+  focusedMessageId = null,
+  focusedMessageActive = false,
   loadMissingNetworksForMessages,
   newestFirst,
   onError,
   onUnauthorized,
   optionsFreqValues,
   queryState,
+  setGroupInfos,
+  setProfiles,
   setSummaryCallsignsInfo,
 }: Params) {
   const [counts, setCounts] = useState<CountStatsRsp | null>(null);
@@ -59,18 +71,24 @@ export function useAnalysisMessageList({
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
   const [messageComments, setMessageComments] = useState<Record<number, MessageComment[]>>({});
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
+  const [focusedHasMoreEarlier, setFocusedHasMoreEarlier] = useState(true);
+  const [focusedHasMoreLater, setFocusedHasMoreLater] = useState(true);
+  const [focusedLoadingDirection, setFocusedLoadingDirection] = useState<
+    'earlier' | 'later' | null
+  >(null);
   const [nolimitShown, setNolimitShown] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const messageCommentsRef = useRef(messageComments);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
+  const focusedLoadingDirectionRef = useRef<'earlier' | 'later' | null>(null);
   const pageCursorsRef = useRef<AnalysisMessagePageCursor[]>([FIRST_PAGE_CURSOR]);
   const callsignEnrichmentGenerationRef = useRef(0);
   const unscopedCallsignsRef = useRef(new Set<string>());
   const callsignEnrichmentInFlightRef = useRef(new Map<string, number>());
   const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, refreshMessageCounts } =
     useAnalysisMessageCounts({
-      deferInitialLoad,
+      deferInitialLoad: deferInitialLoad || focusedMessageActive,
       newestFirst,
       onError,
       onUnauthorized,
@@ -78,9 +96,40 @@ export function useAnalysisMessageList({
       queryState,
     });
 
+  const mergeMessageReferences = useCallback(
+    (rsp: Pick<InboxMessagesRsp, 'signalGroups' | 'signalProfiles'>) => {
+      setGroupInfos((current) => ({
+        ...current,
+        ...Object.fromEntries((rsp.signalGroups ?? []).map((group) => [group.masterKey, group])),
+      }));
+      setProfiles((current) => mergeSignalProfiles(current, rsp.signalProfiles ?? {}));
+    },
+    [setGroupInfos, setProfiles],
+  );
+
   useEffect(() => {
     messageCommentsRef.current = messageComments;
   }, [messageComments]);
+
+  useEffect(() => {
+    loadMoreMessagesRequestRef.current += 1;
+    focusedLoadingDirectionRef.current = null;
+    setFocusedHasMoreEarlier(true);
+    setFocusedHasMoreLater(true);
+    setFocusedLoadingDirection(null);
+    setMessagesPaging(false);
+  }, [focusedMessageActive, focusedMessageId, queryState]);
+
+  const displayedMessages = useMemo(() => {
+    if (!focusedMessageActive || isNullOrUndefined(focusedMessageId)) return messages;
+    const targetIndex = messages.findIndex(([id]) => id === focusedMessageId);
+    if (targetIndex < 0 || !newestFirst) return messages;
+
+    const earlierMessages = messages.slice(0, targetIndex);
+    const targetMessage = messages[targetIndex];
+    const laterMessages = messages.slice(targetIndex + 1);
+    return [...laterMessages].reverse().concat([targetMessage], [...earlierMessages].reverse());
+  }, [focusedMessageActive, focusedMessageId, messages, newestFirst]);
 
   const invalidateCallsignEnrichment = useCallback(() => {
     callsignEnrichmentGenerationRef.current += 1;
@@ -172,6 +221,7 @@ export function useAnalysisMessageList({
     setMessagesPaging(true);
     try {
       const rsp = await fetchInboxMessages({ ...inboxReq, nolimit: true, newestFirst });
+      mergeMessageReferences(rsp);
       setMessages(rsp.inboxItems ?? []);
       setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
       await loadMissingNetworksForMessages(rsp.inboxItems ?? []);
@@ -188,6 +238,7 @@ export function useAnalysisMessageList({
   }, [
     loadMessageComments,
     loadMissingNetworksForMessages,
+    mergeMessageReferences,
     newestFirst,
     onError,
     onUnauthorized,
@@ -222,6 +273,7 @@ export function useAnalysisMessageList({
         };
         const rsp = await fetchInboxMessages(paginatedReq);
         if (isStale()) return null;
+        mergeMessageReferences(rsp);
         const pageMessages = transformPageMessages(rsp.inboxItems ?? [], cursor);
         if (options.keepCurrentOnEmpty && pageMessages.length === 0) {
           setNoMoreToLoad(true);
@@ -251,6 +303,7 @@ export function useAnalysisMessageList({
     [
       loadMessageComments,
       loadMissingNetworksForMessages,
+      mergeMessageReferences,
       newestFirst,
       onError,
       onUnauthorized,
@@ -288,6 +341,82 @@ export function useAnalysisMessageList({
   }, [loadNextMessages]);
 
   const loadMoreMessages = useCallback(() => loadNextMessages(true), [loadNextMessages]);
+
+  const loadFocusedMessages = useCallback(
+    async (direction: 'earlier' | 'later') => {
+      if (!focusedMessageActive || focusedLoadingDirectionRef.current !== null) return false;
+      const boundaryMessage = direction === 'earlier' ? messages.at(0) : messages.at(-1);
+      if (isNullOrUndefined(boundaryMessage)) return false;
+      const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
+      if (isNullOrUndefined(inboxReq)) return false;
+
+      const requestId = loadMoreMessagesRequestRef.current + 1;
+      loadMoreMessagesRequestRef.current = requestId;
+      const isStale = () => requestId !== loadMoreMessagesRequestRef.current;
+      focusedLoadingDirectionRef.current = direction;
+      setFocusedLoadingDirection(direction);
+      setMessagesPaging(true);
+      try {
+        const rsp = await fetchInboxMessages({
+          ...inboxReq,
+          beforeIdNoninclusive: direction === 'earlier' ? boundaryMessage[0] : null,
+          sinceIdNoninclusive: direction === 'later' ? boundaryMessage[0] : null,
+          sinceDateInclusiveMs: null,
+          tillDateInclusiveMs: null,
+          newestFirst: direction === 'earlier',
+        });
+        if (isStale()) return false;
+        mergeMessageReferences(rsp);
+        const responseMessages = rsp.inboxItems ?? [];
+        const pageMessages =
+          direction === 'earlier' ? [...responseMessages].reverse() : responseMessages;
+        setSummaryCallsignsInfo((current) => mergeAnalysisCallsignInfoMap(current, rsp.callsigns));
+        await loadMissingNetworksForMessages(pageMessages);
+        if (isStale()) return false;
+        await loadMessageComments(pageMessages, false);
+        if (isStale()) return false;
+        const hasMore = !isAnalysisInboxPageExhausted(responseMessages, rsp.pageLimit);
+        setMessages((current) => {
+          const currentIds = new Set(current.map(([id]) => id));
+          const uniqueMessages = pageMessages.filter(([id]) => !currentIds.has(id));
+          return direction === 'earlier'
+            ? [...uniqueMessages, ...current]
+            : [...current, ...uniqueMessages];
+        });
+        if (direction === 'earlier') setFocusedHasMoreEarlier(hasMore);
+        else setFocusedHasMoreLater(hasMore);
+        return pageMessages.length > 0;
+      } catch (loadError) {
+        if (isStale()) return false;
+        if (!onUnauthorized(loadError)) onError(toErrorMessage(loadError));
+        return false;
+      } finally {
+        if (!isStale()) {
+          focusedLoadingDirectionRef.current = null;
+          setFocusedLoadingDirection(null);
+          setMessagesPaging(false);
+        }
+      }
+    },
+    [
+      focusedMessageActive,
+      loadMessageComments,
+      loadMissingNetworksForMessages,
+      mergeMessageReferences,
+      messages,
+      onError,
+      onUnauthorized,
+      optionsFreqValues,
+      queryState,
+      setSummaryCallsignsInfo,
+    ],
+  );
+
+  const loadFocusedEarlier = useCallback(
+    () => loadFocusedMessages('earlier'),
+    [loadFocusedMessages],
+  );
+  const loadFocusedLater = useCallback(() => loadFocusedMessages('later'), [loadFocusedMessages]);
 
   const loadPrevPage = useCallback(async () => {
     if (pageIndex === 0) return;
@@ -357,6 +486,8 @@ export function useAnalysisMessageList({
     invalidateMessagePaging,
     loadAllMessages,
     loadFirstPage,
+    loadFocusedEarlier,
+    loadFocusedLater,
     loadLastPage,
     loadMessageComments,
     loadMoreMessages,
@@ -364,12 +495,15 @@ export function useAnalysisMessageList({
     loadPrevPage,
     messageComments,
     messageCommentsLoadVersionRef,
-    messages,
+    messages: displayedMessages,
     messagesLoading,
     messagesOverallCount,
     messagesPaging,
     messagesTotalCount,
     messagesTotalLoading,
+    focusedHasMoreEarlier,
+    focusedHasMoreLater,
+    focusedLoadingDirection,
     noMoreToLoad,
     nolimitShown,
     pageIndex,

@@ -13,7 +13,136 @@ async function setupAnalysisNeoPage(
   await installAnalysisNeoApiMocks(page, options);
 }
 
+async function setupDirectLinkAnalysisNeoPage(
+  page: Parameters<typeof installAnalysisNeoApiMocks>[0],
+) {
+  const baseResponse = createLoadedInboxResponse();
+  const [targetMessageId, baseMessage] = baseResponse.inbox_items[0];
+  const targetSenderId = 'analysis-direct-link-sender-id';
+  const targetGroupId = 'analysis-direct-link-group-id';
+  const loadedSenderId = 'analysis-loaded-page-sender-id';
+  const loadedGroupId = 'analysis-loaded-page-group-id';
+  const targetMessage = {
+    ...baseMessage,
+    sender: targetSenderId,
+    groupMasterKey: targetGroupId,
+  };
+  const loadedMessage = {
+    ...targetMessage,
+    sender: loadedSenderId,
+    groupMasterKey: loadedGroupId,
+  };
+  const focusedResponse = {
+    ...baseResponse,
+    inbox_items: [[targetMessageId, targetMessage]],
+  } as typeof baseResponse;
+  const earlierResponse = {
+    ...focusedResponse,
+    inbox_items: Array.from({ length: 20 }, (_, index) => [
+      targetMessageId - index - 1,
+      {
+        ...loadedMessage,
+        messageUid: `analysis-direct-link-earlier-${index}`,
+        text: `Analysis direct-link earlier fixture message ${index}`,
+      },
+    ]),
+    signal_profiles: {
+      [loadedSenderId]: { given_name: 'Олена', family_name: 'Коваль' },
+    },
+    signal_groups: [{ master_key: loadedGroupId, name: 'Група Бета' }],
+  } as typeof focusedResponse;
+  await setupAnalysisNeoPage(page, { inboxResponse: earlierResponse });
+  await page.route('**/api/rer-importer/inbox-item-context', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({
+        message: [targetMessageId, targetMessage],
+        group_master_keys: [targetGroupId],
+        sigint_inbox_item_ids: [targetMessageId],
+        sinceTs: null,
+        tillTs: null,
+      }),
+    });
+  });
+  await page.route('**/api/rer-importer/signal-group-batch', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({ data: [{ master_key: targetGroupId, name: 'Група Альфа' }] }),
+    });
+  });
+  await page.route('**/api/rer-importer/signal-profile-batch', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json; charset=utf-8',
+      body: JSON.stringify({
+        data: { [targetSenderId]: { given_name: 'Іван', family_name: 'Петренко' } },
+      }),
+    });
+  });
+  await page.goto(`/rer-analysis-neo?m=${targetMessage.messageUid}`);
+
+  return {
+    loadedGroupId,
+    loadedMessageId: targetMessageId - 1,
+    loadedSenderId,
+    targetGroupId,
+    targetMessageId,
+    targetSenderId,
+  };
+}
+
 test.describe('@smoke', () => {
+  test('@message-references analysis neo resolves group and sender names for a direct-link target', async ({
+    page,
+  }) => {
+    const context = await setupDirectLinkAnalysisNeoPage(page);
+
+    const target = page.locator(`[data-message-id="${context.targetMessageId}"]`);
+    await expect(target).toBeVisible();
+    await expect(target.getByText('Група Альфа', { exact: true })).toBeVisible();
+    await expect(target.getByText('Іван Петренко', { exact: true })).toBeVisible();
+    await expect(target).not.toContainText(context.targetGroupId);
+    await expect(target).not.toContainText(context.targetSenderId);
+  });
+
+  test('@message-references analysis neo resolves group and sender names after loading messages above', async ({
+    page,
+  }) => {
+    const context = await setupDirectLinkAnalysisNeoPage(page);
+
+    await page.getByRole('button', { name: 'Показати ще', exact: true }).first().click();
+    const loadedMessage = page.locator(`[data-message-id="${context.loadedMessageId}"]`);
+    await expect(loadedMessage.getByText('Група Бета', { exact: true })).toBeVisible();
+    await expect(loadedMessage.getByText('Олена Коваль', { exact: true })).toBeVisible();
+    await expect(loadedMessage).not.toContainText(context.loadedGroupId);
+    await expect(loadedMessage).not.toContainText(context.loadedSenderId);
+  });
+
+  test('analysis neo keeps a direct-link target fixed when loading messages above', async ({
+    page,
+  }) => {
+    const { targetMessageId } = await setupDirectLinkAnalysisNeoPage(page);
+
+    const target = page.locator(`[data-message-id="${targetMessageId}"]`);
+    await expect(target).toBeVisible();
+    const targetTopBefore = await target.evaluate((element) => element.getBoundingClientRect().top);
+
+    await page.getByRole('button', { name: 'Показати ще', exact: true }).first().click();
+    await expect(page.locator('section[aria-labelledby] ul').first().locator('li')).toHaveCount(21);
+
+    await expect
+      .poll(async () => target.evaluate((element) => element.getBoundingClientRect().top))
+      .toBeCloseTo(targetTopBefore, 0);
+
+    const messageScrollContainer = page
+      .locator('section[aria-labelledby] ul')
+      .first()
+      .locator('..');
+    await messageScrollContainer.dispatchEvent('wheel', { deltaY: -40 });
+    await expect
+      .poll(async () => target.evaluate((element) => element.getBoundingClientRect().top))
+      .toBeCloseTo(targetTopBefore, 0);
+  });
+
   test('analysis neo summary flow loads a known row', async ({ page }) => {
     await setupAnalysisNeoPage(page, { inboxResponse: createLoadedInboxResponse() });
     await page.goto('/rer-analysis-neo');

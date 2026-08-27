@@ -6,7 +6,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { emptyQueryState } from './helpers';
-import type { CallsignInfoRes, InboxMessage } from '../../../../Bindings';
+import type {
+  CallsignInfoRes,
+  InboxMessage,
+  SignalGroupEntry,
+  SignalProfileEntry,
+} from '../../../../Bindings';
 
 const fetchAnalysisCallsignInfosMock = vi.hoisted(() => vi.fn());
 const fetchInboxMessagesMock = vi.hoisted(() => vi.fn());
@@ -52,8 +57,11 @@ type Harness = {
   root: Root;
   latest: ReturnType<typeof useAnalysisMessageList>;
   setDeferInitialLoad: React.Dispatch<React.SetStateAction<boolean>>;
+  setNewestFirst: React.Dispatch<React.SetStateAction<boolean>>;
   setQueryState: React.Dispatch<React.SetStateAction<ReturnType<typeof buildQueryState>>>;
   summaryCallsignsInfo: Record<string, CallsignInfoRes>;
+  groupInfos: Record<string, SignalGroupEntry>;
+  profiles: Record<string, SignalProfileEntry | null>;
   onError: ReturnType<typeof vi.fn>;
   onUnauthorized: ReturnType<typeof vi.fn>;
 };
@@ -77,6 +85,7 @@ function renderHook(
   newestFirst = true,
   initialDeferInitialLoad = false,
   initialSummaryCallsignsInfo: Record<string, CallsignInfoRes> = {},
+  focusedMessage: { id: number; active: boolean } = { id: 0, active: false },
 ): Harness {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -85,8 +94,10 @@ function renderHook(
 
   function TestComponent() {
     const [deferInitialLoad, setDeferInitialLoad] = useState(initialDeferInitialLoad);
+    const [currentNewestFirst, setNewestFirst] = useState(newestFirst);
     const [currentQueryState, setCurrentQueryState] = useState(queryState);
     harness.setDeferInitialLoad = setDeferInitialLoad;
+    harness.setNewestFirst = setNewestFirst;
     harness.setQueryState = setCurrentQueryState;
     harness.onError ??= vi.fn();
     harness.onUnauthorized ??= vi.fn().mockReturnValue(false);
@@ -94,14 +105,22 @@ function renderHook(
       Record<string, CallsignInfoRes>
     >(initialSummaryCallsignsInfo);
     harness.summaryCallsignsInfo = summaryCallsignsInfo;
+    const [groupInfos, setGroupInfos] = useState<Record<string, SignalGroupEntry>>({});
+    const [profiles, setProfiles] = useState<Record<string, SignalProfileEntry | null>>({});
+    harness.groupInfos = groupInfos;
+    harness.profiles = profiles;
     harness.latest = useAnalysisMessageList({
       deferInitialLoad,
+      focusedMessageId: focusedMessage.id,
+      focusedMessageActive: focusedMessage.active,
       loadMissingNetworksForMessages,
-      newestFirst,
+      newestFirst: currentNewestFirst,
       onError: harness.onError,
       onUnauthorized: harness.onUnauthorized,
       optionsFreqValues: [],
       queryState: currentQueryState,
+      setGroupInfos,
+      setProfiles,
       setSummaryCallsignsInfo,
     });
     return null;
@@ -473,6 +492,89 @@ describe('useAnalysisMessageList pagination', () => {
 
     expect(h.latest.pageIndex).toBe(1);
     expect(h.latest.messages).toEqual([...page(1), ...page(2)]);
+  });
+
+  it('paginates direct-link messages in both directions without date limits', async () => {
+    const queryState = {
+      ...buildQueryState(),
+      groupsSelected: ['group-1'],
+      networksSelected: ['17'],
+      freqsSelected: ['123.45'],
+    };
+    const h = renderHook(
+      queryState,
+      vi.fn().mockResolvedValue(undefined),
+      false,
+      false,
+      {},
+      { id: 50, active: true },
+    );
+    harnesses.push(h);
+    act(() => h.latest.setMessages(page(50)));
+    fetchInboxMessagesMock
+      .mockResolvedValueOnce({
+        inboxItems: [...page(49), ...page(48)],
+        callsigns: [],
+        signalGroups: [{ masterKey: 'group-1', name: 'Група Альфа' }],
+        signalProfiles: {
+          'sender-1': { givenName: 'Іван', familyName: 'Петренко' },
+        },
+        pageLimit: 2,
+      })
+      .mockResolvedValueOnce({
+        inboxItems: [...page(51), ...page(52)],
+        callsigns: [],
+        pageLimit: 20,
+      });
+
+    await act(async () => {
+      await h.latest.loadFocusedEarlier();
+      await h.latest.loadFocusedLater();
+    });
+
+    expect(h.latest.messages.map(([id]) => id)).toEqual([48, 49, 50, 51, 52]);
+    expect(fetchInboxMessagesMock.mock.calls[0][0]).toMatchObject({
+      beforeIdNoninclusive: 50,
+      sinceIdNoninclusive: null,
+      sinceDateInclusiveMs: null,
+      tillDateInclusiveMs: null,
+      newestFirst: true,
+      selectedGroups: ['group-1'],
+      selectedNetworks: [17],
+      selectedFreqs: ['123.45'],
+    });
+    expect(fetchInboxMessagesMock.mock.calls[1][0]).toMatchObject({
+      beforeIdNoninclusive: null,
+      sinceIdNoninclusive: 50,
+      sinceDateInclusiveMs: null,
+      tillDateInclusiveMs: null,
+      newestFirst: false,
+    });
+    expect(h.latest.focusedHasMoreEarlier).toBe(true);
+    expect(h.latest.focusedHasMoreLater).toBe(false);
+    expect(h.groupInfos['group-1']?.name).toBe('Група Альфа');
+    expect(h.profiles['sender-1']).toEqual({ givenName: 'Іван', familyName: 'Петренко' });
+  });
+
+  it('reverses messages around the direct-link target without moving its list index', async () => {
+    const h = renderHook(
+      buildQueryState(),
+      vi.fn().mockResolvedValue(undefined),
+      false,
+      false,
+      {},
+      { id: 50, active: true },
+    );
+    harnesses.push(h);
+    act(() =>
+      h.latest.setMessages([...page(48), ...page(49), ...page(50), ...page(51), ...page(52)]),
+    );
+    expect(h.latest.messages.map(([id]) => id)).toEqual([48, 49, 50, 51, 52]);
+
+    act(() => h.setNewestFirst(true));
+
+    expect(h.latest.messages.map(([id]) => id)).toEqual([52, 51, 50, 49, 48]);
+    expect(fetchInboxMessagesMock).not.toHaveBeenCalled();
   });
 
   it('updates messages and pageIndex together before message hydration finishes', async () => {

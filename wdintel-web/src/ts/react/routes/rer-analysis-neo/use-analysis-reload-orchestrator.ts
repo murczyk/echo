@@ -30,6 +30,8 @@ type Setter<T> = React.Dispatch<React.SetStateAction<T>>;
 type Params = {
   centerTab: AnalysisCenterTab;
   deferInitialLoad: boolean;
+  focusedMessage?: [number, InboxMessage] | null;
+  focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
   newestFirst: boolean;
   onError: (message: string) => void;
@@ -115,6 +117,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     centerTab,
     clearAnalysisResults,
     deferInitialLoad,
+    focusedMessage = null,
+    focusedMessageActive = false,
     getLoadedFilterSections,
     getCurrentMessagePageCursor,
     getReloadFilterSections,
@@ -200,6 +204,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
       try {
         await reloadAnalysisData({
           clearAnalysisResults,
+          focusedMessage,
+          focusedMessageActive,
           invalidateCallsignGraph,
           invalidateCorrelatedFreqsCache,
           invalidateMessagePaging: preserveMessagePage
@@ -270,6 +276,8 @@ export function useAnalysisReloadOrchestrator(params: Params): UseAnalysisReload
     [
       centerTab,
       clearAnalysisResults,
+      focusedMessage,
+      focusedMessageActive,
       getLoadedFilterSections,
       getCurrentMessagePageCursor,
       getReloadFilterSections,

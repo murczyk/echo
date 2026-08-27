@@ -5,7 +5,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { SavedFilter, User } from '../../../../Bindings';
+import type { InboxMessage, SavedFilter, User } from '../../../../Bindings';
 import type { AnalysisPageViewModel } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 
@@ -17,6 +17,10 @@ const systemSettingsMock = vi.hoisted(() => ({
 }));
 const inboxMessagesMock = vi.hoisted(() => ({
   fetchInboxItemContext: vi.fn(),
+}));
+const inboxReferenceDataMock = vi.hoisted(() => ({
+  getGroupInfosBatch: vi.fn(),
+  getSignalProfilesBatch: vi.fn(),
 }));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
@@ -58,6 +62,11 @@ vi.mock('../../services/api/system-settings', () => ({
 
 vi.mock('../../services/api/inbox-messages', () => ({
   fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
+}));
+
+vi.mock('../../services/api/inbox-reference-data', () => ({
+  getGroupInfosBatch: inboxReferenceDataMock.getGroupInfosBatch,
+  getSignalProfilesBatch: inboxReferenceDataMock.getSignalProfilesBatch,
 }));
 
 vi.mock('./use-analysis-data', () => ({
@@ -107,6 +116,10 @@ const baseAnalysisData = {
   loadCorrelatedFreqs: vi.fn(),
   loadGroupsActivity: vi.fn(),
   loadNewCallsigns: vi.fn(),
+  loadFirstPage: vi.fn(),
+  loadFocusedEarlier: vi.fn(),
+  loadFocusedLater: vi.fn(),
+  loadLastPage: vi.fn(),
   loadNextPage: vi.fn(),
   loadMoreMessages: vi.fn(),
   loadPrevPage: vi.fn(),
@@ -127,6 +140,9 @@ const baseAnalysisData = {
   messagesPaging: false,
   messagesTotalCount: 0,
   messagesTotalLoading: false,
+  focusedHasMoreEarlier: true,
+  focusedHasMoreLater: true,
+  focusedLoadingDirection: null,
   messageComments: {},
   messages: [],
   networkDisplayMap: {},
@@ -191,6 +207,10 @@ function buildAnalysisData() {
     loadCorrelatedFreqs: vi.fn(),
     loadGroupsActivity: vi.fn(),
     loadNewCallsigns: vi.fn(),
+    loadFirstPage: vi.fn(),
+    loadFocusedEarlier: vi.fn(),
+    loadFocusedLater: vi.fn(),
+    loadLastPage: vi.fn(),
     loadNextPage: vi.fn(),
     loadMoreMessages: vi.fn(),
     loadPrevPage: vi.fn(),
@@ -302,11 +322,16 @@ describe('useRerAnalysisNeoPage', () => {
     });
     inboxMessagesMock.fetchInboxItemContext.mockReset();
     inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
+      message: null,
       groupMasterKeys: [],
       sigintInboxItemIds: [],
       sinceTs: null,
       tillTs: null,
     });
+    inboxReferenceDataMock.getGroupInfosBatch.mockReset();
+    inboxReferenceDataMock.getGroupInfosBatch.mockResolvedValue([]);
+    inboxReferenceDataMock.getSignalProfilesBatch.mockReset();
+    inboxReferenceDataMock.getSignalProfilesBatch.mockResolvedValue({ data: {} });
 
     useAnalysisDataMock.mockReset();
     analysisFreqValues = ['111.1'];
@@ -791,6 +816,107 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.error).toBe('Не вдалося знайти повідомлення за посиланням.');
+  });
+
+  it('opens only the direct-link message and exposes global context filters', async () => {
+    const targetMessage = {
+      text: 'target',
+      freq: '123.45',
+      sender: 'sender-1',
+      bookmarked: false,
+      important: false,
+      extendedForm: null,
+      callsigns: [],
+      groupMasterKey: 'group-1',
+      networkIds: [17],
+      tags: [],
+    } as InboxMessage;
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({
+      message: [50, targetMessage],
+      groupMasterKeys: ['group-1'],
+      sigintInboxItemIds: [50],
+      sinceTs: null,
+      tillTs: null,
+    });
+    inboxReferenceDataMock.getGroupInfosBatch.mockResolvedValueOnce([
+      { masterKey: 'group-1', name: 'Група Альфа' },
+    ]);
+    inboxReferenceDataMock.getSignalProfilesBatch.mockResolvedValueOnce({
+      data: { 'sender-1': { givenName: 'Іван', familyName: 'Петренко' } },
+    });
+
+    renderHook();
+    await flushEffects();
+
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      focusedMessage: [50, targetMessage],
+      focusedMessageActive: true,
+    });
+    expect(latest?.directMessageNavigation?.filterOptions).toEqual([
+      { kind: 'group', value: 'group-1', label: 'Група: Група Альфа', selected: false },
+      { kind: 'network', value: '17', label: 'Мережа: #17', selected: false },
+      { kind: 'frequency', value: '123.45', label: 'Частота: 123.45', selected: false },
+    ]);
+    expect(latest?.groupInfos['group-1']?.name).toBe('Група Альфа');
+    expect(latest?.profiles['sender-1']).toEqual({
+      givenName: 'Іван',
+      familyName: 'Петренко',
+    });
+
+    const groupOption = latest?.directMessageNavigation?.filterOptions[0];
+    if (groupOption == null) throw new Error('Direct-link group filter is missing');
+    act(() => latest?.directMessageNavigation?.onToggleFilter(groupOption));
+    expect(latest?.queryState.groupsSelected).toEqual(['group-1']);
+    expect(latest?.rightPanelOpen).toBe(true);
+
+    const networkOption = latest?.directMessageNavigation?.filterOptions.find(
+      (option) => option.kind === 'network',
+    );
+    if (networkOption == null) throw new Error('Direct-link network filter is missing');
+    act(() => latest?.directMessageNavigation?.onToggleFilter(networkOption));
+    expect(latest?.queryState.networksSelected).toEqual(['17']);
+
+    const frequencyOption = latest?.directMessageNavigation?.filterOptions.find(
+      (option) => option.kind === 'frequency',
+    );
+    if (frequencyOption == null) throw new Error('Direct-link frequency filter is missing');
+    act(() => latest?.directMessageNavigation?.onToggleFilter(frequencyOption));
+    expect(latest?.queryState.freqsSelected).toEqual(['123.45']);
+
+    act(() => latest?.directMessageNavigation?.onClearFocus());
+    expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    expect(latest?.directMessageNavigation?.focusActive).toBe(false);
+  });
+
+  it('leaves direct-link context when the date range changes', async () => {
+    const targetMessage = {
+      text: 'target',
+      freq: '',
+      bookmarked: false,
+      important: false,
+      callsigns: [],
+      networkIds: [],
+      tags: [],
+    } as InboxMessage;
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({
+      message: [50, targetMessage],
+      groupMasterKeys: [],
+      sigintInboxItemIds: [50],
+      sinceTs: null,
+      tillTs: null,
+    });
+    renderHook();
+    await flushEffects();
+    expect(latest?.directMessageNavigation).not.toBeNull();
+
+    act(() => latest?.updateQueryState({ toDateTimeStr: '2026-05-03T00:00' }));
+    await flushEffects();
+
+    expect(latest?.directMessageNavigation).toBeNull();
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0].focusedMessageActive).toBe(false);
+    expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
   });
 
   it('shows direct-link context request errors', async () => {

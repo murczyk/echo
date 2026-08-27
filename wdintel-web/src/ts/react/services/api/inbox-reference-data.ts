@@ -14,6 +14,30 @@ import { isPresent } from '../../utils/misc';
 import { postJson } from './client';
 import type { RequestOptions } from './client';
 
+type RawSignalProfile = {
+  given_name?: string;
+  family_name?: string;
+  givenName?: string;
+  familyName?: string;
+};
+
+type RawSignalProfilesRsp = {
+  data?: Record<string, RawSignalProfile | null>;
+};
+
+function normalizeSignalProfiles(raw: RawSignalProfilesRsp): SignalProfilesRsp {
+  const data: Record<string, SignalProfilesRsp['data'][string]> = {};
+  for (const [key, entry] of Object.entries(raw.data ?? {})) {
+    data[key] = entry
+      ? {
+          givenName: entry.givenName ?? entry.given_name ?? null,
+          familyName: entry.familyName ?? entry.family_name ?? null,
+        }
+      : null;
+  }
+  return { data };
+}
+
 function normalizeInterseptionKind(raw: Record<string, unknown>): InterseptionKind {
   const interseptionKind = raw.interseptionKind ?? raw.interseption_kind;
   if (interseptionKind === 'rer' || interseptionKind === 'other') return interseptionKind;
@@ -56,32 +80,22 @@ export async function getTagsMapForDisplay(options?: RequestOptions): Promise<Re
 
 /** Latest sender profiles (UUID -> profile). */
 export async function getLatestSenders(options?: RequestOptions): Promise<SignalProfilesRsp> {
-  const raw = await postJson<{
-    data: Record<
-      string,
-      { given_name?: string; family_name?: string; givenName?: string; familyName?: string } | null
-    >;
-  }>('/api/rer-importer/latest-senders', {}, options);
-  const data: Record<string, SignalProfilesRsp['data'][string]> = {};
-  if (raw?.data) {
-    for (const [k, v] of Object.entries(raw.data)) {
-      const entry = v as {
-        given_name?: string;
-        family_name?: string;
-        givenName?: string;
-        familyName?: string;
-      } | null;
-      if (entry) {
-        data[k] = {
-          givenName: entry.givenName ?? entry.given_name ?? null,
-          familyName: entry.familyName ?? entry.family_name ?? null,
-        };
-      } else {
-        data[k] = null;
-      }
-    }
-  }
-  return { data };
+  const raw = await postJson<RawSignalProfilesRsp>('/api/rer-importer/latest-senders', {}, options);
+  return normalizeSignalProfiles(raw);
+}
+
+/** Sender profiles for the requested UUIDs. */
+export async function getSignalProfilesBatch(
+  uuids: string[],
+  options?: RequestOptions,
+): Promise<SignalProfilesRsp> {
+  if (uuids.length === 0) return { data: {} };
+  const raw = await postJson<RawSignalProfilesRsp>(
+    '/api/rer-importer/signal-profile-batch',
+    { profiles: uuids.map((uuid) => ({ uuid })) },
+    options,
+  );
+  return normalizeSignalProfiles(raw);
 }
 
 /** Latest frequencies list. */

@@ -155,7 +155,7 @@ export function AnalysisPageHeader({
   };
   const loading = page.countsLoading || page.messagesLoading || page.summaryLoading;
   const dateRangeLoading = page.mapAttrs?.daterangeLoading === 'true';
-  const showPagination = !isNarrowLayout;
+  const showPagination = !isNarrowLayout && page.directMessageNavigation == null;
   return (
     <PageHeader
       title="Аналіз"
