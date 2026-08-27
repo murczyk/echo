@@ -3,14 +3,14 @@ use crate::config::{
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
 };
-use crate::entities::{orbit_unit_sigint_unit, sigint_unit};
+use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, QueryFilter,
-    QuerySelect, Statement,
+    ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, JoinType,
+    QueryFilter, QuerySelect, RelationTrait, Statement,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ReviewMatch {
@@ -221,7 +221,7 @@ pub(super) async fn run_with_database(
     dbx: &sea_orm::DatabaseConnection,
     link_mode: tui::LinkMode,
 ) -> anyhow::Result<()> {
-    let units = load_unlinked_sigint_units(dbx).await.c(h!())?;
+    let units = load_linkable_sigint_units(dbx, link_mode).await.c(h!())?;
     let orbit_units = persistence::load_latest_synced_source_units(dbx)
         .await
         .c(h!())?;
@@ -233,10 +233,17 @@ pub(super) async fn run_with_database(
         tui::LinkMode::Manual => review_manually(review_units).c(h!())?,
         tui::LinkMode::Automatic => approve_automatic(review_units),
     };
-    let persist_summary =
-        persist_links(dbx, &links, link_mode, &suppressed_links)
-            .await
-            .c(h!())?;
+    let reviewed_sigint_unit_ids =
+        units.iter().map(|unit| unit.id).collect::<Vec<_>>();
+    let persist_summary = persist_links(
+        dbx,
+        &links,
+        &reviewed_sigint_unit_ids,
+        link_mode,
+        &suppressed_links,
+    )
+    .await
+    .c(h!())?;
     print_summary(summary, persist_summary);
     Ok(())
 }
@@ -257,13 +264,14 @@ where
         .collect())
 }
 
-async fn load_unlinked_sigint_units<C>(
+async fn load_linkable_sigint_units<C>(
     dbx: &C,
+    link_mode: tui::LinkMode,
 ) -> anyhow::Result<Vec<sigint_unit::Model>>
 where
     C: ConnectionTrait,
 {
-    sigint_unit::Model::find_by_statement(Statement::from_string(
+    sigint_unit::Model::find_by_statement(Statement::from_sql_and_values(
         dbx.get_database_backend(),
         r#"
 select sigint_unit.*
@@ -278,9 +286,11 @@ where sigint_unit.active = true
         where link.sigint_unit_id = sigint_unit.id
             and link.is_suppressed = false
             and orbit_unit.deleted = false
+            and (link.is_manual = true or $1 = false)
     )
 order by sigint_unit.id
 "#,
+        [matches!(link_mode, tui::LinkMode::Automatic).into()],
     ))
     .all(dbx)
     .await
@@ -329,10 +339,11 @@ fn automatically_approved_link(unit: &ReviewUnit) -> Option<(i64, uuid::Uuid)> {
 async fn persist_links(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
+    reviewed_sigint_unit_ids: &[i64],
     link_mode: tui::LinkMode,
     review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> anyhow::Result<PersistSummary> {
-    if links.is_empty() {
+    if links.is_empty() && link_mode == tui::LinkMode::Manual {
         return Ok(PersistSummary::default());
     }
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
@@ -348,25 +359,62 @@ async fn persist_links(
         review_suppressed_links,
         link_mode,
     );
+    let (summary, links_changed) = match link_mode {
+        tui::LinkMode::Manual => persist_manual_links(
+            &transaction,
+            &login,
+            links,
+            &matcher,
+            &suppressed_links,
+        )
+        .await
+        .c(h!())?,
+        tui::LinkMode::Automatic => revalidate_automatic_links(
+            &transaction,
+            &login,
+            links,
+            reviewed_sigint_unit_ids,
+            &matcher,
+            &suppressed_links,
+        )
+        .await
+        .c(h!())?,
+    };
+    if links_changed {
+        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+            .await
+            .c(h!())?;
+    }
+    transaction.commit().await.c(h!())?;
+    Ok(summary)
+}
+
+async fn persist_manual_links<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    links: &[(i64, uuid::Uuid)],
+    matcher: &matching::TestLinkMatcher<'_>,
+    suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+) -> anyhow::Result<(PersistSummary, bool)>
+where
+    C: ConnectionTrait,
+{
     let mut summary = PersistSummary::default();
-    let mut linked = false;
+    let mut links_changed = false;
     for (sigint_unit_id, orbit_unit_id) in links {
         if suppressed_links.contains(&(*sigint_unit_id, *orbit_unit_id)) {
             summary.suppressed += 1;
             continue;
         }
-        if super::sigint_unit_has_active_orbit_link(
-            &transaction,
-            *sigint_unit_id,
-        )
-        .await
-        .c(h!())?
+        if super::sigint_unit_has_active_orbit_link(dbx, *sigint_unit_id)
+            .await
+            .c(h!())?
         {
             summary.already_linked += 1;
             continue;
         }
         let Some(sigint_unit) =
-            load_reviewable_sigint_unit(&transaction, *sigint_unit_id)
+            load_reviewable_sigint_unit(dbx, *sigint_unit_id)
                 .await
                 .c(h!())?
         else {
@@ -376,34 +424,150 @@ async fn persist_links(
         if !accepted_link_is_current_match(
             &sigint_unit,
             *orbit_unit_id,
-            &matcher,
-            link_mode,
-            &suppressed_links,
+            matcher,
+            tui::LinkMode::Manual,
+            suppressed_links,
         ) {
             summary.no_longer_matching += 1;
             continue;
         }
         crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
-            &transaction,
-            &login,
+            dbx,
+            login,
             *sigint_unit_id,
             *orbit_unit_id,
-            match link_mode {
-                tui::LinkMode::Manual => super::LinkProvenance::Manual,
-                tui::LinkMode::Automatic => super::LinkProvenance::Automatic,
-            },
+            super::LinkProvenance::Manual,
         )
         .await
         .c(h!())?;
-        linked = true;
+        links_changed = true;
     }
-    if linked {
-        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+    Ok((summary, links_changed))
+}
+
+async fn revalidate_automatic_links<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    links: &[(i64, uuid::Uuid)],
+    reviewed_sigint_unit_ids: &[i64],
+    matcher: &matching::TestLinkMatcher<'_>,
+    suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+) -> anyhow::Result<(PersistSummary, bool)>
+where
+    C: ConnectionTrait,
+{
+    let proposed_links = links.iter().copied().collect::<BTreeMap<_, _>>();
+    let mut summary = PersistSummary::default();
+    let mut links_changed = false;
+    for sigint_unit_id in reviewed_sigint_unit_ids {
+        let Some(sigint_unit) =
+            load_reviewable_sigint_unit(dbx, *sigint_unit_id)
+                .await
+                .c(h!())?
+        else {
+            summary.no_longer_matching += 1;
+            continue;
+        };
+        if sigint_unit_has_active_manual_link(dbx, *sigint_unit_id)
             .await
-            .c(h!())?;
+            .c(h!())?
+        {
+            summary.already_linked += 1;
+            continue;
+        }
+        let orbit_unit_id = match proposed_links.get(sigint_unit_id).copied() {
+            Some(orbit_unit_id)
+                if suppressed_links
+                    .contains(&(*sigint_unit_id, orbit_unit_id)) =>
+            {
+                summary.suppressed += 1;
+                None
+            }
+            Some(orbit_unit_id)
+                if accepted_link_is_current_match(
+                    &sigint_unit,
+                    orbit_unit_id,
+                    matcher,
+                    tui::LinkMode::Automatic,
+                    suppressed_links,
+                ) =>
+            {
+                Some(orbit_unit_id)
+            }
+            Some(_) => {
+                summary.no_longer_matching += 1;
+                None
+            }
+            None => None,
+        };
+        let removed =
+            delete_automatic_links(dbx, *sigint_unit_id).await.c(h!())?;
+        links_changed |= removed;
+        let Some(orbit_unit_id) = orbit_unit_id else {
+            if removed {
+                crate::sigint::unit::orbit::reconcile_sigint_unit_orbit(
+                    dbx,
+                    login,
+                    *sigint_unit_id,
+                    true,
+                )
+                .await
+                .c(h!())?;
+            }
+            continue;
+        };
+        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+            dbx,
+            login,
+            *sigint_unit_id,
+            orbit_unit_id,
+            super::LinkProvenance::Automatic,
+        )
+        .await
+        .c(h!())?;
+        links_changed = true;
     }
-    transaction.commit().await.c(h!())?;
-    Ok(summary)
+    Ok((summary, links_changed))
+}
+
+async fn sigint_unit_has_active_manual_link<C>(
+    dbx: &C,
+    sigint_unit_id: i64,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsManual.eq(true))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some())
+}
+
+async fn delete_automatic_links<C>(
+    dbx: &C,
+    sigint_unit_id: i64,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::delete_many()
+        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
+        .filter(orbit_unit_sigint_unit::Column::IsManual.eq(false))
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .exec(dbx)
+        .await
+        .c(h!())?
+        .rows_affected
+        > 0)
 }
 
 fn suppressions_to_preserve(
@@ -583,6 +747,7 @@ fn print_summary(summary: ReviewSummary, persist_summary: PersistSummary) {
 mod tests {
     use super::*;
     use crate::orbit::types::SourceUnit;
+    use sea_orm::{ActiveValue::Set, TransactionTrait};
     use serde_json::json;
 
     fn review_unit(match_count: usize) -> ReviewUnit {
@@ -747,6 +912,142 @@ mod tests {
             &suppressed_links,
         )
         .is_empty());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn automatic_mode_revalidates_automatic_links_and_preserves_manual_links(
+    ) {
+        crate::tests::test::init().await;
+        let db = crate::new_pg_pool_from_mode(Mode::Test).await.unwrap();
+        let login = crate::users::system_login_id(&db).await.unwrap();
+        let imported_at = chrono::Utc::now().naive_utc();
+        let orbit_unit = persistence::ImportUnit {
+            unit_id: uuid::Uuid::new_v4(),
+            unit_name: Some("changed unit".to_string()),
+            unit_name_original: None,
+            unit_name_short: Some("changed unit".to_string()),
+            operational_unit_name_full: Some("changed unit".to_string()),
+            generative_unit_name_full: Some("changed unit".to_string()),
+            unit_number: None,
+            unit_alternate_names: None,
+            unit_alternate_numbers: None,
+            unit_echelon_id: None,
+            combat_unit_type_id: None,
+            grouping_of_forces_ids: None,
+            generative_parent_unit_id: None,
+            operational_parent_unit_id: None,
+            partial: false,
+        };
+        persistence::insert_unit(&db, &orbit_unit, imported_at)
+            .await
+            .unwrap();
+        let automatic_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let manual_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for (sigint_unit_id, is_manual) in
+            [(automatic_unit.id, false), (manual_unit.id, true)]
+        {
+            orbit_unit_sigint_unit::Entity::insert(
+                orbit_unit_sigint_unit::ActiveModel {
+                    orbit_unit_id: Set(orbit_unit.unit_id),
+                    sigint_unit_id: Set(sigint_unit_id),
+                    is_manual: Set(is_manual),
+                    is_suppressed: Set(false),
+                },
+            )
+            .exec(&db)
+            .await
+            .unwrap();
+        }
+
+        let automatic_ids =
+            load_linkable_sigint_units(&db, tui::LinkMode::Automatic)
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|unit| unit.id)
+                .collect::<BTreeSet<_>>();
+        let manual_ids = load_linkable_sigint_units(&db, tui::LinkMode::Manual)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|unit| unit.id)
+            .collect::<BTreeSet<_>>();
+        assert!(automatic_ids.contains(&automatic_unit.id));
+        assert!(!automatic_ids.contains(&manual_unit.id));
+        assert!(!manual_ids.contains(&automatic_unit.id));
+        assert!(!manual_ids.contains(&manual_unit.id));
+
+        let transaction = db.begin().await.unwrap();
+        let (summary, links_changed) = revalidate_automatic_links(
+            &transaction,
+            &login,
+            &[],
+            &[automatic_unit.id, manual_unit.id],
+            &matching::TestLinkMatcher::new(&[]),
+            &BTreeSet::new(),
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+
+        assert!(links_changed);
+        assert_eq!(summary.already_linked, 1);
+        assert!(orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId
+                    .eq(automatic_unit.id),
+            )
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none());
+        let manual_link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId.eq(manual_unit.id),
+            )
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(manual_link.is_manual);
+
+        orbit_unit_sigint_unit::Entity::delete_many()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId
+                    .is_in([automatic_unit.id, manual_unit.id]),
+            )
+            .exec(&db)
+            .await
+            .unwrap();
+        sigint_unit::Entity::delete_many()
+            .filter(
+                sigint_unit::Column::Id
+                    .is_in([automatic_unit.id, manual_unit.id]),
+            )
+            .exec(&db)
+            .await
+            .unwrap();
+        orbit_unit::Entity::delete_by_id(orbit_unit.unit_id)
+            .exec(&db)
+            .await
+            .unwrap();
     }
 
     #[test]
