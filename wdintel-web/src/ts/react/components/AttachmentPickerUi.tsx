@@ -119,12 +119,14 @@ export function useLocalMediaPreviewUrls(files: AttachmentPreviewFile[]) {
   const failedRef = useRef(new Set<string>());
   const [, refresh] = useState(0);
   useEffect(() => {
+    let changed = false;
     const currentIds = new Set(files.map((file) => file.id));
     for (const [id, preview] of urlsRef.current) {
       if (!currentIds.has(id)) {
         URL.revokeObjectURL(preview.url);
         urlsRef.current.delete(id);
         failedRef.current.delete(id);
+        changed = true;
       }
     }
 
@@ -137,8 +139,9 @@ export function useLocalMediaPreviewUrls(files: AttachmentPreviewFile[]) {
       failedRef.current.delete(file.id);
       if (existing) URL.revokeObjectURL(existing.url);
       urlsRef.current.set(file.id, { url: URL.createObjectURL(data), data });
+      changed = true;
     }
-    refresh((value) => value + 1);
+    if (changed) refresh((value) => value + 1);
 
     return () => undefined;
   }, [files]);

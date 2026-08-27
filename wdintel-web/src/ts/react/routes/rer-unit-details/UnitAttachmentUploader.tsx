@@ -8,7 +8,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { AreaOfResponsibility } from '../../../../Bindings';
 import {
@@ -115,13 +115,17 @@ function useAttachmentSelection(busy: boolean, onSelectionChange: () => void) {
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const previewFiles = attachments.map(({ id, file }) => ({
-    id,
-    name: file.name,
-    type: file.type,
-    size: file.size,
-    data: file,
-  }));
+  const previewFiles = useMemo(
+    () =>
+      attachments.map(({ id, file }) => ({
+        id,
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        data: file,
+      })),
+    [attachments],
+  );
   const { urls, failPreview } = useLocalMediaPreviewUrls(previewFiles);
 
   const addFiles = useCallback(
