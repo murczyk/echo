@@ -1,6 +1,7 @@
 use crate::config::{
     DISCORD_WEBHOOK_ALERT, REPORT_HISTORY_CANCELLED_ERROR_STATUS,
     REPORT_HISTORY_DISCORD_ALERT_TIMEOUT_SEC,
+    REPORT_HISTORY_DOWNLOAD_ATTEMPTS_PER_REPORT_LIMIT,
     REPORT_HISTORY_ETALONKA_IN_PROGRESS_TIMEOUT_SECS,
     REPORT_HISTORY_ETALONKA_WORKER_COUNT, REPORT_HISTORY_GENERIC_ERROR_STATUS,
     REPORT_HISTORY_GLOBAL_WORKER_COUNT,
@@ -46,7 +47,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseBackend,
     DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel,
     JoinType, NotSet, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    RelationTrait, Select, Set, Statement, TransactionTrait,
+    RelationTrait, Select, Set, Statement, TransactionTrait, Value,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -469,16 +470,48 @@ async fn load_report_download_attempts(
     if report_histories.is_empty() {
         return Ok(HashMap::new());
     }
-    let report_download_histories = ReportDownloadHistory::find()
-        .filter(
-            report_download_history::Column::ReportHistoryId.is_in(
-                report_histories
-                    .iter()
-                    .map(|report_history| report_history.id),
+    let report_history_ids = report_histories
+        .iter()
+        .map(|report_history| report_history.id)
+        .collect::<Vec<_>>();
+    let report_history_id_placeholders = (1..=report_history_ids.len())
+        .map(|index| format!("${index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let limit_placeholder = format!("${}", report_history_ids.len() + 1);
+    let values = report_history_ids
+        .into_iter()
+        .map(Value::from)
+        .chain(std::iter::once(Value::from(
+            REPORT_HISTORY_DOWNLOAD_ATTEMPTS_PER_REPORT_LIMIT,
+        )))
+        .collect::<Vec<_>>();
+    let report_download_histories =
+        report_download_history::Model::find_by_statement(
+            Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                format!(
+                    r#"
+                select report_download_history.*
+                from unnest(array[{report_history_id_placeholders}]::bigint[])
+                    as selected_report_history(id)
+                cross join lateral (
+                    select report_download_history.*
+                    from report_download_history
+                    where report_download_history.report_history_id =
+                        selected_report_history.id
+                    order by report_download_history.requested_at desc,
+                        report_download_history.id desc
+                    limit {limit_placeholder}
+                ) report_download_history
+                order by report_download_history.report_history_id,
+                    report_download_history.requested_at desc,
+                    report_download_history.id desc
+                "#,
+                ),
+                values,
             ),
         )
-        .order_by_desc(report_download_history::Column::RequestedAt)
-        .order_by_desc(report_download_history::Column::Id)
         .all(dbx)
         .await
         .c(h!())?;
@@ -1863,6 +1896,14 @@ async fn rerun_completed_report(
     )
     .await?
     {
+        insert_report_download_attempt(
+            &txn,
+            active_report.id,
+            rerun_by_login_id,
+            None,
+        )
+        .await
+        .c(h!())?;
         txn.commit().await.c(h!())?;
         return Ok(active_report);
     }
@@ -1872,6 +1913,14 @@ async fn rerun_completed_report(
             .insert(&txn)
             .await
             .c(h!())?;
+    insert_report_download_attempt(
+        &txn,
+        report_history.id,
+        rerun_by_login_id,
+        None,
+    )
+    .await
+    .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(report_history)
 }
@@ -2361,6 +2410,9 @@ pub async fn report_history_retry(
         .ok_or(AppError::NotFound)?;
     let report_history =
         reset_failed_report(&txn, report_history, &user_login).await?;
+    insert_report_download_attempt(&txn, report_history.id, &user_login, None)
+        .await
+        .c(h!())?;
     txn.commit().await.c(h!())?;
     Ok(Json(
         build_report_history_row(&env.dbx, report_history, false).await?,
