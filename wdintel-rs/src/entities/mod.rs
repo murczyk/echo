@@ -128,6 +128,7 @@ pub mod palitra_highlight_blacklist;
 pub mod palitra_highlight_worker_job;
 pub mod palitra_point;
 pub mod palitra_point_lexeme;
+pub mod report_download_history;
 pub mod report_history;
 pub mod rer_gdoc_callsign;
 pub mod restream;

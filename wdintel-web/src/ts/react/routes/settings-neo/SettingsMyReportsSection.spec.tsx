@@ -8,9 +8,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ReportHistoryTableSection, SettingsMyReportsSection } from './SettingsMyReportsSection';
 import {
+  downloadReportHistory,
   isCancelledReportHistory,
   rerunSuccessfulReportHistory,
 } from '../../services/api/report-history';
+import { downloadBlob } from '../../utils/download-blob';
 
 const sampleRunningRow = {
   id: 1501,
@@ -129,6 +131,8 @@ afterEach(() => {
   capturedSettingsNeoTableProps = null;
   capturedDangerDialogProps = null;
   sampleActionRow = sampleRunningRow;
+  vi.mocked(downloadReportHistory).mockReset();
+  vi.mocked(downloadBlob).mockReset();
   vi.mocked(rerunSuccessfulReportHistory).mockReset();
 });
 
@@ -428,6 +432,60 @@ describe('SettingsMyReportsSection', () => {
     });
 
     expect(rerunSuccessfulReportHistory).toHaveBeenCalledWith(completedRow.id);
+    expect(loadReportHistoryBatch).toHaveBeenCalledTimes(2);
+    expect(loadReportHistoryBatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ offset: 0, limit: 200 }),
+      undefined,
+    );
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it('refreshes batch report history after downloading a report', async () => {
+    const completedRow = {
+      ...sampleRunningRow,
+      status: 'done',
+      completedAt: '2026-06-26 17:01:21',
+      hasFile: true,
+      fileName: 'report.xlsx',
+      progress: 100,
+    };
+    sampleActionRow = completedRow;
+    const blob = new Blob();
+    vi.mocked(downloadReportHistory).mockResolvedValue(blob);
+    const loadReportHistoryBatch = vi.fn(async () => ({
+      rows: [completedRow],
+      total: 1,
+      hasMore: false,
+      nextOffset: 1,
+    }));
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ReportHistoryTableSection
+          active
+          title="Всі звіти"
+          tableId="admin-all-reports-v2"
+          fullHeight
+          loadReportHistoryBatch={loadReportHistoryBatch}
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Завантажити"]')?.click();
+      await Promise.resolve();
+    });
+
+    expect(downloadReportHistory).toHaveBeenCalledWith(completedRow.id);
+    expect(downloadBlob).toHaveBeenCalledWith(blob, completedRow.fileName);
     expect(loadReportHistoryBatch).toHaveBeenCalledTimes(2);
     expect(loadReportHistoryBatch).toHaveBeenLastCalledWith(
       expect.objectContaining({ offset: 0, limit: 200 }),
