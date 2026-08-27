@@ -47,18 +47,10 @@ with peleng_distances as (
             component.geom::geography
         )) as distance_m
     from sigint_peleng peleng
-    join signal_message_group message_group
-        on message_group.signal_message_id = peleng.source_inbox_item_id
-    join signal_group_aor group_aor
-        on group_aor.master_key = message_group.group_master_key
-    join area_of_responsibility aor
-        on aor.id = group_aor.aor_id
-       and not aor.deleted
-    join battle_line_aor_geometry aor_geometry
-        on aor_geometry.aor_id = aor.id
-       and aor_geometry.version_id = $2
+    join battle_line_version battle_line
+        on battle_line.id = $2
     cross join lateral ST_Dump(
-        ST_CollectionExtract(aor_geometry.geometry, 2)
+        ST_CollectionExtract(battle_line.geometry, 2)
     ) component
     where peleng.id = any($1::bigint[])
       and peleng.battle_line_distance is null
