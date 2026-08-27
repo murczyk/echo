@@ -625,26 +625,16 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
     if let Some(root_segment) = generative_segments.first() {
         root_names.insert(root_segment.clone());
     }
-    let mut operational_names =
-        hierarchy_names_by_echelon(unit, &unit.operational_parent_units);
-    if let (Some(echelon), Some(root_segment)) =
-        (root_echelon, operational_segments.first())
-    {
-        operational_names
-            .entry(echelon)
-            .or_default()
-            .insert(root_segment.clone());
-    }
-    let mut generative_names =
-        hierarchy_names_by_echelon(unit, &unit.generative_parent_units);
-    if let (Some(echelon), Some(root_segment)) =
-        (root_echelon, generative_segments.first())
-    {
-        generative_names
-            .entry(echelon)
-            .or_default()
-            .insert(root_segment.clone());
-    }
+    let operational_names = hierarchy_names_by_echelon(
+        unit,
+        &unit.operational_parent_units,
+        &operational_segments,
+    );
+    let generative_names = hierarchy_names_by_echelon(
+        unit,
+        &unit.generative_parent_units,
+        &generative_segments,
+    );
     let mut names_by_echelon = operational_names.clone();
     for (echelon, names) in &generative_names {
         names_by_echelon
@@ -680,21 +670,88 @@ fn comparable_path(unit: &SourceUnit) -> anyhow::Result<ComparablePath> {
 fn hierarchy_names_by_echelon(
     unit: &SourceUnit,
     parents: &[SourceUnit],
+    segments: &[String],
 ) -> HashMap<EchoEchelon, HashSet<String>> {
-    std::iter::once(unit)
-        .chain(parents)
-        .filter_map(|descriptor| {
+    let mut parents = parents.iter().collect::<Vec<_>>();
+    parents.sort_by_key(|parent| std::cmp::Reverse(parent.path_level));
+    let descriptors = std::iter::once(unit).chain(parents).collect::<Vec<_>>();
+    let mut segment_indices = vec![None; descriptors.len()];
+    if !segments.is_empty() {
+        segment_indices[0] = Some(0);
+    }
+    let mut segment_offset = 1;
+    for (index, descriptor) in descriptors.iter().enumerate().skip(1) {
+        let names = descriptor_names(descriptor);
+        if names.is_empty() || segment_offset >= segments.len() {
+            continue;
+        }
+        let Some(relative_index) = segments[segment_offset..]
+            .iter()
+            .position(|segment| names.contains(segment))
+        else {
+            continue;
+        };
+        let segment_index = segment_offset + relative_index;
+        segment_indices[index] = Some(segment_index);
+        segment_offset = segment_index + 1;
+    }
+    index_descriptorless_segments(&mut segment_indices, segments.len());
+
+    descriptors
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, descriptor)| {
             let echelon = descriptor
                 .unit_echelon
                 .as_ref()
                 .and_then(|value| value.key.as_str())
                 .and_then(echo_echelon)?;
-            Some((echelon, descriptor_names(descriptor)))
+            let mut names = descriptor_names(descriptor);
+            if let Some(segment) = segment_indices[index]
+                .and_then(|segment_index| segments.get(segment_index))
+            {
+                names.insert(segment.clone());
+            }
+            Some((echelon, names))
         })
         .fold(HashMap::new(), |mut result, (echelon, names)| {
             result.entry(echelon).or_default().extend(names);
             result
         })
+}
+
+fn index_descriptorless_segments(
+    segment_indices: &mut [Option<usize>],
+    segment_count: usize,
+) {
+    let mut index = 0;
+    while index < segment_indices.len() {
+        if segment_indices[index].is_some() {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < segment_indices.len() && segment_indices[index].is_none()
+        {
+            index += 1;
+        }
+        if start == 0 {
+            continue;
+        }
+        let previous_segment = segment_indices[start - 1].unwrap();
+        let next_segment = segment_indices
+            .get(index)
+            .copied()
+            .flatten()
+            .unwrap_or(segment_count);
+        if next_segment - previous_segment - 1 == index - start {
+            for (offset, segment_index) in
+                (previous_segment + 1..next_segment).enumerate()
+            {
+                segment_indices[start + offset] = Some(segment_index);
+            }
+        }
+    }
 }
 
 fn sigint_unit_echelon(unit: &sigint_unit::Model) -> Option<EchoEchelon> {
@@ -969,6 +1026,28 @@ mod tests {
         orbit_unit.unit_name_short = None;
         orbit_unit.unit_number = None;
         let hierarchy = [(EchoEchelon::Battalion, "2 мсб")];
+
+        assert_eq!(
+            TestLinkMatcher::new(std::slice::from_ref(&orbit_unit))
+                .best_matches(&hierarchy),
+            vec![(&orbit_unit, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
+        );
+    }
+
+    #[test]
+    fn test_link_indexes_parent_full_name_without_optional_descriptors() {
+        let mut orbit_unit = source_unit(
+            "2 мсб / 45 мсп",
+            vec![("battalion", "2 мсб", 1), ("regiment", "unused", 0)],
+        );
+        let parent = &mut orbit_unit.operational_parent_units[0];
+        parent.unit_name = None;
+        parent.unit_name_short = None;
+        parent.unit_number = None;
+        let hierarchy = [
+            (EchoEchelon::Battalion, "2 мсб"),
+            (EchoEchelon::Regiment, "45 мсп"),
+        ];
 
         assert_eq!(
             TestLinkMatcher::new(std::slice::from_ref(&orbit_unit))

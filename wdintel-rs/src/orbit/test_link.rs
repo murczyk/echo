@@ -226,10 +226,7 @@ pub(super) async fn run_with_database(
         .await
         .c(h!())?;
     let matcher = matching::TestLinkMatcher::new(&orbit_units);
-    let suppressed_links = match link_mode {
-        tui::LinkMode::Manual => BTreeSet::new(),
-        tui::LinkMode::Automatic => load_suppressed_links(dbx).await.c(h!())?,
-    };
+    let suppressed_links = load_suppressed_links(dbx).await.c(h!())?;
     let review_units =
         prepare_review_units(&units, &matcher, link_mode, &suppressed_links);
     let (summary, links) = match link_mode {
@@ -237,7 +234,9 @@ pub(super) async fn run_with_database(
         tui::LinkMode::Automatic => approve_automatic(review_units),
     };
     let persist_summary =
-        persist_links(dbx, &links, link_mode).await.c(h!())?;
+        persist_links(dbx, &links, link_mode, &suppressed_links)
+            .await
+            .c(h!())?;
     print_summary(summary, persist_summary);
     Ok(())
 }
@@ -331,6 +330,7 @@ async fn persist_links(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     link_mode: tui::LinkMode,
+    review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> anyhow::Result<PersistSummary> {
     if links.is_empty() {
         return Ok(PersistSummary::default());
@@ -342,12 +342,12 @@ async fn persist_links(
             .await
             .c(h!())?;
     let matcher = matching::TestLinkMatcher::new(&orbit_units);
-    let suppressed_links = match link_mode {
-        tui::LinkMode::Manual => BTreeSet::new(),
-        tui::LinkMode::Automatic => {
-            load_suppressed_links(&transaction).await.c(h!())?
-        }
-    };
+    let suppressed_links = load_suppressed_links(&transaction).await.c(h!())?;
+    let suppressed_links = suppressions_to_preserve(
+        suppressed_links,
+        review_suppressed_links,
+        link_mode,
+    );
     let mut summary = PersistSummary::default();
     let mut linked = false;
     for (sigint_unit_id, orbit_unit_id) in links {
@@ -404,6 +404,17 @@ async fn persist_links(
     }
     transaction.commit().await.c(h!())?;
     Ok(summary)
+}
+
+fn suppressions_to_preserve(
+    mut current: BTreeSet<(i64, uuid::Uuid)>,
+    review: &BTreeSet<(i64, uuid::Uuid)>,
+    link_mode: tui::LinkMode,
+) -> BTreeSet<(i64, uuid::Uuid)> {
+    if link_mode == tui::LinkMode::Manual {
+        current.retain(|link| !review.contains(link));
+    }
+    current
 }
 
 async fn load_reviewable_sigint_unit<C>(
@@ -736,6 +747,19 @@ mod tests {
             &suppressed_links,
         )
         .is_empty());
+    }
+
+    #[test]
+    fn manual_mode_preserves_only_suppressions_added_during_review() {
+        let existing = (1, uuid::Uuid::new_v4());
+        let concurrent = (2, uuid::Uuid::new_v4());
+        let review = BTreeSet::from([existing]);
+        let current = BTreeSet::from([existing, concurrent]);
+
+        assert_eq!(
+            suppressions_to_preserve(current, &review, tui::LinkMode::Manual),
+            BTreeSet::from([concurrent])
+        );
     }
 
     #[test]
