@@ -29,11 +29,11 @@ type Session =
       config: Config;
     };
 
-export function finalizeGestureSession(session: Session) {
+function finalizeGestureSession(session: Session) {
   return { completed: session, next: { kind: 'idle' } as Session };
 }
 
-export function cancelGestureSession(session: Session) {
+function cancelGestureSession(session: Session) {
   return {
     next: { kind: 'idle' } as Session,
     transient: session.kind === 'shape' ? session.object : null,

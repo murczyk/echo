@@ -5,15 +5,16 @@ import { act, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
 import { useImageEditorHistory } from './use-image-editor-history';
 
 type History = ReturnType<typeof useImageEditorHistory>;
 
-function renderHistory(canvas: any, onRestoreError = vi.fn()) {
+function renderHistory(canvas: any, onRestoreError = vi.fn(), onRestored = vi.fn()) {
   let history: History | null = null;
   function Harness() {
     const canvasRef = useRef(canvas);
-    history = useImageEditorHistory({ canvasRef, onRestored: vi.fn(), onRestoreError });
+    history = useImageEditorHistory({ canvasRef, onRestored, onRestoreError });
     return null;
   }
   const container = document.createElement('div');
@@ -221,21 +222,78 @@ describe('image editor history #3099', () => {
     expect(fabricCanvas.loadFromJSON).toHaveBeenCalledTimes(2);
   });
 
-  it('restores crop document metadata on reset', async () => {
+  it('restores the real crop canvas references and clean history on reset #3099', async () => {
+    const source = {
+      cropX: 12,
+      cropY: 34,
+      width: 400,
+      height: 300,
+      left: 0,
+      top: 0,
+      originX: 'left',
+      originY: 'top',
+      scaleX: 1,
+      scaleY: 1,
+      get(key: keyof typeof source) {
+        return this[key];
+      },
+      set: vi.fn((values: Record<string, unknown>) => Object.assign(source, values)),
+    };
     const fabricCanvas = Object.assign(canvas(), {
       width: 400,
       height: 300,
-      backgroundImage: {
-        width: 400,
-        height: 300,
-        get: (key: string) => (key === 'cropX' ? 12 : key === 'cropY' ? 34 : undefined),
-      },
+      backgroundImage: source,
+      getObjects: () => [],
     });
-    const harness = renderHistory(fabricCanvas);
+    fabricCanvas.setDimensions = vi.fn((dimensions: { width: number; height: number }) =>
+      Object.assign(fabricCanvas, dimensions),
+    );
+    const sourceRef = { current: null } as any;
+    const cropRef = { current: {} } as any;
+    const onRestored = vi.fn((restoredCanvas, snapshot) =>
+      restoreImageEditorCanvasReferences({
+        canvas: restoredCanvas,
+        sourceRef,
+        cropRef,
+        snapshot,
+      }),
+    );
+    const harness = renderHistory(fabricCanvas, vi.fn(), onRestored);
     act(() => harness.history().saveHistory());
     expect(fabricCanvas.toJSON).toHaveBeenCalledWith(['editorRole']);
     fabricCanvas.value = 'cropped';
+    Object.assign(fabricCanvas, { width: 280, height: 190 });
+    Object.assign(source, {
+      cropX: 48,
+      cropY: 57,
+      width: 280,
+      height: 190,
+      left: 9,
+      top: 11,
+      originX: 'center',
+      originY: 'center',
+      scaleX: 0.7,
+      scaleY: 0.6,
+    });
+    act(() => harness.history().saveHistory());
     await act(async () => harness.history().reset());
     expect(fabricCanvas.value).toBe('clean');
+    expect(fabricCanvas).toMatchObject({ width: 400, height: 300 });
+    expect(source).toMatchObject({
+      cropX: 12,
+      cropY: 34,
+      width: 400,
+      height: 300,
+      left: 0,
+      top: 0,
+      originX: 'left',
+      originY: 'top',
+      scaleX: 1,
+      scaleY: 1,
+    });
+    expect(sourceRef.current).toBe(source);
+    expect(cropRef.current).toBeNull();
+    expect(harness.history().historyState).toEqual({ index: 0, length: 1 });
+    expect(harness.history().hasEdits).toBe(false);
   });
 });

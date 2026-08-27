@@ -39,6 +39,7 @@ class FabricImage extends FabricObject {
 
 const fabric = {
   FabricImage,
+  Rect: class extends FabricObject {},
   Circle: class extends FabricObject {},
   Line: FabricLine,
   Group: class extends FabricObject {
@@ -149,5 +150,71 @@ describe('image editor raster operations #3099', () => {
       } as never,
     });
     expect(drawImage).toHaveBeenCalledWith(element, 140, 90, 120, 80, 0, 0, 120, 80);
+  });
+
+  it('redacts the complete normalized selection once #3099', async () => {
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = createElement(tagName) as HTMLCanvasElement;
+      if (tagName === 'canvas')
+        Object.defineProperty(element, 'getContext', {
+          value: () => ({ drawImage: vi.fn(), fillRect: vi.fn() }),
+        });
+      return element;
+    });
+    const canvas = canvasFixture();
+    await replaceConcealmentArea({
+      canvas,
+      sourceImage: sourceImage(),
+      fabric: fabric as never,
+      bounds: { left: 12.2, top: 7.1, width: 31.4, height: 20.2 },
+      mode: 'redact',
+    });
+    expect(canvas.add).toHaveBeenCalledOnce();
+    expect(canvas.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        left: 12,
+        top: 7,
+        width: 32,
+        height: 21,
+        fill: '#1f2937',
+        editorRole: 'concealment',
+        selectable: false,
+        evented: false,
+      }),
+    );
+  });
+
+  it('pixelates the complete normalized selection at native scale #3099', async () => {
+    const drawImage = vi.fn();
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = createElement(tagName) as HTMLCanvasElement;
+      if (tagName === 'canvas') {
+        Object.defineProperty(element, 'getContext', {
+          value: () => ({ drawImage, imageSmoothingEnabled: true }),
+        });
+      }
+      return element;
+    });
+    await replaceConcealmentArea({
+      canvas: canvasFixture(),
+      sourceImage: sourceImage(),
+      fabric: fabric as never,
+      bounds: { left: 11.2, top: 6.1, width: 31.4, height: 20.1 },
+      mode: 'pixelate',
+    });
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.any(HTMLCanvasElement),
+      11,
+      6,
+      32,
+      21,
+      0,
+      0,
+      3,
+      2,
+    );
+    expect(drawImage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), 0, 0, 3, 2, 0, 0, 32, 21);
   });
 });
