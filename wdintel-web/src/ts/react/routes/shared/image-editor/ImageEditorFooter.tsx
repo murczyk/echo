@@ -1,21 +1,28 @@
 import { CircularProgress } from '@mui/material';
+import type { Ref } from 'react';
 
 import { PowerButton } from '../../../components/PowerButton';
 
 export function ImageEditorFooter({
-  applying,
+  saving,
   disabled,
   cropActive,
   ready,
   onCancel,
-  onApply,
+  onSaveReplacement,
+  onSaveAsNew,
+  saveAsNewButtonRef,
+  saveReplacementButtonRef,
 }: {
-  applying: boolean;
+  saving: boolean;
   disabled: boolean;
   cropActive: boolean;
   ready: boolean;
   onCancel: () => void;
-  onApply: () => void;
+  onSaveReplacement: () => void;
+  onSaveAsNew: () => void;
+  saveAsNewButtonRef: Ref<HTMLButtonElement>;
+  saveReplacementButtonRef: Ref<HTMLButtonElement>;
 }) {
   return (
     <footer className="flex items-center justify-end gap-2 border-t border-echo-border p-2">
@@ -23,12 +30,22 @@ export function ImageEditorFooter({
         Скасувати
       </PowerButton>
       <PowerButton
-        variant="contained"
+        ref={saveAsNewButtonRef}
         type="button"
-        onClick={onApply}
+        variant="outlined"
+        onClick={onSaveAsNew}
         disabled={!ready || disabled || cropActive}
       >
-        {applying ? <CircularProgress size={18} color="inherit" /> : 'Застосувати'}
+        Зберегти як новий
+      </PowerButton>
+      <PowerButton
+        ref={saveReplacementButtonRef}
+        variant="contained"
+        type="button"
+        onClick={onSaveReplacement}
+        disabled={!ready || disabled || cropActive}
+      >
+        {saving ? <CircularProgress size={18} color="inherit" /> : 'Зберегти'}
       </PowerButton>
     </footer>
   );

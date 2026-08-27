@@ -17,10 +17,11 @@ const imageEditorMocks = vi.hoisted(() => ({ handleEscape: vi.fn(() => true) }))
 vi.mock('../../../image-editor/ImageEditor', () => ({
   ImageEditor: ({
     registerEscapeHandler,
-    onApply,
+    onSaveReplacement,
   }: {
     registerEscapeHandler?: (handler: (() => boolean) | null) => void;
-    onApply: (result: { file: File }) => void;
+    onSaveReplacement: (result: { file: File }) => void;
+    onSaveAsNew: (result: { file: File }) => void;
   }) => {
     useLayoutEffect(() => {
       if (!registerEscapeHandler) return;
@@ -32,7 +33,7 @@ vi.mock('../../../image-editor/ImageEditor', () => ({
         <button
           aria-label="Застосувати редактор"
           onClick={() =>
-            onApply({ file: new File(['edited'], 'edited.png', { type: 'image/png' }) })
+            onSaveReplacement({ file: new File(['edited'], 'edited.png', { type: 'image/png' }) })
           }
         />
       </div>
@@ -492,6 +493,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
             canEdit: () => true,
             loadSource,
             applyReplacement: vi.fn(),
+            addAsNew: vi.fn(),
           }}
         />,
       );
@@ -535,6 +537,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
             canEdit: () => true,
             loadSource: vi.fn().mockRejectedValue(new Error('source failed')),
             applyReplacement: vi.fn(),
+            addAsNew: vi.fn(),
           }}
         />,
       );

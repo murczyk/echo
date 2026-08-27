@@ -238,8 +238,29 @@ export function AttachmentsSection({
           shouldDirty: true,
         });
       },
+      addAsNew: async (_image, result) => {
+        if (totalFiles >= MAX_MESSAGE_ATTACHMENTS)
+          throw new Error(`Перевищено максимальну кількість вкладень (${MAX_MESSAGE_ATTACHMENTS})`);
+        try {
+          uppy.addFile({
+            id:
+              typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : `image-editor-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            name: result.file.name,
+            type: result.file.type,
+            data: result.file,
+          });
+        } catch (cause) {
+          throw new Error(
+            cause instanceof Error
+              ? `Не вдалося додати вкладення: ${cause.message}`
+              : 'Не вдалося додати вкладення',
+          );
+        }
+      },
     }),
-    [busy, deletedMediaIds, existingMediaIds, setValue, uppy, visibleMedia.length],
+    [busy, deletedMediaIds, existingMediaIds, setValue, totalFiles, uppy, visibleMedia.length],
   );
 
   const previewAttachments = useMemo<MessageCardPreviewItem[]>(() => {

@@ -357,6 +357,54 @@ describe('AttachmentsSection media previews', () => {
     act(() => root.unmount());
   });
 
+  it('adds an edited image as a distinct attachment and rejects it at the cap', async () => {
+    const existingMedia = [
+      {
+        id: 'media-1',
+        fileName: 'original.png',
+        contentType: 'image/png',
+        href: 'https://example.test/original.png',
+      },
+    ];
+    const uppy = { addFile: vi.fn(), getFile: vi.fn(), getFiles: vi.fn(() => []) };
+    const { container, root } = await renderSection([], existingMedia, uppy);
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Переглянути original.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(
+      previewMocks.imageEditing.addAsNew(existingMedia[0], {
+        file: new File(['edited'], 'original.png', { type: 'image/png' }),
+      }),
+    ).resolves.toBeUndefined();
+    expect(uppy.addFile).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.any(File), id: expect.any(String) }),
+    );
+    expect(uppy.addFile.mock.calls[0][0].meta).toBeUndefined();
+    act(() => root.unmount());
+
+    const cappedMedia = Array.from({ length: 20 }, (_, index) => ({
+      id: `media-${index}`,
+      fileName: `image-${index}.png`,
+      contentType: 'image/png',
+      href: `https://example.test/${index}.png`,
+    }));
+    const capped = await renderSection([], cappedMedia, uppy);
+    await act(async () => {
+      capped.container
+        .querySelector('button[aria-label="Переглянути image-0.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(
+      previewMocks.imageEditing.addAsNew(cappedMedia[0], {
+        file: new File(['edited'], 'new.png', { type: 'image/png' }),
+      }),
+    ).rejects.toThrow('Перевищено максимальну кількість вкладень (20)');
+    expect(uppy.addFile).toHaveBeenCalledTimes(1);
+    act(() => capped.root.unmount());
+  });
+
   it('opens attachment preview dialog when clicking on a preview thumbnail', async () => {
     const existingMedia = [
       {

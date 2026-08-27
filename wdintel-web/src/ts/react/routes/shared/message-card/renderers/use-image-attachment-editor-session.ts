@@ -85,10 +85,18 @@ export function useImageAttachmentEditorSession({
     }
   }, [clearRequest, image, imageEditing, loading, registerEditorEscapeHandler, session]);
 
-  const apply = useCallback(
+  const saveReplacement = useCallback(
     async (result: EditedImageResult) => {
       if (!session || !imageEditing) return;
       await imageEditing.applyReplacement(session.target, result);
+      close();
+    },
+    [close, imageEditing, session],
+  );
+  const saveAsNew = useCallback(
+    async (result: EditedImageResult) => {
+      if (!session || !imageEditing) return;
+      await imageEditing.addAsNew(session.target, result);
       close();
     },
     [close, imageEditing, session],
@@ -100,5 +108,14 @@ export function useImageAttachmentEditorSession({
   }, [clearRequest, image]);
   useEffect(() => () => clearRequest(), [clearRequest]);
 
-  return { apply, close, error, isLocked: loading || session !== null, loading, open, session };
+  return {
+    close,
+    error,
+    isLocked: loading || session !== null,
+    loading,
+    open,
+    saveAsNew,
+    saveReplacement,
+    session,
+  };
 }

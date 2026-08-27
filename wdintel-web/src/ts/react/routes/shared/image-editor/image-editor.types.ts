@@ -38,4 +38,5 @@ export type ImageEditingCapability = {
   canEdit: (image: MessageCardImage) => boolean;
   loadSource: (image: MessageCardImage, signal: AbortSignal) => Promise<ImageEditorSource>;
   applyReplacement: (image: MessageCardImage, result: EditedImageResult) => Promise<void> | void;
+  addAsNew: (image: MessageCardImage, result: EditedImageResult) => Promise<void> | void;
 };

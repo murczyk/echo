@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -20,12 +20,19 @@ const mocks = vi.hoisted(() => ({
   fromURL: vi.fn(),
 }));
 
-vi.mock('./image-editor-export', () => ({ exportEditedImage: mocks.exportEditedImage }));
+vi.mock('./image-editor-export', () => ({
+  exportEditedImage: mocks.exportEditedImage,
+  imageEditorOutputBasename: (fileName: string) => fileName.replace(/\.[^.]+$/, '') || 'image',
+  imageEditorOutputExtension: (type: string) =>
+    type === 'image/jpeg' ? 'jpg' : type === 'image/webp' ? 'webp' : 'png',
+  imageEditorOutputMimeType: (source: { mimeType: string }) => source.mimeType,
+}));
 vi.mock('./image-editor-source-validation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./image-editor-source-validation')>()),
   validateImageEditorSource: vi.fn().mockResolvedValue({ width: 200, height: 100 }),
 }));
 vi.mock('fabric', () => {
+  const classes = new Map<string, unknown>();
   class Canvas {
     width = 200;
     height = 100;
@@ -82,9 +89,16 @@ vi.mock('fabric', () => {
   return {
     Canvas,
     FabricImage: { fromURL: mocks.fromURL },
-    IText: class IText {},
+    FabricObject: class FabricObject {},
+    IText: class IText {
+      static cacheProperties: string[] = [];
+    },
     Rect,
     Point: class Point {},
+    classRegistry: {
+      getClass: (name: string) => classes.get(name),
+      setClass: (value: { type: string }) => classes.set(value.type, value),
+    },
   };
 });
 
@@ -105,7 +119,8 @@ describe('ImageEditor initialization', () => {
     mocks.exportEditedImage.mockResolvedValue(
       new File(['edited'], 'photo.png', { type: 'image/png' }),
     );
-    const onApply = vi.fn();
+    const onSaveReplacement = vi.fn();
+    const onSaveAsNew = vi.fn();
     const container = document.createElement('div');
     const root = createRoot(container);
     document.body.appendChild(container);
@@ -127,16 +142,25 @@ describe('ImageEditor initialization', () => {
             mimeType: 'image/jpeg',
           }}
           onCancel={vi.fn()}
-          onApply={onApply}
+          onSaveReplacement={onSaveReplacement}
+          onSaveAsNew={onSaveAsNew}
         />,
       );
     });
 
     const apply = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Застосувати',
+      (button) => button.textContent === 'Зберегти',
     ) as HTMLButtonElement;
     await vi.waitFor(() => expect(apply.disabled).toBe(false));
     await act(async () => apply.click());
+    expect(onSaveReplacement).not.toHaveBeenCalled();
+    await act(async () =>
+      (
+        Array.from(document.querySelectorAll('button')).find(
+          (button) => button.textContent === 'Замінити',
+        ) as HTMLButtonElement
+      ).click(),
+    );
     expect(mocks.exportEditedImage).toHaveBeenCalledWith(
       expect.objectContaining({ sourceImage: mocks.sourceImage }),
     );
@@ -145,7 +169,9 @@ describe('ImageEditor initialization', () => {
     );
     expect(mocks.canvasAdd).not.toHaveBeenCalled();
     expect(mocks.canvasOptions).toMatchObject({ enableRetinaScaling: false });
-    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({ file: expect.any(File) }));
+    expect(onSaveReplacement).toHaveBeenCalledWith(
+      expect.objectContaining({ file: expect.any(File) }),
+    );
 
     act(() => root.unmount());
   });
@@ -161,7 +187,8 @@ describe('ImageEditor initialization', () => {
         <ImageEditor
           source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
           onCancel={vi.fn()}
-          onApply={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
         />,
       );
     });
@@ -170,12 +197,104 @@ describe('ImageEditor initialization', () => {
       expect(container.textContent).toContain('Не вдалося декодувати зображення'),
     );
     const apply = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Застосувати',
+      (button) => button.textContent === 'Зберегти',
     ) as HTMLButtonElement;
     expect(apply.disabled).toBe(true);
     expect((container.querySelector('button[aria-label="Ще"]') as HTMLButtonElement).disabled).toBe(
       true,
     );
+    act(() => root.unmount());
+  });
+
+  it('saves a user-provided basename as a new image', async () => {
+    mocks.exportEditedImage.mockImplementation(
+      async ({ outputBasename }) =>
+        new File(['edited'], `${outputBasename}.jpg`, { type: 'image/jpeg' }),
+    );
+    const onSaveAsNew = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    await act(async () => {
+      root.render(
+        <ImageEditor
+          source={{
+            blob: new Blob(['source']),
+            fileName: 'battle.map.jpg',
+            mimeType: 'image/jpeg',
+          }}
+          onCancel={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={onSaveAsNew}
+        />,
+      );
+    });
+    const saveAsNew = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Зберегти як новий',
+    ) as HTMLButtonElement;
+    await vi.waitFor(() => expect(saveAsNew.disabled).toBe(false));
+    await act(async () => saveAsNew.click());
+    const input = document.querySelector('input') as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input,
+        'edited.JPG',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () =>
+      (
+        Array.from(document.querySelectorAll('button'))
+          .filter((button) => button.textContent === 'Зберегти як новий')
+          .at(-1) as HTMLButtonElement
+      ).click(),
+    );
+    await vi.waitFor(() =>
+      expect(onSaveAsNew).toHaveBeenCalledWith(
+        expect.objectContaining({ file: expect.objectContaining({ name: 'edited.jpg' }) }),
+      ),
+    );
+    expect(mocks.exportEditedImage).toHaveBeenCalledWith(
+      expect.objectContaining({ outputBasename: 'edited' }),
+    );
+    act(() => root.unmount());
+  });
+
+  it('closes replacement confirmation on Escape without closing the editor', async () => {
+    const onCancel = vi.fn();
+    const onSaveReplacement = vi.fn();
+    const container = document.createElement('div');
+    const root = createRoot(container);
+    document.body.appendChild(container);
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <ImageEditor
+            source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
+            onCancel={onCancel}
+            onSaveReplacement={onSaveReplacement}
+            onSaveAsNew={vi.fn()}
+          />
+        </StrictMode>,
+      );
+    });
+    const save = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Зберегти',
+    ) as HTMLButtonElement;
+    await vi.waitFor(() => expect(save.disabled).toBe(false));
+    await act(async () => save.click());
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Замінити поточне зображення?'),
+    );
+    await act(async () =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    await vi.waitFor(() =>
+      expect(document.body.textContent).not.toContain('Замінити поточне зображення?'),
+    );
+    expect(onSaveReplacement).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(container.querySelector('[aria-label="Редактор зображення"]')).not.toBeNull();
     act(() => root.unmount());
   });
 
@@ -197,14 +316,15 @@ describe('ImageEditor initialization', () => {
         <ImageEditor
           source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
           onCancel={onCancel}
-          onApply={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
         />,
       );
     });
     await vi.waitFor(() =>
       expect(
         Array.from(container.querySelectorAll('button')).find(
-          (button) => button.textContent === 'Застосувати',
+          (button) => button.textContent === 'Зберегти',
         ),
       ).toMatchObject({ disabled: false }),
     );
@@ -236,7 +356,8 @@ describe('ImageEditor initialization', () => {
         <ImageEditor
           source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
           onCancel={onCancel}
-          onApply={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
         />,
       );
     });
@@ -271,7 +392,8 @@ describe('ImageEditor initialization', () => {
         <ImageEditor
           source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
           onCancel={onCancel}
-          onApply={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
         />,
       );
     });
@@ -309,7 +431,8 @@ describe('ImageEditor initialization', () => {
         <ImageEditor
           source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
           onCancel={onCancel}
-          onApply={vi.fn()}
+          onSaveReplacement={vi.fn()}
+          onSaveAsNew={vi.fn()}
         />,
       );
     });
@@ -337,8 +460,8 @@ describe('ImageEditor initialization', () => {
     act(() => root.unmount());
   });
 
-  it('renders an export error once and keeps the loaded editor available for retry', async () => {
-    mocks.exportEditedImage.mockRejectedValueOnce(new Error('Не вдалося експортувати зображення'));
+  it('keeps replacement confirmation open with a visible save error after a failed callback', async () => {
+    const onSaveReplacement = vi.fn().mockRejectedValue(new Error('Не вдалося зберегти вкладення'));
     const container = document.createElement('div');
     const root = createRoot(container);
     document.body.appendChild(container);
@@ -354,20 +477,33 @@ describe('ImageEditor initialization', () => {
         <ImageEditor
           source={{ blob: new Blob(['source']), fileName: 'photo.jpg', mimeType: 'image/jpeg' }}
           onCancel={vi.fn()}
-          onApply={vi.fn()}
+          onSaveReplacement={onSaveReplacement}
+          onSaveAsNew={vi.fn()}
         />,
       );
     });
     const apply = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Застосувати',
+      (button) => button.textContent === 'Зберегти',
     ) as HTMLButtonElement;
     await vi.waitFor(() => expect(apply.disabled).toBe(false));
     await act(async () => apply.click());
-    await vi.waitFor(() =>
-      expect(container.textContent?.match(/Не вдалося експортувати зображення/g)).toHaveLength(1),
+    await act(async () =>
+      (
+        Array.from(document.querySelectorAll('button')).find(
+          (button) => button.textContent === 'Замінити',
+        ) as HTMLButtonElement
+      ).click(),
     );
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Не вдалося зберегти вкладення'),
+    );
+    expect(document.body.textContent).toContain('Замінити поточне зображення?');
     expect(container.querySelector('canvas')).not.toBeNull();
-    expect(apply.disabled).toBe(false);
+    expect(
+      Array.from(document.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Замінити',
+      ),
+    ).toMatchObject({ disabled: false });
     act(() => root.unmount());
   });
 });

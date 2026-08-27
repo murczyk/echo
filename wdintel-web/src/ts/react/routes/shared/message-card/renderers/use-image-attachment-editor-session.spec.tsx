@@ -20,7 +20,7 @@ it('keeps stale sources and replacements bound to the original attachment #3099'
   function Harness({ image }: { image: typeof imageA }) {
     const value = useImageAttachmentEditorSession({
       image,
-      imageEditing: { canEdit: () => true, loadSource, applyReplacement },
+      imageEditing: { canEdit: () => true, loadSource, applyReplacement, addAsNew: vi.fn() },
     });
     useEffect(() => {
       controls = value;
@@ -46,7 +46,7 @@ it('keeps stale sources and replacements bound to the original attachment #3099'
   await vi.waitFor(() => expect(controls!.session).not.toBeNull());
   act(() => root.render(<Harness image={imageB} />));
   await act(async () =>
-    controls!.apply({ file: new File(['x'], 'edited.png', { type: 'image/png' }) }),
+    controls!.saveReplacement({ file: new File(['x'], 'edited.png', { type: 'image/png' }) }),
   );
   expect(applyReplacement).toHaveBeenCalledWith(imageA, expect.any(Object));
   act(() => root.unmount());

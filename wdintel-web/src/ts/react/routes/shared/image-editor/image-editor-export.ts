@@ -3,14 +3,20 @@ import type { ImageEditorSource } from './image-editor.types';
 const JPEG_QUALITY = 0.92;
 const EDITABLE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-function outputMimeType(source: ImageEditorSource) {
+export function imageEditorOutputMimeType(source: ImageEditorSource) {
   return EDITABLE_TYPES.has(source.mimeType) ? source.mimeType : 'image/png';
 }
 
-function outputFileName(fileName: string, type: string) {
-  const base = fileName.replace(/\.[^.]+$/, '') || 'image';
-  const extension = type === 'image/jpeg' ? 'jpg' : type === 'image/webp' ? 'webp' : 'png';
-  return `${base}.${extension}`;
+export function imageEditorOutputExtension(type: string) {
+  return type === 'image/jpeg' ? 'jpg' : type === 'image/webp' ? 'webp' : 'png';
+}
+
+export function imageEditorOutputBasename(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, '').trim() || 'image';
+}
+
+export function imageEditorOutputFileName(basename: string, type: string) {
+  return `${basename}.${imageEditorOutputExtension(type)}`;
 }
 
 export async function exportEditedImage({
@@ -18,11 +24,13 @@ export async function exportEditedImage({
   source,
   sourceImage,
   crop,
+  outputBasename,
 }: {
   canvas: import('fabric').Canvas;
   source: ImageEditorSource;
   sourceImage: import('fabric').FabricImage;
   crop?: import('fabric').Rect | null;
+  outputBasename?: string;
 }) {
   const viewport = [...(canvas.viewportTransform ?? [1, 0, 0, 1, 0, 0])] as [
     number,
@@ -53,7 +61,7 @@ export async function exportEditedImage({
       width: bounds?.width ?? canvas.width ?? sourceImage.width,
       height: bounds?.height ?? canvas.height ?? sourceImage.height,
     });
-    const requestedType = outputMimeType(source);
+    const requestedType = imageEditorOutputMimeType(source);
     const blob = await new Promise<Blob>((resolve, reject) =>
       element.toBlob(
         (value) =>
@@ -63,7 +71,11 @@ export async function exportEditedImage({
       ),
     );
     const type = blob.type || requestedType;
-    return new File([blob], outputFileName(source.fileName, type), { type });
+    return new File(
+      [blob],
+      imageEditorOutputFileName(outputBasename ?? imageEditorOutputBasename(source.fileName), type),
+      { type },
+    );
   } finally {
     transientVisibility.forEach(({ object, visible }) => object.set({ visible }));
     if (crop && cropVisibility !== undefined) crop.visible = cropVisibility;

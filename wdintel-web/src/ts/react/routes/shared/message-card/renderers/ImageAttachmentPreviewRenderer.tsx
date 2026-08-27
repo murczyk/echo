@@ -662,7 +662,8 @@ export function ImageAttachmentPreviewRenderer({
           source={editor.session.source}
           registerEscapeHandler={registerEditorEscapeHandler}
           onCancel={editor.close}
-          onApply={editor.apply}
+          onSaveReplacement={editor.saveReplacement}
+          onSaveAsNew={editor.saveAsNew}
         />
       </Suspense>
     );

@@ -5,9 +5,14 @@ import { ImageEditorToolbar } from './ImageEditorToolbar';
 import { ImageEditorContextToolbar } from './ImageEditorContextToolbar';
 import { ImageEditorFooter } from './ImageEditorFooter';
 import { ImageEditorDiscardAlert } from './ImageEditorDiscardAlert';
+import { ImageEditorSaveDialogs } from './ImageEditorSaveDialogs';
 import { ImageEditorWorkspace } from './ImageEditorWorkspace';
 import { deleteSelectedAnnotations } from './image-editor-actions';
-import { exportEditedImage } from './image-editor-export';
+import {
+  exportEditedImage,
+  imageEditorOutputExtension,
+  imageEditorOutputMimeType,
+} from './image-editor-export';
 import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
 import {
   applyCrop,
@@ -24,6 +29,7 @@ import { useImageEditorDrawingGestures } from './use-image-editor-drawing-gestur
 import { useImageEditorHistory } from './use-image-editor-history';
 import { useImageEditorSelectionStyle } from './use-image-editor-selection-style';
 import { useImageEditorSelection } from './use-image-editor-selection';
+import { useImageEditorSaveDialogState } from './use-image-editor-save-dialog-state';
 import { useImageEditorRasterQueue } from './use-image-editor-raster-queue';
 import { useImageEditorViewport } from './use-image-editor-viewport';
 import type {
@@ -39,12 +45,14 @@ type FabricModule = typeof import('fabric');
 export function ImageEditor({
   source,
   onCancel,
-  onApply,
+  onSaveReplacement,
+  onSaveAsNew,
   registerEscapeHandler,
 }: {
   source: ImageEditorSource;
   onCancel: () => void;
-  onApply: (result: EditedImageResult) => Promise<void> | void;
+  onSaveReplacement: (result: EditedImageResult) => Promise<void> | void;
+  onSaveAsNew: (result: EditedImageResult) => Promise<void> | void;
   registerEscapeHandler?: RegisterImageEditorEscapeHandler;
 }) {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
@@ -54,6 +62,8 @@ export function ImageEditor({
   const sourceRef = useRef<import('fabric').FabricImage | null>(null);
   const cropRef = useRef<import('fabric').Rect | null>(null);
   const hiddenTextareaContainerRef = useRef<HTMLDivElement | null>(null);
+  const saveAsNewButtonRef = useRef<HTMLButtonElement | null>(null);
+  const saveReplacementButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelGestureRef = useRef<() => boolean>(() => false);
   const [tool, setTool] = useState<ImageEditorTool>('select');
   const [stroke, setStroke] = useState('#ef4444');
@@ -78,6 +88,11 @@ export function ImageEditor({
   const [dismissMenu, setDismissMenu] = useState(0);
   const [canDeleteSelected, setCanDeleteSelected] = useState(false);
   const [selection, setSelection] = useState<ImageEditorSelectionDescriptor>();
+  const outputExtension = imageEditorOutputExtension(imageEditorOutputMimeType(source));
+  const saveDialogs = useImageEditorSaveDialogState({
+    sourceFileName: source.fileName,
+    outputExtension,
+  });
   const theme = useTheme();
   const cropStroke = theme.palette.primary.main;
   const cropMaskColor = alpha(theme.palette.common.black, 0.38);
@@ -385,7 +400,7 @@ export function ImageEditor({
     cancelCrop({ canvas, cropRef });
     changeTool('select');
   }, [changeTool, isInteractionLocked]);
-  const apply = async () => {
+  const save = async (destination: 'replacement' | 'new', basename?: string) => {
     const canvas = canvasRef.current;
     const sourceImage = sourceRef.current;
     if (!canvas || !sourceImage || isInteractionLocked()) return;
@@ -397,6 +412,7 @@ export function ImageEditor({
     flushScheduledHistory();
     applyingRef.current = true;
     setApplying(true);
+    saveDialogs.setSaveError(null);
     setError(null);
     try {
       await flushRaster();
@@ -404,14 +420,28 @@ export function ImageEditor({
         canvas,
         source,
         sourceImage,
+        outputBasename: basename,
       });
-      await onApply({ file });
+      if (destination === 'replacement') await onSaveReplacement({ file });
+      else await onSaveAsNew({ file });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не вдалося застосувати зміни');
+      saveDialogs.setSaveError(
+        cause instanceof Error ? cause.message : 'Не вдалося зберегти зміни',
+      );
       applyingRef.current = false;
       setApplying(false);
     }
   };
+  const submitSaveAsNew = useCallback(() => {
+    const basename = saveDialogs.validatedBasename();
+    if (!basename) {
+      saveDialogs.setFilenameError('Вкажіть коректну назву файлу');
+      return;
+    }
+    saveDialogs.setFilenameError(null);
+    saveDialogs.setSaveError(null);
+    void save('new', basename);
+  }, [save, saveDialogs]);
   const requestCancel = useCallback(() => {
     if (isInteractionLocked()) return;
     if (hasEdits) setConfirmCancel(true);
@@ -423,6 +453,14 @@ export function ImageEditor({
       if (target instanceof Element && target.closest('[data-image-editor-local-escape]'))
         return false;
       if (loading || applying || rasterPending) return true;
+      if (saveDialogs.activeDialog === 'replacement') {
+        saveDialogs.closeDialog('replacement');
+        return true;
+      }
+      if (saveDialogs.activeDialog === 'new') {
+        saveDialogs.closeDialog('new');
+        return true;
+      }
       if (confirmCancel) {
         setConfirmCancel(false);
         return true;
@@ -447,7 +485,16 @@ export function ImageEditor({
       requestCancel();
       return true;
     },
-    [applying, cancelCropOperation, confirmCancel, loading, menuOpen, rasterPending, requestCancel],
+    [
+      applying,
+      cancelCropOperation,
+      confirmCancel,
+      loading,
+      menuOpen,
+      rasterPending,
+      requestCancel,
+      saveDialogs,
+    ],
   );
   const onKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -566,6 +613,19 @@ export function ImageEditor({
       {confirmCancel ? (
         <ImageEditorDiscardAlert onContinue={() => setConfirmCancel(false)} onDiscard={onCancel} />
       ) : null}
+      <ImageEditorSaveDialogs
+        activeDialog={saveDialogs.activeDialog}
+        basename={saveDialogs.basename}
+        disabled={applying}
+        extension={outputExtension}
+        filenameError={saveDialogs.filenameError}
+        onBasenameChange={saveDialogs.setBasename}
+        onClose={saveDialogs.closeDialog}
+        onExited={saveDialogs.restoreFocusAfterExit}
+        onSaveAsNew={submitSaveAsNew}
+        onSaveReplacement={() => void save('replacement')}
+        saveError={saveDialogs.saveError}
+      />
       <ImageEditorWorkspace
         canvasElementRef={canvasElementRef}
         canvasRef={canvasRef}
@@ -581,12 +641,15 @@ export function ImageEditor({
         contextualToolbar={<ImageEditorContextToolbar {...contextualToolbarProps} />}
       />
       <ImageEditorFooter
-        applying={applying}
+        saving={applying}
         disabled={applying || rasterPending}
         cropActive={tool === 'crop' && Boolean(cropRef.current)}
         ready={canvasReady && !loading && !rasterPending}
         onCancel={requestCancel}
-        onApply={() => void apply()}
+        onSaveReplacement={() => saveDialogs.openDialog('replacement', saveReplacementButtonRef)}
+        onSaveAsNew={() => saveDialogs.openDialog('new', saveAsNewButtonRef)}
+        saveAsNewButtonRef={saveAsNewButtonRef}
+        saveReplacementButtonRef={saveReplacementButtonRef}
       />
       <div ref={hiddenTextareaContainerRef} data-image-editor-textarea-container />
     </section>
