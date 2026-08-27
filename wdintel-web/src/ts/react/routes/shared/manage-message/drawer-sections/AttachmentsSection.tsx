@@ -19,6 +19,7 @@ import {
 import { MessageCardAttachmentPreviewProvider } from '../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { MessageCardPreviewItem } from '../../message-card/attachment-preview/message-card-preview.types';
 import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
+import { normalizedEditableImageMimeType } from '../../image-editor/image-editor-supported-image';
 import { replacePendingImageFile } from '../../image-editor/image-editor-upload';
 import { blurActiveElement } from '../../../../utils/focus';
 import { MAX_MESSAGE_ATTACHMENTS } from '../useMessageUppy';
@@ -156,8 +157,7 @@ export function AttachmentsSection({
   const imageEditing = useMemo<ImageEditingCapability>(
     () => ({
       canEdit: (image) =>
-        !busy &&
-        ['image/jpeg', 'image/png', 'image/webp'].includes((image.contentType ?? '').toLowerCase()),
+        !busy && normalizedEditableImageMimeType(image.contentType, image.fileName) !== null,
       loadSource: async (image, signal) => {
         const imageId = image.id ?? '';
         const pending = uppy.getFile(imageId);
@@ -165,7 +165,10 @@ export function AttachmentsSection({
           return {
             blob: pending.data,
             fileName: pending.name ?? image.fileName ?? 'image',
-            mimeType: pending.type ?? image.contentType ?? 'image/png',
+            mimeType:
+              normalizedEditableImageMimeType(pending.type, pending.name) ??
+              normalizedEditableImageMimeType(image.contentType, image.fileName) ??
+              'image/png',
           };
         const response = await fetch(image.href, { signal, credentials: 'same-origin' });
         if (!response.ok) throw new Error('Не вдалося завантажити зображення для редагування');
@@ -173,7 +176,10 @@ export function AttachmentsSection({
         return {
           blob,
           fileName: image.fileName ?? 'image',
-          mimeType: image.contentType ?? blob.type ?? 'image/png',
+          mimeType:
+            normalizedEditableImageMimeType(image.contentType, image.fileName) ??
+            normalizedEditableImageMimeType(blob.type, image.fileName) ??
+            'image/png',
         };
       },
       applyReplacement: async (image, result) => {

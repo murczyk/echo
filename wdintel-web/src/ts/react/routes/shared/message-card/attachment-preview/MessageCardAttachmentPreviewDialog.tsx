@@ -98,6 +98,11 @@ export function MessageCardAttachmentPreviewDialog({
       if (childOverlayOpen || navigation.count <= 1 || shouldIgnoreArrowNavigation(event.target))
         return;
 
+      if (isEditing && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        consumeEvent(event);
+        return;
+      }
+
       if (event.key === 'ArrowLeft') {
         event.preventDefault();
         event.stopPropagation();

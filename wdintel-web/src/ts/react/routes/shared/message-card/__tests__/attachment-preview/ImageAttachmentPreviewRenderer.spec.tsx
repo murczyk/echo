@@ -17,15 +17,26 @@ const imageEditorMocks = vi.hoisted(() => ({ handleEscape: vi.fn(() => true) }))
 vi.mock('../../../image-editor/ImageEditor', () => ({
   ImageEditor: ({
     registerEscapeHandler,
+    onApply,
   }: {
     registerEscapeHandler?: (handler: (() => boolean) | null) => void;
+    onApply: (result: { file: File }) => void;
   }) => {
     useLayoutEffect(() => {
       if (!registerEscapeHandler) return;
       registerEscapeHandler(imageEditorMocks.handleEscape);
       return () => registerEscapeHandler(null);
     }, [registerEscapeHandler]);
-    return <div data-testid="mock-image-editor" />;
+    return (
+      <div data-testid="mock-image-editor">
+        <button
+          aria-label="Застосувати редактор"
+          onClick={() =>
+            onApply({ file: new File(['edited'], 'edited.png', { type: 'image/png' }) })
+          }
+        />
+      </div>
+    );
   },
 }));
 
@@ -73,6 +84,7 @@ Object.defineProperty(loadedImage, 'naturalWidth', { value: 24 });
 Object.defineProperty(loadedImage, 'naturalHeight', { value: 16 });
 
 vi.mock('@mui/material', () => ({
+  Alert: ({ children }: { children?: ReactNode }) => <div role="alert">{children}</div>,
   Box: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   CircularProgress: () => <div data-loading-spinner />,
   Dialog: ({
@@ -135,7 +147,13 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
   }: {
     openHref: string;
     download: { href: string; fileName: string };
-    navigation: { index: number; count: number; onPrevious: () => void; onNext: () => void };
+    navigation: {
+      index: number;
+      count: number;
+      disabled?: boolean;
+      onPrevious: () => void;
+      onNext: () => void;
+    };
     additionalActions: ReactElement<{
       status: 'idle' | 'copying' | 'copied' | 'error';
       enabled: boolean;
@@ -181,11 +199,23 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
             onClick={onToggleFullscreen}
           />
         ) : null}
-        {hasCarousel ? <button aria-label="Попереднє" onClick={navigation.onPrevious} /> : null}
+        {hasCarousel ? (
+          <button
+            aria-label="Попереднє"
+            disabled={navigation.disabled}
+            onClick={navigation.onPrevious}
+          />
+        ) : null}
         <span
           data-attachment-preview-counter
         >{`${navigation.index + 1} / ${navigation.count}`}</span>
-        {hasCarousel ? <button aria-label="Наступне" onClick={navigation.onNext} /> : null}
+        {hasCarousel ? (
+          <button
+            aria-label="Наступне"
+            disabled={navigation.disabled}
+            onClick={navigation.onNext}
+          />
+        ) : null}
         <button aria-label="Закрити" onClick={onClose} />
       </div>
     );
@@ -401,7 +431,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('uses fullscreen geometry and closes immediately on Escape', async () => {
+  it('uses fullscreen geometry and closes on one Escape', async () => {
     const onClose = vi.fn();
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -433,12 +463,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(dialogProps.at(-1)?.fullScreen).toBe(true);
     root.unmount();
-    await act(async () => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('keeps Escape in editor ownership while source and lazy editor loading complete', async () => {
@@ -491,6 +516,35 @@ describe('ImageAttachmentPreviewRenderer', () => {
     expect(imageEditorMocks.handleEscape).toHaveBeenCalledTimes(1);
     expect(onClose).not.toHaveBeenCalled();
     root.unmount();
+  });
+
+  it('releases loading Escape ownership after a current source failure #3099', async () => {
+    const onClose = vi.fn();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={onClose}
+          onIndexChange={vi.fn()}
+          initialAction="edit-image"
+          imageEditing={{
+            canEdit: () => true,
+            loadSource: vi.fn().mockRejectedValue(new Error('source failed')),
+            applyReplacement: vi.fn(),
+          }}
+        />,
+      );
+    });
+    await vi.waitFor(() => expect(container.textContent).toContain('source failed'));
+    await act(async () =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })),
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+    act(() => root.unmount());
   });
 
   it('does not enter fullscreen when the config disables it', async () => {

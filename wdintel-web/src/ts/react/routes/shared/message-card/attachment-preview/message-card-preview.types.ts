@@ -6,6 +6,7 @@ import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 export type MessageCardPreviewNavigation = {
   index: number;
   count: number;
+  disabled?: boolean;
   onPrevious: () => void;
   onNext: () => void;
 };

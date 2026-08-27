@@ -19,8 +19,10 @@ const imageEditorEscapeHandler = vi.fn(() => false);
 vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
   ImageAttachmentPreviewRenderer: ({
     registerEditorEscapeHandler,
+    onEditModeChange,
   }: {
     registerEditorEscapeHandler?: (handler: (event: KeyboardEvent) => boolean) => void;
+    onEditModeChange?: (editing: boolean) => void;
   }) => {
     useLayoutEffect(() => {
       registerEditorEscapeHandler?.(imageEditorEscapeHandler);
@@ -28,6 +30,8 @@ vi.mock('../../renderers/ImageAttachmentPreviewRenderer', () => ({
     }, [registerEditorEscapeHandler]);
     return (
       <div data-renderer="image">
+        <button aria-label="Почати редагування" onClick={() => onEditModeChange?.(true)} />
+        <button aria-label="Завершити редагування" onClick={() => onEditModeChange?.(false)} />
         <input data-image-editor-local-escape onKeyDown={(event) => event.stopPropagation()} />
       </div>
     );
@@ -112,5 +116,41 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(targetEscape).toHaveBeenCalledWith(event);
     expect(event.defaultPrevented).toBe(false);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('consumes attachment arrows while editing and restores them afterwards #3099', async () => {
+    const onNext = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[0]!}
+          navigation={{ index: 0, count: 2, onPrevious: vi.fn(), onNext }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    await act(async () =>
+      (container?.querySelector('[aria-label="Почати редагування"]') as HTMLButtonElement).click(),
+    );
+    const locked = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => window.dispatchEvent(locked));
+    expect(locked.defaultPrevented).toBe(true);
+    expect(onNext).not.toHaveBeenCalled();
+    await act(async () =>
+      (
+        container?.querySelector('[aria-label="Завершити редагування"]') as HTMLButtonElement
+      ).click(),
+    );
+    await act(async () =>
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
+    );
+    expect(onNext).toHaveBeenCalledOnce();
   });
 });

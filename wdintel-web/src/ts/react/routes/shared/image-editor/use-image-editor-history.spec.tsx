@@ -296,4 +296,19 @@ describe('image editor history #3099', () => {
     expect(harness.history().historyState).toEqual({ index: 0, length: 1 });
     expect(harness.history().hasEdits).toBe(false);
   });
+
+  it('evicts oversized undo snapshots while retaining the current state and reset source #3099', async () => {
+    const fabricCanvas = canvas();
+    const harness = renderHistory(fabricCanvas);
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = `first-${'x'.repeat(7 * 1024 * 1024)}`;
+    act(() => harness.history().saveHistory());
+    fabricCanvas.value = `second-${'y'.repeat(7 * 1024 * 1024)}`;
+    act(() => harness.history().saveHistory());
+    expect(harness.history().historyState.length).toBe(1);
+    expect(harness.history().canUndo).toBe(false);
+    await act(async () => harness.history().reset());
+    expect(fabricCanvas.value).toBe('clean');
+    expect(harness.history().historyState).toEqual({ index: 0, length: 1 });
+  });
 });

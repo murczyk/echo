@@ -99,6 +99,7 @@ export function ImageEditorToolRail(props: Props) {
     const { label, icon, iconSize } = TOOLS[value];
     return (
       <ImageEditorIconButton
+        key={value}
         label={label}
         icon={icon}
         onClick={() => props.onToolChange(value)}

@@ -202,6 +202,7 @@ export function MessageCardAttachmentPreviewHeader({
               aria-label="Попереднє"
               size="small"
               onClick={navigation.onPrevious}
+              disabled={navigation.disabled}
               sx={iconButtonSx}
               data-attachment-preview-nav="prev"
             >
@@ -232,6 +233,7 @@ export function MessageCardAttachmentPreviewHeader({
               aria-label="Наступне"
               size="small"
               onClick={navigation.onNext}
+              disabled={navigation.disabled}
               sx={iconButtonSx}
               data-attachment-preview-nav="next"
             >

@@ -3,7 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildSafeRaster, replaceConcealmentArea } from './image-editor-raster';
+import { replaceConcealmentArea } from './image-editor-raster';
 
 class FabricObject {
   values: Record<string, unknown>;
@@ -81,12 +81,10 @@ describe('image editor raster operations #3099', () => {
   it('blurs an expanded source canvas and crops it back to selected native bounds', async () => {
     const drawImage = vi.fn();
     const getContext = vi.fn(() => ({ drawImage, filter: '' }));
-    const created: HTMLCanvasElement[] = [];
     const createElement = document.createElement.bind(document);
     vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
       const element = createElement(tagName) as HTMLCanvasElement;
       if (tagName === 'canvas') {
-        created.push(element);
         Object.defineProperty(element, 'getContext', { value: getContext });
         Object.defineProperty(element, 'toDataURL', {
           value: () => 'data:image/png;base64,edited',
@@ -97,16 +95,29 @@ describe('image editor raster operations #3099', () => {
     const canvas = canvasFixture();
     await replaceConcealmentArea({
       canvas,
-      sourceImage: sourceImage(),
+      sourceImage: {
+        ...sourceImage(),
+        get: (key: string) => (key === 'cropX' ? 100 : key === 'cropY' ? 50 : undefined),
+      },
       fabric: fabric as never,
       bounds: { left: 20, top: 10, width: 30, height: 20 },
       mode: 'blur',
     });
 
-    expect(created).toHaveLength(3);
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.any(HTMLImageElement),
+      104,
+      50,
+      62,
+      46,
+      0,
+      0,
+      62,
+      46,
+    );
     expect(drawImage).toHaveBeenCalledWith(
       expect.any(HTMLCanvasElement),
-      4,
+      0,
       0,
       62,
       46,
@@ -128,30 +139,6 @@ describe('image editor raster operations #3099', () => {
     );
   });
 
-  it('uses the cumulative cropped source rectangle for subsequent concealment', () => {
-    const drawImage = vi.fn();
-    const createElement = document.createElement.bind(document);
-    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
-      const element = createElement(tagName) as HTMLCanvasElement;
-      if (tagName === 'canvas')
-        Object.defineProperty(element, 'getContext', { value: () => ({ drawImage }) });
-      return element;
-    });
-    const element = document.createElement('canvas');
-    element.width = 400;
-    element.height = 300;
-    buildSafeRaster({
-      canvas: canvasFixture(),
-      sourceImage: {
-        width: 120,
-        height: 80,
-        get: (key: string) => (key === 'cropX' ? 140 : key === 'cropY' ? 90 : undefined),
-        getElement: () => element,
-      } as never,
-    });
-    expect(drawImage).toHaveBeenCalledWith(element, 140, 90, 120, 80, 0, 0, 120, 80);
-  });
-
   it('redacts the complete normalized selection once #3099', async () => {
     const createElement = document.createElement.bind(document);
     vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
@@ -170,6 +157,7 @@ describe('image editor raster operations #3099', () => {
       bounds: { left: 12.2, top: 7.1, width: 31.4, height: 20.2 },
       mode: 'redact',
     });
+    expect(document.createElement).not.toHaveBeenCalledWith('canvas');
     expect(canvas.add).toHaveBeenCalledOnce();
     expect(canvas.add).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -204,17 +192,58 @@ describe('image editor raster operations #3099', () => {
       bounds: { left: 11.2, top: 6.1, width: 31.4, height: 20.1 },
       mode: 'pixelate',
     });
-    expect(drawImage).toHaveBeenCalledWith(
-      expect.any(HTMLCanvasElement),
-      11,
-      6,
-      32,
-      21,
-      0,
-      0,
-      3,
-      2,
-    );
+    expect(drawImage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), 0, 0, 32, 21, 0, 0, 3, 2);
     expect(drawImage).toHaveBeenCalledWith(expect.any(HTMLCanvasElement), 0, 0, 3, 2, 0, 0, 32, 21);
+  });
+
+  it('rejects an over-budget raster operation before mutating the canvas #3099', async () => {
+    const canvas = canvasFixture();
+    await expect(
+      replaceConcealmentArea({
+        canvas,
+        sourceImage: {
+          width: 10_000,
+          height: 10_000,
+          getElement: () => document.createElement('img'),
+        } as never,
+        fabric: fabric as never,
+        bounds: { left: 0, top: 0, width: 10_000, height: 10_000 },
+        mode: 'pixelate',
+      }),
+    ).rejects.toThrow('Виділена область завелика для безпечної обробки');
+    expect(canvas.add).not.toHaveBeenCalled();
+  });
+
+  it('composites an overlapping concealment into a later regional patch #3099', async () => {
+    const fillRect = vi.fn();
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      const element = createElement(tagName) as HTMLCanvasElement;
+      if (tagName === 'canvas')
+        Object.defineProperty(element, 'getContext', {
+          value: () => ({ drawImage: vi.fn(), fillRect, imageSmoothingEnabled: true }),
+        });
+      return element;
+    });
+    const canvas = canvasFixture();
+    canvas.objects.push(
+      new FabricObject({
+        editorRole: 'concealment',
+        type: 'rect',
+        left: 14,
+        top: 9,
+        width: 12,
+        height: 10,
+        fill: '#1f2937',
+      }),
+    );
+    await replaceConcealmentArea({
+      canvas,
+      sourceImage: sourceImage(),
+      fabric: fabric as never,
+      bounds: { left: 10, top: 5, width: 24, height: 20 },
+      mode: 'pixelate',
+    });
+    expect(fillRect).toHaveBeenCalledWith(4, 4, 12, 10);
   });
 });

@@ -7,6 +7,8 @@ import {
 
 const HISTORY_LIMIT = 30;
 const HISTORY_DELAY_MS = 150;
+// Fabric serializes raster patches as data URLs, so count alone cannot bound history memory.
+const HISTORY_SERIALIZED_BYTES_LIMIT = 12 * 1024 * 1024;
 
 type Canvas = import('fabric').Canvas;
 
@@ -40,6 +42,20 @@ export function useImageEditorHistory({
     second: ImageEditorDocumentSnapshot,
   ) => first != null && JSON.stringify(first) === JSON.stringify(second);
 
+  const trimHistory = (snapshots: ImageEditorDocumentSnapshot[], index: number) => {
+    let retained = snapshots;
+    let retainedIndex = index;
+    const bytes = () => retained.reduce((total, item) => total + item.serializedCanvas.length, 0);
+    while (
+      retained.length > 1 &&
+      (retained.length > HISTORY_LIMIT || bytes() > HISTORY_SERIALIZED_BYTES_LIMIT)
+    ) {
+      retained = retained.slice(1);
+      retainedIndex -= 1;
+    }
+    return { snapshots: retained, index: retainedIndex };
+  };
+
   const commitSnapshot = useCallback((nextSnapshot: ImageEditorDocumentSnapshot) => {
     if (cleanSnapshotRef.current == null) cleanSnapshotRef.current = nextSnapshot;
     if (matches(snapshotsRef.current[indexRef.current] ?? null, nextSnapshot)) {
@@ -48,8 +64,9 @@ export function useImageEditorHistory({
     }
     const snapshots = snapshotsRef.current.slice(0, indexRef.current + 1);
     snapshots.push(nextSnapshot);
-    snapshotsRef.current = snapshots.slice(-HISTORY_LIMIT);
-    indexRef.current = snapshotsRef.current.length - 1;
+    const trimmed = trimHistory(snapshots, snapshots.length - 1);
+    snapshotsRef.current = trimmed.snapshots;
+    indexRef.current = trimmed.index;
     setState({ index: indexRef.current, length: snapshotsRef.current.length });
     setHasEdits(!matches(cleanSnapshotRef.current, nextSnapshot));
   }, []);

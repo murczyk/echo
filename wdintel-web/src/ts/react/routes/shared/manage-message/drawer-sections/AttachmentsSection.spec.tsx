@@ -120,6 +120,17 @@ describe('AttachmentsSection media previews', () => {
     act(() => documentRow.root.unmount());
   });
 
+  it('offers editing for a PNG filename when its MIME type is empty #3099', async () => {
+    const image = await renderSection([pendingFile('image', 'photo.png', '')]);
+    await act(async () => {
+      image.container
+        .querySelector('button[aria-label="Більше дій для photo.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(window.document.body.textContent).toContain('Редагувати');
+    act(() => image.root.unmount());
+  });
+
   it('keeps the icon in the start slot for non-media files and broken previews', async () => {
     const unknown = await renderSection([pendingFile('unknown', 'data.bin', '')]);
     expect(unknown.container.querySelector('img')).toBeNull();

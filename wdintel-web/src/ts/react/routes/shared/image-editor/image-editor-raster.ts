@@ -2,6 +2,7 @@ import type { ConcealMode } from './image-editor.types';
 
 type FabricModule = typeof import('fabric');
 type RasterSource = { element: CanvasImageSource; width: number; height: number };
+const MAX_CONCEALMENT_RASTER_PIXELS = 16 * 1024 * 1024;
 
 function nativeBounds({
   sourceImage,
@@ -23,51 +24,6 @@ function sourceElement(sourceImage: import('fabric').FabricImage) {
   const element = sourceImage.getElement();
   if (!element) throw new Error('Не вдалося обробити виділену область');
   return element;
-}
-
-export function buildSafeRaster({
-  canvas,
-  sourceImage,
-}: {
-  canvas: import('fabric').Canvas;
-  sourceImage: import('fabric').FabricImage;
-}) {
-  const element = sourceElement(sourceImage);
-  const width = sourceImage.width ?? 0;
-  const height = sourceImage.height ?? 0;
-  const elementWidth =
-    Number((element as { naturalWidth?: number; width?: number }).naturalWidth) ||
-    Number((element as { width?: number }).width) ||
-    width;
-  const elementHeight =
-    Number((element as { naturalHeight?: number; height?: number }).naturalHeight) ||
-    Number((element as { height?: number }).height) ||
-    height;
-  const cropX = Math.max(0, Math.min(Number(sourceImage.get?.('cropX') ?? 0), elementWidth));
-  const cropY = Math.max(0, Math.min(Number(sourceImage.get?.('cropY') ?? 0), elementHeight));
-  const sourceWidth = Math.max(0, Math.min(width, elementWidth - cropX));
-  const sourceHeight = Math.max(0, Math.min(height, elementHeight - cropY));
-  const safe = document.createElement('canvas');
-  safe.width = width;
-  safe.height = height;
-  const context = safe.getContext('2d');
-  if (!context) throw new Error('Не вдалося підготувати безпечне зображення');
-  context.drawImage(element, cropX, cropY, sourceWidth, sourceHeight, 0, 0, width, height);
-  canvas.getObjects().forEach((object) => {
-    if (object.get('editorRole') !== 'concealment') return;
-    const left = object.left ?? 0;
-    const top = object.top ?? 0;
-    const width = (object.width ?? 0) * (object.scaleX ?? 1);
-    const height = (object.height ?? 0) * (object.scaleY ?? 1);
-    if (object.type === 'rect' || object.type === 'Rect') {
-      context.fillStyle = typeof object.fill === 'string' ? object.fill : '#1f2937';
-      context.fillRect(left, top, width, height);
-      return;
-    }
-    const element = (object as import('fabric').FabricImage).getElement?.();
-    if (element) context.drawImage(element, left, top, width, height);
-  });
-  return { element: safe, width: safe.width, height: safe.height } satisfies RasterSource;
 }
 
 async function blurredPatch({
@@ -179,27 +135,102 @@ export async function replaceConcealmentArea({
   mode: ConcealMode;
 }) {
   const bounds = nativeBounds({ sourceImage, bounds: requestedBounds });
-  const safe = buildSafeRaster({ canvas, sourceImage });
   if (bounds.width < 3 || bounds.height < 3) {
     canvas.requestRenderAll();
     return false;
   }
-  const replacement =
-    mode === 'redact'
-      ? new fabric.Rect({
-          ...bounds,
-          originX: 'left',
-          originY: 'top',
-          fill: '#1f2937',
-          editorRole: 'concealment',
-          selectable: false,
-          evented: false,
+  if (mode === 'redact') {
+    const replacement = new fabric.Rect({
+      ...bounds,
+      originX: 'left',
+      originY: 'top',
+      fill: '#1f2937',
+      editorRole: 'concealment',
+      selectable: false,
+      evented: false,
+    });
+    canvas.add(replacement);
+    canvas.discardActiveObject();
+    canvas.requestRenderAll();
+    return true;
+  }
+  const bleed = mode === 'blur' ? 16 : 0;
+  const region = {
+    left: Math.max(0, bounds.left - bleed),
+    top: Math.max(0, bounds.top - bleed),
+    width:
+      Math.min(sourceImage.width ?? 0, bounds.left + bounds.width + bleed) -
+      Math.max(0, bounds.left - bleed),
+    height:
+      Math.min(sourceImage.height ?? 0, bounds.top + bounds.height + bleed) -
+      Math.max(0, bounds.top - bleed),
+  };
+  const temporaryPixels =
+    mode === 'blur'
+      ? region.width * region.height
+      : Math.ceil(bounds.width / 12) * Math.ceil(bounds.height / 12);
+  if (
+    region.width * region.height + bounds.width * bounds.height + temporaryPixels >
+    MAX_CONCEALMENT_RASTER_PIXELS
+  )
+    throw new Error('Виділена область завелика для безпечної обробки');
+  const element = sourceElement(sourceImage);
+  const safe = document.createElement('canvas');
+  safe.width = region.width;
+  safe.height = region.height;
+  const context = safe.getContext('2d');
+  if (!context) throw new Error('Не вдалося підготувати область зображення');
+  const cropX = Number(sourceImage.get?.('cropX') ?? 0);
+  const cropY = Number(sourceImage.get?.('cropY') ?? 0);
+  context.drawImage(
+    element,
+    cropX + region.left,
+    cropY + region.top,
+    region.width,
+    region.height,
+    0,
+    0,
+    region.width,
+    region.height,
+  );
+  canvas.getObjects().forEach((object) => {
+    if (object.get('editorRole') !== 'concealment') return;
+    const left = object.left ?? 0,
+      top = object.top ?? 0;
+    const width = (object.width ?? 0) * (object.scaleX ?? 1),
+      height = (object.height ?? 0) * (object.scaleY ?? 1);
+    if (
+      left + width <= region.left ||
+      top + height <= region.top ||
+      left >= region.left + region.width ||
+      top >= region.top + region.height
+    )
+      return;
+    if (object.type === 'rect' || object.type === 'Rect') {
+      context.fillStyle = typeof object.fill === 'string' ? object.fill : '#1f2937';
+      context.fillRect(left - region.left, top - region.top, width, height);
+    } else {
+      const prior = (object as import('fabric').FabricImage).getElement?.();
+      if (prior) context.drawImage(prior, left - region.left, top - region.top, width, height);
+    }
+  });
+  const localBounds = {
+    left: bounds.left - region.left,
+    top: bounds.top - region.top,
+    width: bounds.width,
+    height: bounds.height,
+  };
+  const replacement = new fabric.FabricImage(
+    await (mode === 'blur'
+      ? blurredPatch({
+          source: { element: safe, width: region.width, height: region.height },
+          bounds: localBounds,
         })
-      : new fabric.FabricImage(
-          await (mode === 'blur'
-            ? blurredPatch({ source: safe, bounds })
-            : pixelatedPatch({ source: safe, bounds })),
-        );
+      : pixelatedPatch({
+          source: { element: safe, width: region.width, height: region.height },
+          bounds: localBounds,
+        })),
+  );
   replacement.set({
     ...bounds,
     originX: 'left',

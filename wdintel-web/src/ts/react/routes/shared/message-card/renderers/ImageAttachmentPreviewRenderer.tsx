@@ -56,10 +56,9 @@ import {
   MediaReprocessAction,
 } from '../attachment-preview/MediaReprocessAction';
 import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
+import { useImageAttachmentEditorSession } from './use-image-attachment-editor-session';
 import type {
   ImageEditingCapability,
-  ImageEditorEscapeHandler,
-  ImageEditorSource,
   RegisterImageEditorEscapeHandler,
 } from '../../image-editor/image-editor.types';
 
@@ -68,8 +67,6 @@ const ImageEditor = lazy(() =>
     default: Component,
   })),
 );
-const consumeEditorLoadingEscape: ImageEditorEscapeHandler = () => true;
-
 type StageSize = {
   width: number;
   height: number;
@@ -265,14 +262,15 @@ export function ImageAttachmentPreviewRenderer({
   const [loadedImageKey, setLoadedImageKey] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
   const [zoom, setZoom] = useState(ZOOM_MIN);
-  const [editorSource, setEditorSource] = useState<ImageEditorSource | null>(null);
-  const [editorError, setEditorError] = useState<string | null>(null);
-  const [editorLoading, setEditorLoading] = useState(false);
-
+  const editor = useImageAttachmentEditorSession({
+    image: currentImage,
+    imageEditing,
+    registerEditorEscapeHandler,
+  });
   useEffect(() => {
-    onEditModeChange?.(editorSource !== null);
+    onEditModeChange?.(editor.isLocked);
     return () => onEditModeChange?.(false);
-  }, [editorSource, onEditModeChange]);
+  }, [editor.isLocked, onEditModeChange]);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [imageSize, setImageSize] = useState<StageSize | null>(null);
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
@@ -294,7 +292,6 @@ export function ImageAttachmentPreviewRenderer({
     move: (event: PointerEvent) => void;
     end: (event: PointerEvent) => void;
   } | null>(null);
-  const editorAbortRef = useRef<AbortController | null>(null);
   const initialActionConsumedRef = useRef(false);
   const infoOpen = infoAnchorEl !== null;
   useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
@@ -591,44 +588,11 @@ export function ImageAttachmentPreviewRenderer({
     changeFullscreen(!dialogIsFullscreen);
   };
 
-  const openEditor = async () => {
-    if (imageEditing == null || !imageEditing.canEdit(currentImage) || editorLoading) return;
-    editorAbortRef.current?.abort();
-    const controller = new AbortController();
-    editorAbortRef.current = controller;
-    registerEditorEscapeHandler?.(consumeEditorLoadingEscape);
-    setEditorError(null);
-    setEditorLoading(true);
-    let editorOpened = false;
-    try {
-      const source = await imageEditing.loadSource(currentImage, controller.signal);
-      if (controller.signal.aborted) return;
-      editorOpened = true;
-      setEditorSource(source);
-    } catch (cause) {
-      if (controller.signal.aborted) return;
-      setEditorError(cause instanceof Error ? cause.message : 'Не вдалося завантажити зображення');
-    } finally {
-      if (editorAbortRef.current === controller) {
-        setEditorLoading(false);
-        if (!editorOpened) registerEditorEscapeHandler?.(null);
-      }
-    }
-  };
-
   useEffect(() => {
     if (initialAction !== 'edit-image' || initialActionConsumedRef.current) return;
     initialActionConsumedRef.current = true;
-    void openEditor();
-  }, [initialAction]);
-
-  useEffect(
-    () => () => {
-      editorAbortRef.current?.abort();
-      registerEditorEscapeHandler?.(null);
-    },
-    [registerEditorEscapeHandler],
-  );
+    void editor.open();
+  }, [editor.open, initialAction]);
 
   const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
     setOcrStatus(nextOcr);
@@ -688,19 +652,16 @@ export function ImageAttachmentPreviewRenderer({
     }
   };
 
-  if (editorSource !== null) {
+  if (editor.session !== null) {
     return (
       <Suspense
         fallback={<CircularProgress className="m-auto" aria-label="Завантаження редактора" />}
       >
         <ImageEditor
-          source={editorSource}
+          source={editor.session.source}
           registerEscapeHandler={registerEditorEscapeHandler}
-          onCancel={() => setEditorSource(null)}
-          onApply={async (result) => {
-            await imageEditing?.applyReplacement(currentImage, result);
-            setEditorSource(null);
-          }}
+          onCancel={editor.close}
+          onApply={editor.apply}
         />
       </Suspense>
     );
@@ -753,7 +714,7 @@ export function ImageAttachmentPreviewRenderer({
       fileName={previewFileName}
       openHref={currentHref}
       download={{ href: currentHref, fileName: downloadFileName }}
-      navigation={navigation}
+      navigation={{ ...navigation, disabled: editor.isLocked }}
       additionalActions={
         <>
           <MediaSummaryAction
@@ -800,15 +761,15 @@ export function ImageAttachmentPreviewRenderer({
                 <IconButton
                   aria-label="Редагувати зображення"
                   size="small"
-                  onClick={() => void openEditor()}
-                  disabled={editorLoading}
+                  onClick={() => void editor.open()}
+                  disabled={editor.isLocked}
                   sx={{
                     color: 'text.secondary',
                     '&:hover': { color: 'text.primary', backgroundColor: 'action.hover' },
                     '&.Mui-disabled': { color: 'action.disabled' },
                   }}
                 >
-                  {editorLoading ? (
+                  {editor.loading ? (
                     <CircularProgress size={16} color="inherit" />
                   ) : (
                     <EditIcon fontSize="small" />
@@ -876,10 +837,10 @@ export function ImageAttachmentPreviewRenderer({
       isFullscreen={dialogIsFullscreen}
       config={previewConfig}
       stage={
-        editorError ? (
+        editor.error ? (
           <>
             <Alert severity="error" className="m-2">
-              {editorError}
+              {editor.error}
             </Alert>
             {stage}
           </>
@@ -890,7 +851,7 @@ export function ImageAttachmentPreviewRenderer({
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
-      swipeEnabled={zoom <= ZOOM_MIN}
+      swipeEnabled={zoom <= ZOOM_MIN && !editor.isLocked}
       onToggleFullscreen={handleToggleFullscreen}
     />
   );
