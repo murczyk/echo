@@ -427,6 +427,40 @@ async fn messages_by_id(
     Ok(Json(MessageIdsRsp { messages }))
 }
 
+#[post("/api/rer-importer/messages-by-uuid")]
+async fn messages_by_uuid(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MessageUuidsReq>,
+) -> Result<Json<MessageIdsRsp>, AppError> {
+    let req = req.into_inner();
+    let login = login_id_from_identity(&user)?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let message_ids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .filter(signal_message::Column::IdUuid.eq_any(req.message_uuids))
+        .into_tuple::<i64>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
+        .await
+        .context(h!())?;
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    let messages =
+        messages_by_id_bl(&login, &logins, &env, &message_ids, inbox_req)
+            .await
+            .c(h!())?;
+    Ok(Json(MessageIdsRsp { messages }))
+}
+
 pub(crate) async fn messages_by_id_bl(
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
