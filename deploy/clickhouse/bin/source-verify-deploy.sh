@@ -108,11 +108,11 @@ reconcile_source_tables() {
   fi
 }
 
+log "Running manifest-authorized targeted table repairs"
+"$SCRIPT_DIR/source-resnapshot-table.sh" --manifest
+
 log "Waiting for source table reconciliation"
 reconcile_source_tables
-
-log "Running manifest-authorized targeted empty-table repairs"
-"$SCRIPT_DIR/source-resnapshot-table.sh" --manifest
 
 deadline=$((SECONDS + health_timeout))
 while ((SECONDS < deadline)); do
@@ -130,6 +130,7 @@ while ((SECONDS < deadline)); do
      sudo systemctl start echo-analytics-health.service"
   then
     log "Analytics deployment health check passed"
+    rm -f -- "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
     exit 0
   fi
   sleep 10

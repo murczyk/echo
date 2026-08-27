@@ -82,7 +82,7 @@ function renderMessageText(message: Message[1]): string {
   return escapeHtml(message.text).replace(/\n/g, '<br>');
 }
 
-function liTemplate(message_: Message, selectedUnits: string[]) {
+function liTemplate(message_: Message, selectedUnits: string[], battleLineDistance?: number) {
   const rawUnit = message_[1].unit;
   const unitValue = normalizeUnknownUnitFilterValue(rawUnit);
   const unitDisplay = normalizeUnknownUnitDisplayValue(rawUnit);
@@ -106,6 +106,7 @@ function liTemplate(message_: Message, selectedUnits: string[]) {
             ${message_[1].message_uid ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Посилання: </span><a href="${updateStateUrl(window.location.href, message_[1].message_uid)}">${escapeHtml(message_[1].message_uid)}</a></p>` : ''}
             ${message_[1].freq ? `<p style="line-height: 22px;"><span style="font-weight: 700;">Частота:</span> ${escapeHtml(message_[1].freq)}</p>` : ''}
             ${message_[1].coords ? `<p style="line-height: 16px;"><span style="font-weight: 700;">Координати:</span> ${escapeHtml(String(message_[1].coords))}</p>` : ''}
+            ${battleLineDistance == null ? '' : `<p style="line-height: 16px;"><span style="font-weight: 700;">Відстань до ЛБЗ:</span> ${(battleLineDistance / 1000).toFixed(2)}км</p>`}
             ${message_[1].coords ? '<span style="font-weight: 700; line-height: 22px;">Повідомлення:</span><br>' : ''}
             ${message_[1].date && message_[1].time ? `${escapeHtml(message_[1].date)} ${escapeHtml(message_[1].time)}<br>` : ''}
             ${renderMessageText(message_[1])}
@@ -120,10 +121,11 @@ export function getPointPopupTemplate(
   selectedUnits: string[],
   hasMoreMessages = false,
   contextTitle?: string,
+  battleLineDistances: ReadonlyMap<number, number> = new Map(),
 ) {
   const body = sortedMessages
     .map((message) => {
-      return liTemplate(message, selectedUnits);
+      return liTemplate(message, selectedUnits, battleLineDistances.get(message[0]));
     })
     .join('');
 

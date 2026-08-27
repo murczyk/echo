@@ -373,6 +373,13 @@ pub struct OneoffImportBattleLineFromDeltaKmlPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillPelengBattleLineDistancePs {
+    /// Start datetime in configured local time (inclusive). Defaults to the last 24 hours.
+    #[arg(long)]
+    pub since_ts: Option<String>,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffReprocessUnitNamesPs {
     /// Start datetime in UTC (inclusive). Example: `2026-07-16T05:45:00Z`
     #[arg(long)]
@@ -1089,6 +1096,9 @@ enum Cmd {
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
+    OneoffBackfillPelengBattleLineDistance(
+        OneoffBackfillPelengBattleLineDistancePs,
+    ),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1875,6 +1885,12 @@ async fn async_main(
         }
         Cmd::OneoffImportBattleLineFromDeltaKml(ps) => {
             battle_line::oneoff::oneoff_import_battle_line_from_delta_kml(
+                mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffBackfillPelengBattleLineDistance(ps) => {
+            battle_line::oneoff::oneoff_backfill_peleng_battle_line_distance(
                 mode, &ps,
             )
             .await

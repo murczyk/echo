@@ -1162,6 +1162,7 @@ export type FreqDetailedPoint = {
   mgrsCoords: string;
   sk42Coords: string;
   freq: string | null;
+  battleLineDistance: number | null;
 };
 
 export type InboxMapItem = {
@@ -4526,6 +4527,7 @@ export type SystemSettingsCurrentRsp = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
 };
 
@@ -4561,6 +4563,7 @@ export type SystemSettingsItem = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4594,6 +4597,7 @@ export type CreateSystemSettingsReq = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
 };
 
 export type ActivateSystemSettingsReq = {

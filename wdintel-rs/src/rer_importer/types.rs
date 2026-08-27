@@ -357,6 +357,7 @@ pub struct FreqDetailedPoint {
     pub mgrs_coords: String,
     pub sk42_coords: String,
     pub freq: Option<String>,
+    pub battle_line_distance: Option<i32>,
 }
 #[derive(
     Elm,

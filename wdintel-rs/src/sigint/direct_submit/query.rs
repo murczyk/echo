@@ -1519,13 +1519,24 @@ where
             created_at: NotSet,
             updated_at: Set(peleng.updated_at),
             pelengation_object: Set(peleng.pelengation_object),
+            battle_line_distance: Set(None),
         })
         .collect::<Vec<_>>();
     if !peleng_models.is_empty() {
-        crate::entities::sigint_peleng::Entity::insert_many(peleng_models)
-            .exec(dbx)
-            .await
-            .c(h!())?;
+        let peleng_ids =
+            crate::entities::sigint_peleng::Entity::insert_many(peleng_models)
+                .exec_with_returning(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|peleng| peleng.id)
+                .collect::<Vec<_>>();
+        crate::battle_line::peleng_distance::fill_new_peleng_distances(
+            dbx,
+            &peleng_ids,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }
