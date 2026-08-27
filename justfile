@@ -35,8 +35,7 @@ ai_bucket_prefix := "s3://echouastorage/lfs/echo-ai/models-v2"
 wd_fasttext_models := justfile_directory() + "/echo-ai/fasttext-models"
 workspace_iggy := "~/workspace/iggy"
 local_assets_iggy := "echo-iggy/deploy"
-iggy_fork_remote := "https://github.com/k-bx/iggy.git"
-iggy_default_rev := "k-bx/2026-06-18-poll-option"
+iggy_default_rev := "0.10.3-edge.3"
 
 default:
     @just --list
@@ -817,9 +816,14 @@ deploy _server_pos="" server silent="false":
       trap - EXIT
 
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; unmasking runtime services and leaving them stopped..." >&2
-        if ! ssh "$SERVER" 'sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service'; then
-          echo "Failed to unmask runtime services after deployment failure." >&2
+        echo "Deployment failed; stopping and unmasking runtime services..." >&2
+        if ! ssh "$SERVER" '
+          status=0
+          sudo systemctl stop wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          exit "$status"
+        '; then
+          echo "Failed to stop or unmask runtime services after deployment failure." >&2
         fi
       fi
 
@@ -1184,9 +1188,14 @@ deploy-from-local _server_pos="" server silent="false":
         ssh "$SERVER" "rm -f -- '$REMOTE_DEB_PATH'" >/dev/null 2>&1 || true
       fi
       if [[ $status -ne 0 && $UNMASK_RUNTIME_SERVICES_ON_FAILURE -eq 1 ]]; then
-        echo "Deployment failed; unmasking runtime services and leaving them stopped..." >&2
-        if ! ssh "$SERVER" 'sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service'; then
-          echo "Failed to unmask runtime services after deployment failure." >&2
+        echo "Deployment failed; stopping and unmasking runtime services..." >&2
+        if ! ssh "$SERVER" '
+          status=0
+          sudo systemctl stop wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          sudo systemctl unmask --runtime wdintel-rs.socket wdintel-rs.service wdintel-rs-report-worker.service wdintel-rs-bgworker.service || status=1
+          exit "$status"
+        '; then
+          echo "Failed to stop or unmask runtime services after deployment failure." >&2
         fi
       fi
 
@@ -2914,19 +2923,15 @@ _builder-build-iggy:
 switch-version-iggy rev=iggy_default_rev builder="echo-build-main":
     #!/usr/bin/env bash
     set -euo pipefail
-    ssh "{{ builder }}" bash -s -- "{{ rev }}" "{{ iggy_fork_remote }}" <<'REMOTE'
+    ssh "{{ builder }}" bash -s -- "{{ rev }}" <<'REMOTE'
     set -euo pipefail
     rev="$1"
-    fork_remote="$2"
     cd workspace/iggy
     git fetch --tags origin "+refs/heads/*:refs/remotes/origin/*"
-    git fetch --tags "$fork_remote" "+refs/heads/*:refs/remotes/k-bx/*"
     if git rev-parse --verify --quiet "$rev^{commit}" >/dev/null; then
         git checkout --detach "$rev"
     elif git rev-parse --verify --quiet "origin/$rev^{commit}" >/dev/null; then
         git checkout --detach "origin/$rev"
-    elif git rev-parse --verify --quiet "k-bx/$rev^{commit}" >/dev/null; then
-        git checkout --detach "k-bx/$rev"
     elif git rev-parse --verify --quiet "tags/iggy-$rev^{commit}" >/dev/null; then
         git checkout --detach "tags/iggy-$rev"
     else

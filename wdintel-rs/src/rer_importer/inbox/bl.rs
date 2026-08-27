@@ -18,6 +18,7 @@ use crate::rer_importer::inbox::query::{
     inbox_results_reverse_query_order,
 };
 use crate::rer_importer::signals::*;
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::storage::mk_media_url;
 use crate::types::*;
 use crate::utils::string::*;
@@ -342,12 +343,16 @@ async fn load_intelligence_report_summaries(
     let owner_message_ids = messages
         .values()
         .filter(|message| {
+            let is_owner = message
+                .sender
+                .as_ref()
+                .is_some_and(|sender| owner_sender_ids.contains(sender))
+                || message.login_id.is_some_and(|login_id| {
+                    owner_sender_ids.contains(&login_id.to_string())
+                });
             message.datasource_group_id.is_none()
                 && !grouped_message_ids.contains(&message.id)
-                && message
-                    .sender
-                    .as_ref()
-                    .is_some_and(|sender| owner_sender_ids.contains(sender))
+                && is_owner
         })
         .map(|message| message.id)
         .collect::<HashSet<_>>();
@@ -805,8 +810,8 @@ pub async fn aggregate_to_inbox_messages(
     if let Some(selected_senders) = req.selected_senders.as_ref() {
         if !selected_senders.is_empty() {
             group_query = group_query.filter(
-                signal_message_group::Column::Sender
-                    .eq_any(selected_senders.clone()),
+                preferred_group_sender_expr(None)
+                    .is_in(selected_senders.clone()),
             );
         }
     }
@@ -1880,6 +1885,7 @@ pub fn collect_map_points(
                 id: point.id,
                 message_id: item_id,
                 message_uid: message_uid.clone(),
+                battle_line_distance: point.battle_line_distance,
             });
         }
     }

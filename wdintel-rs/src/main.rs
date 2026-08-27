@@ -291,6 +291,19 @@ pub struct OneoffBackfillInboxNetworksPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillSignalMessageAuthorLoginPs {
+    /// Number of rows updated in each transaction per table.
+    #[arg(long, default_value_t = 10_000)]
+    pub batch_size: u64,
+    /// Resume message backfill after this message id.
+    #[arg(long, default_value_t = 0)]
+    pub after_message_id: i64,
+    /// Resume group-link backfill after this group-link id.
+    #[arg(long, default_value_t = 0)]
+    pub after_group_id: i64,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffPrepareInboxNetworkUniquenessPs {
     /// Confirm deletion of duplicate links and online unique-index creation.
     #[arg(long, action)]
@@ -357,6 +370,13 @@ pub struct OneoffImportBattleLineFromDeltaKmlPs {
     /// Replace an existing active Battle Line.
     #[arg(long, action)]
     pub force: bool,
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillPelengBattleLineDistancePs {
+    /// Start datetime in configured local time (inclusive). Defaults to the last 24 hours.
+    #[arg(long)]
+    pub since_ts: Option<String>,
 }
 
 #[derive(clap::Parser, Debug)]
@@ -1069,10 +1089,16 @@ enum Cmd {
     OneoffImportSignalsCallsignsCsv(OneoffImportSignalsCallsignsCsvPs),
     OneoffFixWhatsappSenders,
     OneoffBackfillInboxNetworks(OneoffBackfillInboxNetworksPs),
+    OneoffBackfillSignalMessageAuthorLogin(
+        OneoffBackfillSignalMessageAuthorLoginPs,
+    ),
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
     OneoffImportBattleLineFromDeltaKml(OneoffImportBattleLineFromDeltaKmlPs),
+    OneoffBackfillPelengBattleLineDistance(
+        OneoffBackfillPelengBattleLineDistancePs,
+    ),
     OneoffBackfillInboxNetworkUnitsTui(OneoffBackfillInboxNetworkUnitsTuiPs),
     OneoffBackfillPalitraPointLexemes,
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
@@ -1191,6 +1217,7 @@ async fn new_pg_pool_from_conn_string_with_runtime_config(
         None,
         false,
         pg_runtime_pool_options(postgres_runtime, role),
+        false,
     )
     .await
     .c(h!())?)
@@ -1207,6 +1234,7 @@ async fn new_pg_pool_from_conn_string_with_timeout(
         connect_timeout,
         connect_lazy,
         None,
+        true,
     )
     .await
     .c(h!())?)
@@ -1222,6 +1250,7 @@ pub(crate) async fn new_pg_pool_from_conn_string_with_max_connections(
         None,
         false,
         None,
+        false,
     )
     .await
 }
@@ -1240,6 +1269,7 @@ pub(crate) async fn new_pg_runtime_pool_from_conn_string_with_max_connections(
             config.postgres_runtime.as_ref(),
             pg_runtime_pool_role(),
         ),
+        false,
     )
     .await
 }
@@ -1250,6 +1280,7 @@ async fn new_pg_pool_from_conn_string_with_options(
     connect_timeout: Option<core::time::Duration>,
     connect_lazy: bool,
     runtime: Option<PgRuntimePoolOptions>,
+    force_custom_plan: bool,
 ) -> Result<sea_orm::DatabaseConnection, sea_orm::DbErr> {
     let mut opt = sea_orm::ConnectOptions::new(conn_string);
     opt.max_connections(max_connections)
@@ -1278,6 +1309,11 @@ async fn new_pg_pool_from_conn_string_with_options(
                     runtime.idle_in_transaction_session_timeout_ms,
                 ),
             ])
+        });
+    }
+    if force_custom_plan {
+        opt.map_sqlx_postgres_opts(|options| {
+            options.options([("plan_cache_mode", ANALYTICS_PLAN_CACHE_MODE)])
         });
     }
 
@@ -1822,6 +1858,10 @@ async fn async_main(
             sigint::network::etalon_calc::oneoff::oneoff_backfill_inbox_networks(mode, ps)
                 .await
         }
+        Cmd::OneoffBackfillSignalMessageAuthorLogin(ps) => {
+            sigint::oneoff::oneoff_backfill_signal_message_author_login(mode, &ps)
+                .await
+        }
         Cmd::OneoffPrepareInboxNetworkUniqueness(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_prepare_inbox_network_uniqueness(
                 mode, &ps,
@@ -1845,6 +1885,12 @@ async fn async_main(
         }
         Cmd::OneoffImportBattleLineFromDeltaKml(ps) => {
             battle_line::oneoff::oneoff_import_battle_line_from_delta_kml(
+                mode, &ps,
+            )
+            .await
+        }
+        Cmd::OneoffBackfillPelengBattleLineDistance(ps) => {
+            battle_line::oneoff::oneoff_backfill_peleng_battle_line_distance(
                 mode, &ps,
             )
             .await

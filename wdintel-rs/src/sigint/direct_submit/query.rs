@@ -7,7 +7,10 @@ use crate::entities::{
 use crate::error::AppError;
 use crate::types::*;
 use chrono::Utc;
-use sea_orm::sea_query::{Expr, LockType};
+use sea_orm::sea_query::{
+    Alias, CommonTableExpression, Expr, LockType, Order, PostgresQueryBuilder,
+    Query, UnionType, WithClause,
+};
 use sea_orm::*;
 use std::collections::{BTreeSet, HashSet};
 use uuid::Uuid;
@@ -62,7 +65,7 @@ where
         .c(h!())?
         .ok_or(AppError::NotFound)
         .c(h!())?;
-    let login = login.to_string();
+    let login_str = login.to_string();
     if message.datasource_group_id.is_none()
         && signal_message_group::Entity::find()
             .filter(
@@ -73,7 +76,10 @@ where
             .await
             .c(h!())?
             .is_none()
-        && (message.sender.as_deref() == Some(login.as_str())
+        && (message
+            .login_id
+            .is_some_and(|login_id| organism_logins.contains(&login_id))
+            || message.sender.as_deref() == Some(login_str.as_str())
             || message.sender.as_deref().is_some_and(|sender| {
                 Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
                     organism_logins.contains(&sender_id)
@@ -100,42 +106,29 @@ where
     if !groups.is_empty() {
         return Err(AppError::NotFound);
     }
-    let parent_ids = find_intel_product_parent_ids(dbx, signal_message_id)
+    let parent_ids = find_intel_product_ancestor_ids(dbx, &[signal_message_id])
         .await
         .c(h!())?;
-    let has_parent_group_access = signal_message_group::Entity::find()
-        .filter(
-            signal_message_group::Column::SignalMessageId
-                .is_in(parent_ids.clone()),
+    if !parent_ids.is_empty()
+        && has_any_copy_access_for_ids(
+            dbx,
+            &parent_ids,
+            allowed_groups,
+            login,
+            organism_logins,
         )
-        .filter(
-            signal_message_group::Column::GroupMasterKey
-                .is_in(allowed_groups.to_vec()),
-        )
-        .one(dbx)
         .await
         .c(h!())?
-        .is_some();
-    let has_parent_datasource_access = signal_message::Entity::find()
-        .join(
-            JoinType::InnerJoin,
-            signal_message::Relation::DatasourceGroup.def(),
-        )
-        .filter(signal_message::Column::Id.is_in(parent_ids))
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            datasource_group::Column::GroupMasterKey
-                .is_in(allowed_groups.to_vec()),
-        )
-        .one(dbx)
-        .await
-        .c(h!())?
-        .is_some();
-    if has_parent_group_access || has_parent_datasource_access {
-        Ok(message)
-    } else {
-        Err(AppError::NotFound)
+    {
+        return Ok(message);
     }
+
+    Err(AppError::NotFound)
+}
+
+#[derive(Debug, sea_orm::FromQueryResult)]
+struct AncestorIdRow {
+    source_message_id: i64,
 }
 
 pub async fn find_intel_product_parent_ids<C>(
@@ -159,7 +152,7 @@ where
         .collect())
 }
 
-pub async fn normalize_copy_parent_signal_message_ids<C>(
+pub async fn find_intel_product_ancestor_ids<C>(
     dbx: &C,
     signal_message_ids: &[i64],
 ) -> Result<Vec<i64>, AppError>
@@ -169,37 +162,138 @@ where
     if signal_message_ids.is_empty() {
         return Ok(vec![]);
     }
-    let links = intel_product::Entity::find()
-        .filter(
+
+    let ancestors = Alias::new("ancestors");
+    let source_message_id = Alias::new("source_message_id");
+    let depth = Alias::new("depth");
+    let path = Alias::new("path");
+
+    let mut seed = Query::select()
+        .expr_as(
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
+            )),
+            source_message_id.clone(),
+        )
+        .expr_as(Expr::val(1), depth.clone())
+        .expr_as(
+            Expr::cust_with_exprs(
+                "ARRAY[$1, $2]::bigint[]",
+                [
+                    Expr::col((
+                        intel_product::Entity,
+                        intel_product::Column::IntelMessageId,
+                    )),
+                    Expr::col((
+                        intel_product::Entity,
+                        intel_product::Column::SourceMessageId,
+                    )),
+                ],
+            ),
+            path.clone(),
+        )
+        .from(intel_product::Entity)
+        .and_where(
             intel_product::Column::IntelMessageId
                 .is_in(signal_message_ids.to_vec()),
         )
-        .filter(intel_product::relation_kind_eq(
+        .and_where(intel_product::relation_kind_eq(
             intel_product::RELATION_KIND_REPORT,
         ))
-        .order_by_asc(intel_product::Column::CreatedAt)
-        .order_by_asc(intel_product::Column::SourceMessageId)
-        .all(dbx)
-        .await
-        .c(h!())?;
-    let mut parents_by_message = HashMap::<i64, Vec<i64>>::new();
-    for link in links {
-        parents_by_message
-            .entry(link.intel_message_id)
-            .or_default()
-            .push(link.source_message_id);
-    }
+        .to_owned();
+    let recursive = Query::select()
+        .expr_as(
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::SourceMessageId,
+            )),
+            source_message_id.clone(),
+        )
+        .expr_as(
+            Expr::col((ancestors.clone(), depth.clone())).add(1),
+            depth.clone(),
+        )
+        .expr_as(
+            Expr::cust_with_exprs(
+                "$1 || $2",
+                [
+                    Expr::col((ancestors.clone(), path.clone())),
+                    Expr::col((
+                        intel_product::Entity,
+                        intel_product::Column::SourceMessageId,
+                    )),
+                ],
+            ),
+            path.clone(),
+        )
+        .from(intel_product::Entity)
+        .join(
+            JoinType::InnerJoin,
+            ancestors.clone(),
+            Expr::col((
+                intel_product::Entity,
+                intel_product::Column::IntelMessageId,
+            ))
+            .equals((ancestors.clone(), source_message_id.clone())),
+        )
+        .and_where(intel_product::relation_kind_eq(
+            intel_product::RELATION_KIND_REPORT,
+        ))
+        .and_where(Expr::col((ancestors.clone(), depth.clone())).lt(100))
+        .and_where(Expr::cust_with_exprs(
+            "NOT ($1 = ANY($2))",
+            [
+                Expr::col((
+                    intel_product::Entity,
+                    intel_product::Column::SourceMessageId,
+                )),
+                Expr::col((ancestors, path.clone())),
+            ],
+        ))
+        .to_owned();
+    let cte = CommonTableExpression::new()
+        .table_name(Alias::new("ancestors"))
+        .columns([source_message_id.clone(), depth.clone(), path.clone()])
+        .query(seed.union(UnionType::All, recursive).to_owned())
+        .to_owned();
+    let mut with_clause = WithClause::new();
+    with_clause.recursive(true).cte(cte);
+    let mut query = Query::select();
+    query
+        .column((Alias::new("ancestors"), source_message_id.clone()))
+        .from(Alias::new("ancestors"))
+        .group_by_col((Alias::new("ancestors"), source_message_id.clone()))
+        .order_by_expr(
+            Expr::col((Alias::new("ancestors"), depth)).min(),
+            Order::Asc,
+        )
+        .order_by((Alias::new("ancestors"), source_message_id), Order::Asc)
+        .with_cte(with_clause);
+    let (sql, values) = query.build(PostgresQueryBuilder);
+
+    let rows = AncestorIdRow::find_by_statement(
+        Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
+
+    Ok(rows.into_iter().map(|row| row.source_message_id).collect())
+}
+
+pub async fn normalize_copy_parent_signal_message_ids<C>(
+    _dbx: &C,
+    signal_message_ids: &[i64],
+) -> Result<Vec<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
     let mut normalized = Vec::new();
     let mut seen = HashSet::new();
     for signal_message_id in signal_message_ids {
-        let parent_ids = parents_by_message
-            .get(signal_message_id)
-            .map(Vec::as_slice)
-            .unwrap_or(std::slice::from_ref(signal_message_id));
-        for parent_id in parent_ids {
-            if seen.insert(*parent_id) {
-                normalized.push(*parent_id);
-            }
+        if seen.insert(*signal_message_id) {
+            normalized.push(*signal_message_id);
         }
     }
     Ok(normalized)
@@ -224,6 +318,66 @@ where
 }
 
 pub async fn resolve_parent_datasource_id_or_none<C>(
+    dbx: &C,
+    parent_signal_message_ids: &[i64],
+    allowed_groups: &[String],
+) -> Result<Option<i64>, AppError>
+where
+    C: ConnectionTrait,
+{
+    if let Some(id) = resolve_direct_parent_datasource_id(
+        dbx,
+        parent_signal_message_ids,
+        allowed_groups,
+    )
+    .await
+    .c(h!())?
+    {
+        return Ok(Some(id));
+    }
+    let ancestor_ids =
+        find_intel_product_ancestor_ids(dbx, parent_signal_message_ids)
+            .await
+            .c(h!())?;
+    if !ancestor_ids.is_empty() {
+        if let Some(id) = resolve_direct_parent_datasource_id(
+            dbx,
+            &ancestor_ids,
+            allowed_groups,
+        )
+        .await
+        .c(h!())?
+        {
+            return Ok(Some(id));
+        }
+    }
+    let check_ids = parent_signal_message_ids
+        .iter()
+        .chain(ancestor_ids.iter())
+        .copied()
+        .collect::<Vec<_>>();
+    let has_grouped_parent = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.is_in(check_ids.clone()))
+        .filter(signal_message::Column::DatasourceGroupId.is_not_null())
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some()
+        || signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::SignalMessageId.is_in(check_ids),
+            )
+            .one(dbx)
+            .await
+            .c(h!())?
+            .is_some();
+    if has_grouped_parent {
+        return Err(AppError::NotFound);
+    }
+    Ok(None)
+}
+
+async fn resolve_direct_parent_datasource_id<C>(
     dbx: &C,
     parent_signal_message_ids: &[i64],
     allowed_groups: &[String],
@@ -264,32 +418,7 @@ where
             .one(dbx)
             .await
             .c(h!())?;
-        if parent_datasource_id.is_some() {
-            return Ok(parent_datasource_id);
-        }
-        let has_grouped_parent = signal_message::Entity::find()
-            .filter(
-                signal_message::Column::Id
-                    .is_in(parent_signal_message_ids.to_vec()),
-            )
-            .filter(signal_message::Column::DatasourceGroupId.is_not_null())
-            .one(dbx)
-            .await
-            .c(h!())?
-            .is_some()
-            || signal_message_group::Entity::find()
-                .filter(
-                    signal_message_group::Column::SignalMessageId
-                        .is_in(parent_signal_message_ids.to_vec()),
-                )
-                .one(dbx)
-                .await
-                .c(h!())?
-                .is_some();
-        if has_grouped_parent {
-            return Err(AppError::NotFound);
-        }
-        return Ok(None);
+        return Ok(parent_datasource_id);
     };
     if let Some(datasource_group_id) = parent_group.datasource_group_id {
         if let Some(datasource_group) =
@@ -486,32 +615,102 @@ where
         return Ok(true);
     }
 
-    let parent_ids = find_intel_product_parent_ids(dbx, message.id)
+    let parent_ids = find_intel_product_ancestor_ids(dbx, &[message.id])
         .await
         .c(h!())?;
-    for parent_id in parent_ids {
-        let Some(parent) = signal_message::Entity::find_by_id(parent_id)
-            .filter(signal_message::Column::Deleted.eq(false))
-            .one(dbx)
-            .await
-            .c(h!())?
-        else {
-            continue;
-        };
-        if message_has_direct_copy_access(
-            dbx,
-            &parent,
-            allowed_groups,
-            login_id,
-            organism_logins,
+    if parent_ids.is_empty() {
+        return Ok(false);
+    }
+
+    has_any_copy_access_for_ids(
+        dbx,
+        &parent_ids,
+        allowed_groups,
+        login_id,
+        organism_logins,
+    )
+    .await
+}
+
+async fn has_any_copy_access_for_ids<C>(
+    dbx: &C,
+    message_ids: &[i64],
+    allowed_groups: &[String],
+    login_id: &uuid::Uuid,
+    organism_logins: &[uuid::Uuid],
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait,
+{
+    if message_ids.is_empty() {
+        return Ok(false);
+    }
+    let has_group_access = signal_message_group::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message_group::Relation::SignalMessage.def(),
         )
+        .filter(
+            signal_message_group::Column::SignalMessageId
+                .is_in(message_ids.to_vec()),
+        )
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            signal_message_group::Column::GroupMasterKey
+                .is_in(allowed_groups.to_vec()),
+        )
+        .one(dbx)
         .await
         .c(h!())?
-        {
-            return Ok(true);
-        }
+        .is_some();
+    if has_group_access {
+        return Ok(true);
     }
-    Ok(false)
+
+    let has_datasource_access = signal_message::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            signal_message::Relation::DatasourceGroup.def(),
+        )
+        .filter(signal_message::Column::Id.is_in(message_ids.to_vec()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(
+            datasource_group::Column::GroupMasterKey
+                .is_in(allowed_groups.to_vec()),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if has_datasource_access {
+        return Ok(true);
+    }
+
+    let mut owner_senders = vec![login_id.to_string()];
+    owner_senders.extend(organism_logins.iter().map(ToString::to_string));
+    let has_any_signal_group = signal_message_group::Entity::find()
+        .filter(
+            Expr::col((
+                signal_message_group::Entity,
+                signal_message_group::Column::SignalMessageId,
+            ))
+            .equals((signal_message::Entity, signal_message::Column::Id)),
+        )
+        .select_only()
+        .column(signal_message_group::Column::Id)
+        .into_query();
+    let has_owner_access = signal_message::Entity::find()
+        .filter(signal_message::Column::Id.is_in(message_ids.to_vec()))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(signal_message::Column::DatasourceGroupId.is_null())
+        .filter(signal_message::Column::Sender.is_in(owner_senders))
+        .filter(Expr::exists(has_any_signal_group).not())
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+
+    Ok(has_owner_access)
 }
 
 async fn message_has_direct_copy_access<C>(
@@ -557,7 +756,10 @@ where
     let login = login_id.to_string();
     Ok(message.datasource_group_id.is_none()
         && groups.is_empty()
-        && (message.sender.as_deref() == Some(login.as_str())
+        && (message
+            .login_id
+            .is_some_and(|author_id| organism_logins.contains(&author_id))
+            || message.sender.as_deref() == Some(login.as_str())
             || message.sender.as_deref().is_some_and(|sender| {
                 Uuid::parse_str(sender).ok().is_some_and(|sender_id| {
                     organism_logins.contains(&sender_id)
@@ -1317,13 +1519,24 @@ where
             created_at: NotSet,
             updated_at: Set(peleng.updated_at),
             pelengation_object: Set(peleng.pelengation_object),
+            battle_line_distance: Set(None),
         })
         .collect::<Vec<_>>();
     if !peleng_models.is_empty() {
-        crate::entities::sigint_peleng::Entity::insert_many(peleng_models)
-            .exec(dbx)
-            .await
-            .c(h!())?;
+        let peleng_ids =
+            crate::entities::sigint_peleng::Entity::insert_many(peleng_models)
+                .exec_with_returning(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .map(|peleng| peleng.id)
+                .collect::<Vec<_>>();
+        crate::battle_line::peleng_distance::fill_new_peleng_distances(
+            dbx,
+            &peleng_ids,
+        )
+        .await
+        .c(h!())?;
     }
     Ok(())
 }

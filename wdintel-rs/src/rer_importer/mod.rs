@@ -20,10 +20,11 @@ use rand::prelude::IndexedRandom;
 use sea_orm::sea_query::{Expr, Func};
 use sea_orm::*;
 use sqlx::Row;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufWriter, Seek, Write};
 use time::{Duration as TimeDuration, OffsetDateTime, PrimitiveDateTime};
 use tokio_util::io::ReaderStream;
+use uuid::Uuid;
 use zip::write::SimpleFileOptions;
 
 pub mod analysis;
@@ -1624,22 +1625,41 @@ pub async fn senders(
     .await
     .c(h!())?;
 
-    let sender_uuids = signal_message_group::Entity::find()
+    let sender_rows = signal_message_group::Entity::find()
         .join(
             JoinType::InnerJoin,
             signal_message_group::Relation::SignalMessage.def(),
         )
         .select_only()
         .column(signal_message_group::Column::Sender)
+        .column(signal_message_group::Column::LoginId)
         .filter(signal_message::Column::Deleted.eq(false))
-        .filter(signal_message_group::Column::Sender.is_not_null())
-        .filter(signal_message_group::Column::Sender.ne(""))
+        .filter(
+            Condition::any()
+                .add(
+                    signal_message_group::Column::Sender
+                        .is_not_null()
+                        .and(signal_message_group::Column::Sender.ne("")),
+                )
+                .add(signal_message_group::Column::LoginId.is_not_null()),
+        )
         .group_by(signal_message_group::Column::Sender)
-        .order_by_asc(signal_message_group::Column::Sender)
-        .into_tuple::<String>()
+        .group_by(signal_message_group::Column::LoginId)
+        .into_tuple::<(Option<String>, Option<Uuid>)>()
         .all(&env.dbx)
         .await
         .c(h!())?;
+    let sender_uuids = sender_rows
+        .into_iter()
+        .flat_map(|(sender, login_id)| {
+            sender
+                .into_iter()
+                .chain(login_id.map(|login_id| login_id.to_string()))
+        })
+        .filter(|sender| !sender.is_empty())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
     let data = collect_profiles_data(&env.dbx, sender_uuids)
         .await
         .c(h!())?;
@@ -1661,12 +1681,43 @@ where
         .iter()
         .map(|p| (p.uuid.clone(), p.clone()))
         .collect();
+    let echo_senders = echo_sender::Entity::find()
+        .filter(echo_sender::Column::Uuid.eq_any(sender_uuids.clone()))
+        .all(txn)
+        .await
+        .c(h!())?;
+    let login_ids = sender_uuids
+        .iter()
+        .filter_map(|sender| Uuid::parse_str(sender).ok())
+        .collect::<Vec<_>>();
+    let logins = login::Entity::find()
+        .filter(login::Column::Id.eq_any(login_ids))
+        .all(txn)
+        .await
+        .c(h!())?;
     let mut data = BTreeMap::new();
     for id in sender_uuids {
-        let m_profile = profiles.get(&id).map(|p| SignalProfileEntry {
-            family_name: p.family_name.clone(),
-            given_name: p.given_name.clone(),
-        });
+        let m_profile = echo_senders
+            .iter()
+            .find(|sender| sender.uuid == id)
+            .map(|sender| SignalProfileEntry {
+                family_name: None,
+                given_name: sender.name.clone(),
+            })
+            .or_else(|| {
+                logins.iter().find(|login| login.id.to_string() == id).map(
+                    |login| SignalProfileEntry {
+                        family_name: None,
+                        given_name: Some(login.login.clone()),
+                    },
+                )
+            })
+            .or_else(|| {
+                profiles.get(&id).map(|p| SignalProfileEntry {
+                    family_name: p.family_name.clone(),
+                    given_name: p.given_name.clone(),
+                })
+            });
         data.insert(id, m_profile);
     }
     Ok(data)

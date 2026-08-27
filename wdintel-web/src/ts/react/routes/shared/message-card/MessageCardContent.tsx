@@ -88,23 +88,21 @@ import {
 
 export type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 
-const MESSAGE_TEXT_PREVIEW_LINE_LIMIT = 20;
-
-function hasMoreThanPreviewLineLimit(messageText: string): boolean {
-  return messageText.split(/\r?\n/).length > MESSAGE_TEXT_PREVIEW_LINE_LIMIT;
+function hasMoreThanPreviewLineLimit(messageText: string, limit: number | null): boolean {
+  return limit !== null && messageText.split(/\r?\n/).length > limit;
 }
 
-function previewTextRows(messageText: string): string {
-  return messageText.split(/\r?\n/).slice(0, MESSAGE_TEXT_PREVIEW_LINE_LIMIT).join('\n');
+function previewTextRows(messageText: string, limit: number): string {
+  return messageText.split(/\r?\n/).slice(0, limit).join('\n');
 }
 
-function previewMarkedTextRows(nodes: ContentNode[]): ContentNode[] {
+function previewMarkedTextRows(nodes: ContentNode[], limit: number): ContentNode[] {
   const previewNodes: ContentNode[] = [];
   let renderedLineBreaks = 0;
 
   for (const node of nodes) {
     if (node === 'CNNewlineC') {
-      if (renderedLineBreaks === MESSAGE_TEXT_PREVIEW_LINE_LIMIT - 1) break;
+      if (renderedLineBreaks === limit - 1) break;
       renderedLineBreaks += 1;
     }
     previewNodes.push(node);
@@ -262,6 +260,8 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   collapseMediaPreviews = false,
+  mediaSummaryEnabled = true,
+  messageTextPreviewLines = 20,
 }: {
   compact?: boolean;
   messageId: number;
@@ -290,12 +290,14 @@ export function MessageCardMessageBody({
   onAddPointHighlightBlacklist?: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   /** When true, heavy media mounts only after the user opens a reveal banner (Duty default). */
   collapseMediaPreviews?: boolean;
+  mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines?: 20 | 40 | null;
 }) {
   const nameCache = usePointBlacklistPaletteNamesCache();
   const { notify } = useOptionalPowerSnackbar();
   const images = collectMessageImages(msg);
   const messageText = msg.text ?? '';
-  const hasMessageTextOverflow = hasMoreThanPreviewLineLimit(messageText);
+  const hasMessageTextOverflow = hasMoreThanPreviewLineLimit(messageText, messageTextPreviewLines);
   const [isMessageTextExpanded, setIsMessageTextExpanded] = useState(false);
   const [revealedVisualMedia, setRevealedVisualMedia] = useState(!collapseMediaPreviews);
   const [revealedAudioMedia, setRevealedAudioMedia] = useState(!collapseMediaPreviews);
@@ -334,7 +336,7 @@ export function MessageCardMessageBody({
   }, []);
   useEffect(() => {
     setIsMessageTextExpanded(false);
-  }, [messageText]);
+  }, [messageText, messageTextPreviewLines]);
   useEffect(() => {
     setRevealedVisualMedia(!collapseMediaPreviews);
     setRevealedAudioMedia(!collapseMediaPreviews);
@@ -585,6 +587,7 @@ export function MessageCardMessageBody({
     requestPointBlacklist,
     pointBlacklistPendingKeys,
     hasMessageTextOverflow && !isMessageTextExpanded,
+    messageTextPreviewLines,
   );
   const hasTextPrimary = Array.isArray(textPrimary)
     ? textPrimary.some((node) => isPresent(node))
@@ -713,10 +716,12 @@ export function MessageCardMessageBody({
           />
         </div>
       ) : null}
-      <MessageCardMediaSummaryCarousel
-        media={summaryMedia}
-        onIndexChange={setSelectedSummaryMediaIndex}
-      />
+      {mediaSummaryEnabled ? (
+        <MessageCardMediaSummaryCarousel
+          media={summaryMedia}
+          onIndexChange={setSelectedSummaryMediaIndex}
+        />
+      ) : null}
       {hasTextPrimary || hasMessageTextOverflow ? (
         <div
           className={
@@ -867,12 +872,18 @@ function useMemoText(
   onRequestPointBlacklist?: (source: PointBlacklistRequestSource) => void,
   pendingBlacklistKeys?: Set<string>,
   showTextPreview = false,
+  messageTextPreviewLines: 20 | 40 | null = 20,
 ) {
   const messageText = msg.text ?? '';
-  const visibleText = showTextPreview ? previewTextRows(messageText) : messageText;
+  const visibleText =
+    showTextPreview && messageTextPreviewLines !== null
+      ? previewTextRows(messageText, messageTextPreviewLines)
+      : messageText;
   return msg.textMarked && msg.textMarked.length > 0
     ? renderMarkedText(
-        showTextPreview ? previewMarkedTextRows(msg.textMarked) : msg.textMarked,
+        showTextPreview && messageTextPreviewLines !== null
+          ? previewMarkedTextRows(msg.textMarked, messageTextPreviewLines)
+          : msg.textMarked,
         visibleText,
         getPointEtalonsFromMessage(msg, tagsMap),
         {

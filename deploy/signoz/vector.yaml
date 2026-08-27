@@ -151,8 +151,9 @@ sinks:
     type: http
     inputs:
       - signoz_prepare
-    # Signoz JSON receiver endpoint is resolved from event field `_signoz_logs_endpoint`.
+    # `signoz_gate` overwrites this field from the trusted service environment.
     uri: "{{ _signoz_logs_endpoint }}"
+    dangerously_allow_unconfined_template_resolution: true
     method: "post"
     encoding:
       codec: json

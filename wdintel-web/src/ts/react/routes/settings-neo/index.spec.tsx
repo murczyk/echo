@@ -25,9 +25,14 @@ const fetchMyAdminGroupEditReferenceMock = vi.hoisted(() =>
 
 vi.mock('@mui/material', () => ({
   Autocomplete: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Box: ({ children, ...props }: { children: ReactNode } & Record<string, unknown>) => (
+    <div {...props}>{children}</div>
+  ),
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Chip: ({ label }: { label?: ReactNode }) => <span>{label}</span>,
   CircularProgress: () => <span>loading</span>,
+  Collapse: ({ children, in: inProp }: { children: ReactNode; in?: boolean }) =>
+    inProp ? <div>{children}</div> : null,
   Dialog: ({ children, open }: { children: ReactNode; open?: boolean }) =>
     open ? <div role="dialog">{children}</div> : null,
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -67,6 +72,37 @@ vi.mock('@mui/material', () => ({
     </button>
   ),
   TextField: ({ label }: { label?: ReactNode }) => <label>{label}</label>,
+  ToggleButtonGroup: ({
+    value,
+    onChange,
+    children,
+  }: {
+    value?: unknown;
+    onChange?: (_event: unknown, val: unknown) => void;
+    children?: ReactNode;
+  }) => (
+    <div data-toggle-group={String(value)}>
+      {React.Children.map(children, (child) => {
+        if (!React.isValidElement(child)) return child;
+        return React.cloneElement(child as any, {
+          onClick: () => onChange?.(new Event('click'), child.props.value),
+        });
+      })}
+    </div>
+  ),
+  ToggleButton: ({
+    value,
+    children,
+    onClick,
+  }: {
+    value?: unknown;
+    children?: ReactNode;
+    onClick?: (event: unknown) => void;
+  }) => (
+    <button type="button" data-toggle-value={String(value)} onClick={onClick}>
+      {children}
+    </button>
+  ),
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -219,6 +255,8 @@ vi.mock('../../services/api/user-settings', () => ({
     showClassicDuty: false,
     showClassicAnalysis: false,
     dutyCollapseMediaPreviews: true,
+    mediaSummaryEnabled: true,
+    messageTextPreviewLines: 20,
   }),
   saveUserSettings: saveUserDutySettings,
 }));
@@ -230,32 +268,29 @@ vi.mock('../../services/api/zones', () => ({
   fetchMyAdminGroupEditReference: fetchMyAdminGroupEditReferenceMock,
 }));
 
-vi.mock('./SettingsDutySection', () => ({
-  SettingsDutySection: (props: {
-    onTagsLayoutChange: (layout: 'full' | 'compact' | 'hidden') => void;
-    onDisableAutoScrollChange: (value: boolean) => void;
-    onAudioTranscriptionCollapsedChange: (value: boolean) => void;
-    showAudioTranscriptionSettings: boolean;
-  }) => (
-    <div>
-      <button type="button" onClick={() => props.onTagsLayoutChange('full')}>
-        change-layout
-      </button>
-      <button type="button" onClick={() => props.onDisableAutoScrollChange(true)}>
-        change-scroll
-      </button>
-      {props.showAudioTranscriptionSettings ? (
-        <button type="button" onClick={() => props.onAudioTranscriptionCollapsedChange(true)}>
-          change-duty-transcription
+vi.mock('./SettingsDutySection', async () => {
+  const actual =
+    await vi.importActual<typeof import('./SettingsDutySection')>('./SettingsDutySection');
+  return {
+    ...actual,
+    SettingsDutySection: (props: any) => (
+      <div>
+        <button type="button" onClick={() => props.onTagsLayoutChange('full')}>
+          change-layout
         </button>
-      ) : null}
-    </div>
-  ),
-}));
-
-vi.mock('./SettingsSharedTagsLayoutCard', () => ({
-  SettingsSharedTagsLayoutCard: () => <div />,
-}));
+        <button type="button" onClick={() => props.onDisableAutoScrollChange(true)}>
+          change-scroll
+        </button>
+        {props.showAudioTranscriptionSettings ? (
+          <button type="button" onClick={() => props.onAudioTranscriptionCollapsedChange(true)}>
+            change-duty-transcription
+          </button>
+        ) : null}
+        <actual.SettingsDutySection {...props} />
+      </div>
+    ),
+  };
+});
 
 vi.mock('./SettingsMyOrganismSection', () => ({
   SettingsMyOrganismSection: () => <div>my-organism-active</div>,
@@ -311,6 +346,58 @@ describe('SettingsNeoPage', () => {
     container.remove();
   });
 
+  it.each(['duty', 'analysis'] as const)(
+    'renders the shared preview control inside the message-card settings for %s',
+    async (section) => {
+      await act(async () => {
+        root.render(<SettingsNeoPage section={section} />);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(container.textContent).toContain('20 рядків');
+      expect(container.textContent).toContain('40 рядків');
+      expect(container.textContent).toContain('Без скорочення');
+      expect(container.textContent).toContain('Повний');
+      expect(container.textContent).toContain('Щільний');
+      expect(container.textContent).toContain('Без тегів');
+      expect(container.textContent).toContain('Згортати перегляд довгих повідомлень:');
+      expect(container.textContent).toContain(
+        'Визначає, коли з’являється кнопка «Показати більше».',
+      );
+      expect(container.textContent).toContain('Стислий опис файлів у картках');
+
+      saveUserDutySettings.mockClear();
+      for (const [label, value] of [
+        ['20 рядків', 20],
+        ['40 рядків', 40],
+        ['Без скорочення', null],
+      ] as const) {
+        const button = Array.from(container.querySelectorAll('button')).find(
+          (candidate) => candidate.textContent === label,
+        );
+        expect(button).toBeTruthy();
+        await act(async () => {
+          button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+          await Promise.resolve();
+        });
+        expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+          tagsLayout: 'compact',
+          messageTextPreviewLines: value,
+          disableAutoScroll: false,
+          analysisMapInSidebar: false,
+          dutyAudioTranscriptionCollapsed: false,
+          analysisAudioTranscriptionCollapsed: false,
+          showAnalysisCallsignAddForm: false,
+          showClassicDuty: false,
+          showClassicAnalysis: false,
+          dutyCollapseMediaPreviews: true,
+          mediaSummaryEnabled: true,
+        });
+      }
+    },
+  );
+
   it('drains queued duty saves after a transient failure', async () => {
     const firstSave = deferred<void>();
     const secondSave = deferred<void>();
@@ -327,16 +414,18 @@ describe('SettingsNeoPage', () => {
     });
 
     const buttons = Array.from(container.querySelectorAll('button'));
-    const changeLayout = buttons.find((button) => button.textContent?.includes('change-layout'));
     const changeScroll = buttons.find((button) => button.textContent?.includes('change-scroll'));
-    expect(changeLayout).toBeTruthy();
+    const changeTranscription = buttons.find((button) =>
+      button.textContent?.includes('change-duty-transcription'),
+    );
     expect(changeScroll).toBeTruthy();
+    expect(changeTranscription).toBeTruthy();
 
     await act(async () => {
-      changeLayout?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      changeScroll?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     await act(async () => {
-      changeScroll?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      changeTranscription?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     expect(saveUserDutySettings).toHaveBeenCalledTimes(1);
@@ -348,15 +437,17 @@ describe('SettingsNeoPage', () => {
 
     expect(saveUserDutySettings).toHaveBeenCalledTimes(2);
     expect(saveUserDutySettings.mock.calls[1]?.[0]).toEqual({
-      tagsLayout: 'full',
+      tagsLayout: 'compact',
       disableAutoScroll: true,
       analysisMapInSidebar: false,
-      dutyAudioTranscriptionCollapsed: false,
+      dutyAudioTranscriptionCollapsed: true,
       analysisAudioTranscriptionCollapsed: false,
       showAnalysisCallsignAddForm: false,
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
 
     await act(async () => {
@@ -399,6 +490,8 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -431,6 +524,8 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -463,6 +558,8 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
 
     saveUserDutySettings.mockClear();
@@ -492,6 +589,113 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
+    });
+  });
+
+  it('saves tags layout preference from the duty settings tab', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="duty" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Картка повідомлення');
+    expect(container.querySelector('[data-message-card-tags-mock="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-tags-mock="true"]')).not.toBeNull();
+
+    const fullButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Повний',
+    );
+    expect(fullButton).toBeTruthy();
+
+    await act(async () => {
+      fullButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'full',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
+    });
+
+    const hiddenButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Без тегів',
+    );
+    expect(hiddenButton).toBeTruthy();
+
+    await act(async () => {
+      hiddenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'hidden',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
+    });
+  });
+
+  it('saves media summary preference from the duty settings tab', async () => {
+    await act(async () => {
+      root.render(<SettingsNeoPage section="duty" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Оперативний');
+    expect(container.textContent).toContain('Стислий опис файлів у картках');
+    expect(container.querySelector('[data-message-card-mock="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-media-summary-mock="true"]')).not.toBeNull();
+
+    saveUserDutySettings.mockClear();
+
+    const switchButton = Array.from(container.querySelectorAll('button')).find(
+      (button) =>
+        (button.textContent === 'on' || button.textContent === 'off') &&
+        button.parentElement?.textContent?.includes('Стислий опис файлів у картках'),
+    );
+    expect(switchButton).toBeTruthy();
+
+    await act(async () => {
+      switchButton?.click();
+      await Promise.resolve();
+    });
+
+    expect(saveUserDutySettings).toHaveBeenLastCalledWith({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: false,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -517,17 +721,18 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).not.toContain('Транскрипція аудіо');
   });
 
-  it('hides general settings and opens my groups for the legacy general section', async () => {
+  it('opens duty settings as default section', async () => {
     await act(async () => {
-      root.render(<SettingsNeoPage section="general" />);
+      root.render(<SettingsNeoPage />);
     });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Загальні');
-    expect(container.textContent).toContain('Мої групи');
+    expect(container.querySelector('#settings-neo-panel-duty')).not.toBeNull();
+    expect(container.textContent).toContain('Оперативний');
+    expect(container.textContent).toContain('Стислий опис файлів у картках');
   });
 
   it('renders the my reports tab as a redirect', async () => {
@@ -579,9 +784,8 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Загальні');
     expect(container.textContent).toContain('Мої групи');
-    expect(container.textContent).toContain('change-layout');
+    expect(container.textContent).toContain('change-scroll');
   });
 
   it('shows the my groups tab when groups exist', async () => {
@@ -610,9 +814,8 @@ describe('SettingsNeoPage', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).not.toContain('Загальні');
     expect(container.textContent).toContain('Мої групи');
-    expect(container.textContent).toContain('change-layout');
+    expect(container.textContent).toContain('change-scroll');
     expect(container.textContent).not.toContain('Group 1');
   });
 

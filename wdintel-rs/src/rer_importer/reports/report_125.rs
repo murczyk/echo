@@ -418,6 +418,8 @@ fn build_report_125_docx_to_path(
     report_data: &Report125Data,
     outpath: &Path,
 ) -> Result<(), AppError> {
+    crate::report_history::ensure_report_record_count(report_data.rows.len())
+        .context(h!())?;
     let file = std::fs::File::create(outpath)?;
     build_report_125_docx(report_data)
         .build()
@@ -885,6 +887,7 @@ mod tests {
             distance_m: None,
             country_code: None,
             pelengation_object: None,
+            battle_line_distance: None,
             deleted: false,
             created_at: test_dt(16, 12, 14, 31),
             updated_at: None,

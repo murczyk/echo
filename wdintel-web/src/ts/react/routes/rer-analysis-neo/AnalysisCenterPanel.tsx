@@ -258,6 +258,8 @@ export function AnalysisCenterPanel({
             tagsOrder={page.tagsOrder}
             tagsLoading={page.filtersLoading && Object.keys(page.tagsMap).length === 0}
             tagsLayout={page.tagsLayout}
+            mediaSummaryEnabled={page.mediaSummaryEnabled}
+            messageTextPreviewLines={page.messageTextPreviewLines}
             showCallsignAddForm={page.showAnalysisCallsignAddForm}
             searchText={page.queryState.search}
             callsignInfoMap={page.summaryCallsignsInfo}

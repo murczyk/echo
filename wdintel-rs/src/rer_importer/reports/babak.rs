@@ -8,6 +8,9 @@ use crate::rer_importer::report_chunking::{
 use crate::rer_importer::types::{
     AnalysisStatsReq, InboxMessagesReq, NewCallsignsRes,
 };
+use crate::sigint::sender::{
+    preferred_group_sender_expr, preferred_message_author_expr,
+};
 use crate::types::*;
 use crate::utils::*;
 use chrono::prelude::*;
@@ -154,17 +157,23 @@ pub fn build_babak_report(
     outpath: &Path,
 ) -> Result<(), AppError> {
     let BabakReportData {
-        units,
+        mut units,
         new_callsigns: new_callsigns_res,
         date_from,
         date_to,
         without_comments,
     } = data;
+    let stream_units = units
+        .iter_mut()
+        .map(BabakStreamUnit::from_report)
+        .collect::<Vec<_>>();
+    let record_count =
+        babak_report_record_count(&stream_units, without_comments);
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     let tz = crate::config::get_tz();
     let date_from_dt_tz = Utc.from_utc_datetime(&date_from).with_timezone(&tz);
     let date_to_dt_tz = Utc.from_utc_datetime(&date_to).with_timezone(&tz);
-
-    let file = std::fs::File::create(outpath)?;
 
     let units_list = units
         .iter()
@@ -434,10 +443,7 @@ pub fn build_babak_report(
 
     doc = doc.add_paragraph(babak_stream_marker(BABAK_OTHERS_MARKER));
 
-    let stream_units = units
-        .into_iter()
-        .map(BabakStreamUnit::from_report)
-        .collect::<Vec<_>>();
+    let file = std::fs::File::create(outpath).context(h!())?;
     pack_babak_docx(doc.build(), file, &stream_units, without_comments)
         .context(h!())?;
 
@@ -461,10 +467,44 @@ struct BabakStreamUnit {
     others_comments: Vec<BabakComment>,
 }
 
+fn babak_report_record_count(
+    units: &[BabakStreamUnit],
+    without_comments: bool,
+) -> usize {
+    units.iter().fold(units.len(), |count, unit| {
+        let comments = if without_comments {
+            0
+        } else {
+            unit.comments
+                .iter()
+                .filter(|comment| {
+                    comment.datetime.is_some()
+                        && babak_non_empty_text(comment.comment.as_deref())
+                            .is_some()
+                })
+                .count()
+        };
+        let supplemental = unit
+            .losses_comments
+            .iter()
+            .chain(&unit.others_comments)
+            .filter(|comment| {
+                comment.datetime.is_some()
+                    && ((!without_comments
+                        && babak_non_empty_text(comment.comment.as_deref())
+                            .is_some())
+                        || babak_non_empty_text(comment.text.as_deref())
+                            .is_some())
+            })
+            .count();
+        count.saturating_add(comments).saturating_add(supplemental)
+    })
+}
+
 impl BabakStreamUnit {
-    fn from_report(mut report: StatsPerUnitReport) -> Self {
+    fn from_report(report: &mut StatsPerUnitReport) -> Self {
         Self {
-            unit: report.unit.take().unwrap_or_else(|| "НВ".to_string()),
+            unit: report.unit.clone().unwrap_or_else(|| "НВ".to_string()),
             comments: take_babak_comments(report.comments.take()),
             losses_comments: take_babak_comments(report.losses_comments.take()),
             others_comments: take_babak_comments(report.others_comments.take()),
@@ -1499,7 +1539,7 @@ fn apply_babak_analytics_access_filter(
         )));
     if let Some(selected_senders) = selected_senders {
         query = query.filter(
-            Expr::col((access_alias, signal_message_group::Column::Sender))
+            preferred_group_sender_expr(Some("babak_message_access"))
                 .is_in(selected_senders.clone()),
         );
     }
@@ -1557,7 +1597,7 @@ fn babak_unit_comment_exists(login_ids: &[uuid::Uuid]) -> SimpleExpr {
                     )
                     .and_where(signal_message::Column::Deleted.eq(false))
                     .and_where(
-                        signal_message::Column::Sender.is_in(
+                        preferred_message_author_expr(None).is_in(
                             login_ids
                                 .iter()
                                 .map(ToString::to_string)
@@ -1685,7 +1725,7 @@ async fn load_babak_enrichment_batch(
                         linked.id,
                         linked.created_at,
                         linked.body as comment,
-                        linked.sender as author
+                        coalesce(linked.sender, linked.login_id::text) as author
                     from intel_product link
                     join signal_message linked
                       on linked.id = link.intel_message_id

@@ -1,9 +1,10 @@
 import { Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material';
 
 import { PowerAlert } from '../../components/PowerAlert';
+import type { MessageTextPreviewLineLimit } from '../../services/api/user-settings';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
-import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
+import { SettingsMessageCard } from './SettingsMessageCard';
 
 const cardSx = {
   border: 1,
@@ -19,6 +20,10 @@ export type SettingsDutySectionProps = {
   saveError: string | null;
   tagsLayout: TagsLayoutVariant;
   onTagsLayoutChange: (layout: TagsLayoutVariant) => void;
+  messageTextPreviewLines: MessageTextPreviewLineLimit;
+  onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
+  mediaSummaryEnabled: boolean;
+  onMediaSummaryEnabledChange: (value: boolean) => void;
   /** When true, duty feed does not auto-scroll / follow new messages. */
   disableAutoScroll: boolean;
   onDisableAutoScrollChange: (value: boolean) => void;
@@ -38,6 +43,10 @@ export function SettingsDutySection({
   saveError,
   tagsLayout,
   onTagsLayoutChange,
+  messageTextPreviewLines,
+  onMessageTextPreviewLinesChange,
+  mediaSummaryEnabled,
+  onMediaSummaryEnabledChange,
   disableAutoScroll,
   onDisableAutoScrollChange,
   audioTranscriptionCollapsed,
@@ -83,9 +92,13 @@ export function SettingsDutySection({
             </Box>
           ) : null}
 
-          <SettingsSharedTagsLayoutCard
+          <SettingsMessageCard
             tagsLayout={tagsLayout}
             onTagsLayoutChange={onTagsLayoutChange}
+            messageTextPreviewLines={messageTextPreviewLines}
+            onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
+            mediaSummaryEnabled={mediaSummaryEnabled}
+            onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
             loadInProgress={loadInProgress}
           />
 
@@ -146,7 +159,7 @@ export function SettingsDutySection({
                 label={
                   <Stack spacing={0.75} sx={{ pt: 0.25 }}>
                     <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                      Автоматична прокрутка стрічок Оперативного
+                      Автоматична прокрутка стрічок
                     </Typography>
                     <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
                       Якщо перемикач увімкнено, автопрокрутка працює лише внизу стрічки з невеликим

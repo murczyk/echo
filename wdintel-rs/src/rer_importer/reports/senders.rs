@@ -138,6 +138,15 @@ pub async fn report_xlsx_kind_senders(
         .sorted_by_key(|(_, date)| *date)
         .map(|(date_txt, _)| date_txt)
         .collect_vec();
+    let record_count = sender_stats.values().fold(0_usize, |count, stats| {
+        count.saturating_add(if advanced_freqs {
+            stats.freq_breakdown.len().max(1)
+        } else {
+            1
+        })
+    });
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
 
     write_report_to_file(
         outpath,
@@ -239,25 +248,41 @@ async fn map_senders(
     }
     let sender_ids = senders.into_iter().map(|x| x.to_string()).collect_vec();
     let senders = match aggregation_kind {
-        ReportAggregation::ByProfile => signal_profile::Entity::find()
-            .filter(signal_profile::Column::Uuid.eq_any(sender_ids))
-            .all(dbx)
-            .await
-            .c(h!())?
-            .into_iter()
-            .filter_map(|g| {
-                let name_vec = vec![g.given_name, g.family_name]
-                    .into_iter()
-                    .flatten()
-                    .filter(|x| !x.trim().is_empty())
-                    .collect_vec();
-                if name_vec.is_empty() {
-                    None
-                } else {
-                    Some((g.uuid, name_vec.join(" ")))
-                }
-            })
-            .collect::<BTreeMap<_, _>>(),
+        ReportAggregation::ByProfile => {
+            let mut map = signal_profile::Entity::find()
+                .filter(signal_profile::Column::Uuid.eq_any(sender_ids.clone()))
+                .all(dbx)
+                .await
+                .c(h!())?
+                .into_iter()
+                .filter_map(|g| {
+                    let name_vec = vec![g.given_name, g.family_name]
+                        .into_iter()
+                        .flatten()
+                        .filter(|x| !x.trim().is_empty())
+                        .collect_vec();
+                    if name_vec.is_empty() {
+                        None
+                    } else {
+                        Some((g.uuid, name_vec.join(" ")))
+                    }
+                })
+                .collect::<BTreeMap<_, _>>();
+            let login_ids = sender_ids
+                .iter()
+                .filter_map(|sender| uuid::Uuid::parse_str(sender).ok())
+                .collect_vec();
+            for login in login::Entity::find()
+                .filter(login::Column::Id.eq_any(login_ids))
+                .all(dbx)
+                .await
+                .c(h!())?
+            {
+                map.entry(login.id.to_string())
+                    .or_insert_with(|| login.login);
+            }
+            map
+        }
         ReportAggregation::ByPost => {
             let mut map = BTreeMap::new();
             for s in sender_ids {

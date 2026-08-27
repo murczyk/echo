@@ -139,6 +139,15 @@ pub async fn report_docx_kind_rer(
     bgtask_id: Option<i64>,
 ) -> Result<String, AppError> {
     let report = load_report(user_login, env, req, bgtask_id).await.c(h!())?;
+    let record_count = report
+        .parents
+        .values()
+        .flat_map(|parent| parent.units.values())
+        .fold(0_usize, |count, unit| {
+            count.saturating_add(unit.messages.len())
+        });
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     let report_till = format_report_till(req).c(h!())?;
     write_report_docx(&report, &report_till, outpath).c(h!())?;
     Ok(rer_report_filename(&report_till))
@@ -152,6 +161,8 @@ pub async fn report_docx_kind_sposob(
     _bgtask_id: Option<i64>,
 ) -> Result<String, AppError> {
     let report = load_sposob_report(user_login, env, req).await.c(h!())?;
+    crate::report_history::ensure_report_record_count(report.messages.len())
+        .context(h!())?;
     let (start_date, _end_date) = sposob_report_date_range(&report, req)?;
     write_sposob_report_docx(&report, start_date, outpath).c(h!())?;
     sposob_report_filename(&report, req)
@@ -1562,6 +1573,7 @@ mod tests {
             created_at: chrono::Utc::now().naive_utc(),
             timestamp: None,
             sender: None,
+            login_id: None,
             format: None,
             deleted: false,
             external_id: None,
@@ -1643,6 +1655,7 @@ mod tests {
             is_deduplicate_candidate: None,
             orbit_note: None,
             is_inconsistent: false,
+            updated_at: Default::default(),
         }
     }
 
@@ -2213,6 +2226,7 @@ mod tests {
             created_at: chrono::Utc::now().naive_utc(),
             timestamp: None,
             sender: None,
+            login_id: None,
             format: None,
             deleted: false,
             external_id: None,
@@ -2240,6 +2254,7 @@ mod tests {
             created_at: chrono::Utc::now().naive_utc(),
             timestamp: None,
             sender: None,
+            login_id: None,
             format: None,
             deleted: false,
             external_id: None,
@@ -2391,6 +2406,7 @@ mod tests {
             created_at: dt(1, 0),
             timestamp: Some(dt(5, 58)),
             sender: None,
+            login_id: None,
             format: None,
             deleted: false,
             external_id: None,
@@ -2439,6 +2455,7 @@ mod tests {
             created_at: dt(1, 0),
             timestamp: Some(dt(6, 58)),
             sender: None,
+            login_id: None,
             format: None,
             deleted: false,
             external_id: None,

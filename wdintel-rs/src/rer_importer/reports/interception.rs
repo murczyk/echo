@@ -3,7 +3,6 @@ use crate::config::{
     AnalyticsConfig, ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT,
     RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM,
     RER_REPORT_ENRICHMENT_ID_BATCH_SIZE, TAG_MINIMUM_CONFIDENCE,
-    XLSX_WORKSHEET_ROW_MAX,
 };
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
@@ -62,22 +61,21 @@ pub async fn report_xlsx_kind_interception(
     req: &super::types::ReportPreviewReq,
     outpath: &PathBuf,
 ) -> Result<(), AppError> {
-    let mut workbook = Workbook::new(); // Use rust_xlsxwriter
-    let sheet1 = get_worksheet(&mut workbook)?;
     let mut inbox_req = req.req.clone();
     inbox_req.report_tags_only_this_unit = req.report_tags_only_this_unit;
     let without_model_tags = inbox_req.without_model_tags.unwrap_or(false);
     let keep_full_message = req.interception_keep_full_message.unwrap_or(false);
     let keep_old_colors = req.interception_keep_old_colors.unwrap_or(false);
-    // Define formats using rust_xlsxwriter
-
-    set_colors_and_formats_for_sheet(sheet1, keep_old_colors)?;
 
     let read_db = env.replica();
     let all_tags = get_all_tags(&read_db).await?;
     let messages =
         collect_interception_report_messages(user_login, env, &inbox_req)
             .await?;
+
+    let mut workbook = Workbook::new();
+    let sheet1 = get_worksheet(&mut workbook).context(h!())?;
+    set_colors_and_formats_for_sheet(sheet1, keep_old_colors).context(h!())?;
     process_messages_for_interception_report(
         sheet1,
         messages,
@@ -110,6 +108,7 @@ async fn collect_interception_report_messages(
 
     let mut seen = HashSet::new();
     let mut messages = vec![];
+    let mut record_count = 0_usize;
     for (index, chunk) in chunks.iter().enumerate() {
         log::info!(
             "Interception report chunk {}/{}: {}..{} ({:?})",
@@ -127,12 +126,14 @@ async fn collect_interception_report_messages(
         )
         .await
         .context(h!())?;
-        merge_interception_report_chunk(
-            &mut messages,
-            &mut seen,
-            chunk_messages,
-        );
-        ensure_interception_report_row_limit(user_login, messages.len())?;
+        record_count =
+            record_count.saturating_add(merge_interception_report_chunk(
+                &mut messages,
+                &mut seen,
+                chunk_messages,
+            ));
+        crate::report_history::ensure_report_record_count(record_count)
+            .context(h!())?;
     }
     sort_interception_report_messages(&mut messages);
     Ok(messages)
@@ -301,7 +302,8 @@ fn merge_interception_report_chunk(
     messages: &mut Vec<InboxMessage>,
     seen: &mut HashSet<InterceptionMessageKey>,
     chunk_messages: Vec<InboxMessage>,
-) {
+) -> usize {
+    let mut record_count = 0_usize;
     for message in chunk_messages {
         let key = (
             message.date.clone(),
@@ -309,9 +311,13 @@ fn merge_interception_report_chunk(
             message.body.clone(),
         );
         if seen.insert(key) {
+            if message.date.is_some() && message.time.is_some() {
+                record_count = record_count.saturating_add(1);
+            }
             messages.push(message);
         }
     }
+    record_count
 }
 
 fn sort_interception_report_messages(messages: &mut [InboxMessage]) {
@@ -588,27 +594,6 @@ fn process_messages_for_interception_report(
     }
 
     Ok(())
-}
-
-fn ensure_interception_report_row_limit(
-    user_login: &uuid::Uuid,
-    rows_count: usize,
-) -> Result<(), AppError> {
-    let max_rows =
-        XLSX_WORKSHEET_ROW_MAX - RER_INTERCEPTION_REPORT_HEADER_ROWS_NUM;
-    if rows_count <= max_rows {
-        return Ok(());
-    }
-
-    log::error!(
-        "interception report row limit exceeded: user={user_login}, rows={rows_count}, max_rows={max_rows}",
-    );
-
-    Err(AppError::BL {
-        msg: format!(
-            "Звіт містить {rows_count} рядків, максимум для XLSX: {max_rows}. Зменшіть період або фільтри."
-        ),
-    })
 }
 
 fn get_parsed_date(date: &String) -> Result<ExcelDateTime, AppError> {
@@ -1310,14 +1295,12 @@ fn process_callsigns(callsigns: Vec<String>) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::{
-        eject_body_from_message, ensure_interception_report_row_limit,
-        interception_analytics_scan_filters, interception_report_chunks,
-        interception_report_newest_first,
+        eject_body_from_message, interception_analytics_scan_filters,
+        interception_report_chunks, interception_report_newest_first,
         linked_intel_product_message_ids_query,
         merge_interception_report_chunk, select_report_message_body,
         sort_interception_report_messages, InboxMessage, PostgresQueryBuilder,
     };
-    use crate::config::XLSX_WORKSHEET_ROW_MAX;
     use crate::entities::prelude::SignalMessage;
     use crate::rer_importer::report_chunking::ReportPeriodEnd;
     use crate::rer_importer::types::InboxMessagesReq;
@@ -1417,7 +1400,7 @@ mod tests {
         let mut messages = vec![];
         let mut seen = HashSet::new();
 
-        merge_interception_report_chunk(
+        let first_record_count = merge_interception_report_chunk(
             &mut messages,
             &mut seen,
             vec![
@@ -1425,7 +1408,7 @@ mod tests {
                 duplicate,
             ],
         );
-        merge_interception_report_chunk(
+        let second_record_count = merge_interception_report_chunk(
             &mut messages,
             &mut seen,
             vec![
@@ -1434,6 +1417,8 @@ mod tests {
             ],
         );
 
+        assert_eq!(first_record_count, 2);
+        assert_eq!(second_record_count, 1);
         assert_eq!(messages.len(), 3);
         assert_eq!(messages[0].body.as_deref(), Some("newest"));
         assert_eq!(messages[1].body.as_deref(), Some("same message"));
@@ -1690,23 +1675,5 @@ y:73-71279
         let output = select_report_message_body(input, true).unwrap();
 
         assert_eq!(output, input.to_string());
-    }
-
-    #[test]
-    fn interception_report_row_limit_allows_excel_max_data_rows() {
-        assert!(ensure_interception_report_row_limit(
-            &uuid::Uuid::nil(),
-            XLSX_WORKSHEET_ROW_MAX - 1
-        )
-        .is_ok());
-    }
-
-    #[test]
-    fn interception_report_row_limit_rejects_overflow() {
-        assert!(ensure_interception_report_row_limit(
-            &uuid::Uuid::nil(),
-            XLSX_WORKSHEET_ROW_MAX
-        )
-        .is_err());
     }
 }

@@ -1,5 +1,6 @@
 import type {
   BattleLineAdminPageReq,
+  BattleLineNetworksRsp,
   BattleLineState,
   BattleLineTestReq,
   BattleLineTestRsp,
@@ -54,4 +55,16 @@ export async function fetchBattleLineUnresolvedLocations(
     options,
   );
   return transformSnakeToCamel<BattleLineUnresolvedLocationsRsp>(raw);
+}
+
+export async function fetchBattleLineNetworks(
+  req: BattleLineAdminPageReq,
+  options?: RequestOptions,
+): Promise<BattleLineNetworksRsp> {
+  const raw = await postJson<unknown>(
+    '/api/battle-line/networks',
+    transformCamelToSnake(req),
+    options,
+  );
+  return transformSnakeToCamel<BattleLineNetworksRsp>(raw);
 }

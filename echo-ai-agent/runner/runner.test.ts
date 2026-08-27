@@ -7,9 +7,12 @@ import test from "node:test";
 import {
   analysisPeriodRequestBody,
   callsignFrequencyMatchesRequestBody,
+  compactHistoryIfNeeded,
   compactInboxResponse,
+  compactToolResponse,
   createToolLifecycleGuard,
   createToolInvocationGuard,
+  createToolResponseCompactor,
   dailyActivityRequestBody,
   directionFindingsRequestBody,
   inboxMessagesRequestBody,
@@ -55,6 +58,28 @@ test("rejects provider errors and empty assistant responses", () => {
   );
 });
 
+test("classifies provider output and context limits", () => {
+  assert.throws(
+    () =>
+      validateFinalAssistantMessage([
+        { role: "assistant", stopReason: "length", content: [] },
+      ]),
+    /output token limit/,
+  );
+  assert.throws(
+    () =>
+      validateFinalAssistantMessage([
+        {
+          role: "assistant",
+          stopReason: "error",
+          errorMessage: "Input exceeds the context window",
+          content: [],
+        },
+      ]),
+    /context window exceeded/,
+  );
+});
+
 const normalPayload = {
   prompt: "Summarize activity",
   modelName: "google/gemma-4-26B-A4B-it",
@@ -86,6 +111,36 @@ test("accepts the backend camelCase runner contract", () => {
   assert.equal(payload.providerApiKey, "budget-limited-token");
   assert.equal(payload.providerTransport, "direct_http");
   assert.equal(payload.skills[0].method, "GET");
+});
+
+test("uses provider-specific context and compaction settings", () => {
+  const payload = validatePayload(
+    {
+      ...normalPayload,
+      modelName: "gpt-5.6-sol",
+      contextWindow: 1_050_000,
+      maxTokens: 65_536,
+      compactionReserveTokens: 98_304,
+      compactionKeepRecentTokens: 49_152,
+    },
+    false,
+  );
+  assert.equal(payload.contextWindow, 1_050_000);
+  assert.equal(payload.maxTokens, 65_536);
+  assert.equal(payload.compactionReserveTokens, 98_304);
+  assert.equal(payload.compactionKeepRecentTokens, 49_152);
+  assert.throws(
+    () =>
+      validatePayload(
+        {
+          ...normalPayload,
+          contextWindow: 16_384,
+          maxTokens: 15_360,
+        },
+        false,
+      ),
+    /leave room/,
+  );
 });
 
 test("writes the provider API key only to the private runtime models file", async () => {
@@ -482,6 +537,26 @@ test("normalizes the failed production rolling-day tool arguments", () => {
   });
 });
 
+test("passes an inherited callsign through applicable analysis tools", () => {
+  const context = validatePayload(normalPayload, false).timeContext!;
+  const params = {
+    period: { kind: "relative_days", days: 31 },
+    selectedCallsigns: ["Сивий"],
+  };
+  assert.deepEqual(analysisPeriodRequestBody(params, context), {
+    since_date_inclusive_ms: Date.parse("2026-07-04T21:00:00Z"),
+    till_date_noninclusive_ms: Date.parse("2026-08-04T21:00:00Z"),
+    selected_callsigns: ["Сивий"],
+  });
+  assert.deepEqual(inboxMessagesRequestBody(params, context), {
+    since_date_inclusive_ms: Date.parse("2026-07-04T21:00:00Z"),
+    till_date_inclusive_ms: Date.parse("2026-08-04T21:00:00Z") - 1,
+    newest_first: true,
+    skip_group_stats: true,
+    selected_callsigns: ["Сивий"],
+  });
+});
+
 test("builds nested callsign-frequency requests from discovered callsigns", () => {
   const context = validatePayload(normalPayload, false).timeContext!;
   assert.deepEqual(
@@ -700,13 +775,79 @@ test("projects inbox pages into compact model context and returns pagination", (
   });
 });
 
+test("bounds individual and aggregate tool context", () => {
+  const route = { skill: "metadata_statistics", requestKind: "analysisPeriod" as const };
+  const compact = createToolResponseCompactor(400, 240, 3);
+  const outputs = [
+    compact(route, { items: Array(100).fill("x".repeat(100)) }, 64),
+    compact(route, { items: Array(100).fill("y".repeat(100)) }, 64),
+    compact(route, { items: Array(100).fill("z".repeat(100)) }, 64),
+  ];
+  assert.ok(outputs.every((output) => output.length <= 240));
+  assert.ok(outputs.reduce((total, output) => total + output.length, 0) <= 400);
+  outputs.forEach((output) => assert.doesNotThrow(() => JSON.parse(output)));
+});
+
+test("keeps the strongest callsign relations within the item cap", () => {
+  const compacted = JSON.parse(
+    compactToolResponse(
+      { skill: "callsign_relations", requestKind: "analysisPeriod" },
+      {
+        relations: [
+          { callsign: "weak", weight: 1 },
+          { callsign: "strong", weight: 20 },
+          { callsign: "medium", weight: 10 },
+        ],
+      },
+      2,
+    ),
+  );
+  assert.deepEqual(
+    compacted.relations.map((relation: { callsign: string }) => relation.callsign),
+    ["strong", "medium"],
+  );
+  assert.equal(compacted._echoTruncation.truncated, true);
+});
+
+test("compacts restored history before prompting when the provider threshold is reached", async () => {
+  const payload = validatePayload(
+    {
+      ...normalPayload,
+      contextWindow: 4_096,
+      maxTokens: 512,
+      compactionReserveTokens: 1_024,
+      compactionKeepRecentTokens: 1_024,
+    },
+    false,
+  );
+  let compactCalls = 0;
+  const session = {
+    messages: [
+      { role: "user", content: "x".repeat(8_000), timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "y".repeat(8_000) }],
+        timestamp: 2,
+      },
+    ],
+    compact: async () => {
+      compactCalls += 1;
+      return { estimatedTokensAfter: 1_000 };
+    },
+  };
+  await compactHistoryIfNeeded(session, payload);
+  assert.equal(compactCalls, 1);
+});
+
 test("guides last-three-days gist follow-ups through inbox pagination and UID context", () => {
   const prompt = systemPrompt(validatePayload(normalPayload, false));
   assert.match(
     prompt,
     /questions about message content, meaning, themes, or gist/,
   );
-  assert.match(prompt, /inherit the most recent period and group scope/);
+  assert.match(prompt, /inherit the most recent period, group scope/);
+  assert.match(prompt, /named subjects, and callsigns/);
+  assert.match(prompt, /selectedCallsigns on every applicable tool/);
   assert.match(prompt, /following every returned next cursor/);
   assert.match(prompt, /using a UID returned with an inbox message/);
   assert.match(prompt, /“за останню добу” mean the rolling 24 hours/);
@@ -718,7 +859,7 @@ test("announces the runner protocol and harness release", () => {
   assert.deepEqual(runnerHello(), {
     type: "runner_hello",
     protocolVersion: 1,
-    harnessRelease: "2026.08.22.1",
+    harnessRelease: "2026.08.25.2",
   });
 });
 

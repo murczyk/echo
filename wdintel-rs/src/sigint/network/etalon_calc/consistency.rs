@@ -1219,6 +1219,7 @@ mod tests {
             signal_message_id,
             group_master_key: Some(group_master_key.to_string()),
             sender: None,
+            login_id: None,
             message_uid: None,
             datasource_group_id: None,
             created_at: test_dt(),
@@ -1264,6 +1265,7 @@ mod tests {
             is_deduplicate_candidate: None,
             orbit_note: None,
             is_inconsistent: false,
+            updated_at: Default::default(),
         }
     }
 

@@ -204,6 +204,10 @@ pub async fn generate_networks_docx_report_to_path(
     etalonka_type: &EtalonkaReportType,
     etalonka_data: EtalonkaData,
 ) -> Result<(), AppError> {
+    crate::report_history::ensure_report_record_count(
+        etalonka_report_record_count(&etalonka_data),
+    )
+    .context(h!())?;
     let file = std::fs::File::create(outpath)?;
 
     let doc = match etalonka_type {
@@ -224,6 +228,29 @@ pub struct EtalonkaData {
     networks_data: BTreeMap<NetworkEtalonkaUnitKey, Vec<NetworkEtalonkaResult>>,
     entries: HashMap<EtalonkaEntryKey, EtalonkaEntry>,
     sources: HashMap<i64, String>,
+}
+
+fn etalonka_report_record_count(data: &EtalonkaData) -> usize {
+    let network_count = data
+        .networks_data
+        .values()
+        .fold(0_usize, |count, networks| {
+            count.saturating_add(networks.len())
+        });
+    data.entries.values().fold(network_count, |count, entry| {
+        let signal_count = entry
+            .network_unit_signals
+            .iter()
+            .fold(0_usize, |count, unit| {
+                count.saturating_add(unit.signals.len())
+            });
+        count
+            .saturating_add(entry.net_callsigns.len())
+            .saturating_add(entry.freqs.len())
+            .saturating_add(entry.callsigns_detailed.len())
+            .saturating_add(entry.network_descriptions.len())
+            .saturating_add(signal_count)
+    })
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Hash, Default)]

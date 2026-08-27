@@ -16,6 +16,7 @@ pub struct Model {
     pub timestamp: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub sender: Option<String>,
+    pub login_id: Option<Uuid>,
     pub format: Option<i64>,
     pub deleted: bool,
     pub external_id: Option<i64>,
@@ -39,6 +40,14 @@ pub enum Relation {
         on_delete = "NoAction"
     )]
     DatasourceGroup,
+    #[sea_orm(
+        belongs_to = "super::login::Entity",
+        from = "Column::LoginId",
+        to = "super::login::Column::Id",
+        on_update = "NoAction",
+        on_delete = "SetNull"
+    )]
+    Login,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
     #[sea_orm(has_many = "super::sigint_comment::Entity")]
@@ -56,6 +65,12 @@ pub enum Relation {
 impl Related<super::datasource_group::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::DatasourceGroup.def()
+    }
+}
+
+impl Related<super::login::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Login.def()
     }
 }
 

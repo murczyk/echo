@@ -17,7 +17,8 @@ use crate::config::{
     AI_AGENT_WORKER_SHUTDOWN_GRACE_SEC,
 };
 use crate::entities::{
-    ai_agent_container, ai_agent_conversation, ai_agent_request,
+    ai_agent_container, ai_agent_conversation, ai_agent_engine_runtime_profile,
+    ai_agent_request,
 };
 use crate::error::AppError;
 use crate::h;
@@ -484,6 +485,15 @@ async fn run_request_inner(
     }
     let ai_engine =
         access::allowed_engine(&env.dbx, Some(request.ai_engine_id)).await?;
+    let runtime_profile =
+        ai_agent_engine_runtime_profile::Entity::find_by_id(ai_engine.id)
+            .one(&env.dbx)
+            .await
+            .c(h!())?
+            .ok_or_else(|| AppError::BL {
+                msg: "AI agent provider runtime profile is not configured"
+                    .to_string(),
+            })?;
     if request_is_cancelled(env, request.id).await? {
         return Ok(RunOutcome::Cancelled);
     }
@@ -566,6 +576,10 @@ async fn run_request_inner(
         json!({
             "echoPublicHost": env.config.public_host,
             "modelName": ai_engine.model_name,
+            "contextWindow": runtime_profile.context_window_tokens,
+            "maxTokens": runtime_profile.max_output_tokens,
+            "compactionReserveTokens": runtime_profile.compaction_reserve_tokens,
+            "compactionKeepRecentTokens": runtime_profile.compaction_keep_recent_tokens,
             "bootstrapToken": bootstrap_token,
             "correlationId": correlation_id,
             "correlationHeader": crate::config::AI_AGENT_CORRELATION_HEADER,

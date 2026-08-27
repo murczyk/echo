@@ -29,7 +29,8 @@ vi.mock('../admin-system-settings-neo/AiEnginesSection', () => ({
   AiEnginesSection: () => null,
 }));
 
-import { AdminAiAgentPage, requestDurationSeconds } from '.';
+import type { AiAgentAuditRequestDetail } from '../../services/api/ai-agent';
+import { AdminAiAgentPage, RequestDetailsDialog, requestDurationSeconds } from '.';
 
 const ENGINE = {
   id: 'engine-1',
@@ -55,6 +56,15 @@ const SETTINGS = {
   enabled: false,
   defaultProviderId: ENGINE.id,
   allowedProviderIds: [ENGINE.id],
+  providerRuntimeProfiles: [
+    {
+      aiEngineId: ENGINE.id,
+      contextWindowTokens: 131_072,
+      maxOutputTokens: 16_384,
+      compactionReserveTokens: 32_768,
+      compactionKeepRecentTokens: 16_384,
+    },
+  ],
   templateLoginId: '019fc7f7-9770-7f83-9c1a-211af29b02e6',
   reviewerProviderId: ENGINE.id,
   reviewEnabled: false,
@@ -260,6 +270,15 @@ describe('AdminAiAgentPage settings', () => {
       ...SETTINGS,
       defaultProviderId: INCOMPATIBLE_ENGINE.id,
       allowedProviderIds: [INCOMPATIBLE_ENGINE.id],
+      providerRuntimeProfiles: [
+        {
+          aiEngineId: INCOMPATIBLE_ENGINE.id,
+          contextWindowTokens: 1_050_000,
+          maxOutputTokens: 32_768,
+          compactionReserveTokens: 65_536,
+          compactionKeepRecentTokens: 32_768,
+        },
+      ],
       reviewerProviderId: INCOMPATIBLE_ENGINE.id,
     };
     mocks.getSettings.mockResolvedValueOnce(incompatibleSettings);
@@ -273,6 +292,67 @@ describe('AdminAiAgentPage settings', () => {
     await flush();
 
     expect(mocks.saveSettings).toHaveBeenCalledWith(incompatibleSettings);
+  });
+});
+
+describe('RequestDetailsDialog', () => {
+  it('shows stored technical details only when the request has an error', async () => {
+    const request: AiAgentAuditRequestDetail = {
+      id: 'request-1',
+      humanLoginId: 'human-1',
+      humanLogin: 'alice',
+      conversationId: 'conversation-1',
+      providerName: 'OpenAI',
+      state: 'failed',
+      prompt: 'сивый позивний',
+      response: null,
+      error: 'AI agent harness release is incompatible',
+      progress: [],
+      toolActivity: [],
+      createdAt: 1_700_000_000_000,
+      startedAt: 1_700_000_001_000,
+      completedAt: 1_700_000_002_000,
+      reviewState: 'pending',
+      severity: null,
+      reviewSummary: null,
+      reviewCategories: [],
+      reviewAttemptCount: 0,
+      reviewLastError: null,
+      alertState: null,
+      alertAttemptCount: 0,
+      alertLastError: null,
+      conversation: {
+        id: 'conversation-1',
+        title: 'Контекст',
+        providerId: 'engine-1',
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_002_000,
+        messages: [],
+      },
+    };
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () =>
+      root.render(
+        <RequestDetailsDialog request={request} onClose={vi.fn()} onReviewRetried={vi.fn()} />,
+      ),
+    );
+
+    expect(document.body.textContent).toContain('Технічні деталі помилки');
+    expect(document.body.textContent).toContain('AI agent harness release is incompatible');
+
+    await act(async () =>
+      root.render(
+        <RequestDetailsDialog
+          request={{ ...request, error: null }}
+          onClose={vi.fn()}
+          onReviewRetried={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(document.body.textContent).not.toContain('Технічні деталі помилки');
   });
 });
 

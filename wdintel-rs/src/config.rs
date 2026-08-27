@@ -163,11 +163,16 @@ pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS: usize = 4 * 1024;
+pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
+    "Input exceeds the context window";
+pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
+    "Provider output token limit reached";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.08.25.2";
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
@@ -193,6 +198,11 @@ pub const ECHO_AUDIO_TRANSCRIPTION_HEARTBEAT_SECS: u64 = 15;
 pub const ECHO_AUDIO_TRANSCRIPTION_STALE_SECS: i64 = 120;
 pub const ECHO_AUDIO_TRANSCRIPTION_SHUTDOWN_GRACE_SECS: u64 = 120;
 pub const ECHO_AUDIO_TRANSCRIPTION_STATUS_LOG_INTERVAL_SECS: u64 = 60;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_LIST_LIMIT: u64 = 100;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_ROW_LIMIT: u64 = 10_000;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_MAX_CHARS: usize = 200;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_COLUMN_FILTER_MAX_COUNT: usize = 8;
+pub const ECHO_AUDIO_TRANSCRIPTION_RESULTS_FILTER_VALUE_MAX_COUNT: usize = 10;
 pub const ECHO_AUDIO_TRANSCRIPTION_BGWORKER_SERVICE: &str =
     "wdintel-rs-bgworker.service";
 pub const OCR_SETTINGS_ID: i16 = 1;
@@ -361,6 +371,25 @@ pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT: usize = 32_000;
 pub const RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR: &str = ", ";
 pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
+pub const REPORT_HISTORY_CANCELLED_ERROR_STATUS: &str =
+    "Скасовано користувачем";
+pub const REPORT_HISTORY_TIMEOUT_ERROR_STATUS: &str =
+    "Обраний період звіту завеликий. Оберіть вужчий період і повторіть спробу.";
+pub const REPORT_HISTORY_MESSAGE_LIMIT_ERROR_STATUS: &str =
+    "Звіт містить понад 10 000 повідомлень. Зменшіть період або звузьте фільтри.";
+pub const REPORT_HISTORY_NO_DEFAULT_AOR_ERROR_STATUS: &str =
+    "Не знайдено AOR за замовчуванням для формування цього звіту.";
+pub const REPORT_HISTORY_WORKER_INTERRUPTED_ERROR_STATUS: &str =
+    "Формування звіту було перервано через перезапуск сервісу. Спробуйте сформувати звіт повторно.";
+pub const REPORT_HISTORY_WORKER_RESTART_LOG_MESSAGE: &str =
+    "Report generation was interrupted by report worker restart and requeued without consuming an attempt";
+pub const REPORT_HISTORY_USER_RETRY_LOG_MESSAGE: &str =
+    "user requested another attempt for a failed task";
+pub const REPORT_HISTORY_GENERIC_ERROR_STATUS: &str =
+    "Не вдалося сформувати звіт. Спробуйте ще раз.";
+pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
+pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
+    "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
@@ -392,6 +421,8 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_CHANGELOG_LIMIT: u64 = 200;
+pub const SIGINT_UNIT_NAME_REVIEW_PAGE_SIZE: usize = 200;
 pub const SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK: &str =
     "Кілька прив’язок ORBIT";
 pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
@@ -695,11 +726,19 @@ pub const BATTLE_LINE_AOR_ANCHOR_LATITUDE: f64 = 48.510_548_612_698_46;
 pub const BATTLE_LINE_AOR_ANCHOR_LONGITUDE: f64 = 32.225_445_087_959_685;
 pub const BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS: f64 =
     2_000.0;
+// These temporary limits should be lifted once location parsing is improved.
+pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS: f64 = 75_000.0;
+pub const BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS: f64 = 150_000.0;
 pub const BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY: i64 = 2_287;
 pub const BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD: &str = "admin_upload";
 pub const BATTLE_LINE_SOURCE_KIND_DELTA_KML: &str = "delta_kml";
 pub const BATTLE_LINE_DELTA_KML_SOURCE_PREFIX: &str = "enemy_units_geojson:";
 pub const BATTLE_LINE_INITIAL_DELTA_KML_ID: i32 = 5;
+pub const BATTLE_LINE_PELENG_DISTANCE_ONEOFF_BATCH_SIZE: u64 = 1_000;
+pub const BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MIN: f64 = -90.0;
+pub const BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MAX: f64 = 90.0;
+pub const BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MIN: f64 = -180.0;
+pub const BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MAX: f64 = 180.0;
 pub const INBOX_SETTLEMENT_WORKER_BATCH_SIZE: usize = 25;
 pub const INBOX_SETTLEMENT_WORKER_CLAIM_CANDIDATE_SIZE: u64 = 64;
 pub const INBOX_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE: &str =
@@ -709,6 +748,9 @@ pub const INBOX_SETTLEMENT_ONEOFF_TRANSACTION_BATCH_SIZE: usize = 50;
 pub const INBOX_SETTLEMENT_WORKER_SLEEP_SECS: u64 = 5;
 pub const INBOX_MAP_SETTLEMENT_MESSAGES_PAGE_SIZE: u64 = 20;
 pub const BATTLE_LINE_ADMIN_PAGE_SIZE: u64 = 10;
+pub const BATTLE_LINE_NETWORKS_PAGE_SIZE: u64 = 5;
+pub const BATTLE_LINE_NETWORKS_LOOKBACK_DAYS: i64 = 7;
+pub const BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT: i64 = 100;
 pub const PALITRA_DOWNLOAD_MAX_FILES: usize = 50;
 pub const PALITRA_RESOLVE_NAMES_MAX_IDS: usize = 500;
 pub const PALITRA_DOWNLOAD_MAX_FILE_BYTES: u64 = 50 * 1024 * 1024;
@@ -956,6 +998,7 @@ pub const ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT: u64 = 5_000;
 pub const ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT: u64 = 90_000;
 pub const ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT: u64 = 30_000;
+pub const ANALYTICS_PLAN_CACHE_MODE: &str = "force_custom_plan";
 pub const ANALYTICS_HEALTH_LOG_INTERVAL_SECS: u64 = 60;
 pub const ANALYTICS_SOURCE_CONFIG_PATH: &str = "/etc/echo-peerdb/source.env";
 pub const ANALYTICS_SOURCE_EXCLUSIONS_PATH: &str =

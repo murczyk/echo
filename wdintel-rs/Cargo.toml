@@ -70,8 +70,7 @@ env_logger = "0.11.9"
 substring = "~1.4.5"
 unicode-segmentation = "1.12.0"
 indicatif = "0.18.4"
-# see https://github.com/apache/iggy/issues/3507 and github.com/apache/iggy/pull/3508
-iggy = { git = "https://github.com/apache/iggy.git", branch = "master" }
+iggy = "=0.10.3-edge.3"
 redis = { version = "1.0.5", features = ["tokio-comp", "connection-manager"] }
 rust-argon2 = "^3.0.0"
 bytes = "1.11.1"
@@ -127,7 +126,7 @@ rev = "c9efd65ccf72bf447867e5f959eec7779771007e"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "0e129d0ab69b6a4ac45b0d79aeb7d5815683adb5"
+rev = "61af3aaaa15fea493cda880a6cb087b94ac75160"
 
 [dependencies.echo-gpu-client]
 git = "ssh://git@github.com/echoua/echo-gpu.git"

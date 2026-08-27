@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   check: vi.fn(),
+  listResults: vi.fn(),
   notify: vi.fn(),
 }));
 
@@ -19,6 +20,7 @@ vi.mock('../../services/api/transcriber', () => ({
   updateTranscriberInstance: mocks.update,
   deleteTranscriberInstance: mocks.remove,
   checkTranscriberInstance: mocks.check,
+  listTranscriptionResults: mocks.listResults,
 }));
 vi.mock('../../services/api/system-settings', () => ({
   currentSystemSettings: mocks.currentSettings,
@@ -126,6 +128,13 @@ describe('AdminTranscriptionSettingsPage', () => {
     mocks.update.mockReset();
     mocks.remove.mockReset();
     mocks.check.mockReset();
+    mocks.listResults.mockReset().mockResolvedValue({
+      rows: [],
+      total: 0,
+      has_more: false,
+      next_cursor: null,
+      previous_cursor: null,
+    });
     mocks.notify.mockReset();
   });
 
@@ -152,6 +161,12 @@ describe('AdminTranscriptionSettingsPage', () => {
     const { container, root } = await renderPage();
     expect(container.querySelector('table')).not.toBeNull();
     expect(button('Додати інстанс')).toBeDefined();
+    expect(
+      document.getElementById('transcription-instances-tab')?.getAttribute('aria-controls'),
+    ).toBe('transcription-instances-panel');
+    expect(
+      document.getElementById('transcription-results-tab')?.getAttribute('aria-controls'),
+    ).toBe('transcription-results-panel');
 
     await clickButton('Додати інстанс');
     await clickButton('Додати');
@@ -174,6 +189,171 @@ describe('AdminTranscriptionSettingsPage', () => {
       ordering: 1,
     });
     expect(container.textContent).toContain('systemd unavailable');
+    await act(async () => root.unmount());
+  });
+
+  it('shows paginated transcription results with the processing instance', async () => {
+    mocks.listResults.mockResolvedValue({
+      rows: [
+        {
+          id: '01900000-0000-7000-8000-000000000002',
+          source_id: '01900000-0000-7000-8000-000000000003',
+          file_name: 'recording.mp3',
+          created_at: 1_700_000_000_000,
+          started_transcription_at: 1_700_000_001_000,
+          completion_time_seconds: 5,
+          status: 'completed',
+          transcribed_value: 'Розпізнаний текст',
+          error: null,
+          instance_id: instance.id,
+          instance_name: instance.name,
+        },
+      ],
+      total: 1,
+      has_more: false,
+      next_cursor: null,
+      previous_cursor: null,
+    });
+    const { container, root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+
+    expect(mocks.listResults).toHaveBeenCalledWith(
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(container.textContent).toContain('recording.mp3');
+    expect(container.textContent).toContain('00:00:05');
+    expect(container.textContent).toContain('Завершено');
+    expect(container.textContent).toContain('Розпізнаний текст');
+    expect(container.textContent).toContain(instance.name);
+    await act(async () => root.unmount());
+  });
+
+  it('does not send instance column filters to transcription results', async () => {
+    const columnFilters = encodeURIComponent(JSON.stringify([{ id: 'name', value: 'GPU 1' }]));
+    window.history.replaceState(
+      {},
+      '',
+      `/admin/transcription-settings?columnFilters=${columnFilters}`,
+    );
+    const { root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+
+    expect(mocks.listResults).toHaveBeenCalledWith(
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    await act(async () => root.unmount());
+  });
+
+  it('shows transcription-result load failures in a toast', async () => {
+    mocks.listResults.mockRejectedValue(new Error('results unavailable'));
+    const { root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'error',
+      message: expect.stringContaining('results unavailable'),
+    });
+    await act(async () => root.unmount());
+  });
+
+  it('uses the server cursor for the next transcription-results page', async () => {
+    mocks.listResults
+      .mockResolvedValueOnce({
+        rows: [],
+        total: 101,
+        has_more: true,
+        next_cursor: 'cursor-100',
+        previous_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [],
+        total: 101,
+        has_more: false,
+        next_cursor: null,
+        previous_cursor: 'cursor-previous',
+      });
+    const { root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+    await clickButton('Наступна сторінка');
+
+    expect(mocks.listResults).toHaveBeenLastCalledWith(
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+        after: 'cursor-100',
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    await act(async () => root.unmount());
+  });
+
+  it('derives the last transcription-results page from the response total', async () => {
+    const result = {
+      id: '01900000-0000-7000-8000-000000000002',
+      source_id: '01900000-0000-7000-8000-000000000003',
+      file_name: 'recording.mp3',
+      created_at: 1_700_000_000_000,
+      started_transcription_at: null,
+      completion_time_seconds: null,
+      status: 'queued',
+      transcribed_value: null,
+      error: null,
+      instance_id: null,
+      instance_name: null,
+    };
+    mocks.listResults
+      .mockResolvedValueOnce({
+        rows: [result],
+        total: 200,
+        has_more: true,
+        next_cursor: 'cursor-next',
+        previous_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        rows: [result],
+        total: 201,
+        has_more: false,
+        next_cursor: null,
+        previous_cursor: 'cursor-previous',
+      });
+    const { container, root } = await renderPage();
+
+    await clickButton('Результати транскрибації');
+    await clickButton('1-1 з 200');
+    const lastPageItem = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.includes('Остання сторінка'));
+    expect(lastPageItem).toBeDefined();
+    await act(async () => {
+      lastPageItem?.click();
+      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
+
+    expect(mocks.listResults).toHaveBeenLastCalledWith(
+      {
+        globalFilter: '',
+        columnFilters: [],
+        limit: 100,
+        lastPage: true,
+      },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(container.textContent).toContain('201-201 з 201');
     await act(async () => root.unmount());
   });
 

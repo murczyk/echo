@@ -109,6 +109,47 @@ pub struct QueueStatusRsp {
     pub oldest_due_age_seconds: Option<i64>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct TranscriptionResultListReq {
+    pub limit: Option<u64>,
+    pub after: Option<String>,
+    pub before: Option<String>,
+    pub last_page: Option<bool>,
+    pub global_filter: Option<String>,
+    #[serde(default)]
+    pub column_filters: Vec<TranscriptionResultColumnFilter>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TranscriptionResultColumnFilter {
+    pub id: String,
+    pub value: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TranscriptionResultRsp {
+    pub id: Uuid,
+    pub source_id: Uuid,
+    pub file_name: Option<String>,
+    pub created_at: i64,
+    pub started_transcription_at: Option<i64>,
+    pub completion_time_seconds: Option<i64>,
+    pub status: String,
+    pub transcribed_value: Option<String>,
+    pub error: Option<String>,
+    pub instance_id: Option<Uuid>,
+    pub instance_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TranscriptionResultListRsp {
+    pub rows: Vec<TranscriptionResultRsp>,
+    pub total: u64,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
+    pub previous_cursor: Option<String>,
+}
+
 impl From<echo_gpu_client::QueueStatus> for QueueStatusRsp {
     fn from(status: echo_gpu_client::QueueStatus) -> Self {
         Self {

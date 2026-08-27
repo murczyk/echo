@@ -1672,6 +1672,18 @@ fn analytics_networks_query_scopes_both_union_arms() {
     assert!(
         str::contains(
             &sql,
+            "JOIN \"sigint_network_freq\" AS \
+             \"analytics_frequency_network_freq\" ON"
+        ),
+        "{sql}"
+    );
+    assert!(
+        !str::contains(&sql, "JOIN (SELECT \"sigint_network_freq\""),
+        "{sql}"
+    );
+    assert!(
+        str::contains(
+            &sql,
             "JOIN \"signal_group\" AS \"analytics_linked_group\""
         ),
         "{sql}"
@@ -7140,11 +7152,11 @@ fn count_stats_analytics_supports_tag_filters() {
 }
 
 #[test]
-fn count_stats_analytics_supports_callsign_filters_but_rejects_search() {
+fn count_stats_analytics_supports_callsign_and_search_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
 
     req.search = Some("callsign".to_string());
-    assert!(!analytics_count_request_supported(&req));
+    assert!(analytics_count_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -7160,7 +7172,7 @@ fn count_stats_analytics_supports_unit_filters() {
 }
 
 #[test]
-fn summary_table_analytics_supports_unit_filters_but_rejects_search() {
+fn summary_table_analytics_supports_unit_and_search_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
 
@@ -7168,11 +7180,11 @@ fn summary_table_analytics_supports_unit_filters_but_rejects_search() {
     assert!(analytics_count_request_supported(&req));
 
     req.search = Some("message".to_string());
-    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(analytics_summary_table_request_supported(&req));
 }
 
 #[test]
-fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
+fn analytical_inbox_reads_support_callsign_and_search_filters() {
     let mut req = InboxMessagesReq::default();
     assert!(!analytics_inbox_request_supported(&req));
 
@@ -7184,7 +7196,7 @@ fn analytical_inbox_reads_support_callsign_filters_but_reject_search() {
     assert!(analytics_inbox_request_supported(&req));
 
     req.search = Some("callsign".to_string());
-    assert!(!analytics_inbox_request_supported(&req));
+    assert!(analytics_inbox_request_supported(&req));
 
     req.search = None;
     req.selected_callsigns = Some(vec!["ALPHA".to_string()]);
@@ -7209,7 +7221,7 @@ fn analytical_inbox_reads_support_unit_filters() {
 }
 
 #[test]
-fn analytical_inbox_candidates_reject_unbounded_media_search_and_nolimit() {
+fn analytical_inbox_candidates_reject_unbounded_media_and_nolimit() {
     let mut req = InboxMessagesReq::default();
     assert!(!analytics_inbox_candidates_supported(&req));
 
@@ -7221,7 +7233,7 @@ fn analytical_inbox_candidates_reject_unbounded_media_search_and_nolimit() {
 
     req.only_with_media = None;
     req.search = Some("message".to_string());
-    assert!(!analytics_inbox_candidates_supported(&req));
+    assert!(analytics_inbox_candidates_supported(&req));
 
     req.search = None;
     req.nolimit = Some(true);

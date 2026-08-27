@@ -26,7 +26,6 @@ import {
   fetchAnalysisUnits,
   fetchInboxMessages,
   fetchNetworksByIds,
-  getLatestSenders,
   getTagsForDisplay,
 } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
@@ -109,6 +108,21 @@ function isFallbackNetworkLabel(option: AnalysisFilterOption): boolean {
 
 function networkLabelWithUnits(network: Network, unitsMap: Record<number, Unit>): string {
   return createMasterUnitText(network, unitsMap).replace(/^р\/м\s*/, '');
+}
+
+async function loadMissingNetworkUnits(
+  networks: Network[],
+  unitsMap: Record<number, Unit>,
+  requestOptions?: { signal?: AbortSignal },
+): Promise<Record<number, Unit>> {
+  const missingUnitIds = Array.from(
+    new Set(networks.flatMap((network) => network.unitIds ?? [])),
+  ).filter((unitId) => unitsMap[unitId] == null);
+  const units = await getUnitsByIds(missingUnitIds, requestOptions);
+  return {
+    ...unitsMap,
+    ...Object.fromEntries(units.map((unit) => [unit.id, unit])),
+  };
 }
 
 function preferCompleteNetworkLabel(
@@ -455,15 +469,13 @@ export async function loadFilterSectionData(
       return;
     }
     case 'senders': {
-      const [sendersRsp, senderProfilesRsp] = await Promise.all([
-        fetchAnalysisSenders(context.analysisReq, requestOptions),
-        getLatestSenders(requestOptions),
-      ]);
+      const sendersRsp = await fetchAnalysisSenders(context.analysisReq, requestOptions);
       if (isStale() || isAborted()) return;
-      context.setProfiles((current) => mergeSignalProfiles(current, senderProfilesRsp.data ?? {}));
+      const senderProfiles = sendersRsp.senderNames ?? {};
+      context.setProfiles((current) => mergeSignalProfiles(current, senderProfiles));
       context.setOptions((current) => ({
         ...current,
-        senders: buildSenderFilterOptions(sendersRsp.senders, senderProfilesRsp.data ?? {}),
+        senders: buildSenderFilterOptions(sendersRsp.senders, senderProfiles),
       }));
       return;
     }
@@ -550,6 +562,12 @@ export async function loadFilterSectionData(
       const networksById =
         networkIds.length > 0 ? await fetchNetworksByIds(networkIds, requestOptions) : [];
       if (isStale() || isAborted()) return;
+      const unitsMap = await loadMissingNetworkUnits(
+        networksById,
+        context.unitsMap,
+        requestOptions,
+      );
+      if (isStale() || isAborted()) return;
       const networkNamesById = Object.fromEntries(
         networksStatsRsp.networkNames.map((network) => [network.id, network.name]),
       );
@@ -566,7 +584,7 @@ export async function loadFilterSectionData(
               const network = hydratedNetworksById.get(item.networkId);
               return normalizeFilterLabel(
                 network
-                  ? networkLabelWithUnits(network, context.unitsMap)
+                  ? networkLabelWithUnits(network, unitsMap)
                   : (networkNamesById[item.networkId] ?? `Network ${item.networkId}`),
               );
             },

@@ -30,10 +30,33 @@ pub enum DutyTagsLayout {
     PartialEq,
     Eq,
     Clone,
+    Copy,
+    Default,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageTextPreviewLines {
+    #[default]
+    Twenty,
+    Forty,
+    Off,
+}
+
+#[derive(
+    Elm,
+    ElmEncode,
+    ElmDecode,
+    Debug,
+    Serialize,
+    Deserialize,
+    PartialEq,
+    Eq,
+    Clone,
 )]
 #[serde(rename_all = "camelCase")]
 pub struct UserDutySettingsDto {
     pub tags_layout: DutyTagsLayout,
+    #[serde(default)]
+    pub message_text_preview_lines: MessageTextPreviewLines,
     #[serde(default)]
     pub disable_auto_scroll: bool,
     #[serde(default)]
@@ -50,16 +73,23 @@ pub struct UserDutySettingsDto {
     pub show_classic_analysis: bool,
     #[serde(default = "default_duty_collapse_media_previews")]
     pub duty_collapse_media_previews: bool,
+    #[serde(default = "default_media_summary_enabled")]
+    pub media_summary_enabled: bool,
 }
 
 fn default_duty_collapse_media_previews() -> bool {
     false
 }
 
+fn default_media_summary_enabled() -> bool {
+    true
+}
+
 impl Default for UserDutySettingsDto {
     fn default() -> Self {
         Self {
             tags_layout: DutyTagsLayout::Compact,
+            message_text_preview_lines: MessageTextPreviewLines::Twenty,
             disable_auto_scroll: false,
             analysis_map_in_sidebar: false,
             duty_audio_transcription_collapsed: false,
@@ -68,6 +98,7 @@ impl Default for UserDutySettingsDto {
             show_classic_duty: false,
             show_classic_analysis: false,
             duty_collapse_media_previews: false,
+            media_summary_enabled: true,
         }
     }
 }

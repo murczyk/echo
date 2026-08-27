@@ -27,6 +27,7 @@ pub struct Model {
     pub updated_at: Option<DateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub pelengation_object: Option<String>,
+    pub battle_line_distance: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

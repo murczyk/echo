@@ -7,10 +7,10 @@ use crate::config::{
 };
 use crate::entities::{
     ai_agent_allowed_engine, ai_agent_container, ai_agent_conversation,
-    ai_agent_dispatcher, ai_agent_echo_proxy, ai_agent_request,
-    ai_agent_request_event, ai_agent_security_review, ai_agent_settings,
-    ai_agent_user_link, ai_engine, login, organism, secret_group_user,
-    sigint_zone,
+    ai_agent_dispatcher, ai_agent_echo_proxy, ai_agent_engine_runtime_profile,
+    ai_agent_request, ai_agent_request_event, ai_agent_security_review,
+    ai_agent_settings, ai_agent_user_link, ai_engine, login, organism,
+    secret_group_user, sigint_zone,
 };
 use crate::error::AppError;
 use crate::h;
@@ -79,6 +79,12 @@ pub async fn update_settings(
         });
     }
     validate_allowed_engines(&env, &allowed_ids).await?;
+    let runtime_profiles = validate_runtime_profiles(
+        &env,
+        &req.provider_runtime_profiles,
+        &unique_ids,
+    )
+    .await?;
     let default_ai_engine_id = req
         .default_ai_engine_id
         .as_deref()
@@ -203,6 +209,43 @@ pub async fn update_settings(
         .await
         .c(h!())?;
     }
+    for (ai_engine_id, profile) in runtime_profiles {
+        let runtime_profile =
+            ai_agent_engine_runtime_profile::Entity::find_by_id(ai_engine_id)
+                .lock_exclusive()
+                .one(&txn)
+                .await
+                .c(h!())?;
+        if let Some(runtime_profile) = runtime_profile {
+            let mut runtime_profile = runtime_profile.into_active_model();
+            runtime_profile.context_window_tokens =
+                Set(profile.context_window_tokens);
+            runtime_profile.max_output_tokens = Set(profile.max_output_tokens);
+            runtime_profile.compaction_reserve_tokens =
+                Set(profile.compaction_reserve_tokens);
+            runtime_profile.compaction_keep_recent_tokens =
+                Set(profile.compaction_keep_recent_tokens);
+            runtime_profile.updated_at = Set(Utc::now().naive_utc());
+            runtime_profile.update(&txn).await.c(h!())?;
+        } else {
+            ai_agent_engine_runtime_profile::ActiveModel {
+                ai_engine_id: Set(ai_engine_id),
+                context_window_tokens: Set(profile.context_window_tokens),
+                max_output_tokens: Set(profile.max_output_tokens),
+                compaction_reserve_tokens: Set(
+                    profile.compaction_reserve_tokens
+                ),
+                compaction_keep_recent_tokens: Set(
+                    profile.compaction_keep_recent_tokens
+                ),
+                created_at: Set(Utc::now().naive_utc()),
+                updated_at: Set(Utc::now().naive_utc()),
+            }
+            .insert(&txn)
+            .await
+            .c(h!())?;
+        }
+    }
     txn.commit().await.c(h!())?;
     Ok(Json(settings_item(&env).await?))
 }
@@ -220,6 +263,23 @@ async fn settings_item(
         .map(|allowed| allowed.ai_engine_id.to_string())
         .collect::<Vec<_>>();
     allowed_ai_engine_ids.sort();
+    let mut provider_runtime_profiles =
+        ai_agent_engine_runtime_profile::Entity::find()
+            .all(&env.dbx)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|profile| AiAgentProviderRuntimeProfileItem {
+                ai_engine_id: profile.ai_engine_id.to_string(),
+                context_window_tokens: profile.context_window_tokens,
+                max_output_tokens: profile.max_output_tokens,
+                compaction_reserve_tokens: profile.compaction_reserve_tokens,
+                compaction_keep_recent_tokens: profile
+                    .compaction_keep_recent_tokens,
+            })
+            .collect::<Vec<_>>();
+    provider_runtime_profiles
+        .sort_by(|a, b| a.ai_engine_id.cmp(&b.ai_engine_id));
     Ok(AiAgentAdminSettingsItem {
         feature_enabled: settings.feature_enabled,
         template_login_id: template_login_id.to_string(),
@@ -233,7 +293,69 @@ async fn settings_item(
         mattermost_chat_enabled: settings.mattermost_chat_enabled,
         has_mattermost_webhook: settings.mattermost_webhook_url.is_some(),
         allowed_ai_engine_ids,
+        provider_runtime_profiles,
     })
+}
+
+async fn validate_runtime_profiles(
+    env: &Env,
+    profiles: &[AiAgentProviderRuntimeProfileItem],
+    allowed_ids: &HashSet<Uuid>,
+) -> Result<Vec<(Uuid, AiAgentProviderRuntimeProfileItem)>, AppError> {
+    let mut runtime_profiles = Vec::with_capacity(profiles.len());
+    let mut profile_ids = HashSet::with_capacity(profiles.len());
+    for profile in profiles {
+        let ai_engine_id = access::parse_uuid(&profile.ai_engine_id)?;
+        if !profile_ids.insert(ai_engine_id) {
+            return Err(AppError::BL {
+                msg: "Профілі провайдерів не повинні дублюватися".to_string(),
+            });
+        }
+        validate_runtime_profile(profile)?;
+        if !allowed_ids.contains(&ai_engine_id) {
+            return Err(AppError::BL {
+                msg: "Runtime-профіль має належати дозволеному провайдеру"
+                    .to_string(),
+            });
+        }
+        runtime_profiles.push((ai_engine_id, profile.clone()));
+    }
+    if allowed_ids
+        .iter()
+        .any(|ai_engine_id| !profile_ids.contains(ai_engine_id))
+    {
+        return Err(AppError::BL {
+            msg: "Налаштуйте runtime-профіль кожного дозволеного провайдера"
+                .to_string(),
+        });
+    }
+    let profile_ids = profile_ids.into_iter().collect::<Vec<_>>();
+    validate_allowed_engines(env, &profile_ids).await?;
+    Ok(runtime_profiles)
+}
+
+fn validate_runtime_profile(
+    profile: &AiAgentProviderRuntimeProfileItem,
+) -> Result<(), AppError> {
+    let valid = (4_096..=2_000_000).contains(&profile.context_window_tokens)
+        && (256..=131_072).contains(&profile.max_output_tokens)
+        && profile
+            .max_output_tokens
+            .checked_add(1_024)
+            .is_some_and(|tokens| tokens < profile.context_window_tokens)
+        && profile.compaction_reserve_tokens >= profile.max_output_tokens
+        && profile.compaction_reserve_tokens < profile.context_window_tokens
+        && profile.compaction_keep_recent_tokens >= 1_024
+        && profile
+            .compaction_keep_recent_tokens
+            .checked_add(profile.compaction_reserve_tokens)
+            .is_some_and(|tokens| tokens < profile.context_window_tokens);
+    if !valid {
+        return Err(AppError::BL {
+            msg: "Некоректний runtime-профіль провайдера".to_string(),
+        });
+    }
+    Ok(())
 }
 
 async fn validate_allowed_engines(

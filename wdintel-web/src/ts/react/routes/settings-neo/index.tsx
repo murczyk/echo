@@ -10,14 +10,13 @@ import { SettingsMyGroupsSection } from './SettingsMyGroupsSection';
 import { SettingsMyOrganismSection } from './SettingsMyOrganismSection';
 import { SettingsDutySection } from './SettingsDutySection';
 import { SettingsAudioTranscriptionCard } from './SettingsAudioTranscriptionCard';
-import { SettingsSharedTagsLayoutCard } from './SettingsSharedTagsLayoutCard';
+import { SettingsMessageCard } from './SettingsMessageCard';
 import { useGlobalSetting } from './use-global-settings';
 import { useDutySettings } from '../../hooks/use-duty-settings';
 import type { UserDutySettings } from '../../services/api/user-settings';
 import { listMyAdminGroups } from '../../services/api/zones';
 
-export type SettingsSection =
-  'general' | 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
+export type SettingsSection = 'myGroups' | 'myOrganism' | 'duty' | 'analysis' | 'myReports';
 
 type SettingsNeoPageProps = {
   section?: string;
@@ -34,19 +33,19 @@ function serializeSettingsSection(section: SettingsSection): string {
 }
 
 function parseSettingsSection(section: string | null | undefined): SettingsSection {
-  if (section === 'my-groups') {
+  if (section === 'myGroups' || section === 'my-groups') {
     return 'myGroups';
   }
-  if (section === 'my-organism') {
+  if (section === 'myOrganism' || section === 'my-organism') {
     return 'myOrganism';
   }
-  if (section === 'my-reports') {
+  if (section === 'myReports' || section === 'my-reports') {
     return 'myReports';
   }
-  if (section === 'duty' || section === 'analysis') {
-    return section;
+  if (section === 'analysis') {
+    return 'analysis';
   }
-  return 'myGroups';
+  return 'duty';
 }
 
 function readSettingsSectionFromUrl(): SettingsSection {
@@ -92,6 +91,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   const scheduleDutySettingsSave = (overrides: Partial<UserDutySettings>) => {
     dutySettings.scheduleSave({
       tagsLayout: dutySettings.tagsLayout,
+      messageTextPreviewLines: dutySettings.messageTextPreviewLines,
       disableAutoScroll: dutySettings.disableAutoScroll,
       analysisMapInSidebar: dutySettings.analysisMapInSidebar,
       dutyAudioTranscriptionCollapsed: dutySettings.dutyAudioTranscriptionCollapsed,
@@ -100,6 +100,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
       showClassicDuty: dutySettings.showClassicDuty,
       showClassicAnalysis: dutySettings.showClassicAnalysis,
       dutyCollapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
+      mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
       ...overrides,
     });
   };
@@ -187,7 +188,7 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
   return (
     <Box className="w-full" sx={{ maxWidth: 980, mx: 'auto' }}>
       <Stack spacing={2} useFlexGap>
-        <PageHeader title="Налаштування" titleInfo="Зберігається для вашого облікового запису" />
+        <PageHeader title="Налаштування" titleInfo="Зберігаються для вашого облікового запису" />
         <Card
           variant="outlined"
           sx={{
@@ -245,18 +246,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
             />
           </Tabs>
 
-          {settingsSection === 'myGroups' ? (
-            <SettingsMyGroupsSection
-              status={myGroupsStatus}
-              groups={myGroups}
-              error={myGroupsError}
-              enableEditActions={globalSettings.featureMyAdminGroupsEdit}
-              onGroupsChanged={() => loadMyGroups()}
-            />
-          ) : null}
-
-          {settingsSection === 'myOrganism' ? <SettingsMyOrganismSection /> : null}
-
           {settingsSection === 'duty' ? (
             <SettingsDutySection
               loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
@@ -266,6 +255,16 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               onTagsLayoutChange={(layout) => {
                 dutySettings.setTagsLayout(layout);
                 scheduleDutySettingsSave({ tagsLayout: layout });
+              }}
+              messageTextPreviewLines={dutySettings.messageTextPreviewLines}
+              onMessageTextPreviewLinesChange={(value) => {
+                dutySettings.setMessageTextPreviewLines(value);
+                scheduleDutySettingsSave({ messageTextPreviewLines: value });
+              }}
+              mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
+              onMediaSummaryEnabledChange={(value) => {
+                dutySettings.setMediaSummaryEnabled(value);
+                scheduleDutySettingsSave({ mediaSummaryEnabled: value });
               }}
               disableAutoScroll={dutySettings.disableAutoScroll}
               onDisableAutoScrollChange={(value) => {
@@ -307,14 +306,6 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                   >
                     Аналіз
                   </Typography>
-                  <SettingsSharedTagsLayoutCard
-                    tagsLayout={dutySettings.tagsLayout}
-                    onTagsLayoutChange={(layout) => {
-                      dutySettings.setTagsLayout(layout);
-                      scheduleDutySettingsSave({ tagsLayout: layout });
-                    }}
-                    loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
-                  />
                   {!globalSettings.showClassicAnalysis ? (
                     <Box
                       sx={{
@@ -341,6 +332,26 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       />
                     </Box>
                   ) : null}
+
+                  <SettingsMessageCard
+                    tagsLayout={dutySettings.tagsLayout}
+                    onTagsLayoutChange={(layout) => {
+                      dutySettings.setTagsLayout(layout);
+                      scheduleDutySettingsSave({ tagsLayout: layout });
+                    }}
+                    messageTextPreviewLines={dutySettings.messageTextPreviewLines}
+                    onMessageTextPreviewLinesChange={(value) => {
+                      dutySettings.setMessageTextPreviewLines(value);
+                      scheduleDutySettingsSave({ messageTextPreviewLines: value });
+                    }}
+                    mediaSummaryEnabled={dutySettings.mediaSummaryEnabled}
+                    onMediaSummaryEnabledChange={(value) => {
+                      dutySettings.setMediaSummaryEnabled(value);
+                      scheduleDutySettingsSave({ mediaSummaryEnabled: value });
+                    }}
+                    loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
+                  />
+
                   {globalSettings.audioTranscriptionEnabled ? (
                     <SettingsAudioTranscriptionCard
                       collapsedByDefault={dutySettings.analysisAudioTranscriptionCollapsed}
@@ -387,9 +398,17 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                           />
                         }
                         label={
-                          <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                            Відображати форму додавання позивного
-                          </Typography>
+                          <Stack spacing={0.75} sx={{ pt: 0.25 }}>
+                            <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                              Відображати форму додавання позивного
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              sx={{ color: 'text.secondary', lineHeight: 1.6 }}
+                            >
+                              Показує форму в картці повідомлення.
+                            </Typography>
+                          </Stack>
                         }
                       />
                     </Stack>
@@ -447,6 +466,18 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
               </Box>
             </Box>
           ) : null}
+
+          {settingsSection === 'myGroups' ? (
+            <SettingsMyGroupsSection
+              status={myGroupsStatus}
+              groups={myGroups}
+              error={myGroupsError}
+              enableEditActions={globalSettings.featureMyAdminGroupsEdit}
+              onGroupsChanged={() => loadMyGroups()}
+            />
+          ) : null}
+
+          {settingsSection === 'myOrganism' ? <SettingsMyOrganismSection /> : null}
         </Card>
       </Stack>
     </Box>

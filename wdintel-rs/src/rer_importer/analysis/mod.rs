@@ -13,6 +13,9 @@ use crate::rer_importer::report_chunking::{
     report_period_chunks, ReportPeriodEnd,
 };
 use crate::sigint::aor::bl::collect_group_aors;
+use crate::sigint::sender::{
+    preferred_group_sender_expr, preferred_message_author_expr,
+};
 use crate::types::*;
 use crate::users::{
     ensure_rer_role, ensure_rer_role_by_id, has_any_role, has_role,
@@ -273,7 +276,7 @@ fn message_in_groups_with_senders_exists(
         .filter(
             signal_message_group::Column::GroupMasterKey.eq_any(keys.to_vec()),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+        .filter(preferred_group_sender_expr(None).is_in(senders.to_vec()));
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,
@@ -354,7 +357,7 @@ fn message_has_sender_in_groups_exists(
             signal_message_group::Column::GroupMasterKey
                 .eq_any(allowed_groups.to_vec()),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+        .filter(preferred_group_sender_expr(None).is_in(senders.to_vec()));
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,
@@ -385,7 +388,7 @@ fn message_has_sender_exists(
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .filter(signal_message_group::Column::Sender.eq_any(senders.to_vec()));
+        .filter(preferred_group_sender_expr(None).is_in(senders.to_vec()));
     let subquery = match scope {
         Some(scope) => subquery.filter(scope.condition((
             signal_message_group::Entity,
@@ -4483,6 +4486,17 @@ fn append_xlsx_omitted_count_token(
 async fn build_summary_table_report(
     data: &SummaryTableReportData,
 ) -> Result<Vec<u8>, AppError> {
+    let callsign_count = data
+        .summary_table
+        .rows
+        .iter()
+        .flat_map(|row| row.callsigns.iter())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let record_count =
+        data.summary_table.rows.len().saturating_add(callsign_count);
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     let SummaryTableReportData {
         description,
         summary_table,
@@ -6408,7 +6422,7 @@ async fn accessible_message_ids(
     let owner_access = Condition::all()
         .add(signal_message::Column::DatasourceGroupId.is_null())
         .add(Expr::exists(has_group).not())
-        .add(signal_message::Column::Sender.is_in(owner_logins));
+        .add(preferred_message_author_expr(None).is_in(owner_logins));
 
     let parent_group_access = Query::select()
         .expr(Expr::value(1))
@@ -7821,16 +7835,12 @@ async fn count_stats(
     Ok(Json(response))
 }
 
-fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
-    req.search
-        .as_ref()
-        .is_none_or(|search| search.trim().is_empty())
+fn analytics_count_request_supported(_req: &AnalysisStatsReq) -> bool {
+    true
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
-    let mut req = req.clone();
-    req.selected_units = None;
-    analytics_count_request_supported(&req)
+    analytics_count_request_supported(req)
 }
 
 fn analytics_stats_request_supported(
@@ -7875,10 +7885,6 @@ pub(crate) fn analytics_inbox_candidates_supported(
 
 fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
     req.only_with_media != Some(true)
-        && req
-            .search
-            .as_ref()
-            .is_none_or(|search| search.trim().is_empty())
 }
 
 #[derive(Clone)]
@@ -9469,39 +9475,23 @@ async fn collect_sender_names(
     senders: &Vec<AnalysisStatsSender>,
     txn: &DatabaseConnection,
 ) -> anyhow::Result<BTreeMap<String, Option<SignalProfileRsp>>> {
-    let mut result = BTreeMap::new();
-    let mut sender_keys = vec![];
-    for sender in senders {
-        sender_keys.push(sender.uuid.clone());
-    }
-    let signal_profiles = signal_profile::Entity::find()
-        .select_only()
-        .columns([
-            signal_profile::Column::Uuid,
-            signal_profile::Column::FamilyName,
-            signal_profile::Column::GivenName,
-        ])
-        .filter(signal_profile::Column::Uuid.eq_any(sender_keys.clone()))
-        .into_tuple::<(String, Option<String>, Option<String>)>()
-        .all(txn)
+    let sender_keys =
+        senders.iter().map(|sender| sender.uuid.clone()).collect();
+    let profiles = crate::rer_importer::collect_profiles_data(txn, sender_keys)
         .await
         .context(h!())?;
-    let mut signal_profiles_map = BTreeMap::new();
-    for (key, family_name, given_name) in signal_profiles {
-        signal_profiles_map.insert(
-            key,
-            SignalProfileRsp {
-                given_name,
-                family_name,
-            },
-        );
-    }
-    for s in sender_keys {
-        let entry = signal_profiles_map.remove(&s);
-        result.insert(s, entry);
-    }
-
-    Ok(result)
+    Ok(profiles
+        .into_iter()
+        .map(|(key, profile)| {
+            (
+                key,
+                profile.map(|profile| SignalProfileRsp {
+                    given_name: profile.given_name,
+                    family_name: profile.family_name,
+                }),
+            )
+        })
+        .collect())
 }
 async fn collect_group_names(
     groups: &Vec<AnalysisStatsGroup>,

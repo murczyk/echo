@@ -107,6 +107,8 @@ fn map_system_settings_item(
         enable_audio_transcription: settings.enable_audio_transcription,
         show_classic_duty: settings.show_classic_duty,
         show_classic_analysis: settings.show_classic_analysis,
+        show_peleng_distance_to_battleline: settings
+            .show_peleng_distance_to_battleline,
     })
 }
 
@@ -568,6 +570,9 @@ fn system_settings_active_model(
         default_neo_analysis: Set(req.default_neo_analysis),
         show_classic_duty: Set(req.show_classic_duty),
         show_classic_analysis: Set(req.show_classic_analysis),
+        show_peleng_distance_to_battleline: Set(
+            req.show_peleng_distance_to_battleline
+        ),
         autofix_echoim_missing_messages: Set(
             req.autofix_echoim_missing_messages
         ),
@@ -750,6 +755,8 @@ pub async fn current_system_settings(
             enable_audio_transcription: settings.enable_audio_transcription,
             show_classic_duty: settings.show_classic_duty,
             show_classic_analysis: settings.show_classic_analysis,
+            show_peleng_distance_to_battleline: settings
+                .show_peleng_distance_to_battleline,
             hide_orbit_data: settings.hide_orbit_data,
         },
         None => SystemSettingsCurrentRsp {
@@ -780,6 +787,7 @@ pub async fn current_system_settings(
             enable_audio_transcription: false,
             show_classic_duty: true,
             show_classic_analysis: true,
+            show_peleng_distance_to_battleline: false,
             hide_orbit_data: false,
         },
     }))
@@ -1131,6 +1139,7 @@ mod tests {
             enable_audio_transcription: false,
             show_classic_duty: true,
             show_classic_analysis: true,
+            show_peleng_distance_to_battleline: false,
         }
     }
 
@@ -1193,6 +1202,7 @@ mod tests {
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),
             show_classic_analysis: Set(true),
+            show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
         }
         .insert(dbx)

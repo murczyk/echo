@@ -244,7 +244,7 @@ export const adminDatabaseSubs: Menu[] = [
     type: 'item',
     link: { type: 'internal', path: '/admin/transcription-settings' },
     activeName: 'transcription-settings',
-    label: 'Echo GPU сервери',
+    label: 'Транскрибація',
   },
   {
     type: 'item',

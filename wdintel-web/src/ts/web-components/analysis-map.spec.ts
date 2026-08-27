@@ -69,6 +69,7 @@ describe('analysis-map', () => {
       _map: typeof map | null;
       _clickedPoint: typeof clickedPoint | null;
       _clickedLatLng: null;
+      _battleLineDistances: Map<number, number>;
       _messagesLoading: boolean;
       _messagesPopupPending: boolean;
       _messagesPopupOpenRetryCount: number;
@@ -78,6 +79,7 @@ describe('analysis-map', () => {
     analysisMap._map = map;
     analysisMap._clickedPoint = clickedPoint;
     analysisMap._clickedLatLng = null;
+    analysisMap._battleLineDistances = new Map([[1, 12_567]]);
     analysisMap._messagesLoading = true;
     analysisMap._messagesPopupPending = true;
     analysisMap._messagesPopupOpenRetryCount = 2;
@@ -94,6 +96,7 @@ describe('analysis-map', () => {
     expect(analysisMap._messagesPopupOpenRetryCount).toBe(2);
     expect(analysisMap._clickedPoint).toBe(clickedPoint);
     expect(analysisMap._clickedLatLng).toBeNull();
+    expect(analysisMap._battleLineDistances.get(1)).toBe(12_567);
   });
 
   it('closes an open popup when its messages are cleared outside a load', () => {
@@ -104,12 +107,14 @@ describe('analysis-map', () => {
     const analysisMap = element as unknown as {
       _clickedPoint: typeof clickedPoint | null;
       _clickedLatLng: null;
+      _battleLineDistances: Map<number, number>;
       _messagesLoading: boolean;
       _messagesPopupPending: boolean;
       attributeChangedCallback: (name: string, oldValue: string | null, newValue: string) => void;
     };
     analysisMap._clickedPoint = clickedPoint;
     analysisMap._clickedLatLng = null;
+    analysisMap._battleLineDistances = new Map([[1, 12_567]]);
     analysisMap._messagesLoading = false;
     analysisMap._messagesPopupPending = false;
 
@@ -121,6 +126,7 @@ describe('analysis-map', () => {
 
     expect(clickedPoint.closePopup).toHaveBeenCalledOnce();
     expect(analysisMap._clickedPoint).toBeNull();
+    expect(analysisMap._battleLineDistances.size).toBe(0);
   });
 
   it('clears stale popup state when loading finishes without messages', () => {
@@ -133,6 +139,7 @@ describe('analysis-map', () => {
       _map: typeof map | null;
       _clickedPoint: typeof clickedPoint | null;
       _clickedLatLng: null;
+      _battleLineDistances: Map<number, number>;
       _messages: unknown[];
       _messagesLoading: boolean;
       _messagesPopupPending: boolean;
@@ -143,6 +150,7 @@ describe('analysis-map', () => {
     analysisMap._map = map;
     analysisMap._clickedPoint = clickedPoint;
     analysisMap._clickedLatLng = null;
+    analysisMap._battleLineDistances = new Map([[1, 12_567]]);
     analysisMap._messages = [];
     analysisMap._messagesLoading = true;
     analysisMap._messagesPopupPending = true;
@@ -157,6 +165,7 @@ describe('analysis-map', () => {
     expect(analysisMap._messagesPopupOpenRetryCount).toBe(0);
     expect(analysisMap._clickedPoint).toBeNull();
     expect(analysisMap._clickedLatLng).toBeNull();
+    expect(analysisMap._battleLineDistances.size).toBe(0);
   });
 
   it('flies to coordinates on search-submit even when the value was submitted before', () => {

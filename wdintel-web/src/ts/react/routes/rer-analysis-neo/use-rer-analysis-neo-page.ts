@@ -57,6 +57,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
   const [cyberEchoEnabled, setCyberEchoEnabled] = useState(false);
   const [audioTranscriptionEnabled, setAudioTranscriptionEnabled] = useState(false);
+  const [showPelengDistanceToBattleline, setShowPelengDistanceToBattleline] = useState(false);
   const [lastResetState, setLastResetState] = useState<AnalysisQueryState>(() =>
     hasMeaningfulUiFiltersBeyondDateRange(initialQueryState)
       ? createResetQueryState()
@@ -202,6 +203,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
         setSupportNonRerInterceptions(settings.supportNonRerInterceptions);
         setCyberEchoEnabled(settings.devicesSectionEnabled);
         setAudioTranscriptionEnabled(settings.enableAudioTranscription ?? false);
+        setShowPelengDistanceToBattleline(settings.showPelengDistanceToBattleline);
       })
       .catch(() => {
         if (abortController.signal.aborted) return;
@@ -535,7 +537,10 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     isDirty: savedFilters.isDirty,
     leftPanelOpen,
     loadedSavedFilter: savedFilters.loadedSavedFilter,
-    mapAttrs: data.mapAttrs,
+    mapAttrs: {
+      ...data.mapAttrs,
+      showPelengDistanceToBattleline: showPelengDistanceToBattleline ? 'true' : 'false',
+    },
     messageActionLoading: data.messageActionLoading,
     botTagAction: data.botTagAction,
     messagesLoading: data.messagesLoading,
@@ -569,6 +574,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     profiles: data.profiles,
     queryState,
     tagsLayout: dutySettings.tagsLayout,
+    mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
+    messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
     audioTranscriptionEnabled,
     rightPanelOpen,

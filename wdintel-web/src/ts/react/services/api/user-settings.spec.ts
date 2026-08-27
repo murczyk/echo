@@ -36,6 +36,8 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
   });
 
@@ -55,6 +57,54 @@ describe('user-settings api', () => {
     });
   });
 
+  it.each([
+    ['null', null, true],
+    ['explicit false', false, false],
+    ['explicit true', true, true],
+  ])('normalizes %s media-summary preferences', async (_, mediaSummaryEnabled, expected) => {
+    mocks.getJson.mockResolvedValueOnce({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      mediaSummaryEnabled,
+    });
+
+    await expect(fetchUserSettings()).resolves.toMatchObject({
+      mediaSummaryEnabled: expected,
+    });
+  });
+
+  it.each([
+    [20, 'twenty'],
+    [40, 'forty'],
+    [null, 'off'],
+  ] as const)('serializes message preview value %s', async (value, wireValue) => {
+    mocks.putJson.mockResolvedValueOnce({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      messageTextPreviewLines: wireValue,
+    });
+
+    await saveUserSettings({
+      tagsLayout: 'compact',
+      messageTextPreviewLines: value,
+      disableAutoScroll: false,
+      analysisMapInSidebar: false,
+      dutyAudioTranscriptionCollapsed: false,
+      analysisAudioTranscriptionCollapsed: false,
+      showAnalysisCallsignAddForm: false,
+      showClassicDuty: false,
+      showClassicAnalysis: false,
+      dutyCollapseMediaPreviews: false,
+      mediaSummaryEnabled: true,
+    });
+
+    expect(mocks.putJson).toHaveBeenCalledWith(
+      '/api/user/settings',
+      expect.objectContaining({ messageTextPreviewLines: wireValue }),
+      { signal: undefined },
+    );
+  });
+
   it('serializes duty settings when saving', async () => {
     mocks.putJson.mockResolvedValueOnce({
       tagsLayout: 'compact',
@@ -66,6 +116,8 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: false,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 'twenty',
     });
 
     await saveUserSettings({
@@ -78,6 +130,8 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: false,
+      mediaSummaryEnabled: true,
+      messageTextPreviewLines: 20,
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
@@ -92,9 +146,31 @@ describe('user-settings api', () => {
         showClassicDuty: false,
         showClassicAnalysis: false,
         dutyCollapseMediaPreviews: false,
+        mediaSummaryEnabled: true,
+        messageTextPreviewLines: 'twenty',
       },
       { signal: undefined },
     );
+  });
+
+  it.each([
+    ['twenty', 20],
+    ['Twenty', 20],
+    ['forty', 40],
+    ['Forty', 40],
+    ['off', null],
+    ['Off', null],
+    ['unknown', 20],
+  ])('normalizes message preview value %s', async (wireValue, expected) => {
+    mocks.getJson.mockResolvedValueOnce({
+      tagsLayout: 'compact',
+      disableAutoScroll: false,
+      messageTextPreviewLines: wireValue,
+    });
+
+    await expect(fetchUserSettings()).resolves.toMatchObject({
+      messageTextPreviewLines: expected,
+    });
   });
 
   it('serializes an enabled media-preview preference', async () => {
@@ -102,6 +178,7 @@ describe('user-settings api', () => {
       tagsLayout: 'compact',
       disableAutoScroll: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: false,
     });
 
     await saveUserSettings({
@@ -114,11 +191,13 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
+      mediaSummaryEnabled: false,
+      messageTextPreviewLines: 20,
     });
 
     expect(mocks.putJson).toHaveBeenCalledWith(
       '/api/user/settings',
-      expect.objectContaining({ dutyCollapseMediaPreviews: true }),
+      expect.objectContaining({ dutyCollapseMediaPreviews: true, mediaSummaryEnabled: false }),
       { signal: undefined },
     );
   });

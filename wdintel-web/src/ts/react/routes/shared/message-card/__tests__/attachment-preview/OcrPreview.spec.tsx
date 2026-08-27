@@ -870,11 +870,7 @@ describe('OcrPreview', () => {
     expect(container.textContent).not.toContain('Перший опис');
     expect(previous?.disabled).toBe(false);
     expect(next?.disabled).toBe(false);
-    expect(getMediaSummary).toHaveBeenLastCalledWith(
-      'image-5',
-      { signal: expect.any(AbortSignal) },
-      'messenger',
-    );
+    expect(getMediaSummary).toHaveBeenCalledWith('image-5', undefined, 'messenger');
     root.unmount();
   });
 

@@ -160,15 +160,7 @@ where
         }
     }
 
-    let parent_signal_message_ids =
-        query::find_intel_product_parent_ids(dbx, source.id)
-            .await
-            .c(h!())?;
-    let parent_signal_message_ids = if parent_signal_message_ids.is_empty() {
-        vec![source.id]
-    } else {
-        parent_signal_message_ids
-    };
+    let parent_signal_message_ids = vec![source.id];
 
     Ok(DirectSubmitPayload {
         full_body: source.body.clone().or_else(|| Some(message.text.clone())),
@@ -1468,7 +1460,8 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(signal_message.body.as_deref(), Some("updated body"));
-        assert_eq!(signal_message.sender, Some(login_id.to_string()));
+        assert_eq!(signal_message.sender, None);
+        assert_eq!(signal_message.login_id, Some(login_id));
         assert_eq!(
             signal_message.timestamp,
             Some(
@@ -1760,6 +1753,7 @@ mod tests {
         let mut inbox_item = inbox_item.into_active_model();
         inbox_item.date = Set(None);
         inbox_item.time = Set(None);
+        inbox_item.datetime = Set(None);
         inbox_item.update(&env.dbx).await.unwrap();
 
         edit_signal_message(
@@ -1786,6 +1780,7 @@ mod tests {
                 .unwrap();
         assert_eq!(inbox_item.date, None);
         assert_eq!(inbox_item.time, None);
+        assert_eq!(inbox_item.datetime, None);
     }
 
     #[tokio::test]
@@ -1839,5 +1834,104 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn chained_intelligence_reports_preserve_parent_child_hierarchy() {
+        let env = cleanup().await.unwrap();
+        let login_id = crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
+            .await
+            .unwrap();
+        let original_a = submit_signal_message(
+            &login_id,
+            &env,
+            direct_submit_payload("message A body"),
+        )
+        .await
+        .unwrap();
+
+        let mut report_b_payload = direct_submit_payload("report B body");
+        report_b_payload.signal_group_master_key = None;
+        report_b_payload.parent_signal_message_ids =
+            vec![original_a.signal_message_id];
+        let report_b = submit_signal_message(&login_id, &env, report_b_payload)
+            .await
+            .unwrap();
+
+        let copy_from_b = copy_signal_messages(
+            &login_id,
+            &env,
+            vec![report_b.signal_message_id],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            copy_from_b.payloads[0].parent_signal_message_ids,
+            vec![report_b.signal_message_id]
+        );
+
+        let mut report_c_payload = direct_submit_payload("report C body");
+        report_c_payload.signal_group_master_key = None;
+        report_c_payload.parent_signal_message_ids =
+            vec![report_b.signal_message_id];
+        let report_c = submit_signal_message(&login_id, &env, report_c_payload)
+            .await
+            .unwrap();
+
+        let logins =
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login_id)
+                .await
+                .unwrap();
+        let messages = crate::rer_importer::inbox::messages_by_id_bl(
+            &login_id,
+            &logins,
+            &env,
+            &[
+                original_a.signal_message_id,
+                report_b.signal_message_id,
+                report_c.signal_message_id,
+            ],
+            &crate::rer_importer::types::InboxMessagesReq::default(),
+        )
+        .await
+        .unwrap();
+        let message_map = messages
+            .into_iter()
+            .collect::<std::collections::HashMap<_, _>>();
+
+        let msg_a = message_map.get(&original_a.signal_message_id).unwrap();
+        assert_eq!(msg_a.parent_messages.len(), 0);
+        assert_eq!(msg_a.intelligence_reports.len(), 1);
+        assert_eq!(
+            msg_a.intelligence_reports[0].id,
+            report_b.signal_message_id
+        );
+
+        let msg_b = message_map.get(&report_b.signal_message_id).unwrap();
+        assert_eq!(msg_b.parent_messages.len(), 1);
+        assert_eq!(msg_b.parent_messages[0].id, original_a.signal_message_id);
+        assert_eq!(msg_b.intelligence_reports.len(), 1);
+        assert_eq!(
+            msg_b.intelligence_reports[0].id,
+            report_c.signal_message_id
+        );
+
+        let msg_c = message_map.get(&report_c.signal_message_id).unwrap();
+        assert_eq!(msg_c.parent_messages.len(), 1);
+        assert_eq!(msg_c.parent_messages[0].id, report_b.signal_message_id);
+        assert_eq!(msg_c.intelligence_reports.len(), 0);
+
+        let mut edit_c_payload = direct_submit_payload("updated report C body");
+        edit_c_payload.signal_group_master_key = None;
+        let edited_c = edit_signal_message(
+            &login_id,
+            &env,
+            report_c.signal_message_id,
+            edit_c_payload,
+        )
+        .await
+        .unwrap();
+        assert_eq!(edited_c.message.unwrap().text, "updated report C body");
     }
 }

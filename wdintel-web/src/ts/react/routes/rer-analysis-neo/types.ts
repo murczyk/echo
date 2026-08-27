@@ -124,6 +124,7 @@ export type AnalysisMapAttrs = {
   palitras: string;
   palitrasLoaded: string;
   palitrasLoadState: AnalysisPalitrasLoadState;
+  showPelengDistanceToBattleline?: string;
 };
 
 export type AnalysisCenterTab = 'messages' | 'summary' | 'map';
@@ -218,6 +219,8 @@ export type AnalysisPageState = {
   profiles: Record<string, SignalProfileEntry | null>;
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
+  mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
   rightPanelOpen: boolean;

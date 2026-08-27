@@ -46,6 +46,7 @@ type SystemSettingsForm = {
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -76,6 +77,7 @@ type SystemSettingsPayload = {
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
   dutyTestEnabled: boolean;
   dutyTestSinceMs: number;
   dutyTestLimit: number;
@@ -104,6 +106,7 @@ const EMPTY_FORM: SystemSettingsForm = {
   defaultNeoAnalysis: false,
   showClassicDuty: true,
   showClassicAnalysis: true,
+  showPelengDistanceToBattleline: false,
   dutyTestEnabled: false,
   dutyTestSinceMs: 0,
   dutyTestLimit: 1,
@@ -182,6 +185,7 @@ function formFromSettings(item: SystemSettingsItem | undefined): SystemSettingsF
     defaultNeoAnalysis: item?.defaultNeoAnalysis ?? false,
     showClassicDuty: item?.showClassicDuty ?? true,
     showClassicAnalysis: item?.showClassicAnalysis ?? true,
+    showPelengDistanceToBattleline: item?.showPelengDistanceToBattleline ?? false,
     dutyTestEnabled: item?.rerDutyTestEnabled ?? false,
     dutyTestSinceMs: item?.rerDutyTestSinceMs ?? 0,
     dutyTestLimit: item?.rerDutyTestLimit ?? 1,
@@ -212,6 +216,7 @@ function formsEqual(a: SystemSettingsForm, b: SystemSettingsForm): boolean {
     a.defaultNeoAnalysis === b.defaultNeoAnalysis &&
     a.showClassicDuty === b.showClassicDuty &&
     a.showClassicAnalysis === b.showClassicAnalysis &&
+    a.showPelengDistanceToBattleline === b.showPelengDistanceToBattleline &&
     a.dutyTestEnabled === b.dutyTestEnabled &&
     a.dutyTestSinceMs === b.dutyTestSinceMs &&
     a.dutyTestLimit === b.dutyTestLimit &&
@@ -298,6 +303,7 @@ function formToPayload(form: SystemSettingsForm): SystemSettingsPayload {
     defaultNeoAnalysis: form.defaultNeoAnalysis,
     showClassicDuty: form.showClassicDuty,
     showClassicAnalysis: form.showClassicAnalysis,
+    showPelengDistanceToBattleline: form.showPelengDistanceToBattleline,
     dutyTestEnabled: form.dutyTestEnabled,
     dutyTestSinceMs: form.dutyTestSinceMs,
     dutyTestLimit: form.dutyTestLimit,
@@ -430,7 +436,7 @@ function MainSettingsSection({
       />
       {form.enableAudioTranscription && !audioTranscriptionSaved ? (
         <PowerAlert severity="info">
-          Збережіть налаштування, щоб відкрити «Echo GPU сервери» в меню «Адмін».
+          Збережіть налаштування, щоб відкрити «Транскрибація» в меню «Адмін».
         </PowerAlert>
       ) : null}
 
@@ -735,6 +741,17 @@ function PelengSettingsSection({
       <FormControlLabel
         control={
           <Switch
+            checked={form.showPelengDistanceToBattleline}
+            onChange={(_, checked) => {
+              patchForm({ showPelengDistanceToBattleline: checked });
+            }}
+          />
+        }
+        label="Показувати відстань пеленга до ЛБЗ"
+      />
+      <FormControlLabel
+        control={
+          <Switch
             checked={form.pelengBoundsEnabled}
             onChange={(_, checked) => {
               patchForm({ pelengBoundsEnabled: checked });
@@ -947,6 +964,7 @@ export function AdminSystemSettingsNeoPage() {
         defaultNeoAnalysis: payload.defaultNeoAnalysis,
         showClassicDuty: payload.showClassicDuty,
         showClassicAnalysis: payload.showClassicAnalysis,
+        showPelengDistanceToBattleline: payload.showPelengDistanceToBattleline,
         autofixEchoimMissingMessages: payload.autofixEchoimMissingMessages,
         devicesSectionEnabled: payload.devicesSectionEnabled,
         sigintCommentParsingEnabled: payload.sigintCommentParsingEnabled,

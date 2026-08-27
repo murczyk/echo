@@ -20,7 +20,9 @@ use sea_query::{Expr, OnConflict, SimpleExpr};
 use std::collections::{BTreeSet, HashMap};
 
 pub mod attachment;
+pub mod changelog;
 pub mod labels;
+pub mod names;
 pub mod orbit;
 pub mod types;
 
@@ -43,7 +45,20 @@ pub fn unit_name(unit: &Unit) -> String {
     ])
 }
 
+fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
+    unit.name.trim().is_empty()
+        || unit.name == unit_name_from_hierarchy(unit_hierarchy(unit))
+}
+
 pub fn unit_name_req(req: &CreateUnitReq) -> String {
+    if let Some(name) = req
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
+        return name.to_string();
+    }
     unit_name_from_hierarchy([
         &req.other,
         &req.team_or_crew,
@@ -972,6 +987,7 @@ async fn insert_unit_with_changelog<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    changelog::set_author(dbx, login).await.c(h!())?;
     let unit = sigint_unit::ActiveModel {
         id: NotSet,
         other: Set(req.other.clone()),
@@ -999,6 +1015,7 @@ where
         sigint_origin_id: NotSet,
         original_id: NotSet,
         is_inconsistent: NotSet,
+        updated_at: NotSet,
     }
     .insert(dbx)
     .await
@@ -1241,6 +1258,7 @@ async fn update_unit_for_login(
     can_update_orbit_note: bool,
 ) -> Result<sigint_unit::Model, AppError> {
     let transaction = dbx.begin().await.context(h!())?;
+    changelog::set_author(&transaction, login).await.c(h!())?;
     let unit = sigint_unit::Entity::find_by_id(req.id)
         .one(&transaction)
         .await
@@ -1300,22 +1318,27 @@ async fn update_unit_for_login(
     unit.military_district = Set(military_district.clone());
     unit.army_region = Set(army_region.clone());
     unit.active = Set(req.active);
-    unit.name = Set(unit_name_from_hierarchy([
-        &other,
-        &team_or_crew,
-        &section,
-        &squad,
-        &platoon,
-        &req.company,
-        &req.battalion,
-        &req.regiment,
-        &brigade,
-        &req.division,
-        &corps,
-        &req.army,
-        &military_district,
-        &army_region,
-    ]));
+    unit.updated_at = Set(chrono::Utc::now().naive_utc());
+    unit.name = Set(if req.name.trim().is_empty() {
+        unit_name_from_hierarchy([
+            &other,
+            &team_or_crew,
+            &section,
+            &squad,
+            &platoon,
+            &req.company,
+            &req.battalion,
+            &req.regiment,
+            &brigade,
+            &req.division,
+            &corps,
+            &req.army,
+            &military_district,
+            &army_region,
+        ])
+    } else {
+        req.name.trim().to_string()
+    });
     unit.comment = Set(req.comment.clone());
     if can_update_orbit_note {
         if let Some(orbit_note) = &req.orbit_note {
@@ -1445,6 +1468,7 @@ async fn set_unit_activity<C>(
 where
     C: ConnectionTrait,
 {
+    changelog::set_author(dbx, login).await.c(h!())?;
     let old_value = unit_json(dbx, unit.id).await?;
     let mut unit = unit.clone().into_active_model();
     unit.active = Set(active);
@@ -1553,6 +1577,7 @@ async fn delete_unit_for_login(
     unit_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
     let transaction = dbx.begin().await.context(h!())?;
+    changelog::set_author(&transaction, login).await.c(h!())?;
     let unit = sigint_unit::Entity::find_by_id(unit_id)
         .one(&transaction)
         .await
@@ -1656,6 +1681,7 @@ async fn merge_units_in_transaction<C>(
 where
     C: ConnectionTrait,
 {
+    changelog::set_author(dbx, &login).await.c(h!())?;
     if unit_to_delete_id == original_id {
         return Err(AppError::BL {
             msg: "unit cannot be merged into itself".to_string(),
@@ -2125,31 +2151,9 @@ where
     C: ConnectionTrait,
 {
     let mut unit = unit_original.clone().into_active_model();
-    unit.name = Set(unit_name_from_hierarchy([
-        merged_unit_value(&unit_original.other, &unit_to_merge.other),
-        merged_unit_value(
-            &unit_original.team_or_crew,
-            &unit_to_merge.team_or_crew,
-        ),
-        merged_unit_value(&unit_original.section, &unit_to_merge.section),
-        merged_unit_value(&unit_original.squad, &unit_to_merge.squad),
-        merged_unit_value(&unit_original.platoon, &unit_to_merge.platoon),
-        merged_unit_value(&unit_original.company, &unit_to_merge.company),
-        merged_unit_value(&unit_original.battalion, &unit_to_merge.battalion),
-        merged_unit_value(&unit_original.regiment, &unit_to_merge.regiment),
-        merged_unit_value(&unit_original.brigade, &unit_to_merge.brigade),
-        merged_unit_value(&unit_original.division, &unit_to_merge.division),
-        merged_unit_value(&unit_original.corps, &unit_to_merge.corps),
-        merged_unit_value(&unit_original.army, &unit_to_merge.army),
-        merged_unit_value(
-            &unit_original.military_district,
-            &unit_to_merge.military_district,
-        ),
-        merged_unit_value(
-            &unit_original.army_region,
-            &unit_to_merge.army_region,
-        ),
-    ]));
+    if unit_name_is_derived(&unit_original) {
+        unit.name = Set(merged_unit_name(&unit_original, unit_to_merge));
+    }
 
     if unit_original.other.is_empty() && !unit_to_merge.other.is_empty() {
         unit.other = Set(unit_to_merge.other.clone());
@@ -2221,6 +2225,37 @@ where
     let unit = unit.update(dbx).await.context(h!())?;
     unit_after_insert_update(dbx, unit.id).await.context(h!())?;
     Ok(unit)
+}
+
+fn merged_unit_name(
+    unit_original: &sigint_unit::Model,
+    unit_to_merge: &sigint_unit::Model,
+) -> String {
+    unit_name_from_hierarchy([
+        merged_unit_value(&unit_original.other, &unit_to_merge.other),
+        merged_unit_value(
+            &unit_original.team_or_crew,
+            &unit_to_merge.team_or_crew,
+        ),
+        merged_unit_value(&unit_original.section, &unit_to_merge.section),
+        merged_unit_value(&unit_original.squad, &unit_to_merge.squad),
+        merged_unit_value(&unit_original.platoon, &unit_to_merge.platoon),
+        merged_unit_value(&unit_original.company, &unit_to_merge.company),
+        merged_unit_value(&unit_original.battalion, &unit_to_merge.battalion),
+        merged_unit_value(&unit_original.regiment, &unit_to_merge.regiment),
+        merged_unit_value(&unit_original.brigade, &unit_to_merge.brigade),
+        merged_unit_value(&unit_original.division, &unit_to_merge.division),
+        merged_unit_value(&unit_original.corps, &unit_to_merge.corps),
+        merged_unit_value(&unit_original.army, &unit_to_merge.army),
+        merged_unit_value(
+            &unit_original.military_district,
+            &unit_to_merge.military_district,
+        ),
+        merged_unit_value(
+            &unit_original.army_region,
+            &unit_to_merge.army_region,
+        ),
+    ])
 }
 
 fn merged_unit_value<'a>(original: &'a str, to_merge: &'a str) -> &'a str {
@@ -2370,6 +2405,7 @@ mod tests {
 
     fn unit_req() -> CreateUnitReq {
         CreateUnitReq {
+            name: None,
             other: String::new(),
             team_or_crew: String::new(),
             section: String::new(),
@@ -2443,6 +2479,7 @@ mod tests {
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),
             show_classic_analysis: Set(true),
+            show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
         }
         .insert(dbx)
@@ -2547,7 +2584,7 @@ mod tests {
                 unit_name: Set(Some(format!("Повна назва {name}"))),
                 unit_name_short: Set(Some((*name).to_string())),
                 unit_echelon_id: Set(Some(echelon_ids[index])),
-                operational_parent_unit_id: Set(
+                generative_parent_unit_id: Set(
                     unit_ids.get(index + 1).copied(),
                 ),
                 ..Default::default()
@@ -3090,20 +3127,31 @@ mod tests {
         .await;
     }
 
-    async fn assert_full_active_orbit_hierarchy(
+    async fn assert_only_active_orbit_hierarchy(
         dbx: &DatabaseConnection,
-        orbit_unit_ids: Vec<uuid::Uuid>,
+        orbit_unit_ids: &[uuid::Uuid],
+        expected_active_orbit_unit_ids: &[uuid::Uuid],
     ) {
         let links = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::OrbitUnitId
-                    .is_in(orbit_unit_ids),
+                    .is_in(orbit_unit_ids.iter().copied()),
             )
             .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
             .all(dbx)
             .await
             .unwrap();
-        assert_eq!(links.len(), 7);
+        assert_eq!(links.len(), expected_active_orbit_unit_ids.len());
+        assert_eq!(
+            links
+                .iter()
+                .map(|link| link.orbit_unit_id)
+                .collect::<BTreeSet<_>>(),
+            expected_active_orbit_unit_ids
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>()
+        );
         let linked_unit_ids = links
             .into_iter()
             .map(|link| link.sigint_unit_id)
@@ -3113,7 +3161,7 @@ mod tests {
             .all(dbx)
             .await
             .unwrap();
-        assert_eq!(linked_units.len(), 7);
+        assert_eq!(linked_units.len(), expected_active_orbit_unit_ids.len());
         assert!(linked_units.iter().all(|unit| unit.active));
         assert!(linked_units
             .iter()
@@ -3679,7 +3727,7 @@ mod tests {
             unit_id: Set(other_unit_id),
             unit_name_short: Set(Some("ВМФ".to_string())),
             unit_echelon_id: Set(Some(other_echelon_id)),
-            operational_parent_unit_id: Set(Some(orbit_fixture.unit_ids[5])),
+            generative_parent_unit_id: Set(Some(orbit_fixture.unit_ids[5])),
             ..Default::default()
         }
         .insert(&env.dbx)
@@ -3688,8 +3736,8 @@ mod tests {
         update_orbit_parents(
             &env.dbx,
             orbit_fixture.unit_ids[4],
-            None,
             Some(other_unit_id),
+            None,
         )
         .await;
         orbit_fixture.unit_ids.push(other_unit_id);
@@ -4000,7 +4048,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn manual_orbit_link_creates_and_activates_both_parent_chains() {
+    async fn manual_orbit_link_creates_only_generative_parent_chain() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
@@ -4016,13 +4064,23 @@ mod tests {
         .await
         .unwrap();
 
-        assert_full_active_orbit_hierarchy(&env.dbx, orbit_fixture.unit_ids)
-            .await;
+        assert_only_active_orbit_hierarchy(
+            &env.dbx,
+            &orbit_fixture.unit_ids,
+            &[
+                orbit_fixture.unit_ids[0],
+                orbit_fixture.unit_ids[2],
+                orbit_fixture.unit_ids[3],
+                orbit_fixture.unit_ids[4],
+                orbit_fixture.unit_ids[6],
+            ],
+        )
+        .await;
     }
 
     #[tokio::test]
     #[serial]
-    async fn automatic_orbit_link_creates_and_activates_both_parent_chains() {
+    async fn automatic_orbit_link_creates_only_generative_parent_chain() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let orbit_fixture = insert_orbit_hierarchy(&env.dbx).await;
@@ -4046,13 +4104,23 @@ mod tests {
         .await
         .unwrap();
 
-        assert_full_active_orbit_hierarchy(&env.dbx, orbit_fixture.unit_ids)
-            .await;
+        assert_only_active_orbit_hierarchy(
+            &env.dbx,
+            &orbit_fixture.unit_ids,
+            &[
+                orbit_fixture.unit_ids[0],
+                orbit_fixture.unit_ids[2],
+                orbit_fixture.unit_ids[3],
+                orbit_fixture.unit_ids[4],
+                orbit_fixture.unit_ids[6],
+            ],
+        )
+        .await;
     }
 
     #[tokio::test]
     #[serial]
-    async fn oneoff_activates_linked_orbit_ancestors_in_both_hierarchies() {
+    async fn oneoff_activates_only_linked_generative_ancestors() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -4117,9 +4185,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(links.len(), 7);
-        let linked_unit_ids = links
-            .into_iter()
-            .map(|link| link.sigint_unit_id)
+        let linked_units_by_orbit_id = links
+            .iter()
+            .map(|link| (link.orbit_unit_id, link.sigint_unit_id))
+            .collect::<HashMap<_, _>>();
+        let linked_unit_ids = linked_units_by_orbit_id
+            .values()
+            .copied()
             .collect::<Vec<_>>();
         let linked_units = sigint_unit::Entity::find()
             .filter(sigint_unit::Column::Id.is_in(linked_unit_ids))
@@ -4127,7 +4199,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(linked_units.len(), 7);
-        assert!(linked_units.iter().all(|unit| unit.active));
+        let operational_unit_id =
+            linked_units_by_orbit_id[&orbit_fixture.unit_ids[1]];
+        assert!(linked_units
+            .iter()
+            .all(|unit| { unit.active == (unit.id != operational_unit_id) }));
     }
 
     #[tokio::test]
@@ -4577,6 +4653,9 @@ mod tests {
             hierarchy_unit(&env.dbx, ["", "2 бат", "55 мбр", "", ""]).await;
         let surviving =
             hierarchy_unit(&env.dbx, ["1 рота", "2 бат", "", "", ""]).await;
+        let mut surviving = surviving.into_active_model();
+        surviving.name = Set("Custom survivor".to_string());
+        let surviving = surviving.update(&env.dbx).await.unwrap();
         let duplicate =
             hierarchy_unit(&env.dbx, ["", "", "55 мбр", "", ""]).await;
         set_unit_activity(&env.dbx, &login_id, &old_parent, true)
@@ -4593,7 +4672,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(merged.regiment, "55 мбр");
-        assert_eq!(merged.name, "1 рота 2 бат 55 мбр");
+        assert_eq!(merged.name, "Custom survivor");
         assert!(active(&env.dbx, old_parent.id).await);
         assert!(active(&env.dbx, new_parent.id).await);
     }

@@ -9,7 +9,9 @@ use crate::rer_importer::analysis::analytics_unit::{
 };
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
-use crate::sigint::sender::preferred_sender_expr;
+use crate::sigint::sender::{
+    preferred_group_sender_expr, preferred_sender_expr,
+};
 use crate::types::*;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
@@ -388,11 +390,8 @@ fn apply_flat_analytics_group_filters(
         .filter(|senders| !senders.is_empty())
     {
         access_condition = access_condition.add(
-            Expr::col((
-                access_alias.clone(),
-                signal_message_group::Column::Sender,
-            ))
-            .is_in(selected_senders.clone()),
+            preferred_group_sender_expr(Some("analytics_access_group"))
+                .is_in(selected_senders.clone()),
         );
     }
     QueryTrait::query(&mut query).join_as(
@@ -417,7 +416,7 @@ fn apply_flat_analytics_group_filters(
         query = left_join_denied_analytics_message_groups(
             query,
             "analytics_denied_group",
-            signal_message_group::Column::GroupMasterKey,
+            Some(signal_message_group::Column::GroupMasterKey),
             denied_groups,
             scope,
         );
@@ -430,7 +429,7 @@ fn apply_flat_analytics_group_filters(
         query = left_join_denied_analytics_message_groups(
             query,
             "analytics_denied_sender",
-            signal_message_group::Column::Sender,
+            None,
             denied_senders.clone(),
             scope,
         );
@@ -484,10 +483,11 @@ fn analytics_message_group_join_condition(
 fn left_join_denied_analytics_message_groups(
     mut query: Select<signal_message::Entity>,
     alias: &str,
-    column: signal_message_group::Column,
+    column: Option<signal_message_group::Column>,
     values: Vec<String>,
     scope: &AnalyticsMessageIdScope,
 ) -> Select<signal_message::Entity> {
+    let alias_name = alias.to_string();
     let alias = Alias::new(alias);
     let condition = Condition::all()
         .add(
@@ -497,7 +497,12 @@ fn left_join_denied_analytics_message_groups(
             ))
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
-        .add(Expr::col((alias.clone(), column)).is_in(values))
+        .add(match column {
+            Some(column) => Expr::col((alias.clone(), column)).is_in(values),
+            None => {
+                preferred_group_sender_expr(Some(&alias_name)).is_in(values)
+            }
+        })
         .add(scope.condition((
             alias.clone(),
             signal_message_group::Column::SignalMessageId,

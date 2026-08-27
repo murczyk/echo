@@ -329,6 +329,7 @@ export type ReportHistoryRow = {
   blockedByStartedAt: string | null;
   blockedByBgtaskId: number | null;
   status: string;
+  errorStatus: string;
   completedAt: string | null;
   hasFile: boolean;
   fileName: string | null;
@@ -1161,6 +1162,7 @@ export type FreqDetailedPoint = {
   mgrsCoords: string;
   sk42Coords: string;
   freq: string | null;
+  battleLineDistance: number | null;
 };
 
 export type InboxMapItem = {
@@ -1287,6 +1289,24 @@ export type BattleLineUnresolvedLocation = {
 
 export type BattleLineUnresolvedLocationsRsp = {
   items: Array<BattleLineUnresolvedLocation>;
+  total: number;
+  pageSize: number;
+};
+
+export type BattleLineNetworkMapPoint = {
+  lat: number;
+  lon: number;
+};
+
+export type BattleLineNetworkUnitMap = {
+  unitId: number;
+  unitName: string;
+  settlementPoints: Array<BattleLineNetworkMapPoint>;
+  pelengPoints: Array<BattleLineNetworkMapPoint>;
+};
+
+export type BattleLineNetworksRsp = {
+  items: Array<BattleLineNetworkUnitMap>;
   total: number;
   pageSize: number;
 };
@@ -3018,7 +3038,39 @@ export type ListInconsistentUnitsRsp = {
   units: Array<InconsistentUnit>;
 };
 
+export type UnitNameReview = {
+  sigintUnitId: number;
+  currentName: string;
+  expectedName: string;
+  matchesExpected: boolean;
+  updatedAt: number;
+};
+
+export type UnitNameReviewCursor = {
+  updatedAtMicros: number;
+  sigintUnitId: number;
+};
+
+export type ListUnitNameReviewsReq = {
+  after: UnitNameReviewCursor | null;
+};
+
+export type ListUnitNameReviewsRsp = {
+  units: Array<UnitNameReview>;
+  nextCursor: UnitNameReviewCursor | null;
+};
+
+export type UpdateUnitNameReq = {
+  sigintUnitId: number;
+  name: string;
+};
+
+export type ConfirmUnitNameReq = {
+  sigintUnitId: number;
+};
+
 export type CreateUnitReq = {
+  name: string | null;
   other: string;
   teamOrCrew: string;
   section: string;
@@ -3073,6 +3125,24 @@ export type UnitSearchReq = {
 
 export type UnitDetailsReq = {
   unitId: number;
+};
+
+export type UnitChangelogChange = {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+};
+
+export type UnitChangelogEntry = {
+  id: number;
+  author: string;
+  createdAt: number;
+  action: string;
+  changes: Array<UnitChangelogChange>;
+};
+
+export type UnitChangelogRsp = {
+  entries: Array<UnitChangelogEntry>;
 };
 
 export type UnitAttachmentAor = {
@@ -4457,6 +4527,7 @@ export type SystemSettingsCurrentRsp = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
 };
 
@@ -4492,6 +4563,7 @@ export type SystemSettingsItem = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4525,6 +4597,7 @@ export type CreateSystemSettingsReq = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -4739,6 +4812,14 @@ export type AiAgentRequestCancelRsp = {
   state: string;
 };
 
+export type AiAgentProviderRuntimeProfileItem = {
+  aiEngineId: string;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
+  compactionReserveTokens: number;
+  compactionKeepRecentTokens: number;
+};
+
 export type AiAgentAdminSettingsItem = {
   featureEnabled: boolean;
   templateLoginId: string;
@@ -4748,6 +4829,7 @@ export type AiAgentAdminSettingsItem = {
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
   allowedAiEngineIds: Array<string>;
+  providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
 
 export type AiAgentAdminSettingsUpdateReq = {
@@ -4760,6 +4842,7 @@ export type AiAgentAdminSettingsUpdateReq = {
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;
   allowedAiEngineIds: Array<string>;
+  providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
 
 export type AiAgentDispatcherItem = {
@@ -5462,8 +5545,15 @@ export type DutyTagsLayout =
   | 'Hidden'
 ;
 
+export type MessageTextPreviewLines =
+  | 'Twenty'
+  | 'Forty'
+  | 'Off'
+;
+
 export type UserDutySettingsDto = {
   tagsLayout: DutyTagsLayout;
+  messageTextPreviewLines: MessageTextPreviewLines;
   disableAutoScroll: boolean;
   analysisMapInSidebar: boolean;
   dutyAudioTranscriptionCollapsed: boolean;
@@ -5472,4 +5562,5 @@ export type UserDutySettingsDto = {
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
   dutyCollapseMediaPreviews: boolean;
+  mediaSummaryEnabled: boolean;
 };

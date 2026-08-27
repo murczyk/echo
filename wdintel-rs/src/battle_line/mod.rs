@@ -2,8 +2,12 @@ use crate::battle_line::types::*;
 use crate::config::{
     BATTLE_LINE_ADMIN_PAGE_SIZE, BATTLE_LINE_ALLOWED_UPLOAD_EXTENSIONS,
     BATTLE_LINE_AOR_ANCHOR_LATITUDE, BATTLE_LINE_AOR_ANCHOR_LONGITUDE,
-    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_EARTH_RADIUS_METERS,
+    BATTLE_LINE_CLIP_EXTENT_METERS, BATTLE_LINE_NETWORKS_LOOKBACK_DAYS,
+    BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT,
+    BATTLE_LINE_NETWORKS_PAGE_SIZE,
     BATTLE_LINE_SETTLEMENT_CANONICAL_MATCH_MAX_DISTANCE_METERS,
+    BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS,
+    BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS,
     BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD, BATTLE_LINE_SOURCE_KIND_DELTA_KML,
     BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY, BATTLE_LINE_UPLOAD_MAX_BYTES,
 };
@@ -19,9 +23,9 @@ use actix_multipart::Multipart;
 use actix_web::web::{Data, Json};
 use actix_web::{get, post};
 use anyhow::Context;
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
 use log::warn;
-use sea_orm::sea_query::{Expr, SimpleExpr};
+use sea_orm::sea_query::{Alias, Expr, Query, SelectStatement, SimpleExpr};
 use sea_orm::*;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +33,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod cleanup;
 pub mod oneoff;
+pub mod peleng_distance;
 pub mod settlement_queue;
 pub mod types;
 
@@ -137,6 +142,7 @@ struct AorGeometryRow {
 struct MatchRow {
     candidate_index: i64,
     distance_m: f64,
+    is_west: bool,
 }
 
 #[derive(Debug, FromQueryResult)]
@@ -150,10 +156,18 @@ struct CanonicalSettlementRow {
     lon: f64,
 }
 
+#[derive(Debug, FromQueryResult)]
+struct UnitMapPointRow {
+    unit_id: i64,
+    lat: f64,
+    lon: f64,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct BattleLineCandidateDistance {
     candidate_index: usize,
     distance_m: f64,
+    is_west: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,8 +180,7 @@ struct BattleLineRankOutcome {
 struct LocationResolutionDraft {
     location: String,
     candidates: Vec<BattleLineSettlementCandidate>,
-    battle_line_distances: BTreeMap<usize, f64>,
-    battle_line_match: Option<BattleLineMatch>,
+    battle_line_distances: BTreeMap<usize, BattleLineCandidateDistance>,
     chosen_candidate_index: Option<usize>,
     invalid_aor_ids: Vec<i64>,
 }
@@ -516,6 +529,298 @@ fn unresolved_locations_query(
         .filter(message_is_accessible(allowed_groups))
         .filter(sigint_inbox_item_settlement::Column::SettlementId.is_null())
         .filter(sigint_inbox_item_settlement::Column::IsUndefined.eq(true))
+}
+
+#[post("/api/battle-line/networks")]
+pub async fn list_network_maps(
+    user: actix_identity::Identity,
+    env: Data<Env>,
+    req: Json<BattleLineAdminPageReq>,
+) -> Result<Json<BattleLineNetworksRsp>, AppError> {
+    crate::users::ensure_admin(&env.dbx, &user).await.c(h!())?;
+    let login_id = crate::users::login_id_from_identity(&user).c(h!())?;
+    let allowed_groups = crate::messenger::group::get_identity_sigint_groups(
+        &env.dbx, &login_id,
+    )
+    .await
+    .c(h!())?;
+    let response = read_network_maps(
+        &env.dbx,
+        &allowed_groups,
+        req.page,
+        Utc::now().naive_utc(),
+    )
+    .await
+    .c(h!())?;
+    Ok(Json(response))
+}
+
+async fn read_network_maps<C>(
+    dbx: &C,
+    allowed_groups: &[String],
+    page: u64,
+    now: NaiveDateTime,
+) -> anyhow::Result<BattleLineNetworksRsp>
+where
+    C: ConnectionTrait,
+{
+    let page = std::cmp::Ord::max(page, 1);
+    let offset = page
+        .saturating_sub(1)
+        .saturating_mul(BATTLE_LINE_NETWORKS_PAGE_SIZE);
+    let total = live_network_units_query(now).count(dbx).await.c(h!())?;
+    let units = live_network_units_query(now)
+        .order_by_desc(sigint_network::Column::CreatedAt.max())
+        .order_by_desc(sigint_unit::Column::Id)
+        .offset(offset)
+        .limit(BATTLE_LINE_NETWORKS_PAGE_SIZE)
+        .all(dbx)
+        .await
+        .c(h!())?;
+    let unit_ids = units.iter().map(|unit| unit.id).collect::<Vec<_>>();
+    let cutoff =
+        now - chrono::Duration::days(BATTLE_LINE_NETWORKS_LOOKBACK_DAYS);
+    let settlement_points = load_network_settlement_points(
+        dbx,
+        allowed_groups,
+        &unit_ids,
+        cutoff,
+        now,
+    )
+    .await
+    .c(h!())?;
+    let peleng_points =
+        load_network_peleng_points(dbx, allowed_groups, &unit_ids, cutoff, now)
+            .await
+            .c(h!())?;
+
+    Ok(BattleLineNetworksRsp {
+        items: units
+            .into_iter()
+            .map(|unit| BattleLineNetworkUnitMap {
+                unit_id: unit.id,
+                unit_name: unit.name,
+                settlement_points: settlement_points
+                    .get(&unit.id)
+                    .cloned()
+                    .unwrap_or_default(),
+                peleng_points: peleng_points
+                    .get(&unit.id)
+                    .cloned()
+                    .unwrap_or_default(),
+            })
+            .collect(),
+        total,
+        page_size: BATTLE_LINE_NETWORKS_PAGE_SIZE,
+    })
+}
+
+fn live_network_units_query(now: NaiveDateTime) -> Select<sigint_unit::Entity> {
+    sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_unit::Relation::SigintNetworkUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintNetwork.def(),
+        )
+        .filter(sigint_unit::Column::Active.eq(true))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        )
+        .group_by(sigint_unit::Column::Id)
+}
+
+async fn load_network_settlement_points<C>(
+    dbx: &C,
+    allowed_groups: &[String],
+    unit_ids: &[i64],
+    cutoff: NaiveDateTime,
+    now: NaiveDateTime,
+) -> anyhow::Result<BTreeMap<i64, Vec<BattleLineNetworkMapPoint>>>
+where
+    C: ConnectionTrait,
+{
+    if unit_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let ranked_points =
+        network_point_query(allowed_groups, unit_ids, cutoff, now)
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SigintInboxItemSettlement.def(),
+            )
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item_settlement::Relation::Settlement.def(),
+            )
+            .filter(settlement::Column::Lat.is_not_null())
+            .filter(settlement::Column::Lon.is_not_null())
+            .filter(settlement::Column::Lat.between(-90.0, 90.0))
+            .filter(settlement::Column::Lon.between(-180.0, 180.0))
+            .select_only()
+            .column(sigint_network_unit::Column::UnitId)
+            .column_as(settlement::Column::Lat, "lat")
+            .column_as(settlement::Column::Lon, "lon")
+            .column_as(
+                Expr::cust(
+                    r#"ROW_NUMBER() OVER (
+                    PARTITION BY "sigint_network_unit"."unit_id"
+                    ORDER BY MAX("sigint_inbox_item"."datetime") DESC,
+                             "settlement"."lat", "settlement"."lon"
+                )"#,
+                ),
+                "point_rank",
+            )
+            .group_by(sigint_network_unit::Column::UnitId)
+            .group_by(settlement::Column::Lat)
+            .group_by(settlement::Column::Lon)
+            .into_query();
+    load_bounded_unit_map_points(dbx, ranked_points)
+        .await
+        .c(h!())
+}
+
+async fn load_network_peleng_points<C>(
+    dbx: &C,
+    allowed_groups: &[String],
+    unit_ids: &[i64],
+    cutoff: NaiveDateTime,
+    now: NaiveDateTime,
+) -> anyhow::Result<BTreeMap<i64, Vec<BattleLineNetworkMapPoint>>>
+where
+    C: ConnectionTrait,
+{
+    if unit_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let ranked_points =
+        network_point_query(allowed_groups, unit_ids, cutoff, now)
+            .join(
+                JoinType::InnerJoin,
+                sigint_inbox_item::Relation::SigintPeleng.def(),
+            )
+            .filter(sigint_peleng::Column::Deleted.eq(false))
+            .filter(sigint_peleng::Column::Lat.between(-90.0, 90.0))
+            .filter(sigint_peleng::Column::Lng.between(-180.0, 180.0))
+            .select_only()
+            .column(sigint_network_unit::Column::UnitId)
+            .column_as(sigint_peleng::Column::Lat, "lat")
+            .column_as(sigint_peleng::Column::Lng, "lon")
+            .column_as(
+                Expr::cust(
+                    r#"ROW_NUMBER() OVER (
+                    PARTITION BY "sigint_network_unit"."unit_id"
+                    ORDER BY MAX("sigint_inbox_item"."datetime") DESC,
+                             "sigint_peleng"."lat", "sigint_peleng"."lng"
+                )"#,
+                ),
+                "point_rank",
+            )
+            .group_by(sigint_network_unit::Column::UnitId)
+            .group_by(sigint_peleng::Column::Lat)
+            .group_by(sigint_peleng::Column::Lng)
+            .into_query();
+    load_bounded_unit_map_points(dbx, ranked_points)
+        .await
+        .c(h!())
+}
+
+async fn load_bounded_unit_map_points<C>(
+    dbx: &C,
+    ranked_points: SelectStatement,
+) -> anyhow::Result<BTreeMap<i64, Vec<BattleLineNetworkMapPoint>>>
+where
+    C: ConnectionTrait,
+{
+    let ranked_points_alias = Alias::new("ranked_points");
+    let query = Query::select()
+        .columns([
+            (ranked_points_alias.clone(), Alias::new("unit_id")),
+            (ranked_points_alias.clone(), Alias::new("lat")),
+            (ranked_points_alias.clone(), Alias::new("lon")),
+        ])
+        .from_subquery(ranked_points, ranked_points_alias.clone())
+        .and_where(
+            Expr::col((ranked_points_alias, Alias::new("point_rank")))
+                .lte(BATTLE_LINE_NETWORKS_MAP_POINTS_PER_UNIT_LIMIT),
+        )
+        .to_owned();
+    let rows = UnitMapPointRow::find_by_statement(
+        dbx.get_database_backend().build(&query),
+    )
+    .all(dbx)
+    .await
+    .c(h!())?;
+    Ok(group_unit_map_points(rows))
+}
+
+fn network_point_query(
+    allowed_groups: &[String],
+    unit_ids: &[i64],
+    cutoff: NaiveDateTime,
+    now: NaiveDateTime,
+) -> Select<sigint_network_unit::Entity> {
+    sigint_network_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            sigint_network_unit::Relation::SigintNetwork.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_network::Relation::SigintInboxItemNetwork.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item_network::Relation::SigintInboxItem.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            sigint_inbox_item::Relation::SignalMessage.def(),
+        )
+        .filter(sigint_network_unit::Column::UnitId.is_in(unit_ids.to_vec()))
+        .filter(sigint_network::Column::Deleted.eq(false))
+        .filter(sigint_network::Column::ActiveTo.is_null())
+        .filter(
+            sigint_network::Column::ActiveFrom
+                .is_null()
+                .or(sigint_network::Column::ActiveFrom.lte(now)),
+        )
+        .filter(sigint_inbox_item::Column::Datetime.gte(cutoff))
+        .filter(sigint_inbox_item::Column::Datetime.lte(now))
+        .filter(signal_message::Column::Deleted.eq(false))
+        .filter(message_is_accessible(allowed_groups))
+}
+
+fn group_unit_map_points(
+    rows: Vec<UnitMapPointRow>,
+) -> BTreeMap<i64, Vec<BattleLineNetworkMapPoint>> {
+    let mut points = BTreeMap::<i64, Vec<_>>::new();
+    for row in rows {
+        if !is_valid_map_coordinate(row.lat, row.lon) {
+            continue;
+        }
+        points.entry(row.unit_id).or_default().push(
+            BattleLineNetworkMapPoint {
+                lat: row.lat,
+                lon: row.lon,
+            },
+        );
+    }
+    points
+}
+
+fn is_valid_map_coordinate(lat: f64, lon: f64) -> bool {
+    lat.is_finite()
+        && lon.is_finite()
+        && (-90.0..=90.0).contains(&lat)
+        && (-180.0..=180.0).contains(&lon)
 }
 
 fn message_is_accessible(allowed_groups: &[String]) -> SimpleExpr {
@@ -1090,7 +1395,10 @@ components as (
     from selected
     cross join lateral ST_Dump(selected.geometry) as dumped
 ), candidates as (
-    select candidate_index, lon, lat
+    select
+        candidate_index,
+        lon,
+        ST_SetSRID(ST_MakePoint(lon, lat), 4326) as geometry
     from unnest(
         ${candidate_indices_placeholder}::bigint[],
         ${longitudes_placeholder}::double precision[],
@@ -1099,13 +1407,22 @@ components as (
 )
 select
     candidates.candidate_index,
-    min(ST_Distance(
-        ST_SetSRID(ST_MakePoint(candidates.lon, candidates.lat), 4326)::geography,
-        components.geometry::geography
-    )) as distance_m
+    matched.distance_m,
+    candidates.lon < matched.closest_lon as is_west
 from candidates
-cross join components
-group by candidates.candidate_index
+cross join lateral (
+    select
+        ST_Distance(
+            candidates.geometry::geography,
+            components.geometry::geography
+        ) as distance_m,
+        ST_X(
+            ST_ClosestPoint(components.geometry, candidates.geometry)
+        ) as closest_lon
+    from components
+    order by distance_m, ST_AsEWKB(components.geometry)
+    limit 1
+) matched
 order by distance_m, candidates.candidate_index
         "#
     );
@@ -1122,6 +1439,7 @@ order by distance_m, candidates.candidate_index
         .map(|row| BattleLineCandidateDistance {
             candidate_index: row.candidate_index as usize,
             distance_m: row.distance_m,
+            is_west: row.is_west,
         })
         .collect())
 }
@@ -1243,10 +1561,11 @@ where
     Ok(group_lengths
         .into_iter()
         .map(|group_length| {
-            let mut group =
-                drafts.by_ref().take(group_length).collect::<Vec<_>>();
-            apply_anchor_resolution(&mut group);
-            group.into_iter().map(location_result_from_draft).collect()
+            drafts
+                .by_ref()
+                .take(group_length)
+                .map(location_result_from_draft)
+                .collect()
         })
         .collect())
 }
@@ -1272,7 +1591,6 @@ where
             location,
             candidates,
             battle_line_distances: BTreeMap::new(),
-            battle_line_match: None,
             chosen_candidate_index: None,
             invalid_aor_ids: vec![],
         })
@@ -1537,81 +1855,12 @@ where
         let draft = drafts.get_mut(*location_index).c(h!())?;
         draft
             .battle_line_distances
-            .insert(*candidate_index, distance.distance_m);
-        if draft.battle_line_match.is_none() {
-            draft.battle_line_match = Some(BattleLineMatch {
-                candidate_index: *candidate_index,
-                distance_m: distance.distance_m,
-            });
+            .insert(*candidate_index, distance);
+        if draft.chosen_candidate_index.is_none() {
             draft.chosen_candidate_index = Some(*candidate_index);
         }
     }
     Ok(())
-}
-
-fn apply_anchor_resolution(drafts: &mut [LocationResolutionDraft]) {
-    let Some((anchor_index, anchor_match)) = drafts
-        .iter()
-        .enumerate()
-        .filter_map(|(index, draft)| {
-            draft
-                .battle_line_match
-                .as_ref()
-                .map(|matched| (index, matched))
-        })
-        .max_by(|(left_index, left), (right_index, right)| {
-            left.distance_m.total_cmp(&right.distance_m).then_with(|| {
-                drafts[*right_index]
-                    .location
-                    .cmp(&drafts[*left_index].location)
-            })
-        })
-    else {
-        return;
-    };
-    let anchor_candidate_index = anchor_match.candidate_index;
-    let Some(anchor_coordinate) = drafts
-        .get(anchor_index)
-        .and_then(|draft| draft.candidates.get(anchor_candidate_index))
-        .map(|candidate| candidate.coordinate.clone())
-    else {
-        return;
-    };
-    for (index, draft) in drafts.iter_mut().enumerate() {
-        if index == anchor_index {
-            draft.chosen_candidate_index = Some(anchor_candidate_index);
-            continue;
-        }
-        draft.chosen_candidate_index =
-            closest_candidate_to_anchor(&draft.candidates, &anchor_coordinate);
-    }
-}
-
-fn closest_candidate_to_anchor(
-    candidates: &[BattleLineSettlementCandidate],
-    anchor_coordinate: &BattleLineCoordinate,
-) -> Option<usize> {
-    candidates
-        .iter()
-        .enumerate()
-        .map(|(index, candidate)| {
-            (
-                index,
-                candidate.settlement_id,
-                distance_between_coordinates_m(
-                    &candidate.coordinate,
-                    anchor_coordinate,
-                ),
-            )
-        })
-        .min_by(
-            |(_, left_id, left_distance), (_, right_id, right_distance)| {
-                left_distance
-                    .total_cmp(right_distance)
-                    .then_with(|| left_id.cmp(right_id))
-            },
-        )
-        .map(|(index, _, _)| index)
 }
 
 fn location_result_from_draft(
@@ -1620,12 +1869,23 @@ fn location_result_from_draft(
     let (chosen_settlement_id, distance_m) = draft
         .chosen_candidate_index
         .and_then(|candidate_index| {
-            draft.candidates.get(candidate_index).map(|candidate| {
-                (
-                    Some(candidate.settlement_id),
-                    draft.battle_line_distances.get(&candidate_index).copied(),
-                )
-            })
+            let candidate = draft.candidates.get(candidate_index)?;
+            let matched = draft.battle_line_distances.get(&candidate_index)?;
+            let max_distance_m = settlement_max_distance_m(matched.is_west);
+            if matched.distance_m > max_distance_m {
+                warn!(
+                    "Skipping incorrect inbox settlement mapping: location={:?}, settlement_id={}, settlement={:?}, region={:?}, side={}, distance_m={:.0}, max_distance_m={:.0}",
+                    draft.location,
+                    candidate.settlement_id,
+                    candidate.name,
+                    candidate.region,
+                    if matched.is_west { "west" } else { "east" },
+                    matched.distance_m,
+                    max_distance_m,
+                );
+                return Some((None, Some(matched.distance_m)));
+            }
+            Some((Some(candidate.settlement_id), Some(matched.distance_m)))
         })
         .unwrap_or((None, None));
     BattleLineLocationResult {
@@ -1637,22 +1897,16 @@ fn location_result_from_draft(
     }
 }
 
-fn normalize_settlement_name(name: &str) -> String {
-    name.trim().to_uppercase().replace(['\'', 'ʼ', '`'], "’")
+fn settlement_max_distance_m(is_west: bool) -> f64 {
+    if is_west {
+        BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS
+    } else {
+        BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
+    }
 }
 
-fn distance_between_coordinates_m(
-    left: &BattleLineCoordinate,
-    right: &BattleLineCoordinate,
-) -> f64 {
-    let left_lat = left.lat.to_radians();
-    let right_lat = right.lat.to_radians();
-    let lat_delta = (right.lat - left.lat).to_radians();
-    let lon_delta = (right.lon - left.lon).to_radians();
-    let haversine = (lat_delta / 2.0).sin().powi(2)
-        + left_lat.cos() * right_lat.cos() * (lon_delta / 2.0).sin().powi(2);
-    2.0 * BATTLE_LINE_EARTH_RADIUS_METERS
-        * haversine.clamp(0.0, 1.0).sqrt().asin()
+fn normalize_settlement_name(name: &str) -> String {
+    name.trim().to_uppercase().replace(['\'', 'ʼ', '`'], "’")
 }
 
 async fn read_battle_line_state<C>(dbx: &C) -> anyhow::Result<BattleLineState>
@@ -2088,7 +2342,7 @@ insert into battle_line_version
     (geometry, source_file_name, uploaded_by_login_id, source_kind, source_sha256)
 select
     ST_GeomFromText('GEOMETRYCOLLECTION(LINESTRING(0 0,10 0))', 4326),
-    'anchor-test.kml',
+    'independent-resolution-test.kml',
     id,
     'admin_upload',
     $1
@@ -2127,6 +2381,311 @@ values (
         .await
         .c(h!())?;
         Ok(aor_id)
+    }
+
+    async fn insert_network_map_item(
+        txn: &DatabaseTransaction,
+        group_master_key: &str,
+        network_id: i64,
+        settlement_id: i32,
+        datetime: NaiveDateTime,
+        peleng: (f64, f64),
+    ) -> anyhow::Result<()> {
+        let message = crate::functest::tests::mk_signal_message(
+            txn,
+            signal_message::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        crate::functest::tests::mk_signal_message_group(
+            txn,
+            signal_message_group::ActiveModel {
+                signal_message_id: Set(message.id),
+                group_master_key: Set(Some(group_master_key.to_string())),
+                datasource_group_id: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        crate::functest::tests::mk_sigint_inbox_item(
+            txn,
+            sigint_inbox_item::ActiveModel {
+                id: Set(message.id),
+                datetime: Set(Some(datetime)),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        crate::functest::tests::mk_sigint_inbox_item_network(
+            txn,
+            sigint_inbox_item_network::ActiveModel {
+                sigint_inbox_item_id: Set(message.id),
+                sigint_network_id: Set(network_id),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        sigint_inbox_item_settlement::ActiveModel {
+            item_id: Set(message.id),
+            settlement_text: Set(format!("settlement-{settlement_id}")),
+            settlement_id: Set(Some(settlement_id)),
+            is_undefined: Set(None),
+            ..Default::default()
+        }
+        .insert(txn)
+        .await
+        .c(h!())?;
+        crate::functest::tests::mk_sigint_peleng(
+            txn,
+            sigint_peleng::ActiveModel {
+                source_inbox_item_id: Set(message.id),
+                lat: Set(peleng.0),
+                lng: Set(peleng.1),
+                ..Default::default()
+            },
+        )
+        .await
+        .c(h!())?;
+        Ok(())
+    }
+
+    // Regression: https://github.com/echoua/echo/issues/2287
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn paginates_units_by_newest_live_network_and_maps_live_points() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let now = Utc::now().naive_utc();
+        let group = crate::functest::tests::mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let other_group = crate::functest::tests::mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let mut units = Vec::new();
+        for index in 0..7 {
+            units.push(
+                crate::functest::tests::mk_sigint_unit(
+                    &txn,
+                    sigint_unit::ActiveModel {
+                        name: Set(format!("#2287 map unit {index}")),
+                        created_at: Set(now
+                            + chrono::Duration::days(1)
+                            + chrono::Duration::seconds(index)),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            );
+        }
+        let network = crate::functest::tests::mk_sigint_network(
+            &txn,
+            sigint_network::ActiveModel {
+                name: Set("#2287 map network".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for unit in &units[..6] {
+            crate::functest::tests::mk_sigint_network_unit(
+                &txn,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(network.id),
+                    unit_id: Set(unit.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        let newest_network = crate::functest::tests::mk_sigint_network(
+            &txn,
+            sigint_network::ActiveModel {
+                name: Set("#2287 newest map network".to_string()),
+                created_at: Set(now + chrono::Duration::days(2)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        crate::functest::tests::mk_sigint_network_unit(
+            &txn,
+            sigint_network_unit::ActiveModel {
+                network_id: Set(newest_network.id),
+                unit_id: Set(units[0].id),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let archived_network = crate::functest::tests::mk_sigint_network(
+            &txn,
+            sigint_network::ActiveModel {
+                name: Set("#2287 archived map network".to_string()),
+                created_at: Set(now + chrono::Duration::days(3)),
+                active_to: Set(Some(now)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        for unit in [&units[0], &units[6]] {
+            crate::functest::tests::mk_sigint_network_unit(
+                &txn,
+                sigint_network_unit::ActiveModel {
+                    network_id: Set(archived_network.id),
+                    unit_id: Set(unit.id),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        }
+        insert_test_settlement(&txn, 2_287_301, "Recent", 48.1, 35.2)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_302, "Old", 47.1, 34.2)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_303, "Inaccessible", 46.1, 33.2)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_304, "Invalid", 95.0, 190.0)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_305, "Future", 45.1, 32.2)
+            .await
+            .unwrap();
+        insert_test_settlement(&txn, 2_287_306, "Archived", 44.1, 31.2)
+            .await
+            .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_301,
+            now - chrono::Duration::days(1),
+            (48.3, 35.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_301,
+            now - chrono::Duration::days(1),
+            (48.3, 35.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &other_group.master_key,
+            network.id,
+            2_287_303,
+            now - chrono::Duration::days(1),
+            (46.3, 33.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_304,
+            now - chrono::Duration::days(1),
+            (95.0, 190.0),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_302,
+            now - chrono::Duration::days(8),
+            (47.3, 34.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            network.id,
+            2_287_305,
+            now + chrono::Duration::days(1),
+            (45.3, 32.4),
+        )
+        .await
+        .unwrap();
+        insert_network_map_item(
+            &txn,
+            &group.master_key,
+            archived_network.id,
+            2_287_306,
+            now - chrono::Duration::days(1),
+            (44.3, 31.4),
+        )
+        .await
+        .unwrap();
+
+        let first = read_network_maps(&txn, &[group.master_key], 1, now)
+            .await
+            .unwrap();
+        assert_eq!(first.page_size, 5);
+        assert_eq!(first.items.len(), 5);
+        assert_eq!(
+            first
+                .items
+                .iter()
+                .map(|item| item.unit_id)
+                .collect::<Vec<_>>(),
+            vec![
+                units[0].id,
+                units[5].id,
+                units[4].id,
+                units[3].id,
+                units[2].id,
+            ]
+        );
+        assert_eq!(
+            first.items[0].settlement_points,
+            vec![BattleLineNetworkMapPoint {
+                lat: 48.1,
+                lon: 35.2,
+            }]
+        );
+        assert_eq!(
+            first.items[0].peleng_points,
+            vec![BattleLineNetworkMapPoint {
+                lat: 48.3,
+                lon: 35.4,
+            }]
+        );
+        let second = read_network_maps(&txn, &[], 2, now).await.unwrap();
+        assert_eq!(second.items[0].unit_id, units[1].id);
+        assert!(second.total >= 6);
+        txn.rollback().await.unwrap();
     }
 
     #[test]
@@ -2432,16 +2991,16 @@ values (
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn resolves_multiple_locations_with_remote_battle_line_anchor() {
+    async fn resolves_ambiguous_locations_independently_2287() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
         let txn = dbx.begin().await.unwrap();
         let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
         let suffix = uuid::Uuid::now_v7();
-        let anchor_name = format!("#2287 ANCHOR {suffix}");
+        let unique_name = format!("#2287 UNIQUE {suffix}");
         let repeated_name = format!("#2287 SAME {suffix}");
-        insert_test_settlement(&txn, 2_287_211, &anchor_name, 0.10, 1.0)
+        insert_test_settlement(&txn, 2_287_211, &unique_name, 0.10, 1.0)
             .await
             .unwrap();
         insert_test_settlement(&txn, 2_287_212, &repeated_name, 0.01, 9.0)
@@ -2455,7 +3014,7 @@ values (
             vec![
                 crate::location::types::SettlementDetails {
                     id: Some(2_287_211),
-                    name: anchor_name.to_uppercase(),
+                    name: unique_name.to_uppercase(),
                     coords: Some((0.10, 1.0)),
                     ..Default::default()
                 },
@@ -2477,16 +3036,80 @@ values (
         let results = resolve_locations_to_settlements_with_db(
             &txn,
             settlements,
-            vec![anchor_name, repeated_name],
+            vec![unique_name, repeated_name],
             &[aor_id],
         )
         .await
         .unwrap();
 
         assert_eq!(results[0].chosen_settlement_id, Some(2_287_211));
-        assert_eq!(results[1].chosen_settlement_id, Some(2_287_213));
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_212));
         assert!(
-            results[1].distance_m.unwrap() > results[0].distance_m.unwrap()
+            results[1].distance_m.unwrap() < results[0].distance_m.unwrap()
+        );
+        txn.rollback().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_distant_settlements_by_battle_line_side_2287() {
+        let config =
+            crate::config::read_config(crate::types::Mode::Test).unwrap();
+        let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
+        let txn = dbx.begin().await.unwrap();
+        let aor_id = insert_test_battle_line_segment(&txn).await.unwrap();
+        let suffix = uuid::Uuid::now_v7();
+        let west_name = format!("#2287 WEST {suffix}");
+        let east_name = format!("#2287 EAST {suffix}");
+        let far_east_name = format!("#2287 FAR EAST {suffix}");
+        let test_settlements = [
+            (2_287_216, &west_name, 0.0, -0.7),
+            (2_287_217, &east_name, 0.0, 10.7),
+            (2_287_218, &far_east_name, 0.0, 11.4),
+        ];
+        for (id, name, lat, lon) in &test_settlements {
+            insert_test_settlement(&txn, *id, name, *lat, *lon)
+                .await
+                .unwrap();
+        }
+        let settlements = test_settlements_for_aor(
+            aor_id,
+            test_settlements
+                .into_iter()
+                .map(|(id, name, lat, lon)| {
+                    crate::location::types::SettlementDetails {
+                        id: Some(id),
+                        name: name.to_uppercase(),
+                        coords: Some((lat, lon)),
+                        ..Default::default()
+                    }
+                })
+                .collect(),
+        );
+
+        let results = resolve_locations_to_settlements_with_db(
+            &txn,
+            settlements,
+            vec![west_name, east_name, far_east_name],
+            &[aor_id],
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(results[0].chosen_settlement_id, None);
+        assert!(
+            results[0].distance_m.unwrap()
+                > BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_WEST_METERS
+        );
+        assert_eq!(results[1].chosen_settlement_id, Some(2_287_217));
+        assert!(
+            results[1].distance_m.unwrap()
+                < BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
+        );
+        assert_eq!(results[2].chosen_settlement_id, None);
+        assert!(
+            results[2].distance_m.unwrap()
+                > BATTLE_LINE_SETTLEMENT_MAX_DISTANCE_EAST_METERS
         );
         txn.rollback().await.unwrap();
     }
@@ -2748,8 +3371,7 @@ where aor_id = $1
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn delta_force_always_imports_new_version_and_keeps_settlement_results(
-    ) {
+    async fn delta_force_import_keeps_peleng_distances_and_settlements() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -2825,6 +3447,16 @@ where id = $1
         .insert(&txn)
         .await
         .unwrap();
+        let peleng = crate::functest::tests::mk_sigint_peleng(
+            &txn,
+            sigint_peleng::ActiveModel {
+                source_inbox_item_id: Set(item_id),
+                battle_line_distance: Set(Some(7)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let settlement_link = sigint_inbox_item_settlement::ActiveModel {
             id: NotSet,
             created_at: NotSet,
@@ -2868,6 +3500,15 @@ where id = $1
         assert_eq!(
             active_battle_line_id(&txn).await.unwrap(),
             Some(version_id)
+        );
+        assert_eq!(
+            sigint_peleng::Entity::find_by_id(peleng.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .battle_line_distance,
+            Some(7)
         );
         assert!(battle_line_version::Entity::find_by_id(initial_version_id)
             .one(&txn)

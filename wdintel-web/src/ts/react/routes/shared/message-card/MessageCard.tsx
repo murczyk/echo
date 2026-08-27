@@ -39,6 +39,7 @@ import {
 } from '../../rer-duty-neo/utils';
 import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
+import type { MessageTextPreviewLineLimit } from '../../../services/api/user-settings';
 
 dayjs.extend(customParseFormat);
 
@@ -139,6 +140,8 @@ export type MessageCardProps = {
    * Defaults to true for `displayMode="duty"`.
    */
   collapseMediaPreviews?: boolean;
+  mediaSummaryEnabled?: boolean;
+  messageTextPreviewLines?: MessageTextPreviewLineLimit;
 };
 
 // Performance boundary: this component is repeated throughout Duty feeds.
@@ -194,6 +197,8 @@ function MessageCardComponent({
   analysisCallsignActions,
   showCallsignAddForm = false,
   collapseMediaPreviews,
+  mediaSummaryEnabled = true,
+  messageTextPreviewLines = 20,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
   const compactLayout = feedCount >= 3;
@@ -358,6 +363,8 @@ function MessageCardComponent({
           onOpenPointsOnMap={onOpenPointsOnMap}
           onAddPointHighlightBlacklist={onAddPointHighlightBlacklist}
           collapseMediaPreviews={collapseMediaPreviews ?? false}
+          mediaSummaryEnabled={mediaSummaryEnabled}
+          messageTextPreviewLines={messageTextPreviewLines}
         />
       </MessageCardRoot>
     </li>

@@ -9,6 +9,7 @@ use crate::rer_importer::report_chunking::{
 use crate::rer_importer::reports::util;
 use crate::rer_importer::reports::util::*;
 use crate::rer_importer::types::InboxMessagesReq;
+use crate::sigint::sender::preferred_group_sender_expr;
 use crate::types::*;
 use anyhow::Context;
 use chrono::prelude::*;
@@ -235,6 +236,12 @@ pub async fn report_docx_kind_reo(
     report
         .undefined_networks
         .sort_by_key(|x| -(x.activity.seances_qty as i64));
+    let record_count = report
+        .hostile_networks
+        .len()
+        .saturating_add(report.undefined_networks.len());
+    crate::report_history::ensure_report_record_count(record_count)
+        .context(h!())?;
     info!("sorting networks took: {:?}", start.elapsed());
 
     let network_summary_total =
@@ -412,8 +419,8 @@ async fn load_reo_group_master_keys(
         if let Some(selected_senders) = req.selected_senders.as_ref() {
             if !selected_senders.is_empty() {
                 query = query.filter(
-                    signal_message_group::Column::Sender
-                        .eq_any(selected_senders.clone()),
+                    preferred_group_sender_expr(None)
+                        .is_in(selected_senders.clone()),
                 );
             }
         }

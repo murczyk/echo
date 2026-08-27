@@ -979,6 +979,8 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::transcriber::delete_instance)
             .service(crate::transcriber::check_instance)
             .service(crate::transcriber::queue_status)
+            .service(crate::transcriber::list_results)
+            .service(crate::transcriber::result_media)
             .service(crate::transcriber::message_transcriptions)
             .service(crate::messenger::missing_message::echo_missing_message_list)
             .service(crate::messenger::missing_message::echo_missing_message_counts)
@@ -1108,6 +1110,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::delete_unit_duplicate)
             .service(crate::sigint::unit::units_search)
             .service(crate::sigint::unit::attachment::unit_details)
+            .service(crate::sigint::unit::changelog::unit_changelog)
             .service(crate::sigint::unit::labels::create_unit_label)
             .service(crate::sigint::unit::labels::delete_unit_label)
             .service(
@@ -1128,6 +1131,9 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::orbit::unit_orbit_children)
             .service(crate::sigint::unit::orbit::list_unit_duplicates)
             .service(crate::sigint::unit::orbit::list_inconsistent_units)
+            .service(crate::sigint::unit::names::list_unit_name_reviews)
+            .service(crate::sigint::unit::names::update_unit_name)
+            .service(crate::sigint::unit::names::confirm_unit_name)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)
             .service(
                 crate::sigint::unit::orbit::create_unit_duplicate_candidates,
@@ -1232,6 +1238,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::battle_line::test_battle_line)
             .service(crate::battle_line::list_unlinked_inbox_items)
             .service(crate::battle_line::list_unresolved_locations)
+            .service(crate::battle_line::list_network_maps)
             .service(crate::sigint::etalonka::task::report_networks_task_launch)
             .service(crate::sigint::etalonka::task::report_networks_batch_id_task_launch)
             .service(crate::sigint::source::list_sources)

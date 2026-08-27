@@ -1673,6 +1673,9 @@ pub mod tests {
         if out.updated_at == NotSet {
             out.updated_at = Set(None);
         }
+        if out.battle_line_distance == NotSet {
+            out.battle_line_distance = Set(None);
+        }
         Ok(out)
     }
 

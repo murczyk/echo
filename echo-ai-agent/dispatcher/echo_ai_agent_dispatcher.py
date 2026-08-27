@@ -18,8 +18,10 @@ from typing import Any, NoReturn
 INSTANCE_PREFIX = "echo-ai-agent-"
 TEMPLATE_NAME = "echo-ai-agent-019fc7f7-9770-7f83-9c1a-211af29b02e6"
 PROFILE_NAME = "echo-ai-agent"
-HARNESS_RELEASE = "2026.08.22.1"
-COMPATIBLE_RUNNER_RELEASES = frozenset({HARNESS_RELEASE, "2026.08.05.2"})
+HARNESS_RELEASE = "2026.08.25.2"
+COMPATIBLE_RUNNER_RELEASES = frozenset(
+    {HARNESS_RELEASE, "2026.08.25.1", "2026.08.22.1", "2026.08.05.2"}
+)
 RUNNER_PROTOCOL_VERSION = 1
 NODE_VERSION = "24.19.0"
 PI_VERSION = "0.83.0"
@@ -348,6 +350,7 @@ def op_preflight(namespace: str, body: dict[str, Any]) -> dict[str, Any]:
     return {
         "namespace": namespace,
         "incus": server,
+        "harness_release": HARNESS_RELEASE,
         "template_id": template_id,
         "template_name": template_name,
         "template_ready": True,

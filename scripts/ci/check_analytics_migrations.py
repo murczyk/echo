@@ -123,6 +123,31 @@ def has_add_column(contents: str, table: str) -> bool:
     ) is not None
 
 
+def has_only_add_column_alters(contents: str, table: str) -> bool:
+    up_contents = re.split(r"\basync\s+fn\s+down\b", contents, maxsplit=1)[0]
+    schema, relation = table.split(".", 1)
+    if schema == "public":
+        qualified_table = rf"(?:public\s*\.\s*)?{re.escape(relation)}"
+    else:
+        qualified_table = rf"{re.escape(schema)}\s*\.\s*{re.escape(relation)}"
+    statements = re.findall(
+        rf"\balter\s+table\s+(?:if\s+exists\s+)?{qualified_table}\b(?P<body>[^;]*)",
+        up_contents,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not statements:
+        return False
+    incompatible = re.compile(
+        r"\b(?:alter|drop|rename)\s+(?:column|constraint|to)\b|\badd\s+constraint\b",
+        re.IGNORECASE,
+    )
+    return all(
+        re.match(r"\s*add\s+column\b", statement, re.IGNORECASE)
+        and not incompatible.search(statement)
+        for statement in statements
+    )
+
+
 def load_manifest() -> dict[str, Any]:
     manifest = json.loads(MANIFEST_PATH.read_text())
     if set(manifest) != {"migrations", "dependencies"}:
@@ -163,11 +188,28 @@ def validate_change(
         if strategy not in STRATEGIES:
             errors.append(f"{key}: invalid strategy for {table}: {strategy!r}")
             continue
+        targeted_resnapshot = change.get("targeted_resnapshot", False)
+        if not isinstance(targeted_resnapshot, bool):
+            errors.append(
+                f"{key}: {table} has a non-boolean targeted_resnapshot flag"
+            )
+            targeted_resnapshot = False
+        if targeted_resnapshot and strategy != "replicated_snapshot":
+            errors.append(
+                f"{key}: {table} uses targeted_resnapshot without replicated_snapshot"
+            )
         operations = {item.operation for item in detected if item.table == table}
         if strategy == "excluded" and table not in exclusions:
             errors.append(f"{key}: {table} uses excluded but is not in canonical exclusions")
-        if strategy == "replicated_snapshot" and "create" not in operations:
-            errors.append(f"{key}: {table} uses replicated_snapshot without CREATE TABLE")
+        if (
+            strategy == "replicated_snapshot"
+            and "create" not in operations
+            and not targeted_resnapshot
+        ):
+            errors.append(
+                f"{key}: {table} uses replicated_snapshot without CREATE TABLE "
+                "or targeted_resnapshot"
+            )
         if strategy == "cdc_backfill":
             if "alter" not in operations or not has_add_column(contents, table):
                 errors.append(f"{key}: {table} uses cdc_backfill without ADD COLUMN")
@@ -188,10 +230,14 @@ def validate_change(
                 errors.append(
                     f"{key}: {table} uses cdc_backfill without reviewed backfill DML"
                 )
-        if strategy == "empty_table_resnapshot":
-            if "alter" not in operations or not has_add_column(contents, table):
+        if strategy == "empty_table_resnapshot" or targeted_resnapshot:
+            if (
+                "alter" not in operations
+                or not has_add_column(contents, table)
+                or not has_only_add_column_alters(contents, table)
+            ):
                 errors.append(
-                    f"{key}: {table} uses empty_table_resnapshot without ADD COLUMN"
+                    f"{key}: {table} uses targeted resnapshot without ADD COLUMN-only DDL"
                 )
 
     detected_tables = {change.table for change in detected}
@@ -307,9 +353,11 @@ def validate_dependency_changes(
                     "use mirror_resync because zero-row DML cannot propagate "
                     "the schema to ClickHouse"
                 )
-            if strategy == "empty_table_resnapshot":
+            if strategy == "empty_table_resnapshot" or change.get(
+                "targeted_resnapshot", False
+            ):
                 errors.append(
-                    f"{key}: {table} uses empty_table_resnapshot in a dependency "
+                    f"{key}: {table} uses {strategy} in a dependency "
                     "declaration where additive DDL cannot be verified"
                 )
     return errors, changed_keys
@@ -327,6 +375,38 @@ def snapshot_changed_tables(before_path: Path, after_path: Path) -> set[str]:
     return tables
 
 
+def non_additive_catalog_tables(
+    before_path: Path, after_path: Path, targeted_tables: set[str]
+) -> set[str]:
+    before = before_path.read_text().splitlines()
+    after = set(after_path.read_text().splitlines())
+    return {
+        table
+        for table in targeted_tables
+        if any(
+            line.startswith(f"{table}\t") and line not in after
+            for line in before
+        )
+    }
+
+
+def non_nullable_added_catalog_tables(
+    before_path: Path, after_path: Path, targeted_tables: set[str]
+) -> set[str]:
+    before = set(before_path.read_text().splitlines())
+    invalid: set[str] = set()
+    for line in after_path.read_text().splitlines():
+        fields = line.split("\t")
+        if (
+            len(fields) >= 4
+            and fields[0] in targeted_tables
+            and line not in before
+            and fields[3] == "t"
+        ):
+            invalid.add(fields[0])
+    return invalid
+
+
 def declared_tables(
     manifest: dict[str, Any], migration_keys: list[str], dependency_keys: list[str]
 ) -> set[str]:
@@ -341,6 +421,41 @@ def declared_tables(
                 continue
             for change in declaration.get("changes", []):
                 if isinstance(change, dict) and isinstance(change.get("table"), str):
+                    tables.add(change["table"])
+    return tables
+
+
+def targeted_resnapshot_tables(
+    manifest: dict[str, Any],
+    migration_keys: list[str],
+    dependency_keys: list[str],
+    nonempty_only: bool = False,
+) -> set[str]:
+    tables: set[str] = set()
+    for section, keys in (
+        (manifest["migrations"], migration_keys),
+        (manifest["dependencies"], dependency_keys),
+    ):
+        for key in keys:
+            declaration = section.get(key)
+            if not isinstance(declaration, dict):
+                continue
+            for change in declaration.get("changes", []):
+                if (
+                    isinstance(change, dict)
+                    and (
+                        (
+                            not nonempty_only
+                            and change.get("strategy")
+                            == "empty_table_resnapshot"
+                        )
+                        or (
+                            change.get("strategy") == "replicated_snapshot"
+                            and change.get("targeted_resnapshot") is True
+                        )
+                    )
+                    and isinstance(change.get("table"), str)
+                ):
                     tables.add(change["table"])
     return tables
 
@@ -386,9 +501,10 @@ def check(
     if (catalog_before is None) != (catalog_after is None):
         errors.append("both catalog snapshots must be supplied together")
     elif catalog_before is not None and catalog_after is not None:
+        migration_keys = [key for key, _, _ in migrations]
         actual = snapshot_changed_tables(catalog_before, catalog_after)
         declared = declared_tables(
-            manifest, [key for key, _, _ in migrations], dependency_keys
+            manifest, migration_keys, dependency_keys
         )
         undeclared, unchanged_but_declared = catalog_differences(
             actual, declared, migrations
@@ -398,6 +514,35 @@ def check(
                 "database catalog changes differ from the analytics impact manifest "
                 f"(undeclared={sorted(undeclared)}, "
                 f"unchanged_but_declared={sorted(unchanged_but_declared)})"
+            )
+        non_additive = non_additive_catalog_tables(
+            catalog_before,
+            catalog_after,
+            targeted_resnapshot_tables(
+                manifest,
+                migration_keys,
+                dependency_keys,
+            ),
+        )
+        if non_additive:
+            errors.append(
+                "targeted table resnapshot requires additive-only catalog changes "
+                f"(non_additive={sorted(non_additive)})"
+            )
+        non_nullable = non_nullable_added_catalog_tables(
+            catalog_before,
+            catalog_after,
+            targeted_resnapshot_tables(
+                manifest,
+                migration_keys,
+                dependency_keys,
+                nonempty_only=True,
+            ),
+        )
+        if non_nullable:
+            errors.append(
+                "non-empty table resnapshot requires nullable added columns "
+                f"(non_nullable={sorted(non_nullable)})"
             )
     return errors
 
