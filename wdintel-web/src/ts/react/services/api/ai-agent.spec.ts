@@ -16,7 +16,9 @@ vi.mock('./client', () => ({
 import {
   cancelAiAgentRequest,
   getAiAgentAuditRequest,
+  getAiAgentSettings,
   saveAiAgentDispatcher,
+  saveAiAgentSettings,
   streamAiAgentEvents,
   testAiAgentDispatcher,
   updateAiAgentConversation,
@@ -30,6 +32,58 @@ afterEach(() => {
 });
 
 describe('AI agent API mapping', () => {
+  it('round-trips provider runtime profiles for allowed engines', async () => {
+    const response = {
+      featureEnabled: true,
+      defaultAiEngineId: 'sol',
+      allowedAiEngineIds: ['sol'],
+      providerRuntimeProfiles: [
+        {
+          aiEngineId: 'sol',
+          contextWindowTokens: 1_050_000,
+          maxOutputTokens: 65_536,
+          compactionReserveTokens: 98_304,
+          compactionKeepRecentTokens: 49_152,
+        },
+      ],
+      templateLoginId: 'template',
+      reviewerAiEngineId: null,
+      securityReviewEnabled: false,
+      mattermostChatEnabled: false,
+      hasMattermostWebhook: false,
+    };
+    mocks.getJson.mockResolvedValue(response);
+    mocks.postJson.mockResolvedValue(response);
+
+    const settings = await getAiAgentSettings();
+    await saveAiAgentSettings({
+      ...settings,
+      providerRuntimeProfiles: [
+        ...settings.providerRuntimeProfiles,
+        {
+          aiEngineId: 'not-allowed',
+          contextWindowTokens: 131_072,
+          maxOutputTokens: 16_384,
+          compactionReserveTokens: 32_768,
+          compactionKeepRecentTokens: 16_384,
+        },
+      ],
+    });
+
+    expect(mocks.postJson).toHaveBeenCalledWith('/api/admin/ai-agent/settings', {
+      featureEnabled: true,
+      defaultAiEngineId: 'sol',
+      allowedAiEngineIds: ['sol'],
+      providerRuntimeProfiles: response.providerRuntimeProfiles,
+      templateLoginId: 'template',
+      reviewerAiEngineId: null,
+      securityReviewEnabled: false,
+      mattermostChatEnabled: false,
+      mattermostWebhookUrl: null,
+      clearMattermostWebhook: false,
+    });
+  });
+
   it('returns the authoritative state from cancellation', async () => {
     mocks.postJson.mockResolvedValue({ state: 'completed' });
 
@@ -51,7 +105,7 @@ describe('AI agent API mapping', () => {
         prompt: 'Запит',
         response: 'Відповідь',
         state: 'completed',
-        error: null,
+        error: 'runner release mismatch',
         queuedAt: 1_700_000_000_000,
         startedAt: 1_700_000_001_000,
         completedAt: 1_700_000_002_000,
@@ -130,6 +184,7 @@ describe('AI agent API mapping', () => {
       reviewCategories: ['route-probing'],
       reviewAttemptCount: 2,
       reviewLastError: null,
+      error: 'runner release mismatch',
       alertState: 'failed',
       alertAttemptCount: 3,
       alertLastError: 'Mattermost HTTP 503',

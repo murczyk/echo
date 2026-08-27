@@ -153,6 +153,19 @@ pub struct AiAgentAdminSettingsItem {
     pub mattermost_chat_enabled: bool,
     pub has_mattermost_webhook: bool,
     pub allowed_ai_engine_ids: Vec<String>,
+    pub provider_runtime_profiles: Vec<AiAgentProviderRuntimeProfileItem>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AiAgentProviderRuntimeProfileItem {
+    pub ai_engine_id: String,
+    pub context_window_tokens: i32,
+    pub max_output_tokens: i32,
+    pub compaction_reserve_tokens: i32,
+    pub compaction_keep_recent_tokens: i32,
 }
 
 #[derive(
@@ -169,6 +182,7 @@ pub struct AiAgentAdminSettingsUpdateReq {
     pub mattermost_webhook_url: Option<String>,
     pub clear_mattermost_webhook: bool,
     pub allowed_ai_engine_ids: Vec<String>,
+    pub provider_runtime_profiles: Vec<AiAgentProviderRuntimeProfileItem>,
 }
 
 #[derive(

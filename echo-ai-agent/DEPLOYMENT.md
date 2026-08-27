@@ -116,13 +116,14 @@ Regular Echo packages target the Ubuntu 22.04 runtime and are built on
 `echo-build-deb13-main` for `wdintel-rs`; that builder is reserved for Debian
 13 workloads such as ClickHouse and PeerDB.
 
-### Roll out `HARNESS_RELEASE=2026.08.22.1`
+### Roll out `HARNESS_RELEASE=2026.08.25.2`
 
 This shared-host rollout is staged by namespace. The new dispatcher accepts
-existing `2026.08.05.2` runners during the transition, but creates new
-containers only from the `2026.08.22.1` template. The new runner still accepts
-the old backend's `json` request kinds; the new typed request kinds require the
-new runner.
+existing `2026.08.25.1`, `2026.08.22.1`, and `2026.08.05.2` runners during
+the transition, but creates new containers only from the `2026.08.25.2`
+template. Dispatcher
+preflight attests the current harness release, and Echo refuses to create or
+start containers whose release does not match its typed skill registry.
 
 1. Run `just check`, then use the read-only preflight, status, and list
    operations to inventory every namespace and confirm there are no active
@@ -140,7 +141,7 @@ new runner.
    that production deployment is explicitly approved. Recreate its containers
    before deploying the backend with typed request kinds.
 6. Keep the previous runner allowance until status/list reports
-   `harness_release=2026.08.22.1` for every managed instance. A later host
+   `harness_release=2026.08.25.2` for every managed instance. A later host
    release may then remove the allowance.
 
 Rolling back only Echo is safe because the new runner accepts the old request

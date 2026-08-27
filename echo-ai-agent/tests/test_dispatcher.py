@@ -113,6 +113,13 @@ class DispatcherValidationTests(unittest.TestCase):
             {
                 "type": "runner_hello",
                 "protocolVersion": DISPATCHER.RUNNER_PROTOCOL_VERSION,
+                "harnessRelease": "2026.08.22.1",
+            }
+        )
+        DISPATCHER.validate_runner_hello(
+            {
+                "type": "runner_hello",
+                "protocolVersion": DISPATCHER.RUNNER_PROTOCOL_VERSION,
                 "harnessRelease": "2026.08.05.2",
             }
         )
@@ -368,6 +375,7 @@ class DispatcherValidationTests(unittest.TestCase):
         instance_record.assert_called_once_with(template_name)
         self.assertEqual(result["template_id"], template_id)
         self.assertEqual(result["template_name"], template_name)
+        self.assertEqual(result["harness_release"], DISPATCHER.HARNESS_RELEASE)
         self.assertTrue(result["template_ready"])
 
     @mock.patch.object(DISPATCHER, "run_json")

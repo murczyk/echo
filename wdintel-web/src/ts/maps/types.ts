@@ -11,6 +11,7 @@ export type MapPointDetailed = Omit<MapPointShort, 'body'> & {
   sk42_coords: string;
   freq: string | null;
   message_id: number;
+  battle_line_distance: number | null;
 };
 
 export type MapPoint = MapPointShort | MapPointDetailed;

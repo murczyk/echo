@@ -1162,6 +1162,7 @@ export type FreqDetailedPoint = {
   mgrsCoords: string;
   sk42Coords: string;
   freq: string | null;
+  battleLineDistance: number | null;
 };
 
 export type InboxMapItem = {
@@ -4526,6 +4527,7 @@ export type SystemSettingsCurrentRsp = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
 };
 
@@ -4561,6 +4563,7 @@ export type SystemSettingsItem = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
 };
 
 export type SystemSettingsListRsp = {
@@ -4594,6 +4597,7 @@ export type CreateSystemSettingsReq = {
   enableAudioTranscription: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
 };
 
 export type ActivateSystemSettingsReq = {
@@ -4808,6 +4812,14 @@ export type AiAgentRequestCancelRsp = {
   state: string;
 };
 
+export type AiAgentProviderRuntimeProfileItem = {
+  aiEngineId: string;
+  contextWindowTokens: number;
+  maxOutputTokens: number;
+  compactionReserveTokens: number;
+  compactionKeepRecentTokens: number;
+};
+
 export type AiAgentAdminSettingsItem = {
   featureEnabled: boolean;
   templateLoginId: string;
@@ -4817,6 +4829,7 @@ export type AiAgentAdminSettingsItem = {
   mattermostChatEnabled: boolean;
   hasMattermostWebhook: boolean;
   allowedAiEngineIds: Array<string>;
+  providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
 
 export type AiAgentAdminSettingsUpdateReq = {
@@ -4829,6 +4842,7 @@ export type AiAgentAdminSettingsUpdateReq = {
   mattermostWebhookUrl: string | null;
   clearMattermostWebhook: boolean;
   allowedAiEngineIds: Array<string>;
+  providerRuntimeProfiles: Array<AiAgentProviderRuntimeProfileItem>;
 };
 
 export type AiAgentDispatcherItem = {

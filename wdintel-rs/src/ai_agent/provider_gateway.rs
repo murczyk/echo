@@ -1,8 +1,9 @@
 use super::auth;
 use crate::config::{
     AI_AGENT_OPENAI_API_BASE, AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX,
-    AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
+    AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE, AI_AGENT_PROVIDER_ERROR_MAX_BYTES,
     AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS, AI_AGENT_PROVIDER_GATEWAY_PATH,
+    AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
     AI_AGENT_PROVIDER_REQUEST_MAX_BYTES, AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC,
     AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES,
 };
@@ -129,6 +130,15 @@ async fn proxy_openai_request(
 ) -> Result<HttpResponse, AppError> {
     let started_at = Instant::now();
     let reasoning_effort_present = body.get("reasoning_effort").is_some();
+    let message_count = body
+        .get("messages")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let max_output_tokens = body
+        .get("max_completion_tokens")
+        .or_else(|| body.get("max_tokens"))
+        .and_then(Value::as_u64);
+    let request_bytes = body.to_string().len();
     let client = reqwest::Client::builder()
         .https_only(true)
         .redirect(reqwest::redirect::Policy::none())
@@ -179,26 +189,37 @@ async fn proxy_openai_request(
     if !status.is_success() {
         let metadata = read_provider_error_metadata(response).await;
         info!(
-            "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?} reasoning_effort_present={} error_type={:?} error_code={:?} error_param={:?} error_kind={:?} error_message={:?}",
+            "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?} reasoning_effort_present={} message_count={} request_bytes={} max_output_tokens={:?} error_type={:?} error_code={:?} error_param={:?} error_kind={:?} error_message={:?}",
             ai_engine.id,
             status,
             started_at.elapsed().as_millis(),
             upstream_request_id,
             reasoning_effort_present,
+            message_count,
+            request_bytes,
+            max_output_tokens,
             metadata.error_type,
             metadata.error_code,
             metadata.error_param,
             metadata.error_kind,
             metadata.error_message
         );
-        return Ok(provider_error(status, "Provider request failed"));
+        let message = match metadata.error_kind {
+            Some("context_limit") => AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE,
+            Some("output_limit") => AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE,
+            _ => "Provider request failed",
+        };
+        return Ok(provider_error(status, message));
     }
     info!(
-        "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?}",
+        "AI agent provider gateway response engine_id={} status={} duration_ms={} upstream_request_id={:?} message_count={} request_bytes={} max_output_tokens={:?}",
         ai_engine.id,
         status,
         started_at.elapsed().as_millis(),
-        upstream_request_id
+        upstream_request_id,
+        message_count,
+        request_bytes,
+        max_output_tokens
     );
     let content_type = response
         .headers()
@@ -305,7 +326,17 @@ fn parse_provider_error_metadata(body: &[u8]) -> ProviderErrorMetadata {
 
 fn provider_error_kind(value: Option<&Value>) -> Option<&'static str> {
     let value = value?.as_str()?.to_ascii_lowercase();
-    if value.contains("unsupported parameter") {
+    if value.contains("max_tokens or model output limit")
+        || value.contains("maximum output token limit")
+        || value.contains("output token limit was reached")
+    {
+        Some("output_limit")
+    } else if value.contains("context window")
+        || value.contains("maximum context length")
+        || value.contains("prompt is too long")
+    {
+        Some("context_limit")
+    } else if value.contains("unsupported parameter") {
         Some("unsupported_parameter")
     } else if value.contains("unsupported value") {
         Some("unsupported_value")
@@ -463,6 +494,22 @@ mod tests {
         assert_eq!(
             metadata.error_message.as_ref().map(String::len),
             Some(AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS)
+        );
+    }
+
+    #[test]
+    fn classifies_provider_token_limits() {
+        assert_eq!(
+            provider_error_kind(Some(&json!(
+                "Could not finish the message because max_tokens or model output limit was reached"
+            ))),
+            Some("output_limit")
+        );
+        assert_eq!(
+            provider_error_kind(Some(&json!(
+                "This model's maximum context length was exceeded"
+            ))),
+            Some("context_limit")
         );
     }
 }

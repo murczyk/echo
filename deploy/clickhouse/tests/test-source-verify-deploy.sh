@@ -28,10 +28,12 @@ setup_case() {
   cp "$COMMAND" "$case_dir/bin/source-verify-deploy.sh"
   chmod +x "$case_dir/bin/source-verify-deploy.sh"
   printf 'configured\n' >"$case_dir/source.env"
+  printf 'baseline\n' >"$case_dir/deployment-baseline-migration-impact.json"
   : >"$case_dir/operations"
 
   cat >"$case_dir/bin/lib.sh" <<'LIB'
 SOURCE_CONFIG_FILE=${ECHO_PEERDB_SOURCE_CONFIG_FILE:?}
+SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE=${ECHO_PEERDB_DEPLOYMENT_BASELINE_MANIFEST_FILE:?}
 SOURCE_RECONCILE_DEPLOY_RETRY_ATTEMPTS_DEFAULT=5
 SOURCE_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS_DEFAULT=30
 protected_file_exists() { [[ -f "$1" ]]; }
@@ -98,6 +100,7 @@ run_command() {
   set +e
   PATH="$case_dir/bin:/usr/bin:/bin" \
   ECHO_PEERDB_SOURCE_CONFIG_FILE="$case_dir/source.env" \
+  ECHO_PEERDB_DEPLOYMENT_BASELINE_MANIFEST_FILE="$case_dir/deployment-baseline-migration-impact.json" \
   ANALYTICS_RECONCILE_DEPLOY_RETRY_ATTEMPTS="$attempts" \
   ANALYTICS_RECONCILE_DEPLOY_RETRY_DELAY_SECONDS=0 \
   ECHO_TEST_CASE_DIR="$case_dir" \
@@ -116,7 +119,8 @@ test_transient_retry_succeeds() {
   [[ $(<"$case_dir/systemctl-count") == 2 ]]
   grep -q 'Transient reconciliation contention detected' "$case_dir/stdout"
   grep -q 'succeeded on attempt 2/3' "$case_dir/stdout"
-  grep -q '^resnapshot --manifest$' "$case_dir/operations"
+  [[ $(head -n 1 "$case_dir/operations") == 'resnapshot --manifest' ]]
+  [[ ! -e "$case_dir/deployment-baseline-migration-impact.json" ]]
 }
 
 test_permanent_failure_stops_immediately() {
@@ -126,7 +130,8 @@ test_permanent_failure_stops_immediately() {
   [[ $(<"$case_dir/systemctl-count") == 1 ]]
   grep -q 'SOURCE TABLE RECONCILIATION FAILED' "$case_dir/stderr"
   grep -q 'not recognized as transient' "$case_dir/stderr"
-  ! grep -q '^resnapshot ' "$case_dir/operations"
+  [[ $(head -n 1 "$case_dir/operations") == 'resnapshot --manifest' ]]
+  [[ -e "$case_dir/deployment-baseline-migration-impact.json" ]]
 }
 
 test_transient_retries_are_bounded() {
@@ -136,7 +141,8 @@ test_transient_retries_are_bounded() {
   [[ $(<"$case_dir/systemctl-count") == 3 ]]
   grep -q 'SOURCE TABLE RECONCILIATION IS STILL BLOCKED' "$case_dir/stderr"
   grep -q '3 transient attempts failed' "$case_dir/stderr"
-  ! grep -q '^resnapshot ' "$case_dir/operations"
+  [[ $(head -n 1 "$case_dir/operations") == 'resnapshot --manifest' ]]
+  [[ -e "$case_dir/deployment-baseline-migration-impact.json" ]]
 }
 
 test_transient_retry_succeeds

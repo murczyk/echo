@@ -25,7 +25,7 @@ run_case() {
     }
   fi
   case $scenario in
-    nonempty|raw_only|terminal_state)
+    nonempty|raw_only|strategy_mismatch|terminal_state)
       ! grep -Eq '^(pause|remove|drop|add|refresh)' "$case_dir/operations"
       ;;
     recoverable_failure)
@@ -38,10 +38,12 @@ run_case() {
 if [[ $# -eq 0 ]]; then
   run_case no_drift success
   run_case additive_empty success
+  run_case additive_nonempty success
   run_case nonempty failure
   run_case raw_only failure
   run_case mapping_preserved success
   run_case interrupted_retry success
+  run_case strategy_mismatch failure
   run_case terminal_state failure
   run_case recoverable_failure failure
   printf 'Targeted table resnapshot tests passed\n'
@@ -158,11 +160,21 @@ case $scenario in
   no_drift)
     mock_raw_columns=$mock_source_columns
     mock_has_rows=true
-    resnapshot_table public.echo_automation
+    resnapshot_table empty_table_resnapshot public.echo_automation
     [[ ! -s "$operations_file" ]]
     ;;
   additive_empty)
-    resnapshot_table public.echo_automation
+    resnapshot_table empty_table_resnapshot public.echo_automation
+    grep -q '^remove' "$operations_file"
+    grep -q '^drop' "$operations_file"
+    grep -q '^add' "$operations_file"
+    grep -q '^snapshot$' "$operations_file"
+    grep -q '^refresh$' "$operations_file"
+    ;;
+  additive_nonempty)
+    mock_has_rows=true
+    resnapshot_table replicated_snapshot public.echo_automation
+    ! grep -q '^checked-rows$' "$operations_file"
     grep -q '^remove' "$operations_file"
     grep -q '^drop' "$operations_file"
     grep -q '^add' "$operations_file"
@@ -171,34 +183,39 @@ case $scenario in
     ;;
   nonempty)
     mock_has_rows=true
-    resnapshot_table public.echo_automation
+    resnapshot_table empty_table_resnapshot public.echo_automation
     ;;
   raw_only)
     mock_source_columns=id
     mock_raw_columns=$'id\nlegacy'
-    resnapshot_table public.echo_automation
+    resnapshot_table empty_table_resnapshot public.echo_automation
     ;;
   mapping_preserved)
     mock_mapping='{"sourceTableIdentifier":"public.echo_automation","destinationTableIdentifier":"custom_automation"}'
     expected_mapping=$(canonical_mapping "$mock_mapping")
-    resnapshot_table public.echo_automation
+    resnapshot_table empty_table_resnapshot public.echo_automation
     grep -Fq $'add\t'"$expected_mapping" "$operations_file"
     grep -q $'^drop\tcustom_automation$' "$operations_file"
     ;;
   interrupted_retry)
     ensure_state_dir
-    write_state_mapping public.echo_automation "$mock_mapping"
+    write_state_mapping public.echo_automation replicated_snapshot "$mock_mapping"
     mock_mapping=
     mock_raw_exists=false
     mock_raw_columns=
-    resnapshot_table public.echo_automation
+    resnapshot_table replicated_snapshot public.echo_automation
     ! grep -q '^remove' "$operations_file"
     grep -q '^add' "$operations_file"
     grep -q '^refresh$' "$operations_file"
     ;;
+  strategy_mismatch)
+    ensure_state_dir
+    write_state_mapping public.echo_automation empty_table_resnapshot "$mock_mapping"
+    resnapshot_table replicated_snapshot public.echo_automation
+    ;;
   terminal_state)
     mock_status=10
-    resnapshot_table public.echo_automation
+    resnapshot_table empty_table_resnapshot public.echo_automation
     ;;
   recoverable_failure)
     leave_mirror_paused() {

@@ -887,6 +887,7 @@ mod tests {
             distance_m: None,
             country_code: None,
             pelengation_object: None,
+            battle_line_distance: None,
             deleted: false,
             created_at: test_dt(16, 12, 14, 31),
             updated_at: None,

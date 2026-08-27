@@ -25,11 +25,19 @@ export type CoordinateMenuTarget = {
 };
 
 export class DataCircleMarker extends L.CircleMarker {
-  data: { messageId: number; freq?: string | null };
+  data: {
+    messageId: number;
+    freq?: string | null;
+    battleLineDistance?: number | null;
+  };
 
   constructor(
     latLng: L.LatLngExpression,
-    data: { messageId: number; freq?: string | null },
+    data: {
+      messageId: number;
+      freq?: string | null;
+      battleLineDistance?: number | null;
+    },
     options: L.CircleMarkerOptions,
   ) {
     super(latLng, options);
@@ -40,7 +48,7 @@ export class DataCircleMarker extends L.CircleMarker {
     return this.data;
   }
 
-  setData(data: { messageId: number; freq?: string | null }) {
+  setData(data: { messageId: number; freq?: string | null; battleLineDistance?: number | null }) {
     this.data = data;
   }
 }

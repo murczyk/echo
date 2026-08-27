@@ -8,6 +8,7 @@ pub mod ai_agent_container;
 pub mod ai_agent_conversation;
 pub mod ai_agent_dispatcher;
 pub mod ai_agent_echo_proxy;
+pub mod ai_agent_engine_runtime_profile;
 pub mod ai_agent_request;
 pub mod ai_agent_request_event;
 pub mod ai_agent_security_review;

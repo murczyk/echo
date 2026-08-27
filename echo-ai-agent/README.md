@@ -280,7 +280,12 @@ They contain no request or response body, headers, cookies, or credentials and
 do not expose a misleading clickable URL for POST-backed sources.
 
 Echo remains canonical for history. The runner restores the supplied user and
-assistant messages into an in-memory Pi session. It emits normalized
+assistant messages into an in-memory Pi session. Echo supplies each provider's
+`contextWindow`, `maxTokens`, `compactionReserveTokens`, and
+`compactionKeepRecentTokens` runtime profile. Pi compacts restored or active
+context at that provider-specific threshold, while each tool response and the
+aggregate tool context are bounded before they enter the session. The runner
+also emits normalized
 `assistant_delta`, `progress`, `tool_start`, `tool_update`, `tool_end`, and
 `source` events. Progress-tool lifecycle events are suppressed because the tool
 already emits its sentence. Route lifecycle events contain both their raw audit
@@ -317,12 +322,15 @@ preflight against the current fixed template. A release/template mismatch
 fails closed and leaves the current release active; replacing a protected
 template remains a separate, explicitly audited operation.
 
-Release `2026.08.22.1` temporarily accepts runner handshakes from both
-`2026.08.22.1` and `2026.08.05.2` so namespaces can rotate independently on
-the shared host. New templates and clones must use `2026.08.22.1`, and
-dispatcher status/list output exposes each instance's `harness_release` for
-the rollout audit. Remove the previous-release allowance only after every
-managed instance has been recreated and verified.
+Release `2026.08.25.2` temporarily accepts runner handshakes from
+`2026.08.25.1`, `2026.08.22.1`, and `2026.08.05.2` so namespaces can rotate
+independently on the shared host. New templates and clones must use
+`2026.08.25.2`; dispatcher
+preflight attests that release, and status/list output exposes each instance's
+`harness_release` for the rollout audit. Echo refuses to start an instance
+whose release does not match its typed skill registry. Remove the
+previous-release allowance only after every managed instance has been
+recreated and verified.
 
 Production Echo servers can be added without another VM or host rebuild; each
 onboarding remains a separate authorized deployment action.

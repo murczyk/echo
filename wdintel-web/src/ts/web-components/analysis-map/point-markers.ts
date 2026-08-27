@@ -14,6 +14,7 @@ type CreatePointsMarkersGroupOptions = {
   ) => void;
   onClusterClick: (
     messageIds: number[],
+    battleLineDistances: Map<number, number>,
     latlng: Leaflet.LatLng | null,
     cluster: Leaflet.Layer,
   ) => void;
@@ -87,7 +88,11 @@ export function createPointsMarkersGroup({
   points.forEach((point) => {
     const circle = new DataCircleMarker(
       [point.lat, point.lng],
-      { messageId: point.message_id, freq: point.freq },
+      {
+        messageId: point.message_id,
+        freq: point.freq,
+        battleLineDistance: point.battle_line_distance,
+      },
       {
         color: '#000',
         fillColor: '#ED1C23',
@@ -130,6 +135,15 @@ export function createPointsMarkersGroup({
   markersGroup.on('clusterclick', (leafletEvent) => {
     const cluster = leafletEvent.layer as unknown as { getAllChildMarkers: () => Leaflet.Layer[] };
     const childMarkers = cluster.getAllChildMarkers() as unknown as DataCircleMarker[];
+    const battleLineDistances = new Map<number, number>();
+    for (const marker of childMarkers) {
+      const { messageId, battleLineDistance } = marker.data;
+      if (battleLineDistance == null) continue;
+      const existing = battleLineDistances.get(messageId);
+      if (existing == null || battleLineDistance < existing) {
+        battleLineDistances.set(messageId, battleLineDistance);
+      }
+    }
     const latlng =
       (leafletEvent as Leaflet.LeafletMouseEvent).latlng ??
       (typeof (cluster as unknown as { getLatLng?: () => Leaflet.LatLng }).getLatLng === 'function'
@@ -137,6 +151,7 @@ export function createPointsMarkersGroup({
         : null);
     onClusterClick(
       childMarkers.map((marker) => marker.data.messageId),
+      battleLineDistances,
       latlng,
       leafletEvent.layer,
     );

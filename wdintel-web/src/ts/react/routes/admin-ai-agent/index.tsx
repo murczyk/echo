@@ -435,7 +435,7 @@ function ContainersPage() {
   );
 }
 
-function RequestDetailsDialog({
+export function RequestDetailsDialog({
   request,
   onClose,
   onReviewRetried,
@@ -492,6 +492,18 @@ function RequestDetailsDialog({
                 {request.response ?? '—'}
               </Typography>
             </Box>
+            {request.error ? (
+              <PowerAlert severity="error">
+                <Typography variant="subtitle2">Технічні деталі помилки</Typography>
+                <Typography
+                  component="pre"
+                  variant="body2"
+                  sx={{ m: 0, mt: 0.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
+                >
+                  {request.error}
+                </Typography>
+              </PowerAlert>
+            ) : null}
             <Box>
               <Typography variant="subtitle2">
                 Контекст розмови: {request.conversation.title}
@@ -1447,6 +1459,163 @@ function providerName(engines: AiEngineItem[], id: string): string {
   return engines.find((engine) => engine.id === id)?.name ?? id;
 }
 
+function defaultProviderRuntimeProfile(
+  engine: AiEngineItem,
+): AiAgentSettings['providerRuntimeProfiles'][number] {
+  const modelName = engine.modelName.toLowerCase();
+  if (modelName === 'gpt-5.6-sol') {
+    return {
+      aiEngineId: engine.id,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 65_536,
+      compactionReserveTokens: 98_304,
+      compactionKeepRecentTokens: 49_152,
+    };
+  }
+  if (modelName === 'gpt-5.6-luna') {
+    return {
+      aiEngineId: engine.id,
+      contextWindowTokens: 1_050_000,
+      maxOutputTokens: 32_768,
+      compactionReserveTokens: 65_536,
+      compactionKeepRecentTokens: 32_768,
+    };
+  }
+  if (modelName === 'google/gemma-4-26b-a4b-it') {
+    return {
+      aiEngineId: engine.id,
+      contextWindowTokens: 262_144,
+      maxOutputTokens: 16_384,
+      compactionReserveTokens: 32_768,
+      compactionKeepRecentTokens: 16_384,
+    };
+  }
+  return {
+    aiEngineId: engine.id,
+    contextWindowTokens: 131_072,
+    maxOutputTokens: 16_384,
+    compactionReserveTokens: 32_768,
+    compactionKeepRecentTokens: 16_384,
+  };
+}
+
+function ensureProviderRuntimeProfiles(
+  settings: AiAgentSettings,
+  engines: AiEngineItem[],
+  allowedProviderIds = settings.allowedProviderIds,
+): AiAgentSettings {
+  const profiles = new Map(
+    settings.providerRuntimeProfiles.map((profile) => [profile.aiEngineId, profile]),
+  );
+  for (const aiEngineId of allowedProviderIds) {
+    const engine = engines.find((candidate) => candidate.id === aiEngineId);
+    if (engine && !profiles.has(aiEngineId)) {
+      profiles.set(aiEngineId, defaultProviderRuntimeProfile(engine));
+    }
+  }
+  return {
+    ...settings,
+    allowedProviderIds,
+    providerRuntimeProfiles: Array.from(profiles.values()),
+  };
+}
+
+function ProviderRuntimeProfilesEditor({
+  settings,
+  engines,
+  onChange,
+}: {
+  settings: AiAgentSettings;
+  engines: AiEngineItem[];
+  onChange: (settings: AiAgentSettings) => void;
+}) {
+  function updateProfile(
+    aiEngineId: string,
+    field: keyof Omit<AiAgentSettings['providerRuntimeProfiles'][number], 'aiEngineId'>,
+    value: number,
+  ) {
+    onChange({
+      ...settings,
+      providerRuntimeProfiles: settings.providerRuntimeProfiles.map((profile) =>
+        profile.aiEngineId === aiEngineId ? { ...profile, [field]: value } : profile,
+      ),
+    });
+  }
+
+  return (
+    <Stack spacing={1.5}>
+      <Typography variant="subtitle2">Runtime-профілі провайдерів</Typography>
+      {settings.allowedProviderIds.map((aiEngineId) => {
+        const engine = engines.find((candidate) => candidate.id === aiEngineId);
+        const profile = settings.providerRuntimeProfiles.find(
+          (candidate) => candidate.aiEngineId === aiEngineId,
+        );
+        if (!engine || !profile) return null;
+        return (
+          <Card key={aiEngineId} variant="outlined" sx={{ borderRadius: 0 }}>
+            <CardContent>
+              <Stack spacing={1.5}>
+                <Box>
+                  <Typography variant="subtitle2">{engine.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {engine.modelName}
+                  </Typography>
+                </Box>
+                <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Контекст, токенів"
+                    value={profile.contextWindowTokens}
+                    onChange={(event) =>
+                      updateProfile(aiEngineId, 'contextWindowTokens', Number(event.target.value))
+                    }
+                  />
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Макс. відповідь, токенів"
+                    value={profile.maxOutputTokens}
+                    onChange={(event) =>
+                      updateProfile(aiEngineId, 'maxOutputTokens', Number(event.target.value))
+                    }
+                  />
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Резерв стиснення"
+                    value={profile.compactionReserveTokens}
+                    onChange={(event) =>
+                      updateProfile(
+                        aiEngineId,
+                        'compactionReserveTokens',
+                        Number(event.target.value),
+                      )
+                    }
+                  />
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Зберегти останні токени"
+                    value={profile.compactionKeepRecentTokens}
+                    onChange={(event) =>
+                      updateProfile(
+                        aiEngineId,
+                        'compactionKeepRecentTokens',
+                        Number(event.target.value),
+                      )
+                    }
+                  />
+                </Stack>
+              </Stack>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </Stack>
+  );
+}
+
 function providerMenuItem(
   engine: AiEngineItem,
   options: {
@@ -1512,7 +1681,7 @@ function SettingsPage() {
         getAiAgentSettings(),
         listAiEngines(),
       ]);
-      setSettings(nextSettings);
+      setSettings(ensureProviderRuntimeProfiles(nextSettings, nextEngines));
       setEngines(nextEngines);
     } catch (loadError) {
       const message = `Не вдалося завантажити налаштування ШІ: ${errorMessage(loadError)}`;
@@ -1584,7 +1753,11 @@ function SettingsPage() {
                 onChange={(event) =>
                   setSettings((current) =>
                     current
-                      ? { ...current, allowedProviderIds: event.target.value as string[] }
+                      ? ensureProviderRuntimeProfiles(
+                          current,
+                          engines,
+                          event.target.value as string[],
+                        )
                       : current,
                   )
                 }
@@ -1592,6 +1765,11 @@ function SettingsPage() {
                 {engines.map((engine) => providerMenuItem(engine))}
               </Select>
             </FormControl>
+            <ProviderRuntimeProfilesEditor
+              settings={settings}
+              engines={engines}
+              onChange={setSettings}
+            />
             <FormControl fullWidth>
               <InputLabel id="ai-agent-default-provider-label">
                 Провайдер за замовчуванням
