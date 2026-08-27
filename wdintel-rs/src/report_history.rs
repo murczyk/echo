@@ -2466,13 +2466,14 @@ async fn claim_report_download_attempt(
     {
         return Ok(report_download_history);
     }
-    insert_report_download_attempt(
+    Ok(insert_report_download_attempt(
         dbx,
         report_history_id,
         requested_by_login_id,
         Some(started_at),
     )
     .await
+    .context(h!())?)
 }
 
 async fn complete_report_download_attempt<C>(
