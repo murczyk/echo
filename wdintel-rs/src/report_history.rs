@@ -313,6 +313,21 @@ async fn build_report_history_rows(
     report_histories: Vec<report_history::Model>,
     expose_last_error: bool,
 ) -> Result<Vec<ReportHistoryRow>, AppError> {
+    build_report_history_rows_with_options(
+        dbx,
+        report_histories,
+        expose_last_error,
+        false,
+    )
+    .await
+}
+
+async fn build_report_history_rows_with_options(
+    dbx: &DatabaseConnection,
+    report_histories: Vec<report_history::Model>,
+    expose_last_error: bool,
+    include_download_attempts: bool,
+) -> Result<Vec<ReportHistoryRow>, AppError> {
     let detail_refs = report_histories
         .iter()
         .map(|report_history| {
@@ -333,10 +348,13 @@ async fn build_report_history_rows(
     )
     .await
     .c(h!())?;
-    let mut download_attempts_by_report_id =
+    let mut download_attempts_by_report_id = if include_download_attempts {
         load_report_download_attempts(dbx, &report_histories)
             .await
-            .c(h!())?;
+            .c(h!())?
+    } else {
+        HashMap::new()
+    };
 
     Ok(report_histories
         .into_iter()
@@ -1433,8 +1451,13 @@ async fn list_admin_report_histories(
     let next_offset = offset + report_histories.len() as u64;
     let report_histories =
         reload_report_histories(detail_db, report_histories).await?;
-    let rows =
-        build_report_history_rows(detail_db, report_histories, true).await?;
+    let rows = build_report_history_rows_with_options(
+        detail_db,
+        report_histories,
+        true,
+        true,
+    )
+    .await?;
 
     Ok(ReportHistoryAdminListRsp {
         rows,
@@ -4266,6 +4289,71 @@ mod tests {
         .await
         .c(h!())?;
         assert_ne!(direct.id, completed.id);
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn download_attempts_are_only_included_for_admin_rows(
+    ) -> Result<(), AppError> {
+        let env = cleanup().await.c(h!())?;
+        report_history::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .c(h!())?;
+        let owner = create_report_history_test_login(
+            &env.dbx,
+            "report-download-history-owner",
+        )
+        .await
+        .c(h!())?;
+        let admin = create_report_history_test_login(
+            &env.dbx,
+            "report-download-history-admin",
+        )
+        .await
+        .c(h!())?;
+        let report_history = enqueue_report(
+            &env.dbx,
+            &owner.id,
+            KIND_GOI,
+            goi_report_request(json!({})),
+            Some("report.xlsx".to_string()),
+            Some("application/octet-stream".to_string()),
+        )
+        .await
+        .c(h!())?;
+        insert_report_download_attempt(
+            &env.dbx,
+            report_history.id,
+            &admin.id,
+            None,
+        )
+        .await
+        .c(h!())?;
+
+        let ordinary_rows = build_report_history_rows(
+            &env.dbx,
+            vec![report_history.clone()],
+            false,
+        )
+        .await
+        .c(h!())?;
+        let admin_rows = build_report_history_rows_with_options(
+            &env.dbx,
+            vec![report_history],
+            true,
+            true,
+        )
+        .await
+        .c(h!())?;
+
+        assert!(ordinary_rows[0].download_attempts.is_empty());
+        assert_eq!(admin_rows[0].download_attempts.len(), 1);
+        assert_eq!(
+            admin_rows[0].download_attempts[0].login,
+            "report-download-history-admin"
+        );
         Ok(())
     }
 
