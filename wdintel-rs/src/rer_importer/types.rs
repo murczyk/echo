@@ -7,6 +7,7 @@ use serde::de;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -412,6 +413,12 @@ pub enum TagPresenceFilter {
 )]
 pub struct MessageIdsReq {
     pub message_ids: Vec<i64>,
+    pub inbox_req: Option<InboxMessagesReq>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct MessageUuidsReq {
+    pub message_uuids: Vec<Uuid>,
     pub inbox_req: Option<InboxMessagesReq>,
 }
 
