@@ -768,8 +768,40 @@ fn is_subsequence(shorter: &[String], longer: &[String]) -> bool {
     expected.is_none()
 }
 
-fn normalize_name(value: &str) -> String {
+pub(super) fn normalize_name(value: &str) -> String {
     crate::unit::normalize_unit_formation_name(value)
+}
+
+pub(super) fn normalize_orbit_hierarchy_name(
+    unit: &SourceUnit,
+    value: &str,
+) -> String {
+    let descriptor_names_by_echelon = std::iter::once(unit)
+        .chain(&unit.operational_parent_units)
+        .chain(&unit.generative_parent_units)
+        .filter_map(|descriptor| {
+            let echelon = descriptor
+                .unit_echelon
+                .as_ref()
+                .and_then(|value| value.key.as_str())
+                .and_then(echo_echelon)?;
+            Some((echelon, descriptor_names(descriptor)))
+        })
+        .collect::<Vec<_>>();
+    split_path(value)
+        .into_iter()
+        .map(|name| {
+            let echelon = descriptor_names_by_echelon.iter().find_map(
+                |(echelon, names)| names.contains(&name).then_some(*echelon),
+            );
+            if echelon == Some(EchoEchelon::Army) {
+                normalize_army_name(&name)
+            } else {
+                name
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn normalize_sigint_name(value: &str) -> String {
@@ -780,7 +812,7 @@ fn normalize_sigint_name(value: &str) -> String {
     normalize_name(&value)
 }
 
-fn normalize_sigint_name_for_echelon(
+pub(super) fn normalize_sigint_name_for_echelon(
     echelon: EchoEchelon,
     value: &str,
 ) -> String {

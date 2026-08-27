@@ -806,6 +806,7 @@ pub async fn replace_sigint_unit_link(
         &transaction,
         sigint_unit_id,
         orbit_unit_id,
+        super::LinkProvenance::Manual,
     )
     .await
     .c(h!())?;
@@ -820,6 +821,7 @@ pub(super) async fn replace_sigint_unit_link_in_transaction<C>(
     db: &C,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
+    provenance: super::LinkProvenance,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -841,7 +843,7 @@ where
         orbit_unit_sigint_unit::ActiveModel {
             orbit_unit_id: Set(orbit_unit_id),
             sigint_unit_id: Set(sigint_unit_id),
-            is_manual: Set(true),
+            is_manual: Set(provenance == super::LinkProvenance::Manual),
             is_suppressed: Set(false),
         },
     )

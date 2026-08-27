@@ -24,6 +24,12 @@ mod test_link;
 mod tui;
 mod types;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LinkProvenance {
+    Manual,
+    Automatic,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum EchoEchelon {
     Other,
@@ -232,6 +238,7 @@ pub(crate) async fn link_sigint_unit_if_unlinked<C>(
     db: &C,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
+    provenance: LinkProvenance,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -251,6 +258,7 @@ where
         db,
         sigint_unit_id,
         orbit_unit_id,
+        provenance,
     )
     .await
     .c(h!())?)

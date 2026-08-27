@@ -359,7 +359,14 @@ async fn persist_links(
             continue;
         }
         crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
-            &transaction, &login, *sigint_unit_id, *orbit_unit_id,
+            &transaction,
+            &login,
+            *sigint_unit_id,
+            *orbit_unit_id,
+            match link_mode {
+                tui::LinkMode::Manual => super::LinkProvenance::Manual,
+                tui::LinkMode::Automatic => super::LinkProvenance::Automatic,
+            },
         )
         .await
         .c(h!())?;
@@ -414,7 +421,14 @@ fn prepare_review_unit(
         .filter(|name| !name.is_empty())
         .map(str::to_string)
         .collect::<Vec<_>>();
-    let sigint_full_name = echelons.join(" / ");
+    let normalized_sigint_full_name = hierarchy
+        .iter()
+        .map(|(echelon, name)| {
+            matching::normalize_sigint_name_for_echelon(*echelon, name)
+        })
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
     let candidates = match link_mode {
         tui::LinkMode::Manual => matcher.potential_matches(&hierarchy),
         tui::LinkMode::Automatic => matcher
@@ -429,7 +443,7 @@ fn prepare_review_unit(
         .into_iter()
         .map(|(orbit_unit, rating)| {
             let (orbit_name, distance) =
-                closest_orbit_name(&sigint_full_name, orbit_unit);
+                closest_orbit_name(&normalized_sigint_full_name, orbit_unit);
             ReviewMatch {
                 unit_id: orbit_unit.unit_id,
                 rating,
@@ -448,7 +462,7 @@ fn prepare_review_unit(
 }
 
 fn closest_orbit_name(
-    sigint_full_name: &str,
+    normalized_sigint_full_name: &str,
     orbit_unit: &crate::orbit::types::SourceUnit,
 ) -> (String, usize) {
     orbit_unit
@@ -459,7 +473,10 @@ fn closest_orbit_name(
         .map(|name| {
             (
                 name.clone(),
-                levenshtein::levenshtein(sigint_full_name, name),
+                levenshtein::levenshtein(
+                    normalized_sigint_full_name,
+                    &matching::normalize_orbit_hierarchy_name(orbit_unit, name),
+                ),
             )
         })
         .min_by_key(|(_, distance)| *distance)
@@ -601,6 +618,40 @@ mod tests {
 
         assert_eq!(review_units[0].matches[0].distance, 0);
         assert_eq!(review_units[0].matches[0].orbit_name, "3 мсб");
+        assert_eq!(approve_automatic(review_units).1.len(), 1);
+    }
+
+    #[test]
+    fn automatic_mode_normalizes_hierarchy_names_before_distance_cutoff() {
+        let mut unit = sigint_unit("3 МСБ");
+        unit.company = "9 МСР".to_string();
+        unit.regiment = "1 МСП".to_string();
+        unit.division = "2 МСД".to_string();
+        unit.army = "1 ТА".to_string();
+        unit.military_district = "МВО".to_string();
+        let orbit_units = [orbit_hierarchy_unit(
+            uuid::Uuid::new_v4(),
+            "9 мср / 3 мсб / 1 мсп / 2 мсд / 1 та / мво",
+            &[
+                ("company", "9 мср"),
+                ("battalion", "3 мсб"),
+                ("regiment", "1 мсп"),
+                ("division", "2 мсд"),
+                ("fieldArmy", "1 та"),
+                ("militaryDistrict", "мво"),
+            ],
+        )];
+        let matcher = matching::TestLinkMatcher::new(&orbit_units);
+
+        let review_units = prepare_review_units(
+            &[unit],
+            &matcher,
+            tui::LinkMode::Automatic,
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(review_units[0].matches[0].rating, 100);
+        assert_eq!(review_units[0].matches[0].distance, 0);
         assert_eq!(approve_automatic(review_units).1.len(), 1);
     }
 

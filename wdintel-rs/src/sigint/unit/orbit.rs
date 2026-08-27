@@ -1270,6 +1270,7 @@ where
         login,
         sigint_unit_id,
         orbit_unit_id,
+        crate::orbit::LinkProvenance::Manual,
         true,
     )
     .await
@@ -1283,6 +1284,7 @@ pub(crate) async fn link_orbit_unit_with_deferred_deduplicate_reconciliation<
     login: &Uuid,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
+    provenance: crate::orbit::LinkProvenance,
 ) -> Result<sigint_unit::Model, AppError>
 where
     C: ConnectionTrait,
@@ -1292,6 +1294,7 @@ where
         login,
         sigint_unit_id,
         orbit_unit_id,
+        provenance,
         false,
     )
     .await
@@ -1303,6 +1306,7 @@ async fn link_orbit_unit_in_transaction_inner<C>(
     login: &Uuid,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
+    provenance: crate::orbit::LinkProvenance,
     reconcile_deduplicate_candidates: bool,
 ) -> Result<sigint_unit::Model, AppError>
 where
@@ -1319,6 +1323,7 @@ where
         dbx,
         sigint_unit_id,
         orbit_unit_id,
+        provenance,
     )
     .await
     .c(h!())?;
