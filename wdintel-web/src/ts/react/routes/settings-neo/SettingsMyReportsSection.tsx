@@ -135,6 +135,7 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMNS_VISIBILITY = {
   requestedBy: true,
   executionTime: true,
   errorLog: true,
+  downloadAttempts: true,
 };
 
 const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
@@ -155,6 +156,7 @@ const DEFAULT_REPORTS_WITH_AUTHOR_COLUMN_ORDER = [
   'completedAt',
   'executionTime',
   'errorLog',
+  'downloadAttempts',
 ];
 
 const DEFAULT_REPORTS_SORTING: MRT_SortingState = [{ id: 'createdAt', desc: true }];
@@ -341,6 +343,7 @@ function buildReportLoadingRows(rowCount: number): ReportHistoryRow[] {
     reportPeriod: null,
     progress: 0,
     errorLog: null,
+    downloadAttempts: [],
     startedAt: null,
     plannedForTs: null,
     queuePosition: null,
@@ -451,6 +454,7 @@ export function ReportHistoryTableSection({
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [errorLogRow, setErrorLogRow] = useState<ReportHistoryRow | null>(null);
+  const [downloadAttemptsRow, setDownloadAttemptsRow] = useState<ReportHistoryRow | null>(null);
   const [cancelRow, setCancelRow] = useState<ReportHistoryRow | null>(null);
   const [queryState, setQueryState] = useState<ReportHistoryQueryState>({
     globalFilter: '',
@@ -542,6 +546,7 @@ export function ReportHistoryTableSection({
       setLoadState('idle');
       setError(null);
       setErrorLogRow(null);
+      setDownloadAttemptsRow(null);
       setCancelRow(null);
       setTotalRows(null);
       setHasMoreRows(false);
@@ -782,6 +787,26 @@ export function ReportHistoryTableSection({
             if (!row.original.errorLog || row.original.errorLog.length === 0) return null;
             return (
               <Button size="small" variant="outlined" onClick={() => setErrorLogRow(row.original)}>
+                Переглянути
+              </Button>
+            );
+          },
+        },
+        {
+          id: 'downloadAttempts',
+          accessorFn: (row) => (row.downloadAttempts.length > 0 ? 'Переглянути' : ''),
+          header: 'Завантаження',
+          enableSorting: false,
+          enableColumnFilter: false,
+          meta: { overflowMode: 'none' },
+          Cell: ({ row }) => {
+            if (row.original.downloadAttempts.length === 0) return null;
+            return (
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setDownloadAttemptsRow(row.original)}
+              >
                 Переглянути
               </Button>
             );
@@ -1155,6 +1180,41 @@ export function ReportHistoryTableSection({
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setErrorLogRow(null)}>Закрити</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={downloadAttemptsRow !== null}
+        onClose={() => setDownloadAttemptsRow(null)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Завантаження</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            {(downloadAttemptsRow?.downloadAttempts ?? []).map((entry, index) => (
+              <Box key={`${entry.requestedAt}-${index}`}>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                  <Chip size="small" label={entry.login} />
+                  <Typography variant="body2" color="text.secondary">
+                    {formatReportDate(entry.requestedAt)}
+                  </Typography>
+                </Stack>
+                <Typography variant="body2">
+                  {entry.successful === null
+                    ? 'Виконується'
+                    : entry.successful
+                      ? 'Успішно'
+                      : 'Неуспішно'}
+                  {entry.durationMs === null
+                    ? ''
+                    : ` · ${formatReportDuration(Math.floor(entry.durationMs / 1000))}`}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDownloadAttemptsRow(null)}>Закрити</Button>
         </DialogActions>
       </Dialog>
     </Box>

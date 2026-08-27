@@ -397,6 +397,7 @@ mod m20260824_124325_transcription_started_at;
 mod m20260825_114553_add_settlement_geography_index;
 mod m20260825_204254_ai_agent_engine_runtime_profile;
 mod m20260826_083256_sigint_peleng_battle_line_distance;
+mod m20260827_074530_create_report_download_history;
 
 pub struct Migrator;
 
@@ -928,6 +929,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260826_083256_sigint_peleng_battle_line_distance::Migration,
+            ),
+            Box::new(
+                m20260827_074530_create_report_download_history::Migration,
             ),
         ]
     }
