@@ -361,6 +361,7 @@ record_source_deployment_manifest_baseline() {
   require_file "$next_manifest"
   [[ -d "$SOURCE_RECONCILE_STATE_DIR" ]] \
     || die "missing source reconciliation state directory: $SOURCE_RECONCILE_STATE_DIR"
+  [[ -f "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE" ]] && return 0
 
   baseline_manifest=$active_manifest
   [[ -f "$baseline_manifest" ]] || baseline_manifest=$next_manifest

@@ -92,6 +92,10 @@ cmp "$next_manifest" "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
 printf '{"migrations":{"echo:old":{}},"dependencies":{}}\n' >"$active_manifest"
 record_source_deployment_manifest_baseline \
   "$active_manifest" "$next_manifest"
+cmp "$next_manifest" "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
+rm "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
+record_source_deployment_manifest_baseline \
+  "$active_manifest" "$next_manifest"
 cmp "$active_manifest" "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
 
 printf 'Source deployment manifest baseline tests passed\n'

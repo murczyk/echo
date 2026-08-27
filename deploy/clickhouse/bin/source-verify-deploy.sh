@@ -130,6 +130,7 @@ while ((SECONDS < deadline)); do
      sudo systemctl start echo-analytics-health.service"
   then
     log "Analytics deployment health check passed"
+    rm -f -- "$SOURCE_DEPLOYMENT_BASELINE_MANIFEST_FILE"
     exit 0
   fi
   sleep 10
