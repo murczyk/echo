@@ -21,6 +21,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('./image-editor-export', () => ({ exportEditedImage: mocks.exportEditedImage }));
+vi.mock('./image-editor-source-validation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./image-editor-source-validation')>()),
+  validateImageEditorSource: vi.fn().mockResolvedValue({ width: 200, height: 100 }),
+}));
 vi.mock('fabric', () => {
   class Canvas {
     width = 200;

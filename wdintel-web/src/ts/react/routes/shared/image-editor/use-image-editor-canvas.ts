@@ -1,10 +1,12 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 
 import { setImageEditorBackground } from './image-editor-canvas-references';
+import {
+  MAX_IMAGE_EDITOR_PIXELS,
+  MAX_IMAGE_EDITOR_SIDE,
+  validateImageEditorSource,
+} from './image-editor-source-validation';
 import type { ImageEditorSource, ImageEditorTool } from './image-editor.types';
-
-const MAX_PIXELS = 24_000_000;
-const MAX_SIDE = 8_192;
 
 export function finalizeImageEditorText(
   canvas: import('fabric').Canvas,
@@ -18,22 +20,6 @@ export function finalizeImageEditorText(
   }
   canvas.remove(text);
   canvas.requestRenderAll();
-  return false;
-}
-
-async function isAnimatedWebp(source: ImageEditorSource) {
-  if (source.mimeType !== 'image/webp') return false;
-  const header = new Uint8Array(await source.blob.slice(0, 128 * 1024).arrayBuffer());
-  if (String.fromCharCode(...header.slice(0, 4)) !== 'RIFF') return false;
-  for (let index = 12; index + 8 <= header.length;) {
-    if (String.fromCharCode(...header.slice(index, index + 4)) === 'ANIM') return true;
-    const size =
-      header[index + 4] |
-      (header[index + 5] << 8) |
-      (header[index + 6] << 16) |
-      (header[index + 7] << 24);
-    index += 8 + (size >>> 0) + ((size >>> 0) % 2);
-  }
   return false;
 }
 
@@ -71,10 +57,9 @@ export function useImageEditorCanvas({
     let objectUrl: string | null = null;
     const init = async () => {
       try {
-        const fabric = await import('fabric');
+        await validateImageEditorSource(source);
         if (disposed || !canvasElementRef.current) return;
-        if (await isAnimatedWebp(source))
-          throw new Error('Анімовані WebP-зображення доступні лише для перегляду');
+        const fabric = await import('fabric');
         if (disposed || !canvasElementRef.current) return;
         fabricRef.current = fabric;
         objectUrl = URL.createObjectURL(source.blob);
@@ -83,9 +68,9 @@ export function useImageEditorCanvas({
         if (
           image.width == null ||
           image.height == null ||
-          image.width > MAX_SIDE ||
-          image.height > MAX_SIDE ||
-          image.width * image.height > MAX_PIXELS
+          image.width > MAX_IMAGE_EDITOR_SIDE ||
+          image.height > MAX_IMAGE_EDITOR_SIDE ||
+          image.width * image.height > MAX_IMAGE_EDITOR_PIXELS
         )
           throw new Error(
             'Зображення завелике для редагування у браузері. Його все ще можна переглянути або завантажити.',
@@ -124,6 +109,10 @@ export function useImageEditorCanvas({
         setCanvasReady(true);
         setLoading(false);
       } catch (cause) {
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+        }
         setError(
           cause instanceof Error ? cause.message : 'Не вдалося відкрити зображення для редагування',
         );

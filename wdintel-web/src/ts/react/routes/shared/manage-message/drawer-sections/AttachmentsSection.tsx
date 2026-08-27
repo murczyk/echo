@@ -20,6 +20,11 @@ import { MessageCardAttachmentPreviewProvider } from '../../message-card/attachm
 import type { MessageCardPreviewItem } from '../../message-card/attachment-preview/message-card-preview.types';
 import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
 import { normalizedEditableImageMimeType } from '../../image-editor/image-editor-supported-image';
+import {
+  IMAGE_EDITOR_SOURCE_TOO_LARGE_ERROR,
+  MAX_IMAGE_EDITOR_SOURCE_BYTES,
+  readBoundedImageEditorResponse,
+} from '../../image-editor/image-editor-source-validation';
 import { replacePendingImageFile } from '../../image-editor/image-editor-upload';
 import { blurActiveElement } from '../../../../utils/focus';
 import { MAX_MESSAGE_ATTACHMENTS } from '../useMessageUppy';
@@ -169,7 +174,9 @@ export function AttachmentsSection({
       loadSource: async (image, signal) => {
         const imageId = image.id ?? '';
         const pending = uppy.getFile(imageId);
-        if (pending?.data instanceof Blob)
+        if (pending?.data instanceof Blob) {
+          if (pending.data.size > MAX_IMAGE_EDITOR_SOURCE_BYTES)
+            throw new Error(IMAGE_EDITOR_SOURCE_TOO_LARGE_ERROR);
           return {
             blob: pending.data,
             fileName: pending.name ?? image.fileName ?? 'image',
@@ -178,9 +185,12 @@ export function AttachmentsSection({
               normalizedEditableImageMimeType(image.contentType, image.fileName) ??
               'image/png',
           };
+        }
+        if (image.sizeBytes != null && image.sizeBytes > MAX_IMAGE_EDITOR_SOURCE_BYTES)
+          throw new Error(IMAGE_EDITOR_SOURCE_TOO_LARGE_ERROR);
         const response = await fetch(image.href, { signal, credentials: 'same-origin' });
         if (!response.ok) throw new Error('Не вдалося завантажити зображення для редагування');
-        const blob = await response.blob();
+        const blob = await readBoundedImageEditorResponse(response, signal);
         return {
           blob,
           fileName: image.fileName ?? 'image',
