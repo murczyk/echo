@@ -37,6 +37,7 @@ use actix_identity::Identity;
 use actix_web::http::header;
 use actix_web::web::Json;
 use actix_web::{post, HttpResponse};
+use anyhow::Context;
 use chrono::{Datelike, Duration, Utc};
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use log::{error, info, warn};
@@ -2412,7 +2413,8 @@ where
             .completed_at
             .unwrap_or_else(|| Utc::now().naive_utc()),
     )
-    .await?;
+    .await
+    .context(h!())?;
     Ok(report_history)
 }
 
