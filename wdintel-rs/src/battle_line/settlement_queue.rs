@@ -1232,7 +1232,7 @@ mod tests {
             .unwrap();
             item_ids.push(item.id);
             let row = sigint_inbox_item_settlement::ActiveModel {
-                id: NotSet,
+                id: Set(i64::MIN + item.id),
                 created_at: NotSet,
                 item_id: Set(item.id),
                 settlement_text: Set(format!("CLAIM {suffix}")),
