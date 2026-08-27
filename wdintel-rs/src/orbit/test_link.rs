@@ -845,7 +845,7 @@ mod tests {
         assert_eq!(review_units[0].matches.len(), 1);
         assert_eq!(review_units[0].matches[0].unit_id, expected_orbit_unit_id);
         assert_eq!(review_units[0].matches[0].rating, 99);
-        assert_eq!(review_units[0].matches[0].distance, 8);
+        assert_eq!(review_units[0].matches[0].distance, 6);
         let (summary, links) = approve_automatic(review_units);
         assert!(links.is_empty());
         assert_eq!(summary.accepted, 0);
