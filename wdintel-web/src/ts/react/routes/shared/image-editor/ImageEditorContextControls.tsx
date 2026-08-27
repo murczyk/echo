@@ -135,21 +135,26 @@ export function ImageEditorSliderControl({
 }) {
   const id = `image-editor-${label}`;
   return (
-    <div className="grid h-8 shrink-0 grid-cols-[max-content_88px_max-content] items-center gap-1.5 whitespace-nowrap text-echo-sm">
-      <span id={id} className="min-w-0">
+    <div className="grid h-8 shrink-0 grid-cols-[max-content_104px_max-content] items-center gap-2 whitespace-nowrap text-echo-sm">
+      <span id={id} className="flex h-8 min-w-0 items-center leading-none">
         {label}
       </span>
-      <Slider
-        aria-labelledby={id}
-        className="w-[88px]"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(_, next) => onChange(next as number)}
-        disabled={disabled}
-      />
-      <output className="tabular-nums">{display}</output>
+      <div className="flex h-8 items-center px-2">
+        <Slider
+          aria-labelledby={id}
+          getAriaValueText={() => display}
+          className="w-full"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(_, next) => onChange(next as number)}
+          disabled={disabled}
+        />
+      </div>
+      <span aria-hidden="true" className="flex h-8 min-w-8 items-center leading-none tabular-nums">
+        {display}
+      </span>
     </div>
   );
 }
