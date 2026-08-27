@@ -8,12 +8,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AttachmentsSection } from './AttachmentsSection';
 import { EMPTY_FORM_VALUES, type MessageFormData } from '../manage-message-drawer.schema';
 
+const previewMocks = vi.hoisted(() => ({ imageEditing: null as any }));
+vi.mock('../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider', () => ({
+  MessageCardAttachmentPreviewProvider: ({ imageEditing }: { imageEditing: unknown }) => {
+    previewMocks.imageEditing = imageEditing;
+    return <div role="dialog" />;
+  },
+}));
+
 function Form({ children }: { children: ReactNode }) {
   const methods = useForm<MessageFormData>({ defaultValues: EMPTY_FORM_VALUES });
   return createElement(FormProvider, methods, children);
 }
 
-async function renderSection(files: unknown[] = [], existingMedia: any[] = []) {
+async function renderSection(files: unknown[] = [], existingMedia: any[] = [], uppy: any = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -21,7 +29,7 @@ async function renderSection(files: unknown[] = [], existingMedia: any[] = []) {
     root.render(
       <Form>
         <AttachmentsSection
-          uppy={{} as never}
+          uppy={uppy}
           uppyFiles={files as never[]}
           fileInputRef={{ current: null }}
           handleFileSelect={vi.fn()}
@@ -314,6 +322,38 @@ describe('AttachmentsSection media previews', () => {
     expect(names).toEqual(['first.png', 'middle-edited.png', 'last.pdf']);
     expect(container.querySelectorAll('p[title="middle-edited.png"]')).toHaveLength(1);
     expect(container.textContent).toContain('Вкладення (3)');
+    act(() => root.unmount());
+  });
+
+  it('allows another persisted replacement at the attachment cap #3099', async () => {
+    const existingMedia = Array.from({ length: 20 }, (_, index) => ({
+      id: `media-${index}`,
+      fileName: `image-${index}.png`,
+      contentType: 'image/png',
+      href: `https://example.test/${index}.png`,
+    }));
+    const firstReplacement = pendingFile('replacement-1', 'edited-1.png', 'image/png', {
+      replaces_media_id: 'media-0',
+    });
+    const uppy = {
+      getFile: vi.fn(() => undefined),
+      getFiles: vi.fn(() => [firstReplacement]),
+      addFile: vi.fn(),
+    };
+    const { container, root } = await renderSection([firstReplacement], existingMedia, uppy);
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Переглянути image-1.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(
+      previewMocks.imageEditing.applyReplacement(existingMedia[1], {
+        file: new File(['edited'], 'edited-2.png', { type: 'image/png' }),
+      }),
+    ).resolves.toBeUndefined();
+    expect(uppy.addFile).toHaveBeenCalledWith(
+      expect.objectContaining({ meta: { replaces_media_id: 'media-1' } }),
+    );
     act(() => root.unmount());
   });
 

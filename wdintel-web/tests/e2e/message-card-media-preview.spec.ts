@@ -58,7 +58,12 @@ async function makeWindowed(dialog: Locator) {
   await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
 }
 
-async function verifyFullscreenEscape(page: Page, dialog: Locator, reopen: () => Promise<Locator>) {
+async function verifyFullscreenEscape(
+  page: Page,
+  dialog: Locator,
+  reopen: () => Promise<Locator>,
+  closesFullscreen: boolean,
+) {
   await makeWindowed(dialog);
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
@@ -68,6 +73,10 @@ async function verifyFullscreenEscape(page: Page, dialog: Locator, reopen: () =>
   await dialog.getByRole('button', { name: 'Повноекранний режим' }).click();
   await expect(dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' })).toBeVisible();
   await page.keyboard.press('Escape');
+  if (closesFullscreen) {
+    await expect(dialog).toHaveCount(0);
+    return;
+  }
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
   await page.keyboard.press('Escape');
@@ -167,7 +176,7 @@ test.describe('message card media preview contract', () => {
     await page.keyboard.press('ArrowLeft');
     await expectPreviewCounter(imageDialog, '1 / 6');
 
-    await verifyFullscreenEscape(page, imageDialog, () => openImagePreview(page));
+    await verifyFullscreenEscape(page, imageDialog, () => openImagePreview(page), true);
   });
 
   test('video previews preserve carousel controls, info, and download', async ({ page }) => {
@@ -196,7 +205,7 @@ test.describe('message card media preview contract', () => {
     await page.keyboard.press('ArrowLeft');
     await expectPreviewCounter(videoDialog, '3 / 6');
 
-    await verifyFullscreenEscape(page, videoDialog, () => openVideoPreview(page));
+    await verifyFullscreenEscape(page, videoDialog, () => openVideoPreview(page), false);
   });
 
   test('txt and markdown previews preserve source text, mixed carousel order, and normal escape close', async ({

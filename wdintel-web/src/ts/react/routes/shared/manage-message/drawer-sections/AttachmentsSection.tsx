@@ -73,6 +73,11 @@ function attachmentSortRank(contentType: string | undefined, fileName: string | 
   return 2;
 }
 
+function replacementMediaId(file: UppyFile<any, any>, existingMediaIds: ReadonlySet<string>) {
+  const mediaId = file.meta?.replaces_media_id;
+  return typeof mediaId === 'string' && existingMediaIds.has(mediaId) ? mediaId : null;
+}
+
 export function AttachmentsSection({
   uppy,
   uppyFiles,
@@ -86,15 +91,18 @@ export function AttachmentsSection({
 }: Props) {
   const { watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
+  const existingMediaIds = useMemo(
+    () => new Set(existingMedia.map((media) => media.id)),
+    [existingMedia],
+  );
   const replacementByMediaId = useMemo(() => {
     const replacements = new Map<string, UppyFile<any, any>>();
     uppyFiles.forEach((file) => {
-      const mediaId = file.meta?.replaces_media_id;
-      if (typeof mediaId === 'string' && existingMedia.some((media) => media.id === mediaId))
-        replacements.set(mediaId, file);
+      const mediaId = replacementMediaId(file, existingMediaIds);
+      if (mediaId) replacements.set(mediaId, file);
     });
     return replacements;
-  }, [existingMedia, uppyFiles]);
+  }, [existingMediaIds, uppyFiles]);
   const visibleMedia = existingMedia.filter(
     (media) => !deletedMediaIds.includes(media.id) || replacementByMediaId.has(media.id),
   );
@@ -190,7 +198,12 @@ export function AttachmentsSection({
           replacePendingImageFile({ uppy, fileId: imageId, pending, replacement: result.file });
           return;
         }
-        if (visibleMedia.length - 1 + uppy.getFiles().length >= MAX_MESSAGE_ATTACHMENTS)
+        const pendingFiles = uppy.getFiles();
+        const ordinaryPendingFiles = pendingFiles.filter(
+          (file) => replacementMediaId(file, existingMediaIds) === null,
+        );
+        const projectedAttachmentCount = visibleMedia.length - 1 + ordinaryPendingFiles.length + 1;
+        if (projectedAttachmentCount > MAX_MESSAGE_ATTACHMENTS)
           throw new Error(`Перевищено максимальну кількість вкладень (${MAX_MESSAGE_ATTACHMENTS})`);
         try {
           uppy.addFile({
@@ -211,7 +224,7 @@ export function AttachmentsSection({
         });
       },
     }),
-    [busy, deletedMediaIds, setValue, uppy, visibleMedia.length],
+    [busy, deletedMediaIds, existingMediaIds, setValue, uppy, visibleMedia.length],
   );
 
   const previewAttachments = useMemo<MessageCardPreviewItem[]>(() => {
