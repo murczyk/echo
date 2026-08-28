@@ -52,7 +52,7 @@ export function ImageEditorSaveDialogs({
     <>
       <Dialog {...dialogProps} open={activeDialog === 'replacement'}>
         <DialogTitle>Замінити поточне зображення?</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pb: 0 }}>
           <DialogContentText>
             Відредаговане зображення замінить поточне вкладення.
           </DialogContentText>
@@ -83,7 +83,7 @@ export function ImageEditorSaveDialogs({
       </Dialog>
       <Dialog {...dialogProps} open={activeDialog === 'new'}>
         <DialogTitle>Зберегти як нове зображення</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ pt: 2.5, overflow: 'visible' }}>
           <TextField
             autoFocus
             fullWidth
@@ -102,6 +102,7 @@ export function ImageEditorSaveDialogs({
               }
             }}
             slotProps={{
+              inputLabel: { shrink: true },
               input: {
                 endAdornment: <InputAdornment position="end">.{extension}</InputAdornment>,
               },

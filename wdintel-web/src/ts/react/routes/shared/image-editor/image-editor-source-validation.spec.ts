@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  IMAGE_EDITOR_ANIMATED_PNG_ERROR,
   IMAGE_EDITOR_DIMENSIONS_TOO_LARGE_ERROR,
   IMAGE_EDITOR_SOURCE_TOO_LARGE_ERROR,
   MAX_IMAGE_EDITOR_SIDE,
@@ -10,12 +11,36 @@ import {
   validateImageEditorSource,
 } from './image-editor-source-validation';
 
-function png(width: number, height: number) {
-  const bytes = new Uint8Array(24);
-  bytes.set([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]);
-  new DataView(bytes.buffer).setUint32(16, width);
-  new DataView(bytes.buffer).setUint32(20, height);
+function pngChunk(type: string, data: number[] = []) {
+  const bytes = new Uint8Array(12 + data.length);
+  new DataView(bytes.buffer).setUint32(0, data.length);
+  bytes.set(
+    Array.from(type).map((value) => value.charCodeAt(0)),
+    4,
+  );
+  bytes.set(data, 8);
   return bytes;
+}
+
+function png(width: number, height: number, beforeIdat: Uint8Array[] = []) {
+  const ihdr = new Uint8Array(13);
+  const view = new DataView(ihdr.buffer);
+  view.setUint32(0, width);
+  view.setUint32(4, height);
+  return Uint8Array.from([
+    137,
+    80,
+    78,
+    71,
+    13,
+    10,
+    26,
+    10,
+    ...pngChunk('IHDR', Array.from(ihdr)),
+    ...beforeIdat.flatMap((chunk) => Array.from(chunk)),
+    ...pngChunk('IDAT'),
+    ...pngChunk('IEND'),
+  ]);
 }
 
 function source(bytes: Uint8Array) {
@@ -62,6 +87,15 @@ describe('image editor bounded source validation #3294', () => {
       width: 6000,
       height: 4000,
     });
+  });
+
+  it('rejects APNG chunks but not acTL bytes in ancillary payloads', async () => {
+    await expect(validateImageEditorSource(source(png(4, 3, [pngChunk('acTL')])))).rejects.toThrow(
+      IMAGE_EDITOR_ANIMATED_PNG_ERROR,
+    );
+    await expect(
+      validateImageEditorSource(source(png(4, 3, [pngChunk('tEXt', [97, 99, 84, 76])]))),
+    ).resolves.toMatchObject({ format: 'png', width: 4, height: 3 });
   });
 
   it('rejects malformed JPEG segments and parses static WebP variants', async () => {

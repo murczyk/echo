@@ -12,6 +12,8 @@ export const IMAGE_EDITOR_MALFORMED_SOURCE_ERROR =
   'Не вдалося безпечно прочитати параметри зображення для редагування.';
 export const IMAGE_EDITOR_ANIMATED_WEBP_ERROR =
   'Анімовані WebP-зображення доступні лише для перегляду';
+export const IMAGE_EDITOR_ANIMATED_PNG_ERROR =
+  'Анімовані PNG-зображення доступні лише для перегляду';
 
 type ImageMetadata = {
   format: 'jpeg' | 'png' | 'webp';
@@ -30,17 +32,33 @@ function u24le(bytes: Uint8Array, offset: number) {
 
 function png(bytes: Uint8Array): ImageMetadata | null {
   if (
-    bytes.length < 24 ||
+    bytes.length < 8 ||
     ![137, 80, 78, 71, 13, 10, 26, 10].every((value, index) => bytes[index] === value)
   )
     return null;
-  if (String.fromCharCode(...bytes.slice(12, 16)) !== 'IHDR') fail();
-  return {
-    format: 'png',
-    width: new DataView(bytes.buffer, bytes.byteOffset).getUint32(16),
-    height: new DataView(bytes.buffer, bytes.byteOffset).getUint32(20),
-    animated: false,
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const chunkType = (offset: number) => String.fromCharCode(...bytes.slice(offset + 4, offset + 8));
+  const chunkEnd = (offset: number) => {
+    if (offset > bytes.length - 8) fail();
+    const length = view.getUint32(offset);
+    if (length > bytes.length - offset - 12) fail();
+    return offset + 12 + length;
   };
+  const ihdrEnd = chunkEnd(8);
+  if (view.getUint32(8) !== 13 || chunkType(8) !== 'IHDR') fail();
+  const metadata = {
+    format: 'png' as const,
+    width: view.getUint32(16),
+    height: view.getUint32(20),
+  };
+  for (let offset = ihdrEnd; ;) {
+    const nextOffset = chunkEnd(offset);
+    const type = chunkType(offset);
+    if (type === 'acTL') return { ...metadata, animated: true };
+    if (type === 'IDAT') return { ...metadata, animated: false };
+    if (type === 'IEND') fail();
+    offset = nextOffset;
+  }
 }
 
 function jpeg(bytes: Uint8Array): ImageMetadata | null {
@@ -129,7 +147,12 @@ export async function validateImageEditorSource(source: ImageEditorSource): Prom
   );
   const metadata = png(bytes) ?? jpeg(bytes) ?? webp(bytes) ?? fail();
   if (!metadata.width || !metadata.height) fail();
-  if (metadata.animated) fail(IMAGE_EDITOR_ANIMATED_WEBP_ERROR);
+  if (metadata.animated)
+    fail(
+      metadata.format === 'png'
+        ? IMAGE_EDITOR_ANIMATED_PNG_ERROR
+        : IMAGE_EDITOR_ANIMATED_WEBP_ERROR,
+    );
   if (
     metadata.width > MAX_IMAGE_EDITOR_SIDE ||
     metadata.height > MAX_IMAGE_EDITOR_SIDE ||
