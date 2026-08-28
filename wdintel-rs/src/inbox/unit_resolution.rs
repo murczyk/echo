@@ -1261,7 +1261,7 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
         .iter()
         .map(|failure| failure.failed_unit_label_id)
         .collect_vec();
-    let mut labels = failed_unit_label::Entity::find()
+    let labels = failed_unit_label::Entity::find()
         .filter(failed_unit_label::Column::Id.is_in(label_ids))
         .all(&transaction)
         .await
@@ -1270,8 +1270,10 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
         .map(|label| (label.id, label))
         .collect::<HashMap<_, _>>();
     for failure in failures {
-        let label =
-            labels.remove(&failure.failed_unit_label_id).context(h!())?;
+        let label = labels
+            .get(&failure.failed_unit_label_id)
+            .cloned()
+            .context(h!())?;
         let inbox_item_id = failure.inbox_item_id;
         verify_pending_failure(&transaction, failure, label)
             .await
@@ -2680,16 +2682,20 @@ mod tests {
         .await
         .unwrap();
         let label = format!("worker-label-{}", Uuid::new_v4());
-        let successful =
-            insert_inbox_item(&env.dbx, Some(&label), None, None).await;
-        resolve_and_sync_inbox_item(
-            &env.dbx,
-            successful.id,
-            successful.unit_v2.as_deref(),
-            None,
-        )
-        .await
-        .unwrap();
+        let successful_items = vec![
+            insert_inbox_item(&env.dbx, Some(&label), None, None).await,
+            insert_inbox_item(&env.dbx, Some(&label), None, None).await,
+        ];
+        for successful in &successful_items {
+            resolve_and_sync_inbox_item(
+                &env.dbx,
+                successful.id,
+                successful.unit_v2.as_deref(),
+                None,
+            )
+            .await
+            .unwrap();
+        }
         crate::sigint::unit::labels::insert_label(
             &env.dbx,
             sigint_unit.id,
@@ -2701,7 +2707,7 @@ mod tests {
             mark_failures_pending_for_text(&env.dbx, &label)
                 .await
                 .unwrap(),
-            1
+            2
         );
 
         let unresolved_label = format!("worker-unresolved-{}", Uuid::new_v4());
@@ -2742,24 +2748,26 @@ mod tests {
 
         run_failed_inbox_unit_worker_once(&env.dbx).await.unwrap();
 
-        assert_eq!(
-            unit_ids_for_kind(
-                &env.dbx,
-                successful.id,
-                SigintInboxItemUnitKind::Parsed,
-            )
-            .await,
-            vec![sigint_unit.id]
-        );
-        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
-            .filter(
-                sigint_inbox_item_failed_unit_label::Column::InboxItemId
-                    .eq(successful.id),
-            )
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .is_none());
+        for successful in successful_items {
+            assert_eq!(
+                unit_ids_for_kind(
+                    &env.dbx,
+                    successful.id,
+                    SigintInboxItemUnitKind::Parsed,
+                )
+                .await,
+                vec![sigint_unit.id]
+            );
+            assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+                .filter(
+                    sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                        .eq(successful.id),
+                )
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .is_none());
+        }
 
         let failure = sigint_inbox_item_failed_unit_label::Entity::find()
             .filter(

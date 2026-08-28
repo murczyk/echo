@@ -65,6 +65,15 @@ describe('getPointPopupTemplate', () => {
     expect(html).toContain('bi-dash-square');
   });
 
+  it('filters by the displayed unit when several canonical units are linked', () => {
+    const message = buildMessage({ unit: 'Header Unit', unit_ids: [11, 17] });
+
+    const html = getPointPopupTemplate([message], ['Header Unit']);
+
+    expect(html).toContain('data-unitname="Header Unit"');
+    expect(html).toContain('bi-dash-square');
+  });
+
   it('shows an undefined unit when the message unit is missing', () => {
     const message = buildMessage({
       freq: '145.5',
