@@ -423,7 +423,6 @@ pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_CHANGELOG_LIMIT: u64 = 200;
-pub const SIGINT_UNIT_NAME_REVIEW_PAGE_SIZE: usize = 200;
 pub const SIGINT_UNIT_INCONSISTENCY_MULTIPLE_ORBIT_LINKS_REASON_UK: &str =
     "Кілька прив’язок ORBIT";
 pub const SIGINT_UNIT_INCONSISTENCY_LOWER_ORBIT_ECHELON_REASON_UK: &str =
@@ -950,6 +949,7 @@ pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 3] =
 pub const INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE: usize = 20_000;
 pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;
 pub const INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE: u64 = 500;
+pub const INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT: usize = 128;
 pub const SIGINT_INBOX_NETWORK_CHECK_SLEEP_SECS: u64 = 2 * 60 * 60;
 pub const SIGINT_INBOX_NETWORK_CHECK_BATCH_SIZE: u64 = 500;
 pub const SIGINT_INBOX_NETWORK_CHECK_MISMATCH_LOG_LIMIT: usize = 10;
@@ -979,6 +979,21 @@ pub const ORBIT_IMPORT_UNIT_ECHELON_FILE_NAME: &str =
     "orbit_unit_echelon.parquet";
 pub const ORBIT_MATCHING_SIGINT_NAME_BLACKLIST: &[&str] =
     &["ТерО", "ТрО", "(ат)"];
+pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
+    ("оббпс", &["об бпс", "оббпс"]),
+    ("а", &["а", "зва", "оа"]),
+    ("в", &["в", "b"]),
+    ("оптадн", &["оптадн", "оптдн"]),
+    ("габат", &["габат", "габатр"]),
+    ("шр", &["шр v", "шр", "шр в"]),
+    ("обреб", &["об реб", "обреб"]),
+];
+pub const ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE: usize = 10;
+pub const ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE: usize = 5;
+pub const ORBIT_TEST_LINK_UNITS_MAX_RATING: u8 = 100;
+pub const ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY: u8 = 1;
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
 pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
 pub const NETWORK_INBOX_OLD_WORKER_START_HOUR: u32 = 2;
