@@ -1,7 +1,18 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import { NeoMuiThemeProvider } from './mui-theme';
-import { AdminUnitInconsistentPage } from './routes/admin-unit-inconsistent';
+import { AdminUnitsPage } from './routes/admin-units';
+
+function getAuthUserRoles(element: Element): string[] {
+  const raw =
+    element.getAttribute('data-auth-user-roles') ??
+    element.closest('.app-shell')?.getAttribute('data-auth-user-roles') ??
+    '';
+  return raw
+    .split(',')
+    .map((role) => role.trim())
+    .filter(Boolean);
+}
 
 class AdminUnitInconsistentElement extends HTMLElement {
   private root: Root | null = null;
@@ -13,7 +24,7 @@ class AdminUnitInconsistentElement extends HTMLElement {
   private renderRoot() {
     this.root?.render(
       <NeoMuiThemeProvider>
-        <AdminUnitInconsistentPage />
+        <AdminUnitsPage authUserRoles={getAuthUserRoles(this)} initialTab="inconsistent" />
       </NeoMuiThemeProvider>,
     );
   }

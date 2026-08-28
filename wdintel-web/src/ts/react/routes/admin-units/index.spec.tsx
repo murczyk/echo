@@ -56,6 +56,7 @@ describe('admin units routing', () => {
 
   it.each([
     ['/admin/unit-duplicates', 'duplicates'],
+    ['/admin/unit-inconsistent', 'inconsistent'],
     ['/admin/unit-unparsed', 'unparsed'],
   ] as const)('replaces legacy route %s', async (pathname, tab) => {
     window.history.replaceState({}, '', pathname);
@@ -75,7 +76,13 @@ describe('admin units routing', () => {
     const root = createRoot(container);
 
     await act(async () => root.render(<AdminUnitsPage authUserRoles={[]} />));
+    expect(container.textContent).toContain('Неконсистентні підрозділи');
     expect(container.textContent).toContain('Нерозпізнані підрозділи');
+    const inconsistentTab = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === 'Неконсистентні підрозділи',
+    );
+    await act(async () => inconsistentTab?.click());
+    expect(window.location.search).toBe('?tab=inconsistent');
     const unparsedTab = Array.from(container.querySelectorAll('button')).find(
       (button) => button.textContent === 'Нерозпізнані підрозділи',
     );

@@ -506,7 +506,7 @@ fn apply_reviewed_orbit_hierarchy_change(
                 unreachable!("unknown reviewed unit attribute {attribute}")
             }
         };
-        if *current != attribute.proposed {
+        if *current == attribute.current && *current != attribute.proposed {
             current.clone_from(&attribute.proposed);
             updated = true;
         }
@@ -2040,16 +2040,56 @@ async fn merge_identical_duplicate_candidates(
     let components = identical_duplicate_components(&links, &units);
     let mut merged = 0;
     for component in components {
-        let transaction = dbx.begin().await.c(h!())?;
+        merged += merge_identical_duplicate_component(dbx, login, &component)
+            .await
+            .c(h!())?;
+    }
+    Ok(merged)
+}
+
+async fn merge_identical_duplicate_component(
+    dbx: &DatabaseConnection,
+    login: &Uuid,
+    unit_ids: &BTreeSet<i64>,
+) -> Result<usize, AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(unit_ids.iter().copied()))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .order_by_asc(sigint_unit::Column::Id)
+        .lock_exclusive()
+        .all(&transaction)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.id, unit))
+        .collect::<BTreeMap<_, _>>();
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .filter(
+            orbit_unit_sigint_unit::Column::SigintUnitId
+                .is_in(units.keys().copied()),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .all(&transaction)
+        .await
+        .c(h!())?;
+    let components = identical_duplicate_components(&links, &units);
+    let mut merged = 0;
+    for component in components {
         let mut candidates = component
             .into_iter()
             .filter_map(|unit_id| units.get(&unit_id).cloned())
             .collect::<Vec<_>>();
         candidates.sort_by_key(|unit| (!unit.active, unit.id));
-        let Some(survivor) = candidates.first() else {
-            continue;
-        };
-        let survivor_id = survivor.id;
+        let survivor_id = candidates
+            .first()
+            .expect("duplicate component must contain candidates")
+            .id;
         for duplicate in candidates.into_iter().skip(1) {
             super::merge_units_in_transaction(
                 *login,
@@ -2061,8 +2101,8 @@ async fn merge_identical_duplicate_candidates(
             .c(h!())?;
             merged += 1;
         }
-        transaction.commit().await.c(h!())?;
     }
+    transaction.commit().await.c(h!())?;
     Ok(merged)
 }
 
@@ -3425,7 +3465,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn reviewed_reconciliation_applies_only_displayed_changes() {
+    async fn reviewed_reconciliation_preserves_concurrent_edits() {
         let env = cleanup().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
@@ -3508,6 +3548,7 @@ mod tests {
         let mut edited = unchanged.into_active_model();
         edited.platoon = Set("Edited platoon".to_string());
         edited.company = Set(String::new());
+        edited.brigade = Set("Edited brigade".to_string());
         edited.update(&env.dbx).await.unwrap();
 
         let stats = reconcile_selected_orbit_hierarchy_changes(
@@ -3517,7 +3558,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(stats.hierarchy_updated, 1);
+        assert_eq!(stats.hierarchy_updated, 0);
         let unit = sigint_unit::Entity::find_by_id(sigint_unit.id)
             .one(&env.dbx)
             .await
@@ -3526,7 +3567,7 @@ mod tests {
 
         assert_eq!(unit.platoon, "Edited platoon");
         assert!(unit.company.is_empty());
-        assert_eq!(unit.brigade, "Generative brigade");
+        assert_eq!(unit.brigade, "Edited brigade");
         assert!(unit.division.is_empty());
     }
 
@@ -3787,7 +3828,7 @@ mod tests {
         let different_name = mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
-                name: Set("exact name".to_string()),
+                name: Set("Exact name".to_string()),
                 ..Default::default()
             },
         )
@@ -3807,6 +3848,21 @@ mod tests {
         {
             link_orbit_unit(&env.dbx, orbit_unit.unit_id, sigint_unit_id).await;
         }
+        let stale_component =
+            BTreeSet::from([active_newer.id, different_name.id]);
+        let mut different_name = different_name.into_active_model();
+        different_name.name = Set("exact name".to_string());
+        let different_name = different_name.update(&env.dbx).await.unwrap();
+        assert_eq!(
+            merge_identical_duplicate_component(
+                &env.dbx,
+                &login.id,
+                &stale_component,
+            )
+            .await
+            .unwrap(),
+            0
+        );
 
         let stats = reconcile_orbit_linked_units(&env.dbx, &login.id, None)
             .await

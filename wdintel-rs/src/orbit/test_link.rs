@@ -1,8 +1,9 @@
 use super::{matching, persistence, tui};
 use crate::config::{
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE,
+    ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE,
+    ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
-    ORBIT_TEST_LINK_UNITS_PERSIST_BATCH_SIZE,
 };
 use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
 use crate::types::{Mode, ShortContext};
@@ -26,6 +27,14 @@ struct PersistSummary {
     already_linked: usize,
     suppressed: usize,
     no_longer_matching: usize,
+}
+
+impl PersistSummary {
+    fn add(&mut self, summary: Self) {
+        self.already_linked += summary.already_linked;
+        self.suppressed += summary.suppressed;
+        self.no_longer_matching += summary.no_longer_matching;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -346,7 +355,7 @@ async fn persist_links(
 ) -> anyhow::Result<PersistSummary> {
     match link_mode {
         tui::LinkMode::Manual => {
-            persist_manual_link_batch(dbx, links, review_suppressed_links)
+            persist_manual_link_batches(dbx, links, review_suppressed_links)
                 .await
                 .c(h!())
         }
@@ -356,6 +365,22 @@ async fn persist_links(
                 .c(h!())
         }
     }
+}
+
+async fn persist_manual_link_batches(
+    dbx: &sea_orm::DatabaseConnection,
+    links: &[(i64, uuid::Uuid)],
+    review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+) -> anyhow::Result<PersistSummary> {
+    let mut summary = PersistSummary::default();
+    for links in links.chunks(ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE) {
+        summary.add(
+            persist_manual_link_batch(dbx, links, review_suppressed_links)
+                .await
+                .c(h!())?,
+        );
+    }
+    Ok(summary)
 }
 
 async fn persist_manual_link_batch(
@@ -404,22 +429,13 @@ async fn persist_automatic_link_batches(
 ) -> anyhow::Result<PersistSummary> {
     let mut summary = PersistSummary::default();
     for sigint_unit_ids in reviewed_sigint_unit_ids
-        .chunks(ORBIT_TEST_LINK_UNITS_PERSIST_BATCH_SIZE)
+        .chunks(ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE)
     {
-        let batch_summary =
+        summary.add(
             persist_automatic_link_batch(dbx, links, sigint_unit_ids)
                 .await
-                .c(h!())?;
-        summary.already_linked += batch_summary.already_linked;
-        summary.suppressed += batch_summary.suppressed;
-        summary.no_longer_matching += batch_summary.no_longer_matching;
-    }
-    if !reviewed_sigint_unit_ids.is_empty() {
-        let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
-        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
-            .await
-            .c(h!())?;
-        transaction.commit().await.c(h!())?;
+                .c(h!())?,
+        );
     }
     Ok(summary)
 }
@@ -447,6 +463,9 @@ async fn persist_automatic_link_batch(
     )
     .await
     .c(h!())?;
+    super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await
+        .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(summary)
 }
