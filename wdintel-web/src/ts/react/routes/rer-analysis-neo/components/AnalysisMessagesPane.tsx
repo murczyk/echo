@@ -643,7 +643,7 @@ function AnalysisMessagesPaneComponent({
 
   const handleFocusedLoad = useCallback(
     async (position: MessageLoadPosition) => {
-      if (directMessageNavigation == null) return false;
+      if (directMessageNavigation == null || directMessageNavigation.contextLoading) return false;
       const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
       const loading =
         direction === 'earlier'
@@ -684,6 +684,7 @@ function AnalysisMessagesPaneComponent({
     if (container == null || messages.length === 0 || loading) return;
 
     if (directMessageNavigation != null) {
+      if (directMessageNavigation.contextLoading) return;
       if (initialFocusedLoadTargetIdRef.current !== directMessageNavigation.targetMessageId) return;
       for (const position of ['above', 'below'] as const) {
         const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
@@ -753,6 +754,7 @@ function AnalysisMessagesPaneComponent({
     bottomAnchorSpacerPx,
     directMessageNavigation?.canLoadEarlier,
     directMessageNavigation?.canLoadLater,
+    directMessageNavigation?.contextLoading,
     directMessageNavigation?.focusActive,
     directMessageNavigation?.loadingEarlier,
     directMessageNavigation?.loadingLater,
@@ -870,6 +872,9 @@ function AnalysisMessagesPaneComponent({
   };
   const focusedLoadingAbove = isFocusedPositionLoading('above');
   const focusedLoadingBelow = isFocusedPositionLoading('below');
+  const displayedMessages = directMessageNavigation?.contextLoading
+    ? messages.filter(([messageId]) => messageId === directMessageNavigation.targetMessageId)
+    : messages;
 
   if (messages.length === 0 && !loading) {
     return (
@@ -935,8 +940,10 @@ function AnalysisMessagesPaneComponent({
             },
           }}
         >
-          {focusedLoadingAbove ? <MessageLoadingSkeletons position="above" /> : null}
-          {messages.map(([id, message]) => (
+          {focusedLoadingAbove || directMessageNavigation?.contextLoading ? (
+            <MessageLoadingSkeletons position="above" />
+          ) : null}
+          {displayedMessages.map(([id, message]) => (
             <AnalysisMessageCardItem
               key={id}
               authUserName={authUserName}
@@ -977,7 +984,9 @@ function AnalysisMessagesPaneComponent({
               unitsMap={unitsMap}
             />
           ))}
-          {focusedLoadingBelow || (directMessageNavigation == null && paginationLoading) ? (
+          {focusedLoadingBelow ||
+          directMessageNavigation?.contextLoading ||
+          (directMessageNavigation == null && paginationLoading) ? (
             <MessageLoadingSkeletons position="below" />
           ) : null}
         </Box>

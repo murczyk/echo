@@ -340,6 +340,61 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).not.toContain('loading');
   });
 
+  it('keeps only the target visible while refreshing direct-link context', async () => {
+    const directMessageNavigation = {
+      targetMessageId: 7,
+      focusActive: true,
+      contextLoading: true,
+      newestFirst: false,
+      canLoadEarlier: true,
+      canLoadLater: true,
+      loadingEarlier: false,
+      loadingLater: false,
+      onClearFocus: vi.fn(),
+      onLoadEarlier: vi.fn().mockResolvedValue(true),
+      onLoadLater: vi.fn().mockResolvedValue(true),
+    };
+    const messages: Array<[number, InboxMessage]> = [
+      [6, buildMessage()],
+      [7, buildMessage()],
+      [8, buildMessage()],
+    ];
+    const view = await renderComponent(buildProps({ messages, directMessageNavigation }));
+    rendered.push(view);
+
+    const target = view.container.querySelector('[data-testid="message-card-7"]');
+    expect(view.container.querySelector('[data-testid="message-card-6"]')).toBeNull();
+    expect(target).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="message-card-8"]')).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-above"]'),
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-below"]'),
+    ).not.toBeNull();
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            messages,
+            directMessageNavigation: { ...directMessageNavigation, contextLoading: false },
+          })}
+        />,
+      );
+    });
+
+    expect(view.container.querySelector('[data-testid="message-card-6"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-testid="message-card-7"]')).toBe(target);
+    expect(view.container.querySelector('[data-testid="message-card-8"]')).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-above"]'),
+    ).toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-below"]'),
+    ).toBeNull();
+  });
+
   it('uses a theme-aware scrollbar thumb in the messages pane', () => {
     const lightTheme = createTheme({ palette: { mode: 'light' } });
     const darkTheme = createTheme({ palette: { mode: 'dark' } });

@@ -890,14 +890,15 @@ describe('useRerAnalysisNeoPage', () => {
       hasMoreAfter: true,
     });
     window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildWindow(49, 'initial'));
+    const initialWindow = buildWindow(49, 'initial');
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(initialWindow);
 
     renderHook();
     await flushEffects();
 
     currentAnalysisData = {
       ...buildAnalysisData(),
-      messages: [[50, targetMessage]],
+      messages: initialWindow.inbox.inboxItems,
     };
     const groupWindow = buildWindow(48, 'same group');
     let resolveGroupWindow: ((value: InboxWindowRsp) => void) | undefined;
@@ -914,6 +915,9 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageNavigation).toMatchObject({
       targetMessageId: 50,
       focusActive: true,
+      contextLoading: true,
+      loadingEarlier: true,
+      loadingLater: true,
     });
     resolveGroupWindow?.(groupWindow);
     await flushEffects();
@@ -925,6 +929,14 @@ describe('useRerAnalysisNeoPage', () => {
       focusedWindow: groupWindow,
       focusedMessageActive: true,
     });
+
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: groupWindow.inbox.inboxItems,
+    };
+    act(() => latest?.setNewestFirst(false));
+    await flushEffects();
+    expect(latest?.directMessageNavigation?.contextLoading).toBe(false);
 
     const frequencyWindow = buildWindow(47, 'same frequency');
     inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(frequencyWindow);

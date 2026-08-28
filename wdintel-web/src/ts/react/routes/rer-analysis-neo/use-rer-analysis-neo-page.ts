@@ -52,6 +52,15 @@ function stringArraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function inboxWindowMatchesMessages(
+  inboxWindow: InboxWindowRsp,
+  messages: Array<[number, InboxMessage]>,
+): boolean {
+  if (inboxWindow.inbox.inboxItems.length !== messages.length) return false;
+  const messageIds = new Set(messages.map(([messageId]) => messageId));
+  return inboxWindow.inbox.inboxItems.every(([messageId]) => messageIds.has(messageId));
+}
+
 export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPageViewModel {
   const theme = useTheme();
   const isMobileLayout = useMediaQuery(theme.breakpoints.down('sm'));
@@ -89,6 +98,9 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [targetMessageUid] = useState(parseMessageUidFromWindow);
   const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
   const [targetMessageLoading, setTargetMessageLoading] = useState(targetMessageUid !== null);
+  const [targetMessageContextLoading, setTargetMessageContextLoading] = useState(false);
+  const [targetMessageContextResponsePending, setTargetMessageContextResponsePending] =
+    useState(false);
   const [targetMessageContextActive, setTargetMessageContextActive] = useState(
     targetMessageUid !== null,
   );
@@ -124,7 +136,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   useEffect(() => {
     if (!targetMessageUid || !targetMessageContextActive) return;
     let cancelled = false;
-    if (!targetMessageLoadedRef.current) setTargetMessageLoading(true);
+    const isContextRefresh = targetMessageLoadedRef.current;
+    if (isContextRefresh) {
+      setTargetMessageContextLoading(true);
+      setTargetMessageContextResponsePending(true);
+    } else {
+      setTargetMessageLoading(true);
+    }
     void fetchInboxWindow({
       messageRef: targetMessageUid,
       inboxReq: buildInboxReq(directMessageWindowQueryState, [], true),
@@ -135,6 +153,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
           if (!targetMessageLoadedRef.current) {
             setTargetMessageContextActive(false);
           }
+          setTargetMessageContextLoading(false);
+          setTargetMessageContextResponsePending(false);
           setPageError('Не вдалося знайти повідомлення за посиланням.');
           return;
         }
@@ -155,12 +175,15 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
           });
         }
         setTargetMessageWindow(res);
+        if (isContextRefresh) setTargetMessageContextResponsePending(false);
       })
       .catch((err) => {
         if (cancelled) return;
         if (!targetMessageLoadedRef.current) {
           setTargetMessageContextActive(false);
         }
+        setTargetMessageContextLoading(false);
+        setTargetMessageContextResponsePending(false);
         setPageError(`Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`);
       })
       .finally(() => {
@@ -624,17 +647,35 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const groupInfos = data.groupInfos;
   const profiles = data.profiles;
 
+  useEffect(() => {
+    if (
+      !targetMessageContextLoading ||
+      targetMessageContextResponsePending ||
+      targetMessageWindow == null ||
+      !inboxWindowMatchesMessages(targetMessageWindow, data.messages)
+    ) {
+      return;
+    }
+    setTargetMessageContextLoading(false);
+  }, [
+    data.messages,
+    targetMessageContextLoading,
+    targetMessageContextResponsePending,
+    targetMessageWindow,
+  ]);
+
   const directMessageNavigation = useMemo(() => {
     const targetMessageId = targetMessageWindow?.targetMessageId;
     if (!targetMessageContextActive || targetMessageId == null) return null;
     return {
       targetMessageId,
       focusActive: targetMessageFocusActive,
+      contextLoading: targetMessageContextLoading,
       newestFirst,
       canLoadEarlier: data.focusedHasMoreEarlier,
       canLoadLater: data.focusedHasMoreLater,
-      loadingEarlier: data.focusedLoadingEarlier,
-      loadingLater: data.focusedLoadingLater,
+      loadingEarlier: targetMessageContextLoading || data.focusedLoadingEarlier,
+      loadingLater: targetMessageContextLoading || data.focusedLoadingLater,
       onClearFocus: clearTargetMessageFocus,
       onLoadEarlier: data.loadFocusedEarlier,
       onLoadLater: data.loadFocusedLater,
@@ -650,6 +691,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     newestFirst,
     targetMessageWindow,
     targetMessageContextActive,
+    targetMessageContextLoading,
     targetMessageFocusActive,
   ]);
   const directMessageLoading =
