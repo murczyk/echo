@@ -18,7 +18,9 @@ export function getUnitFilterValue(unit: Unit): string {
 }
 
 export function getUnitIdFilterValue(unitId: number): string {
-  return `${UNIT_FILTER_ID_PREFIX}${unitId}`;
+  return unitId === UNIT_FILTER_UNSET_ID
+    ? UNIT_FILTER_UNSET_NAME
+    : `${UNIT_FILTER_ID_PREFIX}${unitId}`;
 }
 
 export function getCanonicalUnitIdValue(value: string): number | null {

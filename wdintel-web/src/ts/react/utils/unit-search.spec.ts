@@ -68,6 +68,7 @@ describe('buildUnitFilterOptions', () => {
 
     expect(options.map((unit) => unit.id)).toEqual([0, 2, 5]);
     expect(options.map(getUnitFilterValue)).toEqual(['Не визначено', 'unit-id:2', 'unit-id:5']);
+    expect(getUnitIdFilterValue(0)).toBe('Не визначено');
   });
 
   it('distinguishes tagged ids from numeric legacy labels', () => {

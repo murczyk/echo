@@ -267,40 +267,65 @@ pub(in crate::rer_importer) fn apply_analysis_unit_filters<E>(
 where
     E: EntityTrait,
 {
-    let query = if let Some(scope) = scope {
+    if let Some(scope) = scope {
         if selected_units.as_ref().is_none_or(Vec::is_empty) {
-            query
+            return Ok(super::filter_selected_unit_ids(
+                query,
+                selected_unit_ids,
+            ));
         } else {
             let resolved = resolved
                 .ok_or_else(|| {
                     anyhow::anyhow!("analytics unit filters were not resolved")
                 })
                 .context(h!())?;
-            apply_resolved_analytics_unit_filters(
+            return Ok(apply_resolved_analytics_unit_filters_with_ids(
                 query,
                 resolved,
                 scope,
                 units_exact_match_only.unwrap_or(false),
-            )
+                selected_unit_ids,
+            ));
         }
-    } else {
-        super::filter_selected_units_for_period(
-            query,
-            selected_units,
-            units_exact_match_only,
-            dt_since,
-            dt_till,
-        )
-        .context(h!())?
-    };
-    Ok(super::filter_selected_unit_ids(query, selected_unit_ids))
+    }
+    Ok(super::filter_selected_units_or_ids_for_period(
+        query,
+        selected_units,
+        selected_unit_ids,
+        units_exact_match_only,
+        dt_since,
+        dt_till,
+    )
+    .context(h!())?)
 }
 
+#[cfg(test)]
 pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters<E>(
+    query: Select<E>,
+    resolved: &ResolvedAnalyticsUnitFilters,
+    scope: &AnalyticsMessageIdScope,
+    exact_match_only: bool,
+) -> Select<E>
+where
+    E: EntityTrait,
+{
+    apply_resolved_analytics_unit_filters_with_ids(
+        query,
+        resolved,
+        scope,
+        exact_match_only,
+        &None,
+    )
+}
+
+pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters_with_ids<
+    E,
+>(
     mut query: Select<E>,
     resolved: &ResolvedAnalyticsUnitFilters,
     scope: &AnalyticsMessageIdScope,
     exact_match_only: bool,
+    selected_unit_ids: &Option<Vec<i64>>,
 ) -> Select<E>
 where
     E: EntityTrait,
@@ -330,13 +355,26 @@ where
         None
     };
 
-    if resolved.selected.present {
-        query = query.filter(analytics_unit_filter_match(
+    let selected_units = resolved.selected.present.then(|| {
+        analytics_unit_filter_match(
             &resolved.selected,
             selected_link.as_ref(),
             any_link.as_ref(),
             exact_match_only,
-        ));
+        )
+    });
+    let selected_unit_ids = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+        .map(|unit_ids| super::message_has_linked_unit_ids(unit_ids, false));
+    match (selected_units, selected_unit_ids) {
+        (None, None) => {}
+        (None, Some(condition)) | (Some(condition), None) => {
+            query = query.filter(condition);
+        }
+        (Some(units), Some(unit_ids)) => {
+            query = query.filter(units.or(unit_ids));
+        }
     }
     if resolved.denied.present {
         query = query.filter(

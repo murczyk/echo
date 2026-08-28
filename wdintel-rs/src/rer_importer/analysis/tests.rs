@@ -4560,6 +4560,58 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([(unit_tag.id, 1)])
     );
+
+    sigint_inbox_item_unit::ActiveModel {
+        item_id: Set(msg_etalon.id),
+        unit_id: Set(etalon_unit.id),
+        kind: Set(SigintInboxItemUnitKind::Network),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    req.selected_unit_ids = Some(vec![etalon_unit.id]);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([("944.1".to_string(), 1), ("944.3".to_string(), 1),])
+    );
+
+    let identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &identity).await;
+    let inbox_req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_units: req.selected_units,
+        selected_unit_ids: req.selected_unit_ids,
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let item_ids =
+        crate::rer_importer::inbox::query::build_filtered_inbox_query(
+            db,
+            &login_id,
+            &fixture.env,
+            &inbox_req,
+        )
+        .await
+        .unwrap()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    assert!(item_ids.contains(&msg_etalon.id));
+    assert!(item_ids.contains(&msg_unknown.id));
+    assert!(!item_ids.contains(&msg_header_only.id));
 }
 
 #[tokio::test]

@@ -5,7 +5,8 @@ use crate::config::{
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
 use crate::rer_importer::analysis::analytics_unit::{
-    apply_resolved_analytics_unit_filters, resolve_analytics_unit_filters,
+    apply_resolved_analytics_unit_filters_with_ids,
+    resolve_analytics_unit_filters,
 };
 use crate::rer_importer::analysis::*;
 use crate::rer_importer::types::*;
@@ -640,25 +641,19 @@ where
     let q = filter_search(q, &req.search)?;
     let q = filter_selected_device_names(q, &req.selected_device_names)?;
     let q = match unit_lookup_strategy {
-        InboxUnitLookupStrategy::Default => filter_selected_units(
+        InboxUnitLookupStrategy::Default => filter_selected_units_or_ids(
             q,
             &req.selected_units,
+            &req.selected_unit_ids,
             &req.units_exact_match_only,
         )?,
         InboxUnitLookupStrategy::Correlated => {
-            filter_selected_units_correlated(
+            filter_selected_units_or_ids_correlated(
                 q,
                 &req.selected_units,
+                &req.selected_unit_ids,
                 &req.units_exact_match_only,
             )?
-        }
-    };
-    let q = match unit_lookup_strategy {
-        InboxUnitLookupStrategy::Default => {
-            filter_selected_unit_ids(q, &req.selected_unit_ids)
-        }
-        InboxUnitLookupStrategy::Correlated => {
-            filter_selected_unit_ids_correlated(q, &req.selected_unit_ids)
         }
     };
     let q = match unit_lookup_strategy {
@@ -1205,6 +1200,7 @@ async fn build_analytics_filtered_inbox_query(
     let resolved_aors = resolve_analytics_aor_filter(&env.dbx, req).await?;
     let mut analytics_req = req.clone();
     analytics_req.selected_units = None;
+    analytics_req.selected_unit_ids = None;
     analytics_req.denied_units = None;
     analytics_req.selected_aors = None;
     let query = build_filtered_inbox_query_with_scope(
@@ -1220,11 +1216,12 @@ async fn build_analytics_filtered_inbox_query(
     .await
     .context(h!())?;
     let has_unit_filters = resolved_units.has_filters();
-    let query = apply_resolved_analytics_unit_filters(
+    let query = apply_resolved_analytics_unit_filters_with_ids(
         query,
         &resolved_units,
         &scope,
         req.units_exact_match_only.unwrap_or(false),
+        &req.selected_unit_ids,
     );
     let query =
         apply_resolved_analytics_aor_filter(query, &resolved_aors, &scope);

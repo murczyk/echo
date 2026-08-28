@@ -99,7 +99,11 @@ isCanonicalUnitIdValue value =
 
 unitIdFilterValue : Int -> String
 unitIdFilterValue unitId =
-    "unit-id:" ++ String.fromInt unitId
+    if unitId == 0 then
+        "Не визначено"
+
+    else
+        "unit-id:" ++ String.fromInt unitId
 
 
 canonicalUnitIdFromValue : String -> Maybe Int
