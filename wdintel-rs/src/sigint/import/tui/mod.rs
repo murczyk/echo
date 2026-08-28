@@ -1653,6 +1653,7 @@ where
             last_release_seen: NotSet,
             description: NotSet,
             password_auth_enabled: Set(false),
+            totp_secret: Set(None),
         })
         .collect::<Vec<_>>();
 

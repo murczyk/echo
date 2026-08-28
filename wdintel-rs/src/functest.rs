@@ -909,6 +909,9 @@ pub mod tests {
         if out.deleted_permanently == NotSet {
             out.deleted_permanently = Set(false);
         }
+        if out.totp_secret == NotSet {
+            out.totp_secret = Set(None);
+        }
         out
     }
 

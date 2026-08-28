@@ -30,6 +30,8 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
     pub password_auth_enabled: bool,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub totp_secret: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

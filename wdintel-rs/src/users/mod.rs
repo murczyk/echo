@@ -491,6 +491,7 @@ pub async fn create_login(
                 req.description.clone(),
             )),
             password_auth_enabled: Set(true),
+            totp_secret: Set(None),
         },
     )
     .await
@@ -1027,6 +1028,7 @@ pub async fn register_user(
         last_release_seen: NotSet,
         description: NotSet,
         password_auth_enabled: Set(true),
+        totp_secret: Set(None),
     }
     .insert(&txn)
     .await
@@ -1486,6 +1488,7 @@ async fn register_delta_user(
             last_release_seen: NotSet,
             description: Set(normalize_login_description(description)),
             password_auth_enabled: Set(false),
+            totp_secret: Set(None),
         },
     )
     .await
@@ -2170,6 +2173,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+                totp_secret: Set(None),
             },
         )
         .await
@@ -2244,6 +2248,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
+                    totp_secret: Set(None),
                 },
             )
             .await
@@ -2316,6 +2321,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
+                    totp_secret: Set(None),
                 },
             )
             .await
@@ -2340,6 +2346,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+                totp_secret: Set(None),
             },
         )
         .await
@@ -2393,6 +2400,7 @@ mod tests {
             last_release_seen: Default::default(),
             description: Default::default(),
             password_auth_enabled: Set(false),
+            totp_secret: Set(None),
         }
         .insert(&env.dbx)
         .await
@@ -2416,6 +2424,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+                totp_secret: Set(None),
             },
         )
         .await

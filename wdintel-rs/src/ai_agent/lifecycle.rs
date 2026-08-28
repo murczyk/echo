@@ -105,6 +105,7 @@ where
             )),
             id: Set(template_login_id),
             password_auth_enabled: Set(false),
+            totp_secret: Set(None),
         }
         .insert(dbx)
         .await
@@ -227,6 +228,7 @@ async fn create_link(
         description: Set(Some(format!("AI agent linked to {}", human.login))),
         id: Set(agent_login_id),
         password_auth_enabled: Set(false),
+        totp_secret: Set(None),
     }
     .insert(txn)
     .await
