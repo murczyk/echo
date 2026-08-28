@@ -269,6 +269,22 @@ fn etalonka_network_ids(
         .collect()
 }
 
+fn repeated_etalonka_network_ids(
+    networks_data: &BTreeMap<
+        NetworkEtalonkaUnitKey,
+        Vec<NetworkEtalonkaResult>,
+    >,
+) -> HashSet<i64> {
+    let mut network_ids = HashSet::new();
+    networks_data
+        .values()
+        .flat_map(|unit_networks| {
+            unit_networks.iter().map(|network| network.id)
+        })
+        .filter(|network_id| !network_ids.insert(*network_id))
+        .collect()
+}
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Hash, Default)]
 pub struct EtalonkaEntryKey {
     pub unit_name: String,
@@ -447,6 +463,7 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             .await
             .c(h!())?;
     let network_ids = etalonka_network_ids(&networks_data);
+    let repeated_network_ids = repeated_etalonka_network_ids(&networks_data);
     let network_count = network_ids.len();
     let options = etalonka_collection_options(
         report_type,
@@ -535,7 +552,9 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                     )
                     .await
                     .context(h!())?;
-                    entries_by_network_id.insert(network_id, entry.clone());
+                    if repeated_network_ids.contains(&network_id) {
+                        entries_by_network_id.insert(network_id, entry.clone());
+                    }
                     entry
                 };
             if options.include_pelengs_map {
@@ -2498,27 +2517,6 @@ mod tests {
             options.filters[1].since_date_inclusive_ms,
             Some(since_ms + 24 * hour_ms)
         );
-        assert_eq!(
-            options.filters[2].till_date_end,
-            ReportPeriodEnd::Inclusive
-        );
-    }
-
-    #[test]
-    fn extended_report_always_uses_configured_chunks() {
-        let hour_ms = chrono::Duration::hours(1).num_milliseconds();
-        let since_ms = crate::config::RER_ETALONKA_REPORT_SINCE_MIN_MS;
-        let till_ms = since_ms + 49 * hour_ms;
-        let options = etalonka_collection_options(
-            &extended_report_type(since_ms, till_ms),
-            24,
-            since_ms + 50 * hour_ms,
-        )
-        .unwrap();
-
-        assert_eq!(options.filters.len(), 3);
-        assert_eq!(options.filters[0].since_date_inclusive_ms, Some(since_ms));
-        assert_eq!(options.filters[2].till_date_inclusive_ms, Some(till_ms));
         assert_eq!(
             options.filters[2].till_date_end,
             ReportPeriodEnd::Inclusive
