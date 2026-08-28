@@ -131,7 +131,7 @@ async fn process_next(
             },
             AiEngineMessage {
                 role: AI_CHAT_ROLE_USER.to_string(),
-                content: body,
+                content: body.clone(),
             },
         ],
     )
@@ -142,7 +142,8 @@ async fn process_next(
             Err(error) => {
                 fail_job(
                     dbx,
-                    job,
+                    job.sigint_inbox_item_id,
+                    &body,
                     format!("{error}; відповідь ШІ: {response_text}"),
                 )
                 .await
@@ -151,20 +152,25 @@ async fn process_next(
             }
         },
         Err(error) => {
-            fail_job(dbx, job, error.to_string()).await.context(h!())?;
+            fail_job(dbx, job.sigint_inbox_item_id, &body, error.to_string())
+                .await
+                .context(h!())?;
             return Ok(true);
         }
     };
     let changed = match complete_job(
         dbx,
         job.sigint_inbox_item_id,
+        &body,
         normalize_settlements(settlements),
     )
     .await
     {
         Ok(changed) => changed,
         Err(error) => {
-            fail_job(dbx, job, error.to_string()).await.c(h!())?;
+            fail_job(dbx, job.sigint_inbox_item_id, &body, error.to_string())
+                .await
+                .c(h!())?;
             return Ok(true);
         }
     };
@@ -240,9 +246,31 @@ async fn load_next_job(
 async fn complete_job(
     dbx: &DatabaseConnection,
     sigint_inbox_item_id: i64,
+    expected_body: &str,
     ai_settlements: Vec<String>,
 ) -> Result<bool, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
+    let message = lock_signal_message(&transaction, sigint_inbox_item_id)
+        .await
+        .context(h!())?;
+    let job = lock_worker_job(&transaction, sigint_inbox_item_id)
+        .await
+        .context(h!())?;
+    if job.is_none() {
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    }
+    let Some(message) = message.filter(|message| !message.deleted) else {
+        delete_job(&transaction, sigint_inbox_item_id)
+            .await
+            .context(h!())?;
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    };
+    if message.body.as_deref().unwrap_or_default() != expected_body {
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    }
     let Some(inbox_item) = lock_inbox_item(&transaction, sigint_inbox_item_id)
         .await
         .context(h!())?
@@ -282,6 +310,30 @@ async fn complete_job(
     Ok(changed)
 }
 
+async fn lock_signal_message(
+    transaction: &DatabaseTransaction,
+    sigint_inbox_item_id: i64,
+) -> Result<Option<signal_message::Model>, AppError> {
+    Ok(signal_message::Entity::find_by_id(sigint_inbox_item_id)
+        .lock_exclusive()
+        .one(transaction)
+        .await
+        .c(h!())?)
+}
+
+async fn lock_worker_job(
+    transaction: &DatabaseTransaction,
+    sigint_inbox_item_id: i64,
+) -> Result<Option<ai_settlement_worker_job::Model>, AppError> {
+    Ok(
+        ai_settlement_worker_job::Entity::find_by_id(sigint_inbox_item_id)
+            .lock_exclusive()
+            .one(transaction)
+            .await
+            .c(h!())?,
+    )
+}
+
 async fn lock_inbox_item(
     transaction: &DatabaseTransaction,
     sigint_inbox_item_id: i64,
@@ -295,9 +347,32 @@ async fn lock_inbox_item(
 
 async fn fail_job(
     dbx: &DatabaseConnection,
-    job: ai_settlement_worker_job::Model,
+    sigint_inbox_item_id: i64,
+    expected_body: &str,
     error_text: String,
 ) -> Result<(), AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let message = lock_signal_message(&transaction, sigint_inbox_item_id)
+        .await
+        .context(h!())?;
+    let Some(job) = lock_worker_job(&transaction, sigint_inbox_item_id)
+        .await
+        .context(h!())?
+    else {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    };
+    let Some(message) = message.filter(|message| !message.deleted) else {
+        delete_job(&transaction, sigint_inbox_item_id)
+            .await
+            .context(h!())?;
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    };
+    if message.body.as_deref().unwrap_or_default() != expected_body {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
     let attempts = job.attempts + 1;
     let error_text = truncate_error(error_text);
     if attempts >= AI_SETTLEMENT_WORKER_MAX_ATTEMPTS {
@@ -305,9 +380,10 @@ async fn fail_job(
             "ai_settlement_worker dropped message_id={} after {} attempts: {}",
             job.sigint_inbox_item_id, attempts, error_text
         );
-        delete_job(dbx, job.sigint_inbox_item_id)
+        delete_job(&transaction, job.sigint_inbox_item_id)
             .await
             .context(h!())?;
+        transaction.commit().await.c(h!())?;
         return Ok(());
     }
     let mut job = job.into_active_model();
@@ -315,7 +391,8 @@ async fn fail_job(
     job.next_attempt_at = Set(Utc::now().naive_utc()
         + ChronoDuration::seconds(retry_delay_secs(attempts)));
     job.last_error = Set(Some(error_text));
-    job.update(dbx).await.c(h!())?;
+    job.update(&transaction).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(())
 }
 
@@ -379,8 +456,8 @@ fn truncate_error(error: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_job, merge_current_and_ai_settlements, normalize_settlements,
-        retry_delay_secs,
+        complete_job, fail_job, merge_current_and_ai_settlements,
+        normalize_settlements, retry_delay_secs,
     };
     use crate::entities::{
         ai_settlement_worker_job, sigint_inbox_item,
@@ -429,6 +506,7 @@ mod tests {
         let message = crate::functest::tests::mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
+                body: Set(Some("message body".to_string())),
                 ..Default::default()
             },
         )
@@ -457,6 +535,7 @@ mod tests {
         assert!(complete_job(
             &env.dbx,
             message.id,
+            "message body",
             vec!["existing mixed".to_string(), "THIRD".to_string()],
         )
         .await
@@ -489,5 +568,86 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn ignores_stale_or_already_completed_results_2133() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("new body".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            location_v2: Set(Some("|EXISTING|".to_string())),
+            parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        ai_settlement_worker_job::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            attempts: Set(0),
+            next_attempt_at: Set(chrono::Utc::now().naive_utc()),
+            last_error: Set(None),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        assert!(!complete_job(
+            &env.dbx,
+            message.id,
+            "old body",
+            vec!["STALE".to_string()],
+        )
+        .await
+        .unwrap());
+        fail_job(&env.dbx, message.id, "old body", "stale error".to_string())
+            .await
+            .unwrap();
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|EXISTING|"));
+        let job = ai_settlement_worker_job::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.attempts, 0);
+
+        assert!(complete_job(
+            &env.dbx,
+            message.id,
+            "new body",
+            vec!["FRESH".to_string()],
+        )
+        .await
+        .unwrap());
+        assert!(!complete_job(
+            &env.dbx,
+            message.id,
+            "new body",
+            vec!["DUPLICATE".to_string()],
+        )
+        .await
+        .unwrap());
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|EXISTING|FRESH|"));
     }
 }

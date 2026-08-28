@@ -18,6 +18,7 @@ use crate::types::{Deserialize, Env, Serialize, ShortContext};
 use crate::users::{ensure_admin, login_id_from_identity};
 use actix_identity::Identity;
 use actix_web::{post, web::Json};
+use anyhow::Context;
 use base64::Engine;
 use chrono::Utc;
 use reqwest::StatusCode;
@@ -207,7 +208,8 @@ pub async fn update_ai_engine(
         ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
             .await?;
         ensure_not_used_by_enabled_settlement_worker(&env.dbx, ai_engine_id)
-            .await?;
+            .await
+            .context(h!())?;
         crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
             .await
             .c(h!())?;
@@ -245,7 +247,8 @@ pub async fn delete_ai_engine(
     find_ai_engine(&env.dbx, ai_engine_id).await?;
     ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id).await?;
     ensure_not_used_by_enabled_settlement_worker(&env.dbx, ai_engine_id)
-        .await?;
+        .await
+        .context(h!())?;
     crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
         .await
         .c(h!())?;
