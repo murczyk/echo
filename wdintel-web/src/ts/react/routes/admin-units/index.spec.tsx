@@ -7,6 +7,10 @@ vi.mock('../admin-unit-duplicates', () => ({
   AdminUnitDuplicatesPage: () => <div>Дублікати дані</div>,
 }));
 
+vi.mock('../admin-unit-inconsistent', () => ({
+  AdminUnitInconsistentPage: () => <div>Неконсистентні дані</div>,
+}));
+
 vi.mock('../admin-unit-unparsed', () => ({
   AdminUnitUnparsedPage: () => <div>Нерозпізнані дані</div>,
 }));
@@ -34,7 +38,7 @@ describe('admin units routing', () => {
   it('defaults missing and invalid tabs to duplicates', () => {
     expect(readAdminUnitsTab('')).toBe('duplicates');
     expect(readAdminUnitsTab('?tab=unknown')).toBe('duplicates');
-    expect(readAdminUnitsTab('?tab=inconsistent')).toBe('duplicates');
+    expect(readAdminUnitsTab('?tab=inconsistent')).toBe('inconsistent');
     expect(readAdminUnitsTab('?tab=names')).toBe('duplicates');
     expect(readAdminUnitsTab('?tab=unparsed')).toBe('unparsed');
   });
