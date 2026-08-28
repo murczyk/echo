@@ -438,6 +438,7 @@ pub struct MessageUuidsReq {
 pub struct InboxMessagesReq {
     pub since_id_noninclusive: Option<i64>,
     pub before_id_noninclusive: Option<i64>,
+    pub around_message_ref: Option<String>,
     pub since_date_inclusive_ms: Option<i64>,
     pub till_date_inclusive_ms: Option<i64>,
     pub only_show_unprocessed: Option<bool>,
@@ -526,14 +527,6 @@ pub struct InboxItemContextRsp {
     pub since_ts: Option<i64>,
     #[serde(rename = "tillTs")]
     pub till_ts: Option<i64>,
-}
-
-#[derive(
-    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
-)]
-pub struct InboxWindowReq {
-    pub message_ref: String,
-    pub inbox_req: Option<InboxMessagesReq>,
 }
 
 #[derive(

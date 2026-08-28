@@ -270,6 +270,7 @@ export function buildInboxReq(opts: {
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
     beforeIdNoninclusive: opts.beforeIdNoninclusive ?? null,
+    aroundMessageRef: null,
     sinceDateInclusiveMs: opts.sinceDateInclusiveMs ?? null,
     tillDateInclusiveMs: opts.tillDateInclusiveMs ?? null,
     onlyShowUnprocessed: null,

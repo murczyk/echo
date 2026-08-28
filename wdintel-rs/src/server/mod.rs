@@ -837,7 +837,6 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::rer_importer::inbox::inbox_cursor)
             .service(crate::rer_importer::inbox::update_inbox_cursor)
             .service(crate::rer_importer::inbox::inbox_item_context)
-            .service(crate::rer_importer::inbox::inbox_window)
             .service(crate::rer_importer::inbox::messages_by_id)
             .service(crate::rer_importer::inbox::messages_by_uuid)
             .service(crate::rer_importer::inbox::get_freq_pelengs_summary)

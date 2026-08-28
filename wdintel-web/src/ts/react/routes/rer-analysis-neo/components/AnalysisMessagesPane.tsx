@@ -227,7 +227,7 @@ function MessageLoadingSkeletons({ position }: { position: MessageLoadPosition }
       role="status"
       aria-label="Завантаження ще повідомлень"
       data-testid={`message-loading-skeletons-${position}`}
-      sx={{ display: 'grid', gap: 1.25, py: 1 }}
+      sx={{ display: 'grid', gap: 1.5, pb: 1.5 }}
     >
       {[96, 76].map((bodyHeight, index) => (
         <Box

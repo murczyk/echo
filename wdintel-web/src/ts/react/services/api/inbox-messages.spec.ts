@@ -213,28 +213,25 @@ describe('fetchInboxItemContext', () => {
 describe('fetchInboxWindow', () => {
   it('loads and normalizes the target with messages on both sides in one request', async () => {
     apiMocks.postJson.mockResolvedValueOnce({
-      target_message_id: 101,
-      inbox: {
-        inbox_items: [
-          [100, { text: 'before' }],
-          [101, { message_uuid: '019-id', text: 'target' }],
-          [102, { text: 'after' }],
-        ],
-        callsigns: [],
-        signal_profiles: {},
-        signal_groups: [],
-        freq_pelengs_summary: null,
-        page_limit: 20,
-      },
-      has_more_before: true,
-      has_more_after: false,
+      inbox_items: [
+        [100, { text: 'before' }],
+        [101, { message_uuid: '019-id', text: 'target' }],
+        [102, { text: 'after' }],
+      ],
+      callsigns: [],
+      signal_profiles: {},
+      signal_groups: [],
+      freq_pelengs_summary: null,
+      page_limit: 20,
     });
 
     const result = await fetchInboxWindow({ messageRef: '019-id', inboxReq: null });
 
     expect(apiMocks.postJson).toHaveBeenCalledWith(
-      '/api/rer-importer/inbox-window',
-      { message_ref: '019-id', inbox_req: null },
+      '/api/rer-importer/get-inbox',
+      expect.objectContaining({
+        around_message_ref: '019-id',
+      }),
       undefined,
     );
     expect(result).toMatchObject({
@@ -246,7 +243,7 @@ describe('fetchInboxWindow', () => {
           [102, expect.objectContaining({ text: 'after' })],
         ],
       },
-      hasMoreBefore: true,
+      hasMoreBefore: false,
       hasMoreAfter: false,
     });
   });

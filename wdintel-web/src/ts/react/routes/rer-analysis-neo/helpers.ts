@@ -405,6 +405,7 @@ export function buildInboxReq(
   return {
     sinceIdNoninclusive: null,
     beforeIdNoninclusive: null,
+    aroundMessageRef: null,
     sinceDateInclusiveMs: req.sinceDateInclusiveMs,
     tillDateInclusiveMs: req.tillDateNoninclusiveMs,
     onlyShowUnprocessed: null,

@@ -1305,6 +1305,7 @@ tagPresenceFilterEncoder enum =
 type alias InboxMessagesReq =
     { sinceIdNoninclusive : Maybe (Int)
     , beforeIdNoninclusive : Maybe (Int)
+    , aroundMessageRef : Maybe (String)
     , sinceDateInclusiveMs : Maybe (Int)
     , tillDateInclusiveMs : Maybe (Int)
     , onlyShowUnprocessed : Maybe (Bool)
@@ -1369,6 +1370,7 @@ inboxMessagesReqEncoder struct =
     Json.Encode.object
         [ ( "since_id_noninclusive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceIdNoninclusive )
         , ( "before_id_noninclusive", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.beforeIdNoninclusive )
+        , ( "around_message_ref", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aroundMessageRef )
         , ( "since_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceDateInclusiveMs )
         , ( "till_date_inclusive_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillDateInclusiveMs )
         , ( "only_show_unprocessed", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.onlyShowUnprocessed )
@@ -3475,20 +3477,6 @@ inboxItemContextRspEncoder struct =
         , ( "sigint_inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.sigintInboxItemIds )
         , ( "sinceTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceTs )
         , ( "tillTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillTs )
-        ]
-
-
-type alias InboxWindowReq =
-    { messageRef : String
-    , inboxReq : Maybe (InboxMessagesReq)
-    }
-
-
-inboxWindowReqEncoder : InboxWindowReq -> Json.Encode.Value
-inboxWindowReqEncoder struct =
-    Json.Encode.object
-        [ ( "message_ref", (Json.Encode.string) struct.messageRef )
-        , ( "inbox_req", (Maybe.withDefault Json.Encode.null << Maybe.map (inboxMessagesReqEncoder)) struct.inboxReq )
         ]
 
 
@@ -15035,6 +15023,7 @@ inboxMessagesReqDecoder =
     Json.Decode.succeed InboxMessagesReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_id_noninclusive" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "before_id_noninclusive" (Json.Decode.nullable (Json.Decode.int))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "around_message_ref" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "since_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "till_date_inclusive_ms" (Json.Decode.nullable (Json.Decode.int))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "only_show_unprocessed" (Json.Decode.nullable (Json.Decode.bool))))

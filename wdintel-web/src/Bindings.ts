@@ -496,6 +496,7 @@ export type TagPresenceFilter =
 export type InboxMessagesReq = {
   sinceIdNoninclusive: number | null;
   beforeIdNoninclusive: number | null;
+  aroundMessageRef: string | null;
   sinceDateInclusiveMs: number | null;
   tillDateInclusiveMs: number | null;
   onlyShowUnprocessed: boolean | null;
@@ -1339,11 +1340,6 @@ export type InboxItemContextRsp = {
   sigintInboxItemIds: Array<number>;
   sinceTs: number | null;
   tillTs: number | null;
-};
-
-export type InboxWindowReq = {
-  messageRef: string;
-  inboxReq: InboxMessagesReq | null;
 };
 
 export type InboxWindowRsp = {

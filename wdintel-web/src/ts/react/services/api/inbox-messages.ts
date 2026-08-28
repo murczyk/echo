@@ -8,7 +8,6 @@ import type {
   InboxMessageMetadata,
   InboxMessageTag,
   InboxMessagesReq,
-  InboxWindowReq,
   InboxWindowRsp,
   MessageIdsReq,
   InboxMessagesRsp,
@@ -375,6 +374,7 @@ export function inboxMsgtoSnakeBody(req: InboxMessagesReq): object {
   return {
     since_id_noninclusive: req.sinceIdNoninclusive,
     before_id_noninclusive: req.beforeIdNoninclusive,
+    around_message_ref: req.aroundMessageRef,
     since_date_inclusive_ms: req.sinceDateInclusiveMs,
     till_date_inclusive_ms: req.tillDateInclusiveMs,
     only_show_unprocessed: req.onlyShowUnprocessed,
@@ -446,31 +446,38 @@ export async function fetchInboxMessages(
   return mapRsp(raw);
 }
 
-type InboxWindowRspRaw = {
-  target_message_id: number;
-  inbox: InboxMessagesRspRaw;
-  has_more_before: boolean;
-  has_more_after: boolean;
+export type FetchInboxWindowReq = {
+  messageRef: string;
+  inboxReq: InboxMessagesReq | null;
 };
 
 export async function fetchInboxWindow(
-  req: InboxWindowReq,
+  req: FetchInboxWindowReq,
   options?: RequestOptions,
 ): Promise<InboxWindowRsp | null> {
-  const raw = await postJson<InboxWindowRspRaw | null>(
-    '/api/rer-importer/inbox-window',
+  const inbox = await fetchInboxMessages(
     {
-      message_ref: req.messageRef,
-      inbox_req: req.inboxReq == null ? null : inboxMsgtoSnakeBody(req.inboxReq),
-    } as any,
+      ...(req.inboxReq ?? {}),
+      aroundMessageRef: req.messageRef,
+    } as InboxMessagesReq,
     options,
   );
-  if (raw == null) return null;
+  const target = inbox.inboxItems
+    .filter(
+      ([messageId, message]) =>
+        String(messageId) === req.messageRef ||
+        message.messageUuid === req.messageRef ||
+        message.messageUid === req.messageRef,
+    )
+    .sort(([leftId], [rightId]) => leftId - rightId)[0];
+  if (target == null) return null;
+  const targetIndex = inbox.inboxItems.findIndex(([messageId]) => messageId === target[0]);
+  const pageLimit = inbox.pageLimit ?? 20;
   return {
-    targetMessageId: raw.target_message_id,
-    inbox: mapRsp(raw.inbox),
-    hasMoreBefore: raw.has_more_before,
-    hasMoreAfter: raw.has_more_after,
+    targetMessageId: target[0],
+    inbox,
+    hasMoreBefore: targetIndex >= pageLimit,
+    hasMoreAfter: inbox.inboxItems.length - targetIndex - 1 >= pageLimit,
   };
 }
 

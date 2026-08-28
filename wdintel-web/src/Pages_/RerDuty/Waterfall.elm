@@ -396,6 +396,7 @@ getBasicInboxParams : Model -> B.InboxMessagesReq
 getBasicInboxParams model =
     { sinceIdNoninclusive = Nothing
     , beforeIdNoninclusive = Nothing
+    , aroundMessageRef = Nothing
     , sinceDateInclusiveMs = Nothing
     , tillDateInclusiveMs = Nothing
     , onlyShowUnprocessed = Nothing

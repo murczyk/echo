@@ -363,49 +363,22 @@ async fn load_inbox_item_context_rows(
         .c(h!())?)
 }
 
-#[post("/api/rer-importer/inbox-window")]
-async fn inbox_window(
-    user: Identity,
-    env: actix_web::web::Data<Env>,
-    req: Json<InboxWindowReq>,
-) -> Result<Json<Option<InboxWindowRsp>>, AppError> {
-    let login = login_id_from_identity(&user).context(h!())?;
-    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
-        .await
-        .c(h!())?;
-    let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, &login)
-        .await
-        .c(h!())?;
-    let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
-    let req = req.into_inner();
-
-    Ok(Json(
-        inbox_window_bl(&env, &login, &logins, is_admin, req)
-            .await
-            .context(h!())?,
-    ))
-}
-
 async fn inbox_window_bl(
     env: &Env,
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
     is_admin: bool,
-    req: InboxWindowReq,
+    message_ref: &str,
+    inbox_req: InboxMessagesReq,
 ) -> Result<Option<InboxWindowRsp>, AppError> {
-    let Some(message_ref) =
-        normalized_optional_string(Some(req.message_ref.as_str()))
-    else {
-        return Ok(None);
-    };
-    let rows = load_inbox_item_context_rows(&env.dbx, &message_ref)
+    let rows = load_inbox_item_context_rows(&env.dbx, message_ref)
         .await
         .context(h!())?;
     if rows.is_empty() {
         return Ok(None);
     }
 
-    let inbox_req = inbox_window_base_req(req.inbox_req);
+    let inbox_req = inbox_window_base_req(inbox_req);
     let target_req = inbox_window_target_req(&inbox_req);
     let candidate_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
     let mut target_messages =
@@ -469,18 +442,10 @@ async fn inbox_window_bl(
     }))
 }
 
-fn inbox_window_base_req(
-    inbox_req: Option<InboxMessagesReq>,
-) -> InboxMessagesReq {
-    let mut inbox_req = inbox_req.unwrap_or_else(|| InboxMessagesReq {
-        highlight_callsigns: Some(true),
-        highlight_keywords: Some(true),
-        highlight_searchres: Some(true),
-        highlight_points: Some(true),
-        ..Default::default()
-    });
+fn inbox_window_base_req(mut inbox_req: InboxMessagesReq) -> InboxMessagesReq {
     inbox_req.since_id_noninclusive = None;
     inbox_req.before_id_noninclusive = None;
+    inbox_req.around_message_ref = None;
     inbox_req.since_date_inclusive_ms = None;
     inbox_req.till_date_inclusive_ms = None;
     inbox_req.nolimit = None;
@@ -1056,23 +1021,23 @@ async fn inbox_messages(
     let logins = crate::users::get_organism_login_ids(&env.dbx, user)
         .await
         .context(h!())?;
+    if let Some(message_ref) = around_message_ref(&req) {
+        let window =
+            inbox_window_bl(&env, &login, &logins, is_admin, &message_ref, req)
+                .await
+                .context(h!())?;
+        return Ok(Json(
+            window
+                .map(|window| window.inbox)
+                .unwrap_or_else(|| empty_inbox_messages_rsp(Some(20))),
+        ));
+    }
     if inbox_request_is_unbounded(&req) && req.load_latest != Some(true) {
         error!(
             "rejecting unbounded get-inbox request without load_latest; page_id={page_id:?}"
         );
-        return Ok(Json(InboxMessagesRsp {
-            inbox_items: vec![],
-            poll_cursor_id: None,
-            callsigns: vec![],
-            signal_profiles: BTreeMap::new(),
-            signal_groups: vec![],
-            freq_pelengs_summary: None,
-            page_limit: if req.nolimit == Some(true) {
-                None
-            } else {
-                Some(20)
-            },
-        }));
+        let page_limit = (req.nolimit != Some(true)).then_some(20);
+        return Ok(Json(empty_inbox_messages_rsp(page_limit)));
     }
     let poll_cursor_id = if inbox_request_is_unbounded_latest(&req) {
         latest_inbox_poll_cursor_id(&env.dbx, &req).await?
@@ -1123,6 +1088,22 @@ async fn inbox_messages(
         freq_pelengs_summary,
         page_limit,
     }))
+}
+
+fn around_message_ref(req: &InboxMessagesReq) -> Option<String> {
+    normalized_optional_string(req.around_message_ref.as_deref())
+}
+
+fn empty_inbox_messages_rsp(page_limit: Option<i64>) -> InboxMessagesRsp {
+    InboxMessagesRsp {
+        inbox_items: vec![],
+        poll_cursor_id: None,
+        callsigns: vec![],
+        signal_profiles: BTreeMap::new(),
+        signal_groups: vec![],
+        freq_pelengs_summary: None,
+        page_limit,
+    }
 }
 
 async fn rer_duty_neo_adaptive_lower_bound(
@@ -4634,13 +4615,14 @@ mod tests {
 
     #[test]
     fn inbox_window_applies_context_filters_to_target_message() {
-        let inbox_req = inbox_window_base_req(Some(InboxMessagesReq {
+        let inbox_req = inbox_window_base_req(InboxMessagesReq {
+            around_message_ref: Some("target".to_string()),
             selected_groups: Some(vec!["group-1".to_string()]),
             selected_freqs: Some(vec!["123.45".to_string()]),
             selected_networks: Some(vec![7]),
             without_network: Some(false),
             ..Default::default()
-        }));
+        });
 
         assert_eq!(
             inbox_req.selected_groups,
@@ -4648,12 +4630,26 @@ mod tests {
         );
         assert_eq!(inbox_req.selected_freqs, Some(vec!["123.45".to_string()]));
         assert_eq!(inbox_req.selected_networks, Some(vec![7]));
+        assert!(inbox_req.around_message_ref.is_none());
 
         let target_req = inbox_window_target_req(&inbox_req);
         assert_eq!(target_req.selected_groups, inbox_req.selected_groups);
         assert_eq!(target_req.selected_freqs, inbox_req.selected_freqs);
         assert_eq!(target_req.selected_networks, inbox_req.selected_networks);
         assert_eq!(target_req.without_network, inbox_req.without_network);
+    }
+
+    #[test]
+    fn around_message_ref_enables_bidirectional_mode() {
+        let mut req = InboxMessagesReq {
+            page_id: Some(RER_DUTY_NEO_PAGE_ID.to_string()),
+            ..Default::default()
+        };
+
+        assert!(around_message_ref(&req).is_none());
+
+        req.around_message_ref = Some("target".to_string());
+        assert_eq!(around_message_ref(&req).as_deref(), Some("target"));
     }
 
     #[serial]
@@ -4730,10 +4726,8 @@ mod tests {
             &login.id,
             &logins,
             false,
-            InboxWindowReq {
-                message_ref: target_message_uuid.to_string(),
-                inbox_req: None,
-            },
+            &target_message_uuid.to_string(),
+            InboxMessagesReq::default(),
         )
         .await
         .unwrap()
@@ -4756,12 +4750,10 @@ mod tests {
             &login.id,
             &logins,
             false,
-            InboxWindowReq {
-                message_ref: target_message_uuid.to_string(),
-                inbox_req: Some(InboxMessagesReq {
-                    selected_groups: Some(vec!["other-group".to_string()]),
-                    ..Default::default()
-                }),
+            &target_message_uuid.to_string(),
+            InboxMessagesReq {
+                selected_groups: Some(vec!["other-group".to_string()]),
+                ..Default::default()
             },
         )
         .await
