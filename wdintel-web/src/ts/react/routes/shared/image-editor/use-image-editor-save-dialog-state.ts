@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 import { imageEditorOutputBasename } from './image-editor-export';
+import { ImageEditorSaveDialog } from './image-editor.types';
 
-export type ImageEditorSaveDialog = 'replacement' | 'new' | null;
+type ActiveImageEditorSaveDialog = ImageEditorSaveDialog | null;
 
 export function useImageEditorSaveDialogState({
   sourceFileName,
@@ -11,7 +12,7 @@ export function useImageEditorSaveDialogState({
   sourceFileName: string;
   outputExtension: string;
 }) {
-  const [activeDialog, setActiveDialog] = useState<ImageEditorSaveDialog>(null);
+  const [activeDialog, setActiveDialog] = useState<ActiveImageEditorSaveDialog>(null);
   const [basename, setBasenameValue] = useState(() => imageEditorOutputBasename(sourceFileName));
   const [filenameError, setFilenameError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -30,14 +31,12 @@ export function useImageEditorSaveDialogState({
     setSaveError(null);
   }, []);
   const openDialog = useCallback(
-    (
-      dialog: Exclude<ImageEditorSaveDialog, null>,
-      buttonRef: RefObject<HTMLButtonElement | null>,
-    ) => {
+    (dialog: ImageEditorSaveDialog, buttonRef: RefObject<HTMLButtonElement | null>) => {
       pendingFocusRef.current = buttonRef;
       (document.activeElement instanceof HTMLElement ? document.activeElement : null)?.blur();
       clearErrors();
-      if (dialog === 'new') setBasenameValue(imageEditorOutputBasename(sourceFileName));
+      if (dialog === ImageEditorSaveDialog.New)
+        setBasenameValue(imageEditorOutputBasename(sourceFileName));
       requestAnimationFrame(() => {
         if (mountedRef.current) setActiveDialog(dialog);
       });
@@ -45,7 +44,7 @@ export function useImageEditorSaveDialogState({
     [clearErrors, sourceFileName],
   );
   const closeDialog = useCallback(
-    (dialog: Exclude<ImageEditorSaveDialog, null>) => {
+    (dialog: ImageEditorSaveDialog) => {
       setActiveDialog((active) => (active === dialog ? null : active));
       clearErrors();
     },

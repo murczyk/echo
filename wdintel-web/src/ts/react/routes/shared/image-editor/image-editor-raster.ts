@@ -1,4 +1,4 @@
-import type { ConcealMode } from './image-editor.types';
+import { ConcealMode, ImageEditorObjectRole } from './image-editor.types';
 
 type FabricModule = typeof import('fabric');
 type RasterSource = { element: CanvasImageSource; width: number; height: number };
@@ -139,13 +139,13 @@ export async function replaceConcealmentArea({
     canvas.requestRenderAll();
     return false;
   }
-  if (mode === 'redact') {
+  if (mode === ConcealMode.Redact) {
     const replacement = new fabric.Rect({
       ...bounds,
       originX: 'left',
       originY: 'top',
       fill: '#1f2937',
-      editorRole: 'concealment',
+      editorRole: ImageEditorObjectRole.Concealment,
       selectable: false,
       evented: false,
     });
@@ -154,7 +154,7 @@ export async function replaceConcealmentArea({
     canvas.requestRenderAll();
     return true;
   }
-  const bleed = mode === 'blur' ? 16 : 0;
+  const bleed = mode === ConcealMode.Blur ? 16 : 0;
   const region = {
     left: Math.max(0, bounds.left - bleed),
     top: Math.max(0, bounds.top - bleed),
@@ -166,7 +166,7 @@ export async function replaceConcealmentArea({
       Math.max(0, bounds.top - bleed),
   };
   const temporaryPixels =
-    mode === 'blur'
+    mode === ConcealMode.Blur
       ? region.width * region.height
       : Math.ceil(bounds.width / 12) * Math.ceil(bounds.height / 12);
   if (
@@ -194,7 +194,7 @@ export async function replaceConcealmentArea({
     region.height,
   );
   canvas.getObjects().forEach((object) => {
-    if (object.get('editorRole') !== 'concealment') return;
+    if (object.get('editorRole') !== ImageEditorObjectRole.Concealment) return;
     const left = object.left ?? 0,
       top = object.top ?? 0;
     const width = (object.width ?? 0) * (object.scaleX ?? 1),
@@ -221,7 +221,7 @@ export async function replaceConcealmentArea({
     height: bounds.height,
   };
   const replacement = new fabric.FabricImage(
-    await (mode === 'blur'
+    await (mode === ConcealMode.Blur
       ? blurredPatch({
           source: { element: safe, width: region.width, height: region.height },
           bounds: localBounds,
@@ -235,7 +235,7 @@ export async function replaceConcealmentArea({
     ...bounds,
     originX: 'left',
     originY: 'top',
-    editorRole: 'concealment',
+    editorRole: ImageEditorObjectRole.Concealment,
     objectCaching: false,
     selectable: false,
     evented: false,

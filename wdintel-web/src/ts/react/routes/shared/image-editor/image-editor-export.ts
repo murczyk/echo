@@ -1,4 +1,5 @@
 import type { ImageEditorSource } from './image-editor.types';
+import { ImageEditorObjectRole } from './image-editor.types';
 
 const JPEG_QUALITY = 0.92;
 const EDITABLE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -41,7 +42,7 @@ export async function exportEditedImage({
     number,
   ];
   const transient = (canvas.getObjects?.() ?? []).filter((object) =>
-    ['crop', 'crop-mask'].includes(String(object.get('editorRole'))),
+    [ImageEditorObjectRole.Crop, ImageEditorObjectRole.CropMask].includes(object.get('editorRole')),
   );
   const transientVisibility = transient.map((object) => ({
     object,

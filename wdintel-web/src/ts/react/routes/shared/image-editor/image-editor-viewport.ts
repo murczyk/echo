@@ -1,4 +1,8 @@
-export type EditorViewMode = 'fit' | 'actual' | 'custom';
+export enum EditorViewMode {
+  Fit = 'fit',
+  Actual = 'actual',
+  Custom = 'custom',
+}
 
 export type EditorViewState = {
   scale: number;
@@ -31,8 +35,12 @@ export function resizeEditorView(
   document: EditorSize,
   workspace: EditorSize,
 ): EditorViewState {
-  if (view.mode === 'fit')
-    return { scale: fitEditorScale(document, workspace), pan: { x: 0, y: 0 }, mode: 'fit' };
+  if (view.mode === EditorViewMode.Fit)
+    return {
+      scale: fitEditorScale(document, workspace),
+      pan: { x: 0, y: 0 },
+      mode: EditorViewMode.Fit,
+    };
   return { ...view, pan: clampEditorPan(view.pan, document, workspace, view.scale) };
 }
 
@@ -83,6 +91,6 @@ export function zoomEditorAtPoint({
       workspace,
       nextScale,
     ),
-    mode: 'custom',
+    mode: EditorViewMode.Custom,
   };
 }

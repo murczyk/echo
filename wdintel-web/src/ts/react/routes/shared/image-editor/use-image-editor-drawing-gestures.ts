@@ -4,9 +4,39 @@ import { addTextAnnotation } from './image-editor-actions';
 import { createArrow } from './image-editor-arrow';
 import { imageEditorBounds, imageEditorPointer, minimumGestureSize } from './image-editor-pointer';
 import type { ImageEditorBounds } from './image-editor-pointer';
-import type { ConcealMode, ImageEditorTool } from './image-editor.types';
+import { ConcealMode, ImageEditorObjectRole, ImageEditorTool } from './image-editor.types';
 
 type Point = { x: number; y: number };
+enum ImageEditorGestureSessionKind {
+  Idle = 'idle',
+  Text = 'text',
+  Shape = 'shape',
+}
+type ImageEditorGestureTool =
+  | ImageEditorTool.Rectangle
+  | ImageEditorTool.Ellipse
+  | ImageEditorTool.Line
+  | ImageEditorTool.Arrow
+  | ImageEditorTool.Conceal;
+const GESTURE_TOOLS = new Set<ImageEditorTool>([
+  ImageEditorTool.Rectangle,
+  ImageEditorTool.Ellipse,
+  ImageEditorTool.Line,
+  ImageEditorTool.Arrow,
+  ImageEditorTool.Conceal,
+]);
+
+function isImageEditorGestureTool(tool: ImageEditorTool): tool is ImageEditorGestureTool {
+  return GESTURE_TOOLS.has(tool);
+}
+
+const OBJECT_ROLE_BY_GESTURE_TOOL = {
+  [ImageEditorTool.Rectangle]: ImageEditorObjectRole.Rectangle,
+  [ImageEditorTool.Ellipse]: ImageEditorObjectRole.Ellipse,
+  [ImageEditorTool.Line]: ImageEditorObjectRole.Line,
+  [ImageEditorTool.Arrow]: ImageEditorObjectRole.Arrow,
+  [ImageEditorTool.Conceal]: ImageEditorObjectRole.ConcealmentDraft,
+} satisfies Record<ImageEditorGestureTool, ImageEditorObjectRole>;
 type Config = {
   tool: ImageEditorTool;
   stroke: string;
@@ -22,24 +52,24 @@ type Config = {
   concealmentMarquee: { stroke: string; fill: string };
 };
 type Session =
-  | { kind: 'idle' }
-  | { kind: 'text'; point: Point; config: Config }
+  | { kind: ImageEditorGestureSessionKind.Idle }
+  | { kind: ImageEditorGestureSessionKind.Text; point: Point; config: Config }
   | {
-      kind: 'shape';
-      tool: 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'conceal';
+      kind: ImageEditorGestureSessionKind.Shape;
+      tool: ImageEditorGestureTool;
       start: Point;
       object: import('fabric').FabricObject;
       config: Config;
     };
 
 function finalizeGestureSession(session: Session) {
-  return { completed: session, next: { kind: 'idle' } as Session };
+  return { completed: session, next: { kind: ImageEditorGestureSessionKind.Idle } as Session };
 }
 
 function cancelGestureSession(session: Session) {
   return {
-    next: { kind: 'idle' } as Session,
-    transient: session.kind === 'shape' ? session.object : null,
+    next: { kind: ImageEditorGestureSessionKind.Idle } as Session,
+    transient: session.kind === ImageEditorGestureSessionKind.Shape ? session.object : null,
   };
 }
 
@@ -130,11 +160,11 @@ export function useImageEditorDrawingGestures({
     const canvas = canvasRef.current;
     const fabric = fabricRef.current;
     if (!canvasReady || !canvas || !fabric) return;
-    let session: Session = { kind: 'idle' };
+    let session: Session = { kind: ImageEditorGestureSessionKind.Idle };
     let textFrame: number | null = null;
     let finalBounds: ImageEditorBounds | null = null;
     const reset = () => {
-      const consumed = session.kind !== 'idle' || textFrame != null;
+      const consumed = session.kind !== ImageEditorGestureSessionKind.Idle || textFrame != null;
       const cancelled = cancelGestureSession(session);
       if (cancelled.transient) canvas.remove(cancelled.transient);
       session = cancelled.next;
@@ -153,24 +183,28 @@ export function useImageEditorDrawingGestures({
     };
     const down = (event: { e?: unknown }) => {
       const config = configRef.current;
-      if (session.kind !== 'idle' || operationsRef.current.isInteractionLocked()) return;
+      if (
+        session.kind !== ImageEditorGestureSessionKind.Idle ||
+        operationsRef.current.isInteractionLocked()
+      )
+        return;
       const point = pointer(event);
       if (!point) return;
-      if (config.tool === 'text') {
-        session = { kind: 'text', point, config };
+      if (config.tool === ImageEditorTool.Text) {
+        session = { kind: ImageEditorGestureSessionKind.Text, point, config };
         return;
       }
-      if (!['rectangle', 'ellipse', 'line', 'arrow', 'conceal'].includes(config.tool)) return;
-      const tool = config.tool as 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'conceal';
+      if (!isImageEditorGestureTool(config.tool)) return;
+      const tool = config.tool;
       const common = {
         originX: 'left' as const,
         originY: 'top' as const,
         selectable: false,
         evented: false,
-        editorRole: tool === 'conceal' ? 'concealment-draft' : tool,
+        editorRole: OBJECT_ROLE_BY_GESTURE_TOOL[tool],
       };
       const object =
-        tool === 'ellipse'
+        tool === ImageEditorTool.Ellipse
           ? new fabric.Ellipse({
               ...common,
               left: point.x,
@@ -184,7 +218,7 @@ export function useImageEditorDrawingGestures({
                 : undefined,
               fill: config.fill,
             })
-          : tool === 'line' || tool === 'arrow'
+          : tool === ImageEditorTool.Line || tool === ImageEditorTool.Arrow
             ? new fabric.Line([point.x, point.y, point.x, point.y], {
                 stroke: config.stroke,
                 strokeWidth: config.strokeWidth,
@@ -193,7 +227,7 @@ export function useImageEditorDrawingGestures({
                   : undefined,
                 selectable: false,
                 evented: false,
-                editorRole: tool,
+                editorRole: OBJECT_ROLE_BY_GESTURE_TOOL[tool],
               })
             : new fabric.Rect({
                 ...common,
@@ -201,24 +235,28 @@ export function useImageEditorDrawingGestures({
                 top: point.y,
                 width: 1,
                 height: 1,
-                stroke: tool === 'conceal' ? config.concealmentMarquee.stroke : config.stroke,
-                strokeWidth: tool === 'conceal' ? 1 : config.strokeWidth,
+                stroke:
+                  tool === ImageEditorTool.Conceal
+                    ? config.concealmentMarquee.stroke
+                    : config.stroke,
+                strokeWidth: tool === ImageEditorTool.Conceal ? 1 : config.strokeWidth,
                 strokeDashArray:
-                  tool === 'conceal'
+                  tool === ImageEditorTool.Conceal
                     ? undefined
                     : config.dash
                       ? [config.strokeWidth * 2, config.strokeWidth * 2]
                       : undefined,
-                fill: tool === 'conceal' ? config.concealmentMarquee.fill : config.fill,
-                excludeFromExport: tool === 'conceal',
+                fill:
+                  tool === ImageEditorTool.Conceal ? config.concealmentMarquee.fill : config.fill,
+                excludeFromExport: tool === ImageEditorTool.Conceal,
               });
       canvas.add(object);
       finalBounds = null;
-      session = { kind: 'shape', tool, start: point, object, config };
+      session = { kind: ImageEditorGestureSessionKind.Shape, tool, start: point, object, config };
     };
     const move = (event: { e?: unknown }) => {
       if (operationsRef.current.isInteractionLocked()) return reset();
-      if (session.kind !== 'shape') return;
+      if (session.kind !== ImageEditorGestureSessionKind.Shape) return;
       const point = pointer(event);
       if (!point) return;
       const square = Boolean((event.e as { shiftKey?: boolean })?.shiftKey);
@@ -240,12 +278,12 @@ export function useImageEditorDrawingGestures({
       const finalized = finalizeGestureSession(session);
       const completed = finalized.completed;
       session = finalized.next;
-      if (completed.kind === 'idle') return;
+      if (completed.kind === ImageEditorGestureSessionKind.Idle) return;
       if (operationsRef.current.isInteractionLocked()) {
-        if (completed.kind === 'shape') canvas.remove(completed.object);
+        if (completed.kind === ImageEditorGestureSessionKind.Shape) canvas.remove(completed.object);
         return;
       }
-      if (completed.kind === 'text') {
+      if (completed.kind === ImageEditorGestureSessionKind.Text) {
         const text = addTextAnnotation({
           canvas,
           fabric,
@@ -285,7 +323,7 @@ export function useImageEditorDrawingGestures({
       finalBounds = null;
       const threshold = minimumGestureSize(canvas);
       try {
-        if (completed.tool === 'conceal') {
+        if (completed.tool === ImageEditorTool.Conceal) {
           canvas.remove(completed.object);
           if (bounds && bounds.width >= threshold && bounds.height >= threshold)
             void operationsRef.current
@@ -295,7 +333,7 @@ export function useImageEditorDrawingGestures({
                   cause instanceof Error ? cause.message : 'Не вдалося застосувати розмиття',
                 ),
               );
-        } else if (completed.tool === 'arrow' && point) {
+        } else if (completed.tool === ImageEditorTool.Arrow && point) {
           const arrow = createArrow({
             fabric,
             start: completed.start,

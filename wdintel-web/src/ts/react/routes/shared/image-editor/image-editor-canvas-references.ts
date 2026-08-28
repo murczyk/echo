@@ -1,6 +1,7 @@
 import type { MutableRefObject } from 'react';
 
 import type { ImageEditorDocumentSnapshot } from './image-editor-document-snapshot';
+import { ImageEditorObjectRole } from './image-editor.types';
 import { assignImageEditorTextareaContainers } from './image-editor-text';
 
 export function setImageEditorBackground({
@@ -42,7 +43,7 @@ export function restoreImageEditorCanvasReferences({
       children?.some((child) => child.type === 'line' || child.type === 'Line') &&
       children.some((child) => child.type === 'triangle' || child.type === 'Triangle')
     )
-      object.set({ editorRole: 'arrow', selectable: true, evented: true });
+      object.set({ editorRole: ImageEditorObjectRole.Arrow, selectable: true, evented: true });
   });
   const source = canvas.backgroundImage as import('fabric').FabricImage | undefined;
   if (source) {

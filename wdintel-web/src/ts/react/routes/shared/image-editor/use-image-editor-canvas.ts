@@ -7,7 +7,9 @@ import {
   MAX_IMAGE_EDITOR_SIDE,
   validateImageEditorSource,
 } from './image-editor-source-validation';
-import type { ImageEditorSource, ImageEditorTool } from './image-editor.types';
+import { ImageEditorObjectRole, ImageEditorTool } from './image-editor.types';
+import { isTransientCropRole } from './image-editor-object-role';
+import type { ImageEditorSource } from './image-editor.types';
 
 export function finalizeImageEditorText(
   canvas: import('fabric').Canvas,
@@ -88,14 +90,17 @@ export function useImageEditorCanvas({
         sourceRef.current = image;
         const commit = (event?: { target?: import('fabric').FabricObject }) => {
           const role = event?.target?.get('editorRole');
-          if (role === 'crop' || role === 'crop-mask') return;
+          if (isTransientCropRole(role)) return;
           saveHistory();
         };
         canvas.on('object:modified', commit);
         canvas.on('path:created', (event) => {
           const role =
-            toolRef.current === 'brush' || toolRef.current === 'highlight'
-              ? toolRef.current
+            toolRef.current === ImageEditorTool.Brush ||
+            toolRef.current === ImageEditorTool.Highlight
+              ? toolRef.current === ImageEditorTool.Brush
+                ? ImageEditorObjectRole.Brush
+                : ImageEditorObjectRole.Highlight
               : undefined;
           if (role && event.path)
             event.path.set({ editorRole: role, selectable: false, evented: false });

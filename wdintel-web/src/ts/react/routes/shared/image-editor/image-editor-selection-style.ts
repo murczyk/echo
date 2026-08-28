@@ -1,5 +1,7 @@
 type FabricModule = typeof import('fabric');
 type FabricObject = import('fabric').FabricObject;
+import { ImageEditorObjectRole } from './image-editor.types';
+import { isImageEditorObjectRole, STYLEABLE_ANNOTATION_ROLES } from './image-editor-object-role';
 
 export type ImageEditorObjectStyle = {
   stroke: string;
@@ -55,13 +57,16 @@ function arrowParts(selected: FabricObject, fabric: FabricModule) {
   return shaft ? { shaft, head } : undefined;
 }
 
-export function editorObjectRole(selected: FabricObject, fabric: FabricModule) {
+export function editorObjectRole(
+  selected: FabricObject,
+  fabric: FabricModule,
+): ImageEditorObjectRole | undefined {
   const role = selected.get('editorRole');
-  if (typeof role === 'string') return role;
+  if (isImageEditorObjectRole(role)) return role;
   const parts = arrowParts(selected, fabric);
-  if (parts?.head) return 'arrow';
+  if (parts?.head) return ImageEditorObjectRole.Arrow;
   return typeof selected.stroke === 'string' && /^#[\da-f]{6}88$/i.test(selected.stroke)
-    ? 'highlight'
+    ? ImageEditorObjectRole.Highlight
     : undefined;
 }
 
@@ -70,7 +75,7 @@ export function readImageEditorObjectStyle(
   fabric: FabricModule,
 ): ImageEditorObjectStyle | undefined {
   const role = editorObjectRole(selected, fabric);
-  if (role === 'arrow') {
+  if (role === ImageEditorObjectRole.Arrow) {
     const parts = arrowParts(selected, fabric);
     if (!parts) return undefined;
     return {
@@ -79,14 +84,14 @@ export function readImageEditorObjectStyle(
       dash: dashEnabled(parts.shaft.strokeDashArray),
     };
   }
-  if (!role || !['rectangle', 'ellipse', 'line', 'brush', 'highlight'].includes(role))
-    return undefined;
+  if (!role || !STYLEABLE_ANNOTATION_ROLES.has(role)) return undefined;
   return {
     stroke: normalizeEditorColor(selected.stroke),
     fill: typeof selected.fill === 'string' ? selected.fill : undefined,
     strokeWidth: selected.strokeWidth ?? 1,
     dash: dashEnabled(selected.strokeDashArray),
-    opacity: role === 'highlight' ? highlightOpacity(selected.stroke) : undefined,
+    opacity:
+      role === ImageEditorObjectRole.Highlight ? highlightOpacity(selected.stroke) : undefined,
   };
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, type MutableRefObject } from 'react';
 
-import type { ImageEditorTool } from './image-editor.types';
+import { ImageEditorTool } from './image-editor.types';
 
 export function useImageEditorPan({
   canvasRef,
@@ -23,7 +23,7 @@ export function useImageEditorPan({
     let dragging = false;
     let last = { x: 0, y: 0 };
     const down = (event: { e: MouseEvent }) => {
-      if (tool !== 'pan' && !(event.e.button === 2 || event.e.shiftKey)) return;
+      if (tool !== ImageEditorTool.Pan && !(event.e.button === 2 || event.e.shiftKey)) return;
       dragging = true;
       last = { x: event.e.clientX, y: event.e.clientY };
       canvas.defaultCursor = 'grabbing';
@@ -39,7 +39,7 @@ export function useImageEditorPan({
     };
     const up = () => {
       dragging = false;
-      canvas.defaultCursor = tool === 'pan' ? 'grab' : 'default';
+      canvas.defaultCursor = tool === ImageEditorTool.Pan ? 'grab' : 'default';
     };
     const wheel = (event: { e: WheelEvent }) => {
       event.e.preventDefault();

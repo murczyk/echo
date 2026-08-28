@@ -1,4 +1,5 @@
 type Canvas = import('fabric').Canvas;
+import { ImageEditorObjectRole } from './image-editor.types';
 
 export type ImageEditorDocumentSnapshot = {
   serializedCanvas: string;
@@ -26,7 +27,7 @@ function withoutTransientCropUi(serialized: unknown) {
     objects: canvas.objects?.filter((object) => {
       if (!object || typeof object !== 'object') return true;
       const role = (object as { editorRole?: unknown }).editorRole;
-      return role !== 'crop' && role !== 'crop-mask';
+      return role !== ImageEditorObjectRole.Crop && role !== ImageEditorObjectRole.CropMask;
     }),
   };
 }

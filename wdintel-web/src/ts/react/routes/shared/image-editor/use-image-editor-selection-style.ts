@@ -6,7 +6,12 @@ import {
   normalizeEditorColor,
   withHighlightAlpha,
 } from './image-editor-selection-style';
-import type { ImageEditorTool } from './image-editor.types';
+import {
+  DASH_SUPPORTING_ROLES,
+  SHAPE_ROLES,
+  STYLEABLE_ANNOTATION_ROLES,
+} from './image-editor-object-role';
+import { ImageEditorObjectRole, type ImageEditorTool } from './image-editor.types';
 
 export function useImageEditorSelectionStyle({
   canvasRef,
@@ -90,15 +95,14 @@ export function useImageEditorSelectionStyle({
     const selected = canvas?.getActiveObject();
     if (!canvas || !fabric || !selected || selected instanceof fabric.IText) return;
     const role = editorObjectRole(selected, fabric);
-    if (!role || !['rectangle', 'ellipse', 'line', 'arrow', 'brush', 'highlight'].includes(role))
-      return;
-    const isShape = role === 'rectangle' || role === 'ellipse';
-    const supportsDash = isShape || role === 'line' || role === 'arrow';
+    if (!role || !STYLEABLE_ANNOTATION_ROLES.has(role)) return;
+    const isShape = SHAPE_ROLES.has(role);
+    const supportsDash = DASH_SUPPORTING_ROLES.has(role);
     const selectedStroke =
-      role === 'highlight'
+      role === ImageEditorObjectRole.Highlight
         ? withHighlightAlpha(stroke, highlightOpacity)
         : normalizeEditorColor(stroke);
-    if (role === 'arrow') {
+    if (role === ImageEditorObjectRole.Arrow) {
       if (!applyArrowStyle({ selected, fabric, stroke: selectedStroke, strokeWidth, dash })) return;
       canvas.requestRenderAll();
       scheduleHistory();

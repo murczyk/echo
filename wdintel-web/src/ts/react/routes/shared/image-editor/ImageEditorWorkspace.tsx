@@ -11,7 +11,7 @@ import {
 import type { EditorViewState } from './image-editor-viewport';
 import { calculateMagnifierSample } from './image-editor-magnifier';
 import { applyImageEditorSurfaceCursor, imageEditorCursor } from './image-editor-interaction-mode';
-import type { ImageEditorTool } from './image-editor.types';
+import { ImageEditorTool } from './image-editor.types';
 
 export function ImageEditorWorkspace({
   canvasElementRef,
@@ -103,11 +103,11 @@ export function ImageEditorWorkspace({
   };
   useEffect(() => hideLens, []);
   useEffect(() => {
-    if (tool !== 'magnifier' || busy) hideLens();
+    if (tool !== ImageEditorTool.Magnifier || busy) hideLens();
   }, [busy, tool]);
 
   const updateLens = (event: PointerEvent<HTMLDivElement>) => {
-    if (tool !== 'magnifier' || busy) return;
+    if (tool !== ImageEditorTool.Magnifier || busy) return;
     lensPointerRef.current = { clientX: event.clientX, clientY: event.clientY };
     if (lensFrameRef.current != null) return;
     lensFrameRef.current = requestAnimationFrame(() => {
@@ -174,7 +174,7 @@ export function ImageEditorWorkspace({
 
   const beginPan = (event: PointerEvent<HTMLDivElement>) => {
     if (busy) return;
-    if (tool !== 'pan' && !spaceDownRef.current && event.button !== 1) return;
+    if (tool !== ImageEditorTool.Pan && !spaceDownRef.current && event.button !== 1) return;
     event.preventDefault();
     event.stopPropagation();
     dragRef.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
@@ -233,7 +233,7 @@ export function ImageEditorWorkspace({
       >
         <canvas ref={canvasElementRef as RefObject<HTMLCanvasElement>} />
       </div>
-      {tool === 'magnifier' && !busy ? (
+      {tool === ImageEditorTool.Magnifier && !busy ? (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute z-20 size-36 rounded-full border-2 border-echo-border bg-echo-surface shadow-echo-lg"

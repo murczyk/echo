@@ -11,8 +11,9 @@ import {
 
 import { PowerAlert } from '../../../components/PowerAlert';
 import { PowerButton } from '../../../components/PowerButton';
+import { ImageEditorSaveDialog } from './image-editor.types';
 
-type SaveDialog = 'replacement' | 'new' | null;
+type SaveDialog = ImageEditorSaveDialog | null;
 
 export function ImageEditorSaveDialogs({
   activeDialog,
@@ -33,7 +34,7 @@ export function ImageEditorSaveDialogs({
   extension: string;
   filenameError: string | null;
   onBasenameChange: (value: string) => void;
-  onClose: (dialog: Exclude<SaveDialog, null>) => void;
+  onClose: (dialog: ImageEditorSaveDialog) => void;
   onExited: () => void;
   onSaveAsNew: () => void;
   onSaveReplacement: () => void;
@@ -50,7 +51,7 @@ export function ImageEditorSaveDialogs({
   };
   return (
     <>
-      <Dialog {...dialogProps} open={activeDialog === 'replacement'}>
+      <Dialog {...dialogProps} open={activeDialog === ImageEditorSaveDialog.Replacement}>
         <DialogTitle>Замінити поточне зображення?</DialogTitle>
         <DialogContent sx={{ pb: 0 }}>
           <DialogContentText>
@@ -67,7 +68,7 @@ export function ImageEditorSaveDialogs({
             type="button"
             autoFocus
             disabled={disabled}
-            onClick={() => onClose('replacement')}
+            onClick={() => onClose(ImageEditorSaveDialog.Replacement)}
           >
             Скасувати
           </PowerButton>
@@ -81,7 +82,7 @@ export function ImageEditorSaveDialogs({
           </PowerButton>
         </DialogActions>
       </Dialog>
-      <Dialog {...dialogProps} open={activeDialog === 'new'}>
+      <Dialog {...dialogProps} open={activeDialog === ImageEditorSaveDialog.New}>
         <DialogTitle>Зберегти як нове зображення</DialogTitle>
         <DialogContent sx={{ pt: 2.5, overflow: 'visible' }}>
           <TextField
@@ -115,7 +116,11 @@ export function ImageEditorSaveDialogs({
           ) : null}
         </DialogContent>
         <DialogActions>
-          <PowerButton type="button" disabled={disabled} onClick={() => onClose('new')}>
+          <PowerButton
+            type="button"
+            disabled={disabled}
+            onClick={() => onClose(ImageEditorSaveDialog.New)}
+          >
             Скасувати
           </PowerButton>
           <PowerButton variant="contained" type="button" disabled={disabled} onClick={onSaveAsNew}>

@@ -1,20 +1,30 @@
 import { useEffect, type MutableRefObject } from 'react';
 
 import { editorObjectRole, readImageEditorObjectStyle } from './image-editor-selection-style';
-import type { ImageEditorSelectionDescriptor } from './image-editor.types';
+import {
+  ImageEditorObjectRole,
+  ImageEditorSelectionKind,
+  type ImageEditorSelectionDescriptor,
+} from './image-editor.types';
+import { isImageEditorObjectRole, NON_DELETABLE_ROLES } from './image-editor-object-role';
 
 function selectionDescriptor(
   selected: import('fabric').FabricObject,
   fabric: typeof import('fabric') | null,
 ): ImageEditorSelectionDescriptor | undefined {
   const role = fabric ? editorObjectRole(selected, fabric) : selected.get('editorRole');
-  if (typeof role !== 'string' || role === 'source') return undefined;
-  if (fabric && selected instanceof fabric.IText) return { kind: 'text', role };
-  if (role === 'rectangle' || role === 'ellipse') return { kind: 'shape', role };
-  if (role === 'line' || role === 'arrow') return { kind: 'line', role };
-  if (role === 'brush') return { kind: 'brush', role };
-  if (role === 'highlight') return { kind: 'highlight', role };
-  if (role === 'concealment') return { kind: 'concealment', role };
+  if (!isImageEditorObjectRole(role) || role === ImageEditorObjectRole.Source) return undefined;
+  if (fabric && selected instanceof fabric.IText)
+    return { kind: ImageEditorSelectionKind.Text, role };
+  if (role === ImageEditorObjectRole.Rectangle || role === ImageEditorObjectRole.Ellipse)
+    return { kind: ImageEditorSelectionKind.Shape, role };
+  if (role === ImageEditorObjectRole.Line || role === ImageEditorObjectRole.Arrow)
+    return { kind: ImageEditorSelectionKind.Line, role };
+  if (role === ImageEditorObjectRole.Brush) return { kind: ImageEditorSelectionKind.Brush, role };
+  if (role === ImageEditorObjectRole.Highlight)
+    return { kind: ImageEditorSelectionKind.Highlight, role };
+  if (role === ImageEditorObjectRole.Concealment)
+    return { kind: ImageEditorSelectionKind.Concealment, role };
   return undefined;
 }
 
@@ -60,7 +70,8 @@ export function useImageEditorSelection({
       onCanDeleteChange(
         Boolean(
           selected &&
-          !['concealment', 'crop', 'crop-mask'].includes(String(selected.get('editorRole'))),
+          (!isImageEditorObjectRole(selected.get('editorRole')) ||
+            !NON_DELETABLE_ROLES.has(selected.get('editorRole'))),
         ),
       );
       if (!selected) {

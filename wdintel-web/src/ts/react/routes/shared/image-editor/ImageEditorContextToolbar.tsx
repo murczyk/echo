@@ -15,11 +15,55 @@ import {
 } from './ImageEditorContextControls';
 import { ImageEditorContextInspector } from './ImageEditorContextInspector';
 import { ImageEditorDashedLineIcon } from './ImageEditorIcons';
-import type {
+import {
   ConcealMode,
   ImageEditorSelectionDescriptor,
+  ImageEditorSelectionKind,
   ImageEditorTool,
 } from './image-editor.types';
+
+export enum ImageEditorToolbarContext {
+  Text = 'text',
+  Shape = 'shape',
+  Line = 'line',
+  Brush = 'brush',
+  Highlight = 'highlight',
+  Conceal = 'conceal',
+  Magnifier = 'magnifier',
+  Crop = 'crop',
+}
+
+export function resolveImageEditorToolbarContext(
+  tool: ImageEditorTool,
+  selection: ImageEditorSelectionDescriptor | undefined,
+): ImageEditorToolbarContext | null {
+  if (tool === ImageEditorTool.Select)
+    return selection ? TOOLBAR_CONTEXT_BY_SELECTION_KIND[selection.kind] : null;
+  return TOOLBAR_CONTEXT_BY_TOOL[tool];
+}
+
+const TOOLBAR_CONTEXT_BY_SELECTION_KIND = {
+  [ImageEditorSelectionKind.Text]: ImageEditorToolbarContext.Text,
+  [ImageEditorSelectionKind.Shape]: ImageEditorToolbarContext.Shape,
+  [ImageEditorSelectionKind.Line]: ImageEditorToolbarContext.Line,
+  [ImageEditorSelectionKind.Brush]: ImageEditorToolbarContext.Brush,
+  [ImageEditorSelectionKind.Highlight]: ImageEditorToolbarContext.Highlight,
+  [ImageEditorSelectionKind.Concealment]: null,
+} satisfies Record<ImageEditorSelectionKind, ImageEditorToolbarContext | null>;
+const TOOLBAR_CONTEXT_BY_TOOL = {
+  [ImageEditorTool.Select]: null,
+  [ImageEditorTool.Pan]: null,
+  [ImageEditorTool.Crop]: ImageEditorToolbarContext.Crop,
+  [ImageEditorTool.Text]: ImageEditorToolbarContext.Text,
+  [ImageEditorTool.Rectangle]: ImageEditorToolbarContext.Shape,
+  [ImageEditorTool.Ellipse]: ImageEditorToolbarContext.Shape,
+  [ImageEditorTool.Line]: ImageEditorToolbarContext.Line,
+  [ImageEditorTool.Arrow]: ImageEditorToolbarContext.Line,
+  [ImageEditorTool.Brush]: ImageEditorToolbarContext.Brush,
+  [ImageEditorTool.Highlight]: ImageEditorToolbarContext.Highlight,
+  [ImageEditorTool.Conceal]: ImageEditorToolbarContext.Conceal,
+  [ImageEditorTool.Magnifier]: ImageEditorToolbarContext.Magnifier,
+} satisfies Record<ImageEditorTool, ImageEditorToolbarContext | null>;
 
 export type ImageEditorContextToolbarProps = {
   disabled: boolean;
@@ -55,16 +99,17 @@ export type ImageEditorContextToolbarProps = {
 };
 
 export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps) {
-  const context = props.tool === 'select' ? props.selection?.kind : props.tool;
-  if (!shouldRenderContextualRow(props.tool, props.selection, context)) return null;
-  const showText = context === 'text';
-  const showShape = context === 'shape' || context === 'rectangle' || context === 'ellipse';
-  const showLine = context === 'line' || context === 'arrow';
-  const showBrush = context === 'brush' || context === 'highlight';
+  const context = resolveImageEditorToolbarContext(props.tool, props.selection);
+  if (context === null) return null;
+  const showText = context === ImageEditorToolbarContext.Text;
+  const showShape = context === ImageEditorToolbarContext.Shape;
+  const showLine = context === ImageEditorToolbarContext.Line;
+  const showBrush =
+    context === ImageEditorToolbarContext.Brush || context === ImageEditorToolbarContext.Highlight;
   const showStroke = showShape || showLine || showBrush;
   const showDash = showShape || showLine;
   return (
-    <ImageEditorContextInspector bordered={props.tool !== 'conceal'}>
+    <ImageEditorContextInspector bordered={context !== ImageEditorToolbarContext.Conceal}>
       <div
         data-image-editor-contextual-row
         className="flex min-w-0 max-w-full flex-wrap items-center gap-3"
@@ -173,7 +218,7 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
                 <ImageEditorDashedLineIcon /> Пунктир
               </ToggleButton>
             ) : null}
-            {context === 'highlight' ? (
+            {context === ImageEditorToolbarContext.Highlight ? (
               <ImageEditorSliderControl
                 label="Прозорість"
                 value={props.highlightOpacity}
@@ -187,21 +232,21 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
             ) : null}
           </ImageEditorContextGroup>
         ) : null}
-        {props.tool === 'conceal' ? (
+        {context === ImageEditorToolbarContext.Conceal ? (
           <ImageEditorContextGroup>
             <ImageEditorSegmentedControl
               value={props.concealMode}
               choices={[
-                { value: 'blur', label: 'Розмиття' },
-                { value: 'pixelate', label: 'Пікселізація' },
-                { value: 'redact', label: 'Затемнення' },
+                { value: ConcealMode.Blur, label: 'Розмиття' },
+                { value: ConcealMode.Pixelate, label: 'Пікселізація' },
+                { value: ConcealMode.Redact, label: 'Затемнення' },
               ]}
               onChange={props.onConcealModeChange}
               disabled={props.disabled}
             />
           </ImageEditorContextGroup>
         ) : null}
-        {props.tool === 'magnifier' ? (
+        {context === ImageEditorToolbarContext.Magnifier ? (
           <ImageEditorSliderControl
             label="Збільшення"
             value={props.magnification}
@@ -212,7 +257,7 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
             disabled={props.disabled}
           />
         ) : null}
-        {props.tool === 'crop' && props.cropActive ? (
+        {context === ImageEditorToolbarContext.Crop && props.cropActive ? (
           <ImageEditorContextGroup>
             <span className="shrink-0 whitespace-nowrap pl-1.5 text-echo-sm">
               Перетягніть рамку, щоб обрізати
@@ -238,27 +283,4 @@ export function ImageEditorContextToolbar(props: ImageEditorContextToolbarProps)
       </div>
     </ImageEditorContextInspector>
   );
-}
-
-function shouldRenderContextualRow(
-  tool: ImageEditorTool,
-  selection: ImageEditorSelectionDescriptor | undefined,
-  context: ImageEditorTool | ImageEditorSelectionDescriptor['kind'] | undefined,
-) {
-  if (tool === 'select')
-    return Boolean(
-      selection && ['text', 'shape', 'line', 'brush', 'highlight'].includes(context ?? ''),
-    );
-  return [
-    'text',
-    'rectangle',
-    'ellipse',
-    'line',
-    'arrow',
-    'brush',
-    'highlight',
-    'conceal',
-    'magnifier',
-    'crop',
-  ].includes(tool);
 }

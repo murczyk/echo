@@ -9,11 +9,12 @@ import {
   zoomEditorAtPoint,
   type EditorSize,
   type EditorViewState,
+  EditorViewMode,
 } from './image-editor-viewport';
 
 type Canvas = import('fabric').Canvas;
 
-const INITIAL_VIEW: EditorViewState = { scale: 1, pan: { x: 0, y: 0 }, mode: 'fit' };
+const INITIAL_VIEW: EditorViewState = { scale: 1, pan: { x: 0, y: 0 }, mode: EditorViewMode.Fit };
 
 function sizeOf(element: HTMLElement): EditorSize {
   return { width: element.clientWidth, height: element.clientHeight };
@@ -57,17 +58,17 @@ export function useImageEditorViewport({
       const workspaceSize = sizeOf(workspace);
       if (workspaceSize.width === 0 || workspaceSize.height === 0) return;
       setView((current) => {
-        if (fit || current.mode === 'fit')
+        if (fit || current.mode === EditorViewMode.Fit)
           return {
             scale: fitEditorScale(document, workspaceSize),
             pan: { x: 0, y: 0 },
-            mode: 'fit',
+            mode: EditorViewMode.Fit,
           };
-        if (current.mode === 'actual')
+        if (current.mode === EditorViewMode.Actual)
           return {
             scale: 1,
             pan: clampEditorPan(current.pan, document, workspaceSize, 1),
-            mode: 'actual',
+            mode: EditorViewMode.Actual,
           };
         return {
           ...current,
@@ -95,13 +96,13 @@ export function useImageEditorViewport({
     setView({
       scale: fitEditorScale(sizes.document, sizes.workspace),
       pan: { x: 0, y: 0 },
-      mode: 'fit',
+      mode: EditorViewMode.Fit,
     });
     setReady(true);
   }, [getSizes]);
 
   const actualSize = useCallback(() => {
-    setView({ scale: 1, pan: { x: 0, y: 0 }, mode: 'actual' });
+    setView({ scale: 1, pan: { x: 0, y: 0 }, mode: EditorViewMode.Actual });
     setReady(true);
   }, []);
   const centerViewport = useCallback(() => setView((current) => centerEditorView(current)), []);
@@ -143,7 +144,7 @@ export function useImageEditorViewport({
           sizes.workspace,
           current.scale,
         ),
-        mode: 'custom',
+        mode: EditorViewMode.Custom,
       }));
     },
     [getSizes],

@@ -1,8 +1,8 @@
 type Canvas = import('fabric').Canvas;
 type Rect = import('fabric').Rect;
+import { ImageEditorObjectRole } from './image-editor.types';
+import { isTransientCropRole } from './image-editor-object-role';
 
-const CROP_ROLE = 'crop';
-const CROP_MASK_ROLE = 'crop-mask';
 const MIN_CROP_SIZE = 8;
 const CROP_CONTROL_INSET = 8;
 const cropScalingByCanvas = new WeakMap<
@@ -73,14 +73,13 @@ function cropBounds(canvas: Canvas, crop: Rect) {
 
 function removeCropUi(canvas: Canvas) {
   canvas.getObjects().forEach((object) => {
-    if ([CROP_ROLE, CROP_MASK_ROLE].includes(String(object.get('editorRole'))))
-      canvas.remove(object);
+    if (isTransientCropRole(object.get('editorRole'))) canvas.remove(object);
   });
 }
 
 function removeCropMasks(canvas: Canvas) {
   canvas.getObjects().forEach((object) => {
-    if (object.get('editorRole') === CROP_MASK_ROLE) canvas.remove(object);
+    if (object.get('editorRole') === ImageEditorObjectRole.CropMask) canvas.remove(object);
   });
 }
 
@@ -122,7 +121,7 @@ function addCropMask({
           fill: maskColor,
           selectable: false,
           evented: false,
-          editorRole: CROP_MASK_ROLE,
+          editorRole: ImageEditorObjectRole.CropMask,
           excludeFromExport: true,
         }),
       );
@@ -173,7 +172,7 @@ export function startCrop({
     stroke,
     strokeDashArray: [8, 6],
     strokeWidth: 2,
-    editorRole: CROP_ROLE,
+    editorRole: ImageEditorObjectRole.Crop,
     excludeFromExport: true,
     lockRotation: true,
     lockScalingFlip: true,

@@ -2,6 +2,7 @@ type FabricModule = typeof import('fabric');
 
 import { assignImageEditorTextareaContainer } from './image-editor-text';
 import { createPaddedTextAnnotation } from './image-editor-padded-text';
+import { ImageEditorObjectRole } from './image-editor.types';
 
 export function addTextAnnotation({
   canvas,
@@ -39,7 +40,7 @@ export function addTextAnnotation({
       fill: stroke,
       fontSize,
       fontWeight: bold ? 'bold' : 'normal',
-      editorRole: 'text',
+      editorRole: ImageEditorObjectRole.Text,
       annotationBackgroundColor: backgroundColor,
       annotationBackgroundEnabled: backgroundEnabled,
       annotationBackgroundPadding: backgroundPadding,
@@ -54,7 +55,12 @@ export function deleteSelectedAnnotations(canvas: import('fabric').Canvas) {
   const selected = canvas
     .getActiveObjects()
     .filter(
-      (object) => !['concealment', 'crop', 'crop-mask'].includes(String(object.get('editorRole'))),
+      (object) =>
+        ![
+          ImageEditorObjectRole.Concealment,
+          ImageEditorObjectRole.Crop,
+          ImageEditorObjectRole.CropMask,
+        ].includes(object.get('editorRole')),
     );
   selected.forEach((object) => canvas.remove(object));
   canvas.discardActiveObject();

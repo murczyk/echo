@@ -26,7 +26,7 @@ import { PowerMenu } from '../../../components/PowerMenu';
 import { ImageEditorIconButton } from './ImageEditorIconButton';
 import { ImageEditorDiagonalLineIcon } from './ImageEditorIcons';
 import { ImageEditorViewControls } from './ImageEditorViewControls';
-import type { ImageEditorTool } from './image-editor.types';
+import { ImageEditorTool } from './image-editor.types';
 
 function ToolGroup({ children }: { children: ReactNode }) {
   return <div className="flex shrink-0 items-center gap-1">{children}</div>;
@@ -57,32 +57,37 @@ type Props = {
 };
 
 const TOOLS: Record<ImageEditorTool, { label: string; icon: ReactNode; iconSize?: number }> = {
-  select: { label: 'Вибрати об’єкт', icon: <HighlightAltIcon /> },
-  pan: { label: 'Перемістити полотно', icon: <PanToolIcon />, iconSize: 20 },
-  crop: { label: 'Обрізати', icon: <CropIcon /> },
-  text: { label: 'Текст', icon: <TextFieldsIcon /> },
-  rectangle: { label: 'Прямокутник', icon: <RectangleOutlinedIcon /> },
-  ellipse: { label: 'Еліпс', icon: <CircleOutlinedIcon /> },
-  line: { label: 'Лінія', icon: <ImageEditorDiagonalLineIcon /> },
-  arrow: { label: 'Стрілка', icon: <ArrowForwardIcon /> },
-  brush: { label: 'Пензель', icon: <BrushIcon /> },
-  highlight: { label: 'Маркер', icon: <BorderColorIcon /> },
-  conceal: { label: 'Розмиття', icon: <BlurOnIcon /> },
-  magnifier: { label: 'Лупа', icon: <SearchIcon /> },
+  [ImageEditorTool.Select]: { label: 'Вибрати об’єкт', icon: <HighlightAltIcon /> },
+  [ImageEditorTool.Pan]: { label: 'Перемістити полотно', icon: <PanToolIcon />, iconSize: 20 },
+  [ImageEditorTool.Crop]: { label: 'Обрізати', icon: <CropIcon /> },
+  [ImageEditorTool.Text]: { label: 'Текст', icon: <TextFieldsIcon /> },
+  [ImageEditorTool.Rectangle]: { label: 'Прямокутник', icon: <RectangleOutlinedIcon /> },
+  [ImageEditorTool.Ellipse]: { label: 'Еліпс', icon: <CircleOutlinedIcon /> },
+  [ImageEditorTool.Line]: { label: 'Лінія', icon: <ImageEditorDiagonalLineIcon /> },
+  [ImageEditorTool.Arrow]: { label: 'Стрілка', icon: <ArrowForwardIcon /> },
+  [ImageEditorTool.Brush]: { label: 'Пензель', icon: <BrushIcon /> },
+  [ImageEditorTool.Highlight]: { label: 'Маркер', icon: <BorderColorIcon /> },
+  [ImageEditorTool.Conceal]: { label: 'Розмиття', icon: <BlurOnIcon /> },
+  [ImageEditorTool.Magnifier]: { label: 'Лупа', icon: <SearchIcon /> },
 };
 
 const TABLET_VISIBLE_TOOLS: readonly ImageEditorTool[] = [
-  'select',
-  'pan',
-  'crop',
-  'text',
-  'rectangle',
-  'arrow',
-  'brush',
-  'conceal',
+  ImageEditorTool.Select,
+  ImageEditorTool.Pan,
+  ImageEditorTool.Crop,
+  ImageEditorTool.Text,
+  ImageEditorTool.Rectangle,
+  ImageEditorTool.Arrow,
+  ImageEditorTool.Brush,
+  ImageEditorTool.Conceal,
 ];
-const MOBILE_VISIBLE_TOOLS: readonly ImageEditorTool[] = ['select', 'pan', 'text', 'conceal'];
-const TOOL_ORDER = Object.keys(TOOLS) as ImageEditorTool[];
+const MOBILE_VISIBLE_TOOLS: readonly ImageEditorTool[] = [
+  ImageEditorTool.Select,
+  ImageEditorTool.Pan,
+  ImageEditorTool.Text,
+  ImageEditorTool.Conceal,
+];
+const TOOL_ORDER = Object.values(ImageEditorTool);
 
 export function ImageEditorToolRail(props: Props) {
   const desktop = useMediaQuery('(min-width: 1280px)', { noSsr: true });
@@ -143,24 +148,21 @@ export function ImageEditorToolRail(props: Props) {
         <>
           <div className="flex min-w-0 flex-1 items-center">
             <ToolGroup>
-              {toolButton('select')}
-              {toolButton('pan')}
-              {toolButton('crop')}
+              {toolButton(ImageEditorTool.Select)}
+              {toolButton(ImageEditorTool.Pan)}
+              {toolButton(ImageEditorTool.Crop)}
             </ToolGroup>
             <GroupSeparator />
             <ToolGroup>
-              {toolButton('text')}
-              {toolButton('rectangle')}
-              {toolButton('ellipse')}
-              {toolButton('line')}
-              {toolButton('arrow')}
-              {toolButton('brush')}
-              {toolButton('highlight')}
+              {toolButton(ImageEditorTool.Text)} {toolButton(ImageEditorTool.Rectangle)}
+              {toolButton(ImageEditorTool.Ellipse)} {toolButton(ImageEditorTool.Line)}
+              {toolButton(ImageEditorTool.Arrow)} {toolButton(ImageEditorTool.Brush)}
+              {toolButton(ImageEditorTool.Highlight)}
             </ToolGroup>
             <GroupSeparator />
             <ToolGroup>
-              {toolButton('conceal')}
-              {toolButton('magnifier')}
+              {toolButton(ImageEditorTool.Conceal)}
+              {toolButton(ImageEditorTool.Magnifier)}
             </ToolGroup>
             <div className="min-w-0 flex-1" />
             <ToolGroup>

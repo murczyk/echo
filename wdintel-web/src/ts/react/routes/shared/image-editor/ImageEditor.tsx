@@ -32,12 +32,16 @@ import { useImageEditorSelection } from './use-image-editor-selection';
 import { useImageEditorSaveDialogState } from './use-image-editor-save-dialog-state';
 import { useImageEditorRasterQueue } from './use-image-editor-raster-queue';
 import { useImageEditorViewport } from './use-image-editor-viewport';
-import type {
+import {
   ConcealMode,
+  ImageEditorSaveDestination,
+  ImageEditorSaveDialog,
+  ImageEditorTool,
+} from './image-editor.types';
+import type {
   EditedImageResult,
   ImageEditorSource,
   ImageEditorSelectionDescriptor,
-  ImageEditorTool,
   RegisterImageEditorEscapeHandler,
 } from './image-editor.types';
 type FabricModule = typeof import('fabric');
@@ -65,7 +69,7 @@ export function ImageEditor({
   const saveAsNewButtonRef = useRef<HTMLButtonElement | null>(null);
   const saveReplacementButtonRef = useRef<HTMLButtonElement | null>(null);
   const cancelGestureRef = useRef<() => boolean>(() => false);
-  const [tool, setTool] = useState<ImageEditorTool>('select');
+  const [tool, setTool] = useState<ImageEditorTool>(ImageEditorTool.Select);
   const [stroke, setStroke] = useState('#ef4444');
   const [fill, setFill] = useState('transparent');
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -75,7 +79,7 @@ export function ImageEditor({
   const applyingRef = useRef(false);
   const [canvasReady, setCanvasReady] = useState(false);
   const [dash, setDash] = useState(false);
-  const [concealMode, setConcealMode] = useState<ConcealMode>('blur');
+  const [concealMode, setConcealMode] = useState<ConcealMode>(ConcealMode.Blur);
   const [magnification, setMagnification] = useState(2);
   const [fontSize, setFontSize] = useState(36);
   const [bold, setBold] = useState(false);
@@ -117,7 +121,8 @@ export function ImageEditor({
       cancelGestureRef.current();
       const canvas = canvasRef.current;
       toolRef.current = nextTool;
-      if (canvas && nextTool !== 'crop' && cropRef.current) cancelCrop({ canvas, cropRef });
+      if (canvas && nextTool !== ImageEditorTool.Crop && cropRef.current)
+        cancelCrop({ canvas, cropRef });
       if (canvas)
         applyImageEditorInteractionMode({
           canvas,
@@ -128,7 +133,7 @@ export function ImageEditor({
           highlightOpacity,
         });
       const fabric = fabricRef.current;
-      if (canvas && fabric && nextTool === 'crop')
+      if (canvas && fabric && nextTool === ImageEditorTool.Crop)
         startCrop({ canvas, fabric, cropRef, stroke: cropStroke, maskColor: cropMaskColor });
       setTool(nextTool);
     },
@@ -168,12 +173,12 @@ export function ImageEditor({
         snapshot,
         hiddenTextareaContainer: hiddenTextareaContainerRef.current,
       });
-      toolRef.current = 'select';
-      setTool('select');
+      toolRef.current = ImageEditorTool.Select;
+      setTool(ImageEditorTool.Select);
       syncDocumentDimensions({ fit: true });
       applyImageEditorInteractionMode({
         canvas,
-        tool: 'select',
+        tool: ImageEditorTool.Select,
         fabric: fabricRef.current,
         stroke,
         strokeWidth,
@@ -203,8 +208,8 @@ export function ImageEditor({
       await resetEdits();
       const canvas = canvasRef.current;
       if (canvas) cancelCrop({ canvas, cropRef });
-      toolRef.current = 'select';
-      setTool('select');
+      toolRef.current = ImageEditorTool.Select;
+      setTool(ImageEditorTool.Select);
       syncDocumentDimensions({ fit: true });
     });
   }, [enqueueRaster, isInteractionLocked, resetEdits, syncDocumentDimensions]);
@@ -390,7 +395,7 @@ export function ImageEditor({
     if (applyCrop({ canvas, sourceImage, cropRef })) {
       saveHistory();
       syncDocumentDimensions({ fit: true });
-      changeTool('select');
+      changeTool(ImageEditorTool.Select);
     }
   }, [changeTool, isInteractionLocked, saveHistory, syncDocumentDimensions]);
   const cancelCropOperation = useCallback(() => {
@@ -398,9 +403,9 @@ export function ImageEditor({
     const canvas = canvasRef.current;
     if (!canvas) return;
     cancelCrop({ canvas, cropRef });
-    changeTool('select');
+    changeTool(ImageEditorTool.Select);
   }, [changeTool, isInteractionLocked]);
-  const save = async (destination: 'replacement' | 'new', basename?: string) => {
+  const save = async (destination: ImageEditorSaveDestination, basename?: string) => {
     const canvas = canvasRef.current;
     const sourceImage = sourceRef.current;
     if (!canvas || !sourceImage || isInteractionLocked()) return;
@@ -422,7 +427,7 @@ export function ImageEditor({
         sourceImage,
         outputBasename: basename,
       });
-      if (destination === 'replacement') await onSaveReplacement({ file });
+      if (destination === ImageEditorSaveDestination.Replacement) await onSaveReplacement({ file });
       else await onSaveAsNew({ file });
     } catch (cause) {
       saveDialogs.setSaveError(
@@ -440,7 +445,7 @@ export function ImageEditor({
     }
     saveDialogs.setFilenameError(null);
     saveDialogs.setSaveError(null);
-    void save('new', basename);
+    void save(ImageEditorSaveDestination.New, basename);
   }, [save, saveDialogs]);
   const requestCancel = useCallback(() => {
     if (isInteractionLocked()) return;
@@ -453,12 +458,12 @@ export function ImageEditor({
       if (target instanceof Element && target.closest('[data-image-editor-local-escape]'))
         return false;
       if (loading || applying || rasterPending) return true;
-      if (saveDialogs.activeDialog === 'replacement') {
-        saveDialogs.closeDialog('replacement');
+      if (saveDialogs.activeDialog === ImageEditorSaveDialog.Replacement) {
+        saveDialogs.closeDialog(ImageEditorSaveDialog.Replacement);
         return true;
       }
-      if (saveDialogs.activeDialog === 'new') {
-        saveDialogs.closeDialog('new');
+      if (saveDialogs.activeDialog === ImageEditorSaveDialog.New) {
+        saveDialogs.closeDialog(ImageEditorSaveDialog.New);
         return true;
       }
       if (confirmCancel) {
@@ -509,7 +514,7 @@ export function ImageEditor({
         (canvasRef.current?.getActiveObject() as import('fabric').IText | undefined)?.isEditing ===
           true;
       if (typing || isInteractionLocked()) return;
-      if (event.key === 'Enter' && tool === 'crop' && cropRef.current) {
+      if (event.key === 'Enter' && tool === ImageEditorTool.Crop && cropRef.current) {
         event.preventDefault();
         applyCropOperation();
         return;
@@ -598,7 +603,7 @@ export function ImageEditor({
     magnification,
     onMagnificationChange: setMagnification,
     selection,
-    cropActive: tool === 'crop' && Boolean(cropRef.current),
+    cropActive: tool === ImageEditorTool.Crop && Boolean(cropRef.current),
     onApplyCrop: applyCropOperation,
     onCancelCrop: cancelCropOperation,
   };
@@ -623,7 +628,7 @@ export function ImageEditor({
         onClose={saveDialogs.closeDialog}
         onExited={saveDialogs.restoreFocusAfterExit}
         onSaveAsNew={submitSaveAsNew}
-        onSaveReplacement={() => void save('replacement')}
+        onSaveReplacement={() => void save(ImageEditorSaveDestination.Replacement)}
         saveError={saveDialogs.saveError}
       />
       <ImageEditorWorkspace
@@ -643,11 +648,13 @@ export function ImageEditor({
       <ImageEditorFooter
         saving={applying}
         disabled={applying || rasterPending}
-        cropActive={tool === 'crop' && Boolean(cropRef.current)}
+        cropActive={tool === ImageEditorTool.Crop && Boolean(cropRef.current)}
         ready={canvasReady && !loading && !rasterPending}
         onCancel={requestCancel}
-        onSaveReplacement={() => saveDialogs.openDialog('replacement', saveReplacementButtonRef)}
-        onSaveAsNew={() => saveDialogs.openDialog('new', saveAsNewButtonRef)}
+        onSaveReplacement={() =>
+          saveDialogs.openDialog(ImageEditorSaveDialog.Replacement, saveReplacementButtonRef)
+        }
+        onSaveAsNew={() => saveDialogs.openDialog(ImageEditorSaveDialog.New, saveAsNewButtonRef)}
         saveAsNewButtonRef={saveAsNewButtonRef}
         saveReplacementButtonRef={saveReplacementButtonRef}
       />

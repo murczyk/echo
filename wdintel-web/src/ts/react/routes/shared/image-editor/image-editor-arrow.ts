@@ -1,3 +1,5 @@
+import { ImageEditorObjectRole } from './image-editor.types';
+
 export function createArrow({
   fabric,
   start,
@@ -53,6 +55,6 @@ export function createArrow({
     left: (arrow.left ?? 0) + start.x - renderedStart.x,
     top: (arrow.top ?? 0) + start.y - renderedStart.y,
   });
-  arrow.set({ editorRole: 'arrow', selectable: false, evented: false });
+  arrow.set({ editorRole: ImageEditorObjectRole.Arrow, selectable: false, evented: false });
   return arrow;
 }

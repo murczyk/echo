@@ -3,25 +3,63 @@ import type { MessageCardImage } from '../message-card/message-card-image-utils'
 export type ImageEditorEscapeHandler = (event: globalThis.KeyboardEvent) => boolean;
 export type RegisterImageEditorEscapeHandler = (handler: ImageEditorEscapeHandler | null) => void;
 
-export type ImageEditorTool =
-  | 'select'
-  | 'pan'
-  | 'crop'
-  | 'text'
-  | 'rectangle'
-  | 'ellipse'
-  | 'line'
-  | 'arrow'
-  | 'brush'
-  | 'highlight'
-  | 'conceal'
-  | 'magnifier';
+export enum ImageEditorTool {
+  Select = 'select',
+  Pan = 'pan',
+  Crop = 'crop',
+  Text = 'text',
+  Rectangle = 'rectangle',
+  Ellipse = 'ellipse',
+  Line = 'line',
+  Arrow = 'arrow',
+  Brush = 'brush',
+  Highlight = 'highlight',
+  Conceal = 'conceal',
+  Magnifier = 'magnifier',
+}
 
-export type ConcealMode = 'blur' | 'pixelate' | 'redact';
+export enum ImageEditorSelectionKind {
+  Text = 'text',
+  Shape = 'shape',
+  Line = 'line',
+  Brush = 'brush',
+  Highlight = 'highlight',
+  Concealment = 'concealment',
+}
+
+export enum ImageEditorObjectRole {
+  Source = 'source',
+  Text = 'text',
+  Rectangle = 'rectangle',
+  Ellipse = 'ellipse',
+  Line = 'line',
+  Arrow = 'arrow',
+  Brush = 'brush',
+  Highlight = 'highlight',
+  ConcealmentDraft = 'concealment-draft',
+  Concealment = 'concealment',
+  Crop = 'crop',
+  CropMask = 'crop-mask',
+}
+
+export enum ConcealMode {
+  Blur = 'blur',
+  Pixelate = 'pixelate',
+  Redact = 'redact',
+}
+
+export enum ImageEditorSaveDialog {
+  Replacement = 'replacement',
+  New = 'new',
+}
+export enum ImageEditorSaveDestination {
+  Replacement = 'replacement',
+  New = 'new',
+}
 
 export type ImageEditorSelectionDescriptor = {
-  kind: 'text' | 'shape' | 'line' | 'brush' | 'highlight' | 'concealment';
-  role: string;
+  kind: ImageEditorSelectionKind;
+  role: ImageEditorObjectRole;
 };
 
 export type ImageEditorSource = {
