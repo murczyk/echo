@@ -8,6 +8,8 @@ import type {
   InboxMessageMetadata,
   InboxMessageTag,
   InboxMessagesReq,
+  InboxWindowReq,
+  InboxWindowRsp,
   MessageIdsReq,
   InboxMessagesRsp,
   InterseptionKind,
@@ -251,6 +253,7 @@ function normalizeInboxMessage(
   },
 ): InboxMessageType {
   const raw = m as Record<string, unknown>;
+  const messageUuid = (m.messageUuid ?? raw.message_uuid ?? null) as string | null;
   const groupMasterKey = (m.groupMasterKey ?? raw.group_master_key ?? null) as string | null;
   const networkIds = (m.networkIds ?? raw.network_ids ?? null) as number[] | null;
   const networkName = (m.networkName ?? raw.network_name ?? null) as string | null;
@@ -287,6 +290,7 @@ function normalizeInboxMessage(
       : (m.media ?? []);
   return {
     ...m,
+    messageUuid,
     groupMasterKey,
     networkIds,
     networkName,
@@ -440,6 +444,34 @@ export async function fetchInboxMessages(
     options,
   );
   return mapRsp(raw);
+}
+
+type InboxWindowRspRaw = {
+  target_message_id: number;
+  inbox: InboxMessagesRspRaw;
+  has_more_before: boolean;
+  has_more_after: boolean;
+};
+
+export async function fetchInboxWindow(
+  req: InboxWindowReq,
+  options?: RequestOptions,
+): Promise<InboxWindowRsp | null> {
+  const raw = await postJson<InboxWindowRspRaw | null>(
+    '/api/rer-importer/inbox-window',
+    {
+      message_ref: req.messageRef,
+      inbox_req: req.inboxReq == null ? null : inboxMsgtoSnakeBody(req.inboxReq),
+    } as any,
+    options,
+  );
+  if (raw == null) return null;
+  return {
+    targetMessageId: raw.target_message_id,
+    inbox: mapRsp(raw.inbox),
+    hasMoreBefore: raw.has_more_before,
+    hasMoreAfter: raw.has_more_after,
+  };
 }
 
 export type InboxMessagesDigestRsp = {

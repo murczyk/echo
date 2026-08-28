@@ -295,7 +295,7 @@ export function useAnalysisData({
   authUserName,
   currentUser,
   deferInitialLoad = false,
-  focusedMessage = null,
+  focusedWindow = null,
   focusedMessageActive = false,
   centerTab,
   leftPanelOpen = true,
@@ -307,6 +307,13 @@ export function useAnalysisData({
   rightSidebarTab,
   shouldLoadNewCallsigns,
 }: UseAnalysisDataProps): UseAnalysisDataResult {
+  const focusedMessage = useMemo(
+    () =>
+      focusedWindow?.inbox.inboxItems.find(
+        ([messageId]) => messageId === focusedWindow.targetMessageId,
+      ) ?? null,
+    [focusedWindow],
+  );
   const referenceState = useAnalysisReferenceState({ shouldLoadNewCallsigns });
   const optionsFreqValues = useMemo(
     () => referenceState.options.freqs.map((option) => option.value),
@@ -337,6 +344,8 @@ export function useAnalysisData({
     deferInitialLoad,
     focusedMessageId: focusedMessage?.[0] ?? null,
     focusedMessageActive,
+    focusedHasMoreEarlier: focusedWindow?.hasMoreBefore ?? false,
+    focusedHasMoreLater: focusedWindow?.hasMoreAfter ?? false,
     loadMissingNetworksForMessages,
     newestFirst,
     onError,
@@ -349,9 +358,9 @@ export function useAnalysisData({
   });
 
   useEffect(() => {
-    if (focusedMessage == null) return;
-    void loadMissingNetworksForMessages([focusedMessage]);
-  }, [focusedMessage, loadMissingNetworksForMessages]);
+    if (focusedWindow == null) return;
+    void loadMissingNetworksForMessages(focusedWindow.inbox.inboxItems);
+  }, [focusedWindow, loadMissingNetworksForMessages]);
 
   const {
     filterSectionLoadStates,
@@ -555,7 +564,7 @@ export function useAnalysisData({
     buildReloadOrchestratorParams({
       centerTab,
       deferInitialLoad,
-      focusedMessage,
+      focusedWindow,
       focusedMessageActive,
       leftPanelOpen,
       newestFirst,

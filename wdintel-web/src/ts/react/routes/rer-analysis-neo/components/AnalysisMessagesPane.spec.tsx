@@ -636,18 +636,10 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).not.toContain('Завантажити ще');
   });
 
-  it('loads both sides of a direct link concurrently and blocks scrolling until they finish', async () => {
-    let resolveEarlier!: (value: boolean) => void;
-    let resolveLater!: (value: boolean) => void;
-    const earlierPromise = new Promise<boolean>((resolve) => {
-      resolveEarlier = resolve;
-    });
-    const laterPromise = new Promise<boolean>((resolve) => {
-      resolveLater = resolve;
-    });
+  it('uses the initial direct-link window without loading extra pages', async () => {
     const onClearFocus = vi.fn();
-    const onLoadEarlier = vi.fn(() => earlierPromise);
-    const onLoadLater = vi.fn(() => laterPromise);
+    const onLoadEarlier = vi.fn();
+    const onLoadLater = vi.fn();
     const directMessageNavigation = {
       targetMessageId: 7,
       focusActive: true,
@@ -670,25 +662,8 @@ describe('AnalysisMessagesPane', () => {
     if (scrollBox == null) throw new Error('Target message scroll box is missing');
     setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 1600, scrollTop: 0 });
 
-    expect(onLoadEarlier).toHaveBeenCalledTimes(1);
-    expect(onLoadLater).toHaveBeenCalledTimes(1);
-    expect(scrollBox.getAttribute('aria-busy')).toBe('true');
-
-    await act(async () => {
-      scrollBox.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true }));
-    });
-    expect(onClearFocus).not.toHaveBeenCalled();
-
-    await act(async () => {
-      resolveEarlier(false);
-      await earlierPromise;
-    });
-    expect(scrollBox.getAttribute('aria-busy')).toBe('true');
-
-    await act(async () => {
-      resolveLater(false);
-      await laterPromise;
-    });
+    expect(onLoadEarlier).not.toHaveBeenCalled();
+    expect(onLoadLater).not.toHaveBeenCalled();
     expect(scrollBox.hasAttribute('aria-busy')).toBe(false);
 
     await act(async () => {

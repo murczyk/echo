@@ -2071,6 +2071,7 @@ mod tests {
         InboxMessage {
             parent_messages: vec![],
             intelligence_reports: vec![],
+            message_uuid: None,
             message_uid: None,
             text: String::new(),
             media: vec![],

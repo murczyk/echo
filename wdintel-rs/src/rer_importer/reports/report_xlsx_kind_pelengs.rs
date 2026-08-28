@@ -560,6 +560,7 @@ async fn get_inbox_messages_report_chunk_postgres(
                 message: InboxMessage {
                     parent_messages: vec![],
                     intelligence_reports: vec![],
+                    message_uuid: None,
                     message_uid: None,
                     location,
                     coords,

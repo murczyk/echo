@@ -4,6 +4,7 @@ import type {
   CountStatsRsp,
   FreqDailyActivityCount,
   InboxMessage,
+  InboxWindowRsp,
   MessageComment,
   NetworkCallsignRelationsRsp,
   Network,
@@ -33,7 +34,7 @@ export type UseAnalysisDataProps = {
   authUserName: string | null;
   currentUser: User | null;
   deferInitialLoad?: boolean;
-  focusedMessage?: [number, InboxMessage] | null;
+  focusedWindow?: InboxWindowRsp | null;
   focusedMessageActive?: boolean;
   leftPanelOpen?: boolean;
   newestFirst: boolean;

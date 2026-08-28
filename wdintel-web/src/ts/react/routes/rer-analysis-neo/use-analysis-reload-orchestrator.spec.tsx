@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   InboxMessage,
+  InboxWindowRsp,
   Network,
   NewCallsignsRes,
   SignalGroupEntry,
@@ -45,6 +46,26 @@ function buildQueryState(): AnalysisQueryState {
     toDateTimeStr: '2026-06-01T11:00',
     sinceDateInclusiveMs: 1,
     tillDateNoninclusiveMs: 2,
+  };
+}
+
+function buildFocusedWindow(neighborId: number): InboxWindowRsp {
+  return {
+    targetMessageId: 50,
+    inbox: {
+      inboxItems: [
+        [neighborId, { text: `message-${neighborId}` } as InboxMessage],
+        [50, { text: 'target' } as InboxMessage],
+      ],
+      pollCursorId: null,
+      callsigns: [],
+      signalProfiles: {},
+      signalGroups: [],
+      freqPelengsSummary: null,
+      pageLimit: 20,
+    },
+    hasMoreBefore: true,
+    hasMoreAfter: true,
   };
 }
 
@@ -179,6 +200,45 @@ describe('useAnalysisReloadOrchestrator', () => {
 
     expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
     expect(params.refreshMessageCounts).not.toHaveBeenCalled();
+  });
+
+  it('reloads immediately when a filtered focused window arrives', async () => {
+    vi.useFakeTimers();
+    const params = buildParams({
+      focusedMessageActive: true,
+      focusedWindow: buildFocusedWindow(49),
+    });
+
+    await renderHook(params);
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    const filteredQueryState = { ...params.queryState, groupsSelected: ['group-1'] };
+    await rerenderHook({
+      ...params,
+      queryState: filteredQueryState,
+      reloadTriggerKey: 'reload-key-filtered',
+    });
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(1);
+
+    const filteredWindow = buildFocusedWindow(48);
+    await rerenderHook({
+      ...params,
+      focusedWindow: filteredWindow,
+      queryState: filteredQueryState,
+      reloadTriggerKey: 'reload-key-filtered',
+    });
+
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
+    expect(reloadAnalysisDataMock.reloadAnalysisData.mock.calls[1]?.[0]).toMatchObject({
+      focusedWindow: filteredWindow,
+      focusedMessageActive: true,
+      queryState: { groupsSelected: ['group-1'] },
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(reloadAnalysisDataMock.reloadAnalysisData).toHaveBeenCalledTimes(2);
   });
 
   it('preserves the current message cursor for a manual page refresh', async () => {

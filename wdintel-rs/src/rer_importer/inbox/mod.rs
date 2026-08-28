@@ -343,7 +343,13 @@ async fn load_inbox_item_context_rows(
         .column_as(sigint_inbox_item::Column::Datetime, "datetime")
         .filter(signal_message::Column::Deleted.eq(false));
 
-    if let Ok(id) = message_identifier.parse::<i64>() {
+    if let Ok(id_uuid) = uuid::Uuid::parse_str(message_identifier) {
+        query = query.filter(
+            Condition::any()
+                .add(signal_message::Column::IdUuid.eq(id_uuid))
+                .add(signal_message::Column::MessageUid.eq(message_identifier)),
+        );
+    } else if let Ok(id) = message_identifier.parse::<i64>() {
         query = query.filter(signal_message::Column::Id.eq(id));
     } else {
         query = query
@@ -355,6 +361,171 @@ async fn load_inbox_item_context_rows(
         .all(dbx)
         .await
         .c(h!())?)
+}
+
+#[post("/api/rer-importer/inbox-window")]
+async fn inbox_window(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<InboxWindowReq>,
+) -> Result<Json<Option<InboxWindowRsp>>, AppError> {
+    let login = login_id_from_identity(&user).context(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let logins = crate::users::get_organism_login_ids_by_id(&env.dbx, &login)
+        .await
+        .c(h!())?;
+    let is_admin = has_role(&env.dbx, &login, "Admin").await.is_ok();
+    let req = req.into_inner();
+
+    Ok(Json(
+        inbox_window_bl(&env, &login, &logins, is_admin, req)
+            .await
+            .context(h!())?,
+    ))
+}
+
+async fn inbox_window_bl(
+    env: &Env,
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    is_admin: bool,
+    req: InboxWindowReq,
+) -> Result<Option<InboxWindowRsp>, AppError> {
+    let Some(message_ref) =
+        normalized_optional_string(Some(req.message_ref.as_str()))
+    else {
+        return Ok(None);
+    };
+    let rows = load_inbox_item_context_rows(&env.dbx, &message_ref)
+        .await
+        .context(h!())?;
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    let inbox_req = inbox_window_base_req(req.inbox_req);
+    let target_req = inbox_window_target_req(&inbox_req);
+    let candidate_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let mut target_messages =
+        messages_by_id_bl(login, logins, env, &candidate_ids, &target_req)
+            .await
+            .context(h!())?
+            .into_iter()
+            .collect::<HashMap<_, _>>();
+    let Some(target_message_id) = rows
+        .iter()
+        .map(|row| row.id)
+        .filter(|id| target_messages.contains_key(id))
+        .min()
+    else {
+        return Ok(None);
+    };
+    let target_message = target_messages.remove(&target_message_id).c(h!())?;
+
+    let before_req = inbox_window_page_req(&inbox_req, target_message_id, true);
+    let after_req = inbox_window_page_req(&inbox_req, target_message_id, false);
+    let (before_messages, after_messages) = tokio::try_join!(
+        get_inbox_messages(login, logins, env, &before_req),
+        get_inbox_messages(login, logins, env, &after_req),
+    )
+    .context(h!())?;
+    let has_more_before = before_messages.len() == INBOX_MESSAGES_PAGE_LIMIT;
+    let has_more_after = after_messages.len() == INBOX_MESSAGES_PAGE_LIMIT;
+    let inbox_items = merge_inbox_window_messages(
+        before_messages,
+        (target_message_id, target_message),
+        after_messages,
+    );
+    let callsigns = load_inbox_callsigns(&inbox_items, env).await.c(h!())?;
+    let signal_profiles = load_inbox_signal_profiles(&inbox_items, &env.dbx)
+        .await
+        .c(h!())?;
+    let signal_groups =
+        load_inbox_signal_groups(&inbox_items, &env.dbx, is_admin, true)
+            .await
+            .c(h!())?;
+
+    Ok(Some(InboxWindowRsp {
+        target_message_id,
+        inbox: InboxMessagesRsp {
+            inbox_items,
+            poll_cursor_id: None,
+            callsigns,
+            signal_profiles,
+            signal_groups,
+            freq_pelengs_summary: None,
+            page_limit: Some(INBOX_MESSAGES_PAGE_LIMIT as i64),
+        },
+        has_more_before,
+        has_more_after,
+    }))
+}
+
+fn inbox_window_base_req(
+    inbox_req: Option<InboxMessagesReq>,
+) -> InboxMessagesReq {
+    let mut inbox_req = inbox_req.unwrap_or_else(|| InboxMessagesReq {
+        highlight_callsigns: Some(true),
+        highlight_keywords: Some(true),
+        highlight_searchres: Some(true),
+        highlight_points: Some(true),
+        ..Default::default()
+    });
+    inbox_req.since_id_noninclusive = None;
+    inbox_req.before_id_noninclusive = None;
+    inbox_req.since_date_inclusive_ms = None;
+    inbox_req.till_date_inclusive_ms = None;
+    inbox_req.nolimit = None;
+    inbox_req.load_latest = None;
+    inbox_req.calculate_freq_pelengs_summary = None;
+    inbox_req.skip_group_stats = Some(true);
+    inbox_req.page_id = Some("rer-analysis".to_string());
+    inbox_req
+}
+
+fn inbox_window_target_req(inbox_req: &InboxMessagesReq) -> InboxMessagesReq {
+    InboxMessagesReq {
+        search: inbox_req.search.clone(),
+        highlight_callsigns: inbox_req.highlight_callsigns,
+        highlight_keywords: inbox_req.highlight_keywords,
+        highlight_searchres: inbox_req.highlight_searchres,
+        highlight_signals: inbox_req.highlight_signals,
+        highlight_points: inbox_req.highlight_points,
+        highlight_keyword_set_id: inbox_req.highlight_keyword_set_id,
+        skip_group_stats: Some(true),
+        without_model_tags: inbox_req.without_model_tags,
+        ..Default::default()
+    }
+}
+
+fn inbox_window_page_req(
+    inbox_req: &InboxMessagesReq,
+    target_message_id: i64,
+    before: bool,
+) -> InboxMessagesReq {
+    InboxMessagesReq {
+        before_id_noninclusive: before.then_some(target_message_id),
+        since_id_noninclusive: (!before).then_some(target_message_id),
+        newest_first: Some(before),
+        ..inbox_req.clone()
+    }
+}
+
+fn merge_inbox_window_messages(
+    mut before_messages: Vec<(i64, InboxMessage)>,
+    target_message: (i64, InboxMessage),
+    after_messages: Vec<(i64, InboxMessage)>,
+) -> Vec<(i64, InboxMessage)> {
+    before_messages.reverse();
+    let mut seen = BTreeSet::new();
+    before_messages
+        .into_iter()
+        .chain(std::iter::once(target_message))
+        .chain(after_messages)
+        .filter(|(id, _)| seen.insert(*id))
+        .collect()
 }
 
 async fn load_inbox_item_context_group_keys(
@@ -1708,6 +1879,7 @@ fn generic_submit_item_to_inbox_message(
     let message = InboxMessage {
         parent_messages: vec![],
         intelligence_reports: vec![],
+        message_uuid: None,
         message_uid: None,
         text: full_body,
         media: vec![],
@@ -4330,6 +4502,7 @@ mod tests {
         let env = cleanup().await.unwrap();
         let login = find_test_login(&env.dbx).await.unwrap();
         let now = Utc::now().naive_utc();
+        let legacy_message_uid = Uuid::new_v4().to_string();
         let message = mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
@@ -4337,10 +4510,7 @@ mod tests {
                 created_at: Set(now),
                 timestamp: Set(Some(now)),
                 sender: Set(Some(login.id.to_string())),
-                message_uid: Set(Some(format!(
-                    "owner-direct-link-{}",
-                    Uuid::new_v4()
-                ))),
+                message_uid: Set(Some(legacy_message_uid.clone())),
                 datasource_group_id: Set(None),
                 deleted: Set(false),
                 ..Default::default()
@@ -4362,7 +4532,7 @@ mod tests {
         .unwrap();
 
         let context =
-            inbox_item_context_bl(&env, &login.id, &message.id.to_string())
+            inbox_item_context_bl(&env, &login.id, &legacy_message_uid)
                 .await
                 .unwrap();
 
@@ -4387,6 +4557,124 @@ mod tests {
             context.till_ts,
             Some((now + Duration::minutes(15)).and_utc().timestamp_millis())
         );
+    }
+
+    #[test]
+    fn inbox_window_applies_context_filters_only_to_surrounding_messages() {
+        let inbox_req = inbox_window_base_req(Some(InboxMessagesReq {
+            selected_groups: Some(vec!["group-1".to_string()]),
+            selected_freqs: Some(vec!["123.45".to_string()]),
+            selected_networks: Some(vec![7]),
+            ..Default::default()
+        }));
+
+        assert_eq!(
+            inbox_req.selected_groups,
+            Some(vec!["group-1".to_string()])
+        );
+        assert_eq!(inbox_req.selected_freqs, Some(vec!["123.45".to_string()]));
+        assert_eq!(inbox_req.selected_networks, Some(vec![7]));
+
+        let target_req = inbox_window_target_req(&inbox_req);
+        assert!(target_req.selected_groups.is_none());
+        assert!(target_req.selected_freqs.is_none());
+        assert!(target_req.selected_networks.is_none());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn issue_2726_inbox_window_returns_twenty_messages_on_each_side() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let datasource_group =
+            find_test_datasource_group(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let mut target = None;
+
+        for offset in 0..43 {
+            let timestamp = now + Duration::seconds(offset);
+            let message = mk_signal_message(
+                &env.dbx,
+                signal_message::ActiveModel {
+                    body: Set(Some(format!("window-{offset}"))),
+                    created_at: Set(timestamp),
+                    timestamp: Set(Some(timestamp)),
+                    sender: Set(Some(login.id.to_string())),
+                    message_uid: Set(Some(format!(
+                        "window-{}-{offset}",
+                        Uuid::new_v4()
+                    ))),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    deleted: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_signal_message_group(
+                &env.dbx,
+                signal_message_group::ActiveModel {
+                    signal_message_id: Set(message.id),
+                    group_master_key: Set(Some(
+                        datasource_group.group_master_key.clone(),
+                    )),
+                    sender: Set(message.sender.clone()),
+                    message_uid: Set(message.message_uid.clone()),
+                    datasource_group_id: Set(Some(datasource_group.id)),
+                    created_at: Set(timestamp),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            mk_sigint_inbox_item(
+                &env.dbx,
+                sigint_inbox_item::ActiveModel {
+                    id: Set(message.id),
+                    datetime: Set(Some(timestamp)),
+                    checked: Set(Some(true)),
+                    reviewed: Set(Some(true)),
+                    parsed_unit_v2: Set(false),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            if offset == 21 {
+                target = Some((message.id, message.id_uuid.unwrap()));
+            }
+        }
+
+        let (target_message_id, target_message_uuid) = target.unwrap();
+        let logins =
+            crate::users::get_organism_login_ids_by_id(&env.dbx, &login.id)
+                .await
+                .unwrap();
+        let window = inbox_window_bl(
+            &env,
+            &login.id,
+            &logins,
+            false,
+            InboxWindowReq {
+                message_ref: target_message_uuid.to_string(),
+                inbox_req: None,
+            },
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(window.target_message_id, target_message_id);
+        assert_eq!(window.inbox.inbox_items.len(), 41);
+        assert_eq!(window.inbox.inbox_items[20].0, target_message_id);
+        assert_eq!(window.inbox.inbox_items[20].1.text, "window-21");
+        assert!(window.has_more_before);
+        assert!(window.has_more_after);
+        assert!(window
+            .inbox
+            .inbox_items
+            .windows(2)
+            .all(|messages| messages[0].0 < messages[1].0));
     }
 
     fn generic_submit_req() -> InboxSubmitItem {

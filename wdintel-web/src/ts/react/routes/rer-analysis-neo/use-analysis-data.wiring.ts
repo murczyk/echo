@@ -1,4 +1,4 @@
-import type { InboxMessage } from '../../../../Bindings';
+import type { InboxMessage, InboxWindowRsp } from '../../../../Bindings';
 import { useAnalysisReferenceState } from './use-analysis-reference-state';
 import { useAnalysisMessageList } from './use-analysis-message-list';
 import { useAnalysisMapData } from './use-analysis-map-data';
@@ -114,7 +114,7 @@ export function buildAnalysisActionsParams({
 type BuildReloadParamsInput = {
   centerTab: UseAnalysisDataProps['centerTab'];
   deferInitialLoad: boolean;
-  focusedMessage: [number, InboxMessage] | null;
+  focusedWindow: InboxWindowRsp | null;
   focusedMessageActive: boolean;
   leftPanelOpen: boolean;
   newestFirst: boolean;
@@ -194,7 +194,7 @@ export function buildReloadOrchestratorParams(input: BuildReloadParamsInput) {
   return {
     centerTab: input.centerTab,
     deferInitialLoad: input.deferInitialLoad,
-    focusedMessage: input.focusedMessage,
+    focusedWindow: input.focusedWindow,
     focusedMessageActive: input.focusedMessageActive,
     leftPanelOpen: input.leftPanelOpen,
     newestFirst: input.newestFirst,

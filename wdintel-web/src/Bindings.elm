@@ -1070,7 +1070,8 @@ geoCoordinatesEncoder struct =
 
 
 type alias InboxMessage =
-    { messageUid : Maybe (String)
+    { messageUuid : Maybe (String)
+    , messageUid : Maybe (String)
     , text : String
     , media : List (MessageMediaInfo)
     , images : List (String)
@@ -1116,7 +1117,8 @@ type alias InboxMessage =
 inboxMessageEncoder : InboxMessage -> Json.Encode.Value
 inboxMessageEncoder struct =
     Json.Encode.object
-        [ ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUid )
+        [ ( "message_uuid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUuid )
+        , ( "message_uid", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.messageUid )
         , ( "text", (Json.Encode.string) struct.text )
         , ( "media", (Json.Encode.list (messageMediaInfoEncoder)) struct.media )
         , ( "images", (Json.Encode.list (Json.Encode.string)) struct.images )
@@ -3473,6 +3475,38 @@ inboxItemContextRspEncoder struct =
         , ( "sigint_inbox_item_ids", (Json.Encode.list (Json.Encode.int)) struct.sigintInboxItemIds )
         , ( "sinceTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.sinceTs )
         , ( "tillTs", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.tillTs )
+        ]
+
+
+type alias InboxWindowReq =
+    { messageRef : String
+    , inboxReq : Maybe (InboxMessagesReq)
+    }
+
+
+inboxWindowReqEncoder : InboxWindowReq -> Json.Encode.Value
+inboxWindowReqEncoder struct =
+    Json.Encode.object
+        [ ( "message_ref", (Json.Encode.string) struct.messageRef )
+        , ( "inbox_req", (Maybe.withDefault Json.Encode.null << Maybe.map (inboxMessagesReqEncoder)) struct.inboxReq )
+        ]
+
+
+type alias InboxWindowRsp =
+    { targetMessageId : Int
+    , inbox : InboxMessagesRsp
+    , hasMoreBefore : Bool
+    , hasMoreAfter : Bool
+    }
+
+
+inboxWindowRspEncoder : InboxWindowRsp -> Json.Encode.Value
+inboxWindowRspEncoder struct =
+    Json.Encode.object
+        [ ( "target_message_id", (Json.Encode.int) struct.targetMessageId )
+        , ( "inbox", (inboxMessagesRspEncoder) struct.inbox )
+        , ( "has_more_before", (Json.Encode.bool) struct.hasMoreBefore )
+        , ( "has_more_after", (Json.Encode.bool) struct.hasMoreAfter )
         ]
 
 
@@ -14833,6 +14867,7 @@ geoCoordinatesDecoder =
 inboxMessageDecoder : Json.Decode.Decoder InboxMessage
 inboxMessageDecoder =
     Json.Decode.succeed InboxMessage
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uuid" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message_uid" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "text" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "media" (Json.Decode.list (messageMediaInfoDecoder))))
@@ -15822,6 +15857,15 @@ inboxMessagesRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "signal_groups" (Json.Decode.list (signalGroupEntryDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq_pelengs_summary" (Json.Decode.nullable (Json.Decode.list (freqPelengsEntryDecoder)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "page_limit" (Json.Decode.nullable (Json.Decode.int))))
+
+
+inboxWindowRspDecoder : Json.Decode.Decoder InboxWindowRsp
+inboxWindowRspDecoder =
+    Json.Decode.succeed InboxWindowRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "target_message_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "inbox" (inboxMessagesRspDecoder)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more_before" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "has_more_after" (Json.Decode.bool)))
 
 
 inboxMapItemDecoder : Json.Decode.Decoder InboxMapItem

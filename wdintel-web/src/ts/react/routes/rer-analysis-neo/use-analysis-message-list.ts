@@ -23,6 +23,8 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 type Params = {
   deferInitialLoad: boolean;
+  focusedHasMoreEarlier?: boolean;
+  focusedHasMoreLater?: boolean;
   focusedMessageId?: number | null;
   focusedMessageActive?: boolean;
   loadMissingNetworksForMessages: (messageItems: Array<[number, InboxMessage]>) => Promise<void>;
@@ -73,6 +75,8 @@ function transformPageMessages(
 
 export function useAnalysisMessageList({
   deferInitialLoad,
+  focusedHasMoreEarlier: initialFocusedHasMoreEarlier = false,
+  focusedHasMoreLater: initialFocusedHasMoreLater = false,
   focusedMessageId = null,
   focusedMessageActive = false,
   loadMissingNetworksForMessages,
@@ -93,8 +97,8 @@ export function useAnalysisMessageList({
   const [messages, setMessages] = useState<Array<[number, InboxMessage]>>([]);
   const [messageComments, setMessageComments] = useState<Record<number, MessageComment[]>>({});
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
-  const [focusedHasMoreEarlier, setFocusedHasMoreEarlier] = useState(true);
-  const [focusedHasMoreLater, setFocusedHasMoreLater] = useState(true);
+  const [focusedHasMoreEarlier, setFocusedHasMoreEarlier] = useState(initialFocusedHasMoreEarlier);
+  const [focusedHasMoreLater, setFocusedHasMoreLater] = useState(initialFocusedHasMoreLater);
   const [focusedLoadingEarlier, setFocusedLoadingEarlier] = useState(false);
   const [focusedLoadingLater, setFocusedLoadingLater] = useState(false);
   const [nolimitShown, setNolimitShown] = useState(false);
@@ -160,12 +164,18 @@ export function useAnalysisMessageList({
     );
     if (!earlierLoading) focusedLoadingDirectionsRef.current.earlier = null;
     if (!laterLoading) focusedLoadingDirectionsRef.current.later = null;
-    setFocusedHasMoreEarlier(true);
-    setFocusedHasMoreLater(true);
+    setFocusedHasMoreEarlier(focusedMessageActive ? initialFocusedHasMoreEarlier : true);
+    setFocusedHasMoreLater(focusedMessageActive ? initialFocusedHasMoreLater : true);
     setFocusedLoadingEarlier(earlierLoading);
     setFocusedLoadingLater(laterLoading);
     setMessagesPaging(earlierLoading || laterLoading);
-  }, [focusedMessageActive, focusedMessageId, queryState]);
+  }, [
+    focusedMessageActive,
+    focusedMessageId,
+    initialFocusedHasMoreEarlier,
+    initialFocusedHasMoreLater,
+    queryState,
+  ]);
 
   const displayedMessages = useMemo(() => {
     if (!focusedMessageActive || isNullOrUndefined(focusedMessageId)) return messages;

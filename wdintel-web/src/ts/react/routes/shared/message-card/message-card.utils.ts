@@ -440,14 +440,23 @@ export function resolveMessageCardEtalonDisplayModel(
 }
 
 export function buildMessageLinkHref(
-  msg: Pick<InboxMessage, 'messageUid'> | { messageUid?: string | null },
+  msg:
+    | Pick<InboxMessage, 'messageUuid' | 'messageUid'>
+    | { messageUuid?: string | null; messageUid?: string | null },
   feature: 'duty' | 'analysis',
   id?: number,
 ): string {
   const targetPath = feature === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo';
+  const uuid = msg.messageUuid?.trim();
   const uid = msg.messageUid?.trim();
   const identifier =
-    feature === 'duty' && id != null ? String(id) : uid && uid !== '' ? uid : String(id ?? '');
+    uuid && uuid !== ''
+      ? uuid
+      : feature === 'duty' && id != null
+        ? String(id)
+        : uid && uid !== ''
+          ? uid
+          : String(id ?? '');
   const params = new URLSearchParams();
   if (identifier) {
     params.set('m', identifier);
@@ -457,7 +466,9 @@ export function buildMessageLinkHref(
 }
 
 export function buildMessageLinkFullUrl(
-  msg: Pick<InboxMessage, 'messageUid'> | { messageUid?: string | null },
+  msg:
+    | Pick<InboxMessage, 'messageUuid' | 'messageUid'>
+    | { messageUuid?: string | null; messageUid?: string | null },
   feature: 'duty' | 'analysis',
   id?: number,
 ): string {

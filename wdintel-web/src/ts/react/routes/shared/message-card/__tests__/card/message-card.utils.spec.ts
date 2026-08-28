@@ -174,11 +174,18 @@ describe('buildMessageLinkHref', () => {
     );
   });
 
-  it('prefers the exact numeric id for a duty card', async () => {
+  it('prefers the exact numeric id for a duty card without uuid', async () => {
     const { buildMessageLinkHref } = await import('../../message-card.utils');
     expect(buildMessageLinkHref({ messageUid: 'shared-uid' }, 'duty', 456)).toBe(
       '/rer-duty-neo?m=456',
     );
+  });
+
+  it('prefers the stable message uuid for both links', async () => {
+    const { buildMessageLinkHref } = await import('../../message-card.utils');
+    const message = { messageUuid: '019-stable', messageUid: 'legacy-uid' };
+    expect(buildMessageLinkHref(message, 'duty', 456)).toBe('/rer-duty-neo?m=019-stable');
+    expect(buildMessageLinkHref(message, 'analysis', 456)).toBe('/rer-analysis-neo?m=019-stable');
   });
 
   it('builds short analysis link with messageUid', async () => {

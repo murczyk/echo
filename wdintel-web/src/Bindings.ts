@@ -390,6 +390,7 @@ export type GeoCoordinates = {
 };
 
 export type InboxMessage = {
+  messageUuid: string | null;
   messageUid: string | null;
   text: string;
   media: Array<MessageMediaInfo>;
@@ -1338,6 +1339,18 @@ export type InboxItemContextRsp = {
   sigintInboxItemIds: Array<number>;
   sinceTs: number | null;
   tillTs: number | null;
+};
+
+export type InboxWindowReq = {
+  messageRef: string;
+  inboxReq: InboxMessagesReq | null;
+};
+
+export type InboxWindowRsp = {
+  targetMessageId: number;
+  inbox: InboxMessagesRsp;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
 };
 
 export type InboxByGroupDigestRsp = {

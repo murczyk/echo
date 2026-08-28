@@ -11,8 +11,10 @@ import {
 } from '../shared/analysis-unit-filter';
 import {
   buildAnalysisReq,
+  buildInboxReq,
   createInitialQueryState,
   createResetQueryState,
+  extendQueryDateRangeForDirectMessage,
   hasMeaningfulUiFiltersBeyondDateRange,
   parseQueryStateFromWindow,
   pushQueryStateToUrl,
@@ -24,17 +26,11 @@ import {
   parseMessageUidFromWindow,
   removeMessageUidFromWindowUrl,
 } from './helpers';
-import { fetchInboxItemContext } from '../../services/api/inbox-messages';
-import {
-  getGroupInfosBatch,
-  getSignalProfilesBatch,
-} from '../../services/api/inbox-reference-data';
+import { fetchInboxWindow } from '../../services/api/inbox-messages';
 import type {
   AnalysisCallsignFrequencyMatchesRsp,
-  InboxItemContextRsp,
   InboxMessage,
-  SignalGroupEntry,
-  SignalProfileEntry,
+  InboxWindowRsp,
   User,
 } from '../../../../Bindings';
 import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
@@ -91,15 +87,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     initialPanelQueryState.rightPanelOpen ? 'stats' : null,
   );
   const [targetMessageUid] = useState(parseMessageUidFromWindow);
-  const [targetMessageContext, setTargetMessageContext] = useState<InboxItemContextRsp | null>(
-    null,
-  );
-  const [targetMessageGroupInfos, setTargetMessageGroupInfos] = useState<
-    Record<string, SignalGroupEntry>
-  >({});
-  const [targetMessageProfiles, setTargetMessageProfiles] = useState<
-    Record<string, SignalProfileEntry | null>
-  >({});
+  const [targetMessageWindow, setTargetMessageWindow] = useState<InboxWindowRsp | null>(null);
   const [targetMessageLoading, setTargetMessageLoading] = useState(targetMessageUid !== null);
   const [targetMessageContextActive, setTargetMessageContextActive] = useState(
     targetMessageUid !== null,
@@ -107,44 +95,72 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [targetMessageFocusActive, setTargetMessageFocusActive] = useState(
     targetMessageUid !== null,
   );
+  const targetMessageLoadedRef = useRef(false);
   const [centerTabPending, startCenterTabTransition] = useTransition();
   const setPageError = useCallback((message: string) => setError(message || null), []);
   const dutySettings = useDutySettings();
+  const directQueryBoundaryRef = useRef({
+    fromDateTimeStr: initialQueryState.fromDateTimeStr,
+    toDateTimeStr: initialQueryState.toDateTimeStr,
+    search: initialQueryState.search,
+  });
+  const directMessageWindowQueryState = useMemo(
+    () => ({
+      ...initialQueryState,
+      groupsSelected: queryState.groupsSelected,
+      freqsSelected: queryState.freqsSelected,
+      networksSelected: queryState.networksSelected,
+      withoutNetwork: queryState.withoutNetwork,
+    }),
+    [
+      initialQueryState,
+      queryState.freqsSelected,
+      queryState.groupsSelected,
+      queryState.networksSelected,
+      queryState.withoutNetwork,
+    ],
+  );
 
   useEffect(() => {
-    if (!targetMessageUid) return;
+    if (!targetMessageUid || !targetMessageContextActive) return;
     let cancelled = false;
-    setTargetMessageLoading(true);
-    void fetchInboxItemContext({ messageUid: targetMessageUid })
-      .then(async (res) => {
+    if (!targetMessageLoadedRef.current) setTargetMessageLoading(true);
+    void fetchInboxWindow({
+      messageRef: targetMessageUid,
+      inboxReq: buildInboxReq(directMessageWindowQueryState, [], true),
+    })
+      .then((res) => {
         if (cancelled) return;
-        if (res.message == null) {
-          setTargetMessageContextActive(false);
+        if (res == null) {
+          if (!targetMessageLoadedRef.current) {
+            setTargetMessageContextActive(false);
+          }
           setPageError('Не вдалося знайти повідомлення за посиланням.');
           return;
         }
-        const groupKeys = Array.from(
-          new Set(
-            [...res.groupMasterKeys, res.message[1].groupMasterKey].filter(
-              (groupKey): groupKey is string => groupKey != null,
-            ),
-          ),
-        );
-        const sender = res.message[1].sender?.trim();
-        const [groupInfos, profilesRsp] = await Promise.all([
-          getGroupInfosBatch(groupKeys),
-          getSignalProfilesBatch(sender ? [sender] : []),
-        ]);
-        if (cancelled) return;
-        setTargetMessageGroupInfos(
-          Object.fromEntries(groupInfos.map((groupInfo) => [groupInfo.masterKey, groupInfo])),
-        );
-        setTargetMessageProfiles(profilesRsp.data);
-        setTargetMessageContext(res);
+        targetMessageLoadedRef.current = true;
+        const targetMessage = res.inbox.inboxItems.find(
+          ([messageId]) => messageId === res.targetMessageId,
+        )?.[1];
+        if (targetMessage != null) {
+          setQueryState((current) => {
+            const next = extendQueryDateRangeForDirectMessage(current, targetMessage);
+            if (next === current) return current;
+            directQueryBoundaryRef.current = {
+              fromDateTimeStr: next.fromDateTimeStr,
+              toDateTimeStr: next.toDateTimeStr,
+              search: next.search,
+            };
+            return next;
+          });
+        }
+        setTargetMessageWindow(res);
       })
       .catch((err) => {
         if (cancelled) return;
-        setTargetMessageContextActive(false);
+        if (!targetMessageLoadedRef.current) {
+          setTargetMessageContextActive(false);
+        }
         setPageError(`Не вдалося відкрити повідомлення за посиланням: ${toErrorMessage(err)}`);
       })
       .finally(() => {
@@ -153,18 +169,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     return () => {
       cancelled = true;
     };
-  }, [setPageError, targetMessageUid]);
+  }, [directMessageWindowQueryState, setPageError, targetMessageContextActive, targetMessageUid]);
 
   const clearTargetMessageFocus = useCallback(() => {
     setTargetMessageFocusActive(false);
     removeMessageUidFromWindowUrl();
   }, []);
 
-  const directQueryBoundaryRef = useRef({
-    fromDateTimeStr: initialQueryState.fromDateTimeStr,
-    toDateTimeStr: initialQueryState.toDateTimeStr,
-    search: initialQueryState.search,
-  });
   useEffect(() => {
     const nextBoundary = {
       fromDateTimeStr: queryState.fromDateTimeStr,
@@ -199,7 +210,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     authUserName,
     currentUser,
     deferInitialLoad: !systemSettingsLoaded,
-    focusedMessage: targetMessageContext?.message ?? null,
+    focusedWindow: targetMessageWindow,
     focusedMessageActive: targetMessageContextActive,
     leftPanelOpen,
     centerTab,
@@ -610,17 +621,11 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     return queryStateKey !== lastResetStateKey;
   }, [lastResetState, queryState]);
 
-  const groupInfos = useMemo(
-    () => ({ ...data.groupInfos, ...targetMessageGroupInfos }),
-    [data.groupInfos, targetMessageGroupInfos],
-  );
-  const profiles = useMemo(
-    () => ({ ...targetMessageProfiles, ...data.profiles }),
-    [data.profiles, targetMessageProfiles],
-  );
+  const groupInfos = data.groupInfos;
+  const profiles = data.profiles;
 
   const directMessageNavigation = useMemo(() => {
-    const targetMessageId = targetMessageContext?.message?.[0];
+    const targetMessageId = targetMessageWindow?.targetMessageId;
     if (!targetMessageContextActive || targetMessageId == null) return null;
     return {
       targetMessageId,
@@ -643,7 +648,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     data.loadFocusedEarlier,
     data.loadFocusedLater,
     newestFirst,
-    targetMessageContext,
+    targetMessageWindow,
     targetMessageContextActive,
     targetMessageFocusActive,
   ]);
@@ -651,8 +656,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     targetMessageUid !== null &&
     targetMessageContextActive &&
     (targetMessageLoading ||
-      targetMessageContext?.message == null ||
-      !data.messages.some(([messageId]) => messageId === targetMessageContext.message?.[0]));
+      targetMessageWindow == null ||
+      !data.messages.some(([messageId]) => messageId === targetMessageWindow.targetMessageId));
 
   return {
     authUserName,

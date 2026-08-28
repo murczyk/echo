@@ -519,14 +519,12 @@ function AnalysisMessagesPaneComponent({
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const [bottomAnchorSpacerPx, setBottomAnchorSpacerPx] = useState(0);
   const [autoLoadCheckVersion, setAutoLoadCheckVersion] = useState(0);
-  const [initialFocusedLoadPending, setInitialFocusedLoadPending] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const preserveScrollOnPageChangeRef = useRef(false);
   const paginationRequestInFlightRef = useRef(false);
   const focusedRequestsInFlightRef = useRef(new Map<'earlier' | 'later', number>());
-  const initialFocusedLoadPendingRef = useRef(false);
   const initialFocusedLoadTargetIdRef = useRef<number | null>(null);
   const targetAnchorCenterRef = useRef<number | null>(null);
   const centeredTargetIdRef = useRef<number | null>(null);
@@ -686,11 +684,7 @@ function AnalysisMessagesPaneComponent({
     if (container == null || messages.length === 0 || loading) return;
 
     if (directMessageNavigation != null) {
-      if (
-        initialFocusedLoadTargetIdRef.current !== directMessageNavigation.targetMessageId ||
-        initialFocusedLoadPendingRef.current
-      )
-        return;
+      if (initialFocusedLoadTargetIdRef.current !== directMessageNavigation.targetMessageId) return;
       for (const position of ['above', 'below'] as const) {
         const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
         const directionLoading =
@@ -724,35 +718,13 @@ function AnalysisMessagesPaneComponent({
   useEffect(() => {
     if (directMessageNavigation == null) {
       initialFocusedLoadTargetIdRef.current = null;
-      initialFocusedLoadPendingRef.current = false;
-      setInitialFocusedLoadPending(false);
       return;
     }
     const targetMessageId = directMessageNavigation.targetMessageId;
     if (initialFocusedLoadTargetIdRef.current === targetMessageId) return;
     focusedRequestsInFlightRef.current.clear();
-
-    const positions = (['above', 'below'] as const).filter((position) => {
-      const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
-      return direction === 'earlier'
-        ? directMessageNavigation.canLoadEarlier
-        : directMessageNavigation.canLoadLater;
-    });
-    if (positions.length === 0) {
-      initialFocusedLoadPendingRef.current = false;
-      setInitialFocusedLoadPending(false);
-      return;
-    }
-
     initialFocusedLoadTargetIdRef.current = targetMessageId;
-    initialFocusedLoadPendingRef.current = true;
-    setInitialFocusedLoadPending(true);
-    void Promise.allSettled(positions.map(handleFocusedLoad)).then(() => {
-      if (initialFocusedLoadTargetIdRef.current !== targetMessageId) return;
-      initialFocusedLoadPendingRef.current = false;
-      setInitialFocusedLoadPending(false);
-    });
-  }, [directMessageNavigation, handleFocusedLoad]);
+  }, [directMessageNavigation]);
 
   const reconcileBottomAnchorSpacer = useCallback(() => {
     setBottomAnchorSpacerPx((current) => {
@@ -856,7 +828,6 @@ function AnalysisMessagesPaneComponent({
   }, [autoLoadCheckVersion, loadMessagesNearScrollBoundary, messages]);
 
   const clearFocusOnScrollStart = useCallback(() => {
-    if (initialFocusedLoadPendingRef.current) return;
     preserveTargetAnchorRef.current = false;
     if (directMessageNavigation?.focusActive) directMessageNavigation.onClearFocus();
   }, [directMessageNavigation]);
@@ -895,11 +866,7 @@ function AnalysisMessagesPaneComponent({
       direction === 'earlier'
         ? directMessageNavigation.loadingEarlier
         : directMessageNavigation.loadingLater;
-    const canLoad =
-      direction === 'earlier'
-        ? directMessageNavigation.canLoadEarlier
-        : directMessageNavigation.canLoadLater;
-    return loadingDirection || (initialFocusedLoadPending && canLoad);
+    return loadingDirection;
   };
   const focusedLoadingAbove = isFocusedPositionLoading('above');
   const focusedLoadingBelow = isFocusedPositionLoading('below');
@@ -930,42 +897,21 @@ function AnalysisMessagesPaneComponent({
     >
       <Box
         ref={scrollContainerRef}
-        aria-busy={initialFocusedLoadPending || undefined}
         tabIndex={directMessageNavigation?.focusActive ? 0 : undefined}
         onScroll={handleScroll}
-        onWheel={(event) => {
-          if (initialFocusedLoadPendingRef.current) {
-            event.preventDefault();
-            return;
-          }
-          clearFocusOnScrollStart();
-        }}
-        onTouchMove={(event) => {
-          if (initialFocusedLoadPendingRef.current) {
-            event.preventDefault();
-            return;
-          }
-          clearFocusOnScrollStart();
-        }}
+        onWheel={clearFocusOnScrollStart}
+        onTouchMove={clearFocusOnScrollStart}
         onPointerDown={(event) => {
-          if (initialFocusedLoadPendingRef.current) {
-            event.preventDefault();
-            return;
-          }
           if (event.target === event.currentTarget) clearFocusOnScrollStart();
         }}
         onKeyDown={(event) => {
           if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
-            if (initialFocusedLoadPendingRef.current) {
-              event.preventDefault();
-              return;
-            }
             clearFocusOnScrollStart();
           }
         }}
         sx={{
           ...getAnalysisMessagesScrollSx(theme),
-          overflowY: initialFocusedLoadPending ? 'hidden' : 'auto',
+          overflowY: 'auto',
           overflowAnchor: 'none',
           width: '100%',
           maxWidth: '100%',

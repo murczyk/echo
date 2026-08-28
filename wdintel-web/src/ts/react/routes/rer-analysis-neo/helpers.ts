@@ -1,12 +1,18 @@
 import dayjs from 'dayjs';
 
-import type { AnalysisStatsReq, InboxMessagesReq, SavedFilter } from '../../../../Bindings';
+import type {
+  AnalysisStatsReq,
+  InboxMessage,
+  InboxMessagesReq,
+  SavedFilter,
+} from '../../../../Bindings';
 import {
   parseRerAnalysisQueryStateFromSearchParams,
   writeRerAnalysisQueryStateToSearchParams,
 } from '../../../rer-analysis-query-state';
 import {
   APP_TIME_ZONE,
+  combineDateTimeToMs,
   combineDateTimeInputToMs,
   formatDateTimeInputValueInTimeZone,
   isNullOrUndefined,
@@ -188,6 +194,61 @@ export function createInitialQueryState(
 
 export function createResetQueryState(now: Date = new Date()): AnalysisQueryState {
   return createInitialQueryState(emptyQueryState(), now);
+}
+
+function messageDateInAppTimeZone(
+  message: Pick<InboxMessage, 'date' | 'timestamp'>,
+): string | null {
+  if (message.date != null && combineDateTimeToMs(message.date, '00:00', APP_TIME_ZONE) != null) {
+    return message.date;
+  }
+  if (message.timestamp == null || !Number.isFinite(message.timestamp)) return null;
+  return dayjs(message.timestamp).tz(APP_TIME_ZONE).format('YYYY-MM-DD');
+}
+
+export function extendQueryDateRangeForDirectMessage(
+  state: AnalysisQueryState,
+  message: Pick<InboxMessage, 'date' | 'timestamp'>,
+  now: Date = new Date(),
+): AnalysisQueryState {
+  const messageDate = messageDateInAppTimeZone(message);
+  if (messageDate == null) return state;
+
+  const messageDayStartMs = combineDateTimeToMs(messageDate, '00:00', APP_TIME_ZONE);
+  if (messageDayStartMs == null) return state;
+  const messageDay = dayjs(messageDayStartMs).tz(APP_TIME_ZONE);
+  const previousDate = messageDay.subtract(1, 'day').format('YYYY-MM-DD');
+  const nextDate = messageDay.add(1, 'day').format('YYYY-MM-DD');
+  const previousDayStartMs = combineDateTimeToMs(previousDate, '00:00', APP_TIME_ZONE);
+  const messageDayEndMs = combineDateTimeToMs(nextDate, '00:00', APP_TIME_ZONE);
+  const today = dayjs(now).tz(APP_TIME_ZONE);
+  const tomorrowDate = today.add(1, 'day').format('YYYY-MM-DD');
+  const tomorrowStartMs = combineDateTimeToMs(tomorrowDate, '00:00', APP_TIME_ZONE);
+  const rangeStartMs = combineDateTimeInputToMs(state.fromDateTimeStr, APP_TIME_ZONE);
+  const rangeEndMs = combineDateTimeInputToMs(state.toDateTimeStr, APP_TIME_ZONE);
+  if (
+    previousDayStartMs == null ||
+    messageDayEndMs == null ||
+    tomorrowStartMs == null ||
+    rangeStartMs == null ||
+    rangeEndMs == null
+  ) {
+    return state;
+  }
+
+  const fromDateTimeStr =
+    previousDayStartMs < rangeStartMs ? `${previousDate}T00:00` : state.fromDateTimeStr;
+  const directMessageRangeEndMs = Math.max(messageDayEndMs, tomorrowStartMs);
+  const directMessageRangeEndDate =
+    directMessageRangeEndMs === messageDayEndMs ? nextDate : tomorrowDate;
+  const toDateTimeStr =
+    directMessageRangeEndMs > rangeEndMs
+      ? `${directMessageRangeEndDate}T00:00`
+      : state.toDateTimeStr;
+  if (fromDateTimeStr === state.fromDateTimeStr && toDateTimeStr === state.toDateTimeStr) {
+    return state;
+  }
+  return { ...state, fromDateTimeStr, toDateTimeStr };
 }
 
 export function hasMeaningfulFiltersBeyondDateRange(state: AnalysisQueryState): boolean {

@@ -5,7 +5,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { InboxMessage, SavedFilter, User } from '../../../../Bindings';
+import type { InboxMessage, InboxWindowRsp, SavedFilter, User } from '../../../../Bindings';
 import type { AnalysisPageViewModel } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 
@@ -16,11 +16,7 @@ const systemSettingsMock = vi.hoisted(() => ({
   currentSystemSettings: vi.fn(),
 }));
 const inboxMessagesMock = vi.hoisted(() => ({
-  fetchInboxItemContext: vi.fn(),
-}));
-const inboxReferenceDataMock = vi.hoisted(() => ({
-  getGroupInfosBatch: vi.fn(),
-  getSignalProfilesBatch: vi.fn(),
+  fetchInboxWindow: vi.fn(),
 }));
 
 const useAnalysisDataMock = vi.hoisted(() => vi.fn());
@@ -61,12 +57,7 @@ vi.mock('../../services/api/system-settings', () => ({
 }));
 
 vi.mock('../../services/api/inbox-messages', () => ({
-  fetchInboxItemContext: inboxMessagesMock.fetchInboxItemContext,
-}));
-
-vi.mock('../../services/api/inbox-reference-data', () => ({
-  getGroupInfosBatch: inboxReferenceDataMock.getGroupInfosBatch,
-  getSignalProfilesBatch: inboxReferenceDataMock.getSignalProfilesBatch,
+  fetchInboxWindow: inboxMessagesMock.fetchInboxWindow,
 }));
 
 vi.mock('./use-analysis-data', () => ({
@@ -321,18 +312,8 @@ describe('useRerAnalysisNeoPage', () => {
       rerShortUrlEnabled: false,
       enableAudioTranscription: true,
     });
-    inboxMessagesMock.fetchInboxItemContext.mockReset();
-    inboxMessagesMock.fetchInboxItemContext.mockResolvedValue({
-      message: null,
-      groupMasterKeys: [],
-      sigintInboxItemIds: [],
-      sinceTs: null,
-      tillTs: null,
-    });
-    inboxReferenceDataMock.getGroupInfosBatch.mockReset();
-    inboxReferenceDataMock.getGroupInfosBatch.mockResolvedValue([]);
-    inboxReferenceDataMock.getSignalProfilesBatch.mockReset();
-    inboxReferenceDataMock.getSignalProfilesBatch.mockResolvedValue({ data: {} });
+    inboxMessagesMock.fetchInboxWindow.mockReset();
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValue(null);
 
     useAnalysisDataMock.mockReset();
     analysisFreqValues = ['111.1'];
@@ -820,7 +801,7 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageLoading).toBe(false);
   });
 
-  it('opens only the direct-link message and loads its references', async () => {
+  it('opens the direct-link message window with its references', async () => {
     const targetMessage = {
       text: 'target',
       freq: '123.45',
@@ -832,35 +813,47 @@ describe('useRerAnalysisNeoPage', () => {
       groupMasterKey: 'group-1',
       networkIds: [17],
       tags: [],
+      date: '2026-08-20',
+      timestamp: null,
     } as InboxMessage;
-    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
-    inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({
-      message: [50, targetMessage],
-      groupMasterKeys: ['group-1'],
-      sigintInboxItemIds: [50],
-      sinceTs: null,
-      tillTs: null,
-    });
-    inboxReferenceDataMock.getGroupInfosBatch.mockResolvedValueOnce([
-      { masterKey: 'group-1', name: 'Група Альфа' },
-    ]);
-    inboxReferenceDataMock.getSignalProfilesBatch.mockResolvedValueOnce({
-      data: { 'sender-1': { givenName: 'Іван', familyName: 'Петренко' } },
-    });
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}?m=target-uid&fromDateTime=2026-08-28T00%3A00&toDateTime=2099-08-29T00%3A00`,
+    );
+    const focusedWindow = {
+      targetMessageId: 50,
+      inbox: {
+        inboxItems: [[50, targetMessage]],
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: { 'sender-1': { givenName: 'Іван', familyName: 'Петренко' } },
+        signalGroups: [{ masterKey: 'group-1', name: 'Група Альфа' }],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: true,
+      hasMoreAfter: true,
+    };
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
 
     renderHook();
     await flushEffects();
 
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
-      focusedMessage: [50, targetMessage],
+      focusedWindow,
       focusedMessageActive: true,
     });
-    expect(latest?.directMessageLoading).toBe(true);
-    expect(latest?.groupInfos['group-1']?.name).toBe('Група Альфа');
-    expect(latest?.profiles['sender-1']).toEqual({
-      givenName: 'Іван',
-      familyName: 'Петренко',
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledTimes(1);
+    expect(inboxMessagesMock.fetchInboxWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ messageRef: 'target-uid' }),
+    );
+    expect(latest?.queryState).toMatchObject({
+      fromDateTimeStr: '2026-08-19T00:00',
+      toDateTimeStr: '2099-08-29T00:00',
     });
+    expect(latest?.directMessageNavigation).not.toBeNull();
+    expect(latest?.directMessageLoading).toBe(true);
 
     currentAnalysisData = {
       ...buildAnalysisData(),
@@ -877,6 +870,92 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.directMessageNavigation?.focusActive).toBe(false);
   });
 
+  it('refilters the direct-link window while keeping the target focused', async () => {
+    const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
+    const buildWindow = (neighborId: number, neighborText: string): InboxWindowRsp => ({
+      targetMessageId: 50,
+      inbox: {
+        inboxItems: [
+          [neighborId, { text: neighborText } as InboxMessage],
+          [50, targetMessage],
+        ],
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: {},
+        signalGroups: [],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: true,
+      hasMoreAfter: true,
+    });
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(buildWindow(49, 'initial'));
+
+    renderHook();
+    await flushEffects();
+
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: [[50, targetMessage]],
+    };
+    const groupWindow = buildWindow(48, 'same group');
+    let resolveGroupWindow: ((value: InboxWindowRsp) => void) | undefined;
+    inboxMessagesMock.fetchInboxWindow.mockImplementationOnce(
+      () =>
+        new Promise<InboxWindowRsp>((resolve) => {
+          resolveGroupWindow = resolve;
+        }),
+    );
+    act(() => latest?.updateQueryState({ groupsSelected: ['group-1'] }));
+    await flushEffects();
+
+    expect(latest?.directMessageLoading).toBe(false);
+    expect(latest?.directMessageNavigation).toMatchObject({
+      targetMessageId: 50,
+      focusActive: true,
+    });
+    resolveGroupWindow?.(groupWindow);
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
+      selectedGroups: ['group-1'],
+    });
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      focusedWindow: groupWindow,
+      focusedMessageActive: true,
+    });
+
+    const frequencyWindow = buildWindow(47, 'same frequency');
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(frequencyWindow);
+    act(() => latest?.updateQueryState({ freqsSelected: ['123.45'] }));
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
+      selectedGroups: ['group-1'],
+      selectedFreqs: ['123.45'],
+    });
+
+    const networkWindow = buildWindow(46, 'same network');
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(networkWindow);
+    act(() => latest?.updateQueryState({ networksSelected: ['7'] }));
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
+      selectedGroups: ['group-1'],
+      selectedFreqs: ['123.45'],
+      selectedNetworks: [7],
+    });
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      focusedWindow: networkWindow,
+      focusedMessageActive: true,
+    });
+    expect(latest?.directMessageNavigation).toMatchObject({
+      targetMessageId: 50,
+      focusActive: true,
+    });
+  });
+
   it('leaves direct-link context when the date range changes', async () => {
     const targetMessage = {
       text: 'target',
@@ -888,12 +967,19 @@ describe('useRerAnalysisNeoPage', () => {
       tags: [],
     } as InboxMessage;
     window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
-    inboxMessagesMock.fetchInboxItemContext.mockResolvedValueOnce({
-      message: [50, targetMessage],
-      groupMasterKeys: [],
-      sigintInboxItemIds: [50],
-      sinceTs: null,
-      tillTs: null,
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce({
+      targetMessageId: 50,
+      inbox: {
+        inboxItems: [[50, targetMessage]],
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: {},
+        signalGroups: [],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: false,
+      hasMoreAfter: false,
     });
     renderHook();
     await flushEffects();
@@ -909,7 +995,7 @@ describe('useRerAnalysisNeoPage', () => {
 
   it('shows direct-link context request errors', async () => {
     window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
-    inboxMessagesMock.fetchInboxItemContext.mockRejectedValueOnce(new Error('boom'));
+    inboxMessagesMock.fetchInboxWindow.mockRejectedValueOnce(new Error('boom'));
 
     renderHook();
     await flushEffects();

@@ -37,6 +37,7 @@ pub struct InboxMessageSummary {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct InboxMessage {
+    pub message_uuid: Option<String>,
     pub message_uid: Option<String>,
     pub text: String,
     pub media: Vec<MessageMediaInfo>,
@@ -168,6 +169,7 @@ fn default_checked() -> bool {
 impl From<InboxInsertPayload> for InboxMessage {
     fn from(payload: InboxInsertPayload) -> Self {
         Self {
+            message_uuid: None,
             message_uid: None,
             text: payload.text,
             media: payload.media,
@@ -524,6 +526,24 @@ pub struct InboxItemContextRsp {
     pub since_ts: Option<i64>,
     #[serde(rename = "tillTs")]
     pub till_ts: Option<i64>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxWindowReq {
+    pub message_ref: String,
+    pub inbox_req: Option<InboxMessagesReq>,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+pub struct InboxWindowRsp {
+    pub target_message_id: i64,
+    pub inbox: InboxMessagesRsp,
+    pub has_more_before: bool,
+    pub has_more_after: bool,
 }
 
 #[derive(
