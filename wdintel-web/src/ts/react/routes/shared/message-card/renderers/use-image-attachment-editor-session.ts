@@ -23,17 +23,18 @@ export function useImageAttachmentEditorSession({
   imageEditing?: ImageEditingCapability;
   registerEditorEscapeHandler?: RegisterImageEditorEscapeHandler;
 }) {
+  const targetKey = imageTargetKey(image);
   const [session, setSession] = useState<EditorSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const currentKeyRef = useRef(imageTargetKey(image));
+  const currentKeyRef = useRef(targetKey);
   const requestRef = useRef<{
     generation: number;
     targetKey: string;
     controller: AbortController;
   } | null>(null);
   const generationRef = useRef(0);
-  currentKeyRef.current = imageTargetKey(image);
+  currentKeyRef.current = targetKey;
 
   const clearRequest = useCallback(() => {
     requestRef.current?.controller.abort();
@@ -51,7 +52,6 @@ export function useImageAttachmentEditorSession({
     if (!imageEditing || loading || session || !imageEditing.canEdit(image)) return;
     clearRequest();
     const target = image;
-    const targetKey = imageTargetKey(target);
     const request = {
       generation: ++generationRef.current,
       targetKey,
@@ -83,7 +83,7 @@ export function useImageAttachmentEditorSession({
         if (!established) registerEditorEscapeHandler?.(null);
       }
     }
-  }, [clearRequest, image, imageEditing, loading, registerEditorEscapeHandler, session]);
+  }, [clearRequest, image, imageEditing, loading, registerEditorEscapeHandler, session, targetKey]);
 
   const saveReplacement = useCallback(
     async (result: EditedImageResult) => {
@@ -103,9 +103,10 @@ export function useImageAttachmentEditorSession({
   );
 
   useEffect(() => {
+    setError(null);
     const request = requestRef.current;
-    if (request && request.targetKey !== currentKeyRef.current) clearRequest();
-  }, [clearRequest, image]);
+    if (request && request.targetKey !== targetKey) clearRequest();
+  }, [clearRequest, targetKey]);
   useEffect(() => () => clearRequest(), [clearRequest]);
 
   return {

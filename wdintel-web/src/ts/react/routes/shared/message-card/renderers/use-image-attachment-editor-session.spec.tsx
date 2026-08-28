@@ -51,3 +51,40 @@ it('keeps stale sources and replacements bound to the original attachment #3099'
   expect(applyReplacement).toHaveBeenCalledWith(imageA, expect.any(Object));
   act(() => root.unmount());
 });
+
+it('clears a failed image source error when carousel navigation changes the target #3294', async () => {
+  const imageA = { id: 'a', href: '/a.png' } as never;
+  const imageB = { id: 'b', href: '/b.png' } as never;
+  const loadSource = vi.fn(async () => {
+    throw new Error('image A failed');
+  });
+  let controls: ReturnType<typeof useImageAttachmentEditorSession> | null = null;
+  function Harness({ image }: { image: typeof imageA }) {
+    const value = useImageAttachmentEditorSession({
+      image,
+      imageEditing: {
+        canEdit: () => true,
+        loadSource,
+        applyReplacement: vi.fn(),
+        addAsNew: vi.fn(),
+      },
+    });
+    useEffect(() => {
+      controls = value;
+    });
+    return null;
+  }
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  act(() => root.render(<Harness image={imageA} />));
+  await act(async () => controls!.open());
+  await vi.waitFor(() => expect(controls!.error).toBe('image A failed'));
+
+  act(() => root.render(<Harness image={imageB} />));
+
+  await vi.waitFor(() => expect(controls!.error).toBeNull());
+  expect(loadSource).toHaveBeenCalledOnce();
+  expect(controls!.session).toBeNull();
+  expect(controls!.loading).toBe(false);
+  act(() => root.unmount());
+});
