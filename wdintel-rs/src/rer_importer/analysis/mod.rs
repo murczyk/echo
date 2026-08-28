@@ -5444,12 +5444,12 @@ pub async fn edit_freq_unit_name(
         &reqan.selected_senders,
         &sigint_groups,
     )?;
-    let rows_res = filter_selected_units(
+    let rows_res = filter_selected_units_or_ids(
         rows_res,
         &reqan.selected_units,
+        &reqan.selected_unit_ids,
         &req.analysis_stats_req.units_exact_match_only,
     )?;
-    let rows_res = filter_selected_unit_ids(rows_res, &reqan.selected_unit_ids);
     let rows_res =
         filter_selected_callsigns(rows_res, &reqan.selected_callsigns)?;
     let rows_res = filter_selected_tags(
@@ -6298,12 +6298,12 @@ fn build_new_callsign_filtered_items_query(
     let query = filter_selected_senders(query, &req.selected_senders)?;
     let query = filter_selected_freqs(query, &req.selected_freqs)?;
     let query = filter_selected_posts(query, &req.selected_posts)?;
-    let query = filter_selected_units(
+    let query = filter_selected_units_or_ids(
         query,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
     )?;
-    let query = filter_selected_unit_ids(query, &req.selected_unit_ids);
     let query = filter_selected_locations(
         query,
         &req.selected_locations,

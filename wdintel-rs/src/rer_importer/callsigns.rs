@@ -1867,12 +1867,12 @@ pub async fn callsigns_graph(
         &req.selected_senders,
         &sigint_groups,
     )?;
-    let q = filter_selected_unit_ids(q, &req.selected_unit_ids);
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
-    let q = filter_selected_units(
+    let q = filter_selected_units_or_ids(
         q,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
     )?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
