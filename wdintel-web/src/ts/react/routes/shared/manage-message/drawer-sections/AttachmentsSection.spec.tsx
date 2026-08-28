@@ -9,12 +9,14 @@ import { AttachmentsSection } from './AttachmentsSection';
 import { EMPTY_FORM_VALUES, type MessageFormData } from '../manage-message-drawer.schema';
 
 const previewMocks = vi.hoisted(() => ({ imageEditing: null as any }));
+const authRedirectMocks = vi.hoisted(() => ({ emitUnauthorizedEvent: vi.fn() }));
 vi.mock('../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider', () => ({
   MessageCardAttachmentPreviewProvider: ({ imageEditing }: { imageEditing: unknown }) => {
     previewMocks.imageEditing = imageEditing;
     return <div role="dialog" />;
   },
 }));
+vi.mock('../../../../auth-redirect', () => authRedirectMocks);
 
 function Form({ children }: { children: ReactNode }) {
   const methods = useForm<MessageFormData>({ defaultValues: EMPTY_FORM_VALUES });
@@ -62,6 +64,7 @@ describe('AttachmentsSection media previews', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     document.body.replaceChildren();
   });
 
@@ -354,6 +357,28 @@ describe('AttachmentsSection media previews', () => {
     expect(uppy.addFile).toHaveBeenCalledWith(
       expect.objectContaining({ meta: { replaces_media_id: 'media-1' } }),
     );
+    act(() => root.unmount());
+  });
+
+  it('handles a same-origin unauthorized editor source response before rejecting', async () => {
+    const image = {
+      id: 'media-1',
+      fileName: 'existing-image.png',
+      contentType: 'image/png',
+      href: new URL('/existing-image.png', window.location.href).href,
+    };
+    const uppy = { getFile: vi.fn(() => undefined) };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+    const { root } = await renderSection([], [image], uppy);
+
+    await expect(
+      previewMocks.imageEditing.loadSource(image, new AbortController().signal),
+    ).rejects.toThrow('Не вдалося завантажити зображення для редагування');
+    expect(authRedirectMocks.emitUnauthorizedEvent).toHaveBeenCalledOnce();
+
     act(() => root.unmount());
   });
 

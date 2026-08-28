@@ -1,14 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
+import { IMAGE_EDITOR_TEXT_TYPE } from './image-editor-padded-text';
 
 describe('image editor document snapshot restoration', () => {
   it('restores dimensions and source geometry independently of Fabric JSON metadata', () => {
     const source = { set: vi.fn(), type: 'image' };
     const text = { type: 'i-text' };
+    const restoredText = { type: IMAGE_EDITOR_TEXT_TYPE };
     const canvas = {
       backgroundImage: source,
-      getObjects: () => [text],
+      getObjects: () => [text, restoredText],
       setDimensions: vi.fn(),
       discardActiveObject: vi.fn(),
       requestRenderAll: vi.fn(),
@@ -42,5 +44,6 @@ describe('image editor document snapshot restoration', () => {
     expect(sourceRef.current).toBe(source);
     expect(cropRef.current).toBeNull();
     expect(text.hiddenTextareaContainer).toBe(container);
+    expect(restoredText.hiddenTextareaContainer).toBe(container);
   });
 });

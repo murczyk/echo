@@ -16,6 +16,7 @@ import {
   isImageMediaAttachment,
   isVideoMediaAttachment,
 } from '../../message-card/MessageCardMedia';
+import { handleUnauthorizedMediaResponse } from '../../message-card/message-card-media-fetch';
 import { MessageCardAttachmentPreviewProvider } from '../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider';
 import type { MessageCardPreviewItem } from '../../message-card/attachment-preview/message-card-preview.types';
 import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
@@ -189,6 +190,7 @@ export function AttachmentsSection({
         if (image.sizeBytes != null && image.sizeBytes > MAX_IMAGE_EDITOR_SOURCE_BYTES)
           throw new Error(IMAGE_EDITOR_SOURCE_TOO_LARGE_ERROR);
         const response = await fetch(image.href, { signal, credentials: 'same-origin' });
+        handleUnauthorizedMediaResponse(response, image.href);
         if (!response.ok) throw new Error('Не вдалося завантажити зображення для редагування');
         const blob = await readBoundedImageEditorResponse(response, signal);
         return {

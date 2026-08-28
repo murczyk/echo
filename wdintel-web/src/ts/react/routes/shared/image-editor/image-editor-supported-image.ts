@@ -4,7 +4,8 @@ export function normalizedEditableImageMimeType(
   contentType?: string | null,
   fileName?: string | null,
 ) {
-  const mimeType = contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  const rawMimeType = contentType?.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  const mimeType = rawMimeType === 'image/jpg' ? 'image/jpeg' : rawMimeType;
   if (SUPPORTED_MIME_TYPES.has(mimeType)) return mimeType;
   if (mimeType !== '' && mimeType !== 'application/octet-stream') return null;
   const name = fileName?.trim().toLowerCase() ?? '';

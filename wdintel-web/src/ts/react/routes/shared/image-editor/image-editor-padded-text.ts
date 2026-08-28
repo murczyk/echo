@@ -1,15 +1,16 @@
 export const TEXT_BACKGROUND_PADDING_MIN = 0;
 export const TEXT_BACKGROUND_PADDING_MAX = 32;
 export const TEXT_BACKGROUND_PADDING_DEFAULT = 6;
+export const IMAGE_EDITOR_TEXT_TYPE = 'image-editor-text';
 
 export function registerPaddedTextAnnotation(fabric: typeof import('fabric')) {
   try {
-    if (fabric.classRegistry.getClass('image-editor-text')) return;
+    if (fabric.classRegistry.getClass(IMAGE_EDITOR_TEXT_TYPE)) return;
   } catch {
     // Register the class below when this is the first editor instance.
   }
   class ImageEditorText extends fabric.IText {
-    static type = 'image-editor-text';
+    static type = IMAGE_EDITOR_TEXT_TYPE;
     annotationBackgroundEnabled = false;
     annotationBackgroundColor = '#000000';
     annotationBackgroundPadding = TEXT_BACKGROUND_PADDING_DEFAULT;
@@ -77,7 +78,7 @@ export function registerPaddedTextAnnotation(fabric: typeof import('fabric')) {
     'annotationBackgroundColor',
     'annotationBackgroundPadding',
   ];
-  fabric.classRegistry.setClass(ImageEditorText);
+  fabric.classRegistry.setClass(ImageEditorText, IMAGE_EDITOR_TEXT_TYPE);
 }
 
 export function createPaddedTextAnnotation({
@@ -90,6 +91,6 @@ export function createPaddedTextAnnotation({
   options: Record<string, unknown>;
 }) {
   registerPaddedTextAnnotation(fabric);
-  const Text = fabric.classRegistry.getClass('image-editor-text') as typeof fabric.IText;
+  const Text = fabric.classRegistry.getClass(IMAGE_EDITOR_TEXT_TYPE) as typeof fabric.IText;
   return new Text(text, options);
 }
