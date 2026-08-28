@@ -186,6 +186,7 @@ pub(super) struct TestLinkMatcher {
 }
 
 impl TestLinkMatcher {
+    #[cfg(test)]
     pub fn new(orbit_units: &[SourceUnit]) -> Self {
         Self::from_units(orbit_units.to_vec())
     }

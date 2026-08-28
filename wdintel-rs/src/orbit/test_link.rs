@@ -12,7 +12,7 @@ use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, JoinType,
-    QueryFilter, QuerySelect, RelationTrait, Statement,
+    QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,9 +31,24 @@ struct PersistSummary {
     no_longer_matching: usize,
 }
 
-struct AutomaticPersistenceMatcherCache {
+struct PersistenceMatcherCache {
     orbit_sync: orbit_sync::Model,
     matcher: matching::TestLinkMatcher,
+}
+
+#[derive(FromQueryResult)]
+struct CurrentOrbitLink {
+    sigint_unit_id: i64,
+    orbit_unit_id: uuid::Uuid,
+    is_manual: bool,
+    orbit_unit_deleted: bool,
+}
+
+#[derive(Default)]
+struct CurrentOrbitLinkState {
+    has_active_link: bool,
+    has_active_manual_link: bool,
+    automatic_orbit_unit_ids: BTreeSet<uuid::Uuid>,
 }
 
 impl PersistSummary {
@@ -239,26 +254,31 @@ pub(super) async fn run_with_database(
     link_mode: tui::LinkMode,
 ) -> anyhow::Result<()> {
     let units = load_linkable_sigint_units(dbx, link_mode).await.c(h!())?;
-    let orbit_units = persistence::load_latest_synced_source_units(dbx)
-        .await
-        .c(h!())?;
+    let (orbit_sync, orbit_units) =
+        persistence::load_latest_synced_source_units_with_sync(dbx)
+            .await
+            .c(h!())?;
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let suppressed_links = load_suppressed_links(dbx).await.c(h!())?;
     let review_units =
         prepare_review_units(&units, &matcher, link_mode, &suppressed_links);
-    drop(matcher);
     let (summary, links) = match link_mode {
         tui::LinkMode::Manual => review_manually(review_units).c(h!())?,
         tui::LinkMode::Automatic => approve_automatic(review_units),
     };
     let reviewed_sigint_unit_ids =
         units.iter().map(|unit| unit.id).collect::<Vec<_>>();
+    let mut matcher_cache = PersistenceMatcherCache {
+        orbit_sync,
+        matcher,
+    };
     let persist_summary = persist_links(
         dbx,
         &links,
         &reviewed_sigint_unit_ids,
         link_mode,
         &suppressed_links,
+        &mut matcher_cache,
     )
     .await
     .c(h!())?;
@@ -385,18 +405,25 @@ async fn persist_links(
     reviewed_sigint_unit_ids: &[i64],
     link_mode: tui::LinkMode,
     review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+    matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     match link_mode {
-        tui::LinkMode::Manual => {
-            persist_manual_link_batches(dbx, links, review_suppressed_links)
-                .await
-                .c(h!())
-        }
-        tui::LinkMode::Automatic => {
-            persist_automatic_link_batches(dbx, links, reviewed_sigint_unit_ids)
-                .await
-                .c(h!())
-        }
+        tui::LinkMode::Manual => persist_manual_link_batches(
+            dbx,
+            links,
+            review_suppressed_links,
+            matcher_cache,
+        )
+        .await
+        .c(h!()),
+        tui::LinkMode::Automatic => persist_automatic_link_batches(
+            dbx,
+            links,
+            reviewed_sigint_unit_ids,
+            matcher_cache,
+        )
+        .await
+        .c(h!()),
     }
 }
 
@@ -404,13 +431,19 @@ async fn persist_manual_link_batches(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+    matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let mut summary = PersistSummary::default();
     for links in links.chunks(ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE) {
         summary.add(
-            persist_manual_link_batch(dbx, links, review_suppressed_links)
-                .await
-                .c(h!())?,
+            persist_manual_link_batch(
+                dbx,
+                links,
+                review_suppressed_links,
+                matcher_cache,
+            )
+            .await
+            .c(h!())?,
         );
     }
     Ok(summary)
@@ -420,17 +453,16 @@ async fn persist_manual_link_batch(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+    matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     if links.is_empty() {
         return Ok(PersistSummary::default());
     }
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let orbit_units =
-        persistence::load_latest_synced_source_units(&transaction)
-            .await
-            .c(h!())?;
-    let matcher = matching::TestLinkMatcher::new(&orbit_units);
+    refresh_persistence_matcher(&transaction, matcher_cache)
+        .await
+        .c(h!())?;
     let suppressed_links = load_suppressed_links(&transaction).await.c(h!())?;
     let suppressed_links = suppressions_to_preserve(
         suppressed_links,
@@ -441,7 +473,7 @@ async fn persist_manual_link_batch(
         &transaction,
         &login,
         links,
-        &matcher,
+        &matcher_cache.matcher,
         &suppressed_links,
     )
     .await
@@ -459,9 +491,9 @@ async fn persist_automatic_link_batches(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let mut summary = PersistSummary::default();
-    let mut matcher_cache = None;
     for sigint_unit_ids in reviewed_sigint_unit_ids
         .chunks(ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE)
     {
@@ -470,7 +502,7 @@ async fn persist_automatic_link_batches(
                 dbx,
                 links,
                 sigint_unit_ids,
-                &mut matcher_cache,
+                matcher_cache,
             )
             .await
             .c(h!())?,
@@ -483,24 +515,20 @@ async fn persist_automatic_link_batch(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
-    matcher_cache: &mut Option<AutomaticPersistenceMatcherCache>,
+    matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    refresh_automatic_persistence_matcher(&transaction, matcher_cache)
+    refresh_persistence_matcher(&transaction, matcher_cache)
         .await
         .c(h!())?;
-    let matcher = &matcher_cache
-        .as_ref()
-        .expect("automatic persistence matcher must be initialized")
-        .matcher;
     let suppressed_links = load_suppressed_links(&transaction).await.c(h!())?;
     let (summary, _) = revalidate_automatic_links(
         &transaction,
         &login,
         links,
         reviewed_sigint_unit_ids,
-        matcher,
+        &matcher_cache.matcher,
         &suppressed_links,
     )
     .await
@@ -512,9 +540,9 @@ async fn persist_automatic_link_batch(
     Ok(summary)
 }
 
-async fn refresh_automatic_persistence_matcher<C>(
+async fn refresh_persistence_matcher<C>(
     dbx: &C,
-    matcher_cache: &mut Option<AutomaticPersistenceMatcherCache>,
+    matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -524,20 +552,24 @@ where
         .c(h!())?
         .ok_or_else(|| anyhow::anyhow!("ORBIT data has not been synchronized"))
         .c(h!())?;
-    if matcher_cache
-        .as_ref()
-        .is_some_and(|cache| cache.orbit_sync == orbit_sync)
-    {
+    if matcher_cache_is_current(matcher_cache, &orbit_sync) {
         return Ok(());
     }
-    let orbit_units = persistence::load_latest_synced_source_units(dbx)
+    let orbit_units = persistence::load_synced_source_units(dbx, &orbit_sync)
         .await
         .c(h!())?;
-    *matcher_cache = Some(AutomaticPersistenceMatcherCache {
+    *matcher_cache = PersistenceMatcherCache {
         orbit_sync,
         matcher: matching::TestLinkMatcher::from_units(orbit_units),
-    });
+    };
     Ok(())
+}
+
+fn matcher_cache_is_current(
+    matcher_cache: &PersistenceMatcherCache,
+    orbit_sync: &orbit_sync::Model,
+) -> bool {
+    matcher_cache.orbit_sync == *orbit_sync
 }
 
 async fn persist_manual_links<C>(
@@ -552,31 +584,38 @@ where
 {
     let mut summary = PersistSummary::default();
     let mut links_changed = false;
+    let sigint_unit_ids = links
+        .iter()
+        .map(|(sigint_unit_id, _)| *sigint_unit_id)
+        .collect::<Vec<_>>();
+    let sigint_units = load_locked_sigint_units(dbx, &sigint_unit_ids)
+        .await
+        .c(h!())?;
+    let current_links = load_current_orbit_link_states(dbx, &sigint_unit_ids)
+        .await
+        .c(h!())?;
     for (sigint_unit_id, orbit_unit_id) in links {
         if suppressed_links.contains(&(*sigint_unit_id, *orbit_unit_id)) {
             summary.suppressed += 1;
             continue;
         }
-        if super::sigint_unit_has_active_orbit_link(dbx, *sigint_unit_id)
-            .await
-            .c(h!())?
+        if current_links
+            .get(sigint_unit_id)
+            .is_some_and(|links| links.has_active_link)
         {
             summary.already_linked += 1;
             continue;
         }
-        let Some(sigint_unit) = load_locked_sigint_unit(dbx, *sigint_unit_id)
-            .await
-            .c(h!())?
-        else {
+        let Some(sigint_unit) = sigint_units.get(sigint_unit_id) else {
             summary.no_longer_matching += 1;
             continue;
         };
-        if !sigint_unit_is_reviewable(&sigint_unit) {
+        if !sigint_unit_is_reviewable(sigint_unit) {
             summary.no_longer_matching += 1;
             continue;
         }
         if !accepted_link_is_current_match(
-            &sigint_unit,
+            sigint_unit,
             *orbit_unit_id,
             matcher,
             tui::LinkMode::Manual,
@@ -613,30 +652,41 @@ where
     let proposed_links = links.iter().copied().collect::<BTreeMap<_, _>>();
     let mut summary = PersistSummary::default();
     let mut links_changed = false;
-    for sigint_unit_id in reviewed_sigint_unit_ids {
-        let Some(sigint_unit) = load_locked_sigint_unit(dbx, *sigint_unit_id)
+    let sigint_units = load_locked_sigint_units(dbx, reviewed_sigint_unit_ids)
+        .await
+        .c(h!())?;
+    let current_links =
+        load_current_orbit_link_states(dbx, reviewed_sigint_unit_ids)
             .await
-            .c(h!())?
-        else {
+            .c(h!())?;
+    for sigint_unit_id in reviewed_sigint_unit_ids {
+        let Some(sigint_unit) = sigint_units.get(sigint_unit_id) else {
             summary.no_longer_matching += 1;
             continue;
         };
-        if !sigint_unit_is_reviewable(&sigint_unit) {
+        let current_link_state = current_links.get(sigint_unit_id);
+        if !sigint_unit_is_reviewable(sigint_unit) {
             summary.no_longer_matching += 1;
-            links_changed |=
-                remove_unreviewable_automatic_links(dbx, login, &sigint_unit)
-                    .await
-                    .c(h!())?;
+            if current_link_state
+                .is_some_and(|links| !links.automatic_orbit_unit_ids.is_empty())
+            {
+                links_changed |= remove_unreviewable_automatic_links(
+                    dbx,
+                    login,
+                    sigint_unit,
+                )
+                .await
+                .c(h!())?;
+            }
             continue;
         }
-        if sigint_unit_has_active_manual_link(dbx, *sigint_unit_id)
-            .await
-            .c(h!())?
+        if current_link_state.is_some_and(|links| links.has_active_manual_link)
         {
             summary.already_linked += 1;
-            let removed =
+            if current_link_state
+                .is_some_and(|links| !links.automatic_orbit_unit_ids.is_empty())
+            {
                 delete_automatic_links(dbx, *sigint_unit_id).await.c(h!())?;
-            if removed {
                 crate::sigint::unit::orbit::reconcile_sigint_unit_orbit(
                     dbx,
                     login,
@@ -652,7 +702,7 @@ where
         let proposed_orbit_unit_id =
             proposed_links.get(sigint_unit_id).copied();
         let orbit_unit_id =
-            current_automatic_link(&sigint_unit, matcher, suppressed_links);
+            current_automatic_link(sigint_unit, matcher, suppressed_links);
         match proposed_orbit_unit_id {
             Some(orbit_unit_id)
                 if suppressed_links
@@ -667,8 +717,21 @@ where
             }
             _ => {}
         }
-        let removed =
-            delete_automatic_links(dbx, *sigint_unit_id).await.c(h!())?;
+        let current_automatic_orbit_unit_ids = current_link_state
+            .map(|links| &links.automatic_orbit_unit_ids)
+            .cloned()
+            .unwrap_or_default();
+        let desired_automatic_orbit_unit_ids =
+            orbit_unit_id.into_iter().collect();
+        if current_automatic_orbit_unit_ids == desired_automatic_orbit_unit_ids
+        {
+            continue;
+        }
+        let removed = if current_automatic_orbit_unit_ids.is_empty() {
+            false
+        } else {
+            delete_automatic_links(dbx, *sigint_unit_id).await.c(h!())?
+        };
         links_changed |= removed;
         let Some(orbit_unit_id) = orbit_unit_id else {
             if removed {
@@ -719,26 +782,68 @@ where
     Ok(removed)
 }
 
-async fn sigint_unit_has_active_manual_link<C>(
+async fn load_locked_sigint_units<C>(
     dbx: &C,
-    sigint_unit_id: i64,
-) -> anyhow::Result<bool>
+    sigint_unit_ids: &[i64],
+) -> anyhow::Result<BTreeMap<i64, sigint_unit::Model>>
 where
     C: ConnectionTrait,
 {
-    Ok(orbit_unit_sigint_unit::Entity::find()
+    if sigint_unit_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    Ok(sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids.iter().copied()))
+        .order_by_asc(sigint_unit::Column::Id)
+        .lock_exclusive()
+        .all(dbx)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|sigint_unit| (sigint_unit.id, sigint_unit))
+        .collect())
+}
+
+async fn load_current_orbit_link_states<C>(
+    dbx: &C,
+    sigint_unit_ids: &[i64],
+) -> anyhow::Result<BTreeMap<i64, CurrentOrbitLinkState>>
+where
+    C: ConnectionTrait,
+{
+    if sigint_unit_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let links = orbit_unit_sigint_unit::Entity::find()
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .column(orbit_unit_sigint_unit::Column::OrbitUnitId)
+        .column(orbit_unit_sigint_unit::Column::IsManual)
+        .column_as(orbit_unit::Column::Deleted, "orbit_unit_deleted")
         .join(
             JoinType::InnerJoin,
             orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
         )
-        .filter(orbit_unit_sigint_unit::Column::SigintUnitId.eq(sigint_unit_id))
-        .filter(orbit_unit_sigint_unit::Column::IsManual.eq(true))
+        .filter(
+            orbit_unit_sigint_unit::Column::SigintUnitId
+                .is_in(sigint_unit_ids.iter().copied()),
+        )
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
-        .filter(orbit_unit::Column::Deleted.eq(false))
-        .one(dbx)
+        .into_model::<CurrentOrbitLink>()
+        .all(dbx)
         .await
-        .c(h!())?
-        .is_some())
+        .c(h!())?;
+    let mut states = BTreeMap::<i64, CurrentOrbitLinkState>::new();
+    for link in links {
+        let state = states.entry(link.sigint_unit_id).or_default();
+        state.has_active_link |= !link.orbit_unit_deleted;
+        if link.is_manual {
+            state.has_active_manual_link |= !link.orbit_unit_deleted;
+        } else {
+            state.automatic_orbit_unit_ids.insert(link.orbit_unit_id);
+        }
+    }
+    Ok(states)
 }
 
 async fn delete_automatic_links<C>(
@@ -768,20 +873,6 @@ fn suppressions_to_preserve(
         current.retain(|link| !review.contains(link));
     }
     current
-}
-
-async fn load_locked_sigint_unit<C>(
-    dbx: &C,
-    sigint_unit_id: i64,
-) -> anyhow::Result<Option<sigint_unit::Model>>
-where
-    C: ConnectionTrait,
-{
-    sigint_unit::Entity::find_by_id(sigint_unit_id)
-        .lock_exclusive()
-        .one(dbx)
-        .await
-        .c(h!())
 }
 
 fn sigint_unit_is_reviewable(sigint_unit: &sigint_unit::Model) -> bool {
@@ -958,6 +1049,28 @@ mod tests {
         ActiveModelTrait, ActiveValue::Set, IntoActiveModel, TransactionTrait,
     };
     use serde_json::json;
+
+    #[test]
+    fn persistence_matcher_cache_uses_the_complete_orbit_revision() {
+        let orbit_sync = orbit_sync::Model {
+            id: 1,
+            synced_at: chrono::NaiveDateTime::default(),
+            archive_md5: "first".to_string(),
+        };
+        let matcher_cache = PersistenceMatcherCache {
+            orbit_sync: orbit_sync.clone(),
+            matcher: matching::TestLinkMatcher::new(&[]),
+        };
+
+        assert!(matcher_cache_is_current(&matcher_cache, &orbit_sync));
+        assert!(!matcher_cache_is_current(
+            &matcher_cache,
+            &orbit_sync::Model {
+                archive_md5: "second".to_string(),
+                ..orbit_sync
+            },
+        ));
+    }
 
     fn review_unit(match_count: usize) -> ReviewUnit {
         ReviewUnit {

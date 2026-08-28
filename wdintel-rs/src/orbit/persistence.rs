@@ -233,9 +233,29 @@ pub async fn load_latest_synced_source_units<C>(
 where
     C: ConnectionTrait,
 {
+    Ok(load_latest_synced_source_units_with_sync(db).await?.1)
+}
+
+pub async fn load_latest_synced_source_units_with_sync<C>(
+    db: &C,
+) -> anyhow::Result<(orbit_sync::Model, Vec<SourceUnit>)>
+where
+    C: ConnectionTrait,
+{
     let sync = load_latest_sync(db).await.c(h!())?.ok_or_else(|| {
         anyhow::anyhow!("ORBIT data has not been synchronized")
     })?;
+    let units = load_synced_source_units(db, &sync).await?;
+    Ok((sync, units))
+}
+
+pub(super) async fn load_synced_source_units<C>(
+    db: &C,
+    sync: &orbit_sync::Model,
+) -> anyhow::Result<Vec<SourceUnit>>
+where
+    C: ConnectionTrait,
+{
     let units = orbit_unit::Entity::find()
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::UpdatedAt.eq(sync.synced_at))
