@@ -2,26 +2,28 @@ import * as L from 'leaflet';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { NetworkPoint } from '../../../../../Bindings';
+import { BASE_LAYER_IDS, type BaseLayerId } from '../../../../maps/base-layers';
+import {
+  getTileLayers,
+  type TileLayers,
+} from '../../../../web-components/analysis-map/tile-layers';
 import {
   applyPelengationMapStyles,
-  BASE_TILE_URL,
   buildPelengationLabelGroups,
   createPelengationPopupContent,
   getPelengationHeatmapAlpha,
   getPelengationHeatmapRadius,
-  SATELLITE_TILE_SUBDOMAINS,
-  SATELLITE_TILE_URL,
 } from './NetworkDetailsPelengationMap.shared';
 
 export function useNetworkDetailsPelengationMap(
   pelengPoints: NetworkPoint[],
   showLabels: boolean,
-  satelliteEnabled: boolean,
+  baseLayerId: BaseLayerId,
   heatmapEnabled: boolean,
 ) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const satelliteLayerRef = useRef<L.TileLayer | null>(null);
+  const tileLayersRef = useRef<TileLayers | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const labelLayerRef = useRef<L.LayerGroup | null>(null);
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -31,8 +33,13 @@ export function useNetworkDetailsPelengationMap(
   const redrawHeatmapRef = useRef<(() => void) | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const viewTransitionRef = useRef<{ center: L.LatLng; zoom: number } | null>(null);
+  const baseLayerIdRef = useRef(baseLayerId);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+
+  useEffect(() => {
+    baseLayerIdRef.current = baseLayerId;
+  }, [baseLayerId]);
 
   const clearHeatmapCanvas = () => {
     const canvas = heatCanvasRef.current;
@@ -105,18 +112,8 @@ export function useNetworkDetailsPelengationMap(
         minZoom: 2,
       }).setView(restoredView?.center ?? [49, 32], restoredView?.zoom ?? 5);
 
-      const baseLayer = L.tileLayer(BASE_TILE_URL, {
-        maxZoom: 19,
-        crossOrigin: true,
-      });
-      const satelliteLayer = L.tileLayer(SATELLITE_TILE_URL, {
-        maxZoom: 19,
-        subdomains: SATELLITE_TILE_SUBDOMAINS,
-        crossOrigin: true,
-      });
-
-      map.addLayer(baseLayer);
-      map.addLayer(satelliteLayer);
+      const tileLayers = getTileLayers({ maxZoom: 19, crossOrigin: true });
+      tileLayers[baseLayerIdRef.current].addTo(map);
 
       const markersLayer = L.layerGroup().addTo(map);
       const labelLayer = L.layerGroup().addTo(map);
@@ -132,7 +129,7 @@ export function useNetworkDetailsPelengationMap(
       mapContainer.appendChild(heatCanvas);
 
       mapRef.current = map;
-      satelliteLayerRef.current = satelliteLayer;
+      tileLayersRef.current = tileLayers;
       markersLayerRef.current = markersLayer;
       labelLayerRef.current = labelLayer;
       heatCanvasRef.current = heatCanvas;
@@ -159,7 +156,7 @@ export function useNetworkDetailsPelengationMap(
         heatCanvas.remove();
         map.remove();
         mapRef.current = null;
-        satelliteLayerRef.current = null;
+        tileLayersRef.current = null;
         markersLayerRef.current = null;
         labelLayerRef.current = null;
         heatCanvasRef.current = null;
@@ -180,20 +177,18 @@ export function useNetworkDetailsPelengationMap(
 
   useEffect(() => {
     const map = mapRef.current;
-    const satelliteLayer = satelliteLayerRef.current;
-    if (!mapReady || !map || !satelliteLayer) return;
+    const tileLayers = tileLayersRef.current;
+    if (!mapReady || !map || !tileLayers) return;
 
-    if (satelliteEnabled) {
-      if (!map.hasLayer(satelliteLayer)) {
-        map.addLayer(satelliteLayer);
+    for (const layerId of BASE_LAYER_IDS) {
+      if (layerId !== baseLayerId && map.hasLayer(tileLayers[layerId])) {
+        map.removeLayer(tileLayers[layerId]);
       }
-      return;
     }
-
-    if (map.hasLayer(satelliteLayer)) {
-      map.removeLayer(satelliteLayer);
+    if (!map.hasLayer(tileLayers[baseLayerId])) {
+      tileLayers[baseLayerId].addTo(map);
     }
-  }, [mapReady, satelliteEnabled]);
+  }, [baseLayerId, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;

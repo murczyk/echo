@@ -4,6 +4,7 @@ import { Box, ButtonBase, Skeleton, Tooltip, Typography } from '@mui/material';
 import * as L from 'leaflet';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
+import { DEFAULT_BASE_LAYER_ID } from '../../../../maps/base-layers';
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
 import {
   formatCoordinatePreviewPointCount,
@@ -123,7 +124,7 @@ export function CoordinateAttachmentThumbnail({
       });
 
       const tileLayers = getTileLayers();
-      tileLayers.googleHybrid.addTo(map);
+      tileLayers[DEFAULT_BASE_LAYER_ID].addTo(map);
 
       map.getContainer().style.pointerEvents = 'none';
       mapRef.current = map;

@@ -33,7 +33,8 @@ vi.mock('../../../maps/leaflet-markercluster', () => ({
 }));
 
 vi.mock('../../../web-components/analysis-map/tile-layers', () => ({
-  getTileLayers: () => ({ googleHybrid: { addTo: vi.fn() } }),
+  DEFAULT_BASE_LAYER_ID: 'esriWorldImagery',
+  getTileLayers: () => ({ esriWorldImagery: { addTo: vi.fn() } }),
 }));
 
 import { aorColor, BattleLineMap, reconcileVisibleAorIds } from './BattleLineMap';

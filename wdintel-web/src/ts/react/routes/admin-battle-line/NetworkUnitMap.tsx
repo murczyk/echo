@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import type { BattleLineNetworkUnitMap } from '../../../../Bindings';
 import { PowerChip } from '../../components/PowerChip';
 import { L } from '../../../maps/leaflet-markercluster';
+import { DEFAULT_BASE_LAYER_ID } from '../../../maps/base-layers';
 import { getTileLayers } from '../../../web-components/analysis-map/tile-layers';
 
 function addPoints(
@@ -50,7 +51,7 @@ export function NetworkUnitMap({ item }: { item: BattleLineNetworkUnitMap }) {
       touchZoom: false,
       zoomControl: false,
     });
-    getTileLayers().googleHybrid.addTo(map);
+    getTileLayers()[DEFAULT_BASE_LAYER_ID].addTo(map);
     const layer = L.layerGroup().addTo(map);
     addPoints(layer, item.settlementPoints, colors.info, colors.surfaceRaised, 'Населений пункт');
     addPoints(layer, item.pelengPoints, colors.error, colors.surfaceRaised, 'Пеленг');
