@@ -296,7 +296,19 @@ where sigint_unit.active = true
         where link.sigint_unit_id = sigint_unit.id
             and link.is_suppressed = false
             and orbit_unit.deleted = false
-            and (link.is_manual = true or $1 = false)
+            and (
+                $1 = false
+                or (
+                    link.is_manual = true
+                    and not exists (
+                        select 1
+                        from orbit_unit_sigint_unit automatic_link
+                        where automatic_link.sigint_unit_id = sigint_unit.id
+                            and automatic_link.is_manual = false
+                            and automatic_link.is_suppressed = false
+                    )
+                )
+            )
     )
 order by sigint_unit.id
 "#,
@@ -554,6 +566,19 @@ where
             .c(h!())?
         {
             summary.already_linked += 1;
+            let removed =
+                delete_automatic_links(dbx, *sigint_unit_id).await.c(h!())?;
+            if removed {
+                crate::sigint::unit::orbit::reconcile_sigint_unit_orbit(
+                    dbx,
+                    login,
+                    *sigint_unit_id,
+                    true,
+                )
+                .await
+                .c(h!())?;
+                links_changed = true;
+            }
             continue;
         }
         let proposed_orbit_unit_id =
@@ -1060,6 +1085,17 @@ mod tests {
         persistence::insert_unit(&db, &orbit_unit, imported_at)
             .await
             .unwrap();
+        let mut stale_orbit_unit = orbit_unit.clone();
+        stale_orbit_unit.unit_id = uuid::Uuid::new_v4();
+        stale_orbit_unit.unit_name = Some("stale unit".to_string());
+        stale_orbit_unit.unit_name_short = Some("stale unit".to_string());
+        stale_orbit_unit.operational_unit_name_full =
+            Some("stale unit".to_string());
+        stale_orbit_unit.generative_unit_name_full =
+            Some("stale unit".to_string());
+        persistence::insert_unit(&db, &stale_orbit_unit, imported_at)
+            .await
+            .unwrap();
         let automatic_unit = crate::functest::tests::mk_sigint_unit(
             &db,
             sigint_unit::ActiveModel {
@@ -1078,6 +1114,15 @@ mod tests {
         )
         .await
         .unwrap();
+        let mixed_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let newly_matchable_unit = crate::functest::tests::mk_sigint_unit(
             &db,
             sigint_unit::ActiveModel {
@@ -1088,12 +1133,15 @@ mod tests {
         )
         .await
         .unwrap();
-        for (sigint_unit_id, is_manual) in
-            [(automatic_unit.id, false), (manual_unit.id, true)]
-        {
+        for (sigint_unit_id, orbit_unit_id, is_manual) in [
+            (automatic_unit.id, orbit_unit.unit_id, false),
+            (manual_unit.id, orbit_unit.unit_id, true),
+            (mixed_unit.id, orbit_unit.unit_id, true),
+            (mixed_unit.id, stale_orbit_unit.unit_id, false),
+        ] {
             orbit_unit_sigint_unit::Entity::insert(
                 orbit_unit_sigint_unit::ActiveModel {
-                    orbit_unit_id: Set(orbit_unit.unit_id),
+                    orbit_unit_id: Set(orbit_unit_id),
                     sigint_unit_id: Set(sigint_unit_id),
                     is_manual: Set(is_manual),
                     is_suppressed: Set(false),
@@ -1119,8 +1167,10 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(automatic_ids.contains(&automatic_unit.id));
         assert!(!automatic_ids.contains(&manual_unit.id));
+        assert!(automatic_ids.contains(&mixed_unit.id));
         assert!(!manual_ids.contains(&automatic_unit.id));
         assert!(!manual_ids.contains(&manual_unit.id));
+        assert!(!manual_ids.contains(&mixed_unit.id));
 
         let current_orbit_units = [orbit_hierarchy_unit(
             orbit_unit.unit_id,
@@ -1133,7 +1183,12 @@ mod tests {
             &transaction,
             &login,
             &[],
-            &[automatic_unit.id, manual_unit.id, newly_matchable_unit.id],
+            &[
+                automatic_unit.id,
+                manual_unit.id,
+                mixed_unit.id,
+                newly_matchable_unit.id,
+            ],
             &matcher,
             &BTreeSet::new(),
         )
@@ -1142,7 +1197,7 @@ mod tests {
         transaction.commit().await.unwrap();
 
         assert!(links_changed);
-        assert_eq!(summary.already_linked, 1);
+        assert_eq!(summary.already_linked, 2);
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
@@ -1161,6 +1216,16 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(manual_link.is_manual);
+        let mixed_links = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId.eq(mixed_unit.id),
+            )
+            .all(&db)
+            .await
+            .unwrap();
+        assert_eq!(mixed_links.len(), 1);
+        assert_eq!(mixed_links[0].orbit_unit_id, orbit_unit.unit_id);
+        assert!(mixed_links[0].is_manual);
         let newly_created_link = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
@@ -1177,6 +1242,7 @@ mod tests {
             .filter(orbit_unit_sigint_unit::Column::SigintUnitId.is_in([
                 automatic_unit.id,
                 manual_unit.id,
+                mixed_unit.id,
                 newly_matchable_unit.id,
             ]))
             .exec(&db)
@@ -1186,12 +1252,17 @@ mod tests {
             .filter(sigint_unit::Column::Id.is_in([
                 automatic_unit.id,
                 manual_unit.id,
+                mixed_unit.id,
                 newly_matchable_unit.id,
             ]))
             .exec(&db)
             .await
             .unwrap();
-        orbit_unit::Entity::delete_by_id(orbit_unit.unit_id)
+        orbit_unit::Entity::delete_many()
+            .filter(
+                orbit_unit::Column::UnitId
+                    .is_in([orbit_unit.unit_id, stale_orbit_unit.unit_id]),
+            )
             .exec(&db)
             .await
             .unwrap();
