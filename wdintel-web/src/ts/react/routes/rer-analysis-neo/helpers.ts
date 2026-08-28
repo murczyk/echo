@@ -13,6 +13,7 @@ import {
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
+import { isCanonicalUnitIdValue } from '../../utils/unit-search';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -36,11 +37,9 @@ function partitionUnitSelections(values: readonly string[]): {
   const ids: number[] = [];
   const legacy: string[] = [];
   values.forEach((value) => {
-    const trimmed = value.trim();
-    const id = Number(trimmed);
-    if (trimmed !== '' && Number.isSafeInteger(id) && id > 0 && String(id) === trimmed) {
-      ids.push(id);
-    } else if (trimmed !== '') {
+    if (isCanonicalUnitIdValue(value)) {
+      ids.push(Number(value));
+    } else {
       legacy.push(value);
     }
   });

@@ -727,12 +727,7 @@ view isDark _ model =
         tabFiltersUnits =
             let
                 isLegacyUnitValue value =
-                    case String.toInt value of
-                        Just unitId ->
-                            unitId <= 0
-
-                        Nothing ->
-                            True
+                    not (Pages_.RerAnalysis.Query.isCanonicalUnitIdValue value)
 
                 unitLabel value =
                     case ( String.toInt value, model.units ) of

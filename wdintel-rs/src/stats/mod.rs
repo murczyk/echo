@@ -1400,8 +1400,12 @@ async fn load_redis_unit_stats(
             warn!(
                 "Redis unit stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
             );
-            repair_redis_general_stats(env, intervals_5min, days).await?;
-            load_redis_unit_buckets_once(env, intervals_5min, days).await?
+            repair_redis_general_stats(env, intervals_5min, days)
+                .await
+                .c(h!())?;
+            load_redis_unit_buckets_once(env, intervals_5min, days)
+                .await
+                .c(h!())?
         }
     };
     let mut result = HashMap::<i64, redis::HllSketch>::new();

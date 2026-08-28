@@ -207,15 +207,7 @@ def validate_change(
                 f"{key}: {table} uses targeted_resnapshot without replicated_snapshot"
             )
         operations = {item.operation for item in detected if item.table == table}
-        up_contents = re.split(r"\basync\s+fn\s+down\b", contents, maxsplit=1)[0]
-        up_operations = {
-            item.operation for item in detect_ddl(up_contents) if item.table == table
-        }
-        if (
-            strategy == "excluded"
-            and table not in exclusions
-            and up_operations != {"drop"}
-        ):
+        if strategy == "excluded" and table not in exclusions:
             errors.append(f"{key}: {table} uses excluded but is not in canonical exclusions")
         if (
             strategy == "replicated_snapshot"

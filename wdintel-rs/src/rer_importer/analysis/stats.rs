@@ -4121,21 +4121,22 @@ pub(super) async fn count_units_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let units_res = build_units_filtered_query(
+    let units_res = build_units_count_query(
         &req,
         &login_value,
         dt_since,
         dt_till,
         master_keys,
         scope,
-    )?;
+    )
+    .c(h!())?;
     count_distinct_with_db(
         units_res,
-        Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
+        Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
         db,
     )
     .await
@@ -4240,6 +4241,34 @@ fn build_units_query(
     )
     .group_by(sigint_unit::Column::Id)
     .group_by(sigint_unit::Column::Name))
+}
+
+fn build_units_count_query(
+    req: &&Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_units_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+    )
+    .c(h!())?
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item::Relation::SigintInboxItemUnit.def(),
+    )
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item_unit::Relation::SigintUnit.def(),
+    )
+    .filter(sigint_unit::Column::Deleted.eq(false)))
 }
 
 fn build_units_filtered_query(
@@ -7092,6 +7121,22 @@ mod tests {
                 (second_unit.id, "Shared unit name", 1),
             ]
         );
+        let units_count = count_distinct_with_db(
+            build_units_count_query(
+                &&Json(req.clone()),
+                &login_id,
+                dt_since,
+                dt_till,
+                vec![group_master_key.to_string()],
+                None,
+            )
+            .unwrap(),
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(units_count, 2);
 
         let first_unit_id = first_unit.id;
         let mut first_unit = first_unit.into_active_model();

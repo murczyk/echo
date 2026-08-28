@@ -55,12 +55,12 @@ describe('getPointPopupTemplate', () => {
     expect(html).not.toContain('Unit A');
   });
 
-  it('emits a canonical unit id while displaying the unit name', () => {
+  it('filters by the displayed unit when one unrelated canonical unit is linked', () => {
     const message = buildMessage({ unit: 'Header Unit', unit_ids: [17] });
 
-    const html = getPointPopupTemplate([message], ['17']);
+    const html = getPointPopupTemplate([message], ['Header Unit']);
 
-    expect(html).toContain('data-unitname="17"');
+    expect(html).toContain('data-unitname="Header Unit"');
     expect(html).toContain('Header Unit');
     expect(html).toContain('bi-dash-square');
   });

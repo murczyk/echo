@@ -84,10 +84,7 @@ function renderMessageText(message: Message[1]): string {
 
 function liTemplate(message_: Message, selectedUnits: string[], battleLineDistance?: number) {
   const rawUnit = message_[1].unit;
-  const unitValue =
-    message_[1].unit_ids?.length === 1
-      ? String(message_[1].unit_ids[0])
-      : normalizeUnknownUnitFilterValue(rawUnit);
+  const unitValue = normalizeUnknownUnitFilterValue(rawUnit);
   const unitDisplay = normalizeUnknownUnitDisplayValue(rawUnit);
   const escapedDisplay = escapeHtml(unitDisplay);
   const escapedAttr = escapeHtml(unitValue);

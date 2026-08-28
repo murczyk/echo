@@ -15,6 +15,7 @@ import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-
 import { toLegacyRerAnalysisQueryState } from '../../../rer-analysis-query-state-legacy';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
+import { isCanonicalUnitIdValue } from '../../utils/unit-search';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 
 export type RerDutyState = {
@@ -266,18 +267,12 @@ export function buildInboxReq(opts: {
   reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
   const f = opts.filter;
-  const selectedUnitIds = (f.unitsSelected ?? [])
-    .map(Number)
-    .filter((value) => Number.isSafeInteger(value) && value > 0);
-  const deniedUnitIds = (f.unitsDenied ?? [])
-    .map(Number)
-    .filter((value) => Number.isSafeInteger(value) && value > 0);
+  const selectedUnitIds = (f.unitsSelected ?? []).filter(isCanonicalUnitIdValue).map(Number);
+  const deniedUnitIds = (f.unitsDenied ?? []).filter(isCanonicalUnitIdValue).map(Number);
   const selectedLegacyUnits = (f.unitsSelected ?? []).filter(
-    (value) => !Number.isSafeInteger(Number(value)) || Number(value) <= 0,
+    (value) => !isCanonicalUnitIdValue(value),
   );
-  const deniedLegacyUnits = (f.unitsDenied ?? []).filter(
-    (value) => !Number.isSafeInteger(Number(value)) || Number(value) <= 0,
-  );
+  const deniedLegacyUnits = (f.unitsDenied ?? []).filter((value) => !isCanonicalUnitIdValue(value));
   // send empty arrays as null (backend treats null/undefined vs [] differently)
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,

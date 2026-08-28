@@ -208,6 +208,18 @@ describe('rer-analysis-neo helpers', () => {
     });
   });
 
+  it('preserves undefined and numeric-looking legacy unit selections', () => {
+    const req = buildAnalysisReq(
+      createQueryState({ unitsSelected: ['', '01', '1e3'], unitsExactMatchOnly: true }),
+    );
+
+    expect(req).toMatchObject({
+      selectedUnitIds: null,
+      selectedUnits: ['', '01', '1e3'],
+      unitsExactMatchOnly: true,
+    });
+  });
+
   it('disables legacy exact matching for id-only unit selections', () => {
     const state = createQueryState({
       unitsSelected: ['42'],

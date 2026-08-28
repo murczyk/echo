@@ -154,9 +154,10 @@ updated exclusion file so these tables never enter the PeerDB mirror.
 Failed unit labels and their inbox-item links are PostgreSQL-only operational
 state and are intentionally excluded from analytics. Before applying
 `m20260827_154846_normalize_failed_unit_labels`, deploy and reconcile the
-updated exclusion file. The migration deliberately discards legacy
-`failed_inbox_unit` rows; run the inbox-unit backfill later to rebuild the
-normalized label and link tables.
+updated exclusion file. The legacy `failed_inbox_unit` exclusion remains in
+the file so pre-migration reconciliation cannot snapshot the table immediately
+before it is dropped. The migration deliberately discards its rows; run the
+inbox-unit backfill later to rebuild the normalized label and link tables.
 
 Durable normalized domain tables, including
 `sigint_inbox_item_callsign` and `sigint_inbox_item_settlement`, are

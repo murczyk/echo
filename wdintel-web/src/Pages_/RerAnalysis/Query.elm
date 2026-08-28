@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, emptyQueryState, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, partitionUnitSelections, updModelFromQueryState, updModelFromSavedFilter)
+module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, emptyQueryState, isCanonicalUnitIdValue, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, partitionUnitSelections, updModelFromQueryState, updModelFromSavedFilter)
 
 import Bindings as B
 import Pages_.RerAnalysis.Model exposing (..)
@@ -83,7 +83,7 @@ partitionUnitSelections values =
         (\value ( ids, legacy ) ->
             case String.toInt value of
                 Just unitId ->
-                    if unitId > 0 then
+                    if isCanonicalUnitIdValue value then
                         ( unitId :: ids, legacy )
 
                     else
@@ -94,6 +94,16 @@ partitionUnitSelections values =
         )
         ( [], [] )
         values
+
+
+isCanonicalUnitIdValue : String -> Bool
+isCanonicalUnitIdValue value =
+    case String.toInt value of
+        Just unitId ->
+            unitId > 0 && String.fromInt unitId == value
+
+        Nothing ->
+            False
 
 
 normalizeQueryStateMetadata : B.RerAnalysisQueryState -> B.RerAnalysisQueryState

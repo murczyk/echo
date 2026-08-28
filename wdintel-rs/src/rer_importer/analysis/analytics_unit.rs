@@ -271,9 +271,11 @@ where
         if selected_units.as_ref().is_none_or(Vec::is_empty) {
             query
         } else {
-            let resolved = resolved.ok_or_else(|| {
-                anyhow::anyhow!("analytics unit filters were not resolved")
-            })?;
+            let resolved = resolved
+                .ok_or_else(|| {
+                    anyhow::anyhow!("analytics unit filters were not resolved")
+                })
+                .context(h!())?;
             apply_resolved_analytics_unit_filters(
                 query,
                 resolved,
@@ -288,7 +290,8 @@ where
             units_exact_match_only,
             dt_since,
             dt_till,
-        )?
+        )
+        .context(h!())?
     };
     Ok(super::filter_selected_unit_ids(query, selected_unit_ids))
 }

@@ -13,6 +13,11 @@ export function getUnitFilterValue(unit: Unit): string {
   return String(unit.id);
 }
 
+export function isCanonicalUnitIdValue(value: string): boolean {
+  const unitId = Number(value);
+  return Number.isSafeInteger(unitId) && unitId > 0 && String(unitId) === value;
+}
+
 export function buildUnitFilterOptions(unitsList: Unit[]): Unit[] {
   return buildSelectableUnitOptions(unitsList);
 }

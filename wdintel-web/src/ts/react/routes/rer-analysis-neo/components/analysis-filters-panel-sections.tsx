@@ -20,6 +20,7 @@ import type { CountStatsRsp } from '../../../../../Bindings';
 import type { AnalysisFilterSectionId } from '../types';
 import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
 import { NO_DATA_LABEL } from '../../../utils/misc';
+import { isCanonicalUnitIdValue } from '../../../utils/unit-search';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
 import type { AnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
@@ -77,11 +78,6 @@ function tagFilterModeHint(mode: TagFilterMode): string {
 }
 
 type MetadataFilterMode = 'all' | 'with' | 'without';
-
-function isUnitIdFilterValue(value: string): boolean {
-  const unitId = Number(value);
-  return Number.isSafeInteger(unitId) && unitId > 0 && String(unitId) === value;
-}
 
 function metadataFilterModeFromState(
   queryState: AnalysisFiltersPanelPage['queryState'],
@@ -353,7 +349,7 @@ export function AnalysisFiltersPanelSections({
             preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
-          {queryState.unitsSelected.some((value) => !isUnitIdFilterValue(value)) ? (
+          {queryState.unitsSelected.some((value) => !isCanonicalUnitIdValue(value)) ? (
             <FormControlLabel
               control={
                 <Checkbox

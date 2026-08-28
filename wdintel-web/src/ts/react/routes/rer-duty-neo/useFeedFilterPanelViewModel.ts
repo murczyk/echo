@@ -1,6 +1,10 @@
 import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
-import { buildUnitFilterOptions, getUnitFilterValue } from '../../utils/unit-search';
+import {
+  buildUnitFilterOptions,
+  getUnitFilterValue,
+  isCanonicalUnitIdValue,
+} from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import type { GroupCatalogError } from './useRerDutyFilterOptions';
 import {
@@ -11,11 +15,6 @@ import { useFeedFilterSelectionState } from './useFeedFilterSelectionState';
 import { useDutyBulkCopy } from './useDutyBulkCopy';
 
 type FeedFilterMode = 'include' | 'exclude';
-
-function isUnitIdFilterValue(value: string): boolean {
-  const unitId = Number(value);
-  return Number.isSafeInteger(unitId) && unitId > 0 && String(unitId) === value;
-}
 
 type FeedFilterSelectionViewModel<T> = {
   mode: FeedFilterMode;
@@ -335,12 +334,12 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       rankedSearch: true,
       keepOpenAndPreserveInputOnSelect: true,
       showExactMatchControl: unitSelectionState.localValue.some(
-        (value) => !isUnitIdFilterValue(value),
+        (value) => !isCanonicalUnitIdValue(value),
       ),
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
       unitsExactMatchOnly:
-        unitSelectionState.localValue.some((value) => !isUnitIdFilterValue(value)) &&
+        unitSelectionState.localValue.some((value) => !isCanonicalUnitIdValue(value)) &&
         (unitsExactMatchOnly ?? false),
       onUnitsExactMatchOnlyChange: onUnitsExactMatchOnlyChange ?? (() => {}),
       bulkCopy: true,
