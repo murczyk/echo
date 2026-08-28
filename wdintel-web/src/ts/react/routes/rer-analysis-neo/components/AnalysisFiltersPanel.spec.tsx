@@ -1201,7 +1201,7 @@ describe('AnalysisFiltersPanel', () => {
       buildProps({
         queryState: {
           ...emptyQueryState(),
-          unitsSelected: ['17'],
+          unitsSelected: ['unit-id:17'],
           unitsExactMatchOnly: true,
         },
       }),

@@ -5,21 +5,65 @@ import {
   normalizeSearchValue,
 } from './search-filter';
 
+export const UNIT_FILTER_UNSET_ID = 0;
+const UNIT_FILTER_UNSET_NAME = 'Не визначено';
+const UNIT_FILTER_ID_PREFIX = 'unit-id:';
+
 export function getUnitDisplayLabel(unit: Unit): string {
   return unit.name.trim() || `#${unit.id}`;
 }
 
 export function getUnitFilterValue(unit: Unit): string {
-  return String(unit.id);
+  return unit.id === UNIT_FILTER_UNSET_ID ? UNIT_FILTER_UNSET_NAME : getUnitIdFilterValue(unit.id);
+}
+
+export function getUnitIdFilterValue(unitId: number): string {
+  return `${UNIT_FILTER_ID_PREFIX}${unitId}`;
+}
+
+export function getCanonicalUnitIdValue(value: string): number | null {
+  if (!value.startsWith(UNIT_FILTER_ID_PREFIX)) return null;
+  const rawUnitId = value.slice(UNIT_FILTER_ID_PREFIX.length);
+  const unitId = Number(rawUnitId);
+  return Number.isSafeInteger(unitId) && unitId > 0 && String(unitId) === rawUnitId ? unitId : null;
 }
 
 export function isCanonicalUnitIdValue(value: string): boolean {
-  const unitId = Number(value);
-  return Number.isSafeInteger(unitId) && unitId > 0 && String(unitId) === value;
+  return getCanonicalUnitIdValue(value) !== null;
+}
+
+function createSyntheticUnsetUnit(): Unit {
+  return {
+    id: UNIT_FILTER_UNSET_ID,
+    name: UNIT_FILTER_UNSET_NAME,
+    other: '',
+    teamOrCrew: '',
+    section: '',
+    squad: '',
+    platoon: '',
+    company: '',
+    battalion: '',
+    regiment: '',
+    brigade: '',
+    division: '',
+    corps: '',
+    army: '',
+    militaryDistrict: '',
+    armyRegion: '',
+    comment: '',
+    orbitNote: null,
+    active: true,
+    isDeduplicateCandidate: null,
+    createdAt: 0,
+    createdByLoginId: '',
+    hasOrbit: false,
+    orbitUnitIds: [],
+    orbitUnitGenerativeNames: [],
+  };
 }
 
 export function buildUnitFilterOptions(unitsList: Unit[]): Unit[] {
-  return buildSelectableUnitOptions(unitsList);
+  return [createSyntheticUnsetUnit(), ...buildSelectableUnitOptions(unitsList)];
 }
 
 export function buildSelectableUnitOptions(unitsList: Unit[]): Unit[] {

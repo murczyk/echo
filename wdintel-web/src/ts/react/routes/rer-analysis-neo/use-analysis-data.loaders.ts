@@ -31,6 +31,7 @@ import {
 import { listMapPalitrasV2 } from '../../services/api/palitra';
 import { downloadBlob } from '../../utils/download-blob';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
+import { getUnitIdFilterValue } from '../../utils/unit-search';
 import { ANALYSIS_SESSION_ACTIVITY_PAGE_ID, buildAnalysisReq, buildInboxReq } from './helpers';
 import {
   missingMapMessageIds,
@@ -563,7 +564,7 @@ export function useAnalysisDataLoaders(params: Params) {
           unitsRsp.units,
           (item) => item.name,
           (item) => item.count,
-          (item) => String(item.unitId),
+          (item) => getUnitIdFilterValue(item.unitId),
         ),
       );
       setTopLocations(

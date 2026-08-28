@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import {
   buildUnitFilterOptions,
   getUnitFilterValue,
+  getUnitIdFilterValue,
   isCanonicalUnitIdValue,
 } from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
@@ -210,7 +211,8 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     [unitsCatalogKey],
   );
   const unitLabelsById = useMemo(
-    () => new Map((unitsList ?? []).map((unit) => [String(unit.id), unit.name.trim()])),
+    () =>
+      new Map((unitsList ?? []).map((unit) => [getUnitIdFilterValue(unit.id), unit.name.trim()])),
     [unitsCatalogKey],
   );
   const unitBulkPasteOptions = useMemo(

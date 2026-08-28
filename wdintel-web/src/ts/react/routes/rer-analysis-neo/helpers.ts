@@ -13,7 +13,7 @@ import {
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
-import { isCanonicalUnitIdValue } from '../../utils/unit-search';
+import { getCanonicalUnitIdValue, getUnitIdFilterValue } from '../../utils/unit-search';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -37,8 +37,9 @@ function partitionUnitSelections(values: readonly string[]): {
   const ids: number[] = [];
   const legacy: string[] = [];
   values.forEach((value) => {
-    if (isCanonicalUnitIdValue(value)) {
-      ids.push(Number(value));
+    const unitId = getCanonicalUnitIdValue(value);
+    if (unitId !== null) {
+      ids.push(unitId);
     } else {
       legacy.push(value);
     }
@@ -445,7 +446,10 @@ export function queryStateFromSavedFilter(
     sendersSelected: req.selectedSenders ?? [],
     freqsSelected: req.selectedFreqs ?? [],
     callsignsSelected: req.selectedCallsigns ?? [],
-    unitsSelected: [...(req.selectedUnitIds ?? []).map(String), ...(req.selectedUnits ?? [])],
+    unitsSelected: [
+      ...(req.selectedUnitIds ?? []).map(getUnitIdFilterValue),
+      ...(req.selectedUnits ?? []),
+    ],
     deviceNamesSelected: req.selectedDeviceNames ?? [],
     locationsSelected: req.selectedLocations ?? [],
     postsSelected: req.selectedPosts ?? [],
@@ -530,7 +534,7 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     freqsSelected: normalized.selectedFreqs ?? [],
     callsignsSelected: normalized.selectedCallsigns ?? [],
     unitsSelected: [
-      ...(normalized.selectedUnitIds ?? []).map(String),
+      ...(normalized.selectedUnitIds ?? []).map(getUnitIdFilterValue),
       ...(normalized.selectedUnits ?? []),
     ],
     deviceNamesSelected: normalized.selectedDeviceNames ?? [],

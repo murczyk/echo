@@ -15,7 +15,7 @@ import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-
 import { toLegacyRerAnalysisQueryState } from '../../../rer-analysis-query-state-legacy';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
-import { isCanonicalUnitIdValue } from '../../utils/unit-search';
+import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/unit-search';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 
 export type RerDutyState = {
@@ -267,8 +267,14 @@ export function buildInboxReq(opts: {
   reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
   const f = opts.filter;
-  const selectedUnitIds = (f.unitsSelected ?? []).filter(isCanonicalUnitIdValue).map(Number);
-  const deniedUnitIds = (f.unitsDenied ?? []).filter(isCanonicalUnitIdValue).map(Number);
+  const selectedUnitIds = (f.unitsSelected ?? []).flatMap((value) => {
+    const unitId = getCanonicalUnitIdValue(value);
+    return unitId === null ? [] : [unitId];
+  });
+  const deniedUnitIds = (f.unitsDenied ?? []).flatMap((value) => {
+    const unitId = getCanonicalUnitIdValue(value);
+    return unitId === null ? [] : [unitId];
+  });
   const selectedLegacyUnits = (f.unitsSelected ?? []).filter(
     (value) => !isCanonicalUnitIdValue(value),
   );

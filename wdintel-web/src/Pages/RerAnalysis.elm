@@ -1555,7 +1555,7 @@ update user shared route msg model =
                     List.map
                         (\unit ->
                             Select.customMenuItem
-                                { item = String.fromInt unit.unitId
+                                { item = Query.unitIdFilterValue unit.unitId
                                 , label = unit.name
                                 , view = Html.Styled.fromUnstyled (menuItemWithCount unit.name unit.count)
                                 }

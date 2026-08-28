@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, emptyQueryState, isCanonicalUnitIdValue, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, partitionUnitSelections, updModelFromQueryState, updModelFromSavedFilter)
+module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, canonicalUnitIdFromValue, emptyQueryState, isCanonicalUnitIdValue, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, partitionUnitSelections, unitIdFilterValue, updModelFromQueryState, updModelFromSavedFilter)
 
 import Bindings as B
 import Pages_.RerAnalysis.Model exposing (..)
@@ -81,13 +81,9 @@ partitionUnitSelections : List String -> ( List Int, List String )
 partitionUnitSelections values =
     List.foldr
         (\value ( ids, legacy ) ->
-            case String.toInt value of
+            case canonicalUnitIdFromValue value of
                 Just unitId ->
-                    if isCanonicalUnitIdValue value then
-                        ( unitId :: ids, legacy )
-
-                    else
-                        ( ids, value :: legacy )
+                    ( unitId :: ids, legacy )
 
                 Nothing ->
                     ( ids, value :: legacy )
@@ -98,12 +94,30 @@ partitionUnitSelections values =
 
 isCanonicalUnitIdValue : String -> Bool
 isCanonicalUnitIdValue value =
-    case String.toInt value of
-        Just unitId ->
-            unitId > 0 && String.fromInt unitId == value
+    canonicalUnitIdFromValue value /= Nothing
 
-        Nothing ->
-            False
+
+unitIdFilterValue : Int -> String
+unitIdFilterValue unitId =
+    "unit-id:" ++ String.fromInt unitId
+
+
+canonicalUnitIdFromValue : String -> Maybe Int
+canonicalUnitIdFromValue value =
+    if String.startsWith "unit-id:" value then
+        case String.dropLeft 8 value |> String.toInt of
+            Just unitId ->
+                if unitId > 0 && unitIdFilterValue unitId == value then
+                    Just unitId
+
+                else
+                    Nothing
+
+            Nothing ->
+                Nothing
+
+    else
+        Nothing
 
 
 normalizeQueryStateMetadata : B.RerAnalysisQueryState -> B.RerAnalysisQueryState
@@ -378,7 +392,7 @@ updModelFromRerAnalysisStatsReq model req =
         , freqsSelected = normalizedReq.selectedFreqs |> def []
         , callsignsSelected = normalizedReq.selectedCallsigns |> def []
         , unitsSelected =
-            (normalizedReq.selectedUnitIds |> def [] |> List.map String.fromInt)
+            (normalizedReq.selectedUnitIds |> def [] |> List.map unitIdFilterValue)
                 ++ (normalizedReq.selectedUnits |> def [])
                 |> normalizeUnitSelections
         , tagsSelected = normalizedReq.selectedTags |> def []

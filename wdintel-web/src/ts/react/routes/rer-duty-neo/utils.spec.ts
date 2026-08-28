@@ -469,16 +469,16 @@ describe('rer-duty utils', () => {
     const req = buildInboxReq({
       filter: {
         ...emptyFilter(),
-        unitsSelected: ['11', '01', '1e3', 'Legacy included'],
-        unitsDenied: ['12', '02', '2e3', 'Legacy denied'],
+        unitsSelected: ['unit-id:11', '01', '11', '1e3', 'Legacy included'],
+        unitsDenied: ['unit-id:12', '02', '12', '2e3', 'Legacy denied'],
         unitsExactMatchOnly: true,
       },
     });
 
     expect(req.selectedUnitIds).toEqual([11]);
     expect(req.deniedUnitIds).toEqual([12]);
-    expect(req.selectedUnits).toEqual(['01', '1e3', 'Legacy included']);
-    expect(req.deniedUnits).toEqual(['02', '2e3', 'Legacy denied']);
+    expect(req.selectedUnits).toEqual(['01', '11', '1e3', 'Legacy included']);
+    expect(req.deniedUnits).toEqual(['02', '12', '2e3', 'Legacy denied']);
     expect(req.unitsExactMatchOnly).toBe(true);
   });
 

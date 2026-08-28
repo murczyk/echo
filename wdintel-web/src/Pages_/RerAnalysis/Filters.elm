@@ -730,7 +730,7 @@ view isDark _ model =
                     not (Pages_.RerAnalysis.Query.isCanonicalUnitIdValue value)
 
                 unitLabel value =
-                    case ( String.toInt value, model.units ) of
+                    case ( Pages_.RerAnalysis.Query.canonicalUnitIdFromValue value, model.units ) of
                         ( Just unitId, RD.Success units ) ->
                             units
                                 |> List.filter (\unit -> unit.unitId == unitId)

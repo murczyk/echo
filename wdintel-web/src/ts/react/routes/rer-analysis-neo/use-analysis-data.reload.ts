@@ -35,6 +35,7 @@ import {
   normalizeCallsignLookupValue,
 } from '../../utils/callsign-normalization';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
+import { getUnitIdFilterValue } from '../../utils/unit-search';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
   buildAnalysisReq,
@@ -516,7 +517,7 @@ export async function loadFilterSectionData(
         ...current,
         units: toFilterOptions(
           unitsRsp.units,
-          (item) => String(item.unitId),
+          (item) => getUnitIdFilterValue(item.unitId),
           (item) => item.name,
           (item) => item.count,
         ),

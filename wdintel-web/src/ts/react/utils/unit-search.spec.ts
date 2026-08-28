@@ -5,7 +5,10 @@ import {
   buildSelectableUnitOptions,
   buildUnitFilterOptions,
   buildUnitLookupOptions,
+  getCanonicalUnitIdValue,
   getUnitFilterValue,
+  getUnitIdFilterValue,
+  isCanonicalUnitIdValue,
   unitNamesFromUnits,
   unitsFromNames,
 } from './unit-search';
@@ -63,9 +66,14 @@ describe('buildUnitFilterOptions', () => {
       makeUnit(7, ''),
     ]);
 
-    expect(options.map((unit) => unit.id)).toEqual([2, 5]);
-    expect(getUnitFilterValue(options[0]!)).toBe('2');
-    expect(getUnitFilterValue(options[1]!)).toBe('5');
+    expect(options.map((unit) => unit.id)).toEqual([0, 2, 5]);
+    expect(options.map(getUnitFilterValue)).toEqual(['Не визначено', 'unit-id:2', 'unit-id:5']);
+  });
+
+  it('distinguishes tagged ids from numeric legacy labels', () => {
+    expect(isCanonicalUnitIdValue('123')).toBe(false);
+    expect(getCanonicalUnitIdValue('123')).toBeNull();
+    expect(getCanonicalUnitIdValue('unit-id:123')).toBe(123);
   });
 });
 
@@ -88,7 +96,7 @@ describe('unitsFromNames / unitNamesFromUnits', () => {
   const options = buildUnitFilterOptions([makeUnit(2, '3 мсб'), makeUnit(4, '4 мсб')]);
 
   it('round-trips saved ids through unit options', () => {
-    const ids = ['2', '4'];
+    const ids = [getUnitIdFilterValue(2), getUnitIdFilterValue(4)];
     const units = unitsFromNames(ids, options);
 
     expect(units.map((unit) => unit.id)).toEqual([2, 4]);
