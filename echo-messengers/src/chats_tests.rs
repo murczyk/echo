@@ -805,6 +805,10 @@ fn opaque_ids_cursors_and_input_limits_are_stable() {
         validate_webhook_url("https://user:secret@example.test/hook").is_err()
     );
     assert!(validate_webhook_url("https://127.0.0.1/hook").is_err());
+    assert!(validate_webhook_url("https://100.100.100.200/hook").is_err());
+    assert!(validate_webhook_url("https://198.18.0.1/hook").is_err());
+    assert!(validate_webhook_url("https://192.88.99.2/hook").is_err());
+    assert!(validate_webhook_url("https://[2001:db8::1]/hook").is_err());
     assert!(validate_attachments(
         (0..=CHAT_ATTACHMENT_MAX_COUNT)
             .map(|_| AttachmentInput {

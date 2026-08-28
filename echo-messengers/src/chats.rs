@@ -1,8 +1,9 @@
 use crate::config::{
     Config, CHAT_ATTACHMENTS_TOTAL_MAX_BYTES, CHAT_ATTACHMENT_MAX_BYTES,
     CHAT_ATTACHMENT_MAX_COUNT, CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_PAGE_SIZE,
-    CHAT_UNREAD_KEY_TTL_DAYS, CHAT_WEBHOOK_HISTORY_RETENTION_DAYS,
-    CHAT_WEBHOOK_MAX_ATTEMPTS, CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
+    CHAT_UNREAD_KEY_TTL_DAYS, CHAT_WEBHOOK_BATCH_SIZE,
+    CHAT_WEBHOOK_HISTORY_RETENTION_DAYS, CHAT_WEBHOOK_MAX_ATTEMPTS,
+    CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
 };
 use crate::error::{
     bad_request, conflict, not_found, service_unavailable, ShortContext,
@@ -1943,6 +1944,7 @@ async fn resolve_webhook(url: &str) -> anyhow::Result<WebhookTarget> {
     let url = validate_webhook_url(url).c(h!())?;
     let host = url
         .host_str()
+        .map(normalize_webhook_host)
         .ok_or_else(|| bad_request("Некоректна URL-адреса webhook."))
         .c(h!())?
         .to_string();
@@ -1975,6 +1977,7 @@ fn validate_webhook_url(url: &str) -> anyhow::Result<reqwest::Url> {
         .c(h!())?;
     let public_literal = url
         .host_str()
+        .map(normalize_webhook_host)
         .and_then(|host| host.parse::<IpAddr>().ok())
         .is_none_or(is_public_ip);
     if url.scheme() != "https"
@@ -1987,6 +1990,12 @@ fn validate_webhook_url(url: &str) -> anyhow::Result<reqwest::Url> {
         ));
     }
     Ok(url)
+}
+
+fn normalize_webhook_host(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host)
 }
 
 async fn await_webhook_lookup<T>(
@@ -2005,26 +2014,52 @@ async fn await_webhook_lookup<T>(
 
 fn is_public_ip(address: IpAddr) -> bool {
     match address {
-        IpAddr::V4(address) => {
-            !address.is_private()
-                && !address.is_loopback()
-                && !address.is_link_local()
-                && !address.is_unspecified()
-                && !address.is_multicast()
-                && !address.is_broadcast()
-                && !address.is_documentation()
-        }
-        IpAddr::V6(address) => address.to_ipv4_mapped().map_or_else(
-            || {
-                !address.is_loopback()
-                    && !address.is_unspecified()
-                    && !address.is_multicast()
-                    && !address.is_unique_local()
-                    && !address.is_unicast_link_local()
-            },
-            |address| is_public_ip(IpAddr::V4(address)),
-        ),
+        IpAddr::V4(address) => is_public_ipv4(address),
+        IpAddr::V6(address) => address
+            .to_ipv4_mapped()
+            .map_or_else(|| is_public_ipv6(address), is_public_ipv4),
     }
+}
+
+fn is_public_ipv4(address: std::net::Ipv4Addr) -> bool {
+    let [first, second, third, fourth] = address.octets();
+    first != 0
+        && !address.is_private()
+        && !(first == 100 && second & 0xc0 == 0x40)
+        && !address.is_loopback()
+        && !address.is_link_local()
+        && !(first == 192
+            && second == 0
+            && third == 0
+            && fourth != 9
+            && fourth != 10)
+        && !(first == 192 && second == 88 && third == 99)
+        && !address.is_documentation()
+        && !(first == 198 && second & 0xfe == 18)
+        && first < 224
+}
+
+fn is_public_ipv6(address: std::net::Ipv6Addr) -> bool {
+    let segments = address.segments();
+    if let [0x0064, 0xff9b, 0, 0, 0, 0, high, low] = segments {
+        return is_public_ipv4(std::net::Ipv4Addr::new(
+            (high >> 8) as u8,
+            high as u8,
+            (low >> 8) as u8,
+            low as u8,
+        ));
+    }
+    let [first, second, third, ..] = segments;
+    if first == 0x2001 && second < 0x0200 {
+        return matches!(segments, [0x2001, 1, 0, 0, 0, 0, 0, 1..=3])
+            || second == 3
+            || (second == 4 && third == 0x0112)
+            || (0x0020..=0x003f).contains(&second);
+    }
+    (0x2000..=0x3fff).contains(&first)
+        && first != 0x2002
+        && !(first == 0x2001 && second == 0x0db8)
+        && !(first == 0x3fff && second < 0x1000)
 }
 
 async fn deliver_webhook(
@@ -2045,23 +2080,36 @@ async fn deliver_webhook(
     client.post(target.url).json(payload).send().await.c(h!())
 }
 
+#[derive(FromQueryResult)]
+struct WebhookDelivery {
+    id: i64,
+    endpoint_url: String,
+    payload: serde_json::Value,
+    attempts: i32,
+}
+
 pub async fn webhook_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
-    #[derive(FromQueryResult)]
-    struct Delivery {
-        id: i64,
-        endpoint_url: String,
-        payload: serde_json::Value,
-        attempts: i32,
-    }
-    let Some(delivery) = Delivery::find_by_statement(Statement::from_string(
-        DatabaseBackend::Postgres,
-        format!(
-            "select id, endpoint_url, payload, attempts from echo_chat_webhook_delivery where delivered_at is null and failed_at is null and attempts < {CHAT_WEBHOOK_MAX_ATTEMPTS} and next_attempt_at <= now() at time zone 'utc' order by next_attempt_at, id limit 1"
+    let deliveries = WebhookDelivery::find_by_statement(
+        Statement::from_string(
+            DatabaseBackend::Postgres,
+            format!(
+                "select id, endpoint_url, payload, attempts from echo_chat_webhook_delivery where delivered_at is null and failed_at is null and attempts < {CHAT_WEBHOOK_MAX_ATTEMPTS} and next_attempt_at <= now() at time zone 'utc' order by next_attempt_at, id limit {CHAT_WEBHOOK_BATCH_SIZE}"
+            ),
         ),
-    ))
-    .one(db)
+    )
+    .all(db)
     .await
-    .c(h!())? else { return Ok(()); };
+    .c(h!())?;
+    for delivery in deliveries {
+        deliver_webhook_delivery(db, delivery).await.c(h!())?;
+    }
+    Ok(())
+}
+
+async fn deliver_webhook_delivery(
+    db: &DatabaseConnection,
+    delivery: WebhookDelivery,
+) -> anyhow::Result<()> {
     let result =
         deliver_webhook(&delivery.endpoint_url, &delivery.payload).await;
     match result {
