@@ -18,7 +18,10 @@ export function CreateMessageFab({
     <Fab
       color="primary"
       aria-label="Додати повідомлення"
-      onClick={onClick}
+      onClick={(event) => {
+        event.currentTarget.blur();
+        onClick();
+      }}
       sx={{
         position: 'absolute',
         right: {

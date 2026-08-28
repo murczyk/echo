@@ -1,0 +1,94 @@
+import { ImageEditorObjectRole, ImageEditorTool } from './image-editor.types';
+import { withHighlightAlpha } from './image-editor-selection-style';
+
+const CREATION_TOOLS = new Set<ImageEditorTool>([
+  ImageEditorTool.Text,
+  ImageEditorTool.Crop,
+  ImageEditorTool.Rectangle,
+  ImageEditorTool.Ellipse,
+  ImageEditorTool.Line,
+  ImageEditorTool.Arrow,
+  ImageEditorTool.Brush,
+  ImageEditorTool.Highlight,
+  ImageEditorTool.Conceal,
+  ImageEditorTool.Magnifier,
+]);
+
+const CURSOR_BY_TOOL = {
+  [ImageEditorTool.Select]: 'default',
+  [ImageEditorTool.Pan]: 'grab',
+  [ImageEditorTool.Crop]: 'crosshair',
+  [ImageEditorTool.Text]: 'text',
+  [ImageEditorTool.Rectangle]: 'crosshair',
+  [ImageEditorTool.Ellipse]: 'crosshair',
+  [ImageEditorTool.Line]: 'crosshair',
+  [ImageEditorTool.Arrow]: 'crosshair',
+  [ImageEditorTool.Brush]: 'crosshair',
+  [ImageEditorTool.Highlight]: 'crosshair',
+  [ImageEditorTool.Conceal]: 'crosshair',
+  [ImageEditorTool.Magnifier]: 'zoom-in',
+} satisfies Record<ImageEditorTool, CSSStyleDeclaration['cursor']>;
+
+export function imageEditorCursor(tool: ImageEditorTool) {
+  return CURSOR_BY_TOOL[tool];
+}
+
+export function applyImageEditorSurfaceCursor(
+  canvas: import('fabric').Canvas | null,
+  cursor: string,
+) {
+  if (canvas) canvas.upperCanvasEl.style.cursor = cursor;
+}
+
+export function applyImageEditorInteractionMode({
+  canvas,
+  tool,
+  fabric,
+  stroke,
+  strokeWidth,
+  highlightOpacity,
+}: {
+  canvas: import('fabric').Canvas;
+  tool: ImageEditorTool;
+  fabric?: typeof import('fabric') | null;
+  stroke?: string;
+  strokeWidth?: number;
+  highlightOpacity?: number;
+}) {
+  const selecting = tool === ImageEditorTool.Select || tool === ImageEditorTool.Crop;
+  const creationTool = CREATION_TOOLS.has(tool);
+  const activeObject = canvas.getActiveObject();
+  const preserveTextEditing =
+    tool === ImageEditorTool.Text &&
+    (activeObject as import('fabric').IText | undefined)?.isEditing === true;
+  if (
+    !preserveTextEditing &&
+    activeObject &&
+    'exitEditing' in activeObject &&
+    typeof activeObject.exitEditing === 'function'
+  )
+    activeObject.exitEditing();
+  if (!preserveTextEditing) canvas.discardActiveObject();
+  canvas.selection = selecting;
+  canvas.skipTargetFind = !selecting;
+  canvas.isDrawingMode = tool === ImageEditorTool.Brush || tool === ImageEditorTool.Highlight;
+  if (canvas.isDrawingMode && fabric && stroke != null && strokeWidth != null) {
+    const brush = new fabric.PencilBrush(canvas);
+    brush.color =
+      tool === ImageEditorTool.Highlight ? withHighlightAlpha(stroke, highlightOpacity) : stroke;
+    brush.width = strokeWidth;
+    canvas.freeDrawingBrush = brush;
+  }
+  canvas.defaultCursor = imageEditorCursor(tool);
+  canvas.freeDrawingCursor = imageEditorCursor(tool);
+  canvas.getObjects().forEach((object) => {
+    const role = object.get('editorRole');
+    if (role === ImageEditorObjectRole.Concealment || role === ImageEditorObjectRole.CropMask)
+      return;
+    const editable =
+      (tool === ImageEditorTool.Select && role !== ImageEditorObjectRole.Crop) ||
+      (tool === ImageEditorTool.Crop && role === ImageEditorObjectRole.Crop);
+    object.set({ selectable: editable, evented: editable });
+  });
+  if (creationTool || tool === ImageEditorTool.Pan || selecting) canvas.requestRenderAll();
+}

@@ -301,18 +301,26 @@ export function VideoAttachmentPreviewRenderer({
   onFullscreenChange,
   isDownloadStarting,
   onDownloadStart,
+  onChildOverlayChange,
+  dismissChildOverlay,
 }: {
   onClose: () => void;
   video: VideoPreviewSource;
   navigation: MessageCardPreviewNavigation;
   isFullscreen: boolean;
   onFullscreenChange: (isFullscreen: boolean) => void;
+  onChildOverlayChange?: (open: boolean) => void;
+  dismissChildOverlay?: number;
 } & MessageCardDownloadGuardProps) {
   const [src, setSrc] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const [infoAnchorEl, setInfoAnchorEl] = useState<HTMLButtonElement | null>(null);
   const infoOpen = infoAnchorEl !== null;
+  useEffect(() => onChildOverlayChange?.(infoOpen), [infoOpen, onChildOverlayChange]);
+  useEffect(() => {
+    if (dismissChildOverlay) setInfoAnchorEl(null);
+  }, [dismissChildOverlay]);
 
   const [playerState, setPlayerState] = useState<VideoPlayerState>({
     isPlaying: false,
@@ -839,7 +847,10 @@ export function VideoAttachmentPreviewRenderer({
       download={{ onDownload: () => downloadOriginalVideo(video) }}
       navigation={navigation}
       onClose={handleClose}
-      onInfoClick={(event) => setInfoAnchorEl(event.currentTarget)}
+      onInfoClick={(event) => {
+        setInfoAnchorEl(event.currentTarget);
+        onChildOverlayChange?.(true);
+      }}
       isFullscreen={dialogIsFullscreen}
       canFullscreen={canFullscreen}
       onToggleFullscreen={handleToggleFullscreen}
@@ -852,7 +863,10 @@ export function VideoAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewInfoPopover
       open={infoOpen}
       anchorEl={infoAnchorEl}
-      onClose={() => setInfoAnchorEl(null)}
+      onClose={() => {
+        setInfoAnchorEl(null);
+        onChildOverlayChange?.(false);
+      }}
       fields={[
         {
           label: 'URL',

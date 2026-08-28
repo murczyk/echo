@@ -175,7 +175,7 @@ export function MediaReprocessAction({
             {engines == null && <MenuItem disabled>Завантаження OCR-движків…</MenuItem>}
             {engines != null && engines.length === 0 && (
               <MenuItem disabled={disabled} onClick={() => void reprocess()}>
-                Обробити повторно
+                Повторно запустити OCR
               </MenuItem>
             )}
             {engines?.map((engine) => (
@@ -184,7 +184,7 @@ export function MediaReprocessAction({
                 disabled={disabled}
                 onClick={() => void reprocess(engine.id)}
               >
-                Обробити повторно через {engine.name}
+                Повторно запустити OCR через {engine.name}
               </MenuItem>
             ))}
           </>

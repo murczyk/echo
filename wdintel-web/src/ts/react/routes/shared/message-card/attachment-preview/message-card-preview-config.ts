@@ -6,7 +6,6 @@ export type MessageCardAttachmentPreviewConfig = {
   layout: 'document' | 'media';
   disableRestoreFocus: boolean;
   supportsFullscreen: boolean;
-  disableEscapeKeyDownInFullscreen: boolean;
 };
 
 const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
@@ -14,61 +13,51 @@ const MESSAGE_CARD_PREVIEW_SHELL_CONFIG_BY_KIND = {
     layout: 'media',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   video: {
     layout: 'media',
     disableRestoreFocus: false,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   'coordinate-map': {
     layout: 'media',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   pdf: {
     layout: 'document',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   docx: {
     layout: 'document',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   xlsx: {
     layout: 'document',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   csv: {
     layout: 'document',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   txt: {
     layout: 'document',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   md: {
     layout: 'document',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
   unsupported: {
     layout: 'document',
     disableRestoreFocus: true,
     supportsFullscreen: true,
-    disableEscapeKeyDownInFullscreen: false,
   },
 } satisfies Record<MessageCardPreviewKind, MessageCardAttachmentPreviewConfig>;
 

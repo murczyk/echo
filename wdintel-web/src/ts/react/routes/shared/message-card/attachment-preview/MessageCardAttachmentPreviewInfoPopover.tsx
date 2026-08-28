@@ -39,7 +39,13 @@ export function MessageCardAttachmentPreviewInfoPopover({
       onClose={onClose}
       anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
       transformOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      slotProps={{ paper: { sx: getAttachmentPreviewPopoverPaperSx(theme) } }}
+      slotProps={{
+        paper: {
+          'aria-label': 'Інформація про вкладення',
+          role: 'dialog',
+          sx: getAttachmentPreviewPopoverPaperSx(theme),
+        },
+      }}
     >
       <Stack spacing={1}>
         {fields.map((field) => (
