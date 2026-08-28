@@ -4,8 +4,8 @@ use anyhow::Result;
 use serde::Deserialize;
 use std::path::PathBuf;
 
-pub const DEFAULT_CONFIG_PATH: &str = "/etc/echo-swapp/config.toml";
-pub const ECHO_SWAPP_JSON_PAYLOAD_MAX_BYTES: usize = 1024 * 1024 * 1024;
+pub const DEFAULT_CONFIG_PATH: &str = "/etc/echo-messengers/config.toml";
+pub const ECHO_MESSENGERS_JSON_PAYLOAD_MAX_BYTES: usize = 1024 * 1024 * 1024;
 pub const AUTOMATION_SEND_LOG_RETENTION_DAYS: i64 = 30;
 pub const AUTOMATION_MAP_SCREENSHOT_WIDTH: u32 = 800;
 pub const AUTOMATION_MAP_SCREENSHOT_HEIGHT: u32 = 600;
@@ -28,7 +28,7 @@ pub const AUTOMATION_BROKEN_INTEGRATION_ERROR: &str =
     "Інтеграцію змінено. Переналаштуйте акаунти та групи автоматизації.";
 pub const AUTOMATION_OPERATION_LOCK_ID_BASE: i64 = i64::MIN;
 pub const AUTOMATION_WORKER_SLEEP_MILLIS: u64 = 5_000;
-pub const ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS: u64 = 25;
+pub const ECHO_MESSENGERS_ADVISORY_LOCK_RETRY_MILLIS: u64 = 25;
 pub const MESSENGER_FULL_SYNC_WORKER_SLEEP_MILLIS: u64 = 60_000;
 pub const MESSENGER_SIGNAL_OUTBOX_WORKER_SLEEP_MILLIS: u64 = 1_000;
 pub const MESSENGER_INTEGRATION_UNIQUENESS_LOCK_ID: i64 = 4_563_686_943;
@@ -45,7 +45,7 @@ const DEFAULT_LISTEN_HOST: &str = "0.0.0.0";
 const DEFAULT_LISTEN_PORT: u16 = 4010;
 const DEFAULT_SIGNAL_CLIENT_DIR: &str = "/etc/echo/signal-cli-data";
 const DEFAULT_WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-cli-data";
-const DEFAULT_WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo-swapp/config.toml";
+const DEFAULT_WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo-messengers/config.toml";
 const DEFAULT_SIGNAL_UNIT_NAME: &str = "echo-signal-bot";
 const DEFAULT_WHATSAPP_UNIT_NAME: &str = "echo-whatsapp-bot";
 const DEFAULT_CLIENT_DATA_DIR_NAME: &str = "client_data";
@@ -134,6 +134,9 @@ impl Config {
 }
 
 pub fn read_config() -> Result<Config> {
+    if let Ok(path) = std::env::var("ECHO_MESSENGERS_CONFIG_PATH") {
+        return read_from_path(PathBuf::from(path));
+    }
     if let Ok(path) = std::env::var("ECHO_SWAPP_CONFIG_PATH") {
         return read_from_path(PathBuf::from(path));
     }

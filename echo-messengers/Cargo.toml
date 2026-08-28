@@ -1,10 +1,10 @@
 [package]
-name = "echo-swapp"
+name = "echo-messengers"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Swapp-compatible GOI messenger API wrapper"
+description = "Echo messenger integration service"
 
 [dependencies]
 actix-web = { workspace = true }
@@ -30,11 +30,13 @@ rev = "f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75"
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"
-systemd-units = [{ unit-name = "echo-swapp" }]
+systemd-units = [{ unit-name = "echo-messengers" }]
 depends = ""
+conflicts = "echo-swapp"
+replaces = "echo-swapp"
 assets = [
-    ["target/release/echo-swapp", "usr/bin/", "755"],
-    ["config.toml.example", "etc/echo-swapp/config.toml.example", "644"],
+    ["target/release/echo-messengers", "usr/bin/", "755"],
+    ["config.toml.example", "etc/echo-messengers/config.toml.example", "644"],
     ["deploy/systemd/echo-signal-bot@.service", "usr/lib/systemd/system/", "644"],
     ["deploy/systemd/echo-whatsapp-bot@.service", "usr/lib/systemd/system/", "644"],
 ]

@@ -153,7 +153,7 @@ async fn download_tiles(viewport: Viewport) -> Result<Vec<LoadedTile>> {
         .timeout(Duration::from_secs(
             AUTOMATION_MAP_SCREENSHOT_REQUEST_TIMEOUT_SECS,
         ))
-        .user_agent("echo-swapp")
+        .user_agent("echo-messengers")
         .build()
         .c(h!())?;
     let mut tasks = JoinSet::new();

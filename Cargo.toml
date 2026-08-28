@@ -3,7 +3,7 @@ members = [
     "wdintel-rs",
     "echo-migration", "wdfiles-migration", "echo-install",
     "docs/echo-docs", "echo-ai", "echo-iggy", "goi-echo-worker",
-    "goi/echo-swapp",
+    "echo-messengers",
 ]
 resolver = "2"
 

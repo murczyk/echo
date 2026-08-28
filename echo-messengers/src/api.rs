@@ -624,7 +624,7 @@ struct ErrorRsp {
 }
 
 fn error(err: anyhow::Error) -> actix_web::Error {
-    log::error!("echo-swapp API error: {err:#}");
+    log::error!("echo-messengers API error: {err:#}");
     let (status, code, message) = error_response(&err);
     let response = HttpResponse::build(status).json(ErrorRsp { code, message });
     actix_web::error::InternalError::from_response(err, response).into()
@@ -728,7 +728,7 @@ mod tests {
     #[test]
     fn user_error_returns_actionable_message_and_status() {
         let err = bad_request("Перевірте номер телефону та повторіть спробу.")
-            .context("at goi/echo-swapp/src/api.rs line 73 column 12");
+            .context("at echo-messengers/src/api.rs line 73 column 12");
         let (status, code, message) = error_response(&err);
 
         assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -739,7 +739,7 @@ mod tests {
     #[test]
     fn internal_error_hides_sensitive_details() {
         let err = anyhow::anyhow!("password=secret")
-            .context("at goi/echo-swapp/src/api.rs line 73 column 12");
+            .context("at echo-messengers/src/api.rs line 73 column 12");
         let (status, code, message) = error_response(&err);
 
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);

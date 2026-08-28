@@ -1,6 +1,6 @@
 use crate::config::{
     Config, AUTOMATION_BROKEN_INTEGRATION_ERROR,
-    ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
+    ECHO_MESSENGERS_ADVISORY_LOCK_RETRY_MILLIS,
     MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX,
     MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE,
     MESSENGER_INTEGRATION_RELINK_STATE_PREFIX,
@@ -1342,7 +1342,7 @@ pub(crate) async fn begin_locked_integration_accounts_transaction(
 async fn rollback_before_lock_retry(txn: DatabaseTransaction) -> Result<()> {
     txn.rollback().await.c(h!())?;
     tokio::time::sleep(Duration::from_millis(
-        ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
+        ECHO_MESSENGERS_ADVISORY_LOCK_RETRY_MILLIS,
     ))
     .await;
     Ok(())

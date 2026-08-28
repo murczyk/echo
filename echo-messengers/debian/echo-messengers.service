@@ -1,16 +1,16 @@
 [Unit]
-Description=echo-swapp
+Description=Echo messengers
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/echo-swapp
+ExecStart=/usr/bin/echo-messengers
 Restart=always
 User=root
 Group=root
 RestartSec=5s
-WorkingDirectory=/etc/echo-swapp
-Environment=RUST_LOG=info,echo_swapp=debug
+WorkingDirectory=/etc/echo-messengers
+Environment=RUST_LOG=info,echo_messengers=debug
 
 [Install]
 WantedBy=multi-user.target

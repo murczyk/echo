@@ -9,7 +9,7 @@ listen_port = 4010
 
 signal_client_dir = "/etc/echo/signal-cli-data"
 whatsapp_client_dir = "/etc/echo/whatsapp-cli-data"
-whatsapp_client_config = "/etc/echo-swapp/config.toml"
+whatsapp_client_config = "/etc/echo-messengers/config.toml"
 signal_unit_name = "echo-signal-bot"
 whatsapp_unit_name = "echo-whatsapp-bot"
 client_data_dir_name = "client_data"

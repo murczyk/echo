@@ -22,10 +22,12 @@ pub fn spawn_workers(db: DatabaseConnection) {
 }
 
 async fn automation_worker(db: DatabaseConnection) {
-    log::info!("starting echo-swapp automation worker");
+    log::info!("starting echo-messengers automation worker");
     loop {
         if let Err(err) = automation_worker_tick(&db).await {
-            log::error!("echo-swapp automation worker tick failed: {err:#}");
+            log::error!(
+                "echo-messengers automation worker tick failed: {err:#}"
+            );
         }
         sleep(Duration::from_millis(AUTOMATION_WORKER_SLEEP_MILLIS)).await;
     }
@@ -39,10 +41,12 @@ async fn automation_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
 }
 
 async fn signal_outbox_worker(db: DatabaseConnection) {
-    log::info!("starting echo-swapp Signal outbox worker");
+    log::info!("starting echo-messengers Signal outbox worker");
     loop {
         if let Err(err) = signal_outbox_worker_tick(&db).await {
-            log::error!("echo-swapp Signal outbox worker tick failed: {err:#}");
+            log::error!(
+                "echo-messengers Signal outbox worker tick failed: {err:#}"
+            );
         }
         sleep(Duration::from_millis(
             MESSENGER_SIGNAL_OUTBOX_WORKER_SLEEP_MILLIS,
@@ -73,10 +77,12 @@ async fn signal_outbox_worker_tick(
 }
 
 async fn messenger_worker(db: DatabaseConnection) {
-    log::info!("starting echo-swapp messenger worker");
+    log::info!("starting echo-messengers messenger worker");
     loop {
         if let Err(err) = messenger_worker_tick(&db).await {
-            log::error!("echo-swapp messenger worker tick failed: {err:#}");
+            log::error!(
+                "echo-messengers messenger worker tick failed: {err:#}"
+            );
         }
         sleep(Duration::from_millis(
             MESSENGER_FULL_SYNC_WORKER_SLEEP_MILLIS,
@@ -100,15 +106,15 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
 }
 
 async fn cleanup_worker(db: DatabaseConnection) {
-    log::info!("starting echo-swapp cleanup worker");
+    log::info!("starting echo-messengers cleanup worker");
     loop {
         if let Err(err) = automation::delete_expired_send_log(&db).await {
             log::error!(
-                "echo-swapp automation send log cleanup failed: {err:#}"
+                "echo-messengers automation send log cleanup failed: {err:#}"
             );
         }
         if let Err(err) = echo_im::worker::run_cleanup_worker(&db).await {
-            log::error!("echo-swapp cleanup worker failed: {err:#}");
+            log::error!("echo-messengers cleanup worker failed: {err:#}");
         }
         sleep(Duration::from_millis(CLEANUP_WORKER_SLEEP_MS)).await;
     }

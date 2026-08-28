@@ -2,7 +2,7 @@
 Description=WhatsApp service for %i
 
 [Service]
-ExecStart=/usr/bin/whatsapp-cli -client-name $CLIENT_NAME -config-path /etc/echo-swapp/config.toml
+ExecStart=/usr/bin/whatsapp-cli -client-name $CLIENT_NAME -config-path /etc/echo-messengers/config.toml
 Restart=always
 User=root
 Group=root

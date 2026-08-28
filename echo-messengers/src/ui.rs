@@ -1,10 +1,11 @@
 use actix_web::{get, HttpResponse, Responder};
 
 const ECHO_LOGO_SVG: &str =
-    include_str!("../../../wdintel-web/static/img/echo-logo-white.svg");
+    include_str!("../../wdintel-web/static/img/echo-logo-white.svg");
 const LEAFLET_CSS: &str =
-    include_str!("../../swapp/public/leaflet/leaflet.css");
-const LEAFLET_JS: &str = include_str!("../../swapp/public/leaflet/leaflet.js");
+    include_str!("../../goi/swapp/public/leaflet/leaflet.css");
+const LEAFLET_JS: &str =
+    include_str!("../../goi/swapp/public/leaflet/leaflet.js");
 
 #[get("/")]
 pub async fn index() -> impl Responder {
@@ -67,16 +68,12 @@ const INDEX_HTML: &str = r#"<!doctype html>
 </head>
 <body class="min-h-screen bg-zinc-950 text-zinc-100">
   <main class="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-    <header class="flex flex-col gap-3 border-b border-zinc-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
+    <header class="border-b border-zinc-800 pb-5">
       <div>
         <div class="flex items-center gap-3">
           <img src="echo-logo.svg" alt="ECHO" class="h-8 w-auto shrink-0" />
           <h1 class="text-2xl font-semibold tracking-normal">MESSENGERS</h1>
         </div>
-      </div>
-      <div class="flex gap-2">
-        <button id="globalPauseBtn" class="inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900" type="button" aria-label="Зупинити синхронізацію" title="Зупинити синхронізацію"></button>
-        <button id="refreshBtn" class="h-10 rounded-md border border-zinc-700 px-4 text-sm text-zinc-200 hover:bg-zinc-900">Оновити</button>
       </div>
     </header>
 
@@ -471,9 +468,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
     const qrTitle = document.getElementById('qrTitle');
     const qrStatus = document.getElementById('qrStatus');
     const refreshQr = document.getElementById('refreshQr');
-    const globalPauseBtn = document.getElementById('globalPauseBtn');
     let pollTimer = null;
-    let globalPaused = false;
     let currentQrName = null;
     let activeTab = 'integrations';
     let messengers = [];
@@ -628,7 +623,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
     async function load() {
       clearActionError();
       try {
-        await loadGlobalPause();
         await loadAutomationAccounts();
         await loadAutomationGroups();
       } catch (err) {
@@ -1298,21 +1292,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
       `;
     }
 
-    function updateGlobalPauseButton() {
-      globalPauseBtn.innerHTML = globalPaused ? playIcon() : pauseIcon();
-      globalPauseBtn.setAttribute('aria-label', globalPaused ? 'Відновити всю синхронізацію' : 'Зупинити всю синхронізацію');
-      globalPauseBtn.setAttribute('title', globalPaused ? 'Відновити всю синхронізацію' : 'Зупинити всю синхронізацію');
-      globalPauseBtn.className = globalPaused
-        ? 'inline-flex h-10 w-10 items-center justify-center rounded-md border border-amber-700 text-amber-300 hover:bg-amber-950/40'
-        : 'inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-900';
-    }
-
-    async function loadGlobalPause() {
-      const state = await request(appUrl('/ui-api/sync-pause'));
-      globalPaused = state.isPaused;
-      updateGlobalPauseButton();
-    }
-
     function messengerDisplayName(name) {
       const item = messengers.find(messenger => messenger.name === name);
       return item?.displayName || name;
@@ -1965,19 +1944,6 @@ const INDEX_HTML: &str = r#"<!doctype html>
       clearInterval(pollTimer);
       qrDialog.close();
     });
-    globalPauseBtn.addEventListener('click', async () => {
-      clearActionError();
-      try {
-        await request(appUrl('/ui-api/sync-pause'), {
-          method: 'POST',
-          body: JSON.stringify({ isPaused: !globalPaused }),
-        });
-        await load();
-      } catch (err) {
-        showActionError(err);
-      }
-    });
-    document.getElementById('refreshBtn').addEventListener('click', load);
     document.getElementById('integrationsTabBtn').addEventListener('click', () => setActiveTab('integrations'));
     document.getElementById('automationsTabBtn').addEventListener('click', () => setActiveTab('automations'));
     document.getElementById('polygonsTabBtn').addEventListener('click', () => setActiveTab('polygons'));

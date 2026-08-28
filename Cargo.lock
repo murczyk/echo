@@ -3053,16 +3053,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "echo-migration"
-version = "0.1.0"
-dependencies = [
- "sea-orm",
- "sea-orm-migration",
- "tokio",
-]
-
-[[package]]
-name = "echo-swapp"
+name = "echo-messengers"
 version = "0.1.1-rc.202608281339"
 dependencies = [
  "actix-web",
@@ -3082,6 +3073,15 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+]
+
+[[package]]
+name = "echo-migration"
+version = "0.1.0"
+dependencies = [
+ "sea-orm",
+ "sea-orm-migration",
+ "tokio",
 ]
 
 [[package]]

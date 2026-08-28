@@ -2,7 +2,7 @@ use crate::config::{
     AUTOMATION_BROKEN_INTEGRATION_ERROR,
     AUTOMATION_MAP_SCREENSHOT_WARNING_PREFIX,
     AUTOMATION_OPERATION_LOCK_ID_BASE, AUTOMATION_SEND_LOG_RETENTION_DAYS,
-    ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
+    ECHO_MESSENGERS_ADVISORY_LOCK_RETRY_MILLIS,
 };
 use crate::error::{bad_request, conflict, not_found, ShortContext};
 use crate::h;
@@ -1051,7 +1051,10 @@ async fn process_automation_with_integration_lock(
         set_error(db, automation.id, &err.to_string())
             .await
             .c(h!())?;
-        log::error!("echo-swapp automation {} failed: {err:#}", automation.id);
+        log::error!(
+            "echo-messengers automation {} failed: {err:#}",
+            automation.id
+        );
     }
     txn.commit().await.c(h!())?;
     Ok(())
@@ -1082,7 +1085,7 @@ async fn begin_locked_automation_transaction(
         }
         txn.rollback().await.c(h!())?;
         tokio::time::sleep(std::time::Duration::from_millis(
-            ECHO_SWAPP_ADVISORY_LOCK_RETRY_MILLIS,
+            ECHO_MESSENGERS_ADVISORY_LOCK_RETRY_MILLIS,
         ))
         .await;
     }
@@ -2829,7 +2832,8 @@ mod tests {
     }
 
     async fn test_db() -> Result<DatabaseConnection> {
-        let url = std::env::var("ECHO_SWAPP_TEST_DATABASE_URL")
+        let url = std::env::var("ECHO_MESSENGERS_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("ECHO_SWAPP_TEST_DATABASE_URL"))
             .unwrap_or_else(|_| DEFAULT_TEST_DATABASE_URL.to_string());
         let db = Database::connect(url).await.c(h!())?;
         crate::automation::ensure_schema(&db).await.c(h!())?;
@@ -2840,7 +2844,8 @@ mod tests {
     async fn test_db_with_max_connections(
         max_connections: u32,
     ) -> Result<DatabaseConnection> {
-        let url = std::env::var("ECHO_SWAPP_TEST_DATABASE_URL")
+        let url = std::env::var("ECHO_MESSENGERS_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("ECHO_SWAPP_TEST_DATABASE_URL"))
             .unwrap_or_else(|_| DEFAULT_TEST_DATABASE_URL.to_string());
         let mut options = ConnectOptions::new(url);
         options

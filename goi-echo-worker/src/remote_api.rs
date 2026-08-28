@@ -330,7 +330,7 @@ pub async fn restart_service(
         GoiService::Swapp => "swapp",
         GoiService::SwappAlt => "swapp-alt",
         GoiService::Goi => "goi",
-        GoiService::EchoSwapp => "echo-swapp",
+        GoiService::EchoMessengers => "echo-messengers",
     };
     run_process("systemctl", &["restart", unit], None)
         .await
@@ -348,7 +348,7 @@ pub async fn unlink_whatsapp(
     let working_dir = match req.service {
         GoiService::Swapp => "/etc/swapp",
         GoiService::SwappAlt => "/etc/swapp-alt",
-        GoiService::Goi | GoiService::EchoSwapp => {
+        GoiService::Goi | GoiService::EchoMessengers => {
             return Err(ErrorBadRequest(
                 "WhatsApp unlink is available only for SWAPP services",
             ));

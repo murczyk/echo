@@ -11,7 +11,7 @@ mod worker;
 use crate::error::ShortContext;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use anyhow::Result;
-use config::{Config, ECHO_SWAPP_JSON_PAYLOAD_MAX_BYTES};
+use config::{Config, ECHO_MESSENGERS_JSON_PAYLOAD_MAX_BYTES};
 use sea_orm::DatabaseConnection;
 
 #[derive(Clone)]
@@ -37,14 +37,14 @@ async fn main() -> Result<()> {
         db,
     });
     let bind = format!("{}:{}", config.listen_host(), config.listen_port());
-    log::info!("starting echo-swapp on {bind}");
+    log::info!("starting echo-messengers on {bind}");
 
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .app_data(
                 web::JsonConfig::default()
-                    .limit(ECHO_SWAPP_JSON_PAYLOAD_MAX_BYTES),
+                    .limit(ECHO_MESSENGERS_JSON_PAYLOAD_MAX_BYTES),
             )
             .wrap(Logger::default())
             .service(ui::index)
