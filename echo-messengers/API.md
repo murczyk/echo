@@ -119,3 +119,68 @@ string[] | { error: string }
 Надсилає повідомлення `message` від імені `number` кожному з `recipients`. ГОІ викликає цей ендпоінт окремо для кожного одержувача (по одному `recipient` у масиві за раз). Поле `base64_attachments` опціональне — приймає масив data URL для прикріплення зображень або файлів до повідомлення.
 
 Має бути присутнє хоча б одне з полів `message` або `base64_attachments`.
+
+# Chat administration API v1
+
+Chat IDs are versioned URL-safe opaque values stable for the tuple
+`(client, linked account, private/group kind, remote identity)`. Consumers must
+not decode or construct them. A private identity uses the normalized phone when
+known and otherwise the messenger UUID; a group identity uses the Echo IM group
+record scoped to its linked account.
+
+`GET /ui-api/chats/capability` gates the first `Чати` tab. Chat list and message
+history use opaque `before` keyset cursors. `GET
+/ui-api/chat-clients/{clientId}/filter-options` returns contacts and groups
+independently of current list visibility.
+
+The message DTO returned by history, queued send/reply responses, and webhooks
+is:
+
+```ts
+type ChatMessageV1 = {
+  id: string
+  inboxId: number | null
+  outgoing: boolean
+  senderName: string
+  body: string
+  timestamp: string
+  deliveryStatus: string
+  reply: null | {
+    id: string
+    senderName: string
+    body: string
+  }
+  attachments: Array<{
+    id: number
+    name: string | null
+    url: string
+    mediaKind: "image" | "video" | "audio" | "file"
+    contentType: string
+    sizeBytes: number | null
+    available: boolean
+  }>
+  reactions: string[]
+  unread: boolean
+}
+```
+
+Attachment URLs are scoped to the opaque chat ID and require the same active
+client, current lock, linked account, visibility filter, and message ownership
+checks as history. Uploads accept base64 plus an optional filename and are
+limited to 25 MiB each.
+
+Webhook requests are `POST` JSON without redirects:
+
+```ts
+{
+  version: 1
+  eventId: string
+  chatId: string
+  message: ChatMessageV1
+}
+```
+
+`eventId` is stable across delivery retries. Attachment metadata and scoped
+URLs are present; attachment bytes/base64 are never embedded. Consumers should
+deduplicate by `eventId` and return any 2xx response only after durable
+acceptance.

@@ -36,6 +36,19 @@ pub const MESSENGER_INTEGRATION_OPERATION_LOCK_NAMESPACE: i32 = 1_162_033_231;
 pub const MESSENGER_INTEGRATION_CLIENT_DATA_BACKUP_SUFFIX: &str =
     ".relink-backup";
 pub const MESSENGER_INTEGRATION_RELINK_STATE_PREFIX: &str = "relink:";
+pub const CHAT_WORKER_SLEEP_MILLIS: u64 = 2_000;
+pub const CHAT_REDIS_RECONNECT_SLEEP_MILLIS: u64 = 10_000;
+pub const CHAT_REDIS_PIPELINE_BUFFER_SIZE: usize = 128;
+pub const CHAT_REDIS_RESPONSE_TIMEOUT_SECS: u64 = 5;
+pub const CHAT_UNREAD_KEY_TTL_DAYS: u64 = 35;
+pub const CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS: u64 = 15;
+pub const CHAT_WEBHOOK_MAX_ATTEMPTS: i32 = 8;
+pub const CHAT_WEBHOOK_HISTORY_RETENTION_DAYS: i64 = 30;
+pub const CHAT_MESSAGE_PAGE_SIZE: i64 = 50;
+pub const CHAT_LIST_PAGE_SIZE: i64 = 100;
+pub const CHAT_ATTACHMENT_MAX_BYTES: usize = 25 * 1024 * 1024;
+pub const CHAT_ATTACHMENT_MAX_COUNT: usize = 10;
+pub const CHAT_ATTACHMENTS_TOTAL_MAX_BYTES: usize = 100 * 1024 * 1024;
 const DEFAULT_PG_HOST: &str = "localhost";
 const DEFAULT_PG_PORT: u16 = 5432;
 const DEFAULT_PG_USER: &str = "wd";
@@ -43,6 +56,10 @@ const DEFAULT_PG_PASSWORD: &str = "fee_-_-_-FnoeKFBeebu87bf";
 const DEFAULT_PG_DBNAME: &str = "wd";
 const DEFAULT_LISTEN_HOST: &str = "0.0.0.0";
 const DEFAULT_LISTEN_PORT: u16 = 4010;
+const DEFAULT_REDIS_HOST: &str = "localhost";
+const DEFAULT_REDIS_PORT: u16 = 6379;
+const DEFAULT_CHAT_STORAGE_DIR: &str =
+    "/var/lib/echo-messengers/chat-attachments";
 const DEFAULT_SIGNAL_CLIENT_DIR: &str = "/etc/echo/signal-cli-data";
 const DEFAULT_WHATSAPP_CLIENT_DIR: &str = "/etc/echo/whatsapp-cli-data";
 const DEFAULT_WHATSAPP_CLIENT_CONFIG: &str = "/etc/echo-messengers/config.toml";
@@ -59,6 +76,9 @@ pub struct Config {
     pub pg_dbname: Option<String>,
     pub listen_host: Option<String>,
     pub listen_port: Option<u16>,
+    pub redis_host: Option<String>,
+    pub redis_port: Option<u16>,
+    pub chat_storage_dir: Option<String>,
     pub signal_client_dir: Option<String>,
     pub whatsapp_client_dir: Option<String>,
     pub whatsapp_client_config: Option<String>,
@@ -94,6 +114,20 @@ impl Config {
 
     pub fn listen_port(&self) -> u16 {
         self.listen_port.unwrap_or(DEFAULT_LISTEN_PORT)
+    }
+
+    pub fn redis_host(&self) -> &str {
+        self.redis_host.as_deref().unwrap_or(DEFAULT_REDIS_HOST)
+    }
+
+    pub fn redis_port(&self) -> u16 {
+        self.redis_port.unwrap_or(DEFAULT_REDIS_PORT)
+    }
+
+    pub fn chat_storage_dir(&self) -> &str {
+        self.chat_storage_dir
+            .as_deref()
+            .unwrap_or(DEFAULT_CHAT_STORAGE_DIR)
     }
 
     pub fn signal_client_dir(&self) -> &str {

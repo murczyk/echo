@@ -61,13 +61,20 @@ def default_base() -> str:
 
 
 def changed_paths(base: str) -> list[str]:
-    output = git(
+    committed = git(
         "diff",
         "--name-only",
         "--diff-filter=AM",
         merge_base(base),
     )
-    return [line for line in output.splitlines() if line]
+    worktree = git("diff", "--name-only", "--diff-filter=AM")
+    untracked = git("ls-files", "--others", "--exclude-standard")
+    return sorted({
+        line
+        for output in (committed, worktree, untracked)
+        for line in output.splitlines()
+        if line
+    })
 
 
 def merge_base(base: str) -> str:

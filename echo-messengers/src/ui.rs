@@ -6,6 +6,8 @@ const LEAFLET_CSS: &str =
     include_str!("../../goi/swapp/public/leaflet/leaflet.css");
 const LEAFLET_JS: &str =
     include_str!("../../goi/swapp/public/leaflet/leaflet.js");
+const CHAT_CSS: &str = include_str!("chat.css");
+const CHAT_JS: &str = include_str!("chat.js");
 
 #[get("/")]
 pub async fn index() -> impl Responder {
@@ -35,6 +37,20 @@ pub async fn leaflet_js() -> impl Responder {
         .body(LEAFLET_JS)
 }
 
+#[get("/chat.css")]
+pub async fn chat_css() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/css; charset=utf-8")
+        .body(CHAT_CSS)
+}
+
+#[get("/chat.js")]
+pub async fn chat_js() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/javascript; charset=utf-8")
+        .body(CHAT_JS)
+}
+
 const INDEX_HTML: &str = r#"<!doctype html>
 <html lang="uk">
 <head>
@@ -42,6 +58,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>MESSENGERS</title>
   <link rel="stylesheet" href="leaflet/leaflet.css" />
+  <link rel="stylesheet" href="chat.css" />
   <style>
     .leaflet-bar a,
     .leaflet-control-layers {
@@ -80,10 +97,60 @@ const INDEX_HTML: &str = r#"<!doctype html>
     <p id="actionError" class="hidden rounded-md border border-red-900 bg-red-950/50 px-4 py-3 text-sm text-red-300" role="alert"></p>
 
     <nav class="flex gap-2 border-b border-zinc-800" aria-label="Розділи">
+      <button id="chatsTabBtn" class="hidden border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Чати</button>
       <button id="integrationsTabBtn" class="border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100" type="button">Інтеграції</button>
       <button id="automationsTabBtn" class="border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Автоматизації</button>
       <button id="polygonsTabBtn" class="border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100" type="button">Райони Інтересу</button>
     </nav>
+
+    <section id="chatsTab" class="hidden" aria-labelledby="chatsTabBtn">
+      <div id="chatError" class="hidden rounded-md border border-red-900 bg-red-950/50 px-4 py-3 text-sm text-red-300" role="alert"></div>
+      <div class="chat-layout mt-4">
+        <aside id="chatSidebar" class="chat-sidebar" aria-label="Список чатів">
+          <div class="chat-sidebar-header">
+            <h2 class="text-base font-medium">Чати</h2>
+            <button id="chatSettingsBtn" class="chat-icon-button" type="button" aria-label="Налаштування чатів">⚙</button>
+          </div>
+          <div id="chatList" class="chat-list"><p class="chat-placeholder">Завантаження…</p></div>
+          <button id="loadOlderChatsBtn" class="chat-secondary-button hidden" type="button">Завантажити старіші чати</button>
+        </aside>
+        <section id="chatConversation" class="chat-conversation" aria-live="polite">
+          <div id="chatConversationEmpty" class="chat-placeholder">Виберіть чат.</div>
+          <div id="chatConversationContent" class="hidden h-full min-h-0 flex-col">
+            <header class="chat-conversation-header">
+              <button id="chatBackBtn" class="chat-icon-button chat-back-button" type="button" aria-label="Повернутися до списку чатів">←</button>
+              <div class="min-w-0 flex-1"><h2 id="chatTitle" class="truncate text-base font-medium"></h2><p id="chatSubtitle" class="truncate text-xs text-zinc-500"></p></div>
+              <button id="markAllReadBtn" class="chat-secondary-button" type="button">Позначити все прочитаним</button>
+            </header>
+            <button id="loadOlderMessagesBtn" class="chat-secondary-button mx-auto my-2 hidden" type="button">Завантажити старіші</button>
+            <div id="chatMessages" class="chat-messages" tabindex="0" aria-label="Повідомлення"></div>
+            <div id="chatReplyBar" class="chat-reply-bar hidden"><span id="chatReplyText" class="truncate"></span><button id="cancelReplyBtn" class="chat-icon-button" type="button" aria-label="Скасувати відповідь">×</button></div>
+            <form id="chatSendForm" class="chat-send-form">
+              <label class="chat-icon-button cursor-pointer" aria-label="Додати вкладення">📎<input id="chatFileInput" class="sr-only" type="file" multiple /></label>
+              <textarea id="chatMessageInput" class="chat-message-input" rows="1" placeholder="Повідомлення" aria-label="Текст повідомлення"></textarea>
+              <button class="chat-primary-button" type="submit">Надіслати</button>
+            </form>
+            <div id="chatSelectedFiles" class="chat-selected-files hidden"></div>
+          </div>
+        </section>
+        <aside id="chatLegend" class="chat-legend" aria-label="Позначення акаунтів"></aside>
+      </div>
+    </section>
+
+    <dialog id="chatSettingsDialog" class="chat-settings-dialog">
+      <form id="chatSettingsForm" method="dialog" class="chat-settings-form">
+        <header class="chat-settings-header"><h2 class="text-lg font-medium">Налаштування чатів</h2><button id="closeChatSettingsBtn" class="chat-icon-button" type="button" aria-label="Закрити">×</button></header>
+        <label class="chat-field"><span>Клієнт</span><select id="chatSettingsClient"></select></label>
+        <div id="chatSettingsBody" class="grid gap-4">
+          <fieldset class="chat-settings-group"><legend>Приватні чати</legend><label><input id="hidePrivateChats" type="checkbox" /> Показувати лише вибрані (allowlist)</label><label class="chat-field"><span id="privateFilterLabel">Приховані контакти (denylist)</span><select id="privateChatFilters" multiple></select></label></fieldset>
+          <fieldset class="chat-settings-group"><legend>Групи</legend><label><input id="hideGroupChats" type="checkbox" /> Показувати лише вибрані (allowlist)</label><label class="chat-field"><span id="groupFilterLabel">Приховані групи (denylist)</span><select id="groupChatFilters" multiple></select></label></fieldset>
+          <fieldset class="chat-settings-group"><legend>Webhook</legend><label class="chat-field"><span>Приватні повідомлення</span><select id="privateWebhookAction"><option value="keep">Не змінювати</option><option value="replace">Замінити</option><option value="remove">Видалити</option></select><input id="privateWebhookUrl" class="hidden" type="url" placeholder="https://…" /></label><label class="chat-field"><span>Групові повідомлення</span><select id="groupWebhookAction"><option value="keep">Не змінювати</option><option value="replace">Замінити</option><option value="remove">Видалити</option></select><input id="groupWebhookUrl" class="hidden" type="url" placeholder="https://…" /></label></fieldset>
+          <label><input id="storeChatData" type="checkbox" /> Зберігати дані 30 днів</label>
+          <p id="chatSettingsStatus" class="min-h-5 text-sm text-zinc-400"></p>
+        </div>
+        <footer class="chat-settings-footer"><button id="cancelChatSettingsBtn" class="chat-secondary-button" type="button">Скасувати</button><button class="chat-primary-button" type="submit">Зберегти</button></footer>
+      </form>
+    </dialog>
 
     <section id="integrationsTab" class="grid gap-4 lg:grid-cols-[360px_1fr]">
       <form id="createForm" class="rounded-lg border border-zinc-800 bg-zinc-900/70 p-4">
@@ -648,6 +715,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
 
     function setActiveTab(tab) {
       activeTab = tab;
+      document.getElementById('chatsTab').classList.toggle('hidden', tab !== 'chats');
       document.getElementById('integrationsTab').classList.toggle('hidden', tab !== 'integrations');
       document.getElementById('automationsTab').classList.toggle('hidden', tab !== 'automations');
       document.getElementById('polygonsTab').classList.toggle('hidden', tab !== 'polygons');
@@ -660,6 +728,13 @@ const INDEX_HTML: &str = r#"<!doctype html>
       document.getElementById('polygonsTabBtn').className = tab === 'polygons'
         ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
         : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+      const chatsTabBtn = document.getElementById('chatsTabBtn');
+      if (!chatsTabBtn.classList.contains('hidden')) {
+        chatsTabBtn.className = tab === 'chats'
+          ? 'border-b-2 border-sky-400 px-3 py-2 text-sm text-zinc-100'
+          : 'border-b-2 border-transparent px-3 py-2 text-sm text-zinc-400 hover:text-zinc-100';
+      }
+      if (tab === 'chats') window.echoChats?.activate();
       if (tab === 'polygons') {
         polygonPointPicker.ensureMap();
         requestAnimationFrame(() => {
@@ -671,6 +746,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
         });
       }
     }
+    window.setActiveMessengerTab = setActiveTab;
 
     async function loadAutomationGroups() {
       automationGroups = await request(appUrl('/ui-api/automation-groups'));
@@ -1945,6 +2021,7 @@ const INDEX_HTML: &str = r#"<!doctype html>
       qrDialog.close();
     });
     document.getElementById('integrationsTabBtn').addEventListener('click', () => setActiveTab('integrations'));
+    document.getElementById('chatsTabBtn').addEventListener('click', () => setActiveTab('chats'));
     document.getElementById('automationsTabBtn').addEventListener('click', () => setActiveTab('automations'));
     document.getElementById('polygonsTabBtn').addEventListener('click', () => setActiveTab('polygons'));
     document.getElementById('coordinatePresenceInput').addEventListener('change', updatePolygonAvailability);
@@ -1976,5 +2053,52 @@ const INDEX_HTML: &str = r#"<!doctype html>
     updateEditPolygonAvailability();
     load();
   </script>
+  <script src="chat.js"></script>
 </body>
 </html>"#;
+
+#[cfg(test)]
+mod chat_ui_tests {
+    use super::*;
+
+    #[test]
+    fn chats_are_capability_gated_and_first() {
+        let chats = INDEX_HTML.find("id=\"chatsTabBtn\"").unwrap();
+        let integrations =
+            INDEX_HTML.find("id=\"integrationsTabBtn\"").unwrap();
+        assert!(chats < integrations);
+        assert!(INDEX_HTML[chats..]
+            .starts_with("id=\"chatsTabBtn\" class=\"hidden"));
+        assert!(CHAT_JS.contains("if (!state.capability.enabled) return"));
+        assert!(CHAT_JS.contains("window.setActiveMessengerTab(\"chats\")"));
+    }
+
+    #[test]
+    fn unread_is_cleared_only_after_the_render_anchor() {
+        let render = CHAT_JS.find("renderMessages({ preserveScroll").unwrap();
+        let frames = CHAT_JS[render..]
+            .find("afterRender()")
+            .map(|offset| render + offset)
+            .unwrap();
+        let mark = CHAT_JS[frames..]
+            .find("await markRead(unreadIds)")
+            .map(|offset| frames + offset)
+            .unwrap();
+        assert!(render < frames && frames < mark);
+        assert!(CHAT_JS.contains(
+            "requestAnimationFrame(() => requestAnimationFrame(resolve))"
+        ));
+    }
+
+    #[test]
+    fn settings_modes_and_visible_errors_are_wired() {
+        assert!(
+            CHAT_JS.contains("hidePrivate: elements.hidePrivateChats.checked")
+        );
+        assert!(CHAT_JS.contains("hideGroups: elements.hideGroupChats.checked"));
+        assert!(CHAT_JS.contains("privateFilters: selectedValues"));
+        assert!(CHAT_JS.contains("groupFilters: selectedValues"));
+        assert!(CHAT_JS.matches("showError(error)").count() >= 8);
+        assert!(INDEX_HTML.contains("id=\"chatError\""));
+    }
+}

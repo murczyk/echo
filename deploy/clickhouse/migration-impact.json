@@ -1,5 +1,13 @@
 {
   "migrations": {
+    "echo:m20260828_150352_echo_chat_admin": {
+      "changes": [
+        { "table": "public.echo_client_settings", "strategy": "excluded" },
+        { "table": "public.echo_chat_filter", "strategy": "excluded" },
+        { "table": "public.echo_chat_ingestion_state", "strategy": "excluded" },
+        { "table": "public.echo_chat_webhook_delivery", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260826_083256_sigint_peleng_battle_line_distance": {
       "changes": [
         {
@@ -369,6 +377,18 @@
     }
   },
   "dependencies": {
+    "echo-im:f9b21242397b9cb04c9c98213f1c5217f1f1e273": {
+      "changes": [
+        {
+          "table": "public.echo_client",
+          "strategy": "mirror_resync"
+        },
+        {
+          "table": "public.echo_client_config",
+          "strategy": "mirror_resync"
+        }
+      ]
+    },
     "echo-im:8758373ccd6e914d68ef4c22dd40d364392074ee": { "changes": [] },
     "echo-im:61af3aaaa15fea493cda880a6cb087b94ac75160": { "changes": [] },
     "echo-gpu:44990c61563f7232697cac4aeffd5294ef37e720": { "changes": [] }

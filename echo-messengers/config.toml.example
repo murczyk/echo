@@ -6,6 +6,9 @@ pg_dbname = "wd"
 
 listen_host = "0.0.0.0"
 listen_port = 4010
+redis_host = "localhost"
+redis_port = 6379
+chat_storage_dir = "/var/lib/echo-messengers/chat-attachments"
 
 signal_client_dir = "/etc/echo/signal-cli-data"
 whatsapp_client_dir = "/etc/echo/whatsapp-cli-data"

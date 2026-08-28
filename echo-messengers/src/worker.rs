@@ -1,7 +1,10 @@
 use crate::{
     automation,
+    chat_redis::ChatRedis,
+    chats,
     config::{
-        AUTOMATION_WORKER_SLEEP_MILLIS,
+        Config, AUTOMATION_WORKER_SLEEP_MILLIS,
+        CHAT_REDIS_RECONNECT_SLEEP_MILLIS, CHAT_WORKER_SLEEP_MILLIS,
         MESSENGER_FULL_SYNC_WORKER_SLEEP_MILLIS,
         MESSENGER_SIGNAL_OUTBOX_WORKER_SLEEP_MILLIS,
     },
@@ -13,12 +16,49 @@ use tokio::time::{sleep, Duration};
 
 const CLEANUP_WORKER_SLEEP_MS: u64 = 60_000;
 
-pub fn spawn_workers(db: DatabaseConnection) {
+pub fn spawn_workers(
+    db: DatabaseConnection,
+    config: Config,
+    chat_redis: ChatRedis,
+    webhook_client: reqwest::Client,
+) {
     tokio::spawn(messenger_worker(db.clone()));
     tokio::spawn(signal_outbox_worker(db.clone()));
     tokio::spawn(automation_worker(db.clone()));
-    tokio::spawn(cleanup_worker(db));
+    tokio::spawn(cleanup_worker(db.clone(), chat_redis.clone()));
+    tokio::spawn(chat_worker(db.clone(), chat_redis.clone(), webhook_client));
+    tokio::spawn(chat_redis_reconnect_worker(config, chat_redis));
     tokio::spawn(echo_install_utils::tmpdir::cleanup_tmp_worker_nofail());
+}
+
+async fn chat_worker(
+    db: DatabaseConnection,
+    chat_redis: ChatRedis,
+    webhook_client: reqwest::Client,
+) {
+    log::info!("starting echo-messengers chat worker");
+    loop {
+        if let Err(err) = chats::ingestion_tick(&db, &chat_redis).await {
+            log::error!("chat ingestion tick failed: {err:#}");
+        }
+        if let Err(err) = chats::webhook_tick(&db, &webhook_client).await {
+            log::error!("chat webhook delivery tick failed: {err:#}");
+        }
+        sleep(Duration::from_millis(CHAT_WORKER_SLEEP_MILLIS)).await;
+    }
+}
+
+async fn chat_redis_reconnect_worker(config: Config, chat_redis: ChatRedis) {
+    loop {
+        match chat_redis.reconnect(&config).await {
+            Ok(true) => log::info!("chat unread Redis connection restored"),
+            Ok(false) => {}
+            Err(err) => {
+                log::warn!("chat unread Redis reconnect failed: {err:#}")
+            }
+        }
+        sleep(Duration::from_millis(CHAT_REDIS_RECONNECT_SLEEP_MILLIS)).await;
+    }
 }
 
 async fn automation_worker(db: DatabaseConnection) {
@@ -105,7 +145,7 @@ async fn messenger_worker_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn cleanup_worker(db: DatabaseConnection) {
+async fn cleanup_worker(db: DatabaseConnection, chat_redis: ChatRedis) {
     log::info!("starting echo-messengers cleanup worker");
     loop {
         if let Err(err) = automation::delete_expired_send_log(&db).await {
@@ -115,6 +155,12 @@ async fn cleanup_worker(db: DatabaseConnection) {
         }
         if let Err(err) = echo_im::worker::run_cleanup_worker(&db).await {
             log::error!("echo-messengers cleanup worker failed: {err:#}");
+        }
+        if let Err(err) = chats::prune_unread(&db, &chat_redis).await {
+            log::error!("chat unread cleanup failed: {err:#}");
+        }
+        if let Err(err) = chats::cleanup_webhook_deliveries(&db).await {
+            log::error!("chat webhook cleanup failed: {err:#}");
         }
         sleep(Duration::from_millis(CLEANUP_WORKER_SLEEP_MS)).await;
     }
