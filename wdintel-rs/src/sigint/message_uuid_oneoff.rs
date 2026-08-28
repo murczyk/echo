@@ -228,27 +228,46 @@ pub async fn oneoff_backfill_signal_message_uuid(
         .c(h!())?;
     let mut checkpoint =
         load_checkpoint(&db, ps.reset_checkpoint).await.c(h!())?;
+    let total_messages =
+        signal_message::Entity::find().count(&db).await.c(h!())?;
+    let processed_before_checkpoint = if checkpoint.phase > 0 {
+        total_messages
+    } else {
+        signal_message::Entity::find()
+            .filter(signal_message::Column::LegacyId.lte(checkpoint.cursor))
+            .count(&db)
+            .await
+            .c(h!())?
+    };
+    let progress = indicatif::ProgressBar::new(total_messages);
+    progress.set_style(crate::utils::get_pb_style().c(h!())?);
+    progress.set_prefix("signal-message UUID backfill");
+    progress.set_position(processed_before_checkpoint);
     while checkpoint.phase == 0 {
         let (processed, next_cursor, linked_rows) =
             backfill_message_batch(&db, checkpoint.cursor, ps.batch_size)
                 .await
                 .c(h!())?;
         if processed == 0 {
-            println!("message UUID backfill completed");
             checkpoint.phase += 1;
             checkpoint.cursor = 0;
         } else {
             checkpoint.cursor = next_cursor;
-            println!(
-                "backfilled {processed} messages and {linked_rows} linked rows; through legacy message id {}",
+            progress.inc(processed as u64);
+            progress.set_message(format!(
+                "{linked_rows} linked rows in batch; through legacy message id {}",
                 checkpoint.cursor
-            );
+            ));
         }
         crate::kv::put_kv(&db, CHECKPOINT_KEY, checkpoint.clone())
             .await
             .c(h!())?;
     }
-    println!("signal-message UUID backfill completed");
+    progress.finish_with_message(format!(
+        "signal-message UUID backfill completed: {}/{} messages scanned",
+        progress.position(),
+        total_messages
+    ));
     Ok(())
 }
 
