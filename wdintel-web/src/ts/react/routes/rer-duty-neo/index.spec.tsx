@@ -461,6 +461,7 @@ describe('RerDutyNeoPage creation workflow', () => {
     await act(async () => root.unmount());
   });
 
+  // @test-scope safeguard: prevents creating a report from discarding already loaded duty feeds
   it('opens report mode and keeps populated feeds without a full reload after creation', async () => {
     nextCreatedResponse.value = { signal_message_id: 91 };
     const { container, root, state } = await renderPage();

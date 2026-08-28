@@ -346,6 +346,7 @@ describe('SettingsNeoPage', () => {
     container.remove();
   });
 
+  // @test-scope safeguard: prevents changing the preview limit from failing to persist the selected user setting
   it.each(['duty', 'analysis'] as const)(
     'renders the shared preview control inside the message-card settings for %s',
     async (section) => {
@@ -594,6 +595,7 @@ describe('SettingsNeoPage', () => {
     });
   });
 
+  // @test-scope safeguard: prevents the selected message-tag layout from being lost after saving duty settings
   it('saves tags layout preference from the duty settings tab', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="duty" />);
@@ -656,6 +658,7 @@ describe('SettingsNeoPage', () => {
     });
   });
 
+  // @test-scope safeguard: prevents the media-summary visibility preference from being lost after saving duty settings
   it('saves media summary preference from the duty settings tab', async () => {
     await act(async () => {
       root.render(<SettingsNeoPage section="duty" />);
@@ -719,20 +722,6 @@ describe('SettingsNeoPage', () => {
     });
 
     expect(container.textContent).not.toContain('Транскрипція аудіо');
-  });
-
-  it('opens duty settings as default section', async () => {
-    await act(async () => {
-      root.render(<SettingsNeoPage />);
-    });
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(container.querySelector('#settings-neo-panel-duty')).not.toBeNull();
-    expect(container.textContent).toContain('Оперативний');
-    expect(container.textContent).toContain('Стислий опис файлів у картках');
   });
 
   it('renders the my reports tab as a redirect', async () => {

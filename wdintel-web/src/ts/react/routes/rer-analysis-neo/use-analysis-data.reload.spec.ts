@@ -310,6 +310,7 @@ describe('loadFilterSectionData', () => {
     ]);
   });
 
+  // @test-scope parser: analysis sender statistics response fixture
   it('uses sender names returned with the analysis sender statistics', async () => {
     mocks.fetchAnalysisSenders.mockResolvedValue({
       senders: [{ uuid: 'messenger-sender', count: 2, freqBreakdown: [], perDay: {} }],
@@ -341,6 +342,7 @@ describe('loadFilterSectionData', () => {
     ]);
   });
 
+  // @test-scope parser: analysis network statistics and unit-label response fixture
   it('loads missing units before building network filter labels', async () => {
     mocks.fetchAnalysisNetworks.mockResolvedValue({
       networks: [{ networkId: 12, count: 6 }],

@@ -175,6 +175,7 @@ describe('rer-duty utils', () => {
     });
   });
 
+  // @test-scope parser: legacy camelCase and snake_case duty-feed filter payload
   it('normalizes camelCase and snake_case feed payload keys', () => {
     const expected = {
       ...emptyFilter(),

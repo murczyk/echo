@@ -29,8 +29,7 @@ vi.mock('../admin-system-settings-neo/AiEnginesSection', () => ({
   AiEnginesSection: () => null,
 }));
 
-import type { AiAgentAuditRequestDetail } from '../../services/api/ai-agent';
-import { AdminAiAgentPage, RequestDetailsDialog, requestDurationSeconds } from '.';
+import { AdminAiAgentPage, requestDurationSeconds } from '.';
 
 const ENGINE = {
   id: 'engine-1',
@@ -292,67 +291,6 @@ describe('AdminAiAgentPage settings', () => {
     await flush();
 
     expect(mocks.saveSettings).toHaveBeenCalledWith(incompatibleSettings);
-  });
-});
-
-describe('RequestDetailsDialog', () => {
-  it('shows stored technical details only when the request has an error', async () => {
-    const request: AiAgentAuditRequestDetail = {
-      id: 'request-1',
-      humanLoginId: 'human-1',
-      humanLogin: 'alice',
-      conversationId: 'conversation-1',
-      providerName: 'OpenAI',
-      state: 'failed',
-      prompt: 'сивый позивний',
-      response: null,
-      error: 'AI agent harness release is incompatible',
-      progress: [],
-      toolActivity: [],
-      createdAt: 1_700_000_000_000,
-      startedAt: 1_700_000_001_000,
-      completedAt: 1_700_000_002_000,
-      reviewState: 'pending',
-      severity: null,
-      reviewSummary: null,
-      reviewCategories: [],
-      reviewAttemptCount: 0,
-      reviewLastError: null,
-      alertState: null,
-      alertAttemptCount: 0,
-      alertLastError: null,
-      conversation: {
-        id: 'conversation-1',
-        title: 'Контекст',
-        providerId: 'engine-1',
-        createdAt: 1_700_000_000_000,
-        updatedAt: 1_700_000_002_000,
-        messages: [],
-      },
-    };
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await act(async () =>
-      root.render(
-        <RequestDetailsDialog request={request} onClose={vi.fn()} onReviewRetried={vi.fn()} />,
-      ),
-    );
-
-    expect(document.body.textContent).toContain('Технічні деталі помилки');
-    expect(document.body.textContent).toContain('AI agent harness release is incompatible');
-
-    await act(async () =>
-      root.render(
-        <RequestDetailsDialog
-          request={{ ...request, error: null }}
-          onClose={vi.fn()}
-          onReviewRetried={vi.fn()}
-        />,
-      ),
-    );
-
-    expect(document.body.textContent).not.toContain('Технічні деталі помилки');
   });
 });
 

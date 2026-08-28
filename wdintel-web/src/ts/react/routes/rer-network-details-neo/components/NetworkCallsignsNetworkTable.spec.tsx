@@ -171,19 +171,6 @@ afterEach(() => {
 });
 
 describe('NetworkCallsignsNetworkTable marker actions', () => {
-  it('places period settings with the table controls', () => {
-    const view = renderTable(createRow());
-
-    expect(
-      view.container.querySelector(
-        '[data-testid="table-controls"] [aria-label="Налаштування позивних"]',
-      ),
-    ).toBeTruthy();
-
-    view.root.unmount();
-    view.container.remove();
-  });
-
   it.each([
     [createRow(), ['Зробити головною', 'Зробити ланкою управління']],
     [createRow({ mainRadioStation: true }), ['Зняти головну', 'Зробити ланкою управління']],

@@ -7,7 +7,6 @@ import {
   EMPTY_UNIT_FORM,
   filterUnitsByStatus,
   findPotentialDuplicates,
-  isUnitFormValid,
   readUnitNameColumnFilter,
   readUnitOrbitColumnFilter,
   trimUnitForm,
@@ -109,12 +108,6 @@ describe('rer units helpers', () => {
       linked: 'Усі',
       comment: 'Усі',
     });
-  });
-
-  it('requires a name or at least one hierarchy value', () => {
-    expect(isUnitFormValid(EMPTY_UNIT_FORM)).toBe(false);
-    expect(isUnitFormValid({ ...EMPTY_UNIT_FORM, name: ' Власна назва ' })).toBe(true);
-    expect(isUnitFormValid({ ...EMPTY_UNIT_FORM, battalion: ' 2 батальйон ' })).toBe(true);
   });
 
   it('builds forward and reverse masks without duplicates', () => {

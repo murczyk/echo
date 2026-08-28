@@ -464,6 +464,7 @@ describe('OcrPreview', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents a stale OCR response from appearing after attachment navigation
   it('discards an OCR response after navigating to another attachment', async () => {
     const oldResponse = deferred<{
       state: string;
@@ -544,6 +545,7 @@ describe('OcrPreview', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents a stale media summary response from appearing after attachment navigation
   it('discards a summary response after navigating to another attachment', async () => {
     const oldResponse = deferred<Record<string, unknown>>();
     getMediaSummary
@@ -646,6 +648,7 @@ describe('OcrPreview', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents the media-summary cache from retaining unbounded least-recently-used entries
   it('evicts the least recently used summary when the cache limit is reached', async () => {
     const requestCount = getMediaSummary.mock.calls.length;
     for (let index = 0; index < MEDIA_SUMMARY_CACHE_LIMIT + 2; index += 1) {

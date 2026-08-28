@@ -37,3 +37,57 @@
 - **Source implementation:** `wdintel-web/src/ts/react/routes/admin-goi-integrations-neo/index.tsx`.
 - **Existing tests:** `index.spec.tsx` dirty dismissal, worker baseline, in-flight check, and overflow-delete safeguards.
 - **Original Echo issue/PR:** https://github.com/echoua/echo/pull/3268.
+
+## Report task polling lifecycle
+
+- **Status:** inferred characterization
+- **Behavior ID:** `admin-report-task-polling-lifecycle`
+- **Affected route/component:** administrative report-details page and polling hook
+- **User role or permission:** administrators allowed to view report history
+- **Preconditions:** a report row references a background task that is still running
+- **User action or external event:** the task emits incremental log lines and then reaches a terminal report status
+- **Expected observable result:** new log lines append once, task progress updates, and polling stops after the report finishes.
+- **Loading/empty/error/success behavior:** transient task-state failures surface through the existing error state; a completed task remains visible without further requests.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** polling retains the background-task ID and incremental log offset.
+- **Responsive and keyboard requirements:** none at the polling boundary.
+- **Known race/idempotency constraints:** completed tasks must not schedule another poll or replay their existing log lines.
+- **Source implementation:** `src/ts/react/routes/admin-report-details/use-admin-report-details.ts`
+- **Existing test(s):** `use-admin-report-details.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as a polling safeguard.
+
+## Report-history download refresh
+
+- **Status:** inferred characterization
+- **Behavior ID:** `settings-report-history-download-refresh`
+- **Affected route/component:** Settings report-history table
+- **User role or permission:** users permitted to download their completed reports
+- **Preconditions:** a completed report file is available in the paginated history
+- **User action or external event:** the user downloads the report file
+- **Expected observable result:** the history reloads so its file/status metadata remains current after the download.
+- **Loading/empty/error/success behavior:** download errors use the existing error path and do not claim a successful refresh.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** download and subsequent history requests preserve their existing route and pagination contract.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** a completed download must not leave a stale batch-history row visible.
+- **Source implementation:** `routes/settings-neo/SettingsMyReportsSection.tsx`
+- **Existing test(s):** `SettingsMyReportsSection.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded.
+
+## Transcription results pagination
+
+- **Status:** operational compatibility
+- **Behavior ID:** `admin-transcription-results-pagination`
+- **Affected route/component:** transcription settings result tab
+- **User role or permission:** administrators permitted to inspect transcription results
+- **Preconditions:** the result tab loads a paginated transcription response
+- **User action or external event:** the user opens results, navigates next/last page, or a load fails
+- **Expected observable result:** result rows retain processing-instance metadata; the server cursor and total drive page navigation; unrelated instance-table filters are excluded; failures surface visibly.
+- **Loading/empty/error/success behavior:** an API failure emits the existing error notification instead of leaving a stale/empty table without explanation.
+- **URL, localStorage, or user-settings persistence:** instance-table state does not leak into the results query.
+- **API endpoint and compatibility requirements:** preserves `rows`, `total`, `next_cursor`, `previous_cursor`, and instance metadata response fields.
+- **Responsive and keyboard requirements:** existing table pagination controls remain accessible.
+- **Known race/idempotency constraints:** each page request uses the cursor returned for the current result set.
+- **Source implementation:** `src/ts/react/routes/admin-transcription-settings/TranscriptionResultsTab.tsx`
+- **Existing test(s):** pagination, filter isolation, and failure cases in `index.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility and query-safety coverage.

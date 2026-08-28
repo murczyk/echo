@@ -367,6 +367,7 @@ describe('networks API v2 frequency mutations', () => {
     postJsonMock.mockReset();
   });
 
+  // @test-scope parser: nested Neo frequency-mutation response payload
   it('posts add-freq v2 to the Neo endpoint and normalizes the nested payload', async () => {
     postJsonMock.mockResolvedValueOnce({
       network: {
@@ -435,6 +436,7 @@ describe('networks API v2 frequency mutations', () => {
     );
   });
 
+  // @test-scope parser: nested Neo frequency-mutation response payload
   it('posts update-freq v2 to the Neo endpoint and normalizes the nested payload', async () => {
     postJsonMock.mockResolvedValueOnce({
       network: {

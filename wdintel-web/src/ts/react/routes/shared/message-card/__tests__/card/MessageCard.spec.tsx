@@ -1317,6 +1317,7 @@ describe('MessageCard', () => {
     ).toBeNull();
   });
 
+  // @test-scope safeguard: prevents the selected forty-line preview limit from hiding or exposing the wrong message rows
   it.each([
     [40, false],
     [41, true],
@@ -1344,6 +1345,7 @@ describe('MessageCard', () => {
     },
   );
 
+  // @test-scope safeguard: prevents the user's Off preview preference from truncating message text
   it('does not truncate message text when preview is off', async () => {
     const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
     const view = await renderCard({
@@ -1358,6 +1360,7 @@ describe('MessageCard', () => {
     ).toBeNull();
   });
 
+  // @test-scope safeguard: prevents an expanded message from retaining stale expansion after its preview limit changes
   it('resets expanded message text when the preview limit changes', async () => {
     const rows = Array.from({ length: 41 }, (_, index) => `Рядок ${index + 1}`);
     const view = await renderCard({

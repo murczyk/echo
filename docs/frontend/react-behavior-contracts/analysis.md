@@ -9,7 +9,7 @@
 - **User role or permission:** users authorized to inspect or mutate the current analysis data
 - **Preconditions:** analysis criteria or message IDs are submitted
 - **User action or external event:** the user searches callsign frequencies, loads messages, submits a message, or records a model/tag action origin
-- **Expected observable result:** normalized analysis criteria and ContentNode variants survive the wire boundary; highlight context and optional action origins are preserved without altering the business request body.
+- **Expected observable result:** normalized analysis criteria and ContentNode variants survive the wire boundary; sender statistics use returned profile names and network statistics hydrate missing unit names for user-facing filter labels; highlight context and optional action origins are preserved without altering the business request body.
 - **Loading/empty/error/success behavior:** absent optional origins retain the legacy-compatible request shape.
 - **URL, localStorage, or user-settings persistence:** analysis route state owns persistence.
 - **API endpoint and compatibility requirements:** callsign lookup and message APIs accept established request fields and normalize supported legacy response fields.

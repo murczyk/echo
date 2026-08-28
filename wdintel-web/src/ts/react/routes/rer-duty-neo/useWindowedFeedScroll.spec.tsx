@@ -1441,6 +1441,7 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(130);
   });
 
+  // @test-scope safeguard: prevents new duty messages from jumping the reader before follow scrolling stabilizes
   it('appends follow-tail items below the fold then eases with rAF after layout stabilizes', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
@@ -1494,6 +1495,7 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(200);
   });
 
+  // @test-scope safeguard: prevents resize work from interrupting an in-progress duty-feed follow animation
   it('keeps resize suppression armed while a throttled follow ease is in progress', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const triggerResize = installResizeObserverMock();
@@ -1543,6 +1545,7 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBeLessThan(180);
   });
 
+  // @test-scope safeguard: prevents a throttled frame rate from leaving the live duty feed permanently behind
   it('finishes the follow ease in wall-clock duration under a throttled frame rate', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
@@ -1580,6 +1583,7 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(150);
   });
 
+  // @test-scope safeguard: prevents watch-off catch-up messages from causing an abrupt duty-feed scroll jump
   it('eases watch-off catch-up appends instead of instant stick + settle', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
@@ -1621,6 +1625,7 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(150);
   });
 
+  // @test-scope safeguard: prevents a queued follow from overriding the reader after they leave the feed bottom
   it('cancels watch-off layout wait when the user leaves the physical bottom', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
@@ -1664,6 +1669,7 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(40);
   });
 
+  // @test-scope safeguard: prevents automated following from overriding an upward reader scroll
   it('cancels the follow ease when the user scrolls upward mid-animation', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const onLeftBottom = vi.fn();
@@ -1713,6 +1719,7 @@ describe('useWindowedFeedScroll', () => {
     expect(scroller.scrollTop).toBe(midEaseTop - 40);
   });
 
+  // @test-scope safeguard: prevents unread state from remaining stale after smooth follow reaches the duty-feed tail
   it('publishes physical-bottom after a smooth follow from above the tail', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const onPhysicalBottomChange = vi.fn();
@@ -1764,6 +1771,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onPhysicalBottomChange).toHaveBeenCalledWith(true);
   });
 
+  // @test-scope safeguard: preserves the live-feed tail for users who prefer reduced motion
   it('pins follow-tail appends after layout stabilizes when reduced motion is preferred', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: true }) as MediaQueryList);
     const ids = [1, 2, 3, 4];
@@ -1852,6 +1860,7 @@ describe('useWindowedFeedScroll', () => {
     expect(onPhysicalBottomChange).toHaveBeenCalledWith(false);
   });
 
+  // @test-scope safeguard: prevents trimming old duty rows from moving the reader away from new messages
   it('compensates start-trim while following so only new rows stay below the fold', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({ matches: false }) as MediaQueryList);
     const initialIds = Array.from({ length: 40 }, (_, index) => index + 1);

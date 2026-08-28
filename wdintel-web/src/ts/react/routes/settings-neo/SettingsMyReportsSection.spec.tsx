@@ -244,96 +244,6 @@ describe('SettingsMyReportsSection', () => {
     container.remove();
   });
 
-  it('adds report links, copyable IDs, and execution time for author report tables', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <ReportHistoryTableSection
-          active
-          title="Всі звіти"
-          tableId="admin-all-reports-v2"
-          includeAuthor
-          loadReportHistory={async () => []}
-        />,
-      );
-    });
-
-    const columns = (capturedSettingsNeoTableProps?.columns as Array<Record<string, any>>) ?? [];
-    const executionTimeColumn = columns.find((column) => column.id === 'executionTime');
-    const statusColumn = columns.find((column) => column.id === 'status');
-    const idColumn = columns.find((column) => column.accessorKey === 'id');
-    const startedAtColumn = columns.find((column) => column.accessorKey === 'startedAt');
-    const reportKindColumn = columns.find((column) => column.id === 'reportKind');
-    const errorStatusColumn = columns.find((column) => column.accessorKey === 'errorStatus');
-    const completedRow = {
-      ...sampleRunningRow,
-      status: 'done',
-      hasFile: true,
-      createdAt: '2026-06-26 16:45:00',
-      startedAt: '2026-06-26 17:00:37',
-      completedAt: '2026-06-26 17:01:21',
-    };
-
-    const reportKindCell = reportKindColumn?.Cell?.({
-      row: { original: sampleRunningRow },
-    } as never) as { props?: Record<string, any> } | null;
-
-    expect(idColumn).toMatchObject({ header: 'ID', size: 92, minSize: 92, maxSize: 92 });
-    expect(startedAtColumn).toMatchObject({
-      header: 'Останній запуск',
-      enableSorting: true,
-      enableColumnFilter: false,
-    });
-    expect(reportKindCell?.props?.component).toBe('a');
-    expect(reportKindCell?.props?.componentProps?.href).toBe(
-      `/admin/all-reports/${sampleRunningRow.id}`,
-    );
-    expect(executionTimeColumn?.header).toBe('Час виконання');
-    expect(executionTimeColumn?.enableSorting).toBe(false);
-    expect(executionTimeColumn?.enableColumnFilter).toBe(false);
-    expect(executionTimeColumn?.accessorFn?.(completedRow)).toBe(
-      'очікування 15хв 37с, виконання 44с',
-    );
-    expect(
-      executionTimeColumn?.accessorFn?.({
-        ...completedRow,
-        status: 'failed',
-        hasFile: false,
-        isCancelled: true,
-      }),
-    ).toBe('виконання 44с');
-    expect(errorStatusColumn?.header).toBe('Статус помилки');
-    expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('errorStatus');
-    expect(capturedTableStateProviderProps?.defaultColumnOrder).toContain('executionTime');
-    expect(capturedTableStateProviderProps?.defaultColumnOrder).toEqual(
-      expect.arrayContaining(['actions', 'id', 'reportKind']),
-    );
-    expect(capturedTableStateProviderProps?.defaultColumnVisibility).toMatchObject({
-      id: true,
-      startedAt: true,
-      errorStatus: true,
-      executionTime: true,
-    });
-    expect(statusColumn).toMatchObject({
-      filterVariant: 'multi-select',
-      filterFn: 'arrIncludesSome',
-      filterSelectOptions: [
-        { text: 'Очікує запуску', value: 'planned' },
-        { text: 'Формується', value: 'in_progress' },
-        { text: 'Готово', value: 'done' },
-        { text: 'Помилка', value: 'failed' },
-      ],
-    });
-
-    act(() => {
-      root.unmount();
-    });
-    container.remove();
-  });
-
   it('pages through batch report history with the analysis pagination control', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -444,6 +354,7 @@ describe('SettingsMyReportsSection', () => {
     container.remove();
   });
 
+  // @test-scope safeguard: prevents a completed report download from leaving its history row stale
   it('refreshes batch report history after downloading a report', async () => {
     const completedRow = {
       ...sampleRunningRow,

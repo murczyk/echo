@@ -110,6 +110,7 @@ describe('MessageCardVideoThumb', () => {
     document.body.innerHTML = '';
   });
 
+  // @test-scope safeguard: prevents video thumbnails from downloading the full media file
   it('fetches only the dedicated thumbnail image', async () => {
     vi.mocked(fetch).mockResolvedValue(thumbnailResponse(200));
     const { container, root } = await renderThumb(buildAttachment());
@@ -128,6 +129,7 @@ describe('MessageCardVideoThumb', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents offscreen video cards from starting unnecessary thumbnail requests
   it('waits until the thumbnail is near the viewport before fetching', async () => {
     let intersectionCallback: IntersectionObserverCallback | undefined;
     const disconnect = vi.fn();
@@ -163,6 +165,7 @@ describe('MessageCardVideoThumb', () => {
     expect(disconnect).toHaveBeenCalledTimes(1);
   });
 
+  // @test-scope safeguard: prevents an offscreen pending video thumbnail from consuming repeated network retries
   it('pauses pending thumbnail polling offscreen and resumes it on re-entry', async () => {
     vi.useFakeTimers();
     let intersectionCallback: IntersectionObserverCallback | undefined;
@@ -211,6 +214,7 @@ describe('MessageCardVideoThumb', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents pending thumbnail polling from ignoring the server retry schedule
   it('retries a pending thumbnail using Retry-After and then displays it', async () => {
     vi.useFakeTimers();
     vi.mocked(fetch)
@@ -238,6 +242,7 @@ describe('MessageCardVideoThumb', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents a long-running thumbnail request from retrying faster than the capped backoff
   it('keeps polling at the capped delay while the thumbnail is pending', async () => {
     vi.useFakeTimers();
     vi.mocked(fetch).mockResolvedValue(thumbnailResponse(202, { 'Retry-After': '2' }));
@@ -276,6 +281,7 @@ describe('MessageCardVideoThumb', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents terminal thumbnail failures from generating endless retries
   it('stops polling after the server reports terminal thumbnail failure', async () => {
     vi.useFakeTimers();
     vi.mocked(fetch).mockResolvedValue(
@@ -295,6 +301,7 @@ describe('MessageCardVideoThumb', () => {
     root.unmount();
   });
 
+  // @test-scope safeguard: prevents unauthorized thumbnail responses from retrying without restoring the session
   it('routes thumbnail 401 responses through the unauthorized handler without retrying', async () => {
     vi.useFakeTimers();
     vi.mocked(fetch).mockResolvedValue(thumbnailResponse(401));

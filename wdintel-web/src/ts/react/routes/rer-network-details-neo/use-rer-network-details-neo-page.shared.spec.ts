@@ -22,16 +22,19 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 
 describe('use-rer-network-details-neo-page.shared date parsing', () => {
+  // @test-scope parser: network-details inclusive UTC date input
   it('parses inclusive start dates at UTC midnight', () => {
     expect(parseNetworkDetailsDateInput('2026-05-20')).toBe(Date.parse('2026-05-20T00:00:00Z'));
   });
 
+  // @test-scope parser: network-details exclusive UTC end-date input
   it('parses exclusive end dates as next-day UTC midnight', () => {
     expect(parseNetworkDetailsDateInputExclusiveEnd('2026-05-20')).toBe(
       Date.parse('2026-05-21T00:00:00Z'),
     );
   });
 
+  // @test-scope parser: network-relations date input in the application timezone
   it('parses relations dates in the app timezone', () => {
     const since = dayjs.tz('2026-05-20', 'YYYY-MM-DD', APP_TIME_ZONE).startOf('day').valueOf();
     const till = since + 24 * 60 * 60 * 1000;

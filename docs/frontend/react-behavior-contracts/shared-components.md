@@ -1,5 +1,23 @@
 # Shared components and browser boundaries
 
+## Application-timezone date-time input
+
+- **Status:** operational compatibility
+- **Behavior ID:** `react-shared-app-timezone-datetime-input`
+- **Affected route/component:** shared React date-time input utility
+- **User role or permission:** any user entering an application date-time
+- **Preconditions:** a date/time field uses the configured application timezone
+- **User action or external event:** the user enters or views a `YYYY-MM-DDTHH:mm` value
+- **Expected observable result:** valid local date-times round-trip through epoch milliseconds in the application timezone; malformed non-ISO separators are rejected.
+- **Loading/empty/error/success behavior:** invalid/out-of-range input resolves to no timestamp.
+- **URL, localStorage, or user-settings persistence:** callers own persistence.
+- **API endpoint and compatibility requirements:** shared date-time values use the app timezone rather than the browser locale.
+- **Responsive and keyboard requirements:** native date/time controls preserve their existing keyboard behavior.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `utils/misc.ts`
+- **Existing test(s):** `utils/misc.spec.ts`
+- **Original Echo issue/PR, if known:** none recorded.
+
 ## Snackbar exit ordering
 
 - **Status:** inferred characterization

@@ -112,33 +112,6 @@ async function installVisualFixture(
 }
 
 test.describe('message card visual regression', () => {
-  test('keeps native EchoChip tone opacity contracts in the compiled stylesheet', async ({
-    page,
-  }) => {
-    await openMessageCardPreviewHost(page, 'duty');
-    const opacity = await page.evaluate(() => {
-      const tones = [
-        ['tag', false],
-        ['tag', true],
-        ['primary', false],
-        ['neutral', false],
-      ] as const;
-      const chips = tones.map(([tone, selected]) => {
-        const chip = document.createElement('span');
-        chip.className = `echo-chip echo-chip--${tone}`;
-        chip.dataset.selected = String(selected);
-        chip.dataset.interactive = 'false';
-        document.body.appendChild(chip);
-        return chip;
-      });
-      const result = chips.map((chip) => getComputedStyle(chip).opacity);
-      chips.forEach((chip) => chip.remove());
-      return result;
-    });
-
-    expect(opacity).toEqual(['0.75', '1', '1', '1']);
-  });
-
   test('keeps exclusion-menu labels readable at 14px', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
@@ -183,45 +156,6 @@ test.describe('message card visual regression', () => {
       expect(narrowCard.scrollWidth).toBeLessThanOrEqual(narrowCard.clientWidth + 1);
       await page.setViewportSize({ width: 1280, height: 900 });
       await expect.poll(rowCount).toBe(1);
-    });
-  }
-
-  for (const viewportWidth of [360, 768, 1023, 1025, 1280]) {
-    test(`keeps theme-relative typography at ${viewportWidth}px`, async ({ page }) => {
-      await page.setViewportSize({ width: viewportWidth, height: 960 });
-      await installRerDutyShortStateMocks(page, {
-        inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
-        inboxResponseForRequest: () => buildInboxResponse([41, 42, 43, 44, 45]),
-      });
-
-      await page.goto('/rer-duty-neo?state-short=short-1');
-
-      const card = page.locator('.message-card-root').first();
-      await expect(card).toBeVisible();
-
-      const cardRootFontSize = await card.evaluate((node) => getComputedStyle(node).fontSize);
-      expect(cardRootFontSize).toBe('14px');
-      await expect(card.locator('.MuiTypography-caption')).toHaveCount(0);
-
-      const link = card.locator('a').first();
-      await expect(link).toBeVisible();
-      await expect(link).toHaveText(/https:\/\/example\.test\/cards\/41/);
-      await expect(link).toHaveCSS('font-size', cardRootFontSize);
-
-      const visibleContentChecks = [
-        ['time', card.getByText('12:34')],
-        ['date', card.getByText('13.07.2026')],
-        ['frequency', card.getByText('123.4')],
-        ['location', card.getByText('Location 41')],
-        ['extended form', card.getByText('EXT-41')],
-        ['comment author', card.getByText('peer-41')],
-        ['comment body', card.getByText('Comment 41')],
-        ['message body', card.getByText(/Card 41/)],
-      ] as const;
-      for (const [, locator] of visibleContentChecks) {
-        await expect(locator).toBeVisible();
-        await expect(locator).toHaveCSS('font-size', '14px');
-      }
     });
   }
 

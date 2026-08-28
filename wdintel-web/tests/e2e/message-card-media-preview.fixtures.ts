@@ -45,6 +45,20 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
     text: 'E2E message-card media preview fixture',
     media: [
       {
+        id: 'e2e-image-1',
+        content_type: 'image/png',
+        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
+        size_bytes: 512,
+        href: image1,
+      },
+      {
+        id: 'e2e-image-2',
+        content_type: 'image/png',
+        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2,
+        size_bytes: 768,
+        href: image2,
+      },
+      {
         id: 'e2e-video-1',
         content_type: 'video/mp4',
         file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1,
@@ -192,6 +206,10 @@ export async function openMessageCardPreviewHost(
   await expect(
     page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown }),
   ).toBeVisible();
+  const mediaReveal = page.getByRole('button', { name: /^Показати 2 фото · 2 відео$/ });
+  if (await mediaReveal.count()) {
+    await mediaReveal.click();
+  }
   await expect(page.getByRole('button', { name: 'Відкрити зображення' })).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Відкрити відео' })).toHaveCount(2);
 }

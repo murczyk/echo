@@ -31,7 +31,7 @@
 - **Expected observable result:** AOR and hierarchy filters preserve classic-compatible request semantics; unsupported restored column filters are removed; status/labels/colors derive from one canonical state; frequency grouping and activity bars retain correct active/inactive and date-range meaning.
 - **Loading/empty/error/success behavior:** absent/invalid filters resolve to supported default behavior rather than malformed requests.
 - **URL, localStorage, or user-settings persistence:** restored table filters are normalized before use.
-- **API endpoint and compatibility requirements:** request fields map to the established backend flags, sorting variants, and unpaged report/count semantics.
+- **API endpoint and compatibility requirements:** request fields map to the established backend flags, sorting variants, and unpaged report/count semantics; network-details dates accept `YYYY-MM-DD`, with UTC inclusive starts, UTC next-day exclusive ends, and relations dates interpreted in the application timezone.
 - **Responsive and keyboard requirements:** none at the helper boundary.
 - **Known race/idempotency constraints:** stale restored column state cannot introduce unknown filter identifiers.
 - **Source implementation:** `routes/rer-networks-neo/helpers.ts`

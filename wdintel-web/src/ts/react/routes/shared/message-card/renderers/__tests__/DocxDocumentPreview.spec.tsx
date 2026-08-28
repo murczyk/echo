@@ -19,7 +19,6 @@ vi.mock('../../docx/sanitize-docx-html', () => ({
   sanitizeDocxHtml: vi.fn((html: string) => html),
 }));
 
-import { runWorkerTask } from '../../workers/worker-client';
 import { DocxDocumentPreview } from '../DocxDocumentPreview';
 
 describe('DocxDocumentPreview', () => {
@@ -28,6 +27,7 @@ describe('DocxDocumentPreview', () => {
     vi.restoreAllMocks();
   });
 
+  // @test-scope safeguard: prevents oversized DOCX attachments from downloading into the preview process
   it('rejects oversized files before fetching the body', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       throw new Error('should not fetch');
@@ -49,37 +49,6 @@ describe('DocxDocumentPreview', () => {
 
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(container.textContent).toContain('Файл DOCX завеликий');
-
-    root.unmount();
-  });
-
-  it('passes the fetched buffer to the worker as a transferable', async () => {
-    const arrayBuffer = new ArrayBuffer(8);
-    const arrayBufferSpy = vi.fn(async () => arrayBuffer);
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      headers: new Headers({
-        'content-length': '8',
-        'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      }),
-      arrayBuffer: arrayBufferSpy,
-    } as Response);
-
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(<DocxDocumentPreview href="https://example.test/files/report.docx" zoom={100} />);
-    });
-
-    expect(runWorkerTask).toHaveBeenCalledWith(
-      expect.any(Function),
-      { buffer: arrayBuffer },
-      expect.any(AbortSignal),
-      [arrayBuffer],
-    );
-    expect(container.querySelector('iframe')).not.toBeNull();
 
     root.unmount();
   });

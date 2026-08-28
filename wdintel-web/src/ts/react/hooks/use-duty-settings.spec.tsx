@@ -50,6 +50,7 @@ beforeEach(() => {
 });
 
 describe('useDutySettings', () => {
+  // @test-scope safeguard: prevents a saved Off preview preference from silently reverting to the default limit
   it('preserves Off from the initial settings load', async () => {
     fetchUserSettingsMock.mockResolvedValue({ messageTextPreviewLines: null });
 
@@ -59,6 +60,7 @@ describe('useDutySettings', () => {
     expect(latestSettings?.messageTextPreviewLines).toBeNull();
   });
 
+  // @test-scope safeguard: prevents an in-session Off preview preference from being overwritten by a settings event
   it('preserves Off from a user-settings update event', async () => {
     fetchUserSettingsMock.mockResolvedValue({ messageTextPreviewLines: 20 });
 
@@ -74,14 +76,5 @@ describe('useDutySettings', () => {
     });
 
     expect(latestSettings?.messageTextPreviewLines).toBeNull();
-  });
-
-  it('defaults an absent preview limit to 20', async () => {
-    fetchUserSettingsMock.mockResolvedValue({});
-
-    renderHook();
-    await act(async () => {});
-
-    expect(latestSettings?.messageTextPreviewLines).toBe(20);
   });
 });

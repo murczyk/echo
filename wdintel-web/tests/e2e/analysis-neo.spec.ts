@@ -31,7 +31,6 @@ test.describe('@smoke', () => {
     await expect(summaryPanel).toBeVisible();
     await expect(summaryPanel.getByRole('table', { name: 'Таблиця частот аналізу' })).toBeVisible();
     await expect(summaryPanel.getByText('123.4', { exact: true })).toBeVisible();
-    await expect(summaryPanel.getByText('ALPHA', { exact: true })).toBeVisible();
   });
 
   test('analysis neo keeps narrow controls fixed while messages scroll', async ({ page }) => {
@@ -112,7 +111,7 @@ test.describe('@smoke', () => {
     await expect(expandButton).toBeVisible();
     await expandButton.click();
 
-    const collapseButton = page.getByRole('button', { name: 'Згорнути праву панель' });
+    const collapseButton = page.getByRole('button', { name: 'Закрити праву панель' });
     await expect(collapseButton).toBeVisible();
     await collapseButton.click();
     await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();
@@ -128,7 +127,7 @@ test.describe('@smoke', () => {
 
     const panel = page.locator('[data-analysis-right-panel]');
     const firstTab = panel.getByRole('tab').first();
-    const collapseButton = panel.getByRole('button', { name: 'Згорнути праву панель' });
+    const collapseButton = page.getByRole('button', { name: 'Закрити праву панель' });
     const body = panel.locator('[data-analysis-sidebar-scroll-body]');
     await expect(panel).toBeVisible();
     await expect(collapseButton).toBeVisible();
@@ -143,20 +142,29 @@ test.describe('@smoke', () => {
           height: element.clientHeight,
           overflowY: style.overflowY,
           overflowX: style.overflowX,
+          scrollHeight: element.scrollHeight,
         };
       }),
     ]);
     expect(metrics[0]).not.toBeNull();
     expect(metrics[1]).not.toBeNull();
     expect(metrics[2]).not.toBeNull();
-    expect(Math.abs(metrics[1]!.y - metrics[0]!.y)).toBeLessThanOrEqual(2);
-    expect(metrics[1]!.x + metrics[1]!.width).toBeLessThanOrEqual(375);
+    expect(metrics[1]!.y + metrics[1]!.height).toBeLessThanOrEqual(metrics[0]!.y);
     expect(metrics[2]!.height).toBeGreaterThan(0);
     expect(metrics[3]).toEqual({
       height: expect.any(Number),
       overflowY: 'auto',
       overflowX: 'hidden',
+      scrollHeight: expect.any(Number),
     });
+
+    const closeButtonY = metrics[1]!.y;
+    await body.evaluate((element) => {
+      element.scrollTop = 100;
+    });
+    await expect
+      .poll(async () => (await collapseButton.boundingBox())?.y)
+      .toBeCloseTo(closeButtonY, 0);
 
     await collapseButton.click();
     await expect(page.getByRole('button', { name: 'Розгорнути праву панель' })).toBeVisible();

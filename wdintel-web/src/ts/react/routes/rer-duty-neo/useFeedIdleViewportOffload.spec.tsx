@@ -147,6 +147,7 @@ describe('useFeedIdleViewportOffload', () => {
     expect(latest.hasPlaceholderHeight).toBe(true);
   });
 
+  // @test-scope safeguard: prevents follow scrolling from leaving the visible duty cards unmounted
   it('refreshes mounted ids on programmatic scroll without waking', async () => {
     await act(async () => {
       root.render(
