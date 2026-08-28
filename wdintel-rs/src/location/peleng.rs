@@ -7,6 +7,7 @@ use chrono::NaiveDateTime;
 use milgeo_rs::coordinates::Coords;
 use sea_orm::{prelude::Expr, sea_query::SimpleExpr, *};
 use std::collections::BTreeMap;
+use uuid::Uuid;
 
 pub async fn delete_inbox_pelengs<'a, 'async_trait, C>(
     inbox_item_id: i64,
@@ -84,6 +85,7 @@ where
 pub async fn insert_pelengs<'a, 'async_trait, C>(
     coords: Vec<Coords>,
     inbox_item_id: i64,
+    source_inbox_item_uuid: Option<Uuid>,
     ts: NaiveDateTime,
     pelengation_object: Option<String>,
     txn: &'a C,
@@ -92,11 +94,16 @@ where
     C: ConnectionTrait + 'async_trait,
 {
     let coords = filter_allowed_peleng_coords(coords, txn).await.c(h!())?;
+    if coords.is_empty() {
+        return Ok(());
+    }
 
+    let mut peleng_ids = Vec::with_capacity(coords.len());
     for coord in coords {
-        sigint_peleng::ActiveModel {
+        let peleng = sigint_peleng::ActiveModel {
             id: NotSet,
             source_inbox_item_id: Set(inbox_item_id),
+            source_inbox_item_uuid: Set(source_inbox_item_uuid),
             lat: Set(coord.lat),
             lng: Set(coord.lng),
             settlement: NotSet,
@@ -107,11 +114,19 @@ where
             deleted: NotSet,
             created_at: Set(ts),
             updated_at: NotSet,
+            battle_line_distance: NotSet,
         }
         .insert(txn)
         .await
         .c(h!())?;
+        peleng_ids.push(peleng.id);
     }
+    crate::battle_line::peleng_distance::fill_new_peleng_distances(
+        txn,
+        &peleng_ids,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 

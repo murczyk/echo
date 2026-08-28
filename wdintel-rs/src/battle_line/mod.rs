@@ -33,6 +33,7 @@ use std::sync::{Arc, RwLock};
 
 pub mod cleanup;
 pub mod oneoff;
+pub mod peleng_distance;
 pub mod settlement_queue;
 pub mod types;
 
@@ -3370,8 +3371,7 @@ where aor_id = $1
 
     #[tokio::test]
     #[serial_test::serial]
-    async fn delta_force_always_imports_new_version_and_keeps_settlement_results(
-    ) {
+    async fn delta_force_import_keeps_peleng_distances_and_settlements() {
         let config =
             crate::config::read_config(crate::types::Mode::Test).unwrap();
         let dbx = crate::new_pg_pool_from_config(&config).await.unwrap();
@@ -3440,15 +3440,26 @@ where id = $1
         .await
         .unwrap();
         let item_id = signal_message.id;
-        sigint_inbox_item::ActiveModel {
+        let inbox_item = sigint_inbox_item::ActiveModel {
             id: Set(item_id),
             ..Default::default()
         }
         .insert(&txn)
         .await
         .unwrap();
+        let peleng = crate::functest::tests::mk_sigint_peleng(
+            &txn,
+            sigint_peleng::ActiveModel {
+                source_inbox_item_id: Set(item_id),
+                battle_line_distance: Set(Some(7)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         let settlement_link = sigint_inbox_item_settlement::ActiveModel {
             id: NotSet,
+            item_uuid: Set(inbox_item.id_uuid),
             created_at: NotSet,
             item_id: Set(item_id),
             settlement_text: Set(format!("test-{}", uuid::Uuid::now_v7())),
@@ -3490,6 +3501,15 @@ where id = $1
         assert_eq!(
             active_battle_line_id(&txn).await.unwrap(),
             Some(version_id)
+        );
+        assert_eq!(
+            sigint_peleng::Entity::find_by_id(peleng.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap()
+                .battle_line_distance,
+            Some(7)
         );
         assert!(battle_line_version::Entity::find_by_id(initial_version_id)
             .one(&txn)

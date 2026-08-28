@@ -1217,6 +1217,7 @@ mod tests {
         signal_message_group::Model {
             id,
             signal_message_id,
+            signal_message_uuid: Some(uuid::Uuid::now_v7()),
             group_master_key: Some(group_master_key.to_string()),
             sender: None,
             login_id: None,

@@ -1228,6 +1228,11 @@ view user model shared route =
                             , attribute "messages" (Encode.encode 0 encodedMessagesAndUnits)
                             , attribute "messages-loading" (Encode.encode 0 (Encode.bool (model.mapOpenMessages == Loading)))
                             , attribute "messages-load-serial" (String.fromInt model.mapOpenMessagesRequestId)
+                            , attribute "show-peleng-distance-to-battleline"
+                                (shared.systemSettings
+                                    |> Maybe.map (.showPelengDistanceToBattleline >> Encode.bool >> Encode.encode 0)
+                                    |> Maybe.withDefault "false"
+                                )
                             , attribute "selected-units" (Encode.encode 0 encodedSelectedUnits)
                             , attribute "palitras" (Encode.encode 0 encodedPalitras)
                             , attribute "palitras-loaded" (Encode.encode 0 (Encode.bool palitrasLoaded))

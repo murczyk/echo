@@ -115,6 +115,7 @@ pub async fn run_process_coords_locations_worker(
                 crate::battle_line::settlement_queue::reconcile_item_locations(
                     &txn,
                     inbox_item.id,
+                    inbox_item.id_uuid,
                     location_v2.as_deref(),
                 )
                 .await

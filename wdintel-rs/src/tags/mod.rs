@@ -419,6 +419,7 @@ async fn inbox_message_tags_add(
     } else {
         attached_tag = sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(inbox.id),
+            sigint_inbox_item_uuid: Set(inbox.id_uuid),
             tag_id: Set(req.tag_id),
             login_id: Set(Some(user_id)),
             model: Set(None),
@@ -613,6 +614,7 @@ async fn inbox_message_tags_model_error(
         );
         error_records.push(sigint_inbox_tag_model_error::ActiveModel {
             sigint_inbox_item_id: Set(tag.sigint_inbox_item_id),
+            sigint_inbox_item_uuid: Set(tag.sigint_inbox_item_uuid),
             tag_id: Set(tag.tag_id),
             model: Set(model_name),
             model_login_id: Set(tag.login_id),

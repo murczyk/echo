@@ -909,6 +909,7 @@ type alias ReportHistoryRow =
     , reportPeriod : Maybe (String)
     , progress : Int
     , errorLog : Maybe (List (ReportHistoryLogEntry))
+    , downloadAttempts : List (ReportDownloadHistoryEntry)
     }
 
 
@@ -938,6 +939,7 @@ reportHistoryRowEncoder struct =
         , ( "report_period", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.reportPeriod )
         , ( "progress", (Json.Encode.int) struct.progress )
         , ( "error_log", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (reportHistoryLogEntryEncoder))) struct.errorLog )
+        , ( "download_attempts", (Json.Encode.list (reportDownloadHistoryEntryEncoder)) struct.downloadAttempts )
         ]
 
 
@@ -954,6 +956,24 @@ reportHistoryLogEntryEncoder struct =
         [ ( "login", (Json.Encode.string) struct.login )
         , ( "timestamp", (Json.Encode.string) struct.timestamp )
         , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias ReportDownloadHistoryEntry =
+    { login : String
+    , requestedAt : String
+    , durationMs : Maybe (Int)
+    , successful : Maybe (Bool)
+    }
+
+
+reportDownloadHistoryEntryEncoder : ReportDownloadHistoryEntry -> Json.Encode.Value
+reportDownloadHistoryEntryEncoder struct =
+    Json.Encode.object
+        [ ( "login", (Json.Encode.string) struct.login )
+        , ( "requested_at", (Json.Encode.string) struct.requestedAt )
+        , ( "duration_ms", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.durationMs )
+        , ( "successful", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.successful )
         ]
 
 
@@ -2995,6 +3015,7 @@ type alias FreqDetailedPoint =
     , mgrsCoords : String
     , sk42Coords : String
     , freq : Maybe (String)
+    , battleLineDistance : Maybe (Int)
     }
 
 
@@ -3009,6 +3030,7 @@ freqDetailedPointEncoder struct =
         , ( "mgrs_coords", (Json.Encode.string) struct.mgrsCoords )
         , ( "sk42_coords", (Json.Encode.string) struct.sk42Coords )
         , ( "freq", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.freq )
+        , ( "battle_line_distance", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.battleLineDistance )
         ]
 
 
@@ -11707,6 +11729,7 @@ type alias SystemSettingsCurrentRsp =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , showPelengDistanceToBattleline : Bool
     , hideOrbitData : Bool
     }
 
@@ -11740,6 +11763,7 @@ systemSettingsCurrentRspEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         , ( "hide_orbit_data", (Json.Encode.bool) struct.hideOrbitData )
         ]
 
@@ -11776,6 +11800,7 @@ type alias SystemSettingsItem =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , showPelengDistanceToBattleline : Bool
     }
 
 
@@ -11813,6 +11838,7 @@ systemSettingsItemEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         ]
 
 
@@ -11855,6 +11881,7 @@ type alias CreateSystemSettingsReq =
     , enableAudioTranscription : Bool
     , showClassicDuty : Bool
     , showClassicAnalysis : Bool
+    , showPelengDistanceToBattleline : Bool
     }
 
 
@@ -11887,6 +11914,7 @@ createSystemSettingsReqEncoder struct =
         , ( "enable_audio_transcription", (Json.Encode.bool) struct.enableAudioTranscription )
         , ( "show_classic_duty", (Json.Encode.bool) struct.showClassicDuty )
         , ( "show_classic_analysis", (Json.Encode.bool) struct.showClassicAnalysis )
+        , ( "show_peleng_distance_to_battleline", (Json.Encode.bool) struct.showPelengDistanceToBattleline )
         ]
 
 
@@ -12446,6 +12474,26 @@ aiAgentRequestCancelRspEncoder struct =
         ]
 
 
+type alias AiAgentProviderRuntimeProfileItem =
+    { aiEngineId : String
+    , contextWindowTokens : Int
+    , maxOutputTokens : Int
+    , compactionReserveTokens : Int
+    , compactionKeepRecentTokens : Int
+    }
+
+
+aiAgentProviderRuntimeProfileItemEncoder : AiAgentProviderRuntimeProfileItem -> Json.Encode.Value
+aiAgentProviderRuntimeProfileItemEncoder struct =
+    Json.Encode.object
+        [ ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "contextWindowTokens", (Json.Encode.int) struct.contextWindowTokens )
+        , ( "maxOutputTokens", (Json.Encode.int) struct.maxOutputTokens )
+        , ( "compactionReserveTokens", (Json.Encode.int) struct.compactionReserveTokens )
+        , ( "compactionKeepRecentTokens", (Json.Encode.int) struct.compactionKeepRecentTokens )
+        ]
+
+
 type alias AiAgentAdminSettingsItem =
     { featureEnabled : Bool
     , templateLoginId : String
@@ -12455,6 +12503,7 @@ type alias AiAgentAdminSettingsItem =
     , mattermostChatEnabled : Bool
     , hasMattermostWebhook : Bool
     , allowedAiEngineIds : List (String)
+    , providerRuntimeProfiles : List (AiAgentProviderRuntimeProfileItem)
     }
 
 
@@ -12469,6 +12518,7 @@ aiAgentAdminSettingsItemEncoder struct =
         , ( "mattermostChatEnabled", (Json.Encode.bool) struct.mattermostChatEnabled )
         , ( "hasMattermostWebhook", (Json.Encode.bool) struct.hasMattermostWebhook )
         , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
+        , ( "providerRuntimeProfiles", (Json.Encode.list (aiAgentProviderRuntimeProfileItemEncoder)) struct.providerRuntimeProfiles )
         ]
 
 
@@ -12482,6 +12532,7 @@ type alias AiAgentAdminSettingsUpdateReq =
     , mattermostWebhookUrl : Maybe (String)
     , clearMattermostWebhook : Bool
     , allowedAiEngineIds : List (String)
+    , providerRuntimeProfiles : List (AiAgentProviderRuntimeProfileItem)
     }
 
 
@@ -12497,6 +12548,7 @@ aiAgentAdminSettingsUpdateReqEncoder struct =
         , ( "mattermostWebhookUrl", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.mattermostWebhookUrl )
         , ( "clearMattermostWebhook", (Json.Encode.bool) struct.clearMattermostWebhook )
         , ( "allowedAiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.allowedAiEngineIds )
+        , ( "providerRuntimeProfiles", (Json.Encode.list (aiAgentProviderRuntimeProfileItemEncoder)) struct.providerRuntimeProfiles )
         ]
 
 
@@ -15798,6 +15850,7 @@ freqDetailedPointDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mgrs_coords" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "sk42_coords" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "freq" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "battle_line_distance" (Json.Decode.nullable (Json.Decode.int))))
 
 
 mapPointsReqDecoder : Json.Decode.Decoder MapPointsReq
@@ -21501,6 +21554,7 @@ systemSettingsCurrentRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hide_orbit_data" (Json.Decode.bool)))
 
 
@@ -21538,6 +21592,7 @@ systemSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
 
 
 systemSettingsListRspDecoder : Json.Decode.Decoder SystemSettingsListRsp
@@ -21575,6 +21630,7 @@ createSystemSettingsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enable_audio_transcription" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_duty" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_classic_analysis" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "show_peleng_distance_to_battleline" (Json.Decode.bool)))
 
 
 activateSystemSettingsReqDecoder : Json.Decode.Decoder ActivateSystemSettingsReq
@@ -21855,6 +21911,16 @@ aiAgentRequestCancelRspDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "state" (Json.Decode.string)))
 
 
+aiAgentProviderRuntimeProfileItemDecoder : Json.Decode.Decoder AiAgentProviderRuntimeProfileItem
+aiAgentProviderRuntimeProfileItemDecoder =
+    Json.Decode.succeed AiAgentProviderRuntimeProfileItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "contextWindowTokens" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "maxOutputTokens" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "compactionReserveTokens" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "compactionKeepRecentTokens" (Json.Decode.int)))
+
+
 aiAgentAdminSettingsItemDecoder : Json.Decode.Decoder AiAgentAdminSettingsItem
 aiAgentAdminSettingsItemDecoder =
     Json.Decode.succeed AiAgentAdminSettingsItem
@@ -21866,6 +21932,7 @@ aiAgentAdminSettingsItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostChatEnabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "hasMattermostWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providerRuntimeProfiles" (Json.Decode.list (aiAgentProviderRuntimeProfileItemDecoder))))
 
 
 aiAgentAdminSettingsUpdateReqDecoder : Json.Decode.Decoder AiAgentAdminSettingsUpdateReq
@@ -21880,6 +21947,7 @@ aiAgentAdminSettingsUpdateReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "mattermostWebhookUrl" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clearMattermostWebhook" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "allowedAiEngineIds" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "providerRuntimeProfiles" (Json.Decode.list (aiAgentProviderRuntimeProfileItemDecoder))))
 
 
 aiAgentDispatcherItemDecoder : Json.Decode.Decoder AiAgentDispatcherItem

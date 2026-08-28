@@ -14,6 +14,7 @@ pub struct Model {
     pub deleted: bool,
     pub is_bad_data: bool,
     pub inbox_item_id: i64,
+    pub inbox_item_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text")]
     pub unit_txt: String,
     pub deleted_at: Option<DateTime>,

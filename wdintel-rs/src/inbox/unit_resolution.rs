@@ -539,12 +539,13 @@ where
 async fn upsert_failure<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_txt: &str,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    upsert_failure_inner(db, inbox_item_id, unit_txt, None)
+    upsert_failure_inner(db, inbox_item_id, inbox_item_uuid, unit_txt, None)
         .await
         .context(h!())
 }
@@ -552,20 +553,28 @@ where
 async fn upsert_failure_cached<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_txt: &str,
     cache: &mut FailureMetadataCache,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    upsert_failure_inner(db, inbox_item_id, unit_txt, Some(cache))
-        .await
-        .context(h!())
+    upsert_failure_inner(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        unit_txt,
+        Some(cache),
+    )
+    .await
+    .context(h!())
 }
 
 async fn upsert_failure_inner<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_txt: &str,
     cache: Option<&mut FailureMetadataCache>,
 ) -> anyhow::Result<()>
@@ -617,6 +626,7 @@ where
     }
     failed_inbox_unit::Entity::insert(failed_inbox_unit::ActiveModel {
             id: NotSet,
+            inbox_item_uuid: Set(inbox_item_uuid),
             created_at: NotSet,
             deleted: Set(false),
             is_bad_data: Set(is_bad_data),
@@ -648,6 +658,7 @@ where
 async fn replace_parsed_unit_links<C>(
     db: &C,
     inbox_item_id: i64,
+    item_uuid: Option<Uuid>,
     sigint_unit_ids: &[i64],
 ) -> anyhow::Result<()>
 where
@@ -662,7 +673,6 @@ where
         .exec(db)
         .await
         .context(h!())?;
-
     let unit_links = sigint_unit_ids
         .iter()
         .copied()
@@ -670,6 +680,7 @@ where
         .into_iter()
         .map(|sigint_unit_id| sigint_inbox_item_unit::ActiveModel {
             id: NotSet,
+            item_uuid: Set(item_uuid),
             created_at: NotSet,
             item_id: Set(inbox_item_id),
             unit_id: Set(sigint_unit_id),
@@ -789,10 +800,30 @@ async fn insert_network_unit_links<C>(
 where
     C: ConnectionTrait,
 {
+    let unit_links = unit_links.into_iter().collect::<Vec<_>>();
+    let item_uuids = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::IdUuid)
+        .filter(
+            sigint_inbox_item::Column::Id.eq_any(
+                unit_links
+                    .iter()
+                    .map(|(item_id, _)| *item_id)
+                    .collect::<Vec<_>>(),
+            ),
+        )
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
     let unit_links = unit_links
         .into_iter()
         .map(|(item_id, unit_id)| sigint_inbox_item_unit::ActiveModel {
             id: NotSet,
+            item_uuid: Set(item_uuids.get(&item_id).copied().flatten()),
             created_at: NotSet,
             item_id: Set(item_id),
             unit_id: Set(unit_id),
@@ -871,6 +902,7 @@ where
 pub(crate) async fn resolve_and_sync_inbox_item<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_v2: Option<&str>,
     unit: Option<&str>,
 ) -> anyhow::Result<Option<i64>>
@@ -880,14 +912,21 @@ where
     let resolved_unit_texts = resolve_unit_text_candidates(db, unit_v2, unit)
         .await
         .context(h!())?;
-    sync_resolved_inbox_item(db, inbox_item_id, resolved_unit_texts, None)
-        .await
-        .context(h!())
+    sync_resolved_inbox_item(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        resolved_unit_texts,
+        None,
+    )
+    .await
+    .context(h!())
 }
 
 async fn resolve_and_sync_inbox_item_cached<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_v2: Option<&str>,
     unit: Option<&str>,
     cache: &mut InboxUnitBackfillCache,
@@ -902,6 +941,7 @@ where
     sync_resolved_inbox_item(
         db,
         inbox_item_id,
+        inbox_item_uuid,
         resolved_unit_texts,
         Some(&mut cache.failure_metadata),
     )
@@ -912,6 +952,7 @@ where
 async fn sync_resolved_inbox_item<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     resolved_unit_texts: Vec<UnitTextResolution>,
     mut failure_metadata_cache: Option<&mut FailureMetadataCache>,
 ) -> anyhow::Result<Option<i64>>
@@ -922,9 +963,14 @@ where
         .iter()
         .filter_map(|resolution| resolution.sigint_unit_id)
         .collect_vec();
-    replace_parsed_unit_links(db, inbox_item_id, &sigint_unit_ids)
-        .await
-        .context(h!())?;
+    replace_parsed_unit_links(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        &sigint_unit_ids,
+    )
+    .await
+    .context(h!())?;
 
     if resolved_unit_texts.is_empty() {
         failed_inbox_unit::Entity::delete_many()
@@ -942,15 +988,21 @@ where
                     upsert_failure_cached(
                         db,
                         inbox_item_id,
+                        inbox_item_uuid,
                         &resolution.text,
                         cache,
                     )
                     .await
                     .context(h!())?;
                 } else {
-                    upsert_failure(db, inbox_item_id, &resolution.text)
-                        .await
-                        .context(h!())?;
+                    upsert_failure(
+                        db,
+                        inbox_item_id,
+                        inbox_item_uuid,
+                        &resolution.text,
+                    )
+                    .await
+                    .context(h!())?;
                 }
             }
         }
@@ -1019,6 +1071,7 @@ where
             resolve_and_sync_inbox_item(
                 db,
                 item.id,
+                item.id_uuid,
                 item.unit_v2.as_deref(),
                 item.unit.as_deref(),
             )
@@ -1049,6 +1102,7 @@ where
     resolve_and_sync_inbox_item(
         db,
         inbox_item.id,
+        inbox_item.id_uuid,
         inbox_item.unit_v2.as_deref(),
         inbox_item.unit.as_deref(),
     )
@@ -1173,6 +1227,7 @@ pub(crate) async fn backfill_inbox_unit_links(
             resolve_and_sync_inbox_item_cached(
                 &transaction,
                 item.id,
+                item.id_uuid,
                 item.unit_v2.as_deref(),
                 item.unit.as_deref(),
                 &mut cache,
@@ -1574,6 +1629,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1610,10 +1666,11 @@ mod tests {
         let label = format!("concurrent-missing-{}", Uuid::new_v4());
         let item = insert_inbox_item(&env.dbx, Some(&label), None, None).await;
 
-        let results = futures::future::join_all(
-            (0..8).map(|_| upsert_failure(&env.dbx, item.id, &label)),
-        )
-        .await;
+        let results =
+            futures::future::join_all((0..8).map(|_| {
+                upsert_failure(&env.dbx, item.id, item.id_uuid, &label)
+            }))
+            .await;
         for result in results {
             result.unwrap();
         }
@@ -1662,6 +1719,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1714,6 +1772,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1759,6 +1818,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1793,6 +1853,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             first.id,
+            first.id_uuid,
             first.unit_v2.as_deref(),
             None,
         )
@@ -1812,6 +1873,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             first.id,
+            first.id_uuid,
             first.unit_v2.as_deref(),
             None,
         )
@@ -1822,6 +1884,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             second.id,
+            second.id_uuid,
             second.unit_v2.as_deref(),
             None,
         )
@@ -2022,6 +2085,7 @@ mod tests {
                 resolve_and_sync_inbox_item(
                     &env.dbx,
                     inbox_item.id,
+                    inbox_item.id_uuid,
                     None,
                     inbox_item.unit.as_deref(),
                 )
@@ -2058,6 +2122,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             raw_marker.id,
+            raw_marker.id_uuid,
             None,
             raw_marker.unit.as_deref(),
         )
@@ -2080,6 +2145,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             parsed_unit.id,
+            parsed_unit.id_uuid,
             parsed_unit.unit_v2.as_deref(),
             None,
         )
@@ -2107,6 +2173,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             first.id,
+            first.id_uuid,
             None,
             first.unit.as_deref(),
         )
@@ -2125,6 +2192,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             second.id,
+            second.id_uuid,
             None,
             second.unit.as_deref(),
         )
@@ -2450,6 +2518,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             successful.id,
+            successful.id_uuid,
             successful.unit_v2.as_deref(),
             None,
         )
@@ -2476,6 +2545,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             unresolved.id,
+            unresolved.id_uuid,
             unresolved.unit_v2.as_deref(),
             None,
         )
@@ -2492,6 +2562,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             stale.id,
+            stale.id_uuid,
             stale.unit_v2.as_deref(),
             None,
         )

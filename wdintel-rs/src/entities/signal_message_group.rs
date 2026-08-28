@@ -11,6 +11,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub signal_message_id: i64,
+    pub signal_message_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub group_master_key: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]

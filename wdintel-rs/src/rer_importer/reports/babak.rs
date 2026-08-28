@@ -2337,6 +2337,7 @@ mod tests {
         crate::inbox::callsigns::sync(
             &env.dbx,
             inbox_item.id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: vec!["Alpha".to_string()],
                 alg2: Vec::new(),
@@ -2348,6 +2349,7 @@ mod tests {
         crate::inbox::callsigns::sync(
             &env.dbx,
             second_inbox_item.id,
+            second_inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: vec!["Alpha".to_string(), "Beta".to_string()],
                 alg2: Vec::new(),

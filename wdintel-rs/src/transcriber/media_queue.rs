@@ -120,6 +120,7 @@ mod tests {
         signal_message_media::Model {
             id: Uuid::now_v7(),
             signal_message_id: 1,
+            signal_message_uuid: Some(Uuid::now_v7()),
             content_type: "audio/ogg".to_string(),
             file_ext: Some("ogg".to_string()),
             file_name: Some("recording.ogg".to_string()),

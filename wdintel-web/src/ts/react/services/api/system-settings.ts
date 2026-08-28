@@ -18,6 +18,7 @@ type SystemSettingsItemRaw = {
   default_neo_analysis?: boolean;
   show_classic_duty?: boolean;
   show_classic_analysis?: boolean;
+  show_peleng_distance_to_battleline?: boolean;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
   sigint_comment_parsing_enabled?: boolean;
@@ -48,6 +49,7 @@ type SystemSettingsCurrentRspRaw = {
   default_neo_analysis?: boolean;
   show_classic_duty?: boolean;
   show_classic_analysis?: boolean;
+  show_peleng_distance_to_battleline?: boolean;
   hide_orbit_data?: boolean;
   autofix_echoim_missing_messages?: boolean;
   devices_section_enabled?: boolean;
@@ -81,6 +83,7 @@ type CreateSystemSettingsReqRaw = {
   default_neo_analysis: boolean;
   show_classic_duty: boolean;
   show_classic_analysis: boolean;
+  show_peleng_distance_to_battleline: boolean;
   autofix_echoim_missing_messages: boolean;
   devices_section_enabled: boolean;
   sigint_comment_parsing_enabled: boolean;
@@ -119,6 +122,7 @@ export type SystemSettingsItem = {
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -149,6 +153,7 @@ export type SystemSettingsCurrent = {
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline: boolean;
   hideOrbitData: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
@@ -178,6 +183,7 @@ export type CreateSystemSettingsInput = {
   defaultNeoAnalysis: boolean;
   showClassicDuty: boolean;
   showClassicAnalysis: boolean;
+  showPelengDistanceToBattleline?: boolean;
   autofixEchoimMissingMessages: boolean;
   devicesSectionEnabled: boolean;
   sigintCommentParsingEnabled: boolean;
@@ -213,6 +219,7 @@ function normalizeItem(raw: SystemSettingsItemRaw): SystemSettingsItem {
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     showClassicDuty: raw.show_classic_duty ?? true,
     showClassicAnalysis: raw.show_classic_analysis ?? true,
+    showPelengDistanceToBattleline: raw.show_peleng_distance_to_battleline ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
     sigintCommentParsingEnabled: raw.sigint_comment_parsing_enabled ?? false,
@@ -245,6 +252,7 @@ function normalizeCurrent(raw: SystemSettingsCurrentRspRaw): SystemSettingsCurre
     defaultNeoAnalysis: raw.default_neo_analysis ?? false,
     showClassicDuty: raw.show_classic_duty ?? true,
     showClassicAnalysis: raw.show_classic_analysis ?? true,
+    showPelengDistanceToBattleline: raw.show_peleng_distance_to_battleline ?? false,
     hideOrbitData: raw.hide_orbit_data ?? false,
     autofixEchoimMissingMessages: raw.autofix_echoim_missing_messages ?? false,
     devicesSectionEnabled: raw.devices_section_enabled ?? false,
@@ -283,6 +291,7 @@ export async function createSystemSettings(
     default_neo_analysis: input.defaultNeoAnalysis,
     show_classic_duty: input.showClassicDuty,
     show_classic_analysis: input.showClassicAnalysis,
+    show_peleng_distance_to_battleline: input.showPelengDistanceToBattleline ?? false,
     autofix_echoim_missing_messages: input.autofixEchoimMissingMessages,
     devices_section_enabled: input.devicesSectionEnabled,
     sigint_comment_parsing_enabled: input.sigintCommentParsingEnabled,

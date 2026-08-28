@@ -163,11 +163,16 @@ pub const AI_AGENT_PROVIDER_REQUEST_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_RESPONSE_MAX_BYTES: usize = 2 * 1024 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MAX_BYTES: usize = 64 * 1024;
 pub const AI_AGENT_PROVIDER_ERROR_MESSAGE_MAX_CHARS: usize = 4 * 1024;
+pub const AI_AGENT_PROVIDER_CONTEXT_LIMIT_MESSAGE: &str =
+    "Input exceeds the context window";
+pub const AI_AGENT_PROVIDER_OUTPUT_LIMIT_MESSAGE: &str =
+    "Provider output token limit reached";
 pub const AI_AGENT_PROVIDER_REQUEST_TIMEOUT_SEC: u64 = 5 * 60;
 pub const AI_AGENT_PROVIDER_GATEWAY_PATH: &str =
     "/api/ai-agent/provider/v1/chat/completions";
 pub const AI_AGENT_OPENAI_API_BASE: &str = "https://api.openai.com/v1";
 pub const AI_AGENT_OPENAI_REASONING_NONE_MODEL_PREFIX: &str = "gpt-5";
+pub const AI_AGENT_HARNESS_RELEASE: &str = "2026.08.25.2";
 pub const AI_AGENT_INBOX_MAX_DAYS: i64 = 31;
 pub const AI_AGENT_USER_FAILURE_MESSAGE: &str =
     "Не вдалося виконати запит. Спробуйте ще раз.";
@@ -366,6 +371,7 @@ pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT: usize = 32_000;
 pub const RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR: &str = ", ";
 pub const REPORT_HISTORY_LIST_LIMIT: u64 = 200;
+pub const REPORT_HISTORY_DOWNLOAD_ATTEMPTS_PER_REPORT_LIMIT: i64 = 20;
 pub const REPORT_HISTORY_CANCELLED_ERROR_STATUS: &str =
     "Скасовано користувачем";
 pub const REPORT_HISTORY_TIMEOUT_ERROR_STATUS: &str =
@@ -729,6 +735,11 @@ pub const BATTLE_LINE_SOURCE_KIND_ADMIN_UPLOAD: &str = "admin_upload";
 pub const BATTLE_LINE_SOURCE_KIND_DELTA_KML: &str = "delta_kml";
 pub const BATTLE_LINE_DELTA_KML_SOURCE_PREFIX: &str = "enemy_units_geojson:";
 pub const BATTLE_LINE_INITIAL_DELTA_KML_ID: i32 = 5;
+pub const BATTLE_LINE_PELENG_DISTANCE_ONEOFF_BATCH_SIZE: u64 = 1_000;
+pub const BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MIN: f64 = -90.0;
+pub const BATTLE_LINE_PELENG_DISTANCE_LATITUDE_MAX: f64 = 90.0;
+pub const BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MIN: f64 = -180.0;
+pub const BATTLE_LINE_PELENG_DISTANCE_LONGITUDE_MAX: f64 = 180.0;
 pub const INBOX_SETTLEMENT_WORKER_BATCH_SIZE: usize = 25;
 pub const INBOX_SETTLEMENT_WORKER_CLAIM_CANDIDATE_SIZE: u64 = 64;
 pub const INBOX_SETTLEMENT_WORKER_ADVISORY_LOCK_NAMESPACE: &str =

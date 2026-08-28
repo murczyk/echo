@@ -7,18 +7,33 @@ fn quote_identifier(ident: &str) -> String {
     format!("\"{escaped}\"")
 }
 
+fn nullable_login_id_text_sql(table: &str) -> String {
+    // pg_clickhouse evaluates nullable UUID-to-text casts before COALESCE.
+    format!(
+        "case when {table}.login_id is null then null else \
+         {table}.login_id::text end"
+    )
+}
+
+fn preferred_author_sql(table: &str) -> String {
+    let login_id = nullable_login_id_text_sql(table);
+    format!("coalesce({table}.sender, {login_id})")
+}
+
 fn preferred_sender_sql(table_alias: Option<&str>) -> String {
     let table = table_alias.map(quote_identifier).unwrap_or_else(|| {
         // default table name
         "\"signal_message\"".to_string()
     });
+    let group_sender = preferred_author_sql("signal_message_group");
+    let message_login_id = nullable_login_id_text_sql(&table);
     format!(
-        "coalesce((SELECT coalesce(sender, login_id::text) \
+        "coalesce((SELECT {group_sender} \
          FROM signal_message_group \
          WHERE signal_message_group.signal_message_id = {table}.id \
            AND (sender IS NOT NULL OR login_id IS NOT NULL) \
          ORDER BY signal_message_group.id ASC LIMIT 1), \
-         {table}.login_id::text)"
+         {message_login_id})"
     )
 }
 
@@ -26,14 +41,14 @@ fn preferred_group_sender_sql(table_alias: Option<&str>) -> String {
     let table = table_alias
         .map(quote_identifier)
         .unwrap_or_else(|| "\"signal_message_group\"".to_string());
-    format!("coalesce({table}.sender, {table}.login_id::text)")
+    preferred_author_sql(&table)
 }
 
 fn preferred_message_author_sql(table_alias: Option<&str>) -> String {
     let table = table_alias
         .map(quote_identifier)
         .unwrap_or_else(|| "\"signal_message\"".to_string());
-    format!("coalesce({table}.sender, {table}.login_id::text)")
+    preferred_author_sql(&table)
 }
 
 /// Returns an expression that selects the preferred sender from signal_message_group

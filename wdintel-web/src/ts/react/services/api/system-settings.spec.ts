@@ -31,6 +31,7 @@ describe('system settings audio transcription mapping', () => {
     mocks.postJson.mockResolvedValue({ items: [rawSettings] });
     const settings = await listSystemSettings();
     expect(settings[0].enableAudioTranscription).toBe(false);
+    expect(settings[0].showPelengDistanceToBattleline).toBe(false);
   });
 
   it('writes the audio transcription flag in create requests', async () => {
@@ -66,6 +67,7 @@ describe('system settings audio transcription mapping', () => {
       expect.objectContaining({
         enable_audio_transcription: true,
         rer_duty_test_replay_interval_sec: 3,
+        show_peleng_distance_to_battleline: false,
       }),
     );
   });

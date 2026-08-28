@@ -4,6 +4,7 @@ use crate::messenger::media::{MediaUploadInput, StagedMediaAttachments};
 use crate::{
     location::SettlementsDataConfig, messenger::types::Message, types::*,
 };
+use chrono::Utc;
 use echo_im::types::MessageAttachmentF1;
 use redis::aio::ConnectionManager;
 use sea_orm::*;
@@ -137,6 +138,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         staged_media.len(),
     );
     let attachments_hash = staged_media.attachments_hash().map(str::to_string);
+    let created_at = options.created_at;
     let body_for_dedupe = crate::messenger::dedupe::body_with_attachments_hash(
         &body,
         attachments_hash.as_deref(),
@@ -151,9 +153,13 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
         .c(h!())?;
     let signal_message = signal_message::ActiveModel {
         id: NotSet,
+        id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+            Some(m.timestamp),
+            created_at.unwrap_or_else(|| Utc::now().naive_utc()),
+        ))),
         body: Set(Some(body.clone())),
         datasource_group_id: Set(Some(datasource_group_id)),
-        created_at: match options.created_at {
+        created_at: match created_at {
             Some(created_at) => Set(created_at),
             None => NotSet,
         },
@@ -173,6 +179,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
     .await
     .c(h!())?;
     let staged_signal_message_id = signal_message.id;
+    let staged_signal_message_uuid = signal_message.id_uuid;
     let m_duplicate_of = crate::sigint::find_duplicate_of(
         txn,
         &body_for_dedupe,
@@ -198,6 +205,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
             store_kept_duplicate_trace_media(
                 txn,
                 staged_signal_message_id,
+                staged_signal_message_uuid,
                 staged_media,
             )
             .await
@@ -252,9 +260,14 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
     let uploaded_files_ready_for_deletion = if staged_media.is_empty() {
         vec![]
     } else {
-        store_queue_media(txn, signal_message.id, staged_media)
-            .await
-            .c(h!())?
+        store_queue_media(
+            txn,
+            signal_message.id,
+            signal_message.id_uuid,
+            staged_media,
+        )
+        .await
+        .c(h!())?
     };
 
     if !skip_process_inbox_item {
@@ -289,6 +302,7 @@ pub async fn process_signal_message_queue_item_with_staged_media_and_options(
 async fn store_kept_duplicate_trace_media(
     txn: &DatabaseTransaction,
     signal_message_id: i64,
+    signal_message_uuid: Option<Uuid>,
     staged_media: &StagedMediaAttachments,
 ) -> Result<Vec<MediaUploadInput>, AppError> {
     if staged_media.is_empty() {
@@ -302,18 +316,21 @@ async fn store_kept_duplicate_trace_media(
     {
         return Ok(vec![]);
     }
-    store_queue_media(txn, signal_message_id, staged_media).await
+    store_queue_media(txn, signal_message_id, signal_message_uuid, staged_media)
+        .await
 }
 
 async fn store_queue_media(
     txn: &DatabaseTransaction,
     signal_message_id: i64,
+    signal_message_uuid: Option<Uuid>,
     staged_media: &StagedMediaAttachments,
 ) -> Result<Vec<MediaUploadInput>, AppError> {
     // Recovery wraps this error in a rollback because media may carry critical context.
     crate::messenger::media::persist_staged_media(
         staged_media,
         signal_message_id,
+        signal_message_uuid,
         txn,
     )
     .await
@@ -518,7 +535,7 @@ mod tests {
         .unwrap();
         let txn = env.dbx.begin().await.unwrap();
 
-        store_queue_media(&txn, message.id, &staged_media)
+        store_queue_media(&txn, message.id, message.id_uuid, &staged_media)
             .await
             .unwrap();
         let media = signal_message_media::Entity::find()

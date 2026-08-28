@@ -137,6 +137,7 @@ export type AnalysisMapAttrs = {
   palitras: string;
   palitrasLoaded: string;
   palitrasLoadState: AnalysisPalitrasLoadState;
+  showPelengDistanceToBattleline?: string;
 };
 
 export type AnalysisCenterTab = 'messages' | 'summary' | 'map';

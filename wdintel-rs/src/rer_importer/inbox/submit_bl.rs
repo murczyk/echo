@@ -10,6 +10,7 @@ use sea_orm::*;
 #[derive(Debug)]
 pub(crate) struct SubmittedInboxItem {
     pub(crate) signal_message_id: i64,
+    pub(crate) signal_message_uuid: Option<uuid::Uuid>,
     pub(crate) inbox_id: i64,
     pub(crate) warnings: Vec<InboxSubmitWarning>,
 }
@@ -283,21 +284,38 @@ async fn submit_inbox_item_with_groups_inner(
     .c(h!())?;
     match signal_message_id {
         Some(_) => {
-            super::replace_submit_tags(txn, inbox_id, login, prepared.tag_ids)
-                .await
-                .c(h!())?;
+            super::replace_submit_tags(
+                txn,
+                inbox_id,
+                signal_message.id_uuid,
+                login,
+                prepared.tag_ids,
+            )
+            .await
+            .c(h!())?;
         }
         None => {
-            super::add_submit_tags(txn, inbox_id, login, prepared.tag_ids)
-                .await
-                .c(h!())?;
+            super::add_submit_tags(
+                txn,
+                inbox_id,
+                signal_message.id_uuid,
+                login,
+                prepared.tag_ids,
+            )
+            .await
+            .c(h!())?;
         }
     }
     let InboxSubmitItem { network, dmr, .. } = item;
-    let warnings =
-        super::save_submit_dmr_metadata(inbox_id, network.as_ref(), dmr, txn)
-            .await
-            .c(h!())?;
+    let warnings = super::save_submit_dmr_metadata(
+        inbox_id,
+        signal_message.id_uuid,
+        network.as_ref(),
+        dmr,
+        txn,
+    )
+    .await
+    .c(h!())?;
     crate::stats::enqueue_group_stats_recalculation_for_message(
         txn,
         signal_message.id,
@@ -308,6 +326,7 @@ async fn submit_inbox_item_with_groups_inner(
 
     Ok(SubmittedInboxItem {
         signal_message_id: signal_message.id,
+        signal_message_uuid: signal_message.id_uuid,
         inbox_id,
         warnings,
     })

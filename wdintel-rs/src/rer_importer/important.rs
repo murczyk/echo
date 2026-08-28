@@ -11,6 +11,7 @@ use chrono::prelude::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::{prelude::Expr, *};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -28,19 +29,32 @@ async fn important_add(
     ensure_rer_role(&env.dbx, &user).await.c(h!())?;
     let login = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.c(h!())?;
-    let important_to_insert =
+    let duplicate_ids =
         crate::rer_importer::inbox::find_all_duplicates(&txn, req.message_id)
             .await
-            .c(h!())?
-            .into_iter()
-            .map(|id| sigint_important::ActiveModel {
-                id: NotSet,
-                login_id: Set(Some(login)),
-                signal_message_id: Set(id),
-                deleted: Set(false),
-                created_at: NotSet,
-            })
-            .collect::<Vec<sigint_important::ActiveModel>>();
+            .c(h!())?;
+    let message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(signal_message::Column::Id.is_in(duplicate_ids.clone()))
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(&txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+    let important_to_insert = duplicate_ids
+        .into_iter()
+        .map(|id| sigint_important::ActiveModel {
+            id: NotSet,
+            login_id: Set(Some(login)),
+            signal_message_id: Set(id),
+            signal_message_uuid: Set(message_uuids.get(&id).copied().flatten()),
+            deleted: Set(false),
+            created_at: NotSet,
+        })
+        .collect::<Vec<sigint_important::ActiveModel>>();
     if !important_to_insert.is_empty() {
         sigint_important::Entity::insert_many(important_to_insert)
             .exec(&env.dbx)

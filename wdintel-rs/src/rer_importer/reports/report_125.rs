@@ -880,6 +880,7 @@ mod tests {
         sigint_peleng::Model {
             id,
             source_inbox_item_id: 1,
+            source_inbox_item_uuid: Some(uuid::Uuid::now_v7()),
             lat,
             lng,
             settlement: None,
@@ -887,6 +888,7 @@ mod tests {
             distance_m: None,
             country_code: None,
             pelengation_object: None,
+            battle_line_distance: None,
             deleted: false,
             created_at: test_dt(16, 12, 14, 31),
             updated_at: None,

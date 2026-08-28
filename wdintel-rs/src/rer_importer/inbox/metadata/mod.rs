@@ -130,6 +130,7 @@ fn normalize_metadata_text_callsign(value: &str) -> Option<String> {
 
 pub async fn refresh_metadata_for_body<'a, 'async_trait, C>(
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<uuid::Uuid>,
     body: &str,
     txn: &'a C,
 ) -> anyhow::Result<()>
@@ -150,6 +151,7 @@ where
         new_entries.push(sigint_inbox_item_metadata::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(sigint_inbox_item_id),
+            sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
             color_code: Set(e.cc),
             color_code_start_index: Set(e.cc_start_index),
             color_code_end_index: Set(e.cc_end_index),
@@ -188,15 +190,21 @@ pub async fn refresh_metadata<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
-    let body = signal_message::Entity::find_by_id(sigint_inbox_item_id)
-        .select_only()
-        .column(signal_message::Column::Body)
-        .into_tuple::<String>()
-        .one(dbx)
-        .await
-        .c(h!())?
-        .c(h!())?;
-    refresh_metadata_for_body(sigint_inbox_item_id, &body, dbx).await
+    let (message, inbox_item) =
+        signal_message::Entity::find_by_id(sigint_inbox_item_id)
+            .find_also_related(sigint_inbox_item::Entity)
+            .one(dbx)
+            .await
+            .c(h!())?
+            .c(h!())?;
+    let body = message.body.c(h!())?;
+    refresh_metadata_for_body(
+        sigint_inbox_item_id,
+        inbox_item.and_then(|inbox_item| inbox_item.id_uuid),
+        &body,
+        dbx,
+    )
+    .await
 }
 
 #[cfg(test)]

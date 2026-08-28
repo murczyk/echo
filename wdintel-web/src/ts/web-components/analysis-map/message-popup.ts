@@ -16,6 +16,7 @@ type OpenMessagePopupOptions = {
   hasMoreMessages?: boolean;
   onLoadMoreMessages?: () => void;
   contextTitle?: string;
+  battleLineDistances?: ReadonlyMap<number, number>;
   setClickedState: (clickedPoint: DataCircleMarker | null, clickedLatLng: L.LatLng | null) => void;
 };
 
@@ -32,6 +33,7 @@ export function openMessagesPopup({
   hasMoreMessages = false,
   onLoadMoreMessages,
   contextTitle,
+  battleLineDistances = new Map(),
   setClickedState,
 }: OpenMessagePopupOptions): boolean {
   if ((!clickedPoint && !clickedLatLng) || messages.length === 0) {
@@ -48,6 +50,7 @@ export function openMessagesPopup({
     selectedUnits,
     hasMoreMessages,
     contextTitle,
+    battleLineDistances,
   );
   const clickedMessageId = sortedMessages[0]?.[0];
   const isCluster = sortedMessages.length > 1;

@@ -76,4 +76,12 @@ describe('getPointPopupTemplate', () => {
 
     expect(html).toContain('bi-dash-square');
   });
+
+  it('renders the selected peleng Battle Line distance in kilometers', () => {
+    const message = buildMessage({ coords: '50.255433, 36.915901' });
+
+    const html = getPointPopupTemplate([message], [], false, undefined, new Map([[42, 12_567]]));
+
+    expect(html).toContain('Відстань до ЛБЗ:</span> 12.57км');
+  });
 });

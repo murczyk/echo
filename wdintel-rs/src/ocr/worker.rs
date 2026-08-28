@@ -951,6 +951,7 @@ mod tests {
         let media = signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("application/pdf".to_string()),
             file_ext: Set(Some("pdf".to_string())),
             file_name: Set(Some("expired.pdf".to_string())),
@@ -1002,6 +1003,7 @@ mod tests {
         let media = signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("image/jpeg".to_string()),
             file_ext: Set(Some("jpg".to_string())),
             file_name: Set(Some("unavailable.jpg".to_string())),

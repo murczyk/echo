@@ -2479,6 +2479,7 @@ mod tests {
             enable_audio_transcription: Set(false),
             show_classic_duty: Set(true),
             show_classic_analysis: Set(true),
+            show_peleng_distance_to_battleline: Set(false),
             hide_orbit_data: Set(false),
         }
         .insert(dbx)
