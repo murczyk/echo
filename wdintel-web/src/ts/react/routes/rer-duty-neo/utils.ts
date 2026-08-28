@@ -266,6 +266,18 @@ export function buildInboxReq(opts: {
   reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
   const f = opts.filter;
+  const selectedUnitIds = (f.unitsSelected ?? [])
+    .map(Number)
+    .filter((value) => Number.isSafeInteger(value) && value > 0);
+  const deniedUnitIds = (f.unitsDenied ?? [])
+    .map(Number)
+    .filter((value) => Number.isSafeInteger(value) && value > 0);
+  const selectedLegacyUnits = (f.unitsSelected ?? []).filter(
+    (value) => !Number.isSafeInteger(Number(value)) || Number(value) <= 0,
+  );
+  const deniedLegacyUnits = (f.unitsDenied ?? []).filter(
+    (value) => !Number.isSafeInteger(Number(value)) || Number(value) <= 0,
+  );
   // send empty arrays as null (backend treats null/undefined vs [] differently)
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
@@ -283,9 +295,11 @@ export function buildInboxReq(opts: {
     deniedPosts: emptyArrToNull(f.postsDenied),
     deniedFreqs: emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null),
     selectedCallsigns: null,
-    selectedUnits: emptyArrToNull(f.unitsSelected ?? null),
+    selectedUnits: emptyArrToNull(selectedLegacyUnits),
+    selectedUnitIds: emptyArrToNull(selectedUnitIds),
     selectedDeviceNames: null,
-    deniedUnits: emptyArrToNull(f.unitsDenied ?? null),
+    deniedUnits: emptyArrToNull(deniedLegacyUnits),
+    deniedUnitIds: emptyArrToNull(deniedUnitIds),
     selectedLocations: null,
     nolimit: opts.nolimit ?? null,
     orWithExtendedForm: null,
@@ -319,7 +333,10 @@ export function buildInboxReq(opts: {
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,
-    unitsExactMatchOnly: f.unitsExactMatchOnly ?? null,
+    unitsExactMatchOnly:
+      selectedLegacyUnits.length + deniedLegacyUnits.length > 0
+        ? (f.unitsExactMatchOnly ?? null)
+        : null,
     calculateFreqPelengsSummary: null,
     skipGroupStats: true,
     filterTagsOption: null,

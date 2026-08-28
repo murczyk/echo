@@ -339,6 +339,10 @@ init route _ =
 
 getInboxReq : Model -> B.InboxMessagesReq
 getInboxReq model =
+    let
+        ( selectedUnitIds, selectedLegacyUnits ) =
+            Query.partitionUnitSelections (Query.normalizeUnitSelections model.unitsSelected)
+    in
     { sinceIdNoninclusive = Nothing
     , beforeIdNoninclusive = Nothing
     , sinceDateInclusiveMs = Maybe.map Time.posixToMillis model.from.datePosix
@@ -358,9 +362,11 @@ getInboxReq model =
             |> List.filterMap String.toInt
             |> emptyToNothing
     , selectedCallsigns = emptyToNothing model.callsignsSelected
-    , selectedUnits = emptyToNothing model.unitsSelected
+    , selectedUnits = emptyToNothing selectedLegacyUnits
+    , selectedUnitIds = emptyToNothing selectedUnitIds
     , selectedDeviceNames = Nothing
     , deniedUnits = Nothing
+    , deniedUnitIds = Nothing
     , selectedLocations = emptyToNothing model.locationsSelected
     , includePelengLocations = Just model.includePelengLocations
     , selectedTags = emptyToNothing model.tagsSelected
@@ -395,7 +401,12 @@ getInboxReq model =
     , skipGroupStats = Just True
     , filterTagsOption = Just model.filterTagsOption
     , pageId = Just "rer-analysis"
-    , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+    , unitsExactMatchOnly =
+        if List.isEmpty selectedLegacyUnits then
+            Nothing
+
+        else
+            Just model.unitsExactMatchOnly
     , onlyWithMedia = Just False
     , selectedNetworks =
         if model.withoutNetwork then
@@ -437,6 +448,10 @@ pollEvents lastEventId =
 cmdLoadCallsignGraph : Model -> { dtFromPosix : Posix, dtToPosix : Posix } -> Effect Msg
 cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
     if model.unfoldCallsignGraph then
+        let
+            ( selectedUnitIds, selectedLegacyUnits ) =
+                Query.partitionUnitSelections (Query.normalizeUnitSelections model.unitsSelected)
+        in
         E.getCallsignsGraph GotCallsignGraph
             { sinceDateInclusiveMs = Time.posixToMillis dtFromPosix
             , tillDateNoninclusiveMs = Time.posixToMillis dtToPosix
@@ -449,7 +464,8 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
                 model.aorsSelected
                     |> List.filterMap String.toInt
                     |> emptyToNothing
-            , selectedUnits = emptyToNothing model.unitsSelected
+            , selectedUnits = emptyToNothing selectedLegacyUnits
+            , selectedUnitIds = emptyToNothing selectedUnitIds
             , selectedDeviceNames = Nothing
             , selectedLocations = emptyToNothing model.locationsSelected
             , includePelengLocations = Just model.includePelengLocations
@@ -470,7 +486,12 @@ cmdLoadCallsignGraph model { dtFromPosix, dtToPosix } =
             , deniedTags = Nothing
             , tagPresence = Nothing
             , filterTagsOption = Just model.filterTagsOption
-            , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+            , unitsExactMatchOnly =
+                if List.isEmpty selectedLegacyUnits then
+                    Nothing
+
+                else
+                    Just model.unitsExactMatchOnly
             , withoutModelTags =
                 if model.withoutModelTags then
                     Just True
@@ -1534,12 +1555,12 @@ update user shared route msg model =
                     List.map
                         (\unit ->
                             Select.customMenuItem
-                                { item = unit.unit
-                                , label = unit.unit
-                                , view = Html.Styled.fromUnstyled (menuItemWithCount unit.unit unit.count)
+                                { item = String.fromInt unit.unitId
+                                , label = unit.name
+                                , view = Html.Styled.fromUnstyled (menuItemWithCount unit.name unit.count)
                                 }
                         )
-                        (List.sortBy .unit rsp.units)
+                        (List.sortBy .name rsp.units)
               }
             , E.none
             )

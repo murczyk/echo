@@ -214,6 +214,7 @@ async fn load_kmz_report_items(
         sigint_groups,
     )
     .context(h!())?;
+    let items = filter_selected_unit_ids(items, &req.selected_unit_ids);
     let items = filter_selected_units(
         items,
         &req.selected_units,

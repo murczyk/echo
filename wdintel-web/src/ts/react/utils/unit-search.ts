@@ -5,70 +5,23 @@ import {
   normalizeSearchValue,
 } from './search-filter';
 
-export const UNIT_FILTER_UNSET_ID = 0;
-const UNIT_FILTER_UNSET_NAME = 'Не визначено';
-
 export function getUnitDisplayLabel(unit: Unit): string {
   return unit.name.trim() || `#${unit.id}`;
 }
 
 export function getUnitFilterValue(unit: Unit): string {
-  if (unit.id === UNIT_FILTER_UNSET_ID) {
-    return UNIT_FILTER_UNSET_NAME;
-  }
-  return unit.name.trim();
-}
-
-function createSyntheticUnsetUnit(): Unit {
-  return {
-    id: UNIT_FILTER_UNSET_ID,
-    name: UNIT_FILTER_UNSET_NAME,
-    other: '',
-    teamOrCrew: '',
-    section: '',
-    squad: '',
-    platoon: '',
-    company: '',
-    battalion: '',
-    regiment: '',
-    brigade: '',
-    division: '',
-    corps: '',
-    army: '',
-    militaryDistrict: '',
-    armyRegion: '',
-    comment: '',
-    orbitNote: null,
-    active: true,
-    isDeduplicateCandidate: null,
-    createdAt: 0,
-    createdByLoginId: '',
-    hasOrbit: false,
-    orbitUnitIds: [],
-    orbitUnitGenerativeNames: [],
-  };
+  return String(unit.id);
 }
 
 export function buildUnitFilterOptions(unitsList: Unit[]): Unit[] {
-  return [createSyntheticUnsetUnit(), ...buildSelectableUnitOptions(unitsList)];
+  return buildSelectableUnitOptions(unitsList);
 }
 
 export function buildSelectableUnitOptions(unitsList: Unit[]): Unit[] {
-  const byName = new Map<string, Unit>();
-
-  for (const unit of unitsList) {
-    if (unit.active === false) continue;
-    const name = unit.name.trim();
-    if (name.length === 0) continue;
-
-    const existing = byName.get(name);
-    if (!existing || unit.id < existing.id) {
-      byName.set(name, { ...unit, name });
-    }
-  }
-
-  const sorted = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
-  return sorted;
+  return unitsList
+    .filter((unit) => unit.active && unit.name.trim().length > 0)
+    .map((unit) => ({ ...unit, name: unit.name.trim() }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 }
 
 export function buildUnitLookupOptions(

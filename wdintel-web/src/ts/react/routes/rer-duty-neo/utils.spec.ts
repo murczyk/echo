@@ -465,6 +465,23 @@ describe('rer-duty utils', () => {
     expect(req.loadLatest).toBe(true);
   });
 
+  it('routes included and denied units through id fields', () => {
+    const req = buildInboxReq({
+      filter: {
+        ...emptyFilter(),
+        unitsSelected: ['11', 'Legacy included'],
+        unitsDenied: ['12', 'Legacy denied'],
+        unitsExactMatchOnly: true,
+      },
+    });
+
+    expect(req.selectedUnitIds).toEqual([11]);
+    expect(req.deniedUnitIds).toEqual([12]);
+    expect(req.selectedUnits).toEqual(['Legacy included']);
+    expect(req.deniedUnits).toEqual(['Legacy denied']);
+    expect(req.unitsExactMatchOnly).toBe(true);
+  });
+
   it('parses and writes query state in the url', () => {
     const state = {
       messageFeeds: [['mf-1', { groups_selected: ['legacy-group'], last_viewed_message_id: 42 }]],

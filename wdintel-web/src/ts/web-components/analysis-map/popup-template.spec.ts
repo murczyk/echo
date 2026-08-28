@@ -55,6 +55,16 @@ describe('getPointPopupTemplate', () => {
     expect(html).not.toContain('Unit A');
   });
 
+  it('emits a canonical unit id while displaying the unit name', () => {
+    const message = buildMessage({ unit: 'Header Unit', unit_ids: [17] });
+
+    const html = getPointPopupTemplate([message], ['17']);
+
+    expect(html).toContain('data-unitname="17"');
+    expect(html).toContain('Header Unit');
+    expect(html).toContain('bi-dash-square');
+  });
+
   it('shows an undefined unit when the message unit is missing', () => {
     const message = buildMessage({
       freq: '145.5',

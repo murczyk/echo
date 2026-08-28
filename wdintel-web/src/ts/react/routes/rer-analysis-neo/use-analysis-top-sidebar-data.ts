@@ -79,8 +79,9 @@ export function useAnalysisTopSidebarData({
       setTopUnits(
         topItems(
           unitsRsp.units,
-          (item) => item.unit,
+          (item) => item.name,
           (item) => item.count,
+          (item) => String(item.unitId),
         ),
       );
       setTopLocations(

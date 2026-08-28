@@ -332,6 +332,14 @@ fn inbox_count_has_unit_filter(req: &InboxMessagesReq) -> bool {
             .denied_units
             .as_ref()
             .is_some_and(|units| !units.is_empty())
+        || req
+            .selected_unit_ids
+            .as_ref()
+            .is_some_and(|unit_ids| !unit_ids.is_empty())
+        || req
+            .denied_unit_ids
+            .as_ref()
+            .is_some_and(|unit_ids| !unit_ids.is_empty())
 }
 
 fn inbox_unit_filter_period(
@@ -354,6 +362,17 @@ fn inbox_unit_filter_period(
 }
 
 fn inbox_period_unit_filters_supported(req: &InboxMessagesReq) -> bool {
+    if req
+        .selected_unit_ids
+        .as_ref()
+        .is_some_and(|unit_ids| !unit_ids.is_empty())
+        || req
+            .denied_unit_ids
+            .as_ref()
+            .is_some_and(|unit_ids| !unit_ids.is_empty())
+    {
+        return false;
+    }
     [&req.selected_units, &req.denied_units]
         .into_iter()
         .all(|units| !expand_unit_filter_values(units).includes_undefined)
@@ -635,6 +654,14 @@ where
         }
     };
     let q = match unit_lookup_strategy {
+        InboxUnitLookupStrategy::Default => {
+            filter_selected_unit_ids(q, &req.selected_unit_ids)
+        }
+        InboxUnitLookupStrategy::Correlated => {
+            filter_selected_unit_ids_correlated(q, &req.selected_unit_ids)
+        }
+    };
+    let q = match unit_lookup_strategy {
         InboxUnitLookupStrategy::Default => filter_denied_units(
             q,
             &req.denied_units,
@@ -645,6 +672,14 @@ where
             &req.denied_units,
             &req.units_exact_match_only,
         )?,
+    };
+    let q = match unit_lookup_strategy {
+        InboxUnitLookupStrategy::Default => {
+            filter_denied_unit_ids(q, &req.denied_unit_ids)
+        }
+        InboxUnitLookupStrategy::Correlated => {
+            filter_denied_unit_ids_correlated(q, &req.denied_unit_ids)
+        }
     };
     let q = filter_selected_tags(
         q,

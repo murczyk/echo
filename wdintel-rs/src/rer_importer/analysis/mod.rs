@@ -778,6 +778,106 @@ where
     )
 }
 
+pub fn filter_selected_unit_ids<Q>(
+    q: Q,
+    selected_unit_ids: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(selected_unit_ids) = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(selected_unit_ids, false))
+}
+
+pub(crate) fn filter_selected_unit_ids_correlated<Q>(
+    q: Q,
+    selected_unit_ids: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(selected_unit_ids) = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(selected_unit_ids, true))
+}
+
+pub fn filter_denied_unit_ids<Q>(q: Q, denied_unit_ids: &Option<Vec<i64>>) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(denied_unit_ids) = denied_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(denied_unit_ids, false).not())
+}
+
+pub(crate) fn filter_denied_unit_ids_correlated<Q>(
+    q: Q,
+    denied_unit_ids: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(denied_unit_ids) = denied_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(denied_unit_ids, true).not())
+}
+
+fn message_has_linked_unit_ids(
+    unit_ids: &[i64],
+    force_correlation: bool,
+) -> SimpleExpr {
+    let link_alias = Alias::new("selected_unit_link");
+    let unit_alias = Alias::new("selected_unit_by_id");
+    let mut query = Query::select();
+    query
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_unit::Entity, link_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            unit_alias.clone(),
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Id)).equals((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::UnitId,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::ItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .and_where(
+            Expr::col((link_alias, sigint_inbox_item_unit::Column::UnitId))
+                .is_in(unit_ids.to_vec()),
+        )
+        .and_where(
+            Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
+        );
+    if force_correlation {
+        query.offset(0);
+    }
+    Expr::exists(query.to_owned())
+}
+
 pub(crate) fn filter_denied_units_correlated<Q>(
     q: Q,
     denied_units: &Option<Vec<String>>,
@@ -3891,6 +3991,7 @@ fn build_summary_table_filtered_messages_query_with_access(
     let q = crate::rer_importer::analysis::analytics_unit::apply_analysis_unit_filters(
         q,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -5260,6 +5361,7 @@ pub async fn edit_freq_unit_name(
         &reqan.selected_units,
         &req.analysis_stats_req.units_exact_match_only,
     )?;
+    let rows_res = filter_selected_unit_ids(rows_res, &reqan.selected_unit_ids);
     let rows_res =
         filter_selected_callsigns(rows_res, &reqan.selected_callsigns)?;
     let rows_res = filter_selected_tags(
@@ -6113,6 +6215,7 @@ fn build_new_callsign_filtered_items_query(
         &req.selected_units,
         &req.units_exact_match_only,
     )?;
+    let query = filter_selected_unit_ids(query, &req.selected_unit_ids);
     let query = filter_selected_locations(
         query,
         &req.selected_locations,
@@ -7965,11 +8068,14 @@ fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
 
 fn analysis_request_has_unit_filters(req: &AnalysisStatsReq) -> bool {
     option_vec_has_values(&req.selected_units)
+        || option_vec_has_values(&req.selected_unit_ids)
 }
 
 fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
     option_vec_has_values(&req.selected_units)
         || option_vec_has_values(&req.denied_units)
+        || option_vec_has_values(&req.selected_unit_ids)
+        || option_vec_has_values(&req.denied_unit_ids)
 }
 
 fn option_vec_has_values<T>(values: &Option<Vec<T>>) -> bool {

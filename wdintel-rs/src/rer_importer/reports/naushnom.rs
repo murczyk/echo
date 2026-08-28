@@ -390,6 +390,8 @@ async fn get_inbox_messages_report_network_chunk(
         &req.selected_units,
         &req.units_exact_match_only,
     )?;
+    let q = filter_selected_unit_ids(q, &req.selected_unit_ids);
+    let q = filter_denied_unit_ids(q, &req.denied_unit_ids);
     let q = filter_selected_networks(
         q,
         &req.selected_networks,

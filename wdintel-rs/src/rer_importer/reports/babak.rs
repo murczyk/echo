@@ -88,6 +88,7 @@ pub async fn collect_babak_report_data(
         selected_posts: inbox_req.selected_posts,
         selected_callsigns: inbox_req.selected_callsigns,
         selected_units: inbox_req.selected_units,
+        selected_unit_ids: inbox_req.selected_unit_ids,
         selected_locations: inbox_req.selected_locations,
         selected_device_names: inbox_req.selected_device_names,
         or_with_extended_form: inbox_req.or_with_extended_form,
@@ -1381,6 +1382,8 @@ async fn load_babak_candidate_page(
         &req.selected_units,
         &req.units_exact_match_only,
     )?;
+    query = filter_selected_unit_ids(query, &req.selected_unit_ids);
+    query = filter_denied_unit_ids(query, &req.denied_unit_ids);
     query =
         stats::filter_selected_aors_for_scope(query, &req.selected_aors, scope)
             .context(h!())?;

@@ -78,6 +78,11 @@ function tagFilterModeHint(mode: TagFilterMode): string {
 
 type MetadataFilterMode = 'all' | 'with' | 'without';
 
+function isUnitIdFilterValue(value: string): boolean {
+  const unitId = Number(value);
+  return Number.isSafeInteger(unitId) && unitId > 0 && String(unitId) === value;
+}
+
 function metadataFilterModeFromState(
   queryState: AnalysisFiltersPanelPage['queryState'],
 ): MetadataFilterMode {
@@ -348,7 +353,7 @@ export function AnalysisFiltersPanelSections({
             preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
-          {queryState.unitsSelected.length > 0 ? (
+          {queryState.unitsSelected.some((value) => !isUnitIdFilterValue(value)) ? (
             <FormControlLabel
               control={
                 <Checkbox

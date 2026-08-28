@@ -1685,6 +1685,7 @@ pub async fn callsigns_graph(
         selected_posts: req.selected_posts.clone(),
         selected_callsigns: req.selected_callsigns.clone(),
         selected_units: req.selected_units.clone(),
+        selected_unit_ids: req.selected_unit_ids.clone(),
         selected_locations: req.selected_locations.clone(),
         selected_device_names: req.selected_device_names.clone(),
         selected_networks: req.selected_networks.clone(),
@@ -1866,6 +1867,7 @@ pub async fn callsigns_graph(
         &req.selected_senders,
         &sigint_groups,
     )?;
+    let q = filter_selected_unit_ids(q, &req.selected_unit_ids);
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
     let q = filter_selected_units(

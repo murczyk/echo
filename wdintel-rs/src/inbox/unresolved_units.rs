@@ -1,4 +1,4 @@
-use crate::entities::{failed_inbox_unit, sigint_unit};
+use crate::entities::{failed_unit_label, sigint_unit};
 use crate::error::AppError;
 use crate::h;
 use crate::types::{Env, ShortContext};
@@ -130,13 +130,16 @@ async fn list_rows<C>(
 where
     C: ConnectionTrait,
 {
-    let normalized = normalized_text_sql("failed_inbox_unit");
+    let normalized = normalized_text_sql("failed_unit_label");
     let archive_filter_sql = archive_filter_sql(&archive_filter);
     let total_sql = format!(
-        "select count(*)::bigint as count from (\
-         select 1 from failed_inbox_unit \
-         where deleted = false {archive_filter_sql} \
-         group by {normalized}, is_bad_data) grouped"
+        "select count(*)::bigint as count \
+         from failed_unit_label \
+         where exists (\
+             select 1 from sigint_inbox_item_failed_unit_label link \
+             where link.failed_unit_label_id = failed_unit_label.id \
+                 and link.deleted = false\
+         ) {archive_filter_sql}"
     );
     let total_count = db
         .query_one_raw(Statement::from_string(
@@ -151,12 +154,14 @@ where
         .unwrap_or(0);
 
     let list_sql = format!(
-        "select min(unit_txt) as unit_txt, count(*)::bigint as quantity, \
-         coalesce(max(nullif(note, '')), '') as note, \
+        "select unit_txt, count(link.id)::bigint as quantity, note, \
          is_bad_data as is_archived \
-         from failed_inbox_unit \
-         where deleted = false {archive_filter_sql} \
-         group by {normalized}, is_bad_data \
+         from failed_unit_label \
+         join sigint_inbox_item_failed_unit_label link \
+             on link.failed_unit_label_id = failed_unit_label.id \
+             and link.deleted = false \
+         where true {archive_filter_sql} \
+         group by failed_unit_label.id \
          order by is_bad_data asc, quantity desc, {normalized} asc \
          limit $1 offset $2"
     );
@@ -197,13 +202,16 @@ pub(crate) async fn load_new_unresolved_unit_labels<C>(
 where
     C: ConnectionTrait,
 {
-    let normalized = normalized_text_sql("failed_inbox_unit");
+    let normalized = normalized_text_sql("failed_unit_label");
     let sql = format!(
-        "select min(unit_txt) as unit_txt, count(*)::bigint as quantity, \
-         coalesce(max(nullif(note, '')), '') as note, false as is_archived \
-         from failed_inbox_unit \
-         where deleted = false and is_bad_data = false \
-         group by {normalized} \
+        "select unit_txt, count(link.id)::bigint as quantity, note, \
+         false as is_archived \
+         from failed_unit_label \
+         join sigint_inbox_item_failed_unit_label link \
+             on link.failed_unit_label_id = failed_unit_label.id \
+             and link.deleted = false \
+         where is_bad_data = false \
+         group by failed_unit_label.id \
          order by quantity desc, {normalized} asc"
     );
     Ok(
@@ -290,11 +298,10 @@ pub async fn classify_unresolved_unit_label(
     req: Json<ClassifyUnresolvedUnitLabelReq>,
 ) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let result = failed_inbox_unit::Entity::update_many()
-        .col_expr(failed_inbox_unit::Column::IsBadData, Expr::value(true))
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
+    let result = failed_unit_label::Entity::update_many()
+        .col_expr(failed_unit_label::Column::IsBadData, Expr::value(true))
         .filter(Expr::cust_with_values(
-            format!("{} = $1", normalized_text_sql("failed_inbox_unit")),
+            format!("{} = $1", normalized_text_sql("failed_unit_label")),
             vec![super::unit_resolution::normalize_unit_label(&req.unit_txt)],
         ))
         .exec(&env.dbx)
@@ -351,12 +358,11 @@ async fn set_unresolved_unit_label_archive_state<C>(
 where
     C: ConnectionTrait,
 {
-    failed_inbox_unit::Entity::update_many()
-        .col_expr(failed_inbox_unit::Column::IsBadData, Expr::value(archived))
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
-        .filter(failed_inbox_unit::Column::IsBadData.eq(!archived))
+    failed_unit_label::Entity::update_many()
+        .col_expr(failed_unit_label::Column::IsBadData, Expr::value(archived))
+        .filter(failed_unit_label::Column::IsBadData.eq(!archived))
         .filter(Expr::cust_with_values(
-            format!("{} = $1", normalized_text_sql("failed_inbox_unit")),
+            format!("{} = $1", normalized_text_sql("failed_unit_label")),
             vec![super::unit_resolution::normalize_unit_label(unit_txt)],
         ))
         .exec(db)
@@ -371,15 +377,14 @@ pub async fn update_unresolved_unit_label_note(
     req: Json<UpdateUnresolvedUnitLabelNoteReq>,
 ) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let result = failed_inbox_unit::Entity::update_many()
+    let result = failed_unit_label::Entity::update_many()
         .col_expr(
-            failed_inbox_unit::Column::Note,
+            failed_unit_label::Column::Note,
             Expr::value(req.note.trim().to_string()),
         )
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
-        .filter(failed_inbox_unit::Column::IsBadData.eq(req.is_archived))
+        .filter(failed_unit_label::Column::IsBadData.eq(req.is_archived))
         .filter(Expr::cust_with_values(
-            format!("{} = $1", normalized_text_sql("failed_inbox_unit")),
+            format!("{} = $1", normalized_text_sql("failed_unit_label")),
             vec![super::unit_resolution::normalize_unit_label(&req.unit_txt)],
         ))
         .exec(&env.dbx)
@@ -474,8 +479,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::sigint_inbox_item;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use crate::entities::{
+        failed_unit_label, sigint_inbox_item,
+        sigint_inbox_item_failed_unit_label,
+    };
+    use sea_orm::ActiveValue::Set;
     use serial_test::serial;
 
     async fn insert_failure(
@@ -493,17 +501,34 @@ mod tests {
         )
         .await
         .unwrap();
-        failed_inbox_unit::ActiveModel {
-            deleted: Set(deleted),
-            is_bad_data: Set(is_bad_data),
-            inbox_item_id: Set(inbox_item.id),
-            unit_txt: Set(unit_txt.to_string()),
-            deleted_at: Set(deleted.then(|| chrono::Utc::now().naive_utc())),
-            ..Default::default()
-        }
-        .insert(db)
+        super::super::unit_resolution::upsert_failure(
+            db,
+            inbox_item.id,
+            unit_txt,
+        )
         .await
         .unwrap();
+        if is_bad_data {
+            failed_unit_label::Entity::update_many()
+                .col_expr(
+                    failed_unit_label::Column::IsBadData,
+                    Expr::value(true),
+                )
+                .filter(Expr::cust_with_values(
+                    "lower(regexp_replace(btrim(failed_unit_label.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+                    vec![super::super::unit_resolution::normalize_unit_label(unit_txt)],
+                ))
+                .exec(db)
+                .await
+                .unwrap();
+        }
+        if deleted {
+            super::super::unit_resolution::mark_failures_pending_for_text(
+                db, unit_txt,
+            )
+            .await
+            .unwrap();
+        }
     }
 
     #[tokio::test]
@@ -558,10 +583,9 @@ mod tests {
         .unwrap();
 
         assert_eq!(affected_count, 2);
-        let failures = failed_inbox_unit::Entity::find()
+        let failures = sigint_inbox_item_failed_unit_label::Entity::find()
             .filter(
-                failed_inbox_unit::Column::UnitTxt
-                    .is_in(["original label", "EDITED   LABEL"]),
+                sigint_inbox_item_failed_unit_label::Column::Deleted.eq(true),
             )
             .all(&env.dbx)
             .await

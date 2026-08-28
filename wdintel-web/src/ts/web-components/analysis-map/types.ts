@@ -13,6 +13,7 @@ export type Message = [
     date?: string | null;
     time?: string | null;
     unit?: string | null;
+    unit_ids?: number[] | null;
     network_ids?: number[] | null;
     text_marked?: ContentNode[] | null;
   },

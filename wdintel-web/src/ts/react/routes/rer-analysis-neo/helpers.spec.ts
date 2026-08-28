@@ -188,6 +188,36 @@ describe('rer-analysis-neo helpers', () => {
     expect(inboxReq?.unitsExactMatchOnly).toBeNull();
   });
 
+  it('routes numeric unit selections through stable id fields', () => {
+    const state = createQueryState({
+      unitsSelected: ['42', 'Legacy unit'],
+      unitsExactMatchOnly: true,
+    });
+    const analysisReq = buildAnalysisReq(state);
+    const inboxReq = buildInboxReq(state);
+
+    expect(analysisReq).toMatchObject({
+      selectedUnitIds: [42],
+      selectedUnits: ['Legacy unit'],
+      unitsExactMatchOnly: true,
+    });
+    expect(inboxReq).toMatchObject({
+      selectedUnitIds: [42],
+      selectedUnits: ['Legacy unit'],
+      unitsExactMatchOnly: true,
+    });
+  });
+
+  it('disables legacy exact matching for id-only unit selections', () => {
+    const state = createQueryState({
+      unitsSelected: ['42'],
+      unitsExactMatchOnly: true,
+    });
+
+    expect(buildAnalysisReq(state)?.unitsExactMatchOnly).toBeNull();
+    expect(buildInboxReq(state)?.unitsExactMatchOnly).toBeNull();
+  });
+
   it('keeps inbox-only media filtering out of the analysis request while passing it to the inbox request', () => {
     const state = createQueryState({ onlyWithMedia: true });
 

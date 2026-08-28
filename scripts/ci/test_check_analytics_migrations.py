@@ -52,6 +52,22 @@ class AnalyticsMigrationCheckTests(unittest.TestCase):
         )
         self.assertIn("is not in canonical exclusions", errors[0])
 
+    def test_dropped_excluded_table_may_leave_canonical_exclusions(self) -> None:
+        contents = """
+drop table sample;
+async fn down() {
+    create table sample (id bigint);
+}
+"""
+        errors = MODULE.validate_change(
+            "echo:m1",
+            contents,
+            MODULE.detect_ddl(contents),
+            {"changes": [{"table": "public.sample", "strategy": "excluded"}]},
+            set(),
+        )
+        self.assertEqual(errors, [])
+
     def test_cdc_backfill_requires_dml(self) -> None:
         contents = "alter table sample add column enabled boolean default false;"
         errors = MODULE.validate_change(

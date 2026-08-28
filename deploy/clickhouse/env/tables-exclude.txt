@@ -30,7 +30,8 @@ public.palitra_highlight_blacklist
 
 # PostgreSQL-only parsing configuration.
 public.sigint_comment_blacklist
-public.failed_inbox_unit
+public.failed_unit_label
+public.sigint_inbox_item_failed_unit_label
 public.sigint_unit_label
 public.sigint_unit_change
 public.battle_line_version

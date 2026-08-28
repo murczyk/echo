@@ -1318,6 +1318,8 @@ type alias InboxMessagesReq =
     , selectedCallsigns : Maybe (List (String))
     , selectedUnits : Maybe (List (String))
     , deniedUnits : Maybe (List (String))
+    , selectedUnitIds : Maybe (List (Int))
+    , deniedUnitIds : Maybe (List (Int))
     , selectedLocations : Maybe (List (String))
     , selectedDeviceNames : Maybe (List (String))
     , nolimit : Maybe (Bool)
@@ -1382,6 +1384,8 @@ inboxMessagesReqEncoder struct =
         , ( "selected_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedCallsigns )
         , ( "selected_units", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedUnits )
         , ( "denied_units", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.deniedUnits )
+        , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
+        , ( "denied_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.deniedUnitIds )
         , ( "selected_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedLocations )
         , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
         , ( "nolimit", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.nolimit )
@@ -1945,6 +1949,7 @@ type alias AnalysisStatsReq =
     , selectedPosts : Maybe (List (String))
     , selectedCallsigns : Maybe (List (String))
     , selectedUnits : Maybe (List (String))
+    , selectedUnitIds : Maybe (List (Int))
     , selectedLocations : Maybe (List (String))
     , selectedDeviceNames : Maybe (List (String))
     , selectedAors : Maybe (List (Int))
@@ -1984,6 +1989,7 @@ analysisStatsReqEncoder struct =
         , ( "selected_posts", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedPosts )
         , ( "selected_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedCallsigns )
         , ( "selected_units", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedUnits )
+        , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
         , ( "selected_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedLocations )
         , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
         , ( "selected_aors", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedAors )
@@ -2133,7 +2139,8 @@ analysisStatsCallsignEncoder struct =
 
 
 type alias AnalysisStatsUnit =
-    { unit : String
+    { unitId : Int
+    , name : String
     , count : Int
     }
 
@@ -2141,7 +2148,8 @@ type alias AnalysisStatsUnit =
 analysisStatsUnitEncoder : AnalysisStatsUnit -> Json.Encode.Value
 analysisStatsUnitEncoder struct =
     Json.Encode.object
-        [ ( "unit", (Json.Encode.string) struct.unit )
+        [ ( "unit_id", (Json.Encode.int) struct.unitId )
+        , ( "name", (Json.Encode.string) struct.name )
         , ( "count", (Json.Encode.int) struct.count )
         ]
 
@@ -2339,6 +2347,7 @@ type alias CallsignsGraphReq =
     , selectedPosts : Maybe (List (String))
     , selectedCallsigns : Maybe (List (String))
     , selectedUnits : Maybe (List (String))
+    , selectedUnitIds : Maybe (List (Int))
     , selectedLocations : Maybe (List (String))
     , selectedDeviceNames : Maybe (List (String))
     , orWithExtendedForm : Maybe (Bool)
@@ -2379,6 +2388,7 @@ callsignsGraphReqEncoder struct =
         , ( "selected_posts", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedPosts )
         , ( "selected_callsigns", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedCallsigns )
         , ( "selected_units", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedUnits )
+        , ( "selected_unit_ids", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.int))) struct.selectedUnitIds )
         , ( "selected_locations", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedLocations )
         , ( "selected_device_names", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.list (Json.Encode.string))) struct.selectedDeviceNames )
         , ( "or_with_extended_form", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.orWithExtendedForm )
@@ -15143,6 +15153,8 @@ inboxMessagesReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_callsigns" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_units" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_units" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_locations" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_device_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "nolimit" (Json.Decode.nullable (Json.Decode.bool))))
@@ -15376,6 +15388,7 @@ analysisStatsReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_posts" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_callsigns" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_units" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_locations" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_device_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_aors" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
@@ -15472,7 +15485,8 @@ analysisStatsCallsignDecoder =
 analysisStatsUnitDecoder : Json.Decode.Decoder AnalysisStatsUnit
 analysisStatsUnitDecoder =
     Json.Decode.succeed AnalysisStatsUnit
-        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "unit_id" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "count" (Json.Decode.int)))
 
 
@@ -15573,6 +15587,7 @@ callsignsGraphReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_posts" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_callsigns" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_units" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_locations" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_device_names" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "or_with_extended_form" (Json.Decode.nullable (Json.Decode.bool))))

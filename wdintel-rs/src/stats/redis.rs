@@ -1320,6 +1320,14 @@ impl GroupStatsRedis {
             .await
     }
 
+    pub async fn read_unit_days(
+        &self,
+        dates: &[NaiveDate],
+    ) -> anyhow::Result<Vec<UnitBucket>> {
+        self.read_required(dates.iter().copied().map(unit_day_key).collect())
+            .await
+    }
+
     pub async fn read_network_days(
         &self,
         dates: &[NaiveDate],

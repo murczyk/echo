@@ -257,6 +257,7 @@ fn resolved_analysis_unit_filters(
 pub(in crate::rer_importer) fn apply_analysis_unit_filters<E>(
     query: Select<E>,
     selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
     units_exact_match_only: &Option<bool>,
     dt_since: chrono::NaiveDateTime,
     dt_till: chrono::NaiveDateTime,
@@ -266,27 +267,30 @@ pub(in crate::rer_importer) fn apply_analysis_unit_filters<E>(
 where
     E: EntityTrait,
 {
-    if let Some(scope) = scope {
+    let query = if let Some(scope) = scope {
         if selected_units.as_ref().is_none_or(Vec::is_empty) {
-            return Ok(query);
+            query
+        } else {
+            let resolved = resolved.ok_or_else(|| {
+                anyhow::anyhow!("analytics unit filters were not resolved")
+            })?;
+            apply_resolved_analytics_unit_filters(
+                query,
+                resolved,
+                scope,
+                units_exact_match_only.unwrap_or(false),
+            )
         }
-        let resolved = resolved.ok_or_else(|| {
-            anyhow::anyhow!("analytics unit filters were not resolved")
-        })?;
-        return Ok(apply_resolved_analytics_unit_filters(
+    } else {
+        super::filter_selected_units_for_period(
             query,
-            resolved,
-            scope,
-            units_exact_match_only.unwrap_or(false),
-        ));
-    }
-    super::filter_selected_units_for_period(
-        query,
-        selected_units,
-        units_exact_match_only,
-        dt_since,
-        dt_till,
-    )
+            selected_units,
+            units_exact_match_only,
+            dt_since,
+            dt_till,
+        )?
+    };
+    Ok(super::filter_selected_unit_ids(query, selected_unit_ids))
 }
 
 pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters<E>(
