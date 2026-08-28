@@ -56,6 +56,8 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_one = "super::ai_callsign_worker_job::Entity")]
     AiCallsignWorkerJob,
+    #[sea_orm(has_one = "super::ai_settlement_worker_job::Entity")]
+    AiSettlementWorkerJob,
     #[sea_orm(
         belongs_to = "super::device_name::Entity",
         from = "Column::DeviceNameId",
@@ -117,6 +119,12 @@ pub enum Relation {
 impl Related<super::ai_callsign_worker_job::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::AiCallsignWorkerJob.def()
+    }
+}
+
+impl Related<super::ai_settlement_worker_job::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiSettlementWorkerJob.def()
     }
 }
 

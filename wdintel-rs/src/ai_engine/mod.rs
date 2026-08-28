@@ -8,9 +8,9 @@ use crate::config::{
     AI_ENGINE_URL_MAX_CHARS,
 };
 use crate::entities::{
-    ai_callsign_settings, ai_chat, ai_chat_message, ai_engine, login,
-    media_summary, media_summary_settings, ocr_job, ocr_settings,
-    ocr_settings_ai_engine,
+    ai_callsign_settings, ai_chat, ai_chat_message, ai_engine,
+    ai_settlement_settings, login, media_summary, media_summary_settings,
+    ocr_job, ocr_settings, ocr_settings_ai_engine,
 };
 use crate::error::AppError;
 use crate::h;
@@ -206,6 +206,8 @@ pub async fn update_ai_engine(
     if !values.enabled || !values.callsign_enabled {
         ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
             .await?;
+        ensure_not_used_by_enabled_settlement_worker(&env.dbx, ai_engine_id)
+            .await?;
         crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
             .await
             .c(h!())?;
@@ -242,6 +244,8 @@ pub async fn delete_ai_engine(
     let ai_engine_id = parse_uuid(&req.id)?;
     find_ai_engine(&env.dbx, ai_engine_id).await?;
     ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id).await?;
+    ensure_not_used_by_enabled_settlement_worker(&env.dbx, ai_engine_id)
+        .await?;
     crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
         .await
         .c(h!())?;
@@ -270,6 +274,27 @@ async fn ensure_not_used_by_enabled_callsign_worker(
     if is_used {
         return Err(AppError::BL {
             msg: "ШІ движок використовується воркером позивних. Спочатку вимкніть воркер або виберіть інший движок.".to_string(),
+        });
+    }
+    Ok(())
+}
+
+async fn ensure_not_used_by_enabled_settlement_worker(
+    dbx: &DatabaseConnection,
+    ai_engine_id: Uuid,
+) -> Result<(), AppError> {
+    let is_used = ai_settlement_settings::Entity::find()
+        .filter(ai_settlement_settings::Column::WorkerEnabled.eq(true))
+        .filter(
+            ai_settlement_settings::Column::WorkerAiEngineId.eq(ai_engine_id),
+        )
+        .one(dbx)
+        .await
+        .c(h!())?
+        .is_some();
+    if is_used {
+        return Err(AppError::BL {
+            msg: "ШІ движок використовується воркером населених пунктів. Спочатку вимкніть воркер або виберіть інший движок.".to_string(),
         });
     }
     Ok(())

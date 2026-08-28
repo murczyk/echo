@@ -13024,6 +13024,204 @@ saveAiCallsignWorkerSettingsReqEncoder struct =
         ]
 
 
+type alias AiSettlementEngineItem =
+    { id : String
+    , name : String
+    , modelName : String
+    }
+
+
+aiSettlementEngineItemEncoder : AiSettlementEngineItem -> Json.Encode.Value
+aiSettlementEngineItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "name", (Json.Encode.string) struct.name )
+        , ( "modelName", (Json.Encode.string) struct.modelName )
+        ]
+
+
+type alias AiSettlementParseResultItem =
+    { testMessageId : String
+    , aiEngineId : String
+    , settlements : List (String)
+    , error : Maybe (String)
+    , responseText : String
+    , updatedAt : Maybe (Int)
+    }
+
+
+aiSettlementParseResultItemEncoder : AiSettlementParseResultItem -> Json.Encode.Value
+aiSettlementParseResultItemEncoder struct =
+    Json.Encode.object
+        [ ( "testMessageId", (Json.Encode.string) struct.testMessageId )
+        , ( "aiEngineId", (Json.Encode.string) struct.aiEngineId )
+        , ( "settlements", (Json.Encode.list (Json.Encode.string)) struct.settlements )
+        , ( "error", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.error )
+        , ( "responseText", (Json.Encode.string) struct.responseText )
+        , ( "updatedAt", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.int)) struct.updatedAt )
+        ]
+
+
+type alias AiSettlementTestMessageItem =
+    { id : String
+    , message : String
+    , createdAt : Int
+    , updatedAt : Int
+    , results : List (AiSettlementParseResultItem)
+    }
+
+
+aiSettlementTestMessageItemEncoder : AiSettlementTestMessageItem -> Json.Encode.Value
+aiSettlementTestMessageItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "message", (Json.Encode.string) struct.message )
+        , ( "createdAt", (Json.Encode.int) struct.createdAt )
+        , ( "updatedAt", (Json.Encode.int) struct.updatedAt )
+        , ( "results", (Json.Encode.list (aiSettlementParseResultItemEncoder)) struct.results )
+        ]
+
+
+type alias AiSettlementWorkerSettingsItem =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    }
+
+
+aiSettlementWorkerSettingsItemEncoder : AiSettlementWorkerSettingsItem -> Json.Encode.Value
+aiSettlementWorkerSettingsItemEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        ]
+
+
+type alias AiSettlementPageRsp =
+    { prompt : String
+    , promptOverridden : Bool
+    , engines : List (AiSettlementEngineItem)
+    , messages : List (AiSettlementTestMessageItem)
+    , worker : AiSettlementWorkerSettingsItem
+    }
+
+
+aiSettlementPageRspEncoder : AiSettlementPageRsp -> Json.Encode.Value
+aiSettlementPageRspEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
+        , ( "engines", (Json.Encode.list (aiSettlementEngineItemEncoder)) struct.engines )
+        , ( "messages", (Json.Encode.list (aiSettlementTestMessageItemEncoder)) struct.messages )
+        , ( "worker", (aiSettlementWorkerSettingsItemEncoder) struct.worker )
+        ]
+
+
+type alias AiSettlementPromptState =
+    { prompt : String
+    , promptOverridden : Bool
+    }
+
+
+aiSettlementPromptStateEncoder : AiSettlementPromptState -> Json.Encode.Value
+aiSettlementPromptStateEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "promptOverridden", (Json.Encode.bool) struct.promptOverridden )
+        ]
+
+
+type alias CreateAiSettlementTestMessageReq =
+    { message : String
+    }
+
+
+createAiSettlementTestMessageReqEncoder : CreateAiSettlementTestMessageReq -> Json.Encode.Value
+createAiSettlementTestMessageReqEncoder struct =
+    Json.Encode.object
+        [ ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias UpdateAiSettlementTestMessageReq =
+    { id : String
+    , message : String
+    }
+
+
+updateAiSettlementTestMessageReqEncoder : UpdateAiSettlementTestMessageReq -> Json.Encode.Value
+updateAiSettlementTestMessageReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "message", (Json.Encode.string) struct.message )
+        ]
+
+
+type alias AiSettlementTestMessageIdReq =
+    { id : String
+    }
+
+
+aiSettlementTestMessageIdReqEncoder : AiSettlementTestMessageIdReq -> Json.Encode.Value
+aiSettlementTestMessageIdReqEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        ]
+
+
+type alias RunAiSettlementParsingReq =
+    { prompt : String
+    , aiEngineIds : List (String)
+    }
+
+
+runAiSettlementParsingReqEncoder : RunAiSettlementParsingReq -> Json.Encode.Value
+runAiSettlementParsingReqEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "aiEngineIds", (Json.Encode.list (Json.Encode.string)) struct.aiEngineIds )
+        ]
+
+
+type alias AiSettlementParsingRsp =
+    { results : List (AiSettlementParseResultItem)
+    }
+
+
+aiSettlementParsingRspEncoder : AiSettlementParsingRsp -> Json.Encode.Value
+aiSettlementParsingRspEncoder struct =
+    Json.Encode.object
+        [ ( "results", (Json.Encode.list (aiSettlementParseResultItemEncoder)) struct.results )
+        ]
+
+
+type alias SaveAiSettlementParsingReq =
+    { prompt : String
+    , results : List (AiSettlementParseResultItem)
+    }
+
+
+saveAiSettlementParsingReqEncoder : SaveAiSettlementParsingReq -> Json.Encode.Value
+saveAiSettlementParsingReqEncoder struct =
+    Json.Encode.object
+        [ ( "prompt", (Json.Encode.string) struct.prompt )
+        , ( "results", (Json.Encode.list (aiSettlementParseResultItemEncoder)) struct.results )
+        ]
+
+
+type alias SaveAiSettlementWorkerSettingsReq =
+    { enabled : Bool
+    , aiEngineId : Maybe (String)
+    }
+
+
+saveAiSettlementWorkerSettingsReqEncoder : SaveAiSettlementWorkerSettingsReq -> Json.Encode.Value
+saveAiSettlementWorkerSettingsReqEncoder struct =
+    Json.Encode.object
+        [ ( "enabled", (Json.Encode.bool) struct.enabled )
+        , ( "aiEngineId", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.aiEngineId )
+        ]
+
+
 type alias OcrStatusLogItem =
     { at : Int
     , message : String
@@ -22095,6 +22293,105 @@ saveAiCallsignParsingReqDecoder =
 saveAiCallsignWorkerSettingsReqDecoder : Json.Decode.Decoder SaveAiCallsignWorkerSettingsReq
 saveAiCallsignWorkerSettingsReqDecoder =
     Json.Decode.succeed SaveAiCallsignWorkerSettingsReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiSettlementEngineItemDecoder : Json.Decode.Decoder AiSettlementEngineItem
+aiSettlementEngineItemDecoder =
+    Json.Decode.succeed AiSettlementEngineItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "name" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "modelName" (Json.Decode.string)))
+
+
+aiSettlementParseResultItemDecoder : Json.Decode.Decoder AiSettlementParseResultItem
+aiSettlementParseResultItemDecoder =
+    Json.Decode.succeed AiSettlementParseResultItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "testMessageId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "settlements" (Json.Decode.list (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "error" (Json.Decode.nullable (Json.Decode.string))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "responseText" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.nullable (Json.Decode.int))))
+
+
+aiSettlementTestMessageItemDecoder : Json.Decode.Decoder AiSettlementTestMessageItem
+aiSettlementTestMessageItemDecoder =
+    Json.Decode.succeed AiSettlementTestMessageItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "createdAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "updatedAt" (Json.Decode.int)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiSettlementParseResultItemDecoder))))
+
+
+aiSettlementWorkerSettingsItemDecoder : Json.Decode.Decoder AiSettlementWorkerSettingsItem
+aiSettlementWorkerSettingsItemDecoder =
+    Json.Decode.succeed AiSettlementWorkerSettingsItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
+
+
+aiSettlementPageRspDecoder : Json.Decode.Decoder AiSettlementPageRsp
+aiSettlementPageRspDecoder =
+    Json.Decode.succeed AiSettlementPageRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "engines" (Json.Decode.list (aiSettlementEngineItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messages" (Json.Decode.list (aiSettlementTestMessageItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "worker" (aiSettlementWorkerSettingsItemDecoder)))
+
+
+aiSettlementPromptStateDecoder : Json.Decode.Decoder AiSettlementPromptState
+aiSettlementPromptStateDecoder =
+    Json.Decode.succeed AiSettlementPromptState
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "promptOverridden" (Json.Decode.bool)))
+
+
+createAiSettlementTestMessageReqDecoder : Json.Decode.Decoder CreateAiSettlementTestMessageReq
+createAiSettlementTestMessageReqDecoder =
+    Json.Decode.succeed CreateAiSettlementTestMessageReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
+updateAiSettlementTestMessageReqDecoder : Json.Decode.Decoder UpdateAiSettlementTestMessageReq
+updateAiSettlementTestMessageReqDecoder =
+    Json.Decode.succeed UpdateAiSettlementTestMessageReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "message" (Json.Decode.string)))
+
+
+aiSettlementTestMessageIdReqDecoder : Json.Decode.Decoder AiSettlementTestMessageIdReq
+aiSettlementTestMessageIdReqDecoder =
+    Json.Decode.succeed AiSettlementTestMessageIdReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+
+
+runAiSettlementParsingReqDecoder : Json.Decode.Decoder RunAiSettlementParsingReq
+runAiSettlementParsingReqDecoder =
+    Json.Decode.succeed RunAiSettlementParsingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineIds" (Json.Decode.list (Json.Decode.string))))
+
+
+aiSettlementParsingRspDecoder : Json.Decode.Decoder AiSettlementParsingRsp
+aiSettlementParsingRspDecoder =
+    Json.Decode.succeed AiSettlementParsingRsp
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiSettlementParseResultItemDecoder))))
+
+
+saveAiSettlementParsingReqDecoder : Json.Decode.Decoder SaveAiSettlementParsingReq
+saveAiSettlementParsingReqDecoder =
+    Json.Decode.succeed SaveAiSettlementParsingReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiSettlementParseResultItemDecoder))))
+
+
+saveAiSettlementWorkerSettingsReqDecoder : Json.Decode.Decoder SaveAiSettlementWorkerSettingsReq
+saveAiSettlementWorkerSettingsReqDecoder =
+    Json.Decode.succeed SaveAiSettlementWorkerSettingsReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "enabled" (Json.Decode.bool)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "aiEngineId" (Json.Decode.nullable (Json.Decode.string))))
 

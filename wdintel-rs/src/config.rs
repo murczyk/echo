@@ -58,6 +58,19 @@ pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
+pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
+pub const AI_SETTLEMENT_PROMPT_MAX_CHARS: usize = 100_000;
+pub const AI_SETTLEMENT_MESSAGE_MAX_CHARS: usize = 100_000;
+pub const AI_SETTLEMENT_MAX_SETTLEMENTS: usize = 500;
+pub const AI_SETTLEMENT_MAX_CHARS: usize = 255;
+pub const AI_SETTLEMENT_MAX_CONCURRENT_REQUESTS: usize = 4;
+pub const AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_SETTLEMENT_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_SETTLEMENT_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_SETTLEMENT_WORKER_MAX_ATTEMPTS: i32 = 8;
+pub const AI_SETTLEMENT_WORKER_MAX_ERROR_CHARS: usize = 2_000;
+pub const AI_SETTLEMENT_DEFAULT_PROMPT: &str =
+    include_str!("../../ai-eval/2026-08-28-settlement-prompt/prompt.txt");
 pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;
 pub const AI_INTEL_REPORT_HISTORY_DAYS: i64 = 3;
 pub const AI_INTEL_REPORT_BUCKET_CANDIDATE_LIMIT: u64 = 12;

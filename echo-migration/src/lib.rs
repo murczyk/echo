@@ -399,6 +399,7 @@ mod m20260825_204254_ai_agent_engine_runtime_profile;
 mod m20260826_083256_sigint_peleng_battle_line_distance;
 mod m20260826_212652_sigint_unit_formation_normalized_name_index;
 mod m20260827_074530_create_report_download_history;
+mod m20260828_143607_add_ai_settlement_parsing;
 mod m20260828_150352_echo_chat_admin;
 
 pub struct Migrator;
@@ -938,6 +939,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260827_074530_create_report_download_history::Migration,
             ),
+            Box::new(m20260828_143607_add_ai_settlement_parsing::Migration),
             Box::new(m20260828_150352_echo_chat_admin::Migration),
         ]
     }
