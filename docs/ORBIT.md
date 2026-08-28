@@ -112,12 +112,14 @@ or replace SIGINT links.
 
 ### Link ORBIT units to SIGINT units
 
-This is the only automatic linking workflow. It reads active, non-deleted,
-unlinked SIGINT units and roots from the latest synchronized ORBIT revision
-from PostgreSQL. Choose a mode when the workflow starts:
+This is the only automatic linking workflow. It reads active, non-deleted
+SIGINT units and roots from the latest synchronized ORBIT revision from
+PostgreSQL. Manual mode reviews only unlinked units. Automatic mode also
+revalidates existing automatic links while preserving authoritative manual
+links. Choose a mode when the workflow starts:
 
-- automatic links a unit only when it has exactly one maximum-rated candidate,
-  the rating is exactly 100, and the Levenshtein distance is at most 10;
+- automatic links a unit only when one rating-100 candidate is uniquely closest
+  by Levenshtein distance and that distance is at most 10;
 - manual opens the interactive review for every structurally valid candidate,
   without a Levenshtein-distance cutoff.
 

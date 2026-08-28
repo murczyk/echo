@@ -56,14 +56,16 @@ dictionary rows before resolving units; existing PostgreSQL rows with the same
 Every value in a unit's `grouping_of_forces` array is retained through the
 `orbit_unit_grouping_of_forces` many-to-many relation.
 
-The linking action loads active, unlinked SIGINT units and top-level ORBIT roots
-exclusively from PostgreSQL. It retains candidates matching every populated
-SIGINT echelon, gives exact corresponding-echelon matches the maximum rating,
-and deducts one point for each same-number/different-text match. Automatic mode
-considers only candidates tied at the maximum rating and accepts only a single
-candidate whose rating is exactly 100 and whose Levenshtein distance is at most
-10. Manual mode presents every
-structurally valid candidate for review without a distance cutoff. The
+The linking action loads active SIGINT units and top-level ORBIT roots
+exclusively from PostgreSQL. Manual mode reviews unlinked units. Automatic mode
+also revalidates existing automatic links but preserves authoritative manual
+links. It retains candidates matching every populated SIGINT echelon, gives
+exact corresponding-echelon matches the maximum rating, and deducts one point
+for each same-number/different-text match. Automatic mode considers only
+candidates tied at the maximum rating and accepts a candidate only when it has
+rating 100, is uniquely closest by Levenshtein distance, and that distance is
+at most 10. Manual mode presents every structurally valid candidate for review
+without a distance cutoff. The
 standalone `oneoff-test-link-units` command runs the same workflow. Manual
 links from `/rer-units` and `/rer-units/{id}` use the same transactional link
 implementation.

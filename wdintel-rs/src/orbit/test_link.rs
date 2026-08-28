@@ -5,7 +5,9 @@ use crate::config::{
     ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
 };
-use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
+use crate::entities::{
+    orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
+};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
@@ -30,7 +32,7 @@ struct PersistSummary {
 }
 
 struct AutomaticPersistenceMatcherCache {
-    orbit_sync_id: i64,
+    orbit_sync: orbit_sync::Model,
     matcher: matching::TestLinkMatcher,
 }
 
@@ -524,7 +526,7 @@ where
         .c(h!())?;
     if matcher_cache
         .as_ref()
-        .is_some_and(|cache| cache.orbit_sync_id == orbit_sync.id)
+        .is_some_and(|cache| cache.orbit_sync == orbit_sync)
     {
         return Ok(());
     }
@@ -532,7 +534,7 @@ where
         .await
         .c(h!())?;
     *matcher_cache = Some(AutomaticPersistenceMatcherCache {
-        orbit_sync_id: orbit_sync.id,
+        orbit_sync,
         matcher: matching::TestLinkMatcher::from_units(orbit_units),
     });
     Ok(())
@@ -562,14 +564,17 @@ where
             summary.already_linked += 1;
             continue;
         }
-        let Some(sigint_unit) =
-            load_reviewable_sigint_unit(dbx, *sigint_unit_id)
-                .await
-                .c(h!())?
+        let Some(sigint_unit) = load_locked_sigint_unit(dbx, *sigint_unit_id)
+            .await
+            .c(h!())?
         else {
             summary.no_longer_matching += 1;
             continue;
         };
+        if !sigint_unit_is_reviewable(&sigint_unit) {
+            summary.no_longer_matching += 1;
+            continue;
+        }
         if !accepted_link_is_current_match(
             &sigint_unit,
             *orbit_unit_id,
@@ -609,14 +614,21 @@ where
     let mut summary = PersistSummary::default();
     let mut links_changed = false;
     for sigint_unit_id in reviewed_sigint_unit_ids {
-        let Some(sigint_unit) =
-            load_reviewable_sigint_unit(dbx, *sigint_unit_id)
-                .await
-                .c(h!())?
+        let Some(sigint_unit) = load_locked_sigint_unit(dbx, *sigint_unit_id)
+            .await
+            .c(h!())?
         else {
             summary.no_longer_matching += 1;
             continue;
         };
+        if !sigint_unit_is_reviewable(&sigint_unit) {
+            summary.no_longer_matching += 1;
+            links_changed |=
+                remove_unreviewable_automatic_links(dbx, login, &sigint_unit)
+                    .await
+                    .c(h!())?;
+            continue;
+        }
         if sigint_unit_has_active_manual_link(dbx, *sigint_unit_id)
             .await
             .c(h!())?
@@ -685,6 +697,28 @@ where
     Ok((summary, links_changed))
 }
 
+async fn remove_unreviewable_automatic_links<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    sigint_unit: &sigint_unit::Model,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let removed = delete_automatic_links(dbx, sigint_unit.id).await.c(h!())?;
+    if removed && !sigint_unit.deleted {
+        crate::sigint::unit::orbit::reconcile_sigint_unit_orbit(
+            dbx,
+            login,
+            sigint_unit.id,
+            true,
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(removed)
+}
+
 async fn sigint_unit_has_active_manual_link<C>(
     dbx: &C,
     sigint_unit_id: i64,
@@ -736,7 +770,7 @@ fn suppressions_to_preserve(
     current
 }
 
-async fn load_reviewable_sigint_unit<C>(
+async fn load_locked_sigint_unit<C>(
     dbx: &C,
     sigint_unit_id: i64,
 ) -> anyhow::Result<Option<sigint_unit::Model>>
@@ -744,12 +778,14 @@ where
     C: ConnectionTrait,
 {
     sigint_unit::Entity::find_by_id(sigint_unit_id)
-        .filter(sigint_unit::Column::Active.eq(true))
-        .filter(sigint_unit::Column::Deleted.eq(false))
         .lock_exclusive()
         .one(dbx)
         .await
         .c(h!())
+}
+
+fn sigint_unit_is_reviewable(sigint_unit: &sigint_unit::Model) -> bool {
+    sigint_unit.active && !sigint_unit.deleted
 }
 
 fn accepted_link_is_current_match(
@@ -918,7 +954,9 @@ fn print_summary(summary: ReviewSummary, persist_summary: PersistSummary) {
 mod tests {
     use super::*;
     use crate::orbit::types::SourceUnit;
-    use sea_orm::{ActiveValue::Set, TransactionTrait};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, IntoActiveModel, TransactionTrait,
+    };
     use serde_json::json;
 
     fn review_unit(match_count: usize) -> ReviewUnit {
@@ -1235,11 +1273,21 @@ mod tests {
         )
         .await
         .unwrap();
+        let inactive_automatic_unit = crate::functest::tests::mk_sigint_unit(
+            &db,
+            sigint_unit::ActiveModel {
+                created_by_login_id: Set(login),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         for (sigint_unit_id, orbit_unit_id, is_manual) in [
             (automatic_unit.id, orbit_unit.unit_id, false),
             (manual_unit.id, orbit_unit.unit_id, true),
             (mixed_unit.id, orbit_unit.unit_id, true),
             (mixed_unit.id, stale_orbit_unit.unit_id, false),
+            (inactive_automatic_unit.id, orbit_unit.unit_id, false),
         ] {
             orbit_unit_sigint_unit::Entity::insert(
                 orbit_unit_sigint_unit::ActiveModel {
@@ -1270,9 +1318,16 @@ mod tests {
         assert!(automatic_ids.contains(&automatic_unit.id));
         assert!(!automatic_ids.contains(&manual_unit.id));
         assert!(automatic_ids.contains(&mixed_unit.id));
+        assert!(automatic_ids.contains(&inactive_automatic_unit.id));
         assert!(!manual_ids.contains(&automatic_unit.id));
         assert!(!manual_ids.contains(&manual_unit.id));
         assert!(!manual_ids.contains(&mixed_unit.id));
+
+        let mut inactive_automatic_unit =
+            inactive_automatic_unit.into_active_model();
+        inactive_automatic_unit.active = Set(false);
+        let inactive_automatic_unit =
+            inactive_automatic_unit.update(&db).await.unwrap();
 
         let current_orbit_units = [orbit_hierarchy_unit(
             orbit_unit.unit_id,
@@ -1290,6 +1345,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
+                inactive_automatic_unit.id,
             ],
             &matcher,
             &BTreeSet::new(),
@@ -1300,6 +1356,7 @@ mod tests {
 
         assert!(links_changed);
         assert_eq!(summary.already_linked, 2);
+        assert_eq!(summary.no_longer_matching, 1);
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
@@ -1339,6 +1396,15 @@ mod tests {
             .unwrap();
         assert_eq!(newly_created_link.orbit_unit_id, orbit_unit.unit_id);
         assert!(!newly_created_link.is_manual);
+        assert!(orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::SigintUnitId
+                    .eq(inactive_automatic_unit.id),
+            )
+            .one(&db)
+            .await
+            .unwrap()
+            .is_none());
 
         orbit_unit_sigint_unit::Entity::delete_many()
             .filter(orbit_unit_sigint_unit::Column::SigintUnitId.is_in([
@@ -1346,6 +1412,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
+                inactive_automatic_unit.id,
             ]))
             .exec(&db)
             .await
@@ -1356,6 +1423,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
+                inactive_automatic_unit.id,
             ]))
             .exec(&db)
             .await

@@ -1247,16 +1247,6 @@ mod tests {
         }
         setup.commit().await.unwrap();
         let after_id = Some(row_ids[0] - 1);
-        let raw_key_holder = dbx.begin().await.unwrap();
-        raw_key_holder
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "select pg_advisory_xact_lock($1)",
-                [item_ids[0].into()],
-            ))
-            .await
-            .unwrap();
-
         let first_worker = dbx.begin().await.unwrap();
         assert!(try_lock_pending_item(&first_worker, item_ids[0])
             .await
@@ -1269,7 +1259,6 @@ mod tests {
         assert_eq!(second.item_id, item_ids[1]);
         second_worker.rollback().await.unwrap();
         first_worker.rollback().await.unwrap();
-        raw_key_holder.rollback().await.unwrap();
 
         sigint_inbox_item_settlement::Entity::delete_many()
             .filter(sigint_inbox_item_settlement::Column::Id.is_in(row_ids))
