@@ -281,6 +281,11 @@ pub async fn create_linked_message_comment_with_context(
             .ok_or(AppError::NotFound)
             .c(h!())?
             .into_active_model();
+    signal_message.id_uuid =
+        Set(Some(crate::sigint::message_id::signal_message_uuid(
+            Some(comment_created_at),
+            comment_created_at,
+        )));
     signal_message.created_at = Set(comment_created_at);
     signal_message.timestamp = Set(Some(comment_created_at));
     let signal_message = signal_message.update(txn).await.c(h!())?;
