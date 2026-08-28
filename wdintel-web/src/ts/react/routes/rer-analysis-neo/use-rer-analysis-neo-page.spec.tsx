@@ -142,7 +142,8 @@ const baseAnalysisData = {
   messagesTotalLoading: false,
   focusedHasMoreEarlier: true,
   focusedHasMoreLater: true,
-  focusedLoadingDirection: null,
+  focusedLoadingEarlier: false,
+  focusedLoadingLater: false,
   messageComments: {},
   messages: [],
   networkDisplayMap: {},
@@ -816,9 +817,10 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.error).toBe('Не вдалося знайти повідомлення за посиланням.');
+    expect(latest?.directMessageLoading).toBe(false);
   });
 
-  it('opens only the direct-link message and exposes global context filters', async () => {
+  it('opens only the direct-link message and loads its references', async () => {
     const targetMessage = {
       text: 'target',
       freq: '123.45',
@@ -853,36 +855,22 @@ describe('useRerAnalysisNeoPage', () => {
       focusedMessage: [50, targetMessage],
       focusedMessageActive: true,
     });
-    expect(latest?.directMessageNavigation?.filterOptions).toEqual([
-      { kind: 'group', value: 'group-1', label: 'Група: Група Альфа', selected: false },
-      { kind: 'network', value: '17', label: 'Мережа: #17', selected: false },
-      { kind: 'frequency', value: '123.45', label: 'Частота: 123.45', selected: false },
-    ]);
+    expect(latest?.directMessageLoading).toBe(true);
     expect(latest?.groupInfos['group-1']?.name).toBe('Група Альфа');
     expect(latest?.profiles['sender-1']).toEqual({
       givenName: 'Іван',
       familyName: 'Петренко',
     });
 
-    const groupOption = latest?.directMessageNavigation?.filterOptions[0];
-    if (groupOption == null) throw new Error('Direct-link group filter is missing');
-    act(() => latest?.directMessageNavigation?.onToggleFilter(groupOption));
-    expect(latest?.queryState.groupsSelected).toEqual(['group-1']);
-    expect(latest?.rightPanelOpen).toBe(true);
-
-    const networkOption = latest?.directMessageNavigation?.filterOptions.find(
-      (option) => option.kind === 'network',
-    );
-    if (networkOption == null) throw new Error('Direct-link network filter is missing');
-    act(() => latest?.directMessageNavigation?.onToggleFilter(networkOption));
-    expect(latest?.queryState.networksSelected).toEqual(['17']);
-
-    const frequencyOption = latest?.directMessageNavigation?.filterOptions.find(
-      (option) => option.kind === 'frequency',
-    );
-    if (frequencyOption == null) throw new Error('Direct-link frequency filter is missing');
-    act(() => latest?.directMessageNavigation?.onToggleFilter(frequencyOption));
-    expect(latest?.queryState.freqsSelected).toEqual(['123.45']);
+    currentAnalysisData = {
+      ...buildAnalysisData(),
+      messages: [[50, targetMessage]],
+      messagesLoading: true,
+    };
+    act(() => latest?.setNewestFirst(false));
+    await flushEffects();
+    expect(latest?.directMessageLoading).toBe(false);
+    expect(latest?.messagesLoading).toBe(true);
 
     act(() => latest?.directMessageNavigation?.onClearFocus());
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);

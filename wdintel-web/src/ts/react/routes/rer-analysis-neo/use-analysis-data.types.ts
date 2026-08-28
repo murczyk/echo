@@ -106,7 +106,8 @@ export type UseAnalysisDataResult = {
   messagesTotalLoading: boolean;
   focusedHasMoreEarlier: boolean;
   focusedHasMoreLater: boolean;
-  focusedLoadingDirection: 'earlier' | 'later' | null;
+  focusedLoadingEarlier: boolean;
+  focusedLoadingLater: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;

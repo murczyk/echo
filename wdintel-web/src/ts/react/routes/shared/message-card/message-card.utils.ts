@@ -468,8 +468,8 @@ export function buildMessageLinkFullUrl(
 
 export function scrollToAndHighlightMessage(
   targetElement: HTMLElement,
-  options: { scroll?: boolean } = {},
-) {
+  options: { scroll?: boolean; persistentHighlight?: boolean } = {},
+): () => void {
   if (options.scroll !== false) {
     targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
@@ -483,21 +483,36 @@ export function scrollToAndHighlightMessage(
   ) as HTMLElement;
 
   const originalOutline = cardRoot.style.outline;
+  const originalOutlineColor = cardRoot.style.outlineColor;
   const originalOutlineOffset = cardRoot.style.outlineOffset;
   const originalTransition = cardRoot.style.transition;
+  let fadeTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let restoreTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let restored = false;
+
+  const restoreHighlight = () => {
+    if (restored) return;
+    restored = true;
+    if (fadeTimeoutId != null) clearTimeout(fadeTimeoutId);
+    if (restoreTimeoutId != null) clearTimeout(restoreTimeoutId);
+    cardRoot.style.outline = originalOutline;
+    cardRoot.style.outlineColor = originalOutlineColor;
+    cardRoot.style.outlineOffset = originalOutlineOffset;
+    cardRoot.style.transition = originalTransition;
+  };
 
   cardRoot.style.transition = 'none';
   cardRoot.style.outline = '2px solid var(--color-primary, #3b82f6)';
   cardRoot.style.outlineOffset = '-2px';
 
-  setTimeout(() => {
-    cardRoot.style.transition = 'outline-color 0.7s ease-out';
-    cardRoot.style.outlineColor = 'transparent';
-  }, 1000);
+  if (!options.persistentHighlight) {
+    fadeTimeoutId = setTimeout(() => {
+      cardRoot.style.transition = 'outline-color 0.7s ease-out';
+      cardRoot.style.outlineColor = 'transparent';
+    }, 1000);
 
-  setTimeout(() => {
-    cardRoot.style.outline = originalOutline;
-    cardRoot.style.outlineOffset = originalOutlineOffset;
-    cardRoot.style.transition = originalTransition;
-  }, 1800);
+    restoreTimeoutId = setTimeout(restoreHighlight, 1800);
+  }
+
+  return restoreHighlight;
 }

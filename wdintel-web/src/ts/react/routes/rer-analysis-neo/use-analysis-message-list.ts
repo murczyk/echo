@@ -41,6 +41,28 @@ const FIRST_PAGE_CURSOR: AnalysisMessagePageCursor = {
   sinceIdNoninclusive: null,
 };
 
+type FocusedLoadScope = {
+  targetMessageId: number | null;
+  queryState: AnalysisQueryState;
+  generation: number;
+};
+
+function isCurrentFocusedLoadScope(
+  scope: FocusedLoadScope | null,
+  focusedMessageActive: boolean,
+  focusedMessageId: number | null,
+  queryState: AnalysisQueryState,
+  generation: number,
+): boolean {
+  return (
+    focusedMessageActive &&
+    scope != null &&
+    scope.targetMessageId === focusedMessageId &&
+    scope.queryState === queryState &&
+    scope.generation === generation
+  );
+}
+
 function transformPageMessages(
   messages: Array<[number, InboxMessage]>,
   cursor: AnalysisMessagePageCursor,
@@ -73,19 +95,28 @@ export function useAnalysisMessageList({
   const [noMoreToLoad, setNoMoreToLoad] = useState(false);
   const [focusedHasMoreEarlier, setFocusedHasMoreEarlier] = useState(true);
   const [focusedHasMoreLater, setFocusedHasMoreLater] = useState(true);
-  const [focusedLoadingDirection, setFocusedLoadingDirection] = useState<
-    'earlier' | 'later' | null
-  >(null);
+  const [focusedLoadingEarlier, setFocusedLoadingEarlier] = useState(false);
+  const [focusedLoadingLater, setFocusedLoadingLater] = useState(false);
   const [nolimitShown, setNolimitShown] = useState(false);
   const [pageIndex, setPageIndex] = useState(0);
   const messageCommentsRef = useRef(messageComments);
   const messageCommentsLoadVersionRef = useRef(0);
   const loadMoreMessagesRequestRef = useRef(0);
-  const focusedLoadingDirectionRef = useRef<'earlier' | 'later' | null>(null);
+  const focusedLoadGenerationRef = useRef(0);
+  const focusedMessageIdRef = useRef(focusedMessageId);
+  const focusedMessageActiveRef = useRef(focusedMessageActive);
+  const focusedQueryStateRef = useRef(queryState);
+  const focusedLoadingDirectionsRef = useRef<Record<'earlier' | 'later', FocusedLoadScope | null>>({
+    earlier: null,
+    later: null,
+  });
   const pageCursorsRef = useRef<AnalysisMessagePageCursor[]>([FIRST_PAGE_CURSOR]);
   const callsignEnrichmentGenerationRef = useRef(0);
   const unscopedCallsignsRef = useRef(new Set<string>());
   const callsignEnrichmentInFlightRef = useRef(new Map<string, number>());
+  focusedMessageIdRef.current = focusedMessageId;
+  focusedMessageActiveRef.current = focusedMessageActive;
+  focusedQueryStateRef.current = queryState;
   const { messagesOverallCount, messagesTotalCount, messagesTotalLoading, refreshMessageCounts } =
     useAnalysisMessageCounts({
       deferInitialLoad: deferInitialLoad || focusedMessageActive,
@@ -113,11 +144,27 @@ export function useAnalysisMessageList({
 
   useEffect(() => {
     loadMoreMessagesRequestRef.current += 1;
-    focusedLoadingDirectionRef.current = null;
+    const earlierLoading = isCurrentFocusedLoadScope(
+      focusedLoadingDirectionsRef.current.earlier,
+      focusedMessageActive,
+      focusedMessageId,
+      queryState,
+      focusedLoadGenerationRef.current,
+    );
+    const laterLoading = isCurrentFocusedLoadScope(
+      focusedLoadingDirectionsRef.current.later,
+      focusedMessageActive,
+      focusedMessageId,
+      queryState,
+      focusedLoadGenerationRef.current,
+    );
+    if (!earlierLoading) focusedLoadingDirectionsRef.current.earlier = null;
+    if (!laterLoading) focusedLoadingDirectionsRef.current.later = null;
     setFocusedHasMoreEarlier(true);
     setFocusedHasMoreLater(true);
-    setFocusedLoadingDirection(null);
-    setMessagesPaging(false);
+    setFocusedLoadingEarlier(earlierLoading);
+    setFocusedLoadingLater(laterLoading);
+    setMessagesPaging(earlierLoading || laterLoading);
   }, [focusedMessageActive, focusedMessageId, queryState]);
 
   const displayedMessages = useMemo(() => {
@@ -140,6 +187,10 @@ export function useAnalysisMessageList({
   const invalidateMessagePageRequests = useCallback(() => {
     invalidateCallsignEnrichment();
     loadMoreMessagesRequestRef.current += 1;
+    focusedLoadGenerationRef.current += 1;
+    focusedLoadingDirectionsRef.current = { earlier: null, later: null };
+    setFocusedLoadingEarlier(false);
+    setFocusedLoadingLater(false);
     setMessagesPaging(false);
   }, [invalidateCallsignEnrichment]);
 
@@ -344,17 +395,35 @@ export function useAnalysisMessageList({
 
   const loadFocusedMessages = useCallback(
     async (direction: 'earlier' | 'later') => {
-      if (!focusedMessageActive || focusedLoadingDirectionRef.current !== null) return false;
+      if (
+        !focusedMessageActive ||
+        isCurrentFocusedLoadScope(
+          focusedLoadingDirectionsRef.current[direction],
+          focusedMessageActive,
+          focusedMessageId,
+          queryState,
+          focusedLoadGenerationRef.current,
+        )
+      )
+        return false;
       const boundaryMessage = direction === 'earlier' ? messages.at(0) : messages.at(-1);
       if (isNullOrUndefined(boundaryMessage)) return false;
       const inboxReq = buildInboxReq(queryState, optionsFreqValues, true);
       if (isNullOrUndefined(inboxReq)) return false;
 
-      const requestId = loadMoreMessagesRequestRef.current + 1;
-      loadMoreMessagesRequestRef.current = requestId;
-      const isStale = () => requestId !== loadMoreMessagesRequestRef.current;
-      focusedLoadingDirectionRef.current = direction;
-      setFocusedLoadingDirection(direction);
+      const requestScope: FocusedLoadScope = {
+        targetMessageId: focusedMessageId,
+        queryState,
+        generation: focusedLoadGenerationRef.current,
+      };
+      const isStale = () =>
+        requestScope.generation !== focusedLoadGenerationRef.current ||
+        focusedMessageIdRef.current !== requestScope.targetMessageId ||
+        !focusedMessageActiveRef.current ||
+        focusedQueryStateRef.current !== requestScope.queryState;
+      focusedLoadingDirectionsRef.current[direction] = requestScope;
+      if (direction === 'earlier') setFocusedLoadingEarlier(true);
+      else setFocusedLoadingLater(true);
       setMessagesPaging(true);
       try {
         const rsp = await fetchInboxMessages({
@@ -392,14 +461,23 @@ export function useAnalysisMessageList({
         return false;
       } finally {
         if (!isStale()) {
-          focusedLoadingDirectionRef.current = null;
-          setFocusedLoadingDirection(null);
-          setMessagesPaging(false);
+          if (focusedLoadingDirectionsRef.current[direction] === requestScope) {
+            focusedLoadingDirectionsRef.current[direction] = null;
+          }
+          if (direction === 'earlier') setFocusedLoadingEarlier(false);
+          else setFocusedLoadingLater(false);
+          if (
+            focusedLoadingDirectionsRef.current.earlier == null &&
+            focusedLoadingDirectionsRef.current.later == null
+          ) {
+            setMessagesPaging(false);
+          }
         }
       }
     },
     [
       focusedMessageActive,
+      focusedMessageId,
       loadMessageComments,
       loadMissingNetworksForMessages,
       mergeMessageReferences,
@@ -417,6 +495,25 @@ export function useAnalysisMessageList({
     [loadFocusedMessages],
   );
   const loadFocusedLater = useCallback(() => loadFocusedMessages('later'), [loadFocusedMessages]);
+
+  const currentFocusedLoadingEarlier =
+    focusedLoadingEarlier &&
+    isCurrentFocusedLoadScope(
+      focusedLoadingDirectionsRef.current.earlier,
+      focusedMessageActive,
+      focusedMessageId,
+      queryState,
+      focusedLoadGenerationRef.current,
+    );
+  const currentFocusedLoadingLater =
+    focusedLoadingLater &&
+    isCurrentFocusedLoadScope(
+      focusedLoadingDirectionsRef.current.later,
+      focusedMessageActive,
+      focusedMessageId,
+      queryState,
+      focusedLoadGenerationRef.current,
+    );
 
   const loadPrevPage = useCallback(async () => {
     if (pageIndex === 0) return;
@@ -503,7 +600,8 @@ export function useAnalysisMessageList({
     messagesTotalLoading,
     focusedHasMoreEarlier,
     focusedHasMoreLater,
-    focusedLoadingDirection,
+    focusedLoadingEarlier: currentFocusedLoadingEarlier,
+    focusedLoadingLater: currentFocusedLoadingLater,
     noMoreToLoad,
     nolimitShown,
     pageIndex,

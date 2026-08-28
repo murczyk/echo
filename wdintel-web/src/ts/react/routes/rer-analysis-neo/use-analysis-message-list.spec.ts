@@ -511,25 +511,41 @@ describe('useAnalysisMessageList pagination', () => {
     );
     harnesses.push(h);
     act(() => h.latest.setMessages(page(50)));
+    const earlierResponse = {
+      inboxItems: [...page(49), ...page(48)],
+      callsigns: [],
+      signalGroups: [{ masterKey: 'group-1', name: 'Група Альфа' }],
+      signalProfiles: {
+        'sender-1': { givenName: 'Іван', familyName: 'Петренко' },
+      },
+      pageLimit: 2,
+    };
+    const laterResponse = {
+      inboxItems: [...page(51), ...page(52)],
+      callsigns: [],
+      pageLimit: 20,
+    };
+    const earlierLoad = deferred<typeof earlierResponse>();
+    const laterLoad = deferred<typeof laterResponse>();
     fetchInboxMessagesMock
-      .mockResolvedValueOnce({
-        inboxItems: [...page(49), ...page(48)],
-        callsigns: [],
-        signalGroups: [{ masterKey: 'group-1', name: 'Група Альфа' }],
-        signalProfiles: {
-          'sender-1': { givenName: 'Іван', familyName: 'Петренко' },
-        },
-        pageLimit: 2,
-      })
-      .mockResolvedValueOnce({
-        inboxItems: [...page(51), ...page(52)],
-        callsigns: [],
-        pageLimit: 20,
-      });
+      .mockReturnValueOnce(earlierLoad.promise)
+      .mockReturnValueOnce(laterLoad.promise);
+
+    let earlierPromise!: Promise<boolean>;
+    let laterPromise!: Promise<boolean>;
+    act(() => {
+      earlierPromise = h.latest.loadFocusedEarlier();
+      laterPromise = h.latest.loadFocusedLater();
+    });
+
+    expect(fetchInboxMessagesMock).toHaveBeenCalledTimes(2);
+    expect(h.latest.focusedLoadingEarlier).toBe(true);
+    expect(h.latest.focusedLoadingLater).toBe(true);
 
     await act(async () => {
-      await h.latest.loadFocusedEarlier();
-      await h.latest.loadFocusedLater();
+      laterLoad.resolve(laterResponse);
+      earlierLoad.resolve(earlierResponse);
+      await Promise.all([earlierPromise, laterPromise]);
     });
 
     expect(h.latest.messages.map(([id]) => id)).toEqual([48, 49, 50, 51, 52]);
@@ -552,6 +568,8 @@ describe('useAnalysisMessageList pagination', () => {
     });
     expect(h.latest.focusedHasMoreEarlier).toBe(true);
     expect(h.latest.focusedHasMoreLater).toBe(false);
+    expect(h.latest.focusedLoadingEarlier).toBe(false);
+    expect(h.latest.focusedLoadingLater).toBe(false);
     expect(h.groupInfos['group-1']?.name).toBe('Група Альфа');
     expect(h.profiles['sender-1']).toEqual({ givenName: 'Іван', familyName: 'Петренко' });
   });

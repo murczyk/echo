@@ -1,14 +1,4 @@
-import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
-import {
-  Box,
-  Button,
-  ButtonGroup,
-  Checkbox,
-  CircularProgress,
-  ListItemText,
-  Menu,
-  MenuItem,
-} from '@mui/material';
+import { Box, CircularProgress, Skeleton } from '@mui/material';
 import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
@@ -59,15 +49,9 @@ function filterOtherMessageComments(
   });
 }
 
-function NarrowMessagesLoadingIndicator({
-  loading,
-  paginationLoading,
-}: {
-  loading: boolean;
-  paginationLoading: boolean;
-}) {
-  if (!loading && !paginationLoading) return null;
-  const label = loading ? 'Оновлення повідомлень' : 'Завантаження ще повідомлень';
+function NarrowMessagesLoadingIndicator({ loading }: { loading: boolean }) {
+  if (!loading) return null;
+  const label = 'Оновлення повідомлень';
 
   return (
     <Box
@@ -193,65 +177,80 @@ function getMissingBottomScrollSpace(container: HTMLElement): number {
   );
 }
 
-function FocusedLoadMoreButton({
-  position,
-  navigation,
-  onBeforeLoad,
-}: {
-  position: 'above' | 'below';
-  navigation: AnalysisDirectMessageNavigation;
-  onBeforeLoad: (position: 'above' | 'below') => void;
-}) {
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const direction =
-    position === 'above'
-      ? navigation.newestFirst
-        ? 'later'
-        : 'earlier'
-      : navigation.newestFirst
-        ? 'earlier'
-        : 'later';
-  const canLoad = direction === 'earlier' ? navigation.canLoadEarlier : navigation.canLoadLater;
-  const load = direction === 'earlier' ? navigation.onLoadEarlier : navigation.onLoadLater;
-  if (!canLoad) return null;
+function getElementVerticalCenter(element: HTMLElement): number {
+  const rect = element.getBoundingClientRect();
+  return rect.top + (rect.height || element.offsetHeight) / 2;
+}
 
+function getContainerVerticalCenter(container: HTMLElement): number | null {
+  if (container.clientHeight <= 0) return null;
+  return container.getBoundingClientRect().top + container.clientTop + container.clientHeight / 2;
+}
+
+function getTargetCardElement(targetElement: HTMLElement): HTMLElement {
   return (
-    <Box sx={{ display: 'flex', justifyContent: 'center', my: 1 }}>
-      <ButtonGroup size="small" variant="outlined" aria-label="Показати ще повідомлення">
-        <Button
-          onClick={() => {
-            onBeforeLoad(position);
-            void load();
+    targetElement.querySelector<HTMLElement>('[data-message-card-root], .message-card-root') ??
+    targetElement
+  );
+}
+
+const MESSAGE_PREFETCH_DISTANCE_PX = 480;
+
+type MessageLoadPosition = 'above' | 'below';
+
+function getFocusedLoadDirection(
+  position: MessageLoadPosition,
+  newestFirst: boolean,
+): 'earlier' | 'later' {
+  return position === 'above'
+    ? newestFirst
+      ? 'later'
+      : 'earlier'
+    : newestFirst
+      ? 'earlier'
+      : 'later';
+}
+
+function isNearMessageLoadPosition(container: HTMLElement, position: MessageLoadPosition): boolean {
+  if (container.clientHeight <= 0) return false;
+  if (position === 'above') return container.scrollTop <= MESSAGE_PREFETCH_DISTANCE_PX;
+  return (
+    container.scrollHeight - container.scrollTop - container.clientHeight <=
+    MESSAGE_PREFETCH_DISTANCE_PX
+  );
+}
+
+function MessageLoadingSkeletons({ position }: { position: MessageLoadPosition }) {
+  return (
+    <Box
+      component="li"
+      role="status"
+      aria-label="Завантаження ще повідомлень"
+      data-testid={`message-loading-skeletons-${position}`}
+      sx={{ display: 'grid', gap: 1.25, py: 1 }}
+    >
+      {[96, 76].map((bodyHeight, index) => (
+        <Box
+          key={bodyHeight}
+          sx={{
+            border: '1px solid',
+            borderColor: 'divider',
+            borderRadius: 1,
+            p: 1.5,
+            bgcolor: 'rgba(255, 255, 255, 0.02)',
           }}
-          disabled={navigation.loadingDirection !== null}
-          sx={{ minHeight: 28, px: 1, py: 0.25, fontSize: '0.75rem' }}
         >
-          Показати ще
-        </Button>
-        {navigation.filterOptions.length > 0 ? (
-          <Button
-            aria-label="Опції фільтра для показу повідомлень"
-            aria-haspopup="menu"
-            aria-expanded={menuAnchor == null ? undefined : 'true'}
-            onClick={(event) => setMenuAnchor(event.currentTarget)}
-            disabled={navigation.loadingDirection !== null}
-            sx={{ minWidth: 28, px: 0.25 }}
-          >
-            <ArrowDropDownIcon />
-          </Button>
-        ) : null}
-      </ButtonGroup>
-      <Menu anchorEl={menuAnchor} open={menuAnchor != null} onClose={() => setMenuAnchor(null)}>
-        {navigation.filterOptions.map((option) => (
-          <MenuItem
-            key={`${option.kind}:${option.value}`}
-            onClick={() => navigation.onToggleFilter(option)}
-          >
-            <Checkbox checked={option.selected} />
-            <ListItemText primary={option.label} />
-          </MenuItem>
-        ))}
-      </Menu>
+          <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
+            <Skeleton variant="rounded" width={index === 0 ? 220 : 180} height={20} />
+            <Skeleton variant="rounded" width={88} height={20} />
+          </Box>
+          <Skeleton variant="rounded" height={bodyHeight} />
+          <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+            <Skeleton variant="rounded" width="45%" height={16} />
+            <Skeleton variant="rounded" width="30%" height={16} />
+          </Box>
+        </Box>
+      ))}
     </Box>
   );
 }
@@ -519,12 +518,20 @@ function AnalysisMessagesPaneComponent({
   const [copiedFeedbackId, setCopiedFeedbackId] = useState<string | null>(copiedFeedbackIdProp);
   const [deleteMessageId, setDeleteMessageId] = useState<number | null>(null);
   const [bottomAnchorSpacerPx, setBottomAnchorSpacerPx] = useState(0);
+  const [autoLoadCheckVersion, setAutoLoadCheckVersion] = useState(0);
+  const [initialFocusedLoadPending, setInitialFocusedLoadPending] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const referenceTimeMsRef = useRef<number | null>(Date.now());
   const copyFeedbackTimerRef = useRef<number | null>(null);
   const preserveScrollOnPageChangeRef = useRef(false);
-  const targetAnchorTopRef = useRef<number | null>(null);
+  const paginationRequestInFlightRef = useRef(false);
+  const focusedRequestsInFlightRef = useRef(new Map<'earlier' | 'later', number>());
+  const initialFocusedLoadPendingRef = useRef(false);
+  const initialFocusedLoadTargetIdRef = useRef<number | null>(null);
+  const targetAnchorCenterRef = useRef<number | null>(null);
+  const centeredTargetIdRef = useRef<number | null>(null);
   const preserveTargetAnchorRef = useRef(false);
+  const clearTargetHighlightRef = useRef<(() => void) | null>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
 
   useEffect(() => {
@@ -550,21 +557,30 @@ function AnalysisMessagesPaneComponent({
   }, [scrollResetKey]);
 
   const handleLoadMoreMessages = useCallback(async () => {
+    if (paginationRequestInFlightRef.current || loading || paginationLoading || noMoreToLoad) {
+      return;
+    }
+    paginationRequestInFlightRef.current = true;
     preserveScrollOnPageChangeRef.current = true;
+    let loaded = false;
     try {
-      const loaded = await onLoadMoreMessages();
+      loaded = await onLoadMoreMessages();
       if (!loaded) preserveScrollOnPageChangeRef.current = false;
     } catch (error) {
       preserveScrollOnPageChangeRef.current = false;
       throw error;
+    } finally {
+      paginationRequestInFlightRef.current = false;
+      if (loaded) setAutoLoadCheckVersion((current) => current + 1);
     }
-  }, [onLoadMoreMessages]);
+  }, [loading, noMoreToLoad, onLoadMoreMessages, paginationLoading]);
 
   useEffect(() => {
     return () => {
       if (isPresent(copyFeedbackTimerRef.current)) {
         window.clearTimeout(copyFeedbackTimerRef.current);
       }
+      clearTargetHighlightRef.current?.();
     };
   }, []);
 
@@ -580,22 +596,43 @@ function AnalysisMessagesPaneComponent({
 
   const captureTargetAnchor = useCallback(() => {
     const targetElement = getTargetElement();
-    if (targetElement != null)
-      targetAnchorTopRef.current = targetElement.getBoundingClientRect().top;
+    if (targetElement != null) {
+      targetAnchorCenterRef.current = getElementVerticalCenter(getTargetCardElement(targetElement));
+    }
   }, [getTargetElement]);
 
   const restoreTargetAnchor = useCallback(() => {
     const container = scrollContainerRef.current;
     const targetElement = getTargetElement();
-    if (container == null || targetElement == null || targetAnchorTopRef.current == null) return;
-    const offset = targetElement.getBoundingClientRect().top - targetAnchorTopRef.current;
+    if (container == null || targetElement == null || targetAnchorCenterRef.current == null) return;
+    const offset =
+      getElementVerticalCenter(getTargetCardElement(targetElement)) - targetAnchorCenterRef.current;
     if (Math.abs(offset) < 0.5) return;
     container.scrollTop += offset;
   }, [getTargetElement]);
 
+  const centerTarget = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const targetElement = getTargetElement();
+    if (
+      container == null ||
+      targetElement == null ||
+      directMessageNavigation == null ||
+      !directMessageNavigation.focusActive
+    ) {
+      return;
+    }
+    const centeredTarget = getContainerVerticalCenter(container);
+    if (centeredTarget == null) return;
+    centeredTargetIdRef.current = directMessageNavigation.targetMessageId;
+    targetAnchorCenterRef.current = centeredTarget;
+    preserveTargetAnchorRef.current = true;
+    restoreTargetAnchor();
+  }, [directMessageNavigation, getTargetElement, restoreTargetAnchor]);
+
   const beginTargetAnchorRestoration = useCallback(
-    (position: 'above' | 'below') => {
-      captureTargetAnchor();
+    (position: MessageLoadPosition) => {
+      centerTarget();
       preserveTargetAnchorRef.current = true;
       if (position !== 'above') return;
       const container = scrollContainerRef.current;
@@ -603,8 +640,119 @@ function AnalysisMessagesPaneComponent({
       const missingContentBelow = getMissingBottomScrollSpace(container);
       setBottomAnchorSpacerPx((current) => Math.max(current, Math.ceil(missingContentBelow)));
     },
-    [captureTargetAnchor],
+    [centerTarget],
   );
+
+  const handleFocusedLoad = useCallback(
+    async (position: MessageLoadPosition) => {
+      if (directMessageNavigation == null) return false;
+      const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
+      const loading =
+        direction === 'earlier'
+          ? directMessageNavigation.loadingEarlier
+          : directMessageNavigation.loadingLater;
+      const targetMessageId = directMessageNavigation.targetMessageId;
+      if (focusedRequestsInFlightRef.current.get(direction) === targetMessageId || loading) {
+        return false;
+      }
+      const canLoad =
+        direction === 'earlier'
+          ? directMessageNavigation.canLoadEarlier
+          : directMessageNavigation.canLoadLater;
+      if (!canLoad) return false;
+
+      focusedRequestsInFlightRef.current.set(direction, targetMessageId);
+      beginTargetAnchorRestoration(position);
+      let loaded = false;
+      try {
+        const load =
+          direction === 'earlier'
+            ? directMessageNavigation.onLoadEarlier
+            : directMessageNavigation.onLoadLater;
+        loaded = await load();
+      } finally {
+        if (focusedRequestsInFlightRef.current.get(direction) === targetMessageId) {
+          focusedRequestsInFlightRef.current.delete(direction);
+        }
+        if (loaded) setAutoLoadCheckVersion((current) => current + 1);
+      }
+      return loaded;
+    },
+    [beginTargetAnchorRestoration, directMessageNavigation],
+  );
+
+  const loadMessagesNearScrollBoundary = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (container == null || messages.length === 0 || loading) return;
+
+    if (directMessageNavigation != null) {
+      if (
+        initialFocusedLoadTargetIdRef.current !== directMessageNavigation.targetMessageId ||
+        initialFocusedLoadPendingRef.current
+      )
+        return;
+      for (const position of ['above', 'below'] as const) {
+        const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
+        const directionLoading =
+          direction === 'earlier'
+            ? directMessageNavigation.loadingEarlier
+            : directMessageNavigation.loadingLater;
+        const canLoad =
+          direction === 'earlier'
+            ? directMessageNavigation.canLoadEarlier
+            : directMessageNavigation.canLoadLater;
+        if (!directionLoading && canLoad && isNearMessageLoadPosition(container, position)) {
+          void handleFocusedLoad(position);
+        }
+      }
+      return;
+    }
+
+    if (!noMoreToLoad && !paginationLoading && isNearMessageLoadPosition(container, 'below')) {
+      void handleLoadMoreMessages();
+    }
+  }, [
+    directMessageNavigation,
+    handleFocusedLoad,
+    handleLoadMoreMessages,
+    loading,
+    messages.length,
+    noMoreToLoad,
+    paginationLoading,
+  ]);
+
+  useEffect(() => {
+    if (directMessageNavigation == null) {
+      initialFocusedLoadTargetIdRef.current = null;
+      initialFocusedLoadPendingRef.current = false;
+      setInitialFocusedLoadPending(false);
+      return;
+    }
+    const targetMessageId = directMessageNavigation.targetMessageId;
+    if (initialFocusedLoadTargetIdRef.current === targetMessageId) return;
+    focusedRequestsInFlightRef.current.clear();
+
+    const positions = (['above', 'below'] as const).filter((position) => {
+      const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
+      return direction === 'earlier'
+        ? directMessageNavigation.canLoadEarlier
+        : directMessageNavigation.canLoadLater;
+    });
+    if (positions.length === 0) {
+      initialFocusedLoadPendingRef.current = false;
+      setInitialFocusedLoadPending(false);
+      return;
+    }
+
+    initialFocusedLoadTargetIdRef.current = targetMessageId;
+    initialFocusedLoadPendingRef.current = true;
+    setInitialFocusedLoadPending(true);
+    void Promise.allSettled(positions.map(handleFocusedLoad)).then(() => {
+      if (initialFocusedLoadTargetIdRef.current !== targetMessageId) return;
+      initialFocusedLoadPendingRef.current = false;
+      setInitialFocusedLoadPending(false);
+    });
+  }, [directMessageNavigation, handleFocusedLoad]);
 
   const reconcileBottomAnchorSpacer = useCallback(() => {
     setBottomAnchorSpacerPx((current) => {
@@ -616,15 +764,16 @@ function AnalysisMessagesPaneComponent({
   }, []);
 
   useLayoutEffect(() => {
-    if (directMessageNavigation == null) {
-      targetAnchorTopRef.current = null;
+    if (directMessageNavigation == null || !directMessageNavigation.focusActive) {
+      targetAnchorCenterRef.current = null;
+      centeredTargetIdRef.current = null;
       preserveTargetAnchorRef.current = false;
       return;
     }
     const targetElement = getTargetElement();
     if (targetElement == null) return;
-    if (targetAnchorTopRef.current == null) {
-      targetAnchorTopRef.current = targetElement.getBoundingClientRect().top;
+    if (centeredTargetIdRef.current !== directMessageNavigation.targetMessageId) {
+      centerTarget();
       return;
     }
     restoreTargetAnchor();
@@ -632,7 +781,11 @@ function AnalysisMessagesPaneComponent({
     bottomAnchorSpacerPx,
     directMessageNavigation?.canLoadEarlier,
     directMessageNavigation?.canLoadLater,
+    directMessageNavigation?.focusActive,
+    directMessageNavigation?.loadingEarlier,
+    directMessageNavigation?.loadingLater,
     directMessageNavigation?.newestFirst,
+    centerTarget,
     getTargetElement,
     messages,
     restoreTargetAnchor,
@@ -643,18 +796,22 @@ function AnalysisMessagesPaneComponent({
     const messageList = container?.querySelector('ul');
     if (
       directMessageNavigation == null ||
+      !directMessageNavigation.focusActive ||
+      container == null ||
       messageList == null ||
       typeof ResizeObserver === 'undefined'
     ) {
       return;
     }
     const observer = new ResizeObserver(() => {
+      centerTarget();
       if (preserveTargetAnchorRef.current) restoreTargetAnchor();
     });
+    observer.observe(container);
     observer.observe(messageList);
     for (const messageElement of messageList.children) observer.observe(messageElement);
     return () => observer.disconnect();
-  }, [directMessageNavigation, messages, restoreTargetAnchor]);
+  }, [centerTarget, directMessageNavigation, messages, restoreTargetAnchor]);
 
   useLayoutEffect(() => {
     if (directMessageNavigation == null) {
@@ -665,29 +822,41 @@ function AnalysisMessagesPaneComponent({
   }, [directMessageNavigation, messages, reconcileBottomAnchorSpacer]);
 
   useEffect(() => {
+    if (directMessageNavigation == null || !directMessageNavigation.focusActive) {
+      clearTargetHighlightRef.current?.();
+      clearTargetHighlightRef.current = null;
+      highlightedTargetIdRef.current = null;
+      return;
+    }
     if (
-      directMessageNavigation == null ||
-      !directMessageNavigation.focusActive ||
       highlightedTargetIdRef.current === directMessageNavigation.targetMessageId ||
       loading ||
       messages.length === 0
-    ) {
+    )
       return;
-    }
     const targetElement = getTargetElement();
     if (targetElement) {
+      clearTargetHighlightRef.current?.();
       highlightedTargetIdRef.current = directMessageNavigation.targetMessageId;
-      scrollToAndHighlightMessage(targetElement, { scroll: false });
-      captureTargetAnchor();
+      clearTargetHighlightRef.current = scrollToAndHighlightMessage(targetElement, {
+        scroll: false,
+        persistentHighlight: true,
+      });
     }
-  }, [captureTargetAnchor, directMessageNavigation, getTargetElement, loading, messages]);
+  }, [directMessageNavigation, getTargetElement, loading, messages]);
 
   const handleScroll = useCallback(() => {
     reconcileBottomAnchorSpacer();
     if (!preserveTargetAnchorRef.current) captureTargetAnchor();
-  }, [captureTargetAnchor, reconcileBottomAnchorSpacer]);
+    loadMessagesNearScrollBoundary();
+  }, [captureTargetAnchor, loadMessagesNearScrollBoundary, reconcileBottomAnchorSpacer]);
+
+  useLayoutEffect(() => {
+    loadMessagesNearScrollBoundary();
+  }, [autoLoadCheckVersion, loadMessagesNearScrollBoundary, messages]);
 
   const clearFocusOnScrollStart = useCallback(() => {
+    if (initialFocusedLoadPendingRef.current) return;
     preserveTargetAnchorRef.current = false;
     if (directMessageNavigation?.focusActive) directMessageNavigation.onClearFocus();
   }, [directMessageNavigation]);
@@ -719,6 +888,22 @@ function AnalysisMessagesPaneComponent({
     [blurActiveElement, onOpenEditor],
   );
 
+  const isFocusedPositionLoading = (position: MessageLoadPosition) => {
+    if (directMessageNavigation == null) return false;
+    const direction = getFocusedLoadDirection(position, directMessageNavigation.newestFirst);
+    const loadingDirection =
+      direction === 'earlier'
+        ? directMessageNavigation.loadingEarlier
+        : directMessageNavigation.loadingLater;
+    const canLoad =
+      direction === 'earlier'
+        ? directMessageNavigation.canLoadEarlier
+        : directMessageNavigation.canLoadLater;
+    return loadingDirection || (initialFocusedLoadPending && canLoad);
+  };
+  const focusedLoadingAbove = isFocusedPositionLoading('above');
+  const focusedLoadingBelow = isFocusedPositionLoading('below');
+
   if (messages.length === 0 && !loading) {
     return (
       <Box sx={{ flex: 1, minHeight: 0, px: 0 }}>
@@ -745,34 +930,49 @@ function AnalysisMessagesPaneComponent({
     >
       <Box
         ref={scrollContainerRef}
+        aria-busy={initialFocusedLoadPending || undefined}
         tabIndex={directMessageNavigation?.focusActive ? 0 : undefined}
         onScroll={handleScroll}
-        onWheel={clearFocusOnScrollStart}
-        onTouchMove={clearFocusOnScrollStart}
+        onWheel={(event) => {
+          if (initialFocusedLoadPendingRef.current) {
+            event.preventDefault();
+            return;
+          }
+          clearFocusOnScrollStart();
+        }}
+        onTouchMove={(event) => {
+          if (initialFocusedLoadPendingRef.current) {
+            event.preventDefault();
+            return;
+          }
+          clearFocusOnScrollStart();
+        }}
         onPointerDown={(event) => {
+          if (initialFocusedLoadPendingRef.current) {
+            event.preventDefault();
+            return;
+          }
           if (event.target === event.currentTarget) clearFocusOnScrollStart();
         }}
         onKeyDown={(event) => {
           if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+            if (initialFocusedLoadPendingRef.current) {
+              event.preventDefault();
+              return;
+            }
             clearFocusOnScrollStart();
           }
         }}
         sx={{
           ...getAnalysisMessagesScrollSx(theme),
+          overflowY: initialFocusedLoadPending ? 'hidden' : 'auto',
           overflowAnchor: 'none',
           width: '100%',
           maxWidth: '100%',
           minWidth: 0,
         }}
       >
-        <NarrowMessagesLoadingIndicator loading={loading} paginationLoading={paginationLoading} />
-        {directMessageNavigation ? (
-          <FocusedLoadMoreButton
-            position="above"
-            navigation={directMessageNavigation}
-            onBeforeLoad={beginTargetAnchorRestoration}
-          />
-        ) : null}
+        <NarrowMessagesLoadingIndicator loading={loading} />
         <Box
           component="ul"
           sx={{
@@ -789,6 +989,7 @@ function AnalysisMessagesPaneComponent({
             },
           }}
         >
+          {focusedLoadingAbove ? <MessageLoadingSkeletons position="above" /> : null}
           {messages.map(([id, message]) => (
             <AnalysisMessageCardItem
               key={id}
@@ -830,24 +1031,10 @@ function AnalysisMessagesPaneComponent({
               unitsMap={unitsMap}
             />
           ))}
+          {focusedLoadingBelow || (directMessageNavigation == null && paginationLoading) ? (
+            <MessageLoadingSkeletons position="below" />
+          ) : null}
         </Box>
-        {directMessageNavigation ? (
-          <FocusedLoadMoreButton
-            position="below"
-            navigation={directMessageNavigation}
-            onBeforeLoad={beginTargetAnchorRestoration}
-          />
-        ) : !noMoreToLoad && messages.length > 0 ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 2 }}>
-            <Button
-              variant="outlined"
-              onClick={() => void handleLoadMoreMessages()}
-              disabled={loading || paginationLoading}
-            >
-              Завантажити ще
-            </Button>
-          </Box>
-        ) : null}
         {directMessageNavigation != null && bottomAnchorSpacerPx > 0 ? (
           <Box
             aria-hidden="true"
@@ -864,14 +1051,6 @@ function AnalysisMessagesPaneComponent({
           sx={{ zIndex: 2, display: { xs: 'none', lg: 'flex' } }}
         />
       ) : null}
-      {paginationLoading ? (
-        <SectionLoadingOverlay
-          open
-          ariaLabel="Завантаження ще повідомлень"
-          sx={{ zIndex: 2, display: { xs: 'none', lg: 'flex' } }}
-        />
-      ) : null}
-
       <DeleteConfirmDialog
         open={isPresent(deleteMessageId)}
         onClose={() => setDeleteMessageId(null)}

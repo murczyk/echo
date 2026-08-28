@@ -217,7 +217,13 @@ vi.mock('./components/AnalysisMapPane', () => ({
 }));
 
 vi.mock('./components/AnalysisMessagesPane', () => ({
-  AnalysisMessagesPane: () => <div data-testid="messages-pane" />,
+  AnalysisMessagesPane: ({ loading }: { loading: boolean }) => (
+    <div data-testid="messages-pane" data-loading={String(loading)} />
+  ),
+}));
+
+vi.mock('./AnalysisLoadingSkeletons', () => ({
+  AnalysisLoadingSkeletons: () => <div data-testid="analysis-loading-skeletons" />,
 }));
 
 vi.mock('./components/AnalysisReportDialog', () => ({
@@ -335,6 +341,8 @@ function buildPage() {
     messagesPaging: false,
     messagesTotalCount: null,
     messagesTotalLoading: true,
+    directMessageLoading: false,
+    directMessageNavigation: null,
     networkDisplayMap: {},
     networks: [],
     newCallsigns: { notSeen24h: [], notSeen7days: [], notSeen30days: [] },
@@ -518,6 +526,48 @@ describe('RerAnalysisNeoPage', () => {
     expect(rightDrawer?.querySelector('[data-testid="sidebar"]')).not.toBeNull();
     expect(rightDrawer?.getAttribute('data-width')).toBe('"100vw"');
     expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
+
+    await act(async () => root.unmount());
+  });
+
+  it('keeps direct-link skeletons until the target is ready without showing a pane spinner', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.directMessageLoading = true;
+    page.messagesLoading = true;
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+
+    useRerAnalysisNeoPageMock.mockReturnValue({
+      ...page,
+      directMessageLoading: false,
+      messages: [[50, { text: 'target' }]],
+      directMessageNavigation: {
+        targetMessageId: 50,
+        focusActive: true,
+        newestFirst: false,
+        canLoadEarlier: true,
+        canLoadLater: true,
+        loadingEarlier: false,
+        loadingLater: false,
+        onClearFocus: vi.fn(),
+        onLoadEarlier: vi.fn().mockResolvedValue(false),
+        onLoadLater: vi.fn().mockResolvedValue(false),
+      },
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="messages-pane"]')?.getAttribute('data-loading'),
+    ).toBe('false');
 
     await act(async () => root.unmount());
   });

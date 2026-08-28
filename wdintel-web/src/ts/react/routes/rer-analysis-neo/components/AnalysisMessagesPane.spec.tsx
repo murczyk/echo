@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { act, forwardRef } from 'react';
-import type { ButtonHTMLAttributes, ComponentProps, HTMLAttributes, ReactNode } from 'react';
+import type { ComponentProps, HTMLAttributes, ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTheme } from '@mui/material/styles';
@@ -14,46 +14,30 @@ vi.mock('@mui/material', () => ({
   Alert: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Backdrop: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Box: forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement> & { component?: string }>(
-    ({ children, component, ...props }, ref) =>
-      component === 'ul' ? (
-        <ul role={props.role} aria-label={props['aria-label']} aria-live={props['aria-live']}>
-          {children}
-        </ul>
-      ) : (
+    ({ children, component, ...props }, ref) => {
+      if (component === 'ul') {
+        return (
+          <ul role={props.role} aria-label={props['aria-label']} aria-live={props['aria-live']}>
+            {children}
+          </ul>
+        );
+      }
+      if (component === 'li') {
+        return (
+          <li role={props.role} aria-label={props['aria-label']} data-testid={props['data-testid']}>
+            {children}
+          </li>
+        );
+      }
+      return (
         <div ref={ref} {...props}>
           {children}
         </div>
-      ),
-  ),
-  Button: ({
-    children,
-    startIcon,
-    ...props
-  }: ButtonHTMLAttributes<HTMLButtonElement> & {
-    startIcon?: ReactNode;
-  }) => (
-    <button type="button" {...props}>
-      {startIcon}
-      {children}
-    </button>
-  ),
-  ButtonGroup: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  Checkbox: ({ checked }: { checked: boolean }) => (
-    <input type="checkbox" checked={checked} readOnly />
+      );
+    },
   ),
   CircularProgress: () => <div>loading</div>,
-  ListItemText: ({ primary }: { primary: ReactNode }) => <span>{primary}</span>,
-  Menu: ({ children, open }: { children: ReactNode; open: boolean }) =>
-    open ? <div role="menu">{children}</div> : null,
-  MenuItem: ({ children, onClick }: { children: ReactNode; onClick?: () => void }) => (
-    <button type="button" role="menuitem" onClick={onClick}>
-      {children}
-    </button>
-  ),
-}));
-
-vi.mock('@mui/icons-material/ArrowDropDown', () => ({
-  default: () => <span>options</span>,
+  Skeleton: () => <span data-skeleton="true" />,
 }));
 
 vi.mock('../../shared/message-card/MessageCard', () => ({
@@ -70,7 +54,11 @@ vi.mock('../../shared/message-card/MessageCard', () => ({
     tagsLayout?: string;
     analysisCallsignActions?: { onAddCallsign: () => void; onRemoveCallsign: () => void };
   }) => (
-    <div data-testid={`message-card-${props.id}`} data-message-id={props.id}>
+    <div
+      data-testid={`message-card-${props.id}`}
+      data-message-id={props.id}
+      data-message-card-root="true"
+    >
       <span data-testid={`sender-${props.id}`}>{props.senderName ?? ''}</span>
       <span data-testid={`tags-layout-${props.id}`}>{props.tagsLayout ?? 'unset'}</span>
       <span data-testid={`comments-${props.id}`}>
@@ -230,6 +218,34 @@ async function click(element: HTMLElement): Promise<void> {
   });
 }
 
+function setScrollMetrics(
+  scrollBox: HTMLElement,
+  metrics: { clientHeight: number; scrollHeight: number; scrollTop: number },
+) {
+  let scrollTop = metrics.scrollTop;
+  Object.defineProperty(scrollBox, 'clientHeight', {
+    configurable: true,
+    value: metrics.clientHeight,
+  });
+  Object.defineProperty(scrollBox, 'scrollHeight', {
+    configurable: true,
+    value: metrics.scrollHeight,
+  });
+  Object.defineProperty(scrollBox, 'scrollTop', {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = Math.max(0, Math.min(value, metrics.scrollHeight - metrics.clientHeight));
+    },
+  });
+}
+
+async function scroll(scrollBox: HTMLElement): Promise<void> {
+  await act(async () => {
+    scrollBox.dispatchEvent(new Event('scroll', { bubbles: true }));
+  });
+}
+
 describe('AnalysisMessagesPane', () => {
   const rendered: Rendered[] = [];
 
@@ -241,6 +257,7 @@ describe('AnalysisMessagesPane', () => {
       item.container.remove();
     }
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('shows the empty state when there are no messages', async () => {
@@ -267,7 +284,7 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.querySelector('[aria-label="Оновлення повідомлень"]')).not.toBeNull();
   });
 
-  it('shows a distinct indicator while loading another page', async () => {
+  it('shows message skeletons while loading another page', async () => {
     const view = await renderComponent(
       buildProps({ messages: [[7, buildMessage()]], paginationLoading: true }),
     );
@@ -276,6 +293,51 @@ describe('AnalysisMessagesPane', () => {
     expect(
       view.container.querySelector('[aria-label="Завантаження ще повідомлень"]'),
     ).not.toBeNull();
+    expect(view.container.querySelectorAll('[data-skeleton="true"]')).toHaveLength(10);
+  });
+
+  it('shows direct-link skeletons on both edges while both sides load', async () => {
+    const directMessageNavigation = {
+      targetMessageId: 7,
+      focusActive: true,
+      newestFirst: false,
+      canLoadEarlier: false,
+      canLoadLater: false,
+      loadingEarlier: true,
+      loadingLater: true,
+      onClearFocus: vi.fn(),
+      onLoadEarlier: vi.fn().mockResolvedValue(true),
+      onLoadLater: vi.fn().mockResolvedValue(false),
+    };
+    const messages: Array<[number, InboxMessage]> = [[7, buildMessage()]];
+    const view = await renderComponent(
+      buildProps({ messages, paginationLoading: true, directMessageNavigation }),
+    );
+    rendered.push(view);
+
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-above"]'),
+    ).not.toBeNull();
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-below"]'),
+    ).not.toBeNull();
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            messages,
+            paginationLoading: true,
+            directMessageNavigation: { ...directMessageNavigation, newestFirst: true },
+          })}
+        />,
+      );
+    });
+
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-below"]'),
+    ).not.toBeNull();
+    expect(view.container.textContent).not.toContain('loading');
   });
 
   it('uses a theme-aware scrollbar thumb in the messages pane', () => {
@@ -333,7 +395,7 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.querySelector('[data-testid="sender-7"]')?.textContent).toBe('BBC SPORT');
   });
 
-  it('shows the loading spinner while paginating', async () => {
+  it('does not show the global spinner while paginating', async () => {
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage()]],
@@ -342,7 +404,10 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).toContain('loading');
+    expect(view.container.textContent).not.toContain('loading');
+    expect(
+      view.container.querySelector('[data-testid="message-loading-skeletons-below"]'),
+    ).not.toBeNull();
   });
 
   it('wires report creation and editing into the page callbacks', async () => {
@@ -545,8 +610,8 @@ describe('AnalysisMessagesPane', () => {
     expect(scrollBox?.scrollTop).toBe(0);
   });
 
-  it('loads more messages from the button at the bottom of the list', async () => {
-    const onLoadMoreMessages = vi.fn().mockResolvedValue(true);
+  it('loads more messages shortly before reaching the bottom without a button', async () => {
+    const onLoadMoreMessages = vi.fn(() => new Promise<boolean>(() => {}));
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage()]],
@@ -555,24 +620,43 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    await click(getButton(view.container, 'Завантажити ще'));
+    const messageCard = view.container.querySelector('[data-testid="message-card-7"]');
+    const scrollBox = messageCard?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 1600, scrollTop: 500 });
+
+    await scroll(scrollBox);
+    expect(onLoadMoreMessages).not.toHaveBeenCalled();
+
+    scrollBox.scrollTop = 640;
+    await scroll(scrollBox);
+    await scroll(scrollBox);
 
     expect(onLoadMoreMessages).toHaveBeenCalledTimes(1);
+    expect(view.container.textContent).not.toContain('Завантажити ще');
   });
 
-  it('loads both sides of a direct-link target according to the selected order', async () => {
-    const onLoadEarlier = vi.fn().mockResolvedValue(true);
-    const onLoadLater = vi.fn().mockResolvedValue(true);
+  it('loads both sides of a direct link concurrently and blocks scrolling until they finish', async () => {
+    let resolveEarlier!: (value: boolean) => void;
+    let resolveLater!: (value: boolean) => void;
+    const earlierPromise = new Promise<boolean>((resolve) => {
+      resolveEarlier = resolve;
+    });
+    const laterPromise = new Promise<boolean>((resolve) => {
+      resolveLater = resolve;
+    });
+    const onClearFocus = vi.fn();
+    const onLoadEarlier = vi.fn(() => earlierPromise);
+    const onLoadLater = vi.fn(() => laterPromise);
     const directMessageNavigation = {
       targetMessageId: 7,
       focusActive: true,
       newestFirst: false,
       canLoadEarlier: true,
       canLoadLater: true,
-      loadingDirection: null,
-      filterOptions: [],
-      onToggleFilter: vi.fn(),
-      onClearFocus: vi.fn(),
+      loadingEarlier: false,
+      loadingLater: false,
+      onClearFocus,
       onLoadEarlier,
       onLoadLater,
     };
@@ -581,31 +665,90 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    let loadButtons = Array.from(view.container.querySelectorAll('button')).filter(
-      (button) => button.textContent === 'Показати ще',
-    );
-    await click(loadButtons[0]);
-    await click(loadButtons[1]);
+    const target = view.container.querySelector<HTMLElement>('[data-message-id="7"]');
+    const scrollBox = target?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Target message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 1600, scrollTop: 0 });
+
     expect(onLoadEarlier).toHaveBeenCalledTimes(1);
     expect(onLoadLater).toHaveBeenCalledTimes(1);
+    expect(scrollBox.getAttribute('aria-busy')).toBe('true');
 
     await act(async () => {
-      view.root.render(
-        <AnalysisMessagesPane
-          {...buildProps({
-            messages: [[7, buildMessage()]],
-            directMessageNavigation: { ...directMessageNavigation, newestFirst: true },
-          })}
-        />,
-      );
+      scrollBox.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true }));
     });
-    loadButtons = Array.from(view.container.querySelectorAll('button')).filter(
-      (button) => button.textContent === 'Показати ще',
+    expect(onClearFocus).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveEarlier(false);
+      await earlierPromise;
+    });
+    expect(scrollBox.getAttribute('aria-busy')).toBe('true');
+
+    await act(async () => {
+      resolveLater(false);
+      await laterPromise;
+    });
+    expect(scrollBox.hasAttribute('aria-busy')).toBe(false);
+
+    await act(async () => {
+      scrollBox.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+    });
+    expect(onClearFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('centers the direct-link target in the visible message area', async () => {
+    let resizeCallback: ResizeObserverCallback | null = null;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resizeCallback = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
     );
-    await click(loadButtons[0]);
-    await click(loadButtons[1]);
-    expect(onLoadEarlier).toHaveBeenCalledTimes(2);
-    expect(onLoadLater).toHaveBeenCalledTimes(2);
+    const view = await renderComponent(
+      buildProps({
+        messages: [[7, buildMessage()]],
+        directMessageNavigation: {
+          targetMessageId: 7,
+          focusActive: true,
+          newestFirst: false,
+          canLoadEarlier: false,
+          canLoadLater: false,
+          loadingEarlier: false,
+          loadingLater: false,
+          onClearFocus: vi.fn(),
+          onLoadEarlier: vi.fn().mockResolvedValue(false),
+          onLoadLater: vi.fn().mockResolvedValue(false),
+        },
+      }),
+    );
+    rendered.push(view);
+
+    const target = view.container.querySelector<HTMLElement>('[data-message-id="7"]');
+    const scrollBox = target?.closest('ul')?.parentElement as HTMLElement | null;
+    if (target == null || scrollBox == null)
+      throw new Error('Target message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 1600, scrollTop: 0 });
+    scrollBox.getBoundingClientRect = () => ({ top: 100 }) as DOMRect;
+    const targetLayoutTop = 500;
+    let targetHeight = 100;
+    target.getBoundingClientRect = () =>
+      ({ top: targetLayoutTop - scrollBox.scrollTop, height: targetHeight }) as DOMRect;
+
+    act(() => resizeCallback?.([], {} as ResizeObserver));
+
+    expect(scrollBox.scrollTop).toBe(150);
+    expect(target.getBoundingClientRect().top).toBe(350);
+
+    targetHeight = 140;
+    act(() => resizeCallback?.([], {} as ResizeObserver));
+
+    expect(scrollBox.scrollTop).toBe(170);
+    expect(target.getBoundingClientRect().top + targetHeight / 2).toBe(400);
   });
 
   it('keeps the target anchored when messages loaded above change their height', async () => {
@@ -626,11 +769,10 @@ describe('AnalysisMessagesPane', () => {
       newestFirst: false,
       canLoadEarlier: true,
       canLoadLater: true,
-      loadingDirection: null,
-      filterOptions: [],
-      onToggleFilter: vi.fn(),
+      loadingEarlier: false,
+      loadingLater: false,
       onClearFocus: vi.fn(),
-      onLoadEarlier: vi.fn().mockResolvedValue(true),
+      onLoadEarlier: vi.fn(() => new Promise<boolean>(() => {})),
       onLoadLater: vi.fn().mockResolvedValue(true),
     };
     const view = await renderComponent(
@@ -642,36 +784,31 @@ describe('AnalysisMessagesPane', () => {
     const scrollBox = target?.closest('ul')?.parentElement as HTMLElement | null;
     if (target == null || scrollBox == null)
       throw new Error('Target message scroll box is missing');
-    Object.defineProperty(scrollBox, 'scrollTop', { value: 0, writable: true });
-    let targetLayoutTop = 200;
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 1600, scrollTop: 0 });
+    let targetLayoutTop = 300;
     target.getBoundingClientRect = () =>
       ({ top: targetLayoutTop - scrollBox.scrollTop }) as DOMRect;
 
-    const topLoadButton = Array.from(view.container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Показати ще',
-    );
-    if (topLoadButton == null) throw new Error('Top load button is missing');
-    await click(topLoadButton);
+    await scroll(scrollBox);
 
     targetLayoutTop += 60;
     act(() => resizeCallback?.([], {} as ResizeObserver));
 
     expect(scrollBox.scrollTop).toBe(60);
-    expect(target.getBoundingClientRect().top).toBe(200);
+    expect(target.getBoundingClientRect().top).toBe(300);
   });
 
-  it('keeps the target anchored when the exhausted top load control disappears', async () => {
+  it('keeps the target anchored when loading above finishes', async () => {
     const directMessageNavigation = {
       targetMessageId: 7,
       focusActive: true,
       newestFirst: false,
       canLoadEarlier: true,
       canLoadLater: true,
-      loadingDirection: null,
-      filterOptions: [],
-      onToggleFilter: vi.fn(),
+      loadingEarlier: false,
+      loadingLater: false,
       onClearFocus: vi.fn(),
-      onLoadEarlier: vi.fn().mockResolvedValue(true),
+      onLoadEarlier: vi.fn(() => new Promise<boolean>(() => {})),
       onLoadLater: vi.fn().mockResolvedValue(true),
     };
     const messages: Array<[number, InboxMessage]> = [[7, buildMessage()]];
@@ -682,18 +819,14 @@ describe('AnalysisMessagesPane', () => {
     const scrollBox = target?.closest('ul')?.parentElement as HTMLElement | null;
     if (target == null || scrollBox == null)
       throw new Error('Target message scroll box is missing');
-    Object.defineProperty(scrollBox, 'scrollTop', { value: 100, writable: true });
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 1600, scrollTop: 100 });
     let targetLayoutTop = 300;
     target.getBoundingClientRect = () =>
       ({ top: targetLayoutTop - scrollBox.scrollTop }) as DOMRect;
 
-    const topLoadButton = Array.from(view.container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Показати ще',
-    );
-    if (topLoadButton == null) throw new Error('Top load button is missing');
-    await click(topLoadButton);
+    await scroll(scrollBox);
 
-    targetLayoutTop -= 40;
+    targetLayoutTop += 40;
     await act(async () => {
       view.root.render(
         <AnalysisMessagesPane
@@ -705,8 +838,8 @@ describe('AnalysisMessagesPane', () => {
       );
     });
 
-    expect(scrollBox.scrollTop).toBe(60);
-    expect(target.getBoundingClientRect().top).toBe(200);
+    expect(scrollBox.scrollTop).toBe(40);
+    expect(target.getBoundingClientRect().top).toBe(300);
   });
 
   it('adds only the missing bottom scroll space before loading above a short list', async () => {
@@ -714,14 +847,13 @@ describe('AnalysisMessagesPane', () => {
       targetMessageId: 7,
       focusActive: true,
       newestFirst: false,
-      canLoadEarlier: true,
-      canLoadLater: true,
-      loadingDirection: null,
-      filterOptions: [],
-      onToggleFilter: vi.fn(),
+      canLoadEarlier: false,
+      canLoadLater: false,
+      loadingEarlier: false,
+      loadingLater: false,
       onClearFocus: vi.fn(),
-      onLoadEarlier: vi.fn().mockResolvedValue(true),
-      onLoadLater: vi.fn().mockResolvedValue(true),
+      onLoadEarlier: vi.fn(() => new Promise<boolean>(() => {})),
+      onLoadLater: vi.fn().mockResolvedValue(false),
     };
     const view = await renderComponent(
       buildProps({ messages: [[7, buildMessage()]], directMessageNavigation }),
@@ -754,16 +886,22 @@ describe('AnalysisMessagesPane', () => {
       },
     });
     target.getBoundingClientRect = () => ({ top: targetLayoutTop - scrollTop }) as DOMRect;
-    scrollBox.getBoundingClientRect = () => ({ bottom: 600 }) as DOMRect;
+    scrollBox.getBoundingClientRect = () => ({ top: 0, bottom: 600 }) as DOMRect;
     const bottomContent = scrollBox.lastElementChild;
     if (!(bottomContent instanceof HTMLElement)) throw new Error('Bottom content is missing');
     bottomContent.getBoundingClientRect = () => ({ bottom: 300 }) as DOMRect;
 
-    const topLoadButton = Array.from(view.container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'Показати ще',
-    );
-    if (topLoadButton == null) throw new Error('Top load button is missing');
-    await click(topLoadButton);
+    const loadingNavigation = { ...directMessageNavigation, canLoadEarlier: true };
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            messages: [[7, buildMessage()]],
+            directMessageNavigation: loadingNavigation,
+          })}
+        />,
+      );
+    });
 
     expect(
       view.container.querySelector<HTMLElement>('[data-direct-message-anchor-spacer="true"]')?.style
@@ -780,17 +918,17 @@ describe('AnalysisMessagesPane', () => {
               [6, buildMessage()],
               [7, buildMessage()],
             ],
-            directMessageNavigation,
+            directMessageNavigation: loadingNavigation,
           })}
         />,
       );
     });
 
-    expect(scrollTop).toBe(200);
-    expect(target.getBoundingClientRect().top).toBe(200);
+    expect(scrollTop).toBe(100);
+    expect(target.getBoundingClientRect().top).toBe(300);
   });
 
-  it('hides direct-link load controls for exhausted directions', async () => {
+  it('does not render direct-link load controls for exhausted directions', async () => {
     const view = await renderComponent(
       buildProps({
         messages: [[7, buildMessage()]],
@@ -800,9 +938,8 @@ describe('AnalysisMessagesPane', () => {
           newestFirst: false,
           canLoadEarlier: false,
           canLoadLater: false,
-          loadingDirection: null,
-          filterOptions: [],
-          onToggleFilter: vi.fn(),
+          loadingEarlier: false,
+          loadingLater: false,
           onClearFocus: vi.fn(),
           onLoadEarlier: vi.fn().mockResolvedValue(false),
           onLoadLater: vi.fn().mockResolvedValue(false),
@@ -814,8 +951,7 @@ describe('AnalysisMessagesPane', () => {
     expect(view.container.textContent).not.toContain('Показати ще');
   });
 
-  it('updates global direct-link filters and clears URL focus on user scroll', async () => {
-    const onToggleFilter = vi.fn();
+  it('does not render a direct-link filter action and clears URL focus on user scroll', async () => {
     const onClearFocus = vi.fn();
     const view = await renderComponent(
       buildProps({
@@ -826,28 +962,8 @@ describe('AnalysisMessagesPane', () => {
           newestFirst: false,
           canLoadEarlier: true,
           canLoadLater: true,
-          loadingDirection: null,
-          filterOptions: [
-            {
-              kind: 'group',
-              value: 'group-1',
-              label: 'Група: Альфа',
-              selected: false,
-            },
-            {
-              kind: 'network',
-              value: '17',
-              label: 'Мережа: Браво',
-              selected: false,
-            },
-            {
-              kind: 'frequency',
-              value: '123.45',
-              label: 'Частота: 123.45',
-              selected: false,
-            },
-          ],
-          onToggleFilter,
+          loadingEarlier: false,
+          loadingLater: false,
           onClearFocus,
           onLoadEarlier: vi.fn().mockResolvedValue(true),
           onLoadLater: vi.fn().mockResolvedValue(true),
@@ -856,23 +972,59 @@ describe('AnalysisMessagesPane', () => {
     );
     rendered.push(view);
 
-    const optionsButton = view.container.querySelector<HTMLButtonElement>(
-      '[aria-label="Опції фільтра для показу повідомлень"]',
-    );
-    if (optionsButton == null) throw new Error('Direct-link filter menu button not found');
-    await click(optionsButton);
-    await click(getButton(view.container, 'Група: Альфа'));
-    await click(getButton(view.container, 'Мережа: Браво'));
-    await click(getButton(view.container, 'Частота: 123.45'));
-    expect(onToggleFilter.mock.calls.map(([option]) => option.kind)).toEqual([
-      'group',
-      'network',
-      'frequency',
-    ]);
+    expect(
+      view.container.querySelector('[aria-label="Опції фільтра для показу повідомлень"]'),
+    ).toBeNull();
 
     const messageCard = view.container.querySelector('[data-testid="message-card-7"]');
     const scrollBox = messageCard?.closest('ul')?.parentElement;
     scrollBox?.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
     expect(onClearFocus).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the direct-link highlight until scrolling clears the URL focus', async () => {
+    vi.useFakeTimers();
+    const onClearFocus = vi.fn();
+    const directMessageNavigation = {
+      targetMessageId: 7,
+      focusActive: true,
+      newestFirst: false,
+      canLoadEarlier: false,
+      canLoadLater: false,
+      loadingEarlier: false,
+      loadingLater: false,
+      onClearFocus,
+      onLoadEarlier: vi.fn().mockResolvedValue(false),
+      onLoadLater: vi.fn().mockResolvedValue(false),
+    };
+    const messages: Array<[number, InboxMessage]> = [[7, buildMessage()]];
+    const view = await renderComponent(buildProps({ messages, directMessageNavigation }));
+    rendered.push(view);
+
+    const messageCard = view.container.querySelector<HTMLElement>('[data-testid="message-card-7"]');
+    if (messageCard == null) throw new Error('Target message card is missing');
+    expect(messageCard.style.outlineOffset).toBe('-2px');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(messageCard.style.outlineOffset).toBe('-2px');
+
+    messageCard.parentElement?.parentElement?.dispatchEvent(
+      new WheelEvent('wheel', { bubbles: true }),
+    );
+    expect(onClearFocus).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            messages,
+            directMessageNavigation: { ...directMessageNavigation, focusActive: false },
+          })}
+        />,
+      );
+    });
+    expect(messageCard.style.outlineOffset).toBe('');
   });
 });

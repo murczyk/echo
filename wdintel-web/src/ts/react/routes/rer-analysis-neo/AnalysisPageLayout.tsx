@@ -43,7 +43,8 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const summaryPanelId = `${centerTabsId}-summary-panel`;
   const mapPanelId = `${centerTabsId}-map-panel`;
   const showLoadingSkeletons =
-    !page.hasLoadedInitialMessages && page.error == null && page.messages.length === 0;
+    page.error == null &&
+    (page.directMessageLoading || (!page.hasLoadedInitialMessages && page.messages.length === 0));
   const leftPanelVisible = page.leftPanelOpen;
   const rightPanelVisible = page.rightPanelOpen;
   const inlineLeftPanelVisible = !isNarrowLayout && leftPanelVisible;
@@ -54,7 +55,9 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
   const analysisMapVisible =
     centerTab === 'map' ||
     (page.analysisMapInSidebar && rightPanelVisible && page.rightSidebarTab === 'map');
-  const messagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
+  const delayedMessagesPaneLoading = useMinDurationBusy(page.messagesLoading, 450);
+  const messagesPaneLoading =
+    page.directMessageNavigation == null ? delayedMessagesPaneLoading : false;
   const openReport = useCallback(
     (focusTarget: HTMLElement) => {
       reportFocusTargetRef.current = focusTarget;

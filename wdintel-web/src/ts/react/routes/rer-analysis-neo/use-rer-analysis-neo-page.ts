@@ -37,12 +37,7 @@ import type {
   SignalProfileEntry,
   User,
 } from '../../../../Bindings';
-import type {
-  AnalysisDirectMessageFilterOption,
-  AnalysisFilterSectionId,
-  AnalysisPageViewModel,
-  AnalysisQueryState,
-} from './types';
+import type { AnalysisFilterSectionId, AnalysisPageViewModel, AnalysisQueryState } from './types';
 import { useAnalysisData } from './use-analysis-data';
 import { useAnalysisMessageEditor } from './use-analysis-message-editor';
 import { useAnalysisReport } from './use-analysis-report';
@@ -622,76 +617,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.profiles, targetMessageProfiles],
   );
 
-  const directMessageFilterOptions = useMemo<AnalysisDirectMessageFilterOption[]>(() => {
-    const context = targetMessageContext;
-    const message = context?.message?.[1];
-    if (context == null || message == null) return [];
-
-    const options: AnalysisDirectMessageFilterOption[] = context.groupMasterKeys.map(
-      (groupKey) => ({
-        kind: 'group',
-        value: groupKey,
-        label: `Група: ${groupInfos[groupKey]?.name ?? groupKey}`,
-        selected: queryState.groupsSelected.includes(groupKey),
-      }),
-    );
-    for (const networkId of message.networkIds ?? []) {
-      const value = String(networkId);
-      const networkName =
-        data.networkDisplayMap[networkId] ??
-        data.networks.find((network) => network.id === networkId)?.name ??
-        `#${networkId}`;
-      options.push({
-        kind: 'network',
-        value,
-        label: `Мережа: ${networkName}`,
-        selected: queryState.networksSelected.includes(value),
-      });
-    }
-    const frequency = message.freq?.trim();
-    if (frequency) {
-      options.push({
-        kind: 'frequency',
-        value: frequency,
-        label: `Частота: ${frequency}`,
-        selected: queryState.freqsSelected.includes(frequency),
-      });
-    }
-    return options;
-  }, [data.networkDisplayMap, data.networks, groupInfos, queryState, targetMessageContext]);
-
-  const toggleDirectMessageFilter = useCallback(
-    (option: AnalysisDirectMessageFilterOption) => {
-      const toggleValue = (values: string[]) =>
-        option.selected
-          ? values.filter((value) => value !== option.value)
-          : Array.from(new Set([...values, option.value]));
-      setRightPanelOpen(true);
-      setRightSidebarTab('stats');
-      if (option.kind === 'group') {
-        updateQueryState({ groupsSelected: toggleValue(queryState.groupsSelected) });
-        return;
-      }
-      if (option.kind === 'network') {
-        updateQueryState({
-          networksSelected: toggleValue(queryState.networksSelected),
-          withoutNetwork: false,
-        });
-        return;
-      }
-      updateQueryState({
-        freqsSelected: toggleValue(queryState.freqsSelected),
-        includeOnlyNewFreqs: false,
-      });
-    },
-    [
-      queryState.freqsSelected,
-      queryState.groupsSelected,
-      queryState.networksSelected,
-      updateQueryState,
-    ],
-  );
-
   const directMessageNavigation = useMemo(() => {
     const targetMessageId = targetMessageContext?.message?.[0];
     if (!targetMessageContextActive || targetMessageId == null) return null;
@@ -701,9 +626,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       newestFirst,
       canLoadEarlier: data.focusedHasMoreEarlier,
       canLoadLater: data.focusedHasMoreLater,
-      loadingDirection: data.focusedLoadingDirection,
-      filterOptions: directMessageFilterOptions,
-      onToggleFilter: toggleDirectMessageFilter,
+      loadingEarlier: data.focusedLoadingEarlier,
+      loadingLater: data.focusedLoadingLater,
       onClearFocus: clearTargetMessageFocus,
       onLoadEarlier: data.loadFocusedEarlier,
       onLoadLater: data.loadFocusedLater,
@@ -712,16 +636,21 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     clearTargetMessageFocus,
     data.focusedHasMoreEarlier,
     data.focusedHasMoreLater,
-    data.focusedLoadingDirection,
+    data.focusedLoadingEarlier,
+    data.focusedLoadingLater,
     data.loadFocusedEarlier,
     data.loadFocusedLater,
-    directMessageFilterOptions,
     newestFirst,
     targetMessageContext,
     targetMessageContextActive,
     targetMessageFocusActive,
-    toggleDirectMessageFilter,
   ]);
+  const directMessageLoading =
+    targetMessageUid !== null &&
+    targetMessageContextActive &&
+    (targetMessageLoading ||
+      targetMessageContext?.message == null ||
+      !data.messages.some(([messageId]) => messageId === targetMessageContext.message?.[0]));
 
   return {
     authUserName,
@@ -773,6 +702,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     messagesTotalLoading: data.messagesTotalLoading,
     messageComments: data.messageComments,
     messages: data.messages,
+    directMessageLoading,
     directMessageNavigation,
     networkDisplayMap: data.networkDisplayMap,
     networks: data.networks,
