@@ -120,14 +120,21 @@ export async function openCreateMessageDrawer(
   page: Page,
   host: ImageEditorDrawerHost,
 ): Promise<void> {
-  if (host === 'duty')
-    await installRerDutyShortStateMocks(page, { signalGroups: ['editor-e2e-group'] });
-  else await installAnalysisNeoApiMocks(page, { signalGroups: ['editor-e2e-group'] });
+  const dutyMocks =
+    host === 'duty'
+      ? await installRerDutyShortStateMocks(page, { signalGroups: ['editor-e2e-group'] })
+      : null;
+  if (host === 'analysis')
+    await installAnalysisNeoApiMocks(page, { signalGroups: ['editor-e2e-group'] });
   await page.goto(host === 'duty' ? '/rer-duty-neo' : '/rer-analysis-neo');
+
+  if (dutyMocks) await dutyMocks.systemSettingsReady;
 
   const readyText =
     host === 'duty' ? 'Немає повідомлень' : 'Немає жодного повідомлення для аналізу.';
   await expect(page.getByText(readyText, { exact: true })).toBeVisible();
+  if (dutyMocks)
+    await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
   await page.getByRole('button', { name: 'Додати повідомлення' }).click();
   await expect(page.getByRole('heading', { name: 'Створити повідомлення' })).toBeVisible();
 }
@@ -186,7 +193,7 @@ export async function openEditReportDrawer(page: Page): Promise<void> {
     },
   ];
   await installMessageCardMediaPreviewAssetRoutes(page);
-  await installRerDutyShortStateMocks(page, {
+  const dutyMocks = await installRerDutyShortStateMocks(page, {
     inboxResponse,
     signalGroups: ['e2e-group'],
   });
@@ -197,6 +204,8 @@ export async function openEditReportDrawer(page: Page): Promise<void> {
     }),
   );
   await page.goto('/rer-duty-neo');
+  await dutyMocks.systemSettingsReady;
+  await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
   await page.getByRole('button', { name: 'Редагувати розвіддонесення' }).click();
   await expect(page.getByRole('heading', { name: 'Редагувати розвіддонесення' })).toBeVisible();
 }
@@ -219,7 +228,7 @@ async function openDrawerFromMediaMessage(
   ];
   (message as any).images = [];
   await installMessageCardMediaPreviewAssetRoutes(page);
-  await installRerDutyShortStateMocks(page, { inboxResponse });
+  const dutyMocks = await installRerDutyShortStateMocks(page, { inboxResponse });
   if (actionName === 'Створити розвіддонесення') {
     await page.route('**/api/1.1/messages/copy', (route) =>
       route.fulfill({
@@ -231,6 +240,8 @@ async function openDrawerFromMediaMessage(
     );
   }
   await page.goto('/rer-duty-neo');
+  await dutyMocks.systemSettingsReady;
+  await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
   await page.getByRole('button', { name: actionName }).click();
   await expect(page.getByRole('heading', { name: heading })).toBeVisible();
 }

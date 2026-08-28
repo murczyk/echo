@@ -20,6 +20,7 @@ type ShortStateFixtureOptions = {
 
 type ShortStateFixtureHandle = {
   getLastInboxRequest: () => unknown | null;
+  systemSettingsReady: Promise<void>;
 };
 
 function jsonBody(body: unknown): string {
@@ -65,9 +66,27 @@ function emptySystemSettingsResponse() {
     rer_duty_test_since_ms: 0,
     rer_duty_test_limit: 1,
     rer_duty_poll_interval_sec: 1,
-    short_url_enabled: true,
+    rer_duty_test_replay_interval_sec: 1,
+    short_url_enabled: false,
+    support_non_rer_interceptions: false,
     default_neo_analysis: false,
+    autofix_echoim_missing_messages: false,
+    peleng_bounds_enabled: false,
+    peleng_bounds_top_left_lat: null,
+    peleng_bounds_top_left_lng: null,
+    peleng_bounds_bottom_right_lat: null,
+    peleng_bounds_bottom_right_lng: null,
+    devices_section_enabled: false,
+    sigint_comment_parsing_enabled: false,
     do_not_store_duplicate_echoim_failures: false,
+    goi_association_message_uid_worker_enabled: false,
+    report_chunking_hours: 1,
+    limit_big_reports: false,
+    enable_audio_transcription: false,
+    show_classic_duty: false,
+    show_classic_analysis: false,
+    show_peleng_distance_to_battleline: false,
+    hide_orbit_data: false,
   };
 }
 
@@ -161,6 +180,10 @@ export async function installRerDutyShortStateMocks(
   const shortStateId = options.shortStateId ?? 'short-1';
   const shortState = options.shortState ?? defaultShortState();
   let lastInboxRequest: unknown | null = null;
+  let resolveSystemSettingsReady!: () => void;
+  const systemSettingsReady = new Promise<void>((resolve) => {
+    resolveSystemSettingsReady = resolve;
+  });
 
   const handleApiRoute = async (route: Route) => {
     const request = route.request();
@@ -190,6 +213,7 @@ export async function installRerDutyShortStateMocks(
 
     if (pathname === '/api/system-settings/current') {
       await fulfillJson(route, emptySystemSettingsResponse());
+      resolveSystemSettingsReady();
       return;
     }
 
@@ -281,5 +305,6 @@ export async function installRerDutyShortStateMocks(
 
   return {
     getLastInboxRequest: () => lastInboxRequest,
+    systemSettingsReady,
   };
 }

@@ -16,11 +16,14 @@ async function openPendingImageEditor(
   await page.locator('input[type="file"]').setInputFiles(IMAGE_EDITOR_DRAWER_PNG);
   await page.getByRole('button', { name: `Переглянути ${IMAGE_EDITOR_DRAWER_PNG.name}` }).click();
   const preview = page.getByRole('dialog', { name: 'Перегляд зображення' });
+  await expect(preview).toBeVisible();
   await preview.getByRole('button', { name: 'Редагувати зображення' }).click();
-  return { editor: page.getByLabel('Редактор зображення'), preview };
+  const editor = page.getByLabel('Редактор зображення');
+  await expect(editor).toBeVisible();
+  return { editor, preview };
 }
 
-async function applyMinimalEdit(
+async function saveMinimalReplacement(
   page: import('@playwright/test').Page,
   editor: import('@playwright/test').Locator,
 ) {
@@ -29,15 +32,20 @@ async function applyMinimalEdit(
   if (!box) throw new Error('Canvas редактора не має розмірів');
   await page.mouse.click(box.x + 30, box.y + 30);
   await page.keyboard.type('edited');
-  await editor.getByRole('button', { name: 'Застосувати' }).click();
+  await editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }).click();
+  const confirmation = page.getByRole('dialog', {
+    name: 'Замінити поточне зображення?',
+  });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Замінити', exact: true }).click();
 }
 
 test.describe('image editor drawer integration #3099', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
-    test(`${host} opens from preview and applies one pending replacement`, async ({ page }) => {
+    test(`${host} opens from preview and saves one pending replacement`, async ({ page }) => {
       const submitted = await observeImageEditorSubmission(page);
       const { editor, preview } = await openPendingImageEditor(page, host);
-      await applyMinimalEdit(page, editor);
+      await saveMinimalReplacement(page, editor);
       await expect(editor).toHaveCount(0);
       await preview.getByRole('button', { name: 'Закрити' }).click();
       await expect(page.getByText('Вкладення (1)')).toBeVisible();
@@ -59,9 +67,9 @@ test.describe('image editor drawer integration #3099', () => {
     const preview = page.getByRole('dialog', { name: 'Перегляд зображення' });
     await preview.getByRole('button', { name: 'Редагувати зображення' }).click();
     const editor = page.getByLabel('Редактор зображення');
-    await applyMinimalEdit(page, editor);
+    await saveMinimalReplacement(page, editor);
     await preview.getByRole('button', { name: 'Закрити' }).click();
-    await page.getByRole('button', { name: 'Зберегти' }).click();
+    await page.getByRole('button', { name: 'Зберегти', exact: true }).click();
     await expect.poll(() => submitted.submissions.length).toBe(1);
     expect(submitted.uploads).toHaveLength(1);
     expect(submitted.submissions[0]).toMatchObject({
@@ -84,7 +92,7 @@ test.describe('image editor drawer integration #3099', () => {
         editor.locator('footer').getByRole('button', { name: 'Скасувати' }),
       ).toBeVisible();
       await expect(
-        editor.locator('footer').getByRole('button', { name: 'Застосувати' }),
+        editor.locator('footer').getByRole('button', { name: 'Зберегти', exact: true }),
       ).toBeVisible();
     }
   });
