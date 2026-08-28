@@ -968,6 +968,53 @@ describe('useRerAnalysisNeoPage', () => {
     });
   });
 
+  it('clears the direct-link message when it does not match a selected group', async () => {
+    const targetMessage = { text: 'target', date: null, timestamp: null } as InboxMessage;
+    const focusedWindow: InboxWindowRsp = {
+      targetMessageId: 50,
+      inbox: {
+        inboxItems: [[50, targetMessage]],
+        pollCursorId: null,
+        callsigns: [],
+        signalProfiles: {},
+        signalGroups: [],
+        freqPelengsSummary: null,
+        pageLimit: 20,
+      },
+      hasMoreBefore: true,
+      hasMoreAfter: true,
+    };
+    const focusedData = {
+      ...buildAnalysisData(),
+      messages: focusedWindow.inbox.inboxItems,
+    };
+    const filteredData = buildAnalysisData();
+    useAnalysisDataMock.mockImplementation((options) =>
+      options.focusedMessageActive ? focusedData : filteredData,
+    );
+    window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
+
+    renderHook();
+    await flushEffects();
+
+    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(null);
+    act(() => latest?.updateQueryState({ groupsSelected: ['other-group'] }));
+    await flushEffects();
+
+    expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
+      selectedGroups: ['other-group'],
+    });
+    expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      focusedWindow: null,
+      focusedMessageActive: false,
+    });
+    expect(latest?.directMessageNavigation).toBeNull();
+    expect(latest?.messages).toEqual([]);
+    expect(latest?.error).toBeNull();
+  });
+
   it('leaves direct-link context when the date range changes', async () => {
     const targetMessage = {
       text: 'target',

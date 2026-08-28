@@ -413,6 +413,12 @@ async fn inbox_window_bl(
             .await
             .context(h!())?
             .into_iter()
+            .filter(|(_, message)| {
+                inbox_window_target_matches_context_filters(
+                    message,
+                    &target_req,
+                )
+            })
             .collect::<HashMap<_, _>>();
     let Some(target_message_id) = rows
         .iter()
@@ -488,6 +494,10 @@ fn inbox_window_base_req(
 fn inbox_window_target_req(inbox_req: &InboxMessagesReq) -> InboxMessagesReq {
     InboxMessagesReq {
         search: inbox_req.search.clone(),
+        selected_groups: inbox_req.selected_groups.clone(),
+        selected_freqs: inbox_req.selected_freqs.clone(),
+        selected_networks: inbox_req.selected_networks.clone(),
+        without_network: inbox_req.without_network,
         highlight_callsigns: inbox_req.highlight_callsigns,
         highlight_keywords: inbox_req.highlight_keywords,
         highlight_searchres: inbox_req.highlight_searchres,
@@ -498,6 +508,69 @@ fn inbox_window_target_req(inbox_req: &InboxMessagesReq) -> InboxMessagesReq {
         without_model_tags: inbox_req.without_model_tags,
         ..Default::default()
     }
+}
+
+fn inbox_window_target_matches_context_filters(
+    message: &InboxMessage,
+    req: &InboxMessagesReq,
+) -> bool {
+    inbox_window_target_matches_group(message, &req.selected_groups)
+        && inbox_window_target_matches_frequency(message, &req.selected_freqs)
+        && inbox_window_target_matches_network(
+            message,
+            &req.selected_networks,
+            req.without_network.unwrap_or(false),
+        )
+}
+
+fn inbox_window_target_matches_group(
+    message: &InboxMessage,
+    selected_groups: &Option<Vec<String>>,
+) -> bool {
+    selected_groups
+        .as_ref()
+        .filter(|groups| !groups.is_empty())
+        .is_none_or(|groups| {
+            message
+                .group_master_key
+                .as_ref()
+                .is_some_and(|group| groups.contains(group))
+        })
+}
+
+fn inbox_window_target_matches_frequency(
+    message: &InboxMessage,
+    selected_freqs: &Option<Vec<String>>,
+) -> bool {
+    selected_freqs
+        .as_ref()
+        .filter(|freqs| !freqs.is_empty())
+        .is_none_or(|freqs| {
+            freqs
+                .iter()
+                .any(|freq| message.freq.as_deref().unwrap_or_default() == freq)
+        })
+}
+
+fn inbox_window_target_matches_network(
+    message: &InboxMessage,
+    selected_networks: &Option<Vec<i64>>,
+    without_network: bool,
+) -> bool {
+    let selected_networks = selected_networks
+        .as_ref()
+        .filter(|networks| !networks.is_empty());
+    if without_network {
+        return selected_networks.is_none()
+            && message.network_ids.as_ref().is_none_or(Vec::is_empty);
+    }
+    selected_networks.is_none_or(|selected_networks| {
+        message.network_ids.as_ref().is_some_and(|network_ids| {
+            network_ids
+                .iter()
+                .any(|network_id| selected_networks.contains(network_id))
+        })
+    })
 }
 
 fn inbox_window_page_req(
@@ -4560,11 +4633,12 @@ mod tests {
     }
 
     #[test]
-    fn inbox_window_applies_context_filters_only_to_surrounding_messages() {
+    fn inbox_window_applies_context_filters_to_target_message() {
         let inbox_req = inbox_window_base_req(Some(InboxMessagesReq {
             selected_groups: Some(vec!["group-1".to_string()]),
             selected_freqs: Some(vec!["123.45".to_string()]),
             selected_networks: Some(vec![7]),
+            without_network: Some(false),
             ..Default::default()
         }));
 
@@ -4576,9 +4650,10 @@ mod tests {
         assert_eq!(inbox_req.selected_networks, Some(vec![7]));
 
         let target_req = inbox_window_target_req(&inbox_req);
-        assert!(target_req.selected_groups.is_none());
-        assert!(target_req.selected_freqs.is_none());
-        assert!(target_req.selected_networks.is_none());
+        assert_eq!(target_req.selected_groups, inbox_req.selected_groups);
+        assert_eq!(target_req.selected_freqs, inbox_req.selected_freqs);
+        assert_eq!(target_req.selected_networks, inbox_req.selected_networks);
+        assert_eq!(target_req.without_network, inbox_req.without_network);
     }
 
     #[serial]
@@ -4675,6 +4750,24 @@ mod tests {
             .inbox_items
             .windows(2)
             .all(|messages| messages[0].0 < messages[1].0));
+
+        let filtered_window = inbox_window_bl(
+            &env,
+            &login.id,
+            &logins,
+            false,
+            InboxWindowReq {
+                message_ref: target_message_uuid.to_string(),
+                inbox_req: Some(InboxMessagesReq {
+                    selected_groups: Some(vec!["other-group".to_string()]),
+                    ..Default::default()
+                }),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(filtered_window.is_none());
     }
 
     fn generic_submit_req() -> InboxSubmitItem {

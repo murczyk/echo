@@ -150,12 +150,17 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
       .then((res) => {
         if (cancelled) return;
         if (res == null) {
-          if (!targetMessageLoadedRef.current) {
+          if (isContextRefresh) {
+            setTargetMessageWindow(null);
             setTargetMessageContextActive(false);
+            setTargetMessageFocusActive(false);
+            removeMessageUidFromWindowUrl();
+          } else {
+            setTargetMessageContextActive(false);
+            setPageError('Не вдалося знайти повідомлення за посиланням.');
           }
           setTargetMessageContextLoading(false);
           setTargetMessageContextResponsePending(false);
-          setPageError('Не вдалося знайти повідомлення за посиланням.');
           return;
         }
         targetMessageLoadedRef.current = true;
