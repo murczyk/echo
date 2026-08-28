@@ -675,6 +675,13 @@ pub const REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE: usize = 256;
 pub const REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS: u64 = 5;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
+pub const TOTP_2FA_CHALLENGE_REDIS_PREFIX: &str = "2fa:challenge:";
+pub const TOTP_2FA_CHALLENGE_TTL_SEC: u64 = 300;
+pub const TOTP_2FA_MAX_ATTEMPTS: u32 = 5;
+pub const TOTP_2FA_ISSUER: &str = "Echo";
+pub const TOTP_2FA_DIGITS: usize = 6;
+pub const TOTP_2FA_SKEW: u8 = 1;
+pub const TOTP_2FA_STEP_SEC: u64 = 30;
 pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
     "echo:deployment:maintenance";
 pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;

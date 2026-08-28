@@ -17,6 +17,8 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
+pub mod totp;
+pub mod totp_challenge;
 pub mod types;
 
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
