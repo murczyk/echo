@@ -434,7 +434,7 @@ async fn messages_by_uuid(
     req: Json<MessageUuidsReq>,
 ) -> Result<Json<MessageIdsRsp>, AppError> {
     let req = req.into_inner();
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).c(h!())?;
     has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
         .await
         .c(h!())?;
