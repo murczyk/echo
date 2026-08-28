@@ -29,6 +29,11 @@ struct PersistSummary {
     no_longer_matching: usize,
 }
 
+struct AutomaticPersistenceMatcherCache {
+    orbit_sync_id: i64,
+    matcher: matching::TestLinkMatcher,
+}
+
 impl PersistSummary {
     fn add(&mut self, summary: Self) {
         self.already_linked += summary.already_linked;
@@ -235,10 +240,11 @@ pub(super) async fn run_with_database(
     let orbit_units = persistence::load_latest_synced_source_units(dbx)
         .await
         .c(h!())?;
-    let matcher = matching::TestLinkMatcher::new(&orbit_units);
+    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let suppressed_links = load_suppressed_links(dbx).await.c(h!())?;
     let review_units =
         prepare_review_units(&units, &matcher, link_mode, &suppressed_links);
+    drop(matcher);
     let (summary, links) = match link_mode {
         tui::LinkMode::Manual => review_manually(review_units).c(h!())?,
         tui::LinkMode::Automatic => approve_automatic(review_units),
@@ -350,12 +356,25 @@ fn approve_automatic(
 }
 
 fn automatically_approved_link(unit: &ReviewUnit) -> Option<(i64, uuid::Uuid)> {
-    let [candidate] = unit.matches.as_slice() else {
+    let minimum_distance = unit
+        .matches
+        .iter()
+        .filter(|candidate| {
+            candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
+                && candidate.distance
+                    <= ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE
+        })
+        .map(|candidate| candidate.distance)
+        .min()?;
+    let mut candidates = unit.matches.iter().filter(|candidate| {
+        candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
+            && candidate.distance == minimum_distance
+    });
+    let candidate = candidates.next()?;
+    if candidates.next().is_some() {
         return None;
-    };
-    (candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
-        && candidate.distance <= ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE)
-        .then_some((unit.sigint_unit_id, candidate.unit_id))
+    }
+    Some((unit.sigint_unit_id, candidate.unit_id))
 }
 
 async fn persist_links(
@@ -440,13 +459,19 @@ async fn persist_automatic_link_batches(
     reviewed_sigint_unit_ids: &[i64],
 ) -> anyhow::Result<PersistSummary> {
     let mut summary = PersistSummary::default();
+    let mut matcher_cache = None;
     for sigint_unit_ids in reviewed_sigint_unit_ids
         .chunks(ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE)
     {
         summary.add(
-            persist_automatic_link_batch(dbx, links, sigint_unit_ids)
-                .await
-                .c(h!())?,
+            persist_automatic_link_batch(
+                dbx,
+                links,
+                sigint_unit_ids,
+                &mut matcher_cache,
+            )
+            .await
+            .c(h!())?,
         );
     }
     Ok(summary)
@@ -456,21 +481,24 @@ async fn persist_automatic_link_batch(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    matcher_cache: &mut Option<AutomaticPersistenceMatcherCache>,
 ) -> anyhow::Result<PersistSummary> {
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let orbit_units =
-        persistence::load_latest_synced_source_units(&transaction)
-            .await
-            .c(h!())?;
-    let matcher = matching::TestLinkMatcher::new(&orbit_units);
+    refresh_automatic_persistence_matcher(&transaction, matcher_cache)
+        .await
+        .c(h!())?;
+    let matcher = &matcher_cache
+        .as_ref()
+        .expect("automatic persistence matcher must be initialized")
+        .matcher;
     let suppressed_links = load_suppressed_links(&transaction).await.c(h!())?;
     let (summary, _) = revalidate_automatic_links(
         &transaction,
         &login,
         links,
         reviewed_sigint_unit_ids,
-        &matcher,
+        matcher,
         &suppressed_links,
     )
     .await
@@ -482,11 +510,39 @@ async fn persist_automatic_link_batch(
     Ok(summary)
 }
 
+async fn refresh_automatic_persistence_matcher<C>(
+    dbx: &C,
+    matcher_cache: &mut Option<AutomaticPersistenceMatcherCache>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    let orbit_sync = persistence::load_latest_sync(dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| anyhow::anyhow!("ORBIT data has not been synchronized"))
+        .c(h!())?;
+    if matcher_cache
+        .as_ref()
+        .is_some_and(|cache| cache.orbit_sync_id == orbit_sync.id)
+    {
+        return Ok(());
+    }
+    let orbit_units = persistence::load_latest_synced_source_units(dbx)
+        .await
+        .c(h!())?;
+    *matcher_cache = Some(AutomaticPersistenceMatcherCache {
+        orbit_sync_id: orbit_sync.id,
+        matcher: matching::TestLinkMatcher::from_units(orbit_units),
+    });
+    Ok(())
+}
+
 async fn persist_manual_links<C>(
     dbx: &C,
     login: &uuid::Uuid,
     links: &[(i64, uuid::Uuid)],
-    matcher: &matching::TestLinkMatcher<'_>,
+    matcher: &matching::TestLinkMatcher,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> anyhow::Result<(PersistSummary, bool)>
 where
@@ -543,7 +599,7 @@ async fn revalidate_automatic_links<C>(
     login: &uuid::Uuid,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
-    matcher: &matching::TestLinkMatcher<'_>,
+    matcher: &matching::TestLinkMatcher,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> anyhow::Result<(PersistSummary, bool)>
 where
@@ -699,7 +755,7 @@ where
 fn accepted_link_is_current_match(
     sigint_unit: &sigint_unit::Model,
     orbit_unit_id: uuid::Uuid,
-    matcher: &matching::TestLinkMatcher<'_>,
+    matcher: &matching::TestLinkMatcher,
     link_mode: tui::LinkMode,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> bool {
@@ -722,7 +778,7 @@ fn accepted_link_is_current_match(
 
 fn current_automatic_link(
     sigint_unit: &sigint_unit::Model,
-    matcher: &matching::TestLinkMatcher<'_>,
+    matcher: &matching::TestLinkMatcher,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> Option<uuid::Uuid> {
     prepare_review_unit(
@@ -738,7 +794,7 @@ fn current_automatic_link(
 
 fn prepare_review_units(
     units: &[sigint_unit::Model],
-    matcher: &matching::TestLinkMatcher<'_>,
+    matcher: &matching::TestLinkMatcher,
     link_mode: tui::LinkMode,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> Vec<ReviewUnit> {
@@ -765,7 +821,7 @@ fn sort_review_units(review_units: &mut [ReviewUnit]) {
 
 fn prepare_review_unit(
     unit: &sigint_unit::Model,
-    matcher: &matching::TestLinkMatcher<'_>,
+    matcher: &matching::TestLinkMatcher,
     link_mode: tui::LinkMode,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> Option<ReviewUnit> {
@@ -1010,6 +1066,52 @@ mod tests {
         assert_eq!(review_units[0].matches[0].rating, 100);
         assert_eq!(review_units[0].matches[0].distance, 0);
         assert_eq!(approve_automatic(review_units).1.len(), 1);
+    }
+
+    #[test]
+    fn automatic_mode_chooses_unique_closest_equivalent_hierarchy() {
+        let mut unit = sigint_unit("434 огадн");
+        unit.army = "6 А".to_string();
+        let expected_orbit_unit_id = uuid::Uuid::new_v4();
+        let orbit_units = [
+            orbit_hierarchy_unit(
+                expected_orbit_unit_id,
+                "434 огадн / 6 ЗВА / ЛВО",
+                &[
+                    ("battalion", "434 огадн"),
+                    ("fieldArmy", "6 ЗВА"),
+                    ("militaryDistrict", "ЛВО"),
+                ],
+            ),
+            orbit_hierarchy_unit(
+                uuid::Uuid::new_v4(),
+                "434 огадн / 68 мсд / 6 ЗВА / ЛВО",
+                &[
+                    ("battalion", "434 огадн"),
+                    ("division", "68 мсд"),
+                    ("fieldArmy", "6 ЗВА"),
+                    ("militaryDistrict", "ЛВО"),
+                ],
+            ),
+        ];
+        let matcher = matching::TestLinkMatcher::new(&orbit_units);
+
+        let review_units = prepare_review_units(
+            &[unit],
+            &matcher,
+            tui::LinkMode::Automatic,
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(review_units[0].matches.len(), 2);
+        assert_eq!(review_units[0].matches[0].unit_id, expected_orbit_unit_id);
+        assert_eq!(review_units[0].matches[0].rating, 100);
+        assert_eq!(review_units[0].matches[0].distance, 4);
+        assert!(review_units[0].matches[1].distance > 4);
+        assert_eq!(
+            approve_automatic(review_units).1,
+            vec![(1, expected_orbit_unit_id)]
+        );
     }
 
     #[test]
@@ -1410,21 +1512,29 @@ mod tests {
     }
 
     #[test]
-    fn automatic_mode_accepts_only_one_close_match() {
+    fn automatic_mode_accepts_unique_closest_match() {
         let mut close = review_unit(1);
         close.sigint_unit_id = 1;
         close.matches[0].distance = ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE;
         let mut far = review_unit(1);
         far.sigint_unit_id = 2;
         far.matches[0].distance = ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE + 1;
-        let mut ambiguous = review_unit(2);
-        ambiguous.sigint_unit_id = 3;
+        let mut unique_closest = review_unit(2);
+        unique_closest.sigint_unit_id = 3;
+        unique_closest.matches[0].distance = 4;
+        unique_closest.matches[1].distance = 8;
+        let mut tied = review_unit(2);
+        tied.sigint_unit_id = 4;
+        tied.matches[0].distance = 4;
+        tied.matches[1].distance = 4;
 
-        let (summary, links) = approve_automatic(vec![close, far, ambiguous]);
+        let (summary, links) =
+            approve_automatic(vec![close, far, unique_closest, tied]);
 
-        assert_eq!(links.len(), 1);
+        assert_eq!(links.len(), 2);
         assert_eq!(links[0].0, 1);
-        assert_eq!(summary.accepted, 1);
+        assert_eq!(links[1].0, 3);
+        assert_eq!(summary.accepted, 2);
         assert_eq!(summary.unreviewed, 2);
     }
 

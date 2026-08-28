@@ -800,7 +800,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
 fn draw_link_mode_menu(frame: &mut Frame<'_>, selected: usize) {
     let area = centered_area(frame, 70, 6);
     let options = [
-        "Automatic: link one exact-rating match with distance ≤ 10",
+        "Automatic: link unique closest exact-rating match with distance ≤ 10",
         "Manual: review every potential match (no distance limit)",
     ];
     let items = options.into_iter().map(ListItem::new);

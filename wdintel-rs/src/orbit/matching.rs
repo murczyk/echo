@@ -174,24 +174,28 @@ pub fn matching_orbit_unit_ids(
     .collect()
 }
 
-struct TestLinkCandidate<'a> {
-    orbit_unit: &'a SourceUnit,
+struct TestLinkCandidate {
+    orbit_unit: SourceUnit,
     path: ComparablePath,
 }
 
-pub(super) struct TestLinkMatcher<'a> {
-    candidates: Vec<TestLinkCandidate<'a>>,
+pub(super) struct TestLinkMatcher {
+    candidates: Vec<TestLinkCandidate>,
     exact_index: HashMap<(EchoEchelon, String), Vec<usize>>,
     number_index: HashMap<(EchoEchelon, String), Vec<usize>>,
 }
 
-impl<'a> TestLinkMatcher<'a> {
-    pub fn new(orbit_units: &'a [SourceUnit]) -> Self {
+impl TestLinkMatcher {
+    pub fn new(orbit_units: &[SourceUnit]) -> Self {
+        Self::from_units(orbit_units.to_vec())
+    }
+
+    pub fn from_units(orbit_units: Vec<SourceUnit>) -> Self {
         let mut candidates = Vec::new();
         let mut exact_index = HashMap::new();
         let mut number_index = HashMap::new();
         for orbit_unit in orbit_units {
-            let Ok(path) = comparable_path(orbit_unit) else {
+            let Ok(path) = comparable_path(&orbit_unit) else {
                 continue;
             };
             let candidate_index = candidates.len();
@@ -213,7 +217,7 @@ impl<'a> TestLinkMatcher<'a> {
     pub fn best_matches(
         &self,
         sigint_hierarchy: &[(EchoEchelon, &str)],
-    ) -> Vec<(&'a SourceUnit, u8)> {
+    ) -> Vec<(&SourceUnit, u8)> {
         let matches = self.potential_matches(sigint_hierarchy);
         let Some(max_rating) = matches.iter().map(|(_, rating)| *rating).max()
         else {
@@ -228,7 +232,7 @@ impl<'a> TestLinkMatcher<'a> {
     pub fn potential_matches(
         &self,
         sigint_hierarchy: &[(EchoEchelon, &str)],
-    ) -> Vec<(&'a SourceUnit, u8)> {
+    ) -> Vec<(&SourceUnit, u8)> {
         let Some((echelon, name)) = first_test_link_echelon(sigint_hierarchy)
         else {
             return Vec::new();
@@ -262,7 +266,7 @@ impl<'a> TestLinkMatcher<'a> {
             .filter(|(candidate, _)| {
                 candidate.path.root_echelon == Some(echelon)
             })
-            .map(|(candidate, rating)| (candidate.orbit_unit, rating))
+            .map(|(candidate, rating)| (&candidate.orbit_unit, rating))
             .collect()
     }
 }
