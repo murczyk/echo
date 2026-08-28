@@ -383,7 +383,6 @@ fn etalonka_collection_options(
     report_type: &EtalonkaReportType,
     chunking_hours: i64,
     now_ms: i64,
-    network_count: usize,
 ) -> Result<EtalonkaCollectionOptions, AppError> {
     match report_type {
         EtalonkaReportType::AccordingToTheForm(settings) => {
@@ -407,32 +406,21 @@ fn etalonka_collection_options(
                 settings.since_date_inclusive_ms,
                 till_ms,
             );
-            let filters = if network_count
-                <= crate::config::RER_ETALONKA_REPORT_UNCHUNKED_NETWORK_LIMIT
-            {
-                vec![NetworkFreqFilter {
-                    active_freqs_only: settings.active_freqs_only,
-                    since_date_inclusive_ms: Some(since_ms),
-                    till_date_inclusive_ms: Some(till_ms),
-                    till_date_end: ReportPeriodEnd::Inclusive,
-                }]
-            } else {
-                report_period_chunks(
-                    since_ms,
-                    till_ms,
-                    chunking_hours,
-                    ReportPeriodEnd::Inclusive,
-                )
-                .context(h!())?
-                .into_iter()
-                .map(|chunk| NetworkFreqFilter {
-                    active_freqs_only: settings.active_freqs_only,
-                    since_date_inclusive_ms: Some(chunk.since_ms),
-                    till_date_inclusive_ms: Some(chunk.till_ms),
-                    till_date_end: chunk.end,
-                })
-                .collect()
-            };
+            let filters = report_period_chunks(
+                since_ms,
+                till_ms,
+                chunking_hours,
+                ReportPeriodEnd::Inclusive,
+            )
+            .context(h!())?
+            .into_iter()
+            .map(|chunk| NetworkFreqFilter {
+                active_freqs_only: settings.active_freqs_only,
+                since_date_inclusive_ms: Some(chunk.since_ms),
+                till_date_inclusive_ms: Some(chunk.till_ms),
+                till_date_end: chunk.end,
+            })
+            .collect();
             Ok(EtalonkaCollectionOptions {
                 is_extended_report: true,
                 include_pelengs_map: settings.include_pelengs_map,
@@ -464,7 +452,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
         report_type,
         report_settings.chunking_hours,
         chrono::Utc::now().timestamp_millis(),
-        network_count,
     )
     .context(h!())?;
     info!(
@@ -2494,7 +2481,6 @@ mod tests {
             &extended_report_type(since_ms, since_ms + 49 * hour_ms),
             24,
             since_ms + 50 * hour_ms,
-            crate::config::RER_ETALONKA_REPORT_UNCHUNKED_NETWORK_LIMIT + 1,
         )
         .unwrap();
 
@@ -2519,7 +2505,7 @@ mod tests {
     }
 
     #[test]
-    fn extended_report_single_network_uses_full_period_filter() {
+    fn extended_report_always_uses_configured_chunks() {
         let hour_ms = chrono::Duration::hours(1).num_milliseconds();
         let since_ms = crate::config::RER_ETALONKA_REPORT_SINCE_MIN_MS;
         let till_ms = since_ms + 49 * hour_ms;
@@ -2527,15 +2513,14 @@ mod tests {
             &extended_report_type(since_ms, till_ms),
             24,
             since_ms + 50 * hour_ms,
-            crate::config::RER_ETALONKA_REPORT_UNCHUNKED_NETWORK_LIMIT,
         )
         .unwrap();
 
-        assert_eq!(options.filters.len(), 1);
+        assert_eq!(options.filters.len(), 3);
         assert_eq!(options.filters[0].since_date_inclusive_ms, Some(since_ms));
-        assert_eq!(options.filters[0].till_date_inclusive_ms, Some(till_ms));
+        assert_eq!(options.filters[2].till_date_inclusive_ms, Some(till_ms));
         assert_eq!(
-            options.filters[0].till_date_end,
+            options.filters[2].till_date_end,
             ReportPeriodEnd::Inclusive
         );
     }
@@ -2566,13 +2551,8 @@ mod tests {
                 )
                 .num_milliseconds()
         );
-        let options = etalonka_collection_options(
-            &report_type,
-            24,
-            till_ms,
-            crate::config::RER_ETALONKA_REPORT_UNCHUNKED_NETWORK_LIMIT + 1,
-        )
-        .unwrap();
+        let options =
+            etalonka_collection_options(&report_type, 24, till_ms).unwrap();
 
         assert_eq!(
             options.filters[0].since_date_inclusive_ms,
@@ -2600,13 +2580,8 @@ mod tests {
             settings.since_date_inclusive_ms,
             crate::config::RER_ETALONKA_REPORT_SINCE_MIN_MS
         );
-        let options = etalonka_collection_options(
-            &report_type,
-            24,
-            till_ms,
-            crate::config::RER_ETALONKA_REPORT_UNCHUNKED_NETWORK_LIMIT + 1,
-        )
-        .unwrap();
+        let options =
+            etalonka_collection_options(&report_type, 24, till_ms).unwrap();
 
         assert_eq!(
             options.filters[0].since_date_inclusive_ms,
