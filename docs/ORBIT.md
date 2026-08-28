@@ -89,7 +89,7 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers four workflows.
+PostgreSQL advisory lock. The first screen offers five workflows.
 
 ### IMPORT NEW ORBIT DATA REVISION
 
@@ -125,6 +125,15 @@ Accepted links use the same transactional implementation as manual linking in
 `/rer-units` and `/rer-units/{id}`. That implementation validates both units,
 creates the link, imports missing ORBIT ancestors, reconciles the SIGINT
 hierarchy and duplicate-candidate state, and updates parent activity.
+
+### Reconcile linked SIGINT units and merge exact duplicates
+
+This workflow reviews proposed hierarchy enrichments for linked SIGINT units.
+Accepted attributes are applied, inconsistency flags are recalculated for all
+linked units, and exact-name duplicate candidates sharing an ORBIT unit are
+merged. The ORBIT advisory lock is held for the full run while individual unit
+and duplicate-component transactions are committed separately, so an
+interrupted run can be restarted safely.
 
 ### Erase and reimport all ORBIT data
 

@@ -35,6 +35,7 @@ The first TUI screen offers:
 - prepare a new ORBIT data revision from a JSON path;
 - synchronize ORBIT units;
 - link ORBIT units to SIGINT units in automatic or manual mode;
+- reconcile linked SIGINT hierarchies and merge exact duplicates;
 - erase and reimport all ORBIT data.
 
 The synchronization action uses the latest timestamped ZIP and never asks for
@@ -63,8 +64,15 @@ considers only candidates tied at the maximum rating and accepts only a single
 candidate whose rating is exactly 100 and whose Levenshtein distance is at most
 10. Manual mode presents every
 structurally valid candidate for review without a distance cutoff. The
-standalone `oneoff-test-link-units` command runs the same workflow. Manual links from `/rer-units` and
-`/rer-units/{id}` use the same transactional link implementation.
+standalone `oneoff-test-link-units` command runs the same workflow. Manual
+links from `/rer-units` and `/rer-units/{id}` use the same transactional link
+implementation.
+
+The reconciliation action reviews proposed hierarchy enrichments, recalculates
+linked-unit inconsistency flags, and merges exact-name duplicate candidates
+sharing an ORBIT unit. It keeps the ORBIT advisory lock for the full run and
+commits each unit or duplicate component separately, so it is safe to restart
+after interruption.
 When a unit also appears inside another unit's path with a different parent,
 the unit's own top-level parent chain is authoritative. Conflicting
 embedded-only paths still fail when the ambiguous unit is selected.

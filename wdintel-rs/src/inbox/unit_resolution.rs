@@ -391,24 +391,14 @@ where
     if normalized.is_empty() {
         return Ok(None);
     }
-    let name_variants = std::iter::once(normalize_unit_label(value))
-        .chain(
-            normalized
-                .split_whitespace()
-                .map(|word| {
-                    crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
-                        .iter()
-                        .find_map(|(canonical, aliases)| {
-                            (*canonical == word).then_some(aliases.to_vec())
-                        })
-                        .unwrap_or_else(|| vec![word])
-                })
-                .multi_cartesian_product()
-                .map(|words| words.join(" ")),
-        )
-        .unique()
-        .take(INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT)
-        .collect_vec();
+    let name_variants =
+        equivalent_sigint_unit_name_variants(value, &normalized);
+    if name_variants.len() > INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT {
+        warn!(
+            "Too many equivalent SIGINT unit name variants for value={value:?}"
+        );
+        return Ok(None);
+    }
     let sigint_unit_ids = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(
@@ -430,6 +420,30 @@ where
         return Ok(None);
     }
     Ok(sigint_unit_ids.into_iter().next())
+}
+
+fn equivalent_sigint_unit_name_variants(
+    value: &str,
+    normalized: &str,
+) -> Vec<String> {
+    std::iter::once(normalize_unit_label(value))
+        .chain(
+            normalized
+                .split_whitespace()
+                .map(|word| {
+                    crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
+                        .iter()
+                        .find_map(|(canonical, aliases)| {
+                            (*canonical == word).then_some(aliases.to_vec())
+                        })
+                        .unwrap_or_else(|| vec![word])
+                })
+                .multi_cartesian_product()
+                .map(|words| words.join(" ")),
+        )
+        .unique()
+        .take(INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT + 1)
+        .collect_vec()
 }
 
 async fn resolve_unit_v2_name_fallback<C>(
@@ -1510,6 +1524,17 @@ mod tests {
         assert_eq!(
             resolution_texts("123 ОМСБР"),
             vec![("123 омсбр".to_string(), false)]
+        );
+    }
+
+    #[test]
+    fn equivalent_name_variants_report_the_configured_limit_overflow() {
+        let value = ["В"; 8].join(" ");
+        let normalized = crate::unit::normalize_unit_formation_name(&value);
+
+        assert_eq!(
+            equivalent_sigint_unit_name_variants(&value, &normalized).len(),
+            INBOX_UNIT_EQUIVALENT_NAME_VARIANT_LIMIT + 1
         );
     }
 
