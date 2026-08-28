@@ -169,7 +169,8 @@ client, current lock, linked account, visibility filter, and message ownership
 checks as history. Uploads accept base64 plus an optional filename and are
 limited to 25 MiB each.
 
-Webhook requests are `POST` JSON without redirects:
+Webhook targets must use credential-free HTTPS and resolve only to public IP
+addresses. Requests are `POST` JSON without redirects:
 
 ```ts
 {

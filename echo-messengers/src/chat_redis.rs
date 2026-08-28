@@ -4,7 +4,6 @@ use crate::config::{
 use crate::error::ShortContext;
 use crate::h;
 use redis::aio::{ConnectionManager, ConnectionManagerConfig};
-use redis::ConnectionLike;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -58,15 +57,12 @@ impl ChatRedis {
 async fn new_connection(config: &Config) -> anyhow::Result<ConnectionManager> {
     let redis_url =
         format!("redis://{}:{}/0", config.redis_host(), config.redis_port());
-    let mut client = redis::Client::open(redis_url).c(h!())?;
-    if !client.check_connection() {
-        anyhow::bail!("Redis connection failed");
-    }
+    let client = redis::Client::open(redis_url).c(h!())?;
+    let timeout = Duration::from_secs(CHAT_REDIS_RESPONSE_TIMEOUT_SECS);
     let manager_config = ConnectionManagerConfig::new()
         .set_pipeline_buffer_size(CHAT_REDIS_PIPELINE_BUFFER_SIZE)
-        .set_response_timeout(Some(Duration::from_secs(
-            CHAT_REDIS_RESPONSE_TIMEOUT_SECS,
-        )));
+        .set_connection_timeout(Some(timeout))
+        .set_response_timeout(Some(timeout));
     client
         .get_connection_manager_with_config(manager_config)
         .await

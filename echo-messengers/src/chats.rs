@@ -27,6 +27,8 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
 
 const ALLOWED_REACTIONS: [&str; 6] = ["➕", "➖", "👍", "👎", "❤️", "👀"];
@@ -519,7 +521,8 @@ pub async fn list(
         ), chat_latest as (
             select identity.client_id, identity.client_name, identity.account_id,
                 identity.account_label, identity.account_source, identity.kind,
-                identity.target, identity.title, latest.preview_sender,
+                identity.target, identity.title, identity.group_id,
+                latest.preview_sender,
                 latest.preview, latest.last_message_at, identity.linked_at
             from identities identity
             cross join lateral (
@@ -592,6 +595,7 @@ pub async fn list(
                         where item.account_id = identity.account_id
                             and item.recipient_id = recipient_item.recipient_id
                             and item.group_id is null
+                            and item.reply_to_inbox_message_id is null
                         order by coalesce(item.sent_at, item.created_at) desc,
                             item.id desc
                         limit 1
@@ -638,15 +642,42 @@ pub async fn list(
                 limit 1
             ) latest
         )
-        select client_id, client_name, account_id, account_label, account_source,
-            kind, target, title, preview_sender, preview, last_message_at, linked_at
+        select chat_latest.client_id, chat_latest.client_name,
+            chat_latest.account_id, chat_latest.account_label,
+            chat_latest.account_source, chat_latest.kind, chat_latest.target,
+            chat_latest.title, chat_latest.preview_sender, chat_latest.preview,
+            chat_latest.last_message_at, chat_latest.linked_at
         from chat_latest
-        where true
+        left join echo_client_settings settings
+            on settings.client_id = chat_latest.client_id
+        where coalesce(
+                case when kind = 'private' then settings.hide_private
+                    else settings.hide_groups end,
+                false
+              ) = (
+                (chat_latest.kind = 'private' and exists (
+                    select 1
+                    from echo_chat_filter filter_item
+                    where filter_item.client_id = chat_latest.client_id
+                        and filter_item.account_id = chat_latest.account_id
+                        and filter_item.chat_kind = 'private'
+                        and filter_item.participant_key = chat_latest.target
+                )) or (chat_latest.kind = 'group' and exists (
+                    select 1
+                    from echo_chat_filter filter_item
+                    where filter_item.client_id = chat_latest.client_id
+                        and filter_item.account_id = chat_latest.account_id
+                        and filter_item.chat_kind = 'group'
+                        and filter_item.group_id = chat_latest.group_id
+                ))
+              )
           and ($1::timestamp is null or
-            (last_message_at, client_id, account_id, kind, target) <
+            (chat_latest.last_message_at, chat_latest.client_id,
+                chat_latest.account_id, chat_latest.kind, chat_latest.target) <
             ($1, $2, $3, $4, $5))
-        order by last_message_at desc, client_id desc, account_id desc,
-            kind desc, target desc
+        order by chat_latest.last_message_at desc, chat_latest.client_id desc,
+            chat_latest.account_id desc, chat_latest.kind desc,
+            chat_latest.target desc
         limit $6
     "#;
     let (before_at, before_client, before_account, before_kind, before_target) =
@@ -702,21 +733,17 @@ pub async fn list(
     } else {
         None
     };
-    let visibility = Visibility::load(db).await.c(h!())?;
-    let visible_rows = rows
+    let rows = rows
         .into_iter()
         .map(|row| {
             let key = chat_key_from_row(&row).c(h!())?;
             Ok((row, key))
         })
         .collect::<anyhow::Result<Vec<_>>>()
-        .c(h!())?
-        .into_iter()
-        .filter(|(_, key)| visibility.allows(key))
-        .collect::<Vec<_>>();
-    let unread = unread_counts(chat_redis, &visible_rows).await.c(h!())?;
-    let mut chats = Vec::with_capacity(visible_rows.len());
-    for (row, key) in visible_rows {
+        .c(h!())?;
+    let unread = unread_counts(chat_redis, &rows).await.c(h!())?;
+    let mut chats = Vec::with_capacity(rows.len());
+    for (row, key) in rows {
         let id = encode_chat_id(&key).c(h!())?;
         let unread_count = unread.counts.get(&id).copied().unwrap_or_default();
         chats.push(ChatSummary {
@@ -1024,6 +1051,7 @@ const PRIVATE_MESSAGE_SELECTION: &str = r#"
         where item.account_id = $2
             and item.recipient_id = recipient_item.recipient_id
             and item.group_id is null
+            and item.reply_to_inbox_message_id is null
             and ($5::timestamp is null or
                 (coalesce(item.sent_at, item.created_at), 'out'::text, item.id) <
                 ($5, $6, $7))
@@ -1166,10 +1194,8 @@ async fn queued_message(
         where i.message_id = $1 and i.account_id = $2
           and (($3::integer is not null and i.group_id = $3)
             or ($4::text is not null and i.group_id is null and
-                coalesce(
-                    'p:' || regexp_replace(r.phone_number, '[^0-9+]', '', 'g'),
-                    case when reply_sender.phone_number is not null then 'p:' || regexp_replace(reply_sender.phone_number, '[^0-9+]', '', 'g') else 'u:' || reply_sender.uuid end
-                ) = $4))
+                (('p:' || regexp_replace(r.phone_number, '[^0-9+]', '', 'g')) = $4
+                    or (case when reply_sender.phone_number is not null then 'p:' || regexp_replace(reply_sender.phone_number, '[^0-9+]', '', 'g') else 'u:' || reply_sender.uuid end) = $4)))
         order by i.id desc
         limit 1
         "#,
@@ -1366,8 +1392,10 @@ pub async fn save_settings(
             .c(h!())?;
     validate_filter_keys(db, &private_filters).await.c(h!())?;
     validate_filter_keys(db, &group_filters).await.c(h!())?;
-    validate_webhook_update(&req.private_webhook).c(h!())?;
-    validate_webhook_update(&req.group_webhook).c(h!())?;
+    validate_webhook_update(&req.private_webhook)
+        .await
+        .c(h!())?;
+    validate_webhook_update(&req.group_webhook).await.c(h!())?;
     let current = settings_row(db, client_id).await.c(h!())?;
     let private_webhook_url = apply_webhook_update(
         current
@@ -1491,11 +1519,14 @@ pub async fn attachment(
                 where a.id = $1 and m.client_id = $2 and exists (
                     select 1 from echo_outbox_message_instance i
                     left join echo_recipient r on r.id = i.recipient_id
+                    left join echo_inbox_message reply_in on reply_in.id = i.reply_to_inbox_message_id
+                    left join echo_sender reply_sender on reply_sender.id = reply_in.sender_id
                     join echo_client_lock l on l.client_id = c.id and l.account_id = i.account_id and not l.remove_requested
                     where i.message_id = m.id and i.account_id = $3
                       and (($4::integer is not null and i.group_id = $4)
                         or ($5::text is not null and i.group_id is null and
-                            ('p:' || regexp_replace(r.phone_number, '[^0-9+]', '', 'g')) = $5))
+                            (('p:' || regexp_replace(r.phone_number, '[^0-9+]', '', 'g')) = $5
+                                or (case when reply_sender.phone_number is not null then 'p:' || regexp_replace(reply_sender.phone_number, '[^0-9+]', '', 'g') else 'u:' || reply_sender.uuid end) = $5)))
                 )
             "#,
             vec![
@@ -1902,18 +1933,119 @@ async fn enqueue_webhook(
     Ok(())
 }
 
-pub fn webhook_client() -> anyhow::Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .c(h!())
+struct WebhookTarget {
+    url: reqwest::Url,
+    hostname: Option<String>,
+    addresses: Vec<SocketAddr>,
 }
 
-pub async fn webhook_tick(
-    db: &DatabaseConnection,
-    client: &reqwest::Client,
-) -> anyhow::Result<()> {
+async fn resolve_webhook(url: &str) -> anyhow::Result<WebhookTarget> {
+    let url = validate_webhook_url(url).c(h!())?;
+    let host = url
+        .host_str()
+        .ok_or_else(|| bad_request("Некоректна URL-адреса webhook."))
+        .c(h!())?
+        .to_string();
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| bad_request("Некоректна URL-адреса webhook."))
+        .c(h!())?;
+    let addresses =
+        await_webhook_lookup(tokio::net::lookup_host((host.as_str(), port)))
+            .await
+            .c(h!())?
+            .collect::<Vec<_>>();
+    if addresses.is_empty()
+        || addresses.iter().any(|address| !is_public_ip(address.ip()))
+    {
+        return Err(bad_request(
+            "Webhook повинен вести лише на публічні IP-адреси.",
+        ));
+    }
+    Ok(WebhookTarget {
+        url,
+        hostname: host.parse::<IpAddr>().is_err().then_some(host),
+        addresses,
+    })
+}
+
+fn validate_webhook_url(url: &str) -> anyhow::Result<reqwest::Url> {
+    let url = reqwest::Url::parse(url.trim())
+        .map_err(|_| bad_request("Некоректна URL-адреса webhook."))
+        .c(h!())?;
+    let public_literal = url
+        .host_str()
+        .and_then(|host| host.parse::<IpAddr>().ok())
+        .is_none_or(is_public_ip);
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || !public_literal
+    {
+        return Err(bad_request(
+            "Webhook повинен використовувати HTTPS без облікових даних або приватних IP-адрес.",
+        ));
+    }
+    Ok(url)
+}
+
+async fn await_webhook_lookup<T>(
+    lookup: impl Future<Output = std::io::Result<T>>,
+) -> anyhow::Result<T> {
+    tokio::time::timeout(
+        Duration::from_secs(CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS),
+        lookup,
+    )
+    .await
+    .map_err(|_| bad_request("Не вдалося вчасно перевірити адресу webhook."))
+    .c(h!())?
+    .map_err(|_| bad_request("Не вдалося знайти адресу сервера webhook."))
+    .c(h!())
+}
+
+fn is_public_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => {
+            !address.is_private()
+                && !address.is_loopback()
+                && !address.is_link_local()
+                && !address.is_unspecified()
+                && !address.is_multicast()
+                && !address.is_broadcast()
+                && !address.is_documentation()
+        }
+        IpAddr::V6(address) => address.to_ipv4_mapped().map_or_else(
+            || {
+                !address.is_loopback()
+                    && !address.is_unspecified()
+                    && !address.is_multicast()
+                    && !address.is_unique_local()
+                    && !address.is_unicast_link_local()
+            },
+            |address| is_public_ip(IpAddr::V4(address)),
+        ),
+    }
+}
+
+async fn deliver_webhook(
+    endpoint_url: &str,
+    payload: &serde_json::Value,
+) -> anyhow::Result<reqwest::Response> {
+    let target = resolve_webhook(endpoint_url).await.c(h!())?;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::none());
+    let client = if let Some(hostname) = target.hostname.as_deref() {
+        client.resolve_to_addrs(hostname, &target.addresses)
+    } else {
+        client
+    }
+    .build()
+    .c(h!())?;
+    client.post(target.url).json(payload).send().await.c(h!())
+}
+
+pub async fn webhook_tick(db: &DatabaseConnection) -> anyhow::Result<()> {
     #[derive(FromQueryResult)]
     struct Delivery {
         id: i64,
@@ -1930,11 +2062,8 @@ pub async fn webhook_tick(
     .one(db)
     .await
     .c(h!())? else { return Ok(()); };
-    let result = client
-        .post(&delivery.endpoint_url)
-        .json(&delivery.payload)
-        .send()
-        .await;
+    let result =
+        deliver_webhook(&delivery.endpoint_url, &delivery.payload).await;
     match result {
         Ok(response) if response.status().is_success() => {
             db.execute_raw(Statement::from_sql_and_values(
@@ -1946,7 +2075,6 @@ pub async fn webhook_tick(
         result => {
             let error = match result {
                 Ok(response) => format!("HTTP {}", response.status()),
-                Err(err) if err.is_timeout() => "network timeout".to_string(),
                 Err(_) => "network request failed".to_string(),
             };
             let attempts = delivery.attempts + 1;
@@ -2507,7 +2635,9 @@ fn decode_filter_ids(
     kind: ChatKind,
     ids: &[String],
 ) -> anyhow::Result<Vec<ChatKey>> {
+    let mut unique_ids = HashSet::new();
     ids.iter()
+        .filter(|id| unique_ids.insert(id.as_str()))
         .map(|id| {
             let key = decode_chat_id(id).c(h!())?;
             if key.client_id != client_id || key.kind != kind {
@@ -2520,21 +2650,9 @@ fn decode_filter_ids(
         .collect()
 }
 
-fn validate_webhook_update(update: &WebhookUpdate) -> anyhow::Result<()> {
+async fn validate_webhook_update(update: &WebhookUpdate) -> anyhow::Result<()> {
     if let WebhookUpdate::Replace(url) = update {
-        let parsed = reqwest::Url::parse(url)
-            .map_err(|_| bad_request("Некоректна URL-адреса webhook."))
-            .c(h!())?;
-        if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(bad_request(
-                "Webhook повинен використовувати HTTP або HTTPS.",
-            ));
-        }
-        if !parsed.username().is_empty() || parsed.password().is_some() {
-            return Err(bad_request(
-                "Webhook URL не повинен містити облікові дані.",
-            ));
-        }
+        resolve_webhook(url).await.c(h!())?;
     }
     Ok(())
 }

@@ -381,11 +381,13 @@
       "changes": [
         {
           "table": "public.echo_client",
-          "strategy": "mirror_resync"
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
         },
         {
           "table": "public.echo_client_config",
-          "strategy": "mirror_resync"
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
         }
       ]
     },

@@ -340,6 +340,9 @@ async fn exercise_database_chat_flow(
     verify_message_keyset(db, &chat_redis, fixture)
         .await
         .c(h!())?;
+    verify_visibility_precedes_pagination(db, &chat_redis, fixture)
+        .await
+        .c(h!())?;
     verify_scope_and_filters(db, &chat_redis, fixture)
         .await
         .c(h!())?;
@@ -347,6 +350,49 @@ async fn exercise_database_chat_flow(
         .await
         .c(h!())?;
     verify_attachment_access(db, fixture).await.c(h!())
+}
+
+async fn verify_visibility_precedes_pagination(
+    db: &DatabaseConnection,
+    chat_redis: &crate::chat_redis::ChatRedis,
+    fixture: &Fixture,
+) -> anyhow::Result<()> {
+    execute(
+        db,
+        r#"
+        with hidden_groups as (
+            insert into echo_group (group_id, internal_id, name, account_id)
+            select $1 || '-' || item, $1 || '-' || item, 'Прихована група ' || item, $2
+            from generate_series(1, 101) item
+            returning id
+        ), hidden_filters as (
+            insert into echo_chat_filter (client_id, account_id, chat_kind, group_id)
+            select $3, $2, 'group', id from hidden_groups
+        )
+        insert into echo_inbox_message (
+            body, internal_id, sender_id, group_id, account_id, timestamp, client_id
+        )
+        select 'приховане', $1 || '-message-' || id, $4, id, $2,
+            (now() at time zone 'utc') + id * interval '1 minute', $3
+        from hidden_groups
+        "#,
+        vec![
+            fixture.namespace.clone().into(),
+            fixture.account_id.into(),
+            fixture.client_id.into(),
+            fixture.sender_id.into(),
+        ],
+    )
+    .await
+    .c(h!())?;
+    let chats = list(db, chat_redis, ChatListQuery { before: None })
+        .await
+        .c(h!())?;
+    assert!(chats
+        .chats
+        .iter()
+        .any(|chat| chat.id == fixture.group_chat_id));
+    Ok(())
 }
 
 async fn verify_message_keyset(
@@ -500,6 +546,22 @@ async fn verify_mutations_and_retention(
     )
     .await
     .c(h!())?;
+    let private = messages(
+        db,
+        &crate::chat_redis::ChatRedis::connect(config).await,
+        &fixture.private_chat_id,
+        MessagePageQuery { before: None },
+    )
+    .await
+    .c(h!())?;
+    assert_eq!(
+        private
+            .messages
+            .iter()
+            .filter(|message| message.body == "відповідь")
+            .count(),
+        1
+    );
     react(
         db,
         &fixture.private_chat_id,
@@ -581,6 +643,28 @@ async fn verify_attachment_access(
     assert!(attachment(db, &fixture.group_chat_id, "in", attachment_id)
         .await
         .is_err());
+    let reply_attachment_id = insert_id(
+        db,
+        r#"
+        insert into echo_outbox_message_attachment (message_id, content_base64, extension)
+        select message_id, 'cmVwbHkgYXR0YWNobWVudA==', 'txt'
+        from echo_outbox_message_instance
+        where reply_to_inbox_message_id = $1
+        order by id desc
+        limit 1
+        returning id
+        "#,
+        vec![fixture.inbox_id.into()],
+    )
+    .await
+    .c(h!())?;
+    let (bytes, _, content_type, inline) =
+        attachment(db, &fixture.private_chat_id, "out", reply_attachment_id)
+            .await
+            .c(h!())?;
+    assert_eq!(bytes, b"reply attachment");
+    assert_eq!(content_type, "text/plain; charset=utf-8");
+    assert!(!inline);
     tokio::fs::remove_file(path).await.c(h!())?;
     Ok(())
 }
@@ -623,7 +707,7 @@ async fn exercise_unread_and_webhook(
     .is_empty());
     execute(
         db,
-        "insert into echo_client_settings (client_id, private_webhook_url) values ($1, 'http://127.0.0.1:9/chat-test')",
+        "insert into echo_client_settings (client_id, private_webhook_url) values ($1, 'https://example.invalid/chat-test')",
         vec![fixture.client_id.into()],
     )
     .await
@@ -676,7 +760,6 @@ async fn exercise_unread_and_webhook(
         .try_get::<i64>("", "count")
         .c(h!())?;
     assert_eq!(delivery_count, 1);
-    let client = webhook_client().c(h!())?;
     for _ in 0..CHAT_WEBHOOK_MAX_ATTEMPTS {
         execute(
             db,
@@ -685,7 +768,7 @@ async fn exercise_unread_and_webhook(
         )
         .await
         .c(h!())?;
-        webhook_tick(db, &client).await.c(h!())?;
+        webhook_tick(db).await.c(h!())?;
     }
     let failed = db
         .query_one_raw(Statement::from_sql_and_values(
@@ -718,10 +801,10 @@ fn opaque_ids_cursors_and_input_limits_are_stable() {
     assert_eq!(decoded.client_id, key.client_id);
     assert_eq!(decoded.target, key.target);
     assert!(decode_chat_id("not-an-id").is_err());
-    assert!(validate_webhook_update(&WebhookUpdate::Replace(
-        "https://user:secret@example.test/hook".to_string()
-    ))
-    .is_err());
+    assert!(
+        validate_webhook_url("https://user:secret@example.test/hook").is_err()
+    );
+    assert!(validate_webhook_url("https://127.0.0.1/hook").is_err());
     assert!(validate_attachments(
         (0..=CHAT_ATTACHMENT_MAX_COUNT)
             .map(|_| AttachmentInput {

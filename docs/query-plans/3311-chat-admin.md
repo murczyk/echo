@@ -26,6 +26,11 @@ EXPLAIN (ANALYZE, BUFFERS, TIMING OFF, SUMMARY ON) ...;
 - The terminal reply branch used
   `echo_chat_outbox_instance_reply_history_idx` and returned immediately when
   no replies existed.
+- Allowlist/denylist visibility is evaluated before the cursor and `LIMIT`.
+  Private and group membership checks use `echo_chat_filter_private_uq` and
+  `echo_chat_filter_group_uq`; the database regression fixture also verifies
+  that 101 newer hidden chats cannot displace an older visible chat from the
+  first page.
 
 The initial all-history/window implementation took 4,641.653 ms, touched
 1,921,764 shared buffers, and wrote 64,100 temporary blocks on the same fixture.

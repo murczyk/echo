@@ -48,6 +48,8 @@ Inbound webhook events are JSON with `version`, stable `eventId`, opaque
 includes attachment metadata and scoped URLs but never attachment bytes.
 Network and non-2xx failures retry with bounded exponential backoff; terminal
 failures remain in `echo_chat_webhook_delivery.failed_at` for diagnostics.
+Targets must use credential-free HTTPS and resolve only to public IP addresses;
+delivery pins the validated DNS result and does not follow redirects.
 
 Outbound chat media is stored under
 `/var/lib/echo-messengers/chat-attachments`. The package creates that directory

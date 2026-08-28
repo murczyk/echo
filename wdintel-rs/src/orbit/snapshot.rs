@@ -133,7 +133,15 @@ impl SnapshotStore {
         }
 
         let root = PathBuf::from(&config.storage_dir);
-        fs::create_dir_all(&root).await.c(h!())?;
+        fs::create_dir_all(&root)
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to create ORBIT snapshot storage directory {}",
+                    root.display()
+                )
+            })
+            .c(h!())?;
         let builder =
             opendal::services::Fs::default().root(&root.to_string_lossy());
         let operator = Operator::new(builder).c(h!())?.finish();

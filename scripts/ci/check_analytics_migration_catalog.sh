@@ -13,6 +13,7 @@ changed_paths=$(
   {
     git diff --name-only --diff-filter=AM "$base...HEAD"
     git diff --name-only --diff-filter=AM
+    git diff --cached --name-only --diff-filter=AM
     git ls-files --others --exclude-standard
   } | sort -u
 )

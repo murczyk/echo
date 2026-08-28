@@ -17,6 +17,24 @@ SPEC.loader.exec_module(MODULE)
 
 
 class AnalyticsMigrationCheckTests(unittest.TestCase):
+    def test_changed_paths_include_staged_files(self) -> None:
+        outputs = {
+            ("diff", "--name-only", "--diff-filter=AM", "base"): "committed.rs\n",
+            ("diff", "--name-only", "--diff-filter=AM"): "worktree.rs\n",
+            ("diff", "--cached", "--name-only", "--diff-filter=AM"): "staged.rs\n",
+            ("ls-files", "--others", "--exclude-standard"): "untracked.rs\n",
+        }
+        with (
+            mock.patch.object(MODULE, "merge_base", return_value="base"),
+            mock.patch.object(
+                MODULE, "git", side_effect=lambda *args: outputs[args]
+            ),
+        ):
+            self.assertEqual(
+                MODULE.changed_paths("origin/main"),
+                ["committed.rs", "staged.rs", "untracked.rs", "worktree.rs"],
+            )
+
     def test_detects_unqualified_table_ddl(self) -> None:
         changes = MODULE.detect_ddl("alter table sample add column enabled boolean;")
         self.assertEqual(
@@ -185,6 +203,42 @@ alter table another add column enabled boolean;
             set(),
         )
         self.assertEqual(errors, [])
+
+    def test_dependency_targeted_snapshot_is_catalog_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_dir = root / "wdintel-rs"
+            manifest_dir.mkdir()
+            (manifest_dir / "Cargo.toml").write_text(
+                '[dependencies.echo-im]\nrev = "bbbb"\n'
+            )
+            manifest = {
+                "dependencies": {
+                    "echo-im:bbbb": {
+                        "changes": [
+                            {
+                                "table": "public.echo_client",
+                                "strategy": "replicated_snapshot",
+                                "targeted_resnapshot": True,
+                            }
+                        ]
+                    }
+                }
+            }
+            with (
+                mock.patch.object(MODULE, "REPO_ROOT", root),
+                mock.patch.object(MODULE, "merge_base", return_value="base"),
+                mock.patch.object(
+                    MODULE,
+                    "cargo_toml_at",
+                    return_value='[dependencies.echo-im]\nrev = "aaaa"\n',
+                ),
+            ):
+                errors, keys = MODULE.validate_dependency_changes(
+                    "origin/main", manifest, set()
+                )
+        self.assertEqual(errors, [])
+        self.assertEqual(keys, ["echo-im:bbbb"])
 
     def test_replicated_snapshot_rejects_alter_without_targeted_flag(
         self,

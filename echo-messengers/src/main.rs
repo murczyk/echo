@@ -36,13 +36,7 @@ async fn main() -> Result<()> {
         .c(h!())?;
     std::fs::create_dir_all(config.chat_storage_dir()).c(h!())?;
     let chat_redis = chat_redis::ChatRedis::connect(&config).await;
-    let webhook_client = chats::webhook_client().c(h!())?;
-    worker::spawn_workers(
-        db.clone(),
-        config.clone(),
-        chat_redis.clone(),
-        webhook_client,
-    );
+    worker::spawn_workers(db.clone(), config.clone(), chat_redis.clone());
     let state = web::Data::new(AppState {
         config: config.clone(),
         db,

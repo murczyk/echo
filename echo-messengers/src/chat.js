@@ -11,10 +11,13 @@
     messageCursor: null,
     replyMessage: null,
     polling: null,
-    loadingMessages: false,
+    loadingChats: false,
+    loadingMessagesFor: null,
+    markingRead: false,
   };
 
   const elements = {};
+  let markVisibleReadTimer = null;
 
   function cacheElements() {
     [
@@ -134,9 +137,11 @@
     ].join("");
   }
 
-  async function loadChats({ older = false } = {}) {
-    clearError();
-    if (!older) {
+  async function loadChats({ older = false, refreshing = false } = {}) {
+    if (state.loadingChats) return;
+    state.loadingChats = true;
+    if (!refreshing) clearError();
+    if (!older && !refreshing) {
       elements.chatList.innerHTML =
         '<p class="chat-placeholder">Завантаження…</p>';
     }
@@ -144,8 +149,18 @@
     try {
       const query = cursor ? `?before=${encodeURIComponent(cursor)}` : "";
       const page = await request(appUrl(`/ui-api/chats${query}`));
-      state.chats = older ? mergeById(state.chats, page.chats) : page.chats;
-      state.chatCursor = page.nextCursor;
+      state.chats =
+        older || refreshing
+          ? mergeById(state.chats, page.chats).sort((left, right) =>
+              right.lastMessageAt.localeCompare(left.lastMessageAt),
+            )
+          : page.chats;
+      if (!refreshing) state.chatCursor = page.nextCursor;
+      if (state.selectedChat) {
+        state.selectedChat =
+          state.chats.find((chat) => chat.id === state.selectedChat.id) ||
+          state.selectedChat;
+      }
       renderChatList();
       if (!page.unreadAvailable) {
         showError(
@@ -155,8 +170,12 @@
         );
       }
     } catch (error) {
-      elements.chatList.innerHTML = `<p class="chat-placeholder text-red-400">${escapeHtml(error.message)}</p>`;
+      if (!refreshing) {
+        elements.chatList.innerHTML = `<p class="chat-placeholder text-red-400">${escapeHtml(error.message)}</p>`;
+      }
       showError(error);
+    } finally {
+      state.loadingChats = false;
     }
   }
 
@@ -211,7 +230,12 @@
       </article>`;
   }
 
-  function renderMessages({ preserveScroll = false, opening = false } = {}) {
+  function renderMessages({
+    preserveScroll = false,
+    preservePosition = false,
+    stickToBottom = false,
+    opening = false,
+  } = {}) {
     const previousHeight = elements.chatMessages.scrollHeight;
     const previousTop = elements.chatMessages.scrollTop;
     elements.chatMessages.innerHTML = state.messages
@@ -220,6 +244,10 @@
     if (preserveScroll) {
       elements.chatMessages.scrollTop =
         elements.chatMessages.scrollHeight - previousHeight + previousTop;
+    } else if (preservePosition) {
+      elements.chatMessages.scrollTop = previousTop;
+    } else if (stickToBottom) {
+      elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
     } else if (opening) {
       scrollToLastViewedAnchor();
     }
@@ -248,9 +276,15 @@
   }
 
   async function loadMessages({ older = false, polling = false } = {}) {
-    if (!state.selectedChat || state.loadingMessages) return;
-    state.loadingMessages = true;
+    if (!state.selectedChat) return;
     const selectedId = state.selectedChat.id;
+    if (state.loadingMessagesFor === selectedId) return;
+    state.loadingMessagesFor = selectedId;
+    const stickToBottom =
+      elements.chatMessages.scrollHeight -
+        elements.chatMessages.scrollTop -
+        elements.chatMessages.clientHeight <=
+      8;
     try {
       const cursor = older ? state.messageCursor : null;
       const query = cursor ? `?before=${encodeURIComponent(cursor)}` : "";
@@ -260,17 +294,20 @@
         ),
       );
       if (state.selectedChat?.id !== selectedId) return;
-      const unreadIds = page.messages
-        .filter((message) => message.unread && message.inboxId)
-        .map((message) => message.inboxId);
       if (older) {
         state.messages = mergeById(page.messages, state.messages);
         state.messageCursor = page.nextCursor;
         renderMessages({ preserveScroll: true });
+      } else if (polling) {
+        state.messages = mergeById(state.messages, page.messages);
+        renderMessages({
+          preservePosition: !stickToBottom,
+          stickToBottom,
+        });
       } else {
         state.messages = page.messages;
         state.messageCursor = page.nextCursor;
-        renderMessages({ opening: !polling });
+        renderMessages({ opening: true });
       }
       if (!page.unreadAvailable) {
         showError(
@@ -278,14 +315,16 @@
             "Стан непрочитаних повідомлень тимчасово недоступний; повідомлення не позначено прочитаними.",
           ),
         );
-      } else if (unreadIds.length > 0) {
+      } else {
         await afterRender();
-        await markRead(unreadIds);
+        await markVisibleUnread();
       }
     } catch (error) {
       showError(error);
     } finally {
-      state.loadingMessages = false;
+      if (state.loadingMessagesFor === selectedId) {
+        state.loadingMessagesFor = null;
+      }
     }
   }
 
@@ -297,24 +336,48 @@
 
   async function markRead(ids) {
     if (!state.selectedChat) return;
+    const selectedId = state.selectedChat.id;
     try {
       await request(
-        appUrl(
-          `/ui-api/chats/${encodeURIComponent(state.selectedChat.id)}/read`,
-        ),
+        appUrl(`/ui-api/chats/${encodeURIComponent(selectedId)}/read`),
         { method: "POST", body: JSON.stringify({ inboxMessageIds: ids }) },
       );
+      if (state.selectedChat?.id !== selectedId) return;
       const idSet = new Set(ids);
       state.messages.forEach((message) => {
         if (idSet.has(message.inboxId)) message.unread = false;
       });
-      const chat = state.chats.find(
-        (item) => item.id === state.selectedChat.id,
-      );
+      const chat = state.chats.find((item) => item.id === selectedId);
       if (chat) chat.unreadCount = Math.max(0, chat.unreadCount - ids.length);
+      renderMessages({ preservePosition: true });
       renderChatList();
     } catch (error) {
       showError(error);
+    }
+  }
+
+  async function markVisibleUnread() {
+    if (!state.selectedChat || state.markingRead) return;
+    const bounds = elements.chatMessages.getBoundingClientRect();
+    const ids = state.messages
+      .filter(
+        (message) => !message.outgoing && message.unread && message.inboxId,
+      )
+      .filter((message) => {
+        const item = elements.chatMessages.querySelector(
+          `[data-message-id="${CSS.escape(message.id)}"]`,
+        );
+        if (!item) return false;
+        const itemBounds = item.getBoundingClientRect();
+        return itemBounds.bottom > bounds.top && itemBounds.top < bounds.bottom;
+      })
+      .map((message) => message.inboxId);
+    if (ids.length === 0) return;
+    state.markingRead = true;
+    try {
+      await markRead(ids);
+    } finally {
+      state.markingRead = false;
     }
   }
 
@@ -348,6 +411,7 @@
     state.selectedChat = chat;
     state.messages = [];
     state.messageCursor = null;
+    clearReply();
     elements.chatConversationEmpty.classList.add("hidden");
     elements.chatConversationContent.classList.remove("hidden");
     elements.chatConversationContent.classList.add("flex");
@@ -367,6 +431,7 @@
       if (!document.hidden && state.selectedChat) {
         loadMessages({ polling: true });
       }
+      if (!document.hidden) loadChats({ refreshing: true });
     }, POLL_INTERVAL_MS);
   }
 
@@ -440,7 +505,7 @@
       elements.chatFileInput.value = "";
       renderSelectedFiles();
       clearReply();
-      await loadChats();
+      await loadChats({ refreshing: true });
     } catch (error) {
       showError(error);
     } finally {
@@ -625,6 +690,10 @@
         );
       }
     });
+    elements.chatMessages.addEventListener("scroll", () => {
+      clearTimeout(markVisibleReadTimer);
+      markVisibleReadTimer = setTimeout(markVisibleUnread, 150);
+    });
     elements.chatSendForm.addEventListener("submit", sendMessage);
     elements.chatMessageInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
@@ -665,6 +734,7 @@
       elements.chatsTabBtn.classList.remove("hidden");
       window.setActiveMessengerTab("chats");
       await loadChats();
+      restartPolling();
     } catch (error) {
       showError(error);
     }
