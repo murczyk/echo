@@ -18,6 +18,7 @@ use crate::types::{error, info, Env, ShortContext};
 use crate::utils::worker_watch;
 use anyhow::Context;
 use chrono::{Duration as ChronoDuration, Utc};
+use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
@@ -65,7 +66,15 @@ where
             created_at: NotSet,
         },
     )
-    .on_conflict_do_nothing()
+    .on_conflict(
+        OnConflict::column(ai_settlement_worker_job::Column::SigintInboxItemId)
+            .update_columns([
+                ai_settlement_worker_job::Column::Attempts,
+                ai_settlement_worker_job::Column::NextAttemptAt,
+                ai_settlement_worker_job::Column::LastError,
+            ])
+            .to_owned(),
+    )
     .exec(dbx)
     .await
     .c(h!())?;

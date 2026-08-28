@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -54,7 +60,8 @@ create index ai_settlement_worker_job_next_attempt_idx
     on ai_settlement_worker_job (next_attempt_at, created_at, sigint_inbox_item_id);
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -69,7 +76,8 @@ drop table if exists ai_settlement_test_message;
 drop table if exists ai_settlement_settings;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }
