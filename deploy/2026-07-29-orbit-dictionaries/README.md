@@ -35,6 +35,8 @@ The first TUI screen offers:
 - prepare a new ORBIT data revision from a JSON path;
 - synchronize ORBIT units;
 - link ORBIT units to SIGINT units in automatic or manual mode;
+- merge safe duplicate SIGINT units in automatic or manual mode;
+- resolve non-archived unparsed unit labels in automatic or manual mode;
 - reconcile linked SIGINT hierarchies and merge exact duplicates;
 - erase and reimport all ORBIT data.
 
@@ -69,6 +71,14 @@ without a distance cutoff. The
 standalone `oneoff-test-link-units` command runs the same workflow. Manual
 links from `/rer-units` and `/rer-units/{id}` use the same transactional link
 implementation.
+
+The duplicate and unparsed workflows reuse that matcher directly. Duplicate
+merges require every member to have one shared ORBIT link and to remain a
+current match; unparsed labels can resolve only through an ORBIT unit with one
+non-deleted SIGINT link. Automatic mode retains the rating-100, unique-distance,
+distance-at-most-10 gate. Both workflows re-read their full candidate set and
+the latest ORBIT revision under the advisory lock before writing, and skip
+stale or ambiguous work.
 
 The reconciliation action reviews proposed hierarchy enrichments, recalculates
 linked-unit inconsistency flags, and merges exact-name duplicate candidates

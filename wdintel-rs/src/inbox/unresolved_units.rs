@@ -11,7 +11,7 @@ use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
-    FromQueryResult, QueryFilter, Statement, TransactionTrait,
+    FromQueryResult, QueryFilter, QuerySelect, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 
@@ -191,6 +191,40 @@ where
     })
 }
 
+pub(crate) async fn load_new_unresolved_unit_labels<C>(
+    db: &C,
+) -> anyhow::Result<Vec<UnresolvedUnitLabel>>
+where
+    C: ConnectionTrait,
+{
+    let normalized = normalized_text_sql("failed_inbox_unit");
+    let sql = format!(
+        "select min(unit_txt) as unit_txt, count(*)::bigint as quantity, \
+         coalesce(max(nullif(note, '')), '') as note, false as is_archived \
+         from failed_inbox_unit \
+         where deleted = false and is_bad_data = false \
+         group by {normalized} \
+         order by quantity desc, {normalized} asc"
+    );
+    Ok(
+        UnresolvedUnitLabelRow::find_by_statement(Statement::from_string(
+            DatabaseBackend::Postgres,
+            sql,
+        ))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|row| UnresolvedUnitLabel {
+            unit_txt: row.unit_txt,
+            quantity: row.quantity,
+            note: row.note,
+            is_archived: row.is_archived,
+        })
+        .collect(),
+    )
+}
+
 async fn ensure_admin_unit_editor(
     env: &Env,
     user: &actix_identity::Identity,
@@ -339,57 +373,75 @@ pub async fn resolve_unresolved_unit_label(
     req: Json<ResolveUnresolvedUnitLabelReq>,
 ) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
     let login = ensure_admin_unit_editor(&env, &user).await.c(h!())?;
-    crate::sigint::unit::labels::validate_label(&req.label).c(h!())?;
-    crate::sigint::unit::labels::validate_label(&req.unit_txt).c(h!())?;
-
     let transaction = env.dbx.begin().await.c(h!())?;
-    let sigint_unit = sigint_unit::Entity::find_by_id(req.sigint_unit_id)
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .one(&transaction)
-        .await
-        .c(h!())?
-        .ok_or(AppError::NotFound)
-        .c(h!())?;
-    let sigint_unit_id = sigint_unit.id;
-    let unit_activated = !sigint_unit.active;
-    if unit_activated {
-        crate::sigint::unit::activate_unit_for_login(
-            &transaction,
-            &login,
-            &sigint_unit,
-        )
-        .await
-        .c(h!())?;
-    }
-
-    crate::sigint::unit::labels::insert_label(
+    let result = resolve_unresolved_unit_label_in_transaction(
         &transaction,
-        sigint_unit_id,
-        &req.label,
-    )
-    .await
-    .c(h!())?;
-    crate::sigint::unit::labels::insert_label(
-        &transaction,
-        sigint_unit_id,
+        &login,
         &req.unit_txt,
+        &req.label,
+        req.sigint_unit_id,
     )
     .await
     .c(h!())?;
-    let affected_count =
-        mark_resolved_failures_pending(&transaction, &req.unit_txt, &req.label)
-            .await
-            .c(h!())?;
-    if affected_count == 0 {
-        return Err(AppError::NotFound);
-    }
     transaction.commit().await.c(h!())?;
-    if unit_activated {
+    if result.unit_activated {
         crate::sigint::unit::fanout_unit_changed_data(&env)
             .await
             .c(h!())?;
     }
-    Ok(Json(UpdateUnresolvedUnitLabelsRsp { affected_count }))
+    Ok(Json(UpdateUnresolvedUnitLabelsRsp {
+        affected_count: result.affected_count,
+    }))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ResolveUnresolvedUnitLabelOutcome {
+    pub affected_count: u64,
+    pub unit_activated: bool,
+}
+
+pub(crate) async fn resolve_unresolved_unit_label_in_transaction<C>(
+    db: &C,
+    login: &uuid::Uuid,
+    unit_txt: &str,
+    label: &str,
+    sigint_unit_id: i64,
+) -> Result<ResolveUnresolvedUnitLabelOutcome, AppError>
+where
+    C: ConnectionTrait,
+{
+    crate::sigint::unit::labels::validate_label(label).c(h!())?;
+    crate::sigint::unit::labels::validate_label(unit_txt).c(h!())?;
+    let sigint_unit = sigint_unit::Entity::find_by_id(sigint_unit_id)
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .lock_exclusive()
+        .one(db)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+        .c(h!())?;
+    let unit_activated = !sigint_unit.active;
+    if unit_activated {
+        crate::sigint::unit::activate_unit_for_login(db, login, &sigint_unit)
+            .await
+            .c(h!())?;
+    }
+    crate::sigint::unit::labels::insert_label(db, sigint_unit_id, label)
+        .await
+        .c(h!())?;
+    crate::sigint::unit::labels::insert_label(db, sigint_unit_id, unit_txt)
+        .await
+        .c(h!())?;
+    let affected_count = mark_resolved_failures_pending(db, unit_txt, label)
+        .await
+        .c(h!())?;
+    if affected_count == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(ResolveUnresolvedUnitLabelOutcome {
+        affected_count,
+        unit_activated,
+    })
 }
 
 #[cfg(test)]

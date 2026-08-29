@@ -71,6 +71,8 @@ pub enum StartAction {
     PrepareImport,
     Import,
     LinkUnits,
+    MergeUnitDuplicates,
+    ResolveUnparsedUnits,
     ReconcileSigintUnits,
     Reimport,
 }
@@ -101,18 +103,21 @@ pub enum EnrichmentDecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Delete,
+    Merge,
 }
 
 impl Action {
     fn key(self) -> char {
         match self {
             Self::Delete => 'd',
+            Self::Merge => 'm',
         }
     }
 
     fn label(self) -> &'static str {
         match self {
             Self::Delete => "delete",
+            Self::Merge => "merge",
         }
     }
 }
@@ -379,6 +384,8 @@ fn run_start_menu(
         StartAction::PrepareImport,
         StartAction::Import,
         StartAction::LinkUnits,
+        StartAction::MergeUnitDuplicates,
+        StartAction::ResolveUnparsedUnits,
         StartAction::ReconcileSigintUnits,
         StartAction::Reimport,
     ];
@@ -666,7 +673,11 @@ fn test_link_review_lines(session: &ReviewSession) -> Vec<Line<'static>> {
     let unit = session.current_unit().expect("review unit must exist");
     let visible_matches = session.visible_matches();
     let mut lines = vec![
-        Line::from(format!("SIGINT unit ID: {}", unit.sigint_unit_id)),
+        Line::from(format!(
+            "{} ID: {}",
+            unit.subject_kind.label(),
+            unit.sigint_unit_id
+        )),
         Line::from(format!("Name: {}", unit.sigint_unit_name)),
         Line::from(format!("Echelons: ({})", unit.echelons.join(", "))),
         Line::default(),
@@ -733,7 +744,7 @@ fn test_link_name_diff_lines(
     let label_style = Style::default().add_modifier(Modifier::BOLD);
     let matched_style = Style::default().fg(Color::Green);
     let mismatched_style = Style::default().fg(Color::Red);
-    let mut sigint_spans = vec![Span::styled("SIGINT: ", label_style)];
+    let mut sigint_spans = vec![Span::styled("INPUT: ", label_style)];
     let mut orbit_spans = vec![Span::styled(" ORBIT: ", label_style)];
     for change in
         TextDiff::from_words(sigint_name, orbit_name).iter_all_changes()
@@ -770,11 +781,13 @@ fn test_link_maximum_scroll(area: Rect, session: &ReviewSession) -> usize {
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 70, 8);
+    let area = centered_area(frame, 78, 10);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
         "Link ORBIT units to SIGINT units",
+        "Merge duplicate SIGINT units linked to one ORBIT unit",
+        "Resolve unparsed unit labels through ORBIT links",
         "Reconcile linked SIGINT units and merge exact duplicates",
         "Erase and reimport all ORBIT data",
     ];
@@ -1008,6 +1021,8 @@ mod tests {
         let unit = ReviewUnit {
             sigint_unit_id: 273,
             sigint_unit_name: "4 мсб (АТ)".to_string(),
+            subject_kind:
+                crate::orbit::test_link::ReviewSubjectKind::SigintUnit,
             echelons: vec![
                 "4 мсб (АТ)".to_string(),
                 "752 мсп".to_string(),
@@ -1030,7 +1045,7 @@ mod tests {
             vec![
                 "[1] rating: 100, Levenshtein distance: 2",
                 "ORBIT UUID: 00000000-0000-0000-0000-000000000000",
-                "SIGINT: 4 мсб (АТ) / 752 мсп / 3 мсд",
+                "INPUT: 4 мсб (АТ) / 752 мсп / 3 мсд",
                 " ORBIT: 4 мсб (ат) / 752 мсп / 3 мсд",
             ]
         );
@@ -1140,6 +1155,22 @@ mod tests {
                 false
             ),
             Some(Decision::Quit)
+        );
+        assert_eq!(
+            decision_for_key(
+                KeyEvent::new(KeyCode::Char('m'), plain),
+                Action::Merge,
+                false
+            ),
+            Some(Decision::Accept)
+        );
+        assert_eq!(
+            decision_for_key(
+                KeyEvent::new(KeyCode::Char('d'), plain),
+                Action::Merge,
+                false
+            ),
+            None
         );
     }
 

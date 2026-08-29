@@ -89,7 +89,7 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers five workflows.
+PostgreSQL advisory lock. The first screen offers seven workflows.
 
 ### IMPORT NEW ORBIT DATA REVISION
 
@@ -112,7 +112,7 @@ or replace SIGINT links.
 
 ### Link ORBIT units to SIGINT units
 
-This is the only automatic linking workflow. It reads active, non-deleted
+This workflow reads non-deleted
 SIGINT units and roots from the latest synchronized ORBIT revision from
 PostgreSQL. Manual mode reviews only unlinked units. Automatic mode also
 revalidates existing automatic links while preserving authoritative manual
@@ -127,6 +127,37 @@ Accepted links use the same transactional implementation as manual linking in
 `/rer-units` and `/rer-units/{id}`. That implementation validates both units,
 creates the link, imports missing ORBIT ancestors, reconciles the SIGINT
 hierarchy and duplicate-candidate state, and updates parent activity.
+
+### Merge duplicate SIGINT units linked to one ORBIT unit
+
+This workflow processes the same active ORBIT-to-SIGINT duplicate groups shown
+under `/admin/units?tab=duplicates`. It considers a group safe only when every
+SIGINT unit has that one active ORBIT link and the normal linking matcher still
+matches every unit to that ORBIT unit. Automatic mode additionally applies the
+same rating-100, uniquely closest, distance-at-most-10 approval rule used by
+linking, then keeps the closest active SIGINT unit (with the lowest ID as the
+stable final tie-breaker). Manual mode asks which matching SIGINT unit to keep.
+
+Before merging, each complete group and every match is loaded again under the
+ORBIT advisory lock. Changed membership, links, source revision, or matching
+results cause the group to be skipped. Multi-ORBIT and matcher-rejected groups
+are always left for explicit administration.
+
+### Resolve unparsed unit labels through ORBIT links
+
+This workflow processes non-archived labels from
+`/admin/units?tab=unparsed`. The operational unit parser converts each label to
+an echelon hierarchy, then the normal ORBIT linking matcher scores it without a
+second matching implementation. Only an ORBIT unit with exactly one active,
+non-deleted SIGINT link can resolve a label. Automatic mode preserves the full
+rating, distance, and ambiguity checks before considering whether that ORBIT
+unit has a unique SIGINT link; manual mode presents the structurally valid,
+uniquely linked candidates.
+
+Accepted labels are re-matched under the advisory lock, added as SIGINT unit
+aliases, and returned to the existing failed-unit worker for reprocessing. A
+selected inactive SIGINT unit is activated through the normal audited unit
+path. Archived labels and labels that changed during review remain untouched.
 
 ### Reconcile linked SIGINT units and merge exact duplicates
 
@@ -161,6 +192,13 @@ one-off:
 
 ```sh
 sudo wdintel-rs --mode=live oneoff-test-link-units
+```
+
+The duplicate and unparsed workflows also have direct TUI commands:
+
+```sh
+sudo wdintel-rs --mode=live tui-merge-orbit-unit-duplicates
+sudo wdintel-rs --mode=live tui-resolve-orbit-unparsed-units
 ```
 
 The command first asks for automatic or manual mode. Manual mode evaluates each

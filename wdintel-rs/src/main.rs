@@ -992,6 +992,10 @@ enum Cmd {
     TuiImportOrbitUnits,
     /// Link database SIGINT units to synchronized ORBIT units.
     OneoffTestLinkUnits,
+    /// Merge safe ORBIT-backed unit duplicates in automatic or manual mode.
+    TuiMergeOrbitUnitDuplicates,
+    /// Resolve unparsed unit labels in automatic or manual mode.
+    TuiResolveOrbitUnparsedUnits,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -1911,6 +1915,12 @@ async fn async_main(
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
         Cmd::OneoffTestLinkUnits => orbit::oneoff_test_link_units(mode).await,
+        Cmd::TuiMergeOrbitUnitDuplicates => {
+            orbit::tui_merge_unit_duplicates(mode).await
+        }
+        Cmd::TuiResolveOrbitUnparsedUnits => {
+            orbit::tui_resolve_unparsed_units(mode).await
+        }
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }

@@ -1665,7 +1665,7 @@ pub async fn merge_units(
     Ok(unit)
 }
 
-async fn merge_units_in_transaction<C>(
+pub(crate) async fn merge_units_in_transaction<C>(
     login: uuid::Uuid,
     dbx: &C,
     unit_to_delete_id: i64,
