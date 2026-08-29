@@ -1928,8 +1928,16 @@ async fn enqueue_webhook(
         .c(h!())?
         .remove(&format!("in:{}", message.id))
         .unwrap_or_default();
-    make_attachment_urls_absolute(&mut attachments, config.public_base_url())
-        .c(h!())?;
+    if let Err(err) = make_attachment_urls_absolute(
+        &mut attachments,
+        config.public_base_url(),
+    ) {
+        log::error!(
+            "skipping webhook for inbox message {}: {err:#}",
+            message.id
+        );
+        return Ok(());
+    }
     let reactions = load_reactions(db, &[message.id], &[])
         .await
         .c(h!())?
