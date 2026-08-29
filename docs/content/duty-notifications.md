@@ -7,7 +7,7 @@ description = "Налаштування звукових і браузерних
 
 Сповіщення працюють, поки сторінка «Оперативний» відкрита у браузері. Фонові вкладки можуть перевіряти повідомлення із затримкою. На заблокованому телефоні, після закриття браузера або вивантаження вкладки сповіщення не працюють.
 
-{{ img(id="duty-notifications/01-duty-notification-panel.svg", alt="Схема панелі сповіщень стрічки: перемикачі, перевірки та стан", class="textCenter") }}
+{{ img(id="duty-notifications/01-duty-notification-panel.svg", alt="Панель сповіщень стрічки з увімкненими каналами, перевірками та статусами", class="textCenter") }}
 
 ## Увімкнення й перевірка
 
@@ -18,27 +18,27 @@ description = "Налаштування звукових і браузерних
 
 ## Chrome: дозвіл сайту і звук
 
-{{ img(id="duty-notifications/02-chrome-site-permission.svg", alt="Схема: значок інформації сайту, сповіщення, дозволити", class="textCenter") }}
+{{ img(id="duty-notifications/02-chrome-site-permission.svg", alt="Дозвіл браузерних сповіщень через керування сайтом у Chrome", class="textCenter") }}
 
 Відкрийте значок інформації біля адреси сайту, у «Сповіщення» виберіть «Дозволити», потім перезавантажте сторінку й повторіть тест.
 
-{{ img(id="duty-notifications/03-chrome-sound.svg", alt="Схема перевірки вимкнення звуку вкладки та тесту", class="textCenter") }}
+{{ img(id="duty-notifications/03-chrome-sound.svg", alt="Послідовність перевірки вкладки, гучності, пристрою виводу та тесту звуку", class="textCenter") }}
 
 Переконайтеся, що сайт і вкладка не вимкнені, перевірте медіагучність та вибраний пристрій виводу. Мута вкладки/сайту, гучність і пристрій виводу мають пріоритет.
 
 ## Windows і macOS
 
-{{ img(id="duty-notifications/04-windows-notifications.svg", alt="Схема Windows: сповіщення Chrome увімкнені, не турбувати вимкнено", class="textCenter") }}
+{{ img(id="duty-notifications/04-windows-notifications.svg", alt="Системні налаштування Windows для сповіщень Google Chrome", class="textCenter") }}
 
 У Windows: Система → Сповіщення → Google Chrome; увімкніть сповіщення, банери і звук. Вимкніть «Не турбувати» або дозвольте Chrome як пріоритетний застосунок.
 
-{{ img(id="duty-notifications/05-macos-notifications.svg", alt="Схема macOS: Chrome, сповіщення, звуки та Focus", class="textCenter") }}
+{{ img(id="duty-notifications/05-macos-notifications.svg", alt="Системні налаштування macOS для сповіщень Google Chrome і Focus", class="textCenter") }}
 
 У macOS: System Settings → Notifications → Chrome; дозвольте сповіщення і звуки та перевірте режим Focus.
 
 ## Телефони
 
-{{ img(id="duty-notifications/06-mobile-limitations.svg", alt="Схема: активна розблокована сторінка працює, заблокований телефон і закритий браузер ні", class="textCenter") }}
+{{ img(id="duty-notifications/06-mobile-limitations.svg", alt="Порівняння активної розблокованої сторінки з заблокованим або закритим браузером на телефоні", class="textCenter") }}
 
 На Android Chrome та iPhone/iPad Safari/Chrome браузерні сповіщення в цій фазі не підтримуються. Звук можливий лише у відкритій активній розблокованій сторінці; після блокування, закриття браузера або вивантаження вкладки він не працює.
 
@@ -55,6 +55,6 @@ description = "Налаштування звукових і браузерних
 
 ## Якщо не працює
 
-{{ img(id="duty-notifications/07-troubleshooting-flow.svg", alt="Схема послідовності діагностики сповіщень", class="textCenter") }}
+{{ img(id="duty-notifications/07-troubleshooting-flow.svg", alt="Дерево рішень для діагностики каналу сповіщень", class="textCenter") }}
 
 Перевірте послідовно: перемикач стрічки → дозвіл браузера → обидва тести → системні налаштування → чи відкрита сторінка. Стани «Потрібна взаємодія», «Заблоковано браузером» і «Помилка браузера» означають, що збережена перевага ще не є робочим каналом.
