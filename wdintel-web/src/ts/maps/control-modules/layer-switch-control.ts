@@ -1,4 +1,6 @@
 import * as L from 'leaflet';
+import { DEFAULT_BASE_LAYER_ID, isBaseLayerId, type BaseLayerId } from '../base-layers';
+import type { TileLayers } from '../../web-components/analysis-map/tile-layers';
 
 export type FeatureName = 'palitras' | 'deltaKml' | 'pelengs';
 
@@ -14,17 +16,17 @@ export interface LayerSwitchControl extends L.Control {
 }
 
 export function createLayerSwitchControl(
-  tileLayers: { openStreetMap: L.TileLayer; googleHybrid: L.TileLayer },
+  tileLayers: TileLayers,
   features: FeatureToggleState,
   onFeatureToggle: (feature: FeatureName, enabled: boolean) => void,
 ): LayerSwitchControl {
   const LayerSwitchControlClass = L.Control.extend({
     _tileLayers: tileLayers,
-    _currentLayer: tileLayers.googleHybrid,
+    _currentLayerId: DEFAULT_BASE_LAYER_ID,
     _featureState: features,
     _layerSwitchElement: null as
       | (HTMLElement & {
-          setCurrentLayer?: (currentLayer: 'openStreetMap' | 'googleHybrid') => void;
+          setCurrentLayer?: (currentLayer: BaseLayerId) => void;
           setFeatures?: (features: FeatureToggleState) => void;
         })
       | null,
@@ -35,7 +37,7 @@ export function createLayerSwitchControl(
       const layerSwitchElement = document.createElement(
         'analysis-map-layer-switch',
       ) as HTMLElement & {
-        setCurrentLayer?: (currentLayer: 'openStreetMap' | 'googleHybrid') => void;
+        setCurrentLayer?: (currentLayer: BaseLayerId) => void;
         setFeatures?: (features: FeatureToggleState) => void;
       };
       this._layerSwitchElement = layerSwitchElement;
@@ -43,9 +45,9 @@ export function createLayerSwitchControl(
       this._syncElementState();
 
       layerSwitchElement.addEventListener('analysis-map-layer-change', (event: Event) => {
-        const customEvent = event as CustomEvent<{ layer?: 'openStreetMap' | 'googleHybrid' }>;
+        const customEvent = event as CustomEvent<{ layer?: BaseLayerId }>;
         const layer = customEvent.detail?.layer;
-        if (layer !== 'openStreetMap' && layer !== 'googleHybrid') {
+        if (!isBaseLayerId(layer)) {
           return;
         }
         this._switchLayer(layer);
@@ -80,13 +82,14 @@ export function createLayerSwitchControl(
       this._layerSwitchElement = null;
     },
 
-    _switchLayer: function (layerName: 'openStreetMap' | 'googleHybrid') {
-      if (this._currentLayer) {
-        this._map.removeLayer(this._currentLayer);
+    _switchLayer: function (layerId: BaseLayerId) {
+      const currentLayer = this._tileLayers[this._currentLayerId];
+      if (currentLayer) {
+        this._map.removeLayer(currentLayer);
       }
-      const newLayer = this._tileLayers[layerName];
+      const newLayer = this._tileLayers[layerId];
       newLayer.addTo(this._map);
-      this._currentLayer = newLayer;
+      this._currentLayerId = layerId;
       this._syncElementState();
     },
 
@@ -104,9 +107,7 @@ export function createLayerSwitchControl(
         return;
       }
 
-      this._layerSwitchElement.setCurrentLayer?.(
-        this._currentLayer === this._tileLayers.openStreetMap ? 'openStreetMap' : 'googleHybrid',
-      );
+      this._layerSwitchElement.setCurrentLayer?.(this._currentLayerId);
       this._layerSwitchElement.setFeatures?.(this._featureState);
     },
   });

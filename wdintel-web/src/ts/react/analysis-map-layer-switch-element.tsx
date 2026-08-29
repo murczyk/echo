@@ -1,13 +1,12 @@
 import { createRoot, Root } from 'react-dom/client';
 
 import type { FeatureToggleState } from '../maps/control-modules';
+import { DEFAULT_BASE_LAYER_ID, type BaseLayerId } from '../maps/base-layers';
 import { AnalysisMapLayerSwitchControl } from './AnalysisMapLayerSwitchControl';
-
-type BaseLayerName = 'openStreetMap' | 'googleHybrid';
 
 class AnalysisMapLayerSwitchElement extends HTMLElement {
   private root: Root | null = null;
-  private currentLayer: BaseLayerName = 'googleHybrid';
+  private currentLayer: BaseLayerId = DEFAULT_BASE_LAYER_ID;
   private forceCollapsed = false;
   private pendingUnmountHandle: number | null = null;
   private features: FeatureToggleState = {
@@ -33,7 +32,7 @@ class AnalysisMapLayerSwitchElement extends HTMLElement {
     this.scheduleRootUnmount();
   }
 
-  setCurrentLayer(currentLayer: BaseLayerName) {
+  setCurrentLayer(currentLayer: BaseLayerId) {
     this.currentLayer = currentLayer;
     this.renderComponent();
   }

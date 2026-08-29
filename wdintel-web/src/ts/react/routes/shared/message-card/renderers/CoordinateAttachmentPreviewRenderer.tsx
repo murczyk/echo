@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
+import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
 import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
 import { getCoordinateMgrsText, getCoordinateText } from '../../../../../maps/coordinate-format';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
@@ -23,8 +24,6 @@ import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/mes
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 
 type MapInitState = 'loading' | 'ready' | 'error';
-type BaseLayerId = 'googleHybrid' | 'openStreetMap';
-
 const PREVIEW_ZOOM = 13;
 const PREVIEW_MAX_ZOOM = 13;
 const PREVIEW_BOUNDS_PADDING: [number, number] = [40, 40];
@@ -94,7 +93,7 @@ export function CoordinateAttachmentPreviewRenderer({
   onFullscreenChange: (isFullscreen: boolean) => void;
   onClose: () => void;
 }) {
-  const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>('googleHybrid');
+  const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
   const previewConfig = getMessageCardAttachmentPreviewConfig('coordinate-map');
   const canFullscreen = previewConfig.supportsFullscreen;
   const dialogIsFullscreen = canFullscreen && isFullscreen;
@@ -174,9 +173,9 @@ function CoordinateMapPreview({
   const [mapHostEl, setMapHostEl] = useState<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRefs = useRef<L.CircleMarker[]>([]);
-  const layerRef = useRef<L.TileLayer | null>(null);
+  const layerRef = useRef<L.Layer | null>(null);
   const tileLayersRef = useRef<ReturnType<typeof getTileLayers> | null>(null);
-  const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
+  const baseLayerIdRef = useRef<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
   const previousActiveIndexRef = useRef(activeIndex);
@@ -225,8 +224,7 @@ function CoordinateMapPreview({
       return;
     }
 
-    const nextLayer =
-      baseLayerId === 'googleHybrid' ? tileLayers.googleHybrid : tileLayers.openStreetMap;
+    const nextLayer = tileLayers[baseLayerId];
     if (layerRef.current === nextLayer) {
       return;
     }
@@ -373,10 +371,7 @@ function CoordinateMapPreview({
 
       const tileLayers = getTileLayers();
       tileLayersRef.current = tileLayers;
-      const baseLayer =
-        baseLayerIdRef.current === 'googleHybrid'
-          ? tileLayers.googleHybrid
-          : tileLayers.openStreetMap;
+      const baseLayer = tileLayers[baseLayerIdRef.current];
       baseLayer.addTo(map);
 
       const markers = visiblePoints.map(({ lat, lng, label }, index) => {

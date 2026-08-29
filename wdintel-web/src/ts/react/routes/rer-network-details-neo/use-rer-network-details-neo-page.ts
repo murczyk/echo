@@ -315,9 +315,9 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     [setState],
   );
 
-  const setPelengSatelliteEnabled = useCallback(
-    (pelengSatelliteEnabled: boolean) => {
-      setState((current) => ({ ...current, pelengSatelliteEnabled }));
+  const setPelengBaseLayerId = useCallback(
+    (pelengBaseLayerId: NetworkDetailsNeoPageState['pelengBaseLayerId']) => {
+      setState((current) => ({ ...current, pelengBaseLayerId }));
     },
     [setState],
   );
@@ -571,7 +571,7 @@ export function useRerNetworkDetailsNeoPage(networkId: number) {
     setPelengSearch,
     setPelengEnabledFreqs,
     setPelengShowLabels,
-    setPelengSatelliteEnabled,
+    setPelengBaseLayerId,
     setPelengHeatmapEnabled,
     setActiveNetworkDetailsTab,
     loadRelations,

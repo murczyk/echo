@@ -33,7 +33,8 @@ import {
 } from './analysis-map/point-markers';
 import { buildPelengLabelGroups } from './analysis-map/peleng-label-groups';
 import { buildPelengLabelTooltipHtml } from './analysis-map/peleng-label-tooltip';
-import { getTileLayers } from './analysis-map/tile-layers';
+import { DEFAULT_BASE_LAYER_ID } from '../maps/base-layers';
+import { getTileLayers, type TileLayers } from './analysis-map/tile-layers';
 import { CoordinateMenuTarget, DataCircleMarker, Message, NetworkUnit } from './analysis-map/types';
 import { getSearchQueryFromCurrentUrl } from './analysis-map/url-state';
 
@@ -541,7 +542,7 @@ class AnalysisMap extends HTMLElement {
         zoomControl: false,
         attributionControl: false,
       }).setView([47.42135, 35.62197], 8);
-      tileLayers.googleHybrid.addTo(map);
+      tileLayers[DEFAULT_BASE_LAYER_ID].addTo(map);
       patchMouseDownMapFocus(map);
       suppressNativeContextMenu(map, shouldHandleMapSurfaceContextMenu);
       map.on('click', () => this._closePointContextMenu());
@@ -645,10 +646,7 @@ class AnalysisMap extends HTMLElement {
     return value === 'true';
   }
 
-  private _initializeControls(
-    map: L.Map,
-    tileLayers: { openStreetMap: L.TileLayer; googleHybrid: L.TileLayer },
-  ) {
+  private _initializeControls(map: L.Map, tileLayers: TileLayers) {
     this._restorePelengLabelsPermanentPreference();
 
     const result = initializeAnalysisMapControls({

@@ -4,6 +4,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_BASE_LAYER_ID } from '../../../../maps/base-layers';
 
 vi.mock('./NetworkCallsignsTables', () => ({
   NetworkDetailsCallsignsPanel: () => <div data-testid="callsigns-panel" />,
@@ -94,7 +95,7 @@ function renderPanel(): Rendered {
     pelengSearch: '',
     pelengEnabledFreqs: [],
     pelengShowLabels: true,
-    pelengSatelliteEnabled: true,
+    pelengBaseLayerId: DEFAULT_BASE_LAYER_ID,
     pelengHeatmapEnabled: false,
     onReloadNetworkActivity: vi.fn(),
     onNetworkActivityPeriodChange: vi.fn(),
@@ -104,7 +105,7 @@ function renderPanel(): Rendered {
     onPelengSearchChange: vi.fn(),
     onPelengEnabledFreqsChange: vi.fn(),
     onPelengShowLabelsChange: vi.fn(),
-    onPelengSatelliteEnabledChange: vi.fn(),
+    onPelengBaseLayerIdChange: vi.fn(),
     onPelengHeatmapEnabledChange: vi.fn(),
     modulations: [],
     expandedFrequencyGroupIds: [],
@@ -121,7 +122,7 @@ function renderPanel(): Rendered {
   } as const;
 
   act(() => {
-    root.render(<NetworkDetailsTabPanel {...(props as any)} />);
+    root.render(<NetworkDetailsTabPanel {...props} />);
   });
 
   return { container, root };
@@ -198,7 +199,7 @@ describe('NetworkDetailsTabPanel', () => {
           pelengSearch=""
           pelengEnabledFreqs={[]}
           pelengShowLabels={true}
-          pelengSatelliteEnabled={true}
+          pelengBaseLayerId={DEFAULT_BASE_LAYER_ID}
           pelengHeatmapEnabled={false}
           onReloadRelations={vi.fn()}
           onRelationsSearchChange={vi.fn()}
@@ -214,7 +215,7 @@ describe('NetworkDetailsTabPanel', () => {
           onPelengSearchChange={vi.fn()}
           onPelengEnabledFreqsChange={vi.fn()}
           onPelengShowLabelsChange={vi.fn()}
-          onPelengSatelliteEnabledChange={vi.fn()}
+          onPelengBaseLayerIdChange={vi.fn()}
           onPelengHeatmapEnabledChange={vi.fn()}
           pelengPoints={[]}
           pelengPointsLoaded={false}
