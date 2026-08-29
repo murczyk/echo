@@ -2,8 +2,8 @@ use crate::config::{
     Config, CHAT_ATTACHMENTS_TOTAL_MAX_BYTES, CHAT_ATTACHMENT_MAX_BYTES,
     CHAT_ATTACHMENT_MAX_COUNT, CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_PAGE_SIZE,
     CHAT_UNREAD_KEY_TTL_DAYS, CHAT_WEBHOOK_BATCH_SIZE,
-    CHAT_WEBHOOK_HISTORY_RETENTION_DAYS, CHAT_WEBHOOK_MAX_ATTEMPTS,
-    CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
+    CHAT_WEBHOOK_CLEANUP_BATCH_SIZE, CHAT_WEBHOOK_HISTORY_RETENTION_DAYS,
+    CHAT_WEBHOOK_MAX_ATTEMPTS, CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS,
 };
 use crate::error::{
     bad_request, conflict, not_found, service_unavailable, ShortContext,
@@ -1689,10 +1689,20 @@ pub async fn cleanup_webhook_deliveries(
         DatabaseBackend::Postgres,
         r#"
         delete from echo_chat_webhook_delivery
-        where coalesce(delivered_at, failed_at) <
-            (now() at time zone 'utc') - make_interval(days => $1)
+        where id = any(array(
+            select id
+            from echo_chat_webhook_delivery
+            where (delivered_at is not null or failed_at is not null)
+                and coalesce(delivered_at, failed_at) <
+                    (now() at time zone 'utc') - make_interval(days => $1)
+            order by coalesce(delivered_at, failed_at), id
+            limit $2
+        ))
         "#,
-        [CHAT_WEBHOOK_HISTORY_RETENTION_DAYS.into()],
+        [
+            CHAT_WEBHOOK_HISTORY_RETENTION_DAYS.into(),
+            CHAT_WEBHOOK_CLEANUP_BATCH_SIZE.into(),
+        ],
     ))
     .await
     .c(h!())?;
@@ -1734,30 +1744,28 @@ async fn ingest_account(
     .one(db)
     .await
     .c(h!())?;
-    let max_id = db
-        .query_one_raw(Statement::from_sql_and_values(
-            DatabaseBackend::Postgres,
-            "select coalesce(max(id), 0) as max_id from echo_inbox_message where client_id = $1 and account_id = $2",
-            [client_id.into(), account_id.into()],
-        ))
-        .await
-        .c(h!())?
-        .map(|row| row.try_get::<i32>("", "max_id"))
-        .transpose()
-        .c(h!())?
-        .unwrap_or_default();
-    let Some(state) = state else {
-        upsert_ingestion_state(db, client_id, account_id, linked_at, max_id)
+    let state = match state {
+        Some(state) if state.linked_at == linked_at => state,
+        _ => {
+            let last_inbox_message_id =
+                initial_ingestion_id(db, client_id, account_id, linked_at)
+                    .await
+                    .c(h!())?;
+            upsert_ingestion_state(
+                db,
+                client_id,
+                account_id,
+                linked_at,
+                last_inbox_message_id,
+            )
             .await
             .c(h!())?;
-        return Ok(());
+            StateRow {
+                linked_at,
+                last_inbox_message_id,
+            }
+        }
     };
-    if state.linked_at != linked_at {
-        upsert_ingestion_state(db, client_id, account_id, linked_at, max_id)
-            .await
-            .c(h!())?;
-        return Ok(());
-    }
     let messages = IngestMessage::find_by_statement(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
         r#"
@@ -1838,6 +1846,33 @@ async fn ingest_account(
             .c(h!())?;
     }
     Ok(())
+}
+
+async fn initial_ingestion_id(
+    db: &DatabaseConnection,
+    client_id: i32,
+    account_id: i32,
+    linked_at: Option<NaiveDateTime>,
+) -> anyhow::Result<i32> {
+    let Some(linked_at) = linked_at else {
+        return Ok(0);
+    };
+    db.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        r#"
+            select coalesce(max(id), 0) as initial_id
+            from echo_inbox_message
+            where client_id = $1 and account_id = $2
+                and created_at < $3
+        "#,
+        [client_id.into(), account_id.into(), linked_at.into()],
+    ))
+    .await
+    .c(h!())?
+    .map(|row| row.try_get::<i32>("", "initial_id"))
+    .transpose()
+    .c(h!())
+    .map(|id| id.unwrap_or_default())
 }
 
 async fn upsert_ingestion_state(

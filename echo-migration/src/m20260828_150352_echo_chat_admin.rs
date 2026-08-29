@@ -78,6 +78,31 @@ impl MigrationTrait for Migration {
                 create index echo_chat_webhook_delivery_pending_idx
                     on echo_chat_webhook_delivery (next_attempt_at, id)
                     where delivered_at is null and failed_at is null;
+                create index echo_chat_webhook_delivery_terminal_idx
+                    on echo_chat_webhook_delivery (
+                        (coalesce(delivered_at, failed_at)), id
+                    )
+                    where delivered_at is not null or failed_at is not null;
+
+                create index echo_chat_inbox_ingestion_idx
+                    on echo_inbox_message (client_id, account_id, id);
+
+                insert into echo_chat_ingestion_state (
+                    client_id, account_id, linked_at, last_inbox_message_id
+                )
+                select c.id, a.id, a.linked_at, coalesce(latest.id, 0)
+                from echo_client c
+                join echo_client_lock l
+                    on l.client_id = c.id and not l.remove_requested
+                join echo_account a on a.id = l.account_id and a.is_linked
+                left join lateral (
+                    select m.id
+                    from echo_inbox_message m
+                    where m.client_id = c.id and m.account_id = a.id
+                    order by m.id desc
+                    limit 1
+                ) latest on true
+                where not c.deleted and c.show_chats_admin_panel = true;
 
                 create index echo_chat_inbox_group_history_idx
                     on echo_inbox_message (
@@ -126,6 +151,7 @@ impl MigrationTrait for Migration {
                 drop index if exists echo_chat_outbox_instance_group_history_idx;
                 drop index if exists echo_chat_inbox_private_history_idx;
                 drop index if exists echo_chat_inbox_group_history_idx;
+                drop index if exists echo_chat_inbox_ingestion_idx;
                 drop table if exists echo_chat_webhook_delivery;
                 drop table if exists echo_chat_ingestion_state;
                 drop table if exists echo_chat_filter;

@@ -691,24 +691,34 @@ async fn exercise_unread_and_webhook(
 ) -> anyhow::Result<()> {
     let config = test_config();
     let chat_redis = crate::chat_redis::ChatRedis::connect(&config).await;
-    ingestion_tick(db, &chat_redis).await.c(h!())?;
-    assert!(unread_ids(
-        &chat_redis,
-        &fixture.private_chat_id,
-        account_linked_at(
-            db,
-            &decode_chat_id(&fixture.private_chat_id).c(h!())?
-        )
-        .await
-        .c(h!())?
-    )
-    .await
-    .ids
-    .is_empty());
     execute(
         db,
         "insert into echo_client_settings (client_id, private_webhook_url) values ($1, 'https://example.invalid/chat-test')",
         vec![fixture.client_id.into()],
+    )
+    .await
+    .c(h!())?;
+    ingestion_tick(db, &chat_redis).await.c(h!())?;
+    let initial_unread = unread_ids(
+        &chat_redis,
+        &fixture.private_chat_id,
+        account_linked_at(
+            db,
+            &decode_chat_id(&fixture.private_chat_id).c(h!())?,
+        )
+        .await
+        .c(h!())?,
+    )
+    .await;
+    assert_eq!(initial_unread.ids, HashSet::from([fixture.inbox_id]));
+    mark_read(
+        db,
+        &chat_redis,
+        &fixture.private_chat_id,
+        MarkReadReq {
+            inbox_message_ids: vec![fixture.inbox_id],
+        },
+        false,
     )
     .await
     .c(h!())?;
@@ -784,6 +794,26 @@ async fn exercise_unread_and_webhook(
         CHAT_WEBHOOK_MAX_ATTEMPTS
     );
     assert!(failed.try_get::<bool>("", "failed").c(h!())?);
+    execute(
+        db,
+        "update echo_chat_webhook_delivery set failed_at = (now() at time zone 'utc') - interval '31 days' where client_id = $1 and inbox_message_id = $2",
+        vec![fixture.client_id.into(), new_id.into()],
+    )
+    .await
+    .c(h!())?;
+    cleanup_webhook_deliveries(db).await.c(h!())?;
+    let delivery_count = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select count(*)::bigint as count from echo_chat_webhook_delivery where client_id = $1 and inbox_message_id = $2",
+            [fixture.client_id.into(), new_id.into()],
+        ))
+        .await
+        .c(h!())?
+        .c(h!())?
+        .try_get::<i64>("", "count")
+        .c(h!())?;
+    assert_eq!(delivery_count, 0);
     Ok(())
 }
 

@@ -49,3 +49,11 @@ The initial participant-expression query took 96.212 ms, scanned all 500,000
 message/instance rows, and spilled 3,012 temporary blocks. Resolving the scoped
 sender/recipient IDs first and applying the cursor inside each indexed branch
 removed those scans and spills.
+
+## Webhook history cleanup, 5,000 rows
+
+- Execution time: 4.295 ms against 200,000 expired delivery rows.
+- The terminal timestamp index returned the bounded batch with 124 shared
+  buffer hits.
+- Primary-key index lookups deleted the selected rows without a delivery-table
+  sequential scan.

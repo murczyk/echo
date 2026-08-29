@@ -275,6 +275,31 @@
       ?.scrollIntoView({ block: "end" });
   }
 
+  function requestMessagePage(selectedId, cursor = null) {
+    const query = cursor ? `?before=${encodeURIComponent(cursor)}` : "";
+    return request(
+      appUrl(
+        `/ui-api/chats/${encodeURIComponent(selectedId)}/messages${query}`,
+      ),
+    );
+  }
+
+  async function loadPollingPages(selectedId) {
+    const knownIds = new Set(state.messages.map((message) => message.id));
+    let messages = [];
+    let cursor = null;
+    let unreadAvailable = true;
+    let overlapsKnown = false;
+    do {
+      const page = await requestMessagePage(selectedId, cursor);
+      messages = mergeById(page.messages, messages);
+      unreadAvailable &&= page.unreadAvailable;
+      overlapsKnown = page.messages.some((message) => knownIds.has(message.id));
+      cursor = page.nextCursor;
+    } while (cursor && !overlapsKnown);
+    return { messages, unreadAvailable };
+  }
+
   async function loadMessages({ older = false, polling = false } = {}) {
     if (!state.selectedChat) return;
     const selectedId = state.selectedChat.id;
@@ -287,12 +312,9 @@
       8;
     try {
       const cursor = older ? state.messageCursor : null;
-      const query = cursor ? `?before=${encodeURIComponent(cursor)}` : "";
-      const page = await request(
-        appUrl(
-          `/ui-api/chats/${encodeURIComponent(selectedId)}/messages${query}`,
-        ),
-      );
+      const page = polling
+        ? await loadPollingPages(selectedId)
+        : await requestMessagePage(selectedId, cursor);
       if (state.selectedChat?.id !== selectedId) return;
       if (older) {
         state.messages = mergeById(page.messages, state.messages);
