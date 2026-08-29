@@ -12,6 +12,8 @@ pub struct Model {
     pub ai_settlement_test_message_id: Uuid,
     #[sea_orm(primary_key, auto_increment = false)]
     pub ai_engine_id: Uuid,
+    #[sea_orm(column_type = "Text")]
+    pub prompt: String,
     #[sea_orm(column_type = "JsonBinary")]
     pub settlements: Json,
     #[sea_orm(column_type = "Text", nullable)]

@@ -35,6 +35,7 @@ create table ai_settlement_parse_result (
     ai_settlement_test_message_id uuid not null
         references ai_settlement_test_message(id) on delete cascade,
     ai_engine_id uuid not null references ai_engine(id) on delete cascade,
+    prompt text not null,
     settlements jsonb not null default '[]'::jsonb,
     error text,
     response_text text not null,

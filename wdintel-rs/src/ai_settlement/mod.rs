@@ -232,6 +232,7 @@ async fn load_page(
         Vec::new()
     } else {
         ai_settlement_parse_result::Entity::find()
+            .filter(ai_settlement_parse_result::Column::Prompt.eq(&prompt))
             .filter(
                 ai_settlement_parse_result::Column::AiEngineId
                     .is_in(engine_ids),
@@ -691,12 +692,16 @@ async fn save_prompt_and_results(
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
     let now = Utc::now().naive_utc();
-    clear_results_if_prompt_changed(&transaction, &prompt)
+    clear_results_for_other_prompts(&transaction, &prompt)
         .await
         .context(h!())?;
-    save_prompt(&transaction, prompt, now).await.context(h!())?;
+    save_prompt(&transaction, prompt.clone(), now)
+        .await
+        .context(h!())?;
     for result in &results {
-        save_result(&transaction, result, now).await.context(h!())?;
+        save_result(&transaction, result, &prompt, now)
+            .await
+            .context(h!())?;
     }
     transaction.commit().await.c(h!())?;
     let updated_at = now.and_utc().timestamp_millis();
@@ -706,23 +711,12 @@ async fn save_prompt_and_results(
     Ok(results)
 }
 
-async fn clear_results_if_prompt_changed(
+async fn clear_results_for_other_prompts(
     transaction: &DatabaseTransaction,
     prompt: &str,
 ) -> Result<(), AppError> {
-    let settings =
-        ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
-            .one(transaction)
-            .await
-            .c(h!())?;
-    let saved_prompt = settings
-        .as_ref()
-        .map(|settings| settings.prompt.as_str())
-        .unwrap_or_default();
-    if effective_prompt(saved_prompt) == prompt {
-        return Ok(());
-    }
     ai_settlement_parse_result::Entity::delete_many()
+        .filter(ai_settlement_parse_result::Column::Prompt.ne(prompt))
         .exec(transaction)
         .await
         .c(h!())?;
@@ -759,7 +753,7 @@ async fn save_prompt(
 
 async fn reset_prompt(dbx: &DatabaseConnection) -> Result<(), AppError> {
     let transaction = dbx.begin().await.c(h!())?;
-    clear_results_if_prompt_changed(&transaction, AI_SETTLEMENT_DEFAULT_PROMPT)
+    clear_results_for_other_prompts(&transaction, AI_SETTLEMENT_DEFAULT_PROMPT)
         .await
         .context(h!())?;
     save_prompt(&transaction, String::new(), Utc::now().naive_utc())
@@ -772,6 +766,7 @@ async fn reset_prompt(dbx: &DatabaseConnection) -> Result<(), AppError> {
 async fn save_result(
     transaction: &DatabaseTransaction,
     result: &AiSettlementParseResultItem,
+    prompt: &str,
     now: NaiveDateTime,
 ) -> Result<(), AppError> {
     ai_settlement_parse_result::Entity::insert(
@@ -782,6 +777,7 @@ async fn save_result(
             ai_engine_id: Set(
                 parse_uuid(&result.ai_engine_id).context(h!())?,
             ),
+            prompt: Set(prompt.to_string()),
             settlements: Set(serde_json::to_value(&result.settlements).c(h!())?),
             error: Set(result.error.clone()),
             response_text: Set(result.response_text.clone()),
@@ -794,6 +790,7 @@ async fn save_result(
             ai_settlement_parse_result::Column::AiEngineId,
         ])
         .update_columns([
+            ai_settlement_parse_result::Column::Prompt,
             ai_settlement_parse_result::Column::Settlements,
             ai_settlement_parse_result::Column::Error,
             ai_settlement_parse_result::Column::ResponseText,

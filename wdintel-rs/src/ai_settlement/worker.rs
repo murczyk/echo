@@ -35,6 +35,7 @@ use tokio_util::sync::CancellationToken;
 pub(crate) struct WorkerConfig {
     pub prompt: String,
     pub ai_engine: ai_engine::Model,
+    settings_updated_at: chrono::NaiveDateTime,
 }
 
 pub async fn enqueue_if_enabled<C>(
@@ -136,7 +137,7 @@ async fn process_next(
         vec![
             AiEngineMessage {
                 role: AI_CHAT_ROLE_SYSTEM.to_string(),
-                content: config.prompt,
+                content: config.prompt.clone(),
             },
             AiEngineMessage {
                 role: AI_CHAT_ROLE_USER.to_string(),
@@ -153,6 +154,7 @@ async fn process_next(
                     dbx,
                     job.sigint_inbox_item_id,
                     &body,
+                    &config,
                     format!("{error:#}; відповідь ШІ: {response_text}"),
                 )
                 .await
@@ -161,9 +163,15 @@ async fn process_next(
             }
         },
         Err(error) => {
-            fail_job(dbx, job.sigint_inbox_item_id, &body, error.to_string())
-                .await
-                .context(h!())?;
+            fail_job(
+                dbx,
+                job.sigint_inbox_item_id,
+                &body,
+                &config,
+                error.to_string(),
+            )
+            .await
+            .context(h!())?;
             return Ok(true);
         }
     };
@@ -171,15 +179,22 @@ async fn process_next(
         dbx,
         job.sigint_inbox_item_id,
         &body,
+        &config,
         normalize_settlements(settlements),
     )
     .await
     {
         Ok(changed) => changed,
         Err(error) => {
-            fail_job(dbx, job.sigint_inbox_item_id, &body, error.to_string())
-                .await
-                .c(h!())?;
+            fail_job(
+                dbx,
+                job.sigint_inbox_item_id,
+                &body,
+                &config,
+                error.to_string(),
+            )
+            .await
+            .c(h!())?;
             return Ok(true);
         }
     };
@@ -233,6 +248,7 @@ pub(crate) async fn load_worker_config(
     Ok(Some(WorkerConfig {
         prompt: effective_prompt(&settings.prompt).to_string(),
         ai_engine,
+        settings_updated_at: settings.updated_at,
     }))
 }
 
@@ -256,6 +272,7 @@ async fn complete_job(
     dbx: &DatabaseConnection,
     sigint_inbox_item_id: i64,
     expected_body: &str,
+    expected_config: &WorkerConfig,
     ai_settlements: Vec<String>,
 ) -> Result<bool, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
@@ -277,6 +294,13 @@ async fn complete_job(
         return Ok(false);
     };
     if message.body.as_deref().unwrap_or_default() != expected_body {
+        transaction.commit().await.c(h!())?;
+        return Ok(false);
+    }
+    if !worker_config_is_current(&transaction, expected_config)
+        .await
+        .context(h!())?
+    {
         transaction.commit().await.c(h!())?;
         return Ok(false);
     }
@@ -363,10 +387,41 @@ async fn lock_inbox_item(
         .c(h!())?)
 }
 
+async fn worker_config_is_current(
+    transaction: &DatabaseTransaction,
+    expected: &WorkerConfig,
+) -> Result<bool, AppError> {
+    let settings =
+        ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
+            .lock_exclusive()
+            .one(transaction)
+            .await
+            .c(h!())?;
+    let Some(settings) = settings else {
+        return Ok(false);
+    };
+    if !settings.worker_enabled
+        || settings.worker_ai_engine_id != Some(expected.ai_engine.id)
+        || settings.updated_at != expected.settings_updated_at
+        || effective_prompt(&settings.prompt) != expected.prompt
+    {
+        return Ok(false);
+    }
+    let ai_engine = ai_engine::Entity::find_by_id(expected.ai_engine.id)
+        .lock_exclusive()
+        .one(transaction)
+        .await
+        .c(h!())?;
+    Ok(ai_engine.as_ref() == Some(&expected.ai_engine)
+        && expected.ai_engine.enabled
+        && expected.ai_engine.callsign_enabled)
+}
+
 async fn fail_job(
     dbx: &DatabaseConnection,
     sigint_inbox_item_id: i64,
     expected_body: &str,
+    expected_config: &WorkerConfig,
     error_text: String,
 ) -> Result<(), AppError> {
     let transaction = dbx.begin().await.c(h!())?;
@@ -388,6 +443,13 @@ async fn fail_job(
         return Ok(());
     };
     if message.body.as_deref().unwrap_or_default() != expected_body {
+        transaction.commit().await.c(h!())?;
+        return Ok(());
+    }
+    if !worker_config_is_current(&transaction, expected_config)
+        .await
+        .context(h!())?
+    {
         transaction.commit().await.c(h!())?;
         return Ok(());
     }
@@ -474,17 +536,20 @@ fn truncate_error(error: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        complete_job, fail_job, merge_current_and_ai_settlements,
-        normalize_settlements, retry_delay_secs,
+        complete_job, fail_job, load_worker_config,
+        merge_current_and_ai_settlements, normalize_settlements,
+        retry_delay_secs, WorkerConfig,
     };
+    use crate::config::AI_SETTLEMENT_SETTINGS_ID;
     use crate::entities::{
-        ai_settlement_worker_job, group_stats_recalculation_task,
-        sigint_inbox_item, sigint_inbox_item_settlement, signal_group,
-        signal_message, signal_message_group,
+        ai_engine, ai_settlement_settings, ai_settlement_worker_job,
+        group_stats_recalculation_task, sigint_inbox_item,
+        sigint_inbox_item_settlement, signal_group, signal_message,
+        signal_message_group,
     };
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-        QueryFilter, QueryOrder, QuerySelect,
+        IntoActiveModel, QueryFilter, QueryOrder, QuerySelect,
     };
 
     #[test]
@@ -518,10 +583,47 @@ mod tests {
         assert_eq!(retry_delay_secs(20), 300);
     }
 
+    async fn enable_worker(dbx: &sea_orm::DatabaseConnection) -> WorkerConfig {
+        let now = chrono::Utc::now().naive_utc();
+        let ai_engine_id = uuid::Uuid::now_v7();
+        ai_engine::ActiveModel {
+            id: Set(ai_engine_id),
+            name: Set(format!("settlement-worker-test-{ai_engine_id}")),
+            url: Set("http://localhost".to_string()),
+            token: Set(None),
+            model_name: Set("test".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(false),
+            ocr_request_profile: Set("openai_vision".to_string()),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        ai_settlement_settings::Entity::delete_many()
+            .exec(dbx)
+            .await
+            .unwrap();
+        ai_settlement_settings::ActiveModel {
+            id: Set(AI_SETTLEMENT_SETTINGS_ID),
+            prompt: Set("test prompt".to_string()),
+            worker_enabled: Set(true),
+            worker_ai_engine_id: Set(Some(ai_engine_id)),
+            updated_at: Set(now),
+        }
+        .insert(dbx)
+        .await
+        .unwrap();
+        load_worker_config(dbx).await.unwrap().unwrap()
+    }
+
     #[tokio::test]
     #[serial_test::serial]
     async fn preserves_pipe_delimited_locations_and_reconciles_links_2133() {
         let env = crate::functest::tests::cleanup().await.unwrap();
+        let config = enable_worker(&env.dbx).await;
         let group_master_key = signal_group::Entity::find()
             .filter(signal_group::Column::Deleted.eq(false))
             .select_only()
@@ -573,6 +675,7 @@ mod tests {
             &env.dbx,
             message.id,
             "message body",
+            &config,
             vec!["existing mixed".to_string(), "THIRD".to_string()],
         )
         .await
@@ -620,6 +723,7 @@ mod tests {
     #[serial_test::serial]
     async fn ignores_stale_or_already_completed_results_2133() {
         let env = crate::functest::tests::cleanup().await.unwrap();
+        let config = enable_worker(&env.dbx).await;
         let message = crate::functest::tests::mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
@@ -653,13 +757,20 @@ mod tests {
             &env.dbx,
             message.id,
             "old body",
+            &config,
             vec!["STALE".to_string()],
         )
         .await
         .unwrap());
-        fail_job(&env.dbx, message.id, "old body", "stale error".to_string())
-            .await
-            .unwrap();
+        fail_job(
+            &env.dbx,
+            message.id,
+            "old body",
+            &config,
+            "stale error".to_string(),
+        )
+        .await
+        .unwrap();
         let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
             .one(&env.dbx)
             .await
@@ -677,6 +788,7 @@ mod tests {
             &env.dbx,
             message.id,
             "new body",
+            &config,
             vec!["FRESH".to_string()],
         )
         .await
@@ -685,6 +797,7 @@ mod tests {
             &env.dbx,
             message.id,
             "new body",
+            &config,
             vec!["DUPLICATE".to_string()],
         )
         .await
@@ -695,5 +808,74 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(inbox_item.location_v2.as_deref(), Some("|EXISTING|FRESH|"));
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn rejects_stale_worker_config_2133() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let config = enable_worker(&env.dbx).await;
+        let message = crate::functest::tests::mk_signal_message(
+            &env.dbx,
+            signal_message::ActiveModel {
+                body: Set(Some("message body".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item::ActiveModel {
+            id: Set(message.id),
+            location_v2: Set(Some("|EXISTING|".to_string())),
+            parsed_unit_v2: Set(false),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        ai_settlement_worker_job::ActiveModel {
+            sigint_inbox_item_id: Set(message.id),
+            attempts: Set(0),
+            next_attempt_at: Set(chrono::Utc::now().naive_utc()),
+            last_error: Set(None),
+            created_at: Set(chrono::Utc::now().naive_utc()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let settings = ai_settlement_settings::Entity::find_by_id(
+            AI_SETTLEMENT_SETTINGS_ID,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        let mut settings = settings.into_active_model();
+        settings.worker_enabled = Set(false);
+        settings.updated_at =
+            Set(config.settings_updated_at + chrono::Duration::seconds(1));
+        settings.update(&env.dbx).await.unwrap();
+
+        assert!(!complete_job(
+            &env.dbx,
+            message.id,
+            "message body",
+            &config,
+            vec!["STALE".to_string()],
+        )
+        .await
+        .unwrap());
+
+        let inbox_item = sigint_inbox_item::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(inbox_item.location_v2.as_deref(), Some("|EXISTING|"));
+        assert!(ai_settlement_worker_job::Entity::find_by_id(message.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
     }
 }
