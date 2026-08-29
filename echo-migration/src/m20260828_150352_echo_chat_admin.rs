@@ -104,6 +104,42 @@ impl MigrationTrait for Migration {
                 ) latest on true
                 where not c.deleted and c.show_chats_admin_panel = true;
 
+                create function seed_echo_chat_ingestion_state_on_enable()
+                returns trigger
+                language plpgsql
+                as $$
+                begin
+                    insert into echo_chat_ingestion_state (
+                        client_id, account_id, linked_at, last_inbox_message_id
+                    )
+                    select new.id, a.id, a.linked_at, coalesce(latest.id, 0)
+                    from echo_client_lock l
+                    join echo_account a on a.id = l.account_id and a.is_linked
+                    left join lateral (
+                        select m.id
+                        from echo_inbox_message m
+                        where m.client_id = new.id and m.account_id = a.id
+                        order by m.id desc
+                        limit 1
+                    ) latest on true
+                    where l.client_id = new.id and not l.remove_requested
+                    on conflict (client_id, account_id) do update
+                    set linked_at = excluded.linked_at,
+                        last_inbox_message_id = excluded.last_inbox_message_id,
+                        updated_at = now() at time zone 'utc';
+                    return new;
+                end;
+                $$;
+
+                create trigger echo_chat_seed_ingestion_state_on_enable
+                after update of show_chats_admin_panel on echo_client
+                for each row
+                when (
+                    new.show_chats_admin_panel is true
+                    and old.show_chats_admin_panel is distinct from true
+                )
+                execute function seed_echo_chat_ingestion_state_on_enable();
+
                 create index echo_chat_inbox_group_history_idx
                     on echo_inbox_message (
                         client_id, account_id, group_id,
@@ -130,10 +166,10 @@ impl MigrationTrait for Migration {
                     where recipient_id is not null;
                 create index echo_chat_outbox_instance_reply_history_idx
                     on echo_outbox_message_instance (
-                        account_id, reply_to_inbox_message_id,
-                        (coalesce(sent_at, created_at)) desc, id desc
+                        account_id, (coalesce(sent_at, created_at)) desc, id desc
                     )
-                    where reply_to_inbox_message_id is not null;
+                    where group_id is null
+                        and reply_to_inbox_message_id is not null;
                 "#,
             )
             .await
@@ -152,6 +188,9 @@ impl MigrationTrait for Migration {
                 drop index if exists echo_chat_inbox_private_history_idx;
                 drop index if exists echo_chat_inbox_group_history_idx;
                 drop index if exists echo_chat_inbox_ingestion_idx;
+                drop trigger if exists echo_chat_seed_ingestion_state_on_enable
+                    on echo_client;
+                drop function if exists seed_echo_chat_ingestion_state_on_enable();
                 drop table if exists echo_chat_webhook_delivery;
                 drop table if exists echo_chat_ingestion_state;
                 drop table if exists echo_chat_filter;

@@ -36,6 +36,21 @@ The initial all-history/window implementation took 4,641.653 ms, touched
 1,921,764 shared buffers, and wrote 64,100 temporary blocks on the same fixture.
 It was replaced by the bounded per-identity seeks measured above.
 
+## Chat list, reply-heavy private chats
+
+An additional fixture contained 250,000 inbox messages and 250,000 reply
+instances distributed evenly over 100 private chats.
+
+- Execution time: 19.992 ms.
+- Buffers: 22,840 shared hits and 7 reads; no temporary I/O.
+- Each private identity used the timestamp-ordered
+  `echo_chat_outbox_instance_reply_history_idx` lookup and stopped at its
+  latest matching reply (50 reply instances examined on average).
+
+The previous reply join scanned and sorted the full matching history for each
+identity. On the same fixture it took 3,739.789 ms and touched 708,937 shared
+buffers.
+
 ## Private history, first 51 rows
 
 - Execution time: 1.250 ms.

@@ -698,6 +698,20 @@ async fn exercise_unread_and_webhook(
     )
     .await
     .c(h!())?;
+    execute(
+        db,
+        "update echo_client set show_chats_admin_panel = false where id = $1",
+        vec![fixture.client_id.into()],
+    )
+    .await
+    .c(h!())?;
+    execute(
+        db,
+        "update echo_client set show_chats_admin_panel = true where id = $1",
+        vec![fixture.client_id.into()],
+    )
+    .await
+    .c(h!())?;
     ingestion_tick(db, &test_config(), &chat_redis)
         .await
         .c(h!())?;
@@ -712,18 +726,19 @@ async fn exercise_unread_and_webhook(
         .c(h!())?,
     )
     .await;
-    assert_eq!(initial_unread.ids, HashSet::from([fixture.inbox_id]));
-    mark_read(
-        db,
-        &chat_redis,
-        &fixture.private_chat_id,
-        MarkReadReq {
-            inbox_message_ids: vec![fixture.inbox_id],
-        },
-        false,
-    )
-    .await
-    .c(h!())?;
+    assert!(initial_unread.ids.is_empty());
+    let historical_delivery_count = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "select count(*)::bigint as count from echo_chat_webhook_delivery where client_id = $1",
+            [fixture.client_id.into()],
+        ))
+        .await
+        .c(h!())?
+        .c(h!())?
+        .try_get::<i64>("", "count")
+        .c(h!())?;
+    assert_eq!(historical_delivery_count, 0);
     let new_id = insert_inbox(
         db,
         fixture.client_id,

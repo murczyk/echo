@@ -617,15 +617,23 @@ pub async fn list(
                         coalesce(instance.sent_at, instance.created_at),
                         'out', instance.id
                     from unnest(identity.sender_ids) as sender_item(sender_id)
-                    join echo_inbox_message reply_in on reply_in.sender_id = sender_item.sender_id
-                        and reply_in.client_id = identity.client_id
-                        and reply_in.account_id = identity.account_id
-                        and reply_in.group_id is null and not reply_in.deleted
-                        and reply_in.duplicate_of is null
-                    join echo_outbox_message_instance instance
-                        on instance.reply_to_inbox_message_id = reply_in.id
-                        and instance.account_id = identity.account_id
-                        and instance.reply_to_inbox_message_id is not null
+                    cross join lateral (
+                        select item.id, item.message_id, item.sent_at, item.created_at
+                        from echo_outbox_message_instance item
+                        join echo_inbox_message reply_in
+                            on reply_in.id = item.reply_to_inbox_message_id
+                            and reply_in.client_id = identity.client_id
+                            and reply_in.account_id = identity.account_id
+                            and reply_in.sender_id = sender_item.sender_id
+                            and reply_in.group_id is null and not reply_in.deleted
+                            and reply_in.duplicate_of is null
+                        where item.account_id = identity.account_id
+                            and item.group_id is null
+                            and item.reply_to_inbox_message_id is not null
+                        order by coalesce(item.sent_at, item.created_at) desc,
+                            item.id desc
+                        limit 1
+                    ) instance
                     cross join lateral (
                         select outbox.body
                         from echo_outbox_message outbox
@@ -633,7 +641,7 @@ pub async fn list(
                             and outbox.client_id = identity.client_id
                         offset 0
                     ) message
-                    where identity.kind = 'private' and instance.group_id is null
+                    where identity.kind = 'private'
                     order by coalesce(instance.sent_at, instance.created_at) desc,
                         instance.id desc
                     limit 1)
