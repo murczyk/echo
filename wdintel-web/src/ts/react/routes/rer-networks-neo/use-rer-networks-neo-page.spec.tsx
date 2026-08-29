@@ -1324,10 +1324,130 @@ describe('useRerNetworksNeoPage', () => {
       {
         networkIds: [1, 2],
         tillDateNoninclusiveMs: dayjs().startOf('day').add(1, 'day').valueOf(),
+        period: null,
       },
       expect.any(Object),
     );
     expect(latest?.rows[0]?.activityBars.some((bar) => bar.value === 3)).toBe(true);
+  });
+
+  it('settles first-page activity after pagination starts', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
+    const initialActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: firstPage,
+      statusCounts: { active: 100, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(101)],
+      statusCounts: { active: 101, inactive: 0, archived: 0 },
+    });
+    apiMock.getNetworksGroupsActivity.mockImplementationOnce(() => initialActivity.promise);
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.loadMoreNetworks();
+    });
+    expect(latest?.rows[0]?.activityLoadState).toBe('loading');
+
+    await act(async () => {
+      initialActivity.resolve({});
+      await initialActivity.promise;
+    });
+    await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
+  });
+
+  it('does not abort page-two activity when page three starts loading', async () => {
+    const pageOne = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
+    const pageTwo = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 101));
+    const pageTwoActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: pageOne,
+      statusCounts: { active: 100, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: pageTwo,
+      statusCounts: { active: 200, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(201)],
+      statusCounts: { active: 201, inactive: 0, archived: 0 },
+    });
+    apiMock.getNetworksGroupsActivity
+      .mockResolvedValueOnce({})
+      .mockImplementationOnce(() => pageTwoActivity.promise)
+      .mockResolvedValueOnce({});
+
+    await renderHook();
+    await flushEffects();
+    await act(async () => {
+      await latest?.loadMoreNetworks();
+    });
+    await act(async () => {
+      await latest?.loadMoreNetworks();
+    });
+
+    const pageTwoActivityCall = apiMock.getNetworksGroupsActivity.mock.results[1];
+    expect(pageTwoActivityCall).toBeDefined();
+    const pageTwoSignal = apiMock.getNetworksGroupsActivity.mock.calls[1]?.[1]?.signal;
+    expect(pageTwoSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      pageTwoActivity.resolve({});
+      await pageTwoActivity.promise;
+    });
+    await vi.waitFor(() => expect(latest?.rows[100]?.activityLoadState).toBe('loaded'));
+  });
+
+  it('ignores activity from a replaced list query', async () => {
+    const oldActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    const newActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    apiMock.getNetworksGroupsActivity
+      .mockImplementationOnce(() => oldActivity.promise)
+      .mockImplementationOnce(() => newActivity.promise);
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1), buildNetwork(2)],
+      statusCounts: { active: 2, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(3)],
+      statusCounts: { active: 1, inactive: 0, archived: 0 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+    expect(latest?.rows.map((row) => row.id)).toEqual([3]);
+    expect(latest?.rows[0]?.activityLoadState).toBe('loading');
+
+    await act(async () => {
+      oldActivity.resolve({});
+      await oldActivity.promise;
+    });
+    await flushEffects();
+    expect(latest?.rows[0]?.activityLoadState).toBe('loading');
+
+    await act(async () => {
+      newActivity.resolve({});
+      await newActivity.promise;
+    });
+    await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
+  });
+
+  it('marks every requested network as activity error without rendering inactivity', async () => {
+    apiMock.getNetworksGroupsActivity.mockRejectedValueOnce(new Error('activity unavailable'));
+
+    await renderHook();
+    await vi.waitFor(() =>
+      expect(latest?.rows.every((row) => row.activityLoadState === 'error')).toBe(true),
+    );
+    expect(latest?.rows.every((row) => row.activityLoadState !== 'loaded')).toBe(true);
   });
 
   it('enables edit and delete permissions for UnitsEditor roles', async () => {
