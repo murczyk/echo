@@ -9,11 +9,11 @@ import {
 } from '../../../components/mui-customized/table/get-default-table-options';
 import { NO_AOR_FILTER_VALUE, type NetworkRowView } from '../helpers';
 import {
-  ActivityBars,
   FrequencyCell,
   LastActivityCell,
   LocationCell,
   NetworkCell,
+  NetworkActivityCell,
 } from './NetworkCells';
 
 function formatAorActiveFilterValue(
@@ -171,11 +171,10 @@ export function useNetworksTableColumns({
         meta: { overflowMode: 'none' },
         Cell: ({ row }) => (
           <Box>
-            {row.original.activityBars.some((bar) => bar.value > 0) ? (
-              <ActivityBars bars={row.original.activityBars} />
-            ) : (
-              <Box sx={{ color: 'text.secondary' }}>Не активна останні 10 днів</Box>
-            )}
+            <NetworkActivityCell
+              activityLoadState={row.original.activityLoadState}
+              activityBars={row.original.activityBars}
+            />
           </Box>
         ),
       },

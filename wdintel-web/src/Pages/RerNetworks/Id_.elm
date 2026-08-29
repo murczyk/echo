@@ -1165,7 +1165,7 @@ update shared msg model =
 
         DeleteNetworkReturnedByApi (Ok _) ->
             ( { model | deleteNetworkLoading = False }
-            , E.pushRoute { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
+            , E.pushRoute { path = Route.Path.RerNetworksNeo, hash = Nothing, query = Dict.empty }
             )
 
 

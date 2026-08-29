@@ -601,7 +601,7 @@ update shared route msg model =
                 Nothing ->
                     -- Сценарій 1: Просто перейти назад
                     ( model
-                    , E.pushRoute { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
+                    , E.pushRoute { path = Route.Path.RerNetworksNeo, hash = Nothing, query = Dict.empty }
                     )
 
         CreateClicked ->
@@ -747,7 +747,7 @@ update shared route msg model =
 
         NetworkDeleted (Ok _) ->
             ( { model | deletingNetwork = False }
-            , E.pushRoute { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
+            , E.pushRoute { path = Route.Path.RerNetworksNeo, hash = Nothing, query = Dict.empty }
             )
 
         NetworkDeleted (Err error) ->
