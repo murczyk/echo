@@ -37,7 +37,6 @@ import { buildMessageCardDisplayLabels } from '../shared/message-card/message-ca
 import {
   buildCopyTextWithNetworkAndNote,
   buildCopyTextWithNetworkName,
-  buildMessageLinkFullUrl,
   resolveMessageCardEtalonDisplayModel,
 } from '../shared/message-card/message-card.utils';
 import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
@@ -218,9 +217,6 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
       onImportant={() => onMessageImportant(id, msg.important)}
       onCopyText={() => onMessageCopy(msg.text || '', `text-${id}`)}
       onCopyFreq={() => onMessageCopy(msg.freq ?? '', `freq-${id}`)}
-      onCopyMessageLink={() =>
-        onMessageCopy(buildMessageLinkFullUrl(msg, 'duty', id), `link-${id}`)
-      }
       onCopyTextWithNetwork={
         etalonDisplayModel.primaryKind === 'network' && etalonDisplayModel.copyEtalonValue != null
           ? () =>
