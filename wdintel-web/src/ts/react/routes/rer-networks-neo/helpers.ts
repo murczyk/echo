@@ -12,6 +12,10 @@ import type {
 } from '../../../../Bindings';
 import { isPresent } from '../../utils/misc';
 import type { SelectedSidebarUnitFilter } from '../rer-callsigns-neo/types';
+import type {
+  ActivityLoadStateByNetworkId,
+  NetworkActivityLoadState,
+} from './use-rer-networks-neo-page.types';
 
 dayjs.extend(utc);
 
@@ -28,6 +32,7 @@ export type NetworkRowView = {
   activeFrequencies: NetworkFreq[];
   inactiveFrequencies: NetworkFreq[];
   activityBars: Array<{ value: number; title: string }>;
+  activityLoadState: NetworkActivityLoadState;
   lastActivityLabel: string;
   lastActivityDetail: string;
   lastActivityTooltip: string;
@@ -173,6 +178,7 @@ export function buildNetworkRowView(
   unitsById: Map<number, Unit>,
   aorsById: Map<number, AreaOfResponsibility>,
   activityByNetworkId: Map<number, Record<string, Record<string, number>>>,
+  activityLoadStateByNetworkId: ActivityLoadStateByNetworkId = new Map(),
 ): NetworkRowView {
   const status = getNetworkStatusDescriptor(network);
   const unitLabels = (network.unitIds ?? [])
@@ -201,6 +207,7 @@ export function buildNetworkRowView(
     activeFrequencies,
     inactiveFrequencies,
     activityBars: buildActivityBars(activityByNetworkId.get(network.id)),
+    activityLoadState: activityLoadStateByNetworkId.get(network.id) ?? 'loading',
     lastActivityLabel: formatDateTime(network.lastUpdatedAt),
     lastActivityDetail: network.lastUpdatedBy?.trim() || 'невідомий',
     lastActivityTooltip: [

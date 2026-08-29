@@ -10,6 +10,7 @@
 
 ## NEXT
 
+- [#3329](https://github.com/echoua/echo/issues/3329) 🐞 Мережі: покращено візуальну взаємодію. Прибрано класичну сторінку списку мереж.
 - [#3099](https://github.com/echoua/echo/issues/3099) ✅ Оперативний, Аналіз: додано підтримку редагування зображень.
 - [#3279](https://github.com/echoua/echo/issues/3279) ✅🛡️ Звіти: додано аудит спроб завантаження з автором, часом, тривалістю та результатом на сторінці «Всі звіти».
  - [#2287](https://github.com/echoua/echo/issues/2287) ✅👷 Аналіз, ЛБЗ: у списку пеленгів на карті показується відстань до найближчого релевантного сегмента ЛБЗ; після міграції deployment verification точково перебудує analytics-дзеркало `public.sigint_peleng`, потім запустити `sudo /usr/bin/wdintel-rs --mode=live oneoff-backfill-peleng-battle-line-distance` (для глибшої історії: `--since-ts YYYY-MM-DDT00:00:00`). Якщо reconciliation або analytics health check завершиться помилкою, зупинити деплой перед наступним сервером, усунути причину та повторити `/opt/echo-peerdb/bin/source-resnapshot-table.sh --table public.sigint_peleng`.

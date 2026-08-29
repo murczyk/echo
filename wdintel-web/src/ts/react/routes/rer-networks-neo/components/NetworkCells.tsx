@@ -1,4 +1,4 @@
-import { Box, Stack, Tooltip } from '@mui/material';
+import { Box, Skeleton, Stack, Tooltip } from '@mui/material';
 import type { PointerEvent } from 'react';
 
 import { PowerChip } from '../../../components/PowerChip';
@@ -60,14 +60,28 @@ export function ActivityBars({ bars }: { bars: Array<{ value: number; title: str
   );
 }
 
+export function NetworkActivityCell({
+  activityLoadState,
+  activityBars,
+}: Pick<NetworkRowView, 'activityLoadState' | 'activityBars'>) {
+  if (activityLoadState === 'loading') {
+    return <Skeleton variant="text" width={120} aria-label="Завантаження активності" />;
+  }
+
+  if (activityLoadState === 'error') {
+    return <Box sx={{ color: 'error.main' }}>Не вдалося завантажити активність</Box>;
+  }
+
+  if (activityBars.some((bar) => bar.value > 0)) {
+    return <ActivityBars bars={activityBars} />;
+  }
+
+  return <Box sx={{ color: 'text.secondary' }}>Не активна протягом останніх 10 днів</Box>;
+}
+
 export function NetworkCell({ network }: { network: NetworkRowView }) {
   return (
-    <Stack
-      direction="row"
-      spacing={1}
-      alignItems="flex-start"
-      sx={{ minWidth: 0, flexWrap: 'nowrap' }}
-    >
+    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0, flexWrap: 'nowrap' }}>
       <Tooltip title={network.statusLabel}>
         <Box
           sx={{
@@ -76,7 +90,6 @@ export function NetworkCell({ network }: { network: NetworkRowView }) {
             borderRadius: '50%',
             bgcolor: network.statusColor,
             flexShrink: 0,
-            alignSelf: 'center',
           }}
         />
       </Tooltip>

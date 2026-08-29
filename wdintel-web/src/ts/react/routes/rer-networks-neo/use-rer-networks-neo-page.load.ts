@@ -25,6 +25,7 @@ import {
   normalizeActivityMap,
 } from './use-rer-networks-neo-page.shared';
 import type {
+  ActivityLoadStateByNetworkId,
   ActivityByNetworkId,
   NetworksQuerySnapshot,
   UiMessage,
@@ -48,6 +49,8 @@ type LoadArgs = {
   columnFiltersRef: MutableRefObject<MRT_ColumnFiltersState>;
   latestQuerySnapshotRef: MutableRefObject<NetworksQuerySnapshot | null>;
   requestSeqRef: MutableRefObject<number>;
+  activityQueryGenerationRef: MutableRefObject<number>;
+  activityAbortControllersRef: MutableRefObject<Set<AbortController>>;
   bootstrapLoadedRef: MutableRefObject<boolean>;
   mainAbortRef: MutableRefObject<AbortController | null>;
   loadMoreAbortRef: MutableRefObject<AbortController | null>;
@@ -68,10 +71,61 @@ type LoadArgs = {
   setNoMoreToLoad: Dispatch<SetStateAction<boolean>>;
   setNetworks: Dispatch<SetStateAction<Network[]>>;
   setActivityByNetworkId: Dispatch<SetStateAction<ActivityByNetworkId>>;
+  setActivityLoadStateByNetworkId: Dispatch<SetStateAction<ActivityLoadStateByNetworkId>>;
   setBootstrapLoaded: Dispatch<SetStateAction<boolean>>;
 };
 
 export function createRerNetworksNeoLoadActions(args: LoadArgs) {
+  const abortActivityRequests = () => {
+    for (const controller of args.activityAbortControllersRef.current) controller.abort();
+  };
+
+  const loadActivity = (networkIds: number[], activityGeneration: number) => {
+    const controller = new AbortController();
+    args.activityAbortControllersRef.current.add(controller);
+
+    void (async () => {
+      try {
+        const activityRsp = await getNetworksGroupsActivity(
+          {
+            networkIds,
+            tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
+            period: null,
+          },
+          { signal: controller.signal },
+        );
+        if (args.activityQueryGenerationRef.current !== activityGeneration) return;
+        const normalized = normalizeActivityMap(activityRsp);
+        args.setActivityByNetworkId((current) => {
+          const nextActivity = new Map(current);
+          for (const networkId of networkIds) {
+            nextActivity.set(networkId, normalized.get(networkId) ?? {});
+          }
+          return nextActivity;
+        });
+        args.setActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'loaded');
+          return next;
+        });
+      } catch (error) {
+        if (controller.signal.aborted || isAbortError(error)) return;
+        if (isUnauthorizedError(error)) {
+          redirectToLogin();
+          return;
+        }
+        if (args.activityQueryGenerationRef.current !== activityGeneration) return;
+        args.setActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of networkIds) next.set(networkId, 'error');
+          return next;
+        });
+      } finally {
+        args.activityAbortControllersRef.current.delete(controller);
+      }
+    })();
+  };
+
   const loadNetworks = async (
     snapshot: NetworksQuerySnapshot,
     options?: { includeLookups?: boolean; append?: boolean; force?: boolean },
@@ -90,6 +144,8 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       return;
     }
     if (!append) {
+      args.activityQueryGenerationRef.current += 1;
+      abortActivityRequests();
       args.mainAbortRef.current?.abort();
       args.mainAbortRef.current = controller;
     }
@@ -140,6 +196,19 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       args.setStatusCounts(statusCounts);
       args.setNoMoreToLoad(networksList.length < NETWORK_LIST_PAGE_SIZE);
       args.setNetworks((current) => (append ? [...current, ...networksList] : networksList));
+      const requestedNetworkIds = networksList.map((network) => network.id);
+      if (append) {
+        args.setActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of requestedNetworkIds) next.set(networkId, 'loading');
+          return next;
+        });
+      } else {
+        args.setActivityByNetworkId(new Map());
+        args.setActivityLoadStateByNetworkId(
+          new Map(requestedNetworkIds.map((networkId) => [networkId, 'loading'])),
+        );
+      }
 
       if (lookupsPromise !== null) {
         (async () => {
@@ -176,36 +245,8 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
           }
         })();
       }
-      if (networksList.length === 0) {
-        args.setActivityByNetworkId((current) => (append ? new Map(current) : new Map()));
-      } else {
-        (async () => {
-          try {
-            const activityRsp = await getNetworksGroupsActivity(
-              {
-                networkIds: networksList.map((network) => network.id),
-                tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
-                period: null,
-              },
-              { signal: controller.signal },
-            );
-            if (args.requestSeqRef.current !== seq) return;
-            args.setActivityByNetworkId((current) => {
-              const nextActivity = append ? new Map(current) : new Map();
-              const normalized = normalizeActivityMap(activityRsp);
-              for (const [networkId, activity] of normalized.entries()) {
-                nextActivity.set(networkId, activity);
-              }
-              return nextActivity;
-            });
-          } catch (error) {
-            if (controller.signal.aborted || isAbortError(error)) return;
-            if (isUnauthorizedError(error)) {
-              redirectToLogin();
-              return;
-            }
-          }
-        })();
+      if (networksList.length > 0) {
+        loadActivity(requestedNetworkIds, args.activityQueryGenerationRef.current);
       }
       if (!append) {
         args.lastExecutedFullQueryKeyRef.current = snapshot.fullQueryKey;
@@ -324,38 +365,15 @@ export function createRerNetworksNeoLoadActions(args: LoadArgs) {
       args.setStatusCounts(statusCounts);
       args.setNetworks((current) => [...current, ...networksList]);
       if (networksList.length === 0) {
-        args.setActivityByNetworkId((current) => new Map(current));
+        return;
       } else {
-        const activityController = args.loadMoreAbortRef.current;
-        (async () => {
-          try {
-            if (!activityController) return;
-            const activityRsp = await getNetworksGroupsActivity(
-              {
-                networkIds: networksList.map((network) => network.id),
-                tillDateNoninclusiveMs: getActivityRequestUpperBoundMs(),
-                period: null,
-              },
-              { signal: activityController.signal },
-            );
-            if (args.requestSeqRef.current !== seq) return;
-            args.setActivityByNetworkId((current) => {
-              const nextActivity = new Map(current);
-              const normalized = normalizeActivityMap(activityRsp);
-              for (const [networkId, activity] of normalized.entries()) {
-                nextActivity.set(networkId, activity);
-              }
-              return nextActivity;
-            });
-          } catch (error) {
-            if (!activityController) return;
-            if (activityController.signal.aborted || isAbortError(error)) return;
-            if (isUnauthorizedError(error)) {
-              redirectToLogin();
-              return;
-            }
-          }
-        })();
+        const requestedNetworkIds = networksList.map((network) => network.id);
+        args.setActivityLoadStateByNetworkId((current) => {
+          const next = new Map(current);
+          for (const networkId of requestedNetworkIds) next.set(networkId, 'loading');
+          return next;
+        });
+        loadActivity(requestedNetworkIds, args.activityQueryGenerationRef.current);
       }
     } catch (error) {
       if (args.requestSeqRef.current !== seq) return;

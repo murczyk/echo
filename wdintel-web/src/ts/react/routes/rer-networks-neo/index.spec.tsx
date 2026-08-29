@@ -14,6 +14,7 @@ import {
   getLocationParts,
   LastActivityCell,
   LocationCell,
+  NetworkActivityCell,
 } from './components/NetworkCells';
 import {
   FREQUENCY_HOVER_POPPER_MODIFIERS,
@@ -324,6 +325,55 @@ afterEach(() => {
   container = null;
 });
 
+it('renders activity loading without bars or inactivity text', () => {
+  if (!container) throw new Error('container not initialized');
+  root = createRoot(container);
+  act(() => {
+    root?.render(
+      createElement(NetworkActivityCell, {
+        activityLoadState: 'loading',
+        activityBars: [],
+      }),
+    );
+  });
+  expect(container.querySelector('[aria-label="Завантаження активності"]')).not.toBeNull();
+  expect(container.textContent).not.toContain('Не активна');
+  expect(container.querySelector('[data-testid="activity-bars"]')).toBeNull();
+});
+
+it('renders loaded activity states distinctly', () => {
+  if (!container) throw new Error('container not initialized');
+  root = createRoot(container);
+  const bars = [{ value: 1, title: '01.01' }];
+
+  act(() => {
+    root?.render(
+      createElement(NetworkActivityCell, { activityLoadState: 'loaded', activityBars: bars }),
+    );
+  });
+  expect(container.textContent).not.toContain('Не активна');
+  expect(container.textContent).not.toContain('Не вдалося');
+  expect(container.querySelector('[aria-label="Завантаження активності"]')).toBeNull();
+
+  act(() => {
+    root?.render(
+      createElement(NetworkActivityCell, {
+        activityLoadState: 'loaded',
+        activityBars: [{ value: 0, title: '01.01' }],
+      }),
+    );
+  });
+  expect(container.textContent).toContain('Не активна протягом останніх 10 днів');
+
+  act(() => {
+    root?.render(
+      createElement(NetworkActivityCell, { activityLoadState: 'error', activityBars: bars }),
+    );
+  });
+  expect(container.textContent).toContain('Не вдалося завантажити активність');
+  expect(container.textContent).not.toContain('Не активна');
+});
+
 it('keeps MRT filter modes disabled on the networks table', () => {
   if (!container) throw new Error('container not initialized');
 
@@ -515,8 +565,8 @@ it('wraps long network labels without truncating the status chip row', () => {
     'src/ts/react/routes/rer-networks-neo/components/NetworkCells.tsx',
     'utf8',
   );
-  expect(networkCellsSource).toContain('alignItems="flex-start"');
-  expect(networkCellsSource).toContain("alignSelf: 'center'");
+  expect(networkCellsSource).toContain('alignItems="center"');
+  expect(networkCellsSource).not.toContain("alignSelf: 'center'");
   expect(networkCellsSource).toContain("whiteSpace: 'normal'");
   expect(networkCellsSource).toContain("overflowWrap: 'anywhere'");
   const source = readFileSync('src/ts/react/routes/rer-networks-neo/index.spec.tsx', 'utf8');

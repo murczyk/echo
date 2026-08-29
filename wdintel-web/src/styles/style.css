@@ -865,14 +865,6 @@ sl-tooltip {
   column-gap: 5px;
 }
 
-.rer-networks .callsigns-group {
-  max-width: 800px;
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr 1fr;
-  row-gap: 5px;
-  column-gap: 5px;
-}
-
 .rer-network .callsigns-group {
   max-width: 800px;
   display: grid;
@@ -999,16 +991,6 @@ sl-tooltip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 15px;
-}
-
-.rer-networks table {
-  border-collapse: collapse;
-
-  & :is(td, th) {
-    border-style: solid;
-    padding: 8px;
-    border: 1px solid var(--border-color);
-  }
 }
 
 .rer-network table {

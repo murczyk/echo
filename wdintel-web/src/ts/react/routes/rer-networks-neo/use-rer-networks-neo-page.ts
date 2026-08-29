@@ -21,6 +21,7 @@ import type {
   NetworksQuerySnapshot,
   UiMessage,
   ActivityByNetworkId,
+  ActivityLoadStateByNetworkId,
 } from './use-rer-networks-neo-page.types';
 import { createRerNetworksNeoLoadActions } from './use-rer-networks-neo-page.load';
 import { createRerNetworksNeoReportActions } from './use-rer-networks-neo-page.reports';
@@ -62,6 +63,8 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [posts, setPosts] = useState<Array<{ id: number; name: string }>>([]);
   const [unitStats, setUnitStats] = useState<Array<{ unitId: number; count: number }>>([]);
   const [activityByNetworkId, setActivityByNetworkId] = useState<ActivityByNetworkId>(new Map());
+  const [activityLoadStateByNetworkId, setActivityLoadStateByNetworkId] =
+    useState<ActivityLoadStateByNetworkId>(new Map());
   const [filters, setFilters] = useState<NetworksFilterState>(() =>
     createDefaultNetworksFilterState(),
   );
@@ -96,6 +99,8 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const [supportNonRerInterceptions, setSupportNonRerInterceptions] = useState(false);
 
   const requestSeqRef = useRef(0);
+  const activityQueryGenerationRef = useRef(0);
+  const activityAbortControllersRef = useRef<Set<AbortController>>(new Set());
   const bootstrapLoadedRef = useRef(false);
   const mainAbortRef = useRef<AbortController | null>(null);
   const loadMoreAbortRef = useRef<AbortController | null>(null);
@@ -112,6 +117,12 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   });
   const filtersRef = useRef(filters);
   const columnFiltersRef = useRef(columnFilters);
+
+  useEffect(() => {
+    return () => {
+      for (const controller of activityAbortControllersRef.current) controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     networksLengthRef.current = networks.length;
@@ -160,9 +171,15 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
   const rows = useMemo(
     () =>
       networks.map((network) =>
-        buildNetworkRowView(network, unitsById, aorsById, activityByNetworkId),
+        buildNetworkRowView(
+          network,
+          unitsById,
+          aorsById,
+          activityByNetworkId,
+          activityLoadStateByNetworkId,
+        ),
       ),
-    [activityByNetworkId, aorsById, networks, unitsById],
+    [activityByNetworkId, activityLoadStateByNetworkId, aorsById, networks, unitsById],
   );
   const aorOptions = useMemo(() => sortNetworkAorsForDisplay(aors), [aors]);
   const querySnapshot = useMemo<NetworksQuerySnapshot>(
@@ -229,6 +246,8 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         columnFiltersRef,
         latestQuerySnapshotRef,
         requestSeqRef,
+        activityQueryGenerationRef,
+        activityAbortControllersRef,
         bootstrapLoadedRef,
         mainAbortRef,
         loadMoreAbortRef,
@@ -248,6 +267,7 @@ export function useRerNetworksNeoPage({ authUserRoles = [] }: { authUserRoles?: 
         setNoMoreToLoad,
         setNetworks,
         setActivityByNetworkId,
+        setActivityLoadStateByNetworkId,
         setBootstrapLoaded,
       }),
     [],
