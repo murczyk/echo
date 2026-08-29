@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  analysisLoadingSkeletonPaperSx,
   analysisLoadingSkeletonTabsSx,
   getAnalysisLoadingSkeletonCount,
 } from './AnalysisLoadingSkeletons';
@@ -12,10 +11,5 @@ describe('AnalysisLoadingSkeletons', () => {
     expect(getAnalysisLoadingSkeletonCount(768)).toBe(3);
     expect(analysisLoadingSkeletonTabsSx.flexWrap).toBe('nowrap');
     expect(analysisLoadingSkeletonTabsSx.overflow).toBe('hidden');
-  });
-
-  it('uses an external 8px gutter at all breakpoints', () => {
-    expect(analysisLoadingSkeletonPaperSx.mx).toBe(1);
-    expect(analysisLoadingSkeletonPaperSx.width).toBe('auto');
   });
 });

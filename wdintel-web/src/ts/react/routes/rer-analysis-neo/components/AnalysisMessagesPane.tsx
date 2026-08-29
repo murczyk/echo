@@ -195,11 +195,10 @@ function MessageLoadingSkeletons({ position }: { position: MessageLoadPosition }
         <Box
           key={bodyHeight}
           sx={{
+            p: 1.5,
             border: '1px solid',
             borderColor: 'divider',
             borderRadius: 1,
-            p: 1.5,
-            bgcolor: 'rgba(255, 255, 255, 0.02)',
           }}
         >
           <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>

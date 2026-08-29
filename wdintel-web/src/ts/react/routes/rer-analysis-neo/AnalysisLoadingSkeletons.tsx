@@ -1,4 +1,4 @@
-import { Box, Paper, Skeleton, Stack } from '@mui/material';
+import { Box, Skeleton, Stack } from '@mui/material';
 
 type Props = {
   rightPanelVisible: boolean;
@@ -23,11 +23,6 @@ export const analysisLoadingSkeletonTabsSx = {
   flexWrap: 'nowrap',
 } as const;
 
-export const analysisLoadingSkeletonPaperSx = {
-  mx: 1,
-  width: 'auto',
-} as const;
-
 export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = true }: Props) {
   const skeletonCount = getAnalysisLoadingSkeletonCount(
     typeof window === 'undefined' ? 1024 : window.innerWidth,
@@ -35,14 +30,18 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
   return (
     <>
       {centerVisible ? (
-        <Paper
-          variant="outlined"
+        <Box
           component="section"
           aria-label="Центральна секція"
           aria-disabled="true"
           aria-busy="true"
+          className={
+            'relative flex min-h-0 min-w-0 h-full flex-col overflow-hidden' +
+            (rightPanelVisible
+              ? ' min-[1200px]:border-r min-[1200px]:border-solid min-[1200px]:border-black/12 dark:min-[1200px]:border-white/12'
+              : '')
+          }
           sx={{
-            ...analysisLoadingSkeletonPaperSx,
             minHeight: 0,
             minWidth: 0,
             height: { xs: 'auto', lg: '100%' },
@@ -52,7 +51,7 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
             position: 'relative',
           }}
         >
-          <Stack spacing={0.75} sx={{ px: 1, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
+          <Stack spacing={0.75} sx={{ px: { xs: 1, lg: 2 }, pt: { xs: 0.5, lg: 1 }, mb: 0.25 }}>
             <Stack direction="row" spacing={1} flexWrap="nowrap" sx={analysisLoadingSkeletonTabsSx}>
               <Skeleton variant="rounded" width={180} height={32} />
               <Skeleton variant="rounded" width={108} height={32} />
@@ -63,7 +62,7 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
             sx={{
               flex: 1,
               minHeight: 0,
-              px: 1,
+              px: { xs: 1, lg: 2 },
               pb: { xs: 1, lg: 2 },
               pt: { xs: 0.5, lg: 1 },
               overflow: 'hidden',
@@ -74,11 +73,10 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
                 <Box
                   key={index}
                   sx={{
+                    p: 1.5,
                     border: '1px solid',
                     borderColor: 'divider',
                     borderRadius: 1,
-                    p: 1.5,
-                    bgcolor: 'rgba(255, 255, 255, 0.02)',
                   }}
                 >
                   <Stack spacing={1}>
@@ -108,12 +106,11 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
               ))}
             </Stack>
           </Box>
-        </Paper>
+        </Box>
       ) : null}
 
       {rightPanelVisible ? (
-        <Paper
-          variant="outlined"
+        <Box
           component="aside"
           aria-label="Аналітична права секція"
           aria-disabled="true"
@@ -150,7 +147,7 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
               <Skeleton variant="rounded" height={72} />
             </Stack>
           </Box>
-        </Paper>
+        </Box>
       ) : null}
     </>
   );
