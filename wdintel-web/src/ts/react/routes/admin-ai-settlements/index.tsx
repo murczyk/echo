@@ -157,7 +157,6 @@ export function AdminAiSettlementsPage() {
   async function save() {
     if (!prompt.trim() || action) return;
     const promptToSave = prompt.trim();
-    setTestResults([]);
     setAction('save');
     setError(null);
     try {
