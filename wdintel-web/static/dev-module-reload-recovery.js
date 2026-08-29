@@ -1,12 +1,5 @@
 (function () {
-  const devAssetPrefixes = [
-    '/src/',
-    '/.elm-land/',
-    '/@vite/',
-    '/@id/',
-    '/node_modules/.vite/',
-  ];
-  const devModuleExtensions = ['.ts', '.tsx'];
+  const devAssetPrefixes = ['/src/', '/.elm-land/', '/@vite/', '/@id/', '/node_modules/.vite/'];
   const lastReloadAtStorageKey = 'echo.dev-module-reload-recovery.last-reload-at';
   const autoReloadCooldownMs = 8000;
   const readyProbeUrl = '/.elm-land/server/main.js';
@@ -16,8 +9,7 @@
     'failed to fetch dynamically imported module',
     'importing a module script failed',
     'error loading dynamically imported module',
-    '.vite/deps/',
-    '/.elm-land/server/.vite/',
+    'outdated optimize dep',
   ];
 
   let recoveryInFlight = false;
@@ -27,15 +19,15 @@
       return;
     }
 
+    if (recoveryInFlight || !canAutoReload()) {
+      return;
+    }
+
     event.preventDefault();
     void requestRecovery();
   }
 
   async function requestRecovery() {
-    if (recoveryInFlight || !canAutoReload()) {
-      return;
-    }
-
     recoveryInFlight = true;
     markAutoReloadedNow();
 
@@ -54,14 +46,13 @@
       return true;
     }
 
-    return isRecoverableUrl(getRecoverableUrl(event)) || isRecoverableMessage(getRecoverableMessage(event));
+    return (
+      isRecoverableUrl(getFailedResourceUrl(event)) ||
+      isRecoverableMessage(getRecoverableMessage(event))
+    );
   }
 
-  function getRecoverableUrl(event) {
-    if (event instanceof ErrorEvent && event.filename) {
-      return event.filename;
-    }
-
+  function getFailedResourceUrl(event) {
     const target = event.target;
     if (target instanceof HTMLScriptElement) {
       return target.src;
@@ -76,13 +67,13 @@
 
   function getRecoverableMessage(event) {
     if (event instanceof ErrorEvent) {
-      return [event.message, event.error && event.error.message, event.filename].filter(Boolean).join(' ');
+      return event.message || (event.error instanceof Error ? event.error.message : '');
     }
 
     if (event instanceof PromiseRejectionEvent) {
       const reason = event.reason;
       if (reason instanceof Error) {
-        return [reason.message, reason.stack].filter(Boolean).join(' ');
+        return reason.message;
       }
 
       return String(reason || '');
@@ -97,11 +88,7 @@
     }
 
     const pathname = toPathname(url);
-    return Boolean(
-      pathname &&
-        (devAssetPrefixes.some((prefix) => pathname.startsWith(prefix)) ||
-          devModuleExtensions.some((extension) => pathname.endsWith(extension))),
-    );
+    return Boolean(pathname && devAssetPrefixes.some((prefix) => pathname.startsWith(prefix)));
   }
 
   function isRecoverableMessage(message) {
@@ -119,7 +106,11 @@
 
   function canAutoReload() {
     const lastReloadAt = readLastReloadAt();
-    return !Number.isFinite(lastReloadAt) || lastReloadAt <= 0 || Date.now() - lastReloadAt >= autoReloadCooldownMs;
+    return (
+      !Number.isFinite(lastReloadAt) ||
+      lastReloadAt <= 0 ||
+      Date.now() - lastReloadAt >= autoReloadCooldownMs
+    );
   }
 
   function markAutoReloadedNow() {

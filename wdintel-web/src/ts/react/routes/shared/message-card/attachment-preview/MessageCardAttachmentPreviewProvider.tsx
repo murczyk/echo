@@ -4,6 +4,7 @@ import { normalizePreviewIndex } from '../document-preview-utils';
 import { MessageCardAttachmentPreviewDialog } from './MessageCardAttachmentPreviewDialog';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewItem } from './message-card-preview.types';
+import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
 
 export type MessageCardPreviewAttachment = MessageCardPreviewItem;
 
@@ -14,11 +15,15 @@ export function MessageCardAttachmentPreviewProvider({
   onIndexChange,
   isDownloadStarting,
   onDownloadStart,
+  imageEditing,
+  initialAction,
 }: {
   attachments: MessageCardPreviewItem[];
   initialIndex: number;
   onClose: () => void;
   onIndexChange?: (index: number) => void;
+  imageEditing?: ImageEditingCapability;
+  initialAction?: 'edit-image';
 } & Partial<MessageCardDownloadGuardProps>) {
   const [currentIndex, setCurrentIndex] = useState(() =>
     normalizePreviewIndex(initialIndex, attachments.length),
@@ -60,6 +65,8 @@ export function MessageCardAttachmentPreviewProvider({
       onClose={onClose}
       isDownloadStarting={isDownloadStarting}
       onDownloadStart={onDownloadStart}
+      imageEditing={imageEditing}
+      initialAction={initialAction}
     />
   );
 }

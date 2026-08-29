@@ -70,7 +70,7 @@ enum GoiService {
     Swapp,
     SwappAlt,
     Goi,
-    EchoSwapp,
+    EchoMessengers,
 }
 
 struct GoiCategoriesUpload {
@@ -1493,7 +1493,7 @@ fn parse_goi_service(raw: &str) -> Result<GoiService, AppError> {
         "swapp" => Ok(GoiService::Swapp),
         "swapp_alt" => Ok(GoiService::SwappAlt),
         "goi" => Ok(GoiService::Goi),
-        "echo_swapp" => Ok(GoiService::EchoSwapp),
+        "echo_messengers" | "echo_swapp" => Ok(GoiService::EchoMessengers),
         other => Err(AppError::BL {
             msg: format!("Невідомий сервіс ГОІ: {other}"),
         }),
@@ -1506,7 +1506,7 @@ impl From<&GoiService> for goi_echo_worker::api::GoiService {
             GoiService::Swapp => Self::Swapp,
             GoiService::SwappAlt => Self::SwappAlt,
             GoiService::Goi => Self::Goi,
-            GoiService::EchoSwapp => Self::EchoSwapp,
+            GoiService::EchoMessengers => Self::EchoMessengers,
         }
     }
 }

@@ -1,4 +1,4 @@
-set positional-arguments
+set positional-arguments := true
 
 dt1 := `date -u +%Y-%m-%d-%H-%M-%S`
 pgdb := "wd"
@@ -3064,7 +3064,7 @@ bump-version:
     trap 'rm -f "$LOCKFILE_TMP"' EXIT
     if ! awk -v oldver="$CUR" -v newver="$NEW_VER" '
       BEGIN {
-        split("echo-docs echo-install echo-swapp goi-echo-worker wdintel-rs", packages, " ")
+        split("echo-docs echo-install echo-messengers goi-echo-worker wdintel-rs", packages, " ")
         for (i in packages) expected[packages[i]] = 1
       }
       /^\[\[package\]\]$/ { package = "" }

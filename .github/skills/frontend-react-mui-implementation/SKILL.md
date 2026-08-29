@@ -47,6 +47,14 @@ Use when editing TSX React routes/components or custom element wrappers in `wdin
 - Do not keep a default `React` import just for JSX.
 - Import hooks and runtime helpers directly from `react` (for example `useState`, `useEffect`, `memo`, `forwardRef`, `createElement`, `Fragment`).
 - Import React-only types via `import type` (for example `ReactNode`, `ChangeEvent`, `MouseEvent`, `ComponentProps`, `PropsWithChildren`).
+- Prefer string enums for application-owned, closed domain discriminants reused across state, props, records, or branching. Use enum members at construction and comparison sites; do not retain parallel magic-string arrays.
+- Keep semantic domains in separate enums even when their serialized values overlap. Normalize different domains into an explicit derived enum instead of ambiguous unions such as `Tool | SelectionKind`.
+- Preserve wire and serialized values with string enums. Validate unknown persisted or external values with a type guard rather than blindly casting them.
+- Narrow a meaningful subset of an enum with an explicit enum-member union and typed membership guard. Use `Object.values(Enum)` only when behavior intentionally covers every current and future member, not to avoid declaring a meaningful subset.
+- Use `satisfies Record<Enum, Value>` for genuinely exhaustive mappings so new members fail compilation. Prefer semantic typed sets for reusable membership rules and direct enum members for one-off comparisons; do not create single-use aliases.
+- Prefer object/record mappings for declarative enum-to-value translation. Retain `switch` or ordinary control flow when cases do materially different work or benefit from discriminated-union narrowing.
+- Do not treat DOM strings, CSS values, MIME types, generated API values, or open-ended domains as application enums. Keep enum refactors within the requested feature or branch-touched files.
+- Do not enumize generated API types, open-ended server values, DOM/CSS/MIME strings, or trivial one-off component options. During cleanup, stay within the requested feature/branch scope.
 - Prefer `ReactNode` over `React.ReactNode` and avoid `React.*` namespace access when a direct import is available.
 - If you touch a React file and see mixed import styles, normalize that file to the direct-import style as part of the change.
 - Keep functions focused; split large handlers/helpers.
@@ -126,6 +134,9 @@ if (isUnauthorizedError(error)) {
 - New structure uses semantic HTML and Tailwind; no layout-only MUI wrappers or structural `sx` were introduced.
 - Use `PowerSnackbar` for new transient, non-blocking action feedback; keep `PowerAlert` for contextual/static page, form, load, permission, and persistent states.
 - Check touched React files for stray default `React` imports, duplicate `react` imports, or leftover `React.*` namespace usage.
+- Review repeated string comparisons and mixed discriminant domains in touched files; replace owned closed domains with their enum members.
+- Check enum subset guards use an explicit typed member union; reserve `Object.values(Enum)` for intentionally exhaustive membership.
+- Check exhaustive enum mappings use `satisfies Record<Enum, Value>`, reusable membership rules use semantic typed sets, and unknown external values are validated before enum use.
 - Confirm Prettier formatting was applied with `cd wdintel-web && npm run format:staged` after TS/TSX/JS/CSS/JSON edits.
 - Check new hook/component modules have focused names. Add tests only for behavior admitted by `CODE_REVIEW.md`; do not directly test trivial pure helpers, formatting, defaults, static rendering/configuration, or mocked orchestration.
 - Check keyboard access and focus trapping for dialogs/drawers.

@@ -384,6 +384,9 @@
         { "table": "public.ai_intel_report_attempt", "strategy": "excluded" }
       ]
     },
+    "echo:m20260826_212652_sigint_unit_formation_normalized_name_index": {
+      "changes": []
+    },
     "echo:m20260827_074530_create_report_download_history": {
       "changes": [
         { "table": "public.report_download_history", "strategy": "excluded" }

@@ -52,7 +52,8 @@ pub enum GoiService {
     Swapp,
     SwappAlt,
     Goi,
-    EchoSwapp,
+    #[serde(rename = "echo_swapp")]
+    EchoMessengers,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -978,12 +978,6 @@ pub struct ImportTuiPs {
     pub path: String,
 }
 
-#[derive(clap::Args, Debug, Clone)]
-pub struct OneoffPrepareOrbitImportPs {
-    #[arg(long)]
-    pub path: std::path::PathBuf,
-}
-
 #[derive(clap::Parser, Debug, Clone)]
 pub struct OneoffMergeDatasourceGroupPs {
     #[arg(long)]
@@ -1004,12 +998,10 @@ enum Cmd {
     Migrate,
     OneoffCreateFileRegistryDatabase,
     NetworkInvalidationTui,
-    /// Prepare a normalized ORBIT Parquet snapshot from a JSON export.
-    OneoffPrepareOrbitImport(OneoffPrepareOrbitImportPs),
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
-    /// Create inactive SIGINT units for every unlinked ORBIT unit.
-    OneoffImportUnlinkedOrbitUnits,
+    /// Link database SIGINT units to synchronized ORBIT units.
+    OneoffTestLinkUnits,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -1934,15 +1926,8 @@ async fn async_main(
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
-        Cmd::OneoffPrepareOrbitImport(ps) => {
-            Ok(orbit::prepare_import_snapshot(mode, ps.path)
-                .await
-                .c(h!())?)
-        }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
-        Cmd::OneoffImportUnlinkedOrbitUnits => {
-            sigint::unit::orbit::oneoff_import_unlinked_orbit_units(mode).await
-        }
+        Cmd::OneoffTestLinkUnits => orbit::oneoff_test_link_units(mode).await,
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }

@@ -13,7 +13,6 @@ import {
   getUnitsPage,
   getUnitDetails,
   getUnitIdsWithVisibleAttachments,
-  getUnitNameReviews,
   getUnitStatusCounts,
   getUnitsList,
   importOrbitUnit,
@@ -173,28 +172,6 @@ describe('units API', () => {
       search_mode: 'Strict',
       limit: 20,
       offset: 40,
-    });
-  });
-
-  it('requests unit-name reviews after the supplied cursor', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      jsonResponse({
-        units: [],
-        next_cursor: { updated_at_micros: 1_700_000_000_000_000, sigint_unit_id: 8 },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(
-      getUnitNameReviews({
-        after: { updatedAtMicros: 1_600_000_000_000_000, sigintUnitId: 7 },
-      }),
-    ).resolves.toEqual({
-      units: [],
-      nextCursor: { updatedAtMicros: 1_700_000_000_000_000, sigintUnitId: 8 },
-    });
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-      after: { updated_at_micros: 1_600_000_000_000_000, sigint_unit_id: 7 },
     });
   });
 

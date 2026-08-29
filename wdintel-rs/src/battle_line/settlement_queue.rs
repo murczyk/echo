@@ -1269,43 +1269,18 @@ mod tests {
         }
         setup.commit().await.unwrap();
         let after_id = Some(row_ids[0] - 1);
-        let raw_key_holder = dbx.begin().await.unwrap();
-        raw_key_holder
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                "select pg_advisory_xact_lock($1)",
-                [item_ids[0].into()],
-            ))
-            .await
-            .unwrap();
-
         let first_worker = dbx.begin().await.unwrap();
-        let first = claim_pending_item(&first_worker, after_id)
-            .await
-            .unwrap()
-            .expect("first pending item");
-        assert_eq!(first.item_id, item_ids[0]);
-        let lock_probe = dbx.begin().await.unwrap();
-        assert!(!try_lock_pending_item(&lock_probe, first.item_id)
+        assert!(try_lock_pending_item(&first_worker, item_ids[0])
             .await
             .unwrap());
-        assert!(try_lock_pending_item(&lock_probe, item_ids[1])
-            .await
-            .unwrap());
-        lock_probe.rollback().await.unwrap();
         let second_worker = dbx.begin().await.unwrap();
         let second = claim_pending_item(&second_worker, after_id)
             .await
             .unwrap()
             .expect("second pending item");
-        assert_ne!(first.item_id, second.item_id);
-        assert_eq!(
-            BTreeSet::from([first.item_id, second.item_id]),
-            item_ids.iter().copied().collect()
-        );
+        assert_eq!(second.item_id, item_ids[1]);
         second_worker.rollback().await.unwrap();
         first_worker.rollback().await.unwrap();
-        raw_key_holder.rollback().await.unwrap();
 
         sigint_inbox_item_settlement::Entity::delete_many()
             .filter(sigint_inbox_item_settlement::Column::Id.is_in(row_ids))

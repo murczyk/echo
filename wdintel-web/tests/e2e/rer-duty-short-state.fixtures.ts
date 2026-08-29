@@ -15,10 +15,12 @@ type ShortStateFixtureOptions = {
         quantity: number;
         first_element_ts: number | null;
       }>;
+  signalGroups?: string[];
 };
 
 type ShortStateFixtureHandle = {
   getLastInboxRequest: () => unknown | null;
+  systemSettingsReady: Promise<void>;
 };
 
 function jsonBody(body: unknown): string {
@@ -34,6 +36,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
 
 function emptyUserResponse() {
   return {
+    id: 'operator',
     name: 'operator',
     roles: ['Rer', 'Admin'],
     sigint_zone_id: null,
@@ -43,6 +46,7 @@ function emptyUserResponse() {
     goi_full_access_for_organism: false,
     goi_host: null,
     goi_integrations: [],
+    last_release_seen: null,
   };
 }
 
@@ -62,9 +66,27 @@ function emptySystemSettingsResponse() {
     rer_duty_test_since_ms: 0,
     rer_duty_test_limit: 1,
     rer_duty_poll_interval_sec: 1,
-    short_url_enabled: true,
+    rer_duty_test_replay_interval_sec: 1,
+    short_url_enabled: false,
+    support_non_rer_interceptions: false,
     default_neo_analysis: false,
+    autofix_echoim_missing_messages: false,
+    peleng_bounds_enabled: false,
+    peleng_bounds_top_left_lat: null,
+    peleng_bounds_top_left_lng: null,
+    peleng_bounds_bottom_right_lat: null,
+    peleng_bounds_bottom_right_lng: null,
+    devices_section_enabled: false,
+    sigint_comment_parsing_enabled: false,
     do_not_store_duplicate_echoim_failures: false,
+    goi_association_message_uid_worker_enabled: false,
+    report_chunking_hours: 1,
+    limit_big_reports: false,
+    enable_audio_transcription: false,
+    show_classic_duty: false,
+    show_classic_analysis: false,
+    show_peleng_distance_to_battleline: false,
+    hide_orbit_data: false,
   };
 }
 
@@ -158,6 +180,10 @@ export async function installRerDutyShortStateMocks(
   const shortStateId = options.shortStateId ?? 'short-1';
   const shortState = options.shortState ?? defaultShortState();
   let lastInboxRequest: unknown | null = null;
+  let resolveSystemSettingsReady!: () => void;
+  const systemSettingsReady = new Promise<void>((resolve) => {
+    resolveSystemSettingsReady = resolve;
+  });
 
   const handleApiRoute = async (route: Route) => {
     const request = route.request();
@@ -187,6 +213,7 @@ export async function installRerDutyShortStateMocks(
 
     if (pathname === '/api/system-settings/current') {
       await fulfillJson(route, emptySystemSettingsResponse());
+      resolveSystemSettingsReady();
       return;
     }
 
@@ -211,7 +238,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/user/sigint-groups') {
-      await fulfillJson(route, []);
+      await fulfillJson(route, options.signalGroups ?? []);
       return;
     }
 
@@ -221,7 +248,9 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/rer-importer/signal-group-batch') {
-      await fulfillJson(route, emptyDutySignalGroupBatchResponse());
+      await fulfillJson(route, {
+        data: (options.signalGroups ?? []).map((master_key) => ({ master_key, name: master_key })),
+      });
       return;
     }
 
@@ -276,5 +305,6 @@ export async function installRerDutyShortStateMocks(
 
   return {
     getLastInboxRequest: () => lastInboxRequest,
+    systemSettingsReady,
   };
 }

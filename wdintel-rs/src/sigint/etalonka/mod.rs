@@ -253,13 +253,45 @@ fn etalonka_report_record_count(data: &EtalonkaData) -> usize {
     })
 }
 
+fn etalonka_network_ids(
+    networks_data: &BTreeMap<
+        NetworkEtalonkaUnitKey,
+        Vec<NetworkEtalonkaResult>,
+    >,
+) -> Vec<i64> {
+    networks_data
+        .values()
+        .flat_map(|unit_networks| {
+            unit_networks.iter().map(|network| network.id)
+        })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn repeated_etalonka_network_ids(
+    networks_data: &BTreeMap<
+        NetworkEtalonkaUnitKey,
+        Vec<NetworkEtalonkaResult>,
+    >,
+) -> HashSet<i64> {
+    let mut network_ids = HashSet::new();
+    networks_data
+        .values()
+        .flat_map(|unit_networks| {
+            unit_networks.iter().map(|network| network.id)
+        })
+        .filter(|network_id| !network_ids.insert(*network_id))
+        .collect()
+}
+
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone, Hash, Default)]
 pub struct EtalonkaEntryKey {
     pub unit_name: String,
     pub network_id: i64,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct EtalonkaEntry {
     pub network_unit_signals: Vec<NetworkSignalsRes>,
     correspondents_number: String,
@@ -282,7 +314,7 @@ async fn load_pelengs_maps(
     dbx: &DatabaseConnection,
     groups: &[String],
     jobs: Vec<PelengsMapJob>,
-) -> Result<Vec<(EtalonkaEntryKey, Option<Vec<u8>>)>, AppError> {
+) -> Result<Vec<(EtalonkaEntryKey, i64, Option<Vec<u8>>)>, AppError> {
     let dbx = dbx.clone();
     let groups = groups.to_vec();
 
@@ -299,7 +331,7 @@ async fn load_pelengs_maps(
                 )
                 .await
                 .context(h!())?;
-                Ok::<_, AppError>((job.key, pelengs_map))
+                Ok::<_, AppError>((job.key, job.network_id, pelengs_map))
             }
         })
         .buffer_unordered(ETALONKA_GEO_SCREENSHOT_CONCURRENCY)
@@ -395,7 +427,8 @@ fn etalonka_collection_options(
                 till_ms,
                 chunking_hours,
                 ReportPeriodEnd::Inclusive,
-            )?
+            )
+            .context(h!())?
             .into_iter()
             .map(|chunk| NetworkFreqFilter {
                 active_freqs_only: settings.active_freqs_only,
@@ -429,11 +462,19 @@ pub(crate) async fn collect_etalonka_data_with_progress(
         crate::system_settings::get_report_generation_settings(dbx)
             .await
             .c(h!())?;
+    let network_ids = etalonka_network_ids(&networks_data);
+    let repeated_network_ids = repeated_etalonka_network_ids(&networks_data);
+    let network_count = network_ids.len();
     let options = etalonka_collection_options(
         report_type,
         report_settings.chunking_hours,
         chrono::Utc::now().timestamp_millis(),
-    )?;
+    )
+    .context(h!())?;
+    info!(
+        "[trace_id={trace_id}] collecting {network_count} distinct networks with {} period filter(s)",
+        options.filters.len(),
+    );
     let mut data = EtalonkaData {
         groups,
         networks_data,
@@ -456,13 +497,6 @@ pub(crate) async fn collect_etalonka_data_with_progress(
             .collect();
     }
 
-    let network_ids = data
-        .networks_data
-        .values()
-        .flat_map(|unit_networks| {
-            unit_networks.iter().map(|network| network.id)
-        })
-        .collect::<Vec<_>>();
     let network_descriptions_by_id = if options.include_sigint_signs
         || options.include_confirmation
     {
@@ -474,6 +508,9 @@ pub(crate) async fn collect_etalonka_data_with_progress(
     };
 
     let show_logs = progress.is_none();
+    let mut entries_by_network_id: HashMap<i64, EtalonkaEntry> = HashMap::new();
+    let mut pelengs_maps_by_network_id: HashMap<i64, Option<Vec<u8>>> =
+        HashMap::new();
     let mut units_remaining = data.networks_data.len();
     for (unit_key, unit_networks) in data.networks_data.iter() {
         let unit_name = &unit_key.unit_name;
@@ -499,24 +536,42 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                 unit_name: unit_name.to_string(),
                 network_id,
             };
-            let entry = collect_etalonka_entry(
-                dbx,
-                &data.groups,
-                user_id,
-                network,
-                &all_known_callsigns,
-                &network_descriptions_by_id,
-                &options,
-                trace_id,
-            )
-            .await
-            .context(h!())?;
+            let mut entry =
+                if let Some(entry) = entries_by_network_id.get(&network_id) {
+                    entry.clone()
+                } else {
+                    let entry = collect_etalonka_entry(
+                        dbx,
+                        &data.groups,
+                        user_id,
+                        network,
+                        &all_known_callsigns,
+                        &network_descriptions_by_id,
+                        &options,
+                        trace_id,
+                    )
+                    .await
+                    .context(h!())?;
+                    if repeated_network_ids.contains(&network_id) {
+                        entries_by_network_id.insert(network_id, entry.clone());
+                    }
+                    entry
+                };
             if options.include_pelengs_map {
-                pelengs_map_jobs.push(PelengsMapJob {
-                    key: key.clone(),
-                    network_id,
-                    filters: options.filters.clone(),
-                });
+                if let Some(pelengs_map) =
+                    pelengs_maps_by_network_id.get(&network_id)
+                {
+                    entry.pelengs_map = pelengs_map.clone();
+                    if let Some(progress) = progress {
+                        progress.inc_network();
+                    }
+                } else {
+                    pelengs_map_jobs.push(PelengsMapJob {
+                        key: key.clone(),
+                        network_id,
+                        filters: options.filters.clone(),
+                    });
+                }
             } else if let Some(progress) = progress {
                 progress.inc_network();
             }
@@ -534,7 +589,9 @@ pub(crate) async fn collect_etalonka_data_with_progress(
                 load_pelengs_maps(dbx, &data.groups, pelengs_map_jobs)
                     .await
                     .context(h!())?;
-            for (key, pelengs_map) in pelengs_maps {
+            for (key, network_id, pelengs_map) in pelengs_maps {
+                pelengs_maps_by_network_id
+                    .insert(network_id, pelengs_map.clone());
                 data.entries.get_mut(&key).context(h!())?.pelengs_map =
                     pelengs_map;
                 if let Some(progress) = progress {
@@ -580,46 +637,21 @@ async fn collect_etalonka_entry(
                 filter.till_date_end,
             );
         }
-        let net_callsigns = if options.is_extended_report {
-            bl_get_network_callsigns_list_for_period(
-                &list_network_callsigns_req,
-                user_id,
-                dbx,
-                filter,
-            )
-            .await
-            .context(h!())?
-        } else {
-            bl_get_network_callsigns_list(
-                &list_network_callsigns_req,
-                user_id,
-                dbx,
-            )
-            .await
-            .context(h!())?
-        };
+        let (net_callsigns, callsigns, freqs) = load_etalonka_entry_chunk(
+            dbx,
+            groups,
+            user_id,
+            &list_network_callsigns_req,
+            all_known_callsigns,
+            options.is_extended_report,
+            filter,
+        )
+        .await
+        .context(h!())?;
         merge_network_callsign_chunk(&mut entry.net_callsigns, net_callsigns);
-
-        if options.is_extended_report {
-            let callsigns = load_callsigns(
-                dbx,
-                groups,
-                network.id,
-                Some(all_known_callsigns),
-                true,
-                None,
-                Some(filter),
-                true,
-            )
-            .await
-            .context(h!())?;
+        if !callsigns.is_empty() {
             merge_callsign_chunk(&mut entry.callsigns_detailed, callsigns);
         }
-
-        let freqs =
-            load_freqs(dbx, groups, network.id, Some(filter), user_id, true)
-                .await
-                .context(h!())?;
         merge_freq_chunk(&mut entry.freqs, freqs);
     }
     finalize_etalonka_entry(&mut entry);
@@ -630,8 +662,59 @@ async fn collect_etalonka_entry(
         options,
         &mut entry,
     )
-    .await?;
+    .await
+    .context(h!())?;
     Ok(entry)
+}
+
+async fn load_etalonka_entry_chunk(
+    dbx: &DatabaseConnection,
+    groups: &Vec<String>,
+    user_id: &uuid::Uuid,
+    req: &ListNetworkCallsignsReq,
+    all_known_callsigns: &BTreeMap<String, Vec<KnownCallsignRes>>,
+    is_extended_report: bool,
+    filter: &NetworkFreqFilter,
+) -> Result<
+    (Vec<NetworkCallsign>, Vec<CallsignRes>, Vec<NetworkFreqsRes>),
+    AppError,
+> {
+    let net_callsigns = async {
+        if is_extended_report {
+            bl_get_network_callsigns_list_for_period(req, user_id, dbx, filter)
+                .await
+                .context(h!())
+        } else {
+            bl_get_network_callsigns_list(req, user_id, dbx)
+                .await
+                .context(h!())
+        }
+    };
+    let callsigns = async {
+        if is_extended_report {
+            load_callsigns(
+                dbx,
+                groups,
+                req.network_id,
+                Some(all_known_callsigns),
+                true,
+                None,
+                Some(filter),
+                true,
+            )
+            .await
+            .context(h!())
+        } else {
+            Ok(Vec::new())
+        }
+    };
+    let freqs = async {
+        load_freqs(dbx, groups, req.network_id, Some(filter), user_id, true)
+            .await
+            .context(h!())
+    };
+
+    Ok(tokio::try_join!(net_callsigns, callsigns, freqs).context(h!())?)
 }
 
 fn finalize_etalonka_entry(entry: &mut EtalonkaEntry) {
@@ -2686,6 +2769,15 @@ mod tests {
         .insert(&env.dbx)
         .await
         .unwrap();
+        sigint_network_unit::ActiveModel {
+            network_id: Set(other_network.id),
+            unit_id: Set(unit.id),
+            created_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
 
         sigint_network_aor::ActiveModel {
             network_id: Set(network.id),
@@ -3065,7 +3157,7 @@ mod tests {
         let ts = now.and_utc().timestamp_millis();
         let historical_ts = historical_activity_at.and_utc().timestamp_millis();
 
-        let req = EtalonkaJimForksReq {
+        let mut req = EtalonkaJimForksReq {
             req: ListNetworksReq {
                 filter_freq: None,
                 filter_unit: None,
@@ -3083,7 +3175,7 @@ mod tests {
                 show_only_deleted: None,
                 status_filter: None,
                 aor_ids: None,
-                ids: None,
+                ids: Some(vec![network.id]),
                 limit: None,
                 offset: None,
                 sort_by: None,
@@ -3091,6 +3183,16 @@ mod tests {
             etalonka_type: extended_report_type(historical_ts, ts),
         };
 
+        let unchunked_data = bl_etalonka_report_networks_data(
+            &env.dbx,
+            &login.id,
+            &req,
+            Uuid::new_v4(),
+        )
+        .await
+        .unwrap();
+
+        req.req.ids = Some(vec![network.id, other_network.id]);
         let data = bl_etalonka_report_networks_data(
             &env.dbx,
             &login.id,
@@ -3107,6 +3209,11 @@ mod tests {
             network_id: network.id,
         };
         let entry = data.entries.get(&entry_key).expect("expected entry");
+        let unchunked_entry = unchunked_data
+            .entries
+            .get(&entry_key)
+            .expect("expected unchunked entry");
+        assert_eq!(entry, unchunked_entry);
 
         let callsign = entry
             .callsigns_detailed

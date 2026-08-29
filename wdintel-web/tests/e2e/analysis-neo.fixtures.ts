@@ -7,6 +7,7 @@ type AnalysisNeoMockOptions = {
   sidebarDelayMs?: number;
   inboxDelayMs?: number;
   inboxResponse?: InboxMessagesRspRaw | null;
+  signalGroups?: string[];
 };
 
 function jsonBody(body: unknown): string {
@@ -241,6 +242,18 @@ export async function installAnalysisNeoApiMocks(
 
     if (pathname === '/api/tags/tags-list') {
       await fulfillJson(route, []);
+      return;
+    }
+
+    if (pathname === '/api/user/sigint-groups') {
+      await fulfillJson(route, options.signalGroups ?? []);
+      return;
+    }
+
+    if (pathname === '/api/rer-importer/signal-group-batch') {
+      await fulfillJson(route, {
+        data: (options.signalGroups ?? []).map((master_key) => ({ master_key, name: master_key })),
+      });
       return;
     }
 

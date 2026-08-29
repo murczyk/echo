@@ -3,75 +3,18 @@ set positional-arguments := false
 goi_dir := justfile_directory()
 repo_dir := goi_dir + "/.."
 goi_builder := "echo-build-main"
-goi_builder_repo_dir := "workspace/echo"
 goi_app_dir := "/etc/goi"
 goi_timezone := "Europe/Kyiv"
 goi_b2_endpoint_url := "https://s3.eu-central-003.backblazeb2.com"
-swapp_dir := justfile_directory()
 swapp_app_dir := "/etc/swapp"
 swapp_alt_app_dir := "/etc/swapp-alt"
+messengers_justfile := repo_dir + "/echo-messengers/justfile"
 goi_version := "1.6.2"
 goi_node_version := "24.19.0"
 goi_servers := "goi-stg goi-jf goi-prod-01 goi-prod-02 goi-prod-03 goi-prod-04 goi-prod-05 goi-prod-06 goi-prod-07 goi-prod-08 goi-prod-10 goi-tsur goi-prod-210oshp goi-prod-225oshp goi-159ombr goi-129ovmbr goi-22ombr goi-prod-gorilla goi-25opdbr goi-istar goi-32ombr goi-80odshbr goi-144ombr goi-475oshb goi-152orub goi-154ombr goi-65ombr goi-1kngu goi-41ombr goi-41pbps goi-71center-pep goi-120orppep goi-etalon goi-5oshbr goi-5oshbr-pep goi-prod-3ak"
 
 default:
     @just --list
-
-[arg('builder', long='builder')]
-checkout-messenger-debs builder=goi_builder:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    BUILDER="{{ builder }}"
-
-    echo "Downloading messenger deb packages on ${BUILDER}..."
-    ssh "$BUILDER" bash -se <<'REMOTE'
-    set -euo pipefail
-
-    DEB_DIR="$HOME/{{ goi_builder_repo_dir }}/goi/.deb"
-
-    sudo apt-get update
-    mkdir -p "${DEB_DIR}"
-    rm -f "${DEB_DIR}"/echo-im-signal_*_amd64.deb "${DEB_DIR}"/echo-im-whatsapp_*_amd64.deb
-    cd "${DEB_DIR}"
-    apt-get download echo-im-signal echo-im-whatsapp
-    REMOTE
-
-[arg('builder', long='builder')]
-build-echo-swapp builder=goi_builder:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    BUILDER="{{ builder }}"
-    BRANCH="main"
-
-    echo "Building echo-swapp deb package on ${BUILDER}..."
-    ssh "$BUILDER" bash -se -- "$BRANCH" <<'REMOTE'
-    set -euo pipefail
-
-    BRANCH="$1"
-    REPO_DIR="$HOME/{{ goi_builder_repo_dir }}"
-    GIT_CONFIG=(-c url.ssh://git@github.com/.insteadOf=https://github.com/)
-
-    echo "Switching ${REPO_DIR} to ${BRANCH}..."
-    cd "${REPO_DIR}"
-    git "${GIT_CONFIG[@]}" fetch origin "${BRANCH}"
-    git clean -df
-    git checkout "${BRANCH}"
-    git "${GIT_CONFIG[@]}" pull --ff-only origin "${BRANCH}"
-
-    mkdir -p "${REPO_DIR}/target/debian"
-    rm -f "${REPO_DIR}"/target/debian/echo-swapp_*_*.deb
-    "$HOME/.cargo/bin/cargo" deb -p echo-swapp --output "${REPO_DIR}/target/debian"
-
-    DEB_PATH="$(ls -1t "${REPO_DIR}"/target/debian/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true)"
-    if [[ -z "${DEB_PATH}" ]]; then
-      echo "Failed to build echo-swapp .deb under ${REPO_DIR}/target/debian" >&2
-      find "${REPO_DIR}" -maxdepth 6 -path "*/target/debian/*.deb" -type f -print >&2 || true
-      exit 1
-    fi
-    echo "Built $(basename "${DEB_PATH}")"
-    REMOTE
 
 _require-goi-cloud-access:
     #!/usr/bin/env bash
@@ -484,26 +427,6 @@ _sync-deploy-systemd-units server:
     "
 
 [arg('server', long='server')]
-_sync-echo-swapp-systemd-unit-templates server:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    SERVER="{{ server }}"
-    SYSTEMD_UNIT_DIR="/usr/lib/systemd/system"
-
-    echo "Syncing echo-swapp systemd unit templates from deploy/systemd/ to ${SERVER}..."
-    scp "{{ goi_dir }}/echo-swapp/deploy/systemd/echo-signal-bot@.service" "${SERVER}:/var/tmp/echo-signal-bot@.service"
-    scp "{{ goi_dir }}/echo-swapp/deploy/systemd/echo-whatsapp-bot@.service" "${SERVER}:/var/tmp/echo-whatsapp-bot@.service"
-
-    ssh "$SERVER" "set -euo pipefail
-      sudo mkdir -p '${SYSTEMD_UNIT_DIR}'
-      sudo install -o root -g root -m 0644 /var/tmp/echo-signal-bot@.service '${SYSTEMD_UNIT_DIR}/echo-signal-bot@.service'
-      sudo install -o root -g root -m 0644 /var/tmp/echo-whatsapp-bot@.service '${SYSTEMD_UNIT_DIR}/echo-whatsapp-bot@.service'
-      rm -f /var/tmp/echo-signal-bot@.service /var/tmp/echo-whatsapp-bot@.service
-      sudo systemctl daemon-reload
-    "
-
-[arg('server', long='server')]
 deploy-goi-echo-worker server:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -584,109 +507,14 @@ deploy-goi-xlsx server:
 
 [arg('builder', long='builder')]
 [arg('server', long='server')]
-deploy-echo-swapp server builder=goi_builder:
+deploy-echo-messengers server builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    SERVER="{{ server }}"
-    BUILDER="{{ builder }}"
-    BUILDER_HOME=""
-    BUILDER_REPO_DIR=""
-    ARTIFACT_DIR="$(mktemp -d)"
-    DEB_PATH=""
-    DEB_NAME=""
-    REMOTE_DEB_PATH=""
-    SIGNAL_DEB_PATH=""
-    SIGNAL_DEB_NAME=""
-    WHATSAPP_DEB_PATH=""
-    WHATSAPP_DEB_NAME=""
-
-    trap 'rm -rf -- "${ARTIFACT_DIR}"' EXIT
-
-    just --justfile "{{ goi_dir }}/justfile" build-echo-swapp --builder "$BUILDER"
-    just --justfile "{{ goi_dir }}/justfile" checkout-messenger-debs --builder "$BUILDER"
-
-    BUILDER_HOME="$(ssh "$BUILDER" 'printf %s "$HOME"')"
-    BUILDER_REPO_DIR="${BUILDER_HOME}/{{ goi_builder_repo_dir }}"
-
-    echo "Downloading deploy artifacts from ${BUILDER}..."
-    scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-signal_*_amd64.deb" "${ARTIFACT_DIR}/"
-    scp "${BUILDER}:${BUILDER_REPO_DIR}/goi/.deb/echo-im-whatsapp_*_amd64.deb" "${ARTIFACT_DIR}/"
-
-    REMOTE_DEB_PATH="$(ssh "$BUILDER" "ls -1t ${BUILDER_REPO_DIR}/target/debian/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true")"
-    if [[ -z "${REMOTE_DEB_PATH}" ]]; then
-      echo "Failed to find built echo-swapp .deb on ${BUILDER}:${BUILDER_REPO_DIR}/target/debian" >&2
-      exit 1
-    fi
-    scp "${BUILDER}:${REMOTE_DEB_PATH}" "${ARTIFACT_DIR}/"
-
-    SIGNAL_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
-    if [[ -z "${SIGNAL_DEB_PATH}" ]]; then
-      echo "Failed to download echo-im-signal .deb from ${BUILDER}" >&2
-      exit 1
-    fi
-    SIGNAL_DEB_NAME="$(basename "${SIGNAL_DEB_PATH}")"
-
-    WHATSAPP_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
-    if [[ -z "${WHATSAPP_DEB_PATH}" ]]; then
-      echo "Failed to download echo-im-whatsapp .deb from ${BUILDER}" >&2
-      exit 1
-    fi
-    WHATSAPP_DEB_NAME="$(basename "${WHATSAPP_DEB_PATH}")"
-
-    echo "Uploading ${SIGNAL_DEB_NAME} and ${WHATSAPP_DEB_NAME} to ${SERVER}..."
-    scp "${SIGNAL_DEB_PATH}" "${SERVER}:/var/tmp/${SIGNAL_DEB_NAME}"
-    scp "${WHATSAPP_DEB_PATH}" "${SERVER}:/var/tmp/${WHATSAPP_DEB_NAME}"
-
-    echo "Installing ${SIGNAL_DEB_NAME} and ${WHATSAPP_DEB_NAME} on ${SERVER}..."
-    ssh "$SERVER" "set -euo pipefail
-      export DEBIAN_FRONTEND=noninteractive
-      sudo apt-get update
-      sudo apt-get install -y openjdk-25-jre-headless
-      cd /var/tmp
-      sudo apt-get install -y --reinstall --allow-downgrades \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
-      rm -f \"./${SIGNAL_DEB_NAME}\" \"./${WHATSAPP_DEB_NAME}\"
-    "
-
-    DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-swapp_*_*.deb 2>/dev/null | head -n 1 || true)"
-    if [[ -z "${DEB_PATH}" ]]; then
-      echo "Failed to download built echo-swapp .deb from ${BUILDER}" >&2
-      exit 1
-    fi
-    DEB_NAME="$(basename "${DEB_PATH}")"
-
-    echo "Uploading ${DEB_NAME} to ${SERVER}..."
-    scp "${DEB_PATH}" "${SERVER}:/var/tmp/${DEB_NAME}"
-
-    echo "Installing ${DEB_NAME} on ${SERVER}..."
-    ssh "$SERVER" "set -euo pipefail
-      export DEBIAN_FRONTEND=noninteractive
-      sudo apt-get update
-      cd /var/tmp
-      sudo apt-get install -y --reinstall --allow-downgrades \"./${DEB_NAME}\"
-      if [[ -f /etc/goi-echo-worker/config.toml ]]; then
-        tmp_config=\$(mktemp)
-        chmod 0600 "\${tmp_config}"
-        sudo awk '/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/goi-echo-worker/config.toml > "\${tmp_config}"
-        printf '\n' >> "\${tmp_config}"
-        sudo awk '!/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/echo-swapp/config.toml >> "\${tmp_config}"
-        sudo mv "\${tmp_config}" /etc/echo-swapp/config.toml
-        sudo chown root:root /etc/echo-swapp/config.toml
-        sudo chmod 0600 /etc/echo-swapp/config.toml
-      fi
-      sudo systemctl daemon-reload
-      sudo systemctl enable --now echo-swapp
-      sudo systemctl restart echo-swapp
-      rm -f \"./${DEB_NAME}\"
-    "
-
-    just --justfile "{{ goi_dir }}/justfile" _sync-echo-swapp-systemd-unit-templates --server "${SERVER}"
-
-    echo "Updating nginx on ${SERVER}..."
-    just --justfile "{{ goi_dir }}/justfile" update-nginx --server "${SERVER}"
-
-    echo "Checking echo-swapp.service on ${SERVER}..."
-    ssh "$SERVER" "sudo systemctl status echo-swapp --no-pager"
+    # The standalone deploy verifies and deactivates legacy echo-swapp before installation.
+    just --justfile "{{ messengers_justfile }}" deploy \
+      --server "{{ server }}" \
+      --builder "{{ builder }}"
 
 # Like deploy-goi-echo-worker-from but builds local deb and scp it for quick iteration
 
@@ -870,7 +698,8 @@ deploy server builder=goi_builder fix="false":
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-    just deploy-echo-swapp --server "$SERVER" --builder "$BUILDER"
+    just deploy-echo-messengers --server "$SERVER" --builder "$BUILDER"
+    just update-nginx --server "$SERVER"
 
 [arg('builder', long='builder')]
 [arg('server', long='server')]
@@ -964,7 +793,8 @@ deploy-first server builder=goi_builder:
     "
 
     just deploy-goi-echo-worker --server "$SERVER"
-    just deploy-echo-swapp --server "$SERVER" --builder "$BUILDER"
+    just deploy-echo-messengers --server "$SERVER" --builder "$BUILDER"
+    just update-nginx --server "$SERVER"
 
 [arg('server', long='server')]
 deploy-swapp server:
@@ -1006,8 +836,8 @@ deploy-swapp server:
       "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
 
     echo "Syncing swapp service files..."
-    scp "{{ swapp_dir }}/deploy/swapp-npm-start.sh" "${SERVER}:${APP_DIR}/swapp-npm-start.sh"
-    scp "{{ swapp_dir }}/deploy/swapp.service" "${SERVER}:/var/tmp/swapp.service"
+    scp "{{ goi_dir }}/deploy/swapp-npm-start.sh" "${SERVER}:${APP_DIR}/swapp-npm-start.sh"
+    scp "{{ goi_dir }}/deploy/swapp.service" "${SERVER}:/var/tmp/swapp.service"
     ssh ${SERVER} 'sudo mv /var/tmp/swapp.service /etc/systemd/system/swapp.service'
     ssh ${SERVER} 'sudo apt-get update && sudo apt-get install -y \
                      libnspr4 \
@@ -1131,8 +961,8 @@ deploy-swapp-alt server:
       "${SRC_DIR}" "${SERVER}:${APP_DIR}/"
 
     echo "Syncing swapp-alt service files..."
-    scp "{{ swapp_dir }}/deploy/swapp-npm-start.sh" "${SERVER}:${APP_DIR}/swapp-npm-start.sh"
-    scp "{{ swapp_dir }}/deploy/swapp-alt.service" "${SERVER}:/var/tmp/swapp-alt.service"
+    scp "{{ goi_dir }}/deploy/swapp-npm-start.sh" "${SERVER}:${APP_DIR}/swapp-npm-start.sh"
+    scp "{{ goi_dir }}/deploy/swapp-alt.service" "${SERVER}:/var/tmp/swapp-alt.service"
     ssh ${SERVER} 'sudo mv /var/tmp/swapp-alt.service /etc/systemd/system/swapp-alt.service'
     ssh ${SERVER} 'sudo apt-get update && sudo apt-get install -y \
                      libnspr4 \
