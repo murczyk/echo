@@ -1,4 +1,7 @@
-use crate::config::ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT;
+use crate::config::{
+    ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT, ANALYSIS_STATS_UNDEFINED_UNIT_ID,
+    ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
+};
 use crate::rer_importer::types::SenderFrequencyBreakdown;
 use crate::sigint::network::types::NetworkCallsignRelationMessage;
 use crate::sigint::sender::preferred_group_sender_expr;
@@ -4037,32 +4040,14 @@ pub async fn fetch_units(
     if let Some((dt_since, dt_till)) =
         stats_aggregated_range(&facet_req, env, dt_since, dt_till).c(h!())?
     {
-        let mut result = read_unit_stats_aggregated(
+        return Ok(read_unit_stats_aggregated(
             env,
-            master_keys.clone(),
+            master_keys,
             dt_since,
             dt_till,
         )
         .await
-        .c(h!())?;
-        let mut undefined_req = facet_req.0.clone();
-        undefined_req.since_date_inclusive_ms =
-            dt_since.and_utc().timestamp_millis();
-        undefined_req.till_date_noninclusive_ms =
-            dt_till.and_utc().timestamp_millis();
-        if let Some(undefined) = fetch_undefined_unit_with_db(
-            &Json(undefined_req),
-            user,
-            &env.dbx,
-            master_keys,
-            None,
-        )
-        .await
-        .context(h!())?
-        {
-            result.push(undefined);
-        }
-        return Ok(result);
+        .c(h!())?);
     }
 
     fetch_units_with_db(req, user, &env.dbx, master_keys, None).await
@@ -4124,37 +4109,6 @@ async fn fetch_units_with_db(
 
     debug!("units op took: {:?}", instant.elapsed());
     Ok(units)
-}
-
-async fn fetch_undefined_unit_with_db(
-    req: &Json<AnalysisStatsReq>,
-    user: &Identity,
-    db: &DatabaseConnection,
-    master_keys: Vec<String>,
-    scope: Option<&AnalyticsMessageIdScope>,
-) -> Result<Option<AnalysisStatsUnit>, AppError> {
-    let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
-    let dt_till =
-        dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let login_value = login_id_from_identity(user).c(h!())?;
-    Ok(build_undefined_unit_query(
-        &req,
-        &login_value,
-        dt_since,
-        dt_till,
-        master_keys,
-        scope,
-    )
-    .c(h!())?
-    .into_model::<UnitsRes>()
-    .one(db)
-    .await
-    .context(h!())?
-    .map(|unit| AnalysisStatsUnit {
-        unit_id: unit.unit_id,
-        name: unit.name,
-        count: unit.count,
-    }))
 }
 
 pub async fn count_units(
@@ -4376,8 +4330,8 @@ fn build_undefined_unit_query(
     .c(h!())?
     .filter(Expr::exists(linked_unit.to_owned()).not())
     .select_only()
-    .column_as(Expr::value(0_i64), "unit_id")
-    .column_as(Expr::value("Не визначено"), "name")
+    .column_as(Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_ID), "unit_id")
+    .column_as(Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_NAME), "name")
     .column_as(
         Expr::cust(r#"COUNT(DISTINCT "sigint_inbox_item"."id")"#),
         "count",

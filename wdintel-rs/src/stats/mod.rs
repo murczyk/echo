@@ -2028,7 +2028,12 @@ pub async fn read_unit_stats_aggregated(
     Ok(stats
         .into_iter()
         .filter_map(|(unit_id, count)| {
-            units.get(&unit_id).cloned().map(|name| AnalysisStatsUnit {
+            let name = if unit_id == ANALYSIS_STATS_UNDEFINED_UNIT_ID {
+                Some(ANALYSIS_STATS_UNDEFINED_UNIT_NAME.to_string())
+            } else {
+                units.get(&unit_id).cloned()
+            };
+            name.map(|name| AnalysisStatsUnit {
                 unit_id,
                 name,
                 count,
@@ -3492,7 +3497,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn linked_unit_stats_use_distinct_non_deleted_unit_ids() {
+    async fn linked_unit_stats_include_distinct_units_and_undefined_bucket() {
         use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 
         let env = cleanup().await.unwrap();
@@ -3613,7 +3618,14 @@ mod tests {
             .map(|unit| (unit.value, unit.quantity))
             .collect_vec();
         unit_counts.sort_unstable();
-        assert_eq!(unit_counts, [(active_unit.id, 1), (inactive_unit.id, 1)]);
+        assert_eq!(
+            unit_counts,
+            [
+                (ANALYSIS_STATS_UNDEFINED_UNIT_ID, 1),
+                (active_unit.id, 1),
+                (inactive_unit.id, 1),
+            ]
+        );
         assert!(units
             .unit_hlls
             .iter()
@@ -3627,7 +3639,11 @@ mod tests {
         day_exact_counts.sort_unstable();
         assert_eq!(
             day_exact_counts,
-            [(active_unit.id, 1), (inactive_unit.id, 1)]
+            [
+                (ANALYSIS_STATS_UNDEFINED_UNIT_ID, 1),
+                (active_unit.id, 1),
+                (inactive_unit.id, 1),
+            ]
         );
         let mut day_distinct_counts = day_units
             .unit_hlls
@@ -3637,7 +3653,11 @@ mod tests {
         day_distinct_counts.sort_unstable();
         assert_eq!(
             day_distinct_counts,
-            [(active_unit.id, 1), (inactive_unit.id, 1)]
+            [
+                (ANALYSIS_STATS_UNDEFINED_UNIT_ID, 1),
+                (active_unit.id, 1),
+                (inactive_unit.id, 1),
+            ]
         );
         assert!(enqueue_group_stats_recalculation_for_linked_unit(
             &env.dbx,
