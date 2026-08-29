@@ -864,6 +864,7 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
     expect(latest?.directMessageLoading).toBe(false);
     expect(latest?.messagesLoading).toBe(true);
+    expect(latest?.directMessageNavigation?.contextLoading).toBe(true);
 
     act(() => latest?.directMessageNavigation?.onClearFocus());
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
@@ -911,7 +912,12 @@ describe('useRerAnalysisNeoPage', () => {
     act(() => latest?.updateQueryState({ groupsSelected: ['group-1'] }));
     await flushEffects();
 
-    expect(latest?.directMessageLoading).toBe(false);
+    expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      deferInitialLoad: true,
+      focusedWindow: initialWindow,
+      focusedMessageActive: true,
+    });
+    expect(latest?.directMessageLoading).toBe(true);
     expect(latest?.directMessageNavigation).toMatchObject({
       targetMessageId: 50,
       focusActive: true,
@@ -926,9 +932,11 @@ describe('useRerAnalysisNeoPage', () => {
       selectedGroups: ['group-1'],
     });
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
+      deferInitialLoad: false,
       focusedWindow: groupWindow,
       focusedMessageActive: true,
     });
+    expect(latest?.directMessageLoading).toBe(true);
 
     currentAnalysisData = {
       ...buildAnalysisData(),
@@ -937,6 +945,7 @@ describe('useRerAnalysisNeoPage', () => {
     act(() => latest?.setNewestFirst(false));
     await flushEffects();
     expect(latest?.directMessageNavigation?.contextLoading).toBe(false);
+    expect(latest?.directMessageLoading).toBe(false);
 
     const frequencyWindow = buildWindow(47, 'same frequency');
     inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(frequencyWindow);
@@ -989,8 +998,12 @@ describe('useRerAnalysisNeoPage', () => {
       messages: focusedWindow.inbox.inboxItems,
     };
     const filteredData = buildAnalysisData();
+    let ordinaryData = {
+      ...focusedData,
+      messagesLoading: true,
+    };
     useAnalysisDataMock.mockImplementation((options) =>
-      options.focusedMessageActive ? focusedData : filteredData,
+      options.focusedMessageActive ? focusedData : ordinaryData,
     );
     window.history.replaceState({}, '', `${window.location.pathname}?m=target-uid`);
     inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(focusedWindow);
@@ -998,20 +1011,39 @@ describe('useRerAnalysisNeoPage', () => {
     renderHook();
     await flushEffects();
 
-    inboxMessagesMock.fetchInboxWindow.mockResolvedValueOnce(null);
+    let resolveMissingWindow: ((value: InboxWindowRsp | null) => void) | undefined;
+    inboxMessagesMock.fetchInboxWindow.mockImplementationOnce(
+      () =>
+        new Promise<InboxWindowRsp | null>((resolve) => {
+          resolveMissingWindow = resolve;
+        }),
+    );
     act(() => latest?.updateQueryState({ groupsSelected: ['other-group'] }));
     await flushEffects();
 
     expect(inboxMessagesMock.fetchInboxWindow.mock.calls.at(-1)?.[0].inboxReq).toMatchObject({
       selectedGroups: ['other-group'],
     });
+    expect(latest?.directMessageLoading).toBe(true);
+
+    resolveMissingWindow?.(null);
+    await flushEffects();
+
     expect(new URL(window.location.href).searchParams.has('m')).toBe(false);
     expect(useAnalysisDataMock.mock.calls.at(-1)?.[0]).toMatchObject({
       focusedWindow: null,
       focusedMessageActive: false,
     });
     expect(latest?.directMessageNavigation).toBeNull();
+    expect(latest?.messages).toEqual(focusedWindow.inbox.inboxItems);
+    expect(latest?.directMessageLoading).toBe(true);
+
+    ordinaryData = filteredData;
+    act(() => latest?.setNewestFirst(false));
+    await flushEffects();
+
     expect(latest?.messages).toEqual([]);
+    expect(latest?.directMessageLoading).toBe(false);
     expect(latest?.error).toBeNull();
   });
 

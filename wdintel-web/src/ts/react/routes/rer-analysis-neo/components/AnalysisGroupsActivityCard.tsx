@@ -1,18 +1,10 @@
-import {
-  Button,
-  CircularProgress,
-  Paper,
-  Stack,
-  ToggleButton,
-  ToggleButtonGroup,
-} from '@mui/material';
+import { Button, Paper, Skeleton, Stack, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import { createElement, useEffect, useId, useMemo, useRef } from 'react';
 
 import type { FreqDailyActivityCount } from '../../../../../Bindings';
 import type { AnalysisGroupsActivityPeriod } from '../types';
 import { PowerAlert } from '../../../components/PowerAlert';
 import { CompactText, CompactTitle } from '../../../components/CompactTypography';
-import { ELLIPSIS } from '../../../utils/misc';
 
 type Props = {
   groupsActivity: FreqDailyActivityCount | null;
@@ -60,8 +52,8 @@ export function AnalysisGroupsActivityCard({
     groupsActivityLoadedFreq === selectedFreq && groupsActivityLoadedPeriod === period;
   const canRenderCurrentChart = canRenderChart && matchesCurrentSelection;
   const chartStatus = useMemo(() => {
-    if (canRenderCurrentChart) return 'ready' as const;
     if (loading) return 'loading' as const;
+    if (canRenderCurrentChart) return 'ready' as const;
     if (!matchesCurrentSelection)
       return selectedFreq ? ('empty' as const) : ('needs-load' as const);
     if (hasTimeline) return 'empty-period' as const;
@@ -100,7 +92,6 @@ export function AnalysisGroupsActivityCard({
         <CompactTitle id={headingId} component="h2">
           Активність по датах
         </CompactTitle>
-        {loading ? <CircularProgress size={18} /> : null}
       </Stack>
       <ToggleButtonGroup
         exclusive
@@ -137,11 +128,8 @@ export function AnalysisGroupsActivityCard({
           </Button>
         </Stack>
       ) : chartStatus === 'loading' ? (
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
-          <CircularProgress size={18} />
-          <CompactText color="text.secondary">
-            {`Завантажую активність по датах${ELLIPSIS}`}
-          </CompactText>
+        <Stack role="status" aria-label="Завантаження активності по датах" sx={{ minHeight: 250 }}>
+          <Skeleton variant="rounded" height={250} />
         </Stack>
       ) : chartStatus === 'empty-period' ? (
         <PowerAlert severity="info">

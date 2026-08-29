@@ -23,6 +23,15 @@ import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
 export const ANALYSIS_MESSAGES_PAGE_SIZE = 20;
+
+export function getFirstLoadedMessagesPageIndex(
+  lastLoadedPageIndex: number,
+  messagesCount: number,
+): number {
+  const loadedPageCount = Math.max(1, Math.ceil(messagesCount / ANALYSIS_MESSAGES_PAGE_SIZE));
+  return Math.max(0, lastLoadedPageIndex - loadedPageCount + 1);
+}
+
 // Keep old and new analysis pages grouped in session activity while both coexist.
 export const ANALYSIS_SESSION_ACTIVITY_PAGE_ID = 'rer-analysis';
 export const ADJACENT_FREQS_RANGE_OPTIONS = [0, 0.0005, 0.002, 0.005] as const;

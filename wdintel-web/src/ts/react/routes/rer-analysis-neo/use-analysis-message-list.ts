@@ -525,33 +525,36 @@ export function useAnalysisMessageList({
       focusedLoadGenerationRef.current,
     );
 
-  const loadPrevPage = useCallback(async () => {
-    if (pageIndex === 0) return;
-    let prevCursor = pageCursorsRef.current[pageIndex - 1];
-    if (isNullOrUndefined(prevCursor)) {
-      const firstMessage = messages.at(0);
-      if (isNullOrUndefined(firstMessage)) return;
+  const loadPrevPage = useCallback(
+    async (targetPageIndex = pageIndex - 1) => {
+      if (targetPageIndex < 0 || targetPageIndex >= pageIndex) return;
+      let prevCursor = pageCursorsRef.current[targetPageIndex];
+      if (isNullOrUndefined(prevCursor)) {
+        const firstMessage = messages.at(0);
+        if (isNullOrUndefined(firstMessage)) return;
 
-      prevCursor = newestFirst
-        ? {
-            beforeIdNoninclusive: null,
-            sinceIdNoninclusive: firstMessage[0],
-            requestNewestFirst: false,
-            reverseResults: true,
-          }
-        : {
-            beforeIdNoninclusive: firstMessage[0],
-            sinceIdNoninclusive: null,
-            requestNewestFirst: false,
-            reverseResults: true,
-          };
-    }
+        prevCursor = newestFirst
+          ? {
+              beforeIdNoninclusive: null,
+              sinceIdNoninclusive: firstMessage[0],
+              requestNewestFirst: false,
+              reverseResults: true,
+            }
+          : {
+              beforeIdNoninclusive: firstMessage[0],
+              sinceIdNoninclusive: null,
+              requestNewestFirst: false,
+              reverseResults: true,
+            };
+      }
 
-    const fetched = await fetchPage(prevCursor, { targetPageIndex: pageIndex - 1 });
-    if (fetched === null) return;
+      const fetched = await fetchPage(prevCursor, { targetPageIndex });
+      if (fetched === null) return;
 
-    pageCursorsRef.current[pageIndex - 1] = prevCursor;
-  }, [fetchPage, messages, newestFirst, pageIndex]);
+      pageCursorsRef.current[targetPageIndex] = prevCursor;
+    },
+    [fetchPage, messages, newestFirst, pageIndex],
+  );
 
   const loadFirstPage = useCallback(async () => {
     if (pageIndex === 0) return;

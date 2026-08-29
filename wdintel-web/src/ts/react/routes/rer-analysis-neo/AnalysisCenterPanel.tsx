@@ -18,7 +18,6 @@ type Props = {
   isCompactLayout?: boolean;
   isNarrowLayout: boolean;
   rightPanelVisible: boolean;
-  messagesPaneLoading: boolean;
   messagesPanelId: string;
   messagesTabId: string;
   summaryPanelId: string;
@@ -34,7 +33,6 @@ export function AnalysisCenterPanel({
   isCompactLayout = false,
   isNarrowLayout,
   rightPanelVisible,
-  messagesPaneLoading,
   messagesPanelId,
   messagesTabId,
   summaryPanelId,
@@ -149,6 +147,7 @@ export function AnalysisCenterPanel({
           <AnalysisPaginationControl
             centerTab={centerTab}
             pageIndex={page.pageIndex}
+            rangePageIndex={page.visibleMessagesPageIndex}
             pageSize={ANALYSIS_MESSAGES_PAGE_SIZE}
             messagesCount={page.messages.length}
             totalCount={page.messagesTotalCount}
@@ -231,13 +230,15 @@ export function AnalysisCenterPanel({
             currentUser={page.currentUser}
             copiedFeedbackId={page.copiedFeedbackId}
             groupInfos={page.groupInfos}
-            loading={messagesPaneLoading}
             paginationLoading={page.messagesPaging}
             botTagAction={page.botTagAction}
             messageComments={page.messageComments}
             messages={page.messages}
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
+            pageNavigationTarget={page.messagePageNavigationTarget}
+            onVisiblePageChange={page.setVisibleMessagesPageIndex}
+            onPageNavigationHandled={page.clearMessagePageNavigationTarget}
             scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}`}
             noMoreToLoad={page.noMoreToLoad}
             onDeleteMessage={page.onDeleteMessage}

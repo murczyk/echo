@@ -35,7 +35,6 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
-  CircularProgress: () => <span data-testid="loading-spinner" />,
   FormControlLabel: (props: { control: ReactNode; label: ReactNode }) => (
     <label>
       {props.control}
@@ -82,6 +81,7 @@ vi.mock('@mui/material', () => ({
       {children}
     </button>
   ),
+  Skeleton: () => <span data-testid="loading-skeleton" />,
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Switch: (props: {
     checked?: boolean;
@@ -175,6 +175,8 @@ function buildPage(): AnalysisPageViewModel {
     messagesTotalCount: 0,
     messagesTotalLoading: false,
     pageIndex: 0,
+    messagePageNavigationTarget: null,
+    visibleMessagesPageIndex: 0,
     noMoreToLoad: false,
     messagesPaging: false,
     queryState: {} as AnalysisPageViewModel['queryState'],
@@ -184,6 +186,8 @@ function buildPage(): AnalysisPageViewModel {
     toggleRightPanel: vi.fn(),
     newestFirst: false,
     setNewestFirst: vi.fn(),
+    clearMessagePageNavigationTarget: vi.fn(),
+    setVisibleMessagesPageIndex: vi.fn(),
   } as unknown as AnalysisPageViewModel;
 }
 
@@ -381,7 +385,7 @@ describe('AnalysisPageHeader', () => {
     rendered.push(view);
 
     const refreshButton = view.container.querySelector('[aria-label="Оновити"]');
-    expect(refreshButton?.querySelector('[data-testid="loading-spinner"]')).toBeNull();
+    expect(refreshButton?.querySelector('[data-testid="loading-skeleton"]')).toBeNull();
   });
 
   it('keeps the desktop right-panel toggle and omits the mobile opening control', () => {

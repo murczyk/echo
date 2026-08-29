@@ -92,7 +92,7 @@ export type UseAnalysisDataResult = {
   loadLastPage: () => Promise<void>;
   loadNextPage: () => Promise<void>;
   loadMoreMessages: () => Promise<boolean>;
-  loadPrevPage: () => Promise<void>;
+  loadPrevPage: (targetPageIndex?: number) => Promise<void>;
   loadMessagesForMap: (messageIds: number[]) => Promise<boolean>;
   loadSettlementMessagesForMap: (
     settlementId: number,

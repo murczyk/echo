@@ -40,6 +40,7 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
           component="section"
           aria-label="Центральна секція"
           aria-disabled="true"
+          aria-busy="true"
           sx={{
             ...analysisLoadingSkeletonPaperSx,
             minHeight: 0,
@@ -116,6 +117,7 @@ export function AnalysisLoadingSkeletons({ rightPanelVisible, centerVisible = tr
           component="aside"
           aria-label="Аналітична права секція"
           aria-disabled="true"
+          aria-busy="true"
           sx={{
             minHeight: 0,
             height: { xs: 'auto', lg: '100%' },

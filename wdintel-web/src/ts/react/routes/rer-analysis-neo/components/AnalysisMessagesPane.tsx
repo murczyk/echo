@@ -1,4 +1,4 @@
-import { Box, CircularProgress, Skeleton } from '@mui/material';
+import { Box, Skeleton } from '@mui/material';
 import { alpha, type Theme, useTheme } from '@mui/material/styles';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { isNullOrUndefined, isPresent } from '../../../utils/misc';
@@ -14,7 +14,6 @@ import type {
   User,
 } from '../../../../../Bindings';
 import { DeleteConfirmDialog } from '../../rer-duty-neo/dialogs';
-import { SectionLoadingOverlay } from '../../../components/SectionLoadingOverlay';
 import { AnalysisMessageCard } from '../../shared/message-card/MessageCard';
 import {
   resolveMessageCardEtalonDisplayModel,
@@ -30,6 +29,7 @@ import { PowerAlert } from '../../../components/PowerAlert';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import type { AddPointHighlightBlacklistRequest } from '../../shared/message-card/point-highlight-blacklist';
 import type { AnalysisDirectMessageNavigation } from '../types';
+import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
 
 type BotTagAction = {
   messageId: number;
@@ -47,46 +47,6 @@ function filterOtherMessageComments(
     // comment is already rendered and edited through `msg.extendedForm`.
     return commentLogin !== '' && commentLogin !== normalizedCurrentUserLogin;
   });
-}
-
-function NarrowMessagesLoadingIndicator({ loading }: { loading: boolean }) {
-  if (!loading) return null;
-  const label = 'Оновлення повідомлень';
-
-  return (
-    <Box
-      sx={{
-        display: { xs: 'block', lg: 'none' },
-        position: 'sticky',
-        top: 0,
-        height: 0,
-        overflow: 'visible',
-        zIndex: 3,
-        pointerEvents: 'none',
-      }}
-    >
-      <Box
-        role="status"
-        aria-live="polite"
-        aria-label={label}
-        sx={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 28,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 1,
-          bgcolor: 'background.paper',
-        }}
-      >
-        <CircularProgress size={16} />
-        {label}
-      </Box>
-    </Box>
-  );
 }
 
 export function getAnalysisMessagesScrollSx(theme: Theme) {
@@ -127,12 +87,12 @@ type Props = {
   copiedFeedbackId: string | null;
   botTagAction?: BotTagAction | null;
   groupInfos: Record<string, SignalGroupEntry>;
-  loading: boolean;
   paginationLoading: boolean;
   messageComments: Record<number, MessageComment[]>;
   messages: Array<[number, InboxMessage]>;
   networkDisplayMap: Record<number, string>;
   pageIndex: number;
+  pageNavigationTarget: number | null;
   scrollResetKey: string;
   noMoreToLoad: boolean;
   onDeleteMessage: (messageId: number) => void;
@@ -142,6 +102,8 @@ type Props = {
   onCreateReport: (messageId: number) => void;
   onEditReport: (messageId: number) => void | Promise<void>;
   onLoadMoreMessages: () => Promise<boolean>;
+  onVisiblePageChange: (pageIndex: number) => void;
+  onPageNavigationHandled: () => void;
   onOpenPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   onAddPointHighlightBlacklist: (request: AddPointHighlightBlacklistRequest) => Promise<void>;
   onSaveMessageUpdate: (
@@ -478,12 +440,12 @@ function AnalysisMessagesPaneComponent({
   copiedFeedbackId: copiedFeedbackIdProp,
   botTagAction,
   groupInfos,
-  loading,
   paginationLoading,
   messageComments,
   messages,
   networkDisplayMap,
   pageIndex,
+  pageNavigationTarget,
   scrollResetKey,
   noMoreToLoad,
   onDeleteMessage,
@@ -493,6 +455,8 @@ function AnalysisMessagesPaneComponent({
   onCreateReport,
   onEditReport,
   onLoadMoreMessages,
+  onVisiblePageChange,
+  onPageNavigationHandled,
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   onSaveMessageUpdate,
@@ -532,6 +496,30 @@ function AnalysisMessagesPaneComponent({
   const clearTargetHighlightRef = useRef<(() => void) | null>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
 
+  const updateVisiblePageIndex = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (container == null || messages.length === 0) return;
+    const messageElements = container.querySelectorAll<HTMLElement>('[data-message-id]');
+    if (messageElements.length === 0) return;
+
+    const containerTop = container.getBoundingClientRect().top + container.clientTop;
+    let firstVisibleMessageIndex = messageElements.length - 1;
+    for (let index = 0; index < messageElements.length; index += 1) {
+      if (messageElements[index].getBoundingClientRect().bottom > containerTop) {
+        firstVisibleMessageIndex = index;
+        break;
+      }
+    }
+
+    const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, messages.length);
+    onVisiblePageChange(
+      Math.min(
+        pageIndex,
+        firstLoadedPageIndex + Math.floor(firstVisibleMessageIndex / ANALYSIS_MESSAGES_PAGE_SIZE),
+      ),
+    );
+  }, [messages.length, onVisiblePageChange, pageIndex]);
+
   useEffect(() => {
     setCopiedFeedbackId(copiedFeedbackIdProp);
   }, [copiedFeedbackIdProp]);
@@ -555,7 +543,7 @@ function AnalysisMessagesPaneComponent({
   }, [scrollResetKey]);
 
   const handleLoadMoreMessages = useCallback(async () => {
-    if (paginationRequestInFlightRef.current || loading || paginationLoading || noMoreToLoad) {
+    if (paginationRequestInFlightRef.current || paginationLoading || noMoreToLoad) {
       return;
     }
     paginationRequestInFlightRef.current = true;
@@ -571,7 +559,7 @@ function AnalysisMessagesPaneComponent({
       paginationRequestInFlightRef.current = false;
       if (loaded) setAutoLoadCheckVersion((current) => current + 1);
     }
-  }, [loading, noMoreToLoad, onLoadMoreMessages, paginationLoading]);
+  }, [noMoreToLoad, onLoadMoreMessages, paginationLoading]);
 
   useEffect(() => {
     return () => {
@@ -681,7 +669,7 @@ function AnalysisMessagesPaneComponent({
 
   const loadMessagesNearScrollBoundary = useCallback(() => {
     const container = scrollContainerRef.current;
-    if (container == null || messages.length === 0 || loading) return;
+    if (container == null || messages.length === 0) return;
 
     if (directMessageNavigation != null) {
       if (directMessageNavigation.contextLoading) return;
@@ -710,7 +698,6 @@ function AnalysisMessagesPaneComponent({
     directMessageNavigation,
     handleFocusedLoad,
     handleLoadMoreMessages,
-    loading,
     messages.length,
     noMoreToLoad,
     paginationLoading,
@@ -804,7 +791,6 @@ function AnalysisMessagesPaneComponent({
     }
     if (
       highlightedTargetIdRef.current === directMessageNavigation.targetMessageId ||
-      loading ||
       messages.length === 0
     )
       return;
@@ -817,13 +803,46 @@ function AnalysisMessagesPaneComponent({
         persistentHighlight: true,
       });
     }
-  }, [directMessageNavigation, getTargetElement, loading, messages]);
+  }, [directMessageNavigation, getTargetElement, messages]);
 
   const handleScroll = useCallback(() => {
+    updateVisiblePageIndex();
     reconcileBottomAnchorSpacer();
     if (!preserveTargetAnchorRef.current) captureTargetAnchor();
     loadMessagesNearScrollBoundary();
-  }, [captureTargetAnchor, loadMessagesNearScrollBoundary, reconcileBottomAnchorSpacer]);
+  }, [
+    captureTargetAnchor,
+    loadMessagesNearScrollBoundary,
+    reconcileBottomAnchorSpacer,
+    updateVisiblePageIndex,
+  ]);
+
+  useLayoutEffect(() => {
+    updateVisiblePageIndex();
+  }, [updateVisiblePageIndex]);
+
+  useLayoutEffect(() => {
+    if (pageNavigationTarget == null) return;
+    const container = scrollContainerRef.current;
+    if (container == null) return;
+    const firstLoadedPageIndex = getFirstLoadedMessagesPageIndex(pageIndex, messages.length);
+    const messageIndex =
+      (pageNavigationTarget - firstLoadedPageIndex) * ANALYSIS_MESSAGES_PAGE_SIZE;
+    const messageElement =
+      container.querySelectorAll<HTMLElement>('[data-message-id]')[messageIndex];
+    if (messageElement != null) {
+      const containerTop = container.getBoundingClientRect().top + container.clientTop;
+      container.scrollTop += messageElement.getBoundingClientRect().top - containerTop;
+      onVisiblePageChange(pageNavigationTarget);
+    }
+    onPageNavigationHandled();
+  }, [
+    messages.length,
+    onPageNavigationHandled,
+    onVisiblePageChange,
+    pageIndex,
+    pageNavigationTarget,
+  ]);
 
   useLayoutEffect(() => {
     loadMessagesNearScrollBoundary();
@@ -876,7 +895,7 @@ function AnalysisMessagesPaneComponent({
     ? messages.filter(([messageId]) => messageId === directMessageNavigation.targetMessageId)
     : messages;
 
-  if (messages.length === 0 && !loading) {
+  if (messages.length === 0) {
     return (
       <Box sx={{ flex: 1, minHeight: 0, px: 0 }}>
         <PowerAlert severity="info" sx={{ width: '100%', boxSizing: 'border-box' }}>
@@ -923,7 +942,6 @@ function AnalysisMessagesPaneComponent({
           minWidth: 0,
         }}
       >
-        <NarrowMessagesLoadingIndicator loading={loading} />
         <Box
           component="ul"
           sx={{
@@ -999,13 +1017,6 @@ function AnalysisMessagesPaneComponent({
         ) : null}
       </Box>
 
-      {loading ? (
-        <SectionLoadingOverlay
-          open
-          ariaLabel="Оновлення повідомлень"
-          sx={{ zIndex: 2, display: { xs: 'none', lg: 'flex' } }}
-        />
-      ) : null}
       <DeleteConfirmDialog
         open={isPresent(deleteMessageId)}
         onClose={() => setDeleteMessageId(null)}

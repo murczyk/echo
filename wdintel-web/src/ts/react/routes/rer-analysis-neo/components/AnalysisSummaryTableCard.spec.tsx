@@ -40,7 +40,6 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </button>
   ),
-  CircularProgress: () => <div>loading</div>,
   ClickAwayListener: ({ children }: { children: ReactNode }) => <>{children}</>,
   Dialog: (props: { children: ReactNode; open: boolean; disableRestoreFocus?: boolean }) =>
     props.open ? (
@@ -87,7 +86,9 @@ vi.mock('@mui/material', () => ({
       {props.children}
     </select>
   ),
-  Skeleton: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  Skeleton: ({ children }: { children?: ReactNode }) => (
+    <div data-testid="loading-skeleton">{children}</div>
+  ),
   Stack: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TextField: (props: {
     label?: string;
@@ -208,10 +209,6 @@ vi.mock('../../../components/MrtRowActionButton', () => ({
   },
   mrtRowActionsColumnSize: () => 96,
   MRT_ROW_ACTION_MODAL_PROPS: { disableRestoreFocus: true },
-}));
-
-vi.mock('../../../components/SectionLoadingOverlay', () => ({
-  SectionLoadingOverlay: (props: { open: boolean }) => (props.open ? <div>overlay</div> : null),
 }));
 
 vi.mock('../../../components/TableEmptyState', () => ({
@@ -504,7 +501,7 @@ describe('AnalysisSummaryTableCard', () => {
     ).toBe('false');
   });
 
-  it('keeps the first load skeleton free of the reload overlay', async () => {
+  it('shows skeletons during loading', async () => {
     const view = await renderComponent(
       buildProps({
         loading: true,
@@ -513,7 +510,8 @@ describe('AnalysisSummaryTableCard', () => {
     );
     rendered.push(view);
 
-    expect(view.container.textContent).not.toContain('overlay');
+    expect(view.container.querySelector('[data-testid="loading-skeleton"]')).not.toBeNull();
+    expect(view.container.querySelector('table')).toBeNull();
   });
 
   it('shows a compact empty state without rendering the MRT footer', async () => {

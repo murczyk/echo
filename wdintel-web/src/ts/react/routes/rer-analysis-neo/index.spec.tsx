@@ -217,9 +217,7 @@ vi.mock('./components/AnalysisMapPane', () => ({
 }));
 
 vi.mock('./components/AnalysisMessagesPane', () => ({
-  AnalysisMessagesPane: ({ loading }: { loading: boolean }) => (
-    <div data-testid="messages-pane" data-loading={String(loading)} />
-  ),
+  AnalysisMessagesPane: () => <div data-testid="messages-pane" />,
 }));
 
 vi.mock('./AnalysisLoadingSkeletons', () => ({
@@ -266,10 +264,6 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     manageMessageDrawerPropsHistory.push(props);
     return props.open ? <div data-testid="manage-message-drawer" /> : null;
   },
-}));
-
-vi.mock('./use-min-duration-busy', () => ({
-  useMinDurationBusy: (value: boolean) => value,
 }));
 
 vi.mock('@mui/icons-material/BarChartOutlined', () => ({ default: () => <span /> }));
@@ -351,6 +345,8 @@ function buildPage() {
     newestFirst: true,
     nolimitShown: false,
     pageIndex: 0,
+    messagePageNavigationTarget: null,
+    visibleMessagesPageIndex: 0,
     options: {
       tags: [],
       aors: [],
@@ -431,6 +427,8 @@ function buildPage() {
     reload: vi.fn(),
     setCenterTab: vi.fn(),
     setNewestFirst: vi.fn(),
+    clearMessagePageNavigationTarget: vi.fn(),
+    setVisibleMessagesPageIndex: vi.fn(),
     setReportProgressExpanded: vi.fn(),
     setRightSidebarTab: vi.fn(),
     showFreqOnMap: vi.fn(),
@@ -530,7 +528,7 @@ describe('RerAnalysisNeoPage', () => {
     await act(async () => root.unmount());
   });
 
-  it('keeps direct-link skeletons until the target is ready without showing a pane spinner', async () => {
+  it('shows skeletons for direct-link and regular message loading', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     rendered.push(container);
@@ -548,26 +546,48 @@ describe('RerAnalysisNeoPage', () => {
     useRerAnalysisNeoPageMock.mockReturnValue({
       ...page,
       directMessageLoading: false,
-      messages: [[50, { text: 'target' }]],
+      messagesLoading: false,
+      messages: [[51, { text: 'filtered message' }]],
+      directMessageNavigation: null,
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
+
+    useRerAnalysisNeoPageMock.mockReturnValue({
+      ...page,
+      directMessageLoading: false,
+      messagesLoading: true,
+    });
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+
+    expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="messages-pane"]')).toBeNull();
+
+    useRerAnalysisNeoPageMock.mockReturnValue({
+      ...page,
+      directMessageLoading: true,
+      messagesLoading: true,
+      messages: [[51, { text: 'target message' }]],
       directMessageNavigation: {
-        targetMessageId: 50,
+        targetMessageId: 51,
         focusActive: true,
-        newestFirst: false,
+        contextLoading: true,
+        newestFirst: true,
         canLoadEarlier: true,
         canLoadLater: true,
-        loadingEarlier: false,
-        loadingLater: false,
+        loadingEarlier: true,
+        loadingLater: true,
         onClearFocus: vi.fn(),
-        onLoadEarlier: vi.fn().mockResolvedValue(false),
-        onLoadLater: vi.fn().mockResolvedValue(false),
+        onLoadEarlier: vi.fn().mockResolvedValue(true),
+        onLoadLater: vi.fn().mockResolvedValue(true),
       },
     });
     await act(async () => root.render(<RerAnalysisNeoPage />));
 
     expect(container.querySelector('[data-testid="analysis-loading-skeletons"]')).toBeNull();
-    expect(
-      container.querySelector('[data-testid="messages-pane"]')?.getAttribute('data-loading'),
-    ).toBe('false');
+    expect(container.querySelector('[data-testid="messages-pane"]')).not.toBeNull();
 
     await act(async () => root.unmount());
   });

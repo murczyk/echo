@@ -1,4 +1,4 @@
-import { Box, Button, CircularProgress, Stack } from '@mui/material';
+import { Box, Button, Skeleton, Stack } from '@mui/material';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import type { NetworkCallsignRelationsRsp } from '../../../../../Bindings';
@@ -47,15 +47,24 @@ export function AnalysisCallsignGraphPane({
     setRelationsSelectedEdgeId(null);
   }, [callsignGraph, defaultMinIntensity]);
 
+  if (callsignGraphLoading) {
+    return (
+      <Stack
+        role="status"
+        aria-label="Завантаження графа зв'язків позивних"
+        spacing={2}
+        sx={{ minHeight: 640, p: 2 }}
+      >
+        <Skeleton variant="rounded" height={48} />
+        <Skeleton variant="rounded" height={560} />
+      </Stack>
+    );
+  }
+
   if (!callsignGraph) {
     return (
       <Stack spacing={2} alignItems="center" justifyContent="center" sx={{ minHeight: 360, p: 2 }}>
-        {callsignGraphLoading ? (
-          <>
-            <CircularProgress size={24} />
-            <CompactText color="text.secondary">Завантажуємо граф зв'язків позивних…</CompactText>
-          </>
-        ) : callsignGraphLoadError ? (
+        {callsignGraphLoadError ? (
           <>
             <PowerAlert severity="error" autoHideDuration={null} sx={{ width: '100%' }}>
               {callsignGraphLoadError}

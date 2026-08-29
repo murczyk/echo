@@ -151,6 +151,46 @@ describe('AnalysisPaginationControl', () => {
     expect(view.container.textContent).toContain('21-40 з 137');
   });
 
+  it('renders the visible infinite-scroll page instead of the last loaded page', async () => {
+    const view = await renderComponent({
+      ...baseProps(),
+      pageIndex: 1,
+      rangePageIndex: 0,
+      messagesCount: 35,
+      totalCount: 35,
+      noMoreToLoad: true,
+    });
+    rendered.push(view);
+    expect(view.container.textContent).toContain('1-20 з 35');
+    expect(
+      view.container.querySelector<HTMLButtonElement>('[aria-label="Попередня сторінка"]')
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      view.container.querySelector<HTMLButtonElement>('[aria-label="Наступна сторінка"]')?.disabled,
+    ).toBe(false);
+
+    view.root.render(
+      <AnalysisPaginationControl
+        {...baseProps()}
+        pageIndex={1}
+        rangePageIndex={1}
+        messagesCount={35}
+        totalCount={35}
+        noMoreToLoad
+      />,
+    );
+    await act(async () => {});
+    expect(view.container.textContent).toContain('21-35 з 35');
+    expect(
+      view.container.querySelector<HTMLButtonElement>('[aria-label="Попередня сторінка"]')
+        ?.disabled,
+    ).toBe(false);
+    expect(
+      view.container.querySelector<HTMLButtonElement>('[aria-label="Наступна сторінка"]')?.disabled,
+    ).toBe(true);
+  });
+
   it('falls back to em dash while totals are loading', async () => {
     const view = await renderComponent(
       baseProps() && { ...baseProps(), totalCount: null, totalLoading: true },

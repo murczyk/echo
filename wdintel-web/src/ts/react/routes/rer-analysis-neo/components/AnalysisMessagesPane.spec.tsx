@@ -36,7 +36,6 @@ vi.mock('@mui/material', () => ({
       );
     },
   ),
-  CircularProgress: () => <div>loading</div>,
   Skeleton: () => <span data-skeleton="true" />,
 }));
 
@@ -163,12 +162,12 @@ function buildProps(
       goiIntegrations: [],
     },
     groupInfos: {},
-    loading: false,
     paginationLoading: false,
     messageComments: {},
     messages: [],
     networkDisplayMap: {},
     pageIndex: 0,
+    pageNavigationTarget: null,
     scrollResetKey: 'initial',
     noMoreToLoad: false,
     onDeleteMessage: vi.fn(),
@@ -176,6 +175,8 @@ function buildProps(
     onCreateReport: vi.fn(),
     onEditReport: vi.fn(),
     onLoadMoreMessages: vi.fn().mockResolvedValue(true),
+    onPageNavigationHandled: vi.fn(),
+    onVisiblePageChange: vi.fn(),
     onSaveMessageUpdate: vi.fn().mockResolvedValue(true),
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
@@ -265,23 +266,6 @@ describe('AnalysisMessagesPane', () => {
     rendered.push(view);
 
     expect(view.container.textContent).toContain('Немає жодного повідомлення для аналізу.');
-  });
-
-  it('shows the loading overlay instead of the empty state while messages refresh', async () => {
-    const view = await renderComponent(buildProps({ loading: true }));
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('loading');
-    expect(view.container.textContent).not.toContain('Немає жодного повідомлення для аналізу.');
-  });
-
-  it('shows an accessible narrow refresh indicator over loaded messages', async () => {
-    const view = await renderComponent(
-      buildProps({ messages: [[7, buildMessage()]], loading: true }),
-    );
-    rendered.push(view);
-
-    expect(view.container.querySelector('[aria-label="Оновлення повідомлень"]')).not.toBeNull();
   });
 
   it('shows message skeletons while loading another page', async () => {
@@ -663,6 +647,89 @@ describe('AnalysisMessagesPane', () => {
     });
 
     expect(scrollBox?.scrollTop).toBe(0);
+  });
+
+  it('reports the visible infinite-scroll page in both scroll directions', async () => {
+    const onVisiblePageChange = vi.fn();
+    const messages = Array.from(
+      { length: 35 },
+      (_, index) => [100 - index, buildMessage()] as [number, InboxMessage],
+    );
+    const view = await renderComponent(
+      buildProps({ messages, noMoreToLoad: true, onVisiblePageChange, pageIndex: 1 }),
+    );
+    rendered.push(view);
+
+    const messageCard = view.container.querySelector('[data-testid="message-card-100"]');
+    const scrollBox = messageCard?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 3500, scrollTop: 0 });
+    vi.spyOn(scrollBox, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
+    const messageElements = scrollBox.querySelectorAll<HTMLElement>('[data-message-id]');
+    messageElements.forEach((element, index) => {
+      vi.spyOn(element, 'getBoundingClientRect').mockImplementation(
+        () =>
+          ({
+            bottom: (index + 1) * 100 - scrollBox.scrollTop,
+          }) as DOMRect,
+      );
+    });
+    onVisiblePageChange.mockClear();
+
+    scrollBox.scrollTop = 2100;
+    await scroll(scrollBox);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(1);
+
+    scrollBox.scrollTop = 0;
+    await scroll(scrollBox);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(0);
+  });
+
+  it('scrolls between pages that were retained by infinite scroll', async () => {
+    const onPageNavigationHandled = vi.fn();
+    const onVisiblePageChange = vi.fn();
+    const messages = Array.from(
+      { length: 35 },
+      (_, index) => [100 - index, buildMessage()] as [number, InboxMessage],
+    );
+    const props = buildProps({
+      messages,
+      noMoreToLoad: true,
+      onPageNavigationHandled,
+      onVisiblePageChange,
+      pageIndex: 1,
+    });
+    const view = await renderComponent(props);
+    rendered.push(view);
+
+    const messageCard = view.container.querySelector('[data-testid="message-card-100"]');
+    const scrollBox = messageCard?.closest('ul')?.parentElement as HTMLElement | null;
+    if (scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 3500, scrollTop: 0 });
+    vi.spyOn(scrollBox, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
+    scrollBox.querySelectorAll<HTMLElement>('[data-message-id]').forEach((element, index) => {
+      vi.spyOn(element, 'getBoundingClientRect').mockImplementation(
+        () =>
+          ({
+            bottom: (index + 1) * 100 - scrollBox.scrollTop,
+            top: index * 100 - scrollBox.scrollTop,
+          }) as DOMRect,
+      );
+    });
+
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} pageNavigationTarget={1} />);
+    });
+    expect(scrollBox.scrollTop).toBe(2000);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(1);
+    expect(onPageNavigationHandled).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      view.root.render(<AnalysisMessagesPane {...props} pageNavigationTarget={0} />);
+    });
+    expect(scrollBox.scrollTop).toBe(0);
+    expect(onVisiblePageChange).toHaveBeenLastCalledWith(0);
+    expect(onPageNavigationHandled).toHaveBeenCalledTimes(2);
   });
 
   it('loads more messages shortly before reaching the bottom without a button', async () => {

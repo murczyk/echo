@@ -227,6 +227,8 @@ export type AnalysisPageState = {
   noMoreToLoad: boolean;
   nolimitShown: boolean;
   pageIndex: number;
+  messagePageNavigationTarget: number | null;
+  visibleMessagesPageIndex: number;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
   supportNonRerInterceptions: boolean;
@@ -321,6 +323,8 @@ export type AnalysisPageActions = {
   setCenterTab: (tab: AnalysisCenterTab) => void;
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
+  clearMessagePageNavigationTarget: () => void;
+  setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
