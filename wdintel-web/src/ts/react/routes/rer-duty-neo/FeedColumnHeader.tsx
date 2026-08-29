@@ -30,7 +30,7 @@ type FeedColumnHeaderProps = {
   showFilters: boolean;
   showNotificationPanel: boolean;
   showKeywordsPanel: boolean;
-  dutyNotificationsOn: boolean;
+  dutyNotificationBellState: 'off' | 'ready' | 'degraded' | 'unsupported';
   onCreateFeed?: () => void;
   onToggleFilters: () => void;
   onToggleNotificationPanel: () => void;
@@ -51,6 +51,9 @@ type FeedColumnHeaderProps = {
   };
   notificationStorageSyncKey: number;
   onNotificationPersisted: () => void;
+  notificationStorageError: string | null;
+  onNotificationStorageErrorChange: (error: string | null) => void;
+  onNotificationStatusChanged: () => void;
 };
 
 const columnPanelOverlaySx = {
@@ -183,7 +186,7 @@ export function FeedColumnHeader({
   showFilters,
   showNotificationPanel,
   showKeywordsPanel,
-  dutyNotificationsOn,
+  dutyNotificationBellState,
   onCreateFeed,
   onToggleFilters,
   onToggleNotificationPanel,
@@ -200,6 +203,9 @@ export function FeedColumnHeader({
   keywordsPanel,
   notificationStorageSyncKey,
   onNotificationPersisted,
+  notificationStorageError,
+  onNotificationStorageErrorChange,
+  onNotificationStatusChanged,
 }: FeedColumnHeaderProps) {
   const iconOnlyHeader = feedCount >= DUTY_ICON_ONLY_COLUMN_HEADER_MIN_FEEDS;
 
@@ -269,35 +275,25 @@ export function FeedColumnHeader({
             }}
           >
             {!iconOnlyHeader ? (
-              <Tooltip
-                title={
-                  dutyNotificationsOn
-                    ? 'Вимкнути звукові та браузерні сповіщення для стрічки'
-                    : 'Увімкнути звукові та браузерні сповіщення для стрічки'
-                }
-              >
+              <Tooltip title={bellStateLabel[dutyNotificationBellState]}>
                 <IconButton
                   type="button"
                   size="small"
-                  aria-label={
-                    dutyNotificationsOn
-                      ? 'Вимкнути звукові та браузерні сповіщення для стрічки'
-                      : 'Увімкнути звукові та браузерні сповіщення для стрічки'
-                  }
-                  aria-pressed={dutyNotificationsOn}
+                  aria-label={bellStateLabel[dutyNotificationBellState]}
+                  aria-pressed={dutyNotificationBellState !== 'off'}
                   onClick={onToggleDutyNotifications}
                   sx={{
                     ...headerIconButtonSx,
                     flexShrink: 0,
                     borderRight: '1px solid',
                     borderRightColor: 'rgba(148, 163, 184, 0.28)',
-                    color: dutyNotificationsOn ? 'primary.main' : 'text.secondary',
+                    color: bellStateColor[dutyNotificationBellState],
                   }}
                 >
-                  {dutyNotificationsOn ? (
-                    <NotificationsActiveOutlinedIcon sx={{ fontSize: 20 }} />
-                  ) : (
+                  {dutyNotificationBellState === 'off' ? (
                     <NotificationsOffOutlinedIcon sx={{ fontSize: 20 }} />
+                  ) : (
+                    <NotificationsActiveOutlinedIcon sx={{ fontSize: 20 }} />
                   )}
                 </IconButton>
               </Tooltip>
@@ -305,8 +301,18 @@ export function FeedColumnHeader({
             <Box sx={{ display: 'flex', flex: '1 1 0', minWidth: 0, minHeight: 0 }}>
               <HeaderPanelToggle
                 iconOnly={iconOnlyHeader}
-                label="Сповіщення"
-                icon={iconOnlyHeader ? <NotificationsOutlinedIcon /> : undefined}
+                label={
+                  iconOnlyHeader
+                    ? `Сповіщення — ${bellStateLabel[dutyNotificationBellState]}`
+                    : 'Сповіщення'
+                }
+                icon={
+                  iconOnlyHeader ? (
+                    <NotificationsOutlinedIcon
+                      sx={{ color: bellStateColor[dutyNotificationBellState] }}
+                    />
+                  ) : undefined
+                }
                 expanded={showNotificationPanel}
                 onClick={onToggleNotificationPanel}
                 borderRight
@@ -385,6 +391,9 @@ export function FeedColumnHeader({
               feedId={feedId}
               storageSyncKey={notificationStorageSyncKey}
               onPersisted={onNotificationPersisted}
+              storageError={notificationStorageError}
+              onStorageErrorChange={onNotificationStorageErrorChange}
+              onNotificationStatusChanged={onNotificationStatusChanged}
             />
           </Box>
         </Box>
@@ -405,3 +414,16 @@ export function FeedColumnHeader({
     </Box>
   );
 }
+
+const bellStateLabel = {
+  off: 'Сповіщення вимкнені для стрічки',
+  ready: 'Сповіщення готові; вимкнути для стрічки',
+  degraded: 'Сповіщення потребують налаштування або взаємодії',
+  unsupported: 'Запитані сповіщення не підтримуються',
+} as const;
+const bellStateColor = {
+  off: 'text.secondary',
+  ready: 'primary.main',
+  degraded: 'warning.main',
+  unsupported: 'error.main',
+} as const;

@@ -17,6 +17,10 @@ const dutyApiMocks = vi.hoisted(() => ({
   fetchServerInfo: vi.fn(),
   systemSettingsCurrent: vi.fn(),
   notifyDutyNewMessages: vi.fn(),
+  beginDutyNotificationPollCycle: vi.fn(),
+  endDutyNotificationPollCycle: vi.fn(),
+  recordLastSuccessfulDutyCountCheck: vi.fn(),
+  removeLastSuccessfulDutyCountCheck: vi.fn(),
 }));
 
 export function getDutyApiMocks() {
@@ -36,6 +40,10 @@ vi.mock('../../services/api/system-settings', () => ({
 
 vi.mock('./notifications', () => ({
   notifyDutyNewMessages: dutyApiMocks.notifyDutyNewMessages,
+  beginDutyNotificationPollCycle: dutyApiMocks.beginDutyNotificationPollCycle,
+  endDutyNotificationPollCycle: dutyApiMocks.endDutyNotificationPollCycle,
+  recordLastSuccessfulDutyCountCheck: dutyApiMocks.recordLastSuccessfulDutyCountCheck,
+  removeLastSuccessfulDutyCountCheck: dutyApiMocks.removeLastSuccessfulDutyCountCheck,
 }));
 
 vi.mock('../../services/api/networks', () => ({

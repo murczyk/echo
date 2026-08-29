@@ -473,8 +473,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     });
 
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(7);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 7);
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
 
     hoisted.notifyDutyNewMessages.mockReset();
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 9, firstElementTs: null });
@@ -1064,7 +1063,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect.objectContaining({ sinceIdNoninclusive: null, nolimit: true }),
     );
     expect(rewindRequests.some((request) => request?.sinceIdNoninclusive === 40)).toBe(false);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 5);
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
 
     await act(async () =>
       apiRef.current!.setMessageFeeds((feeds) =>
@@ -1140,8 +1139,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     expect(hoisted.fetchInboxCount.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ sinceIdNoninclusive: 140 }),
     );
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 1);
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
   });
 
   it('keeps unread cursors independent across feeds', async () => {
