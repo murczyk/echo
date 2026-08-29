@@ -1,6 +1,7 @@
 import { Box, Paper, Tab, Tabs } from '@mui/material';
 
 import type { ComponentProps } from 'react';
+import type { BaseLayerId } from '../../../../maps/base-layers';
 import type {
   EncryptionRec,
   Network,
@@ -66,7 +67,7 @@ type Props = {
   pelengSearch: string;
   pelengEnabledFreqs: string[];
   pelengShowLabels: boolean;
-  pelengSatelliteEnabled: boolean;
+  pelengBaseLayerId: BaseLayerId;
   pelengHeatmapEnabled: boolean;
   onReloadRelations: () => void;
   onRelationsSearchChange: (value: string) => void;
@@ -82,7 +83,7 @@ type Props = {
   onPelengSearchChange: (value: string) => void;
   onPelengEnabledFreqsChange: (freqs: string[]) => void;
   onPelengShowLabelsChange: (value: boolean) => void;
-  onPelengSatelliteEnabledChange: (value: boolean) => void;
+  onPelengBaseLayerIdChange: (value: BaseLayerId) => void;
   onPelengHeatmapEnabledChange: (value: boolean) => void;
   pelengPoints: NetworkPoint[];
   pelengPointsLoaded: boolean;
@@ -151,7 +152,7 @@ export function NetworkDetailsTabPanel({
   pelengSearch,
   pelengEnabledFreqs,
   pelengShowLabels,
-  pelengSatelliteEnabled,
+  pelengBaseLayerId,
   pelengHeatmapEnabled,
   onReloadRelations,
   onRelationsSearchChange,
@@ -167,7 +168,7 @@ export function NetworkDetailsTabPanel({
   onPelengSearchChange,
   onPelengEnabledFreqsChange,
   onPelengShowLabelsChange,
-  onPelengSatelliteEnabledChange,
+  onPelengBaseLayerIdChange,
   onPelengHeatmapEnabledChange,
   pelengPoints,
   pelengPointsLoaded,
@@ -376,14 +377,14 @@ export function NetworkDetailsTabPanel({
                 pelengSearch={pelengSearch}
                 pelengEnabledFreqs={pelengEnabledFreqs}
                 pelengShowLabels={pelengShowLabels}
-                pelengSatelliteEnabled={pelengSatelliteEnabled}
+                pelengBaseLayerId={pelengBaseLayerId}
                 pelengHeatmapEnabled={pelengHeatmapEnabled}
                 onPelengSinceChange={onPelengSinceChange}
                 onPelengTillChange={onPelengTillChange}
                 onPelengSearchChange={onPelengSearchChange}
                 onPelengEnabledFreqsChange={onPelengEnabledFreqsChange}
                 onPelengShowLabelsChange={onPelengShowLabelsChange}
-                onPelengSatelliteEnabledChange={onPelengSatelliteEnabledChange}
+                onPelengBaseLayerIdChange={onPelengBaseLayerIdChange}
                 onPelengHeatmapEnabledChange={onPelengHeatmapEnabledChange}
               />
             </Box>

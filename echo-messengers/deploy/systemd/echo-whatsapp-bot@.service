@@ -1,0 +1,15 @@
+[Unit]
+Description=WhatsApp service for %i
+
+[Service]
+ExecStart=/usr/bin/whatsapp-cli -client-name $CLIENT_NAME -config-path /etc/echo-messengers/config.toml
+Restart=always
+User=root
+Group=root
+RestartSec=5s
+WorkingDirectory=/etc/echo/whatsapp-cli-data/%i/client_data/
+EnvironmentFile=/etc/echo/whatsapp-cli-data/%i/%i.env
+Environment=CLIENT_NAME=$CLIENT_NAME
+
+[Install]
+WantedBy=multi-user.target

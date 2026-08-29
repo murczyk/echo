@@ -38,6 +38,7 @@ wdintel-web/test-results/
 
 # GOI local/runtime artifacts
 goi/.deb/
+echo-messengers/.deb/
 goi/swapp/.runtime/
 goi/swapp/.next/
 goi/swapp/.output/

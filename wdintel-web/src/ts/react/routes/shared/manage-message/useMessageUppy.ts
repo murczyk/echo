@@ -3,6 +3,8 @@ import Uppy from '@uppy/core';
 import type { UppyFile } from '@uppy/core';
 import Tus from '@uppy/tus';
 
+import { MESSAGE_TUS_ENDPOINT } from '../message-tus-resume';
+
 // MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this client upload limit synchronized
 // Keep synchronized with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and
 // `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `wdintel-rs/src/config.rs`, and
@@ -61,9 +63,10 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       },
       autoProceed: false,
     }).use(Tus, {
-      endpoint: '/api/sigint/file-upload/tus',
+      endpoint: MESSAGE_TUS_ENDPOINT,
       chunkSize: 5 * 1024 * 1024,
       limit: 3,
+      removeFingerprintOnSuccess: true,
     }),
   );
 
@@ -115,6 +118,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
     uppy.on('upload-pause', updateFiles);
     uppy.on('upload-retry', updateFiles);
     uppy.on('restriction-failed', handleRestrictionFailed);
+    uppy.on('state-update', updateFiles);
     return () => {
       uppy.off('file-added', updateFilesAndClearError);
       uppy.off('file-removed', updateFilesAndClearError);
@@ -125,6 +129,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       uppy.off('upload-pause', updateFiles);
       uppy.off('upload-retry', updateFiles);
       uppy.off('restriction-failed', handleRestrictionFailed);
+      uppy.off('state-update', updateFiles);
     };
   }, [uppy]);
 

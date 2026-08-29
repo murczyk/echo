@@ -4405,10 +4405,14 @@ mod tests {
         .context(h!())?;
 
         assert!(ordinary_rows[0].download_attempts.is_empty());
-        assert_eq!(admin_rows[0].download_attempts.len(), 1);
+        assert_eq!(admin_rows[0].download_attempts.len(), 2);
         assert_eq!(
             admin_rows[0].download_attempts[0].login,
             "report-download-history-admin"
+        );
+        assert_eq!(
+            admin_rows[0].download_attempts[1].login,
+            "report-download-history-owner"
         );
         Ok(())
     }

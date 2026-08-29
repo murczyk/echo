@@ -1,6 +1,8 @@
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import CloseIcon from '@mui/icons-material/Close';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
+import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import DownloadIcon from '@mui/icons-material/Download';
 import InfoIcon from '@mui/icons-material/Info';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
@@ -200,6 +202,7 @@ export function MessageCardAttachmentPreviewHeader({
               aria-label="Попереднє"
               size="small"
               onClick={navigation.onPrevious}
+              disabled={navigation.disabled}
               sx={iconButtonSx}
               data-attachment-preview-nav="prev"
             >
@@ -230,6 +233,7 @@ export function MessageCardAttachmentPreviewHeader({
               aria-label="Наступне"
               size="small"
               onClick={navigation.onNext}
+              disabled={navigation.disabled}
               sx={iconButtonSx}
               data-attachment-preview-nav="next"
             >
@@ -266,6 +270,25 @@ export function MessageCardAttachmentPreviewHeader({
           </Tooltip>
         ) : null}
         {overflowAction}
+        {canFullscreen && onToggleFullscreen ? (
+          <Tooltip
+            title={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+            enterDelay={300}
+          >
+            <IconButton
+              aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
+              size="small"
+              onClick={onToggleFullscreen}
+              sx={iconButtonSx}
+            >
+              {isFullscreen ? (
+                <FullscreenExitIcon fontSize="small" />
+              ) : (
+                <FullscreenIcon fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+        ) : null}
         <Tooltip title="Закрити" enterDelay={300}>
           <IconButton aria-label="Закрити" size="small" onClick={onClose} sx={iconButtonSx}>
             <CloseIcon fontSize="small" />

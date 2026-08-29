@@ -1,6 +1,7 @@
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
 import DownloadIcon from '@mui/icons-material/Download';
+import EditIcon from '@mui/icons-material/Edit';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import {
@@ -102,7 +103,7 @@ export function AttachmentDropzone({
   );
 }
 
-type PreviewUrl = { url: string };
+type PreviewUrl = { url: string; data: Blob };
 
 function isLocalBlob(data: unknown): data is Blob {
   return (
@@ -117,34 +118,33 @@ export function useLocalMediaPreviewUrls(files: AttachmentPreviewFile[]) {
   const urlsRef = useRef(new Map<string, PreviewUrl>());
   const failedRef = useRef(new Set<string>());
   const [, refresh] = useState(0);
-  const fileIdentity = files.map((file) => `${file.id}:${file.type}:${file.data}`).join('|');
-
   useEffect(() => {
+    let changed = false;
     const currentIds = new Set(files.map((file) => file.id));
     for (const [id, preview] of urlsRef.current) {
       if (!currentIds.has(id)) {
         URL.revokeObjectURL(preview.url);
         urlsRef.current.delete(id);
         failedRef.current.delete(id);
+        changed = true;
       }
     }
 
     for (const file of files) {
       const data = file.data;
-      if (
-        !mediaKind(file.type, file.name) ||
-        !isLocalBlob(data) ||
-        failedRef.current.has(file.id) ||
-        urlsRef.current.has(file.id)
-      ) {
-        continue;
-      }
-      urlsRef.current.set(file.id, { url: URL.createObjectURL(data) });
+      const existing = urlsRef.current.get(file.id);
+      if (!mediaKind(file.type, file.name) || !isLocalBlob(data)) continue;
+      if (failedRef.current.has(file.id) && existing?.data === data) continue;
+      if (existing?.data === data) continue;
+      failedRef.current.delete(file.id);
+      if (existing) URL.revokeObjectURL(existing.url);
+      urlsRef.current.set(file.id, { url: URL.createObjectURL(data), data });
+      changed = true;
     }
-    refresh((value) => value + 1);
+    if (changed) refresh((value) => value + 1);
 
     return () => undefined;
-  }, [fileIdentity]);
+  }, [files]);
 
   useEffect(
     () => () => {
@@ -262,6 +262,7 @@ type FileRowProps = {
   busy: boolean;
   onRemove: () => void;
   onDownload?: () => void;
+  onEdit?: () => void;
   previewUrl?: string;
   onPreviewError?: () => void;
   onPreviewClick?: () => void;
@@ -273,6 +274,7 @@ export function AttachmentFileRow({
   busy,
   onRemove,
   onDownload,
+  onEdit,
   previewUrl,
   onPreviewError,
   onPreviewClick,
@@ -300,14 +302,20 @@ export function AttachmentFileRow({
     onDownload?.();
   };
 
+  const handleEditClick = () => {
+    const menuAnchor = menuAnchorEl;
+    handleMenuClose();
+    menuAnchor?.blur();
+    window.setTimeout(() => onEdit?.(), 0);
+  };
+
   return (
     <Box
       sx={{
         display: 'flex',
         flexDirection: 'column',
         gap: 0.5,
-        py: 0.5,
-        px: 1,
+        p: 0.5,
         border: '1px solid',
         borderColor: 'divider',
         borderRadius: 1,
@@ -381,8 +389,8 @@ export function AttachmentFileRow({
             {meta}
           </Typography>
         ) : null}
-        {onDownload ? (
-          <>
+        {onDownload || onEdit ? (
+          <span className="flex shrink-0 items-center gap-0">
             <IconButton
               size="small"
               aria-label={`Більше дій для ${file.name}`}
@@ -401,23 +409,43 @@ export function AttachmentFileRow({
               transformOrigin={{ horizontal: 'right', vertical: 'top' }}
               anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
             >
-              <MenuItem onClick={handleDownloadClick}>
-                <ListItemIcon>
-                  <DownloadIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Завантажити</ListItemText>
-              </MenuItem>
+              {onEdit ? (
+                <MenuItem onClick={handleEditClick}>
+                  <ListItemIcon>
+                    <EditIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Редагувати</ListItemText>
+                </MenuItem>
+              ) : null}
+              {onDownload ? (
+                <MenuItem onClick={handleDownloadClick}>
+                  <ListItemIcon>
+                    <DownloadIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Завантажити</ListItemText>
+                </MenuItem>
+              ) : null}
             </Menu>
-          </>
+            <IconButton
+              size="small"
+              aria-label={`Видалити ${file.name}`}
+              onClick={onRemove}
+              disabled={busy}
+            >
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </span>
         ) : null}
-        <IconButton
-          size="small"
-          aria-label={`Видалити ${file.name}`}
-          onClick={onRemove}
-          disabled={busy}
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
+        {!onDownload && !onEdit ? (
+          <IconButton
+            size="small"
+            aria-label={`Видалити ${file.name}`}
+            onClick={onRemove}
+            disabled={busy}
+          >
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        ) : null}
       </Box>
       {upload ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pl: '60px' }}>

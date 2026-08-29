@@ -35,6 +35,7 @@ import {
 import { NetworkDetailsEmptyState } from './NetworkDetailsEmptyState';
 import { NetworkDetailsLoadingState } from './NetworkDetailsLoadingState';
 import { NetworkDetailsPelengationMap } from './NetworkDetailsPelengationMap';
+import { BASE_LAYER_IDS, BASE_LAYER_LABELS, type BaseLayerId } from '../../../../maps/base-layers';
 
 type Props = {
   pelengPoints: NetworkPoint[];
@@ -46,7 +47,7 @@ type Props = {
   pelengSearch: string;
   pelengEnabledFreqs: string[];
   pelengShowLabels: boolean;
-  pelengSatelliteEnabled: boolean;
+  pelengBaseLayerId: BaseLayerId;
   pelengHeatmapEnabled: boolean;
   onReloadPelengPoints: () => void;
   onPelengSinceChange: (value: string) => void;
@@ -54,7 +55,7 @@ type Props = {
   onPelengSearchChange: (value: string) => void;
   onPelengEnabledFreqsChange: (freqs: string[]) => void;
   onPelengShowLabelsChange: (value: boolean) => void;
-  onPelengSatelliteEnabledChange: (value: boolean) => void;
+  onPelengBaseLayerIdChange: (value: BaseLayerId) => void;
   onPelengHeatmapEnabledChange: (value: boolean) => void;
 };
 
@@ -66,7 +67,7 @@ type PelengationToolbarProps = {
   pelengSearch: string;
   pelengEnabledFreqs: string[];
   pelengShowLabels: boolean;
-  pelengSatelliteEnabled: boolean;
+  pelengBaseLayerId: BaseLayerId;
   pelengHeatmapEnabled: boolean;
   searchText: string;
   allFreqs: string[];
@@ -84,7 +85,7 @@ type PelengationToolbarProps = {
   onPelengSearchChange: (value: string) => void;
   onPelengEnabledFreqsChange: (freqs: string[]) => void;
   onPelengShowLabelsChange: (value: boolean) => void;
-  onPelengSatelliteEnabledChange: (value: boolean) => void;
+  onPelengBaseLayerIdChange: (value: BaseLayerId) => void;
   onPelengHeatmapEnabledChange: (value: boolean) => void;
 };
 
@@ -96,7 +97,7 @@ function PelengationToolbar({
   pelengSearch,
   pelengEnabledFreqs,
   pelengShowLabels,
-  pelengSatelliteEnabled,
+  pelengBaseLayerId,
   pelengHeatmapEnabled,
   searchText,
   allFreqs,
@@ -114,7 +115,7 @@ function PelengationToolbar({
   onPelengSearchChange,
   onPelengEnabledFreqsChange,
   onPelengShowLabelsChange,
-  onPelengSatelliteEnabledChange,
+  onPelengBaseLayerIdChange,
   onPelengHeatmapEnabledChange,
 }: PelengationToolbarProps) {
   return (
@@ -250,38 +251,17 @@ function PelengationToolbar({
           useFlexGap
           sx={{ flexWrap: 'wrap', flexShrink: 0 }}
         >
-          <Button
-            type="button"
-            variant={pelengSatelliteEnabled ? 'contained' : 'outlined'}
-            onClick={() => onPelengSatelliteEnabledChange(!pelengSatelliteEnabled)}
-            startIcon={<LayersOutlinedIcon />}
-            sx={(theme) => ({
-              borderRadius: 2,
-              px: 1.4,
-              py: 0.7,
-              minWidth: 0,
-              height: 40,
-              textTransform: 'none',
-              fontWeight: 700,
-              backgroundColor: pelengSatelliteEnabled ? theme.palette.primary.main : 'transparent',
-              color: pelengSatelliteEnabled
-                ? theme.palette.primary.contrastText
-                : theme.palette.text.secondary,
-              borderColor: pelengSatelliteEnabled
-                ? theme.palette.primary.main
-                : theme.palette.divider,
-              '&:hover': {
-                backgroundColor: pelengSatelliteEnabled
-                  ? theme.palette.primary.dark
-                  : theme.palette.action.hover,
-                borderColor: pelengSatelliteEnabled
-                  ? theme.palette.primary.dark
-                  : theme.palette.text.primary,
-              },
-            })}
-          >
-            Супутник
-          </Button>
+          {BASE_LAYER_IDS.map((baseLayerId) => (
+            <Button
+              key={baseLayerId}
+              type="button"
+              variant={pelengBaseLayerId === baseLayerId ? 'contained' : 'outlined'}
+              onClick={() => onPelengBaseLayerIdChange(baseLayerId)}
+              startIcon={<LayersOutlinedIcon />}
+            >
+              {BASE_LAYER_LABELS[baseLayerId]}
+            </Button>
+          ))}
           <Button
             type="button"
             variant={pelengHeatmapEnabled ? 'contained' : 'outlined'}
@@ -415,7 +395,7 @@ export function NetworkDetailsPelengationPanel({
   pelengSearch,
   pelengEnabledFreqs,
   pelengShowLabels,
-  pelengSatelliteEnabled,
+  pelengBaseLayerId,
   pelengHeatmapEnabled,
   onReloadPelengPoints,
   onPelengSinceChange,
@@ -423,7 +403,7 @@ export function NetworkDetailsPelengationPanel({
   onPelengSearchChange,
   onPelengEnabledFreqsChange,
   onPelengShowLabelsChange,
-  onPelengSatelliteEnabledChange,
+  onPelengBaseLayerIdChange,
   onPelengHeatmapEnabledChange,
 }: Props) {
   const headingId = useId().replace(/:/g, '-');
@@ -499,7 +479,7 @@ export function NetworkDetailsPelengationPanel({
       pelengSearch={pelengSearch}
       pelengEnabledFreqs={pelengEnabledFreqs}
       pelengShowLabels={pelengShowLabels}
-      pelengSatelliteEnabled={pelengSatelliteEnabled}
+      pelengBaseLayerId={pelengBaseLayerId}
       pelengHeatmapEnabled={pelengHeatmapEnabled}
       searchText={searchText}
       allFreqs={allFreqs}
@@ -517,7 +497,7 @@ export function NetworkDetailsPelengationPanel({
       onPelengSearchChange={onPelengSearchChange}
       onPelengEnabledFreqsChange={onPelengEnabledFreqsChange}
       onPelengShowLabelsChange={onPelengShowLabelsChange}
-      onPelengSatelliteEnabledChange={onPelengSatelliteEnabledChange}
+      onPelengBaseLayerIdChange={onPelengBaseLayerIdChange}
       onPelengHeatmapEnabledChange={onPelengHeatmapEnabledChange}
     />
   );
@@ -561,7 +541,7 @@ export function NetworkDetailsPelengationPanel({
       <NetworkDetailsPelengationMap
         pelengPoints={filteredPoints}
         showLabels={pelengShowLabels}
-        satelliteEnabled={pelengSatelliteEnabled}
+        baseLayerId={pelengBaseLayerId}
         heatmapEnabled={pelengHeatmapEnabled}
       />
     </PelengationShell>

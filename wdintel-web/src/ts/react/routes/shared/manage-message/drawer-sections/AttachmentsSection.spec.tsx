@@ -8,12 +8,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AttachmentsSection } from './AttachmentsSection';
 import { EMPTY_FORM_VALUES, type MessageFormData } from '../manage-message-drawer.schema';
 
+const previewMocks = vi.hoisted(() => ({ imageEditing: null as any }));
+const authRedirectMocks = vi.hoisted(() => ({ emitUnauthorizedEvent: vi.fn() }));
+vi.mock('../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider', () => ({
+  MessageCardAttachmentPreviewProvider: ({ imageEditing }: { imageEditing: unknown }) => {
+    previewMocks.imageEditing = imageEditing;
+    return <div role="dialog" />;
+  },
+}));
+vi.mock('../../../../auth-redirect', () => authRedirectMocks);
+
 function Form({ children }: { children: ReactNode }) {
   const methods = useForm<MessageFormData>({ defaultValues: EMPTY_FORM_VALUES });
   return createElement(FormProvider, methods, children);
 }
 
-async function renderSection(files: unknown[] = [], existingMedia: any[] = []) {
+async function renderSection(files: unknown[] = [], existingMedia: any[] = [], uppy: any = {}) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -21,7 +31,7 @@ async function renderSection(files: unknown[] = [], existingMedia: any[] = []) {
     root.render(
       <Form>
         <AttachmentsSection
-          uppy={{} as never}
+          uppy={uppy}
           uppyFiles={files as never[]}
           fileInputRef={{ current: null }}
           handleFileSelect={vi.fn()}
@@ -36,7 +46,7 @@ async function renderSection(files: unknown[] = [], existingMedia: any[] = []) {
   return { container, root };
 }
 
-function pendingFile(id: string, name: string, type: string) {
+function pendingFile(id: string, name: string, type: string, meta: Record<string, string> = {}) {
   return {
     id,
     name,
@@ -44,6 +54,7 @@ function pendingFile(id: string, name: string, type: string) {
     size: 4,
     data: new Blob(['media'], { type }),
     progress: { percentage: 0, uploadStarted: null, uploadComplete: false },
+    meta,
   };
 }
 
@@ -53,6 +64,7 @@ describe('AttachmentsSection media previews', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     document.body.replaceChildren();
   });
 
@@ -93,6 +105,43 @@ describe('AttachmentsSection media previews', () => {
     act(() => root.unmount());
   });
 
+  it('offers image editing before download but omits it for non-image rows', async () => {
+    const image = await renderSection([pendingFile('image', 'photo.png', 'image/png')]);
+    await act(async () => {
+      image.container
+        .querySelector('button[aria-label="Більше дій для photo.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(
+      Array.from(document.body.querySelectorAll('li[role="menuitem"]')).map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(['Редагувати', 'Завантажити']);
+    act(() => image.root.unmount());
+
+    const documentRow = await renderSection([
+      pendingFile('document', 'report.pdf', 'application/pdf'),
+    ]);
+    await act(async () => {
+      documentRow.container
+        .querySelector('button[aria-label="Більше дій для report.pdf"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(window.document.body.textContent).not.toContain('Редагувати');
+    act(() => documentRow.root.unmount());
+  });
+
+  it('offers editing for a PNG filename when its MIME type is empty #3099', async () => {
+    const image = await renderSection([pendingFile('image', 'photo.png', '')]);
+    await act(async () => {
+      image.container
+        .querySelector('button[aria-label="Більше дій для photo.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(window.document.body.textContent).toContain('Редагувати');
+    act(() => image.root.unmount());
+  });
+
   it('keeps the icon in the start slot for non-media files and broken previews', async () => {
     const unknown = await renderSection([pendingFile('unknown', 'data.bin', '')]);
     expect(unknown.container.querySelector('img')).toBeNull();
@@ -129,6 +178,60 @@ describe('AttachmentsSection media previews', () => {
     });
     expect(container.querySelector('img')).toBeNull();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:local');
+    act(() => root.unmount());
+  });
+
+  it('refreshes a local preview when a same-ID file receives replacement data', async () => {
+    const file = pendingFile('image', 'photo.png', 'image/png');
+    const { root } = await renderSection([file]);
+    const replacement = { ...file, data: new Blob(['replacement'], { type: 'image/png' }) };
+
+    act(() => {
+      root.render(
+        <Form>
+          <AttachmentsSection
+            uppy={{} as never}
+            uppyFiles={[replacement] as never[]}
+            fileInputRef={{ current: null }}
+            handleFileSelect={vi.fn()}
+            handleDrop={vi.fn()}
+            handleDropzoneKeyDown={vi.fn()}
+            busy={false}
+          />
+        </Form>,
+      );
+    });
+
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:local');
+    act(() => root.unmount());
+  });
+
+  it('retries a failed local preview when replacement data keeps the same ID', async () => {
+    const file = pendingFile('image', 'photo.png', 'image/png');
+    const { container, root } = await renderSection([file]);
+    act(() => container.querySelector('img')?.dispatchEvent(new Event('error')));
+    expect(container.querySelector('img')).toBeNull();
+
+    const replacement = { ...file, data: new Blob(['replacement'], { type: 'image/png' }) };
+    await act(async () => {
+      root.render(
+        <Form>
+          <AttachmentsSection
+            uppy={{} as never}
+            uppyFiles={[replacement] as never[]}
+            fileInputRef={{ current: null }}
+            handleFileSelect={vi.fn()}
+            handleDrop={vi.fn()}
+            handleDropzoneKeyDown={vi.fn()}
+            busy={false}
+          />
+        </Form>,
+      );
+    });
+
+    expect(container.querySelector('img')).not.toBeNull();
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
     act(() => root.unmount());
   });
 
@@ -185,6 +288,146 @@ describe('AttachmentsSection media previews', () => {
     ).not.toBeNull();
 
     act(() => root.unmount());
+  });
+
+  it('anchors an existing-media replacement once at its original logical position', async () => {
+    const existingMedia = [
+      {
+        id: 'first',
+        fileName: 'first.png',
+        contentType: 'image/png',
+        sizeBytes: 1,
+        href: 'https://example.com/first.png',
+      },
+      {
+        id: 'middle',
+        fileName: 'middle.png',
+        contentType: 'image/png',
+        sizeBytes: 1,
+        href: 'https://example.com/middle.png',
+      },
+      {
+        id: 'last',
+        fileName: 'last.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1,
+        href: 'https://example.com/last.pdf',
+      },
+    ];
+    const replacement = pendingFile('replacement', 'middle-edited.png', 'image/png', {
+      replaces_media_id: 'middle',
+    });
+    const { container, root } = await renderSection([replacement], existingMedia);
+
+    const names = Array.from(container.querySelectorAll('p[title]')).map((node) =>
+      node.getAttribute('title'),
+    );
+    expect(names).toEqual(['first.png', 'middle-edited.png', 'last.pdf']);
+    expect(container.querySelectorAll('p[title="middle-edited.png"]')).toHaveLength(1);
+    expect(container.textContent).toContain('Вкладення (3)');
+    act(() => root.unmount());
+  });
+
+  it('allows another persisted replacement at the attachment cap #3099', async () => {
+    const existingMedia = Array.from({ length: 20 }, (_, index) => ({
+      id: `media-${index}`,
+      fileName: `image-${index}.png`,
+      contentType: 'image/png',
+      href: `https://example.test/${index}.png`,
+    }));
+    const firstReplacement = pendingFile('replacement-1', 'edited-1.png', 'image/png', {
+      replaces_media_id: 'media-0',
+    });
+    const uppy = {
+      getFile: vi.fn(() => undefined),
+      getFiles: vi.fn(() => [firstReplacement]),
+      addFile: vi.fn(),
+    };
+    const { container, root } = await renderSection([firstReplacement], existingMedia, uppy);
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Переглянути image-1.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(
+      previewMocks.imageEditing.applyReplacement(existingMedia[1], {
+        file: new File(['edited'], 'edited-2.png', { type: 'image/png' }),
+      }),
+    ).resolves.toBeUndefined();
+    expect(uppy.addFile).toHaveBeenCalledWith(
+      expect.objectContaining({ meta: { replaces_media_id: 'media-1' } }),
+    );
+    act(() => root.unmount());
+  });
+
+  it('handles a same-origin unauthorized editor source response before rejecting', async () => {
+    const image = {
+      id: 'media-1',
+      fileName: 'existing-image.png',
+      contentType: 'image/png',
+      href: new URL('/existing-image.png', window.location.href).href,
+    };
+    const uppy = { getFile: vi.fn(() => undefined) };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 401 })),
+    );
+    const { root } = await renderSection([], [image], uppy);
+
+    await expect(
+      previewMocks.imageEditing.loadSource(image, new AbortController().signal),
+    ).rejects.toThrow('Не вдалося завантажити зображення для редагування');
+    expect(authRedirectMocks.emitUnauthorizedEvent).toHaveBeenCalledOnce();
+
+    act(() => root.unmount());
+  });
+
+  it('adds an edited image as a distinct attachment and rejects it at the cap', async () => {
+    const existingMedia = [
+      {
+        id: 'media-1',
+        fileName: 'original.png',
+        contentType: 'image/png',
+        href: 'https://example.test/original.png',
+      },
+    ];
+    const uppy = { addFile: vi.fn(), getFile: vi.fn(), getFiles: vi.fn(() => []) };
+    const { container, root } = await renderSection([], existingMedia, uppy);
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Переглянути original.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(
+      previewMocks.imageEditing.addAsNew(existingMedia[0], {
+        file: new File(['edited'], 'original.png', { type: 'image/png' }),
+      }),
+    ).resolves.toBeUndefined();
+    expect(uppy.addFile).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.any(File), id: expect.any(String) }),
+    );
+    expect(uppy.addFile.mock.calls[0][0].meta).toBeUndefined();
+    act(() => root.unmount());
+
+    const cappedMedia = Array.from({ length: 20 }, (_, index) => ({
+      id: `media-${index}`,
+      fileName: `image-${index}.png`,
+      contentType: 'image/png',
+      href: `https://example.test/${index}.png`,
+    }));
+    const capped = await renderSection([], cappedMedia, uppy);
+    await act(async () => {
+      capped.container
+        .querySelector('button[aria-label="Переглянути image-0.png"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await expect(
+      previewMocks.imageEditing.addAsNew(cappedMedia[0], {
+        file: new File(['edited'], 'new.png', { type: 'image/png' }),
+      }),
+    ).rejects.toThrow('Перевищено максимальну кількість вкладень (20)');
+    expect(uppy.addFile).toHaveBeenCalledTimes(1);
+    act(() => capped.root.unmount());
   });
 
   it('opens attachment preview dialog when clicking on a preview thumbnail', async () => {

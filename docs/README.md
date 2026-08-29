@@ -62,6 +62,12 @@ read-only apart from its replication heartbeat and only reports drift.
 
 ## Messenger processing
 
+`echo-messengers` is an independently deployable workspace package and systemd
+service. Its source, package metadata, and build/deploy commands live beside
+`goi/` rather than under it. GOI deployments delegate to the messenger
+justfile and retire the legacy `echo-swapp` service before starting the renamed
+service.
+
 Messenger receipt and processing are separate. Receipt persists snapshots in
 PostgreSQL even while NLP is unavailable. The queue processor waits for
 `wdintel-py` readiness, then catches up automatically; failed rows use durable

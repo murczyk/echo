@@ -1,0 +1,126 @@
+type FabricModule = typeof import('fabric');
+type FabricObject = import('fabric').FabricObject;
+import { ImageEditorObjectRole } from './image-editor.types';
+import { isImageEditorObjectRole, STYLEABLE_ANNOTATION_ROLES } from './image-editor-object-role';
+
+export type ImageEditorObjectStyle = {
+  stroke: string;
+  fill?: string;
+  strokeWidth: number;
+  dash: boolean;
+  opacity?: number;
+};
+
+const FALLBACK_EDITOR_COLOR = '#ef4444';
+const HEX_COLOR = /^#([\da-f]{6})(?:[\da-f]{2})?$/i;
+const SHORT_HEX_COLOR = /^#([\da-f]{3})(?:[\da-f])?$/i;
+
+export function normalizeEditorColor(value: unknown) {
+  if (typeof value !== 'string') return FALLBACK_EDITOR_COLOR;
+  const hex = value.match(HEX_COLOR);
+  if (hex) return `#${hex[1]}`;
+  const shortHex = value.match(SHORT_HEX_COLOR);
+  if (shortHex)
+    return `#${shortHex[1]
+      .split('')
+      .map((character) => character.repeat(2))
+      .join('')}`;
+  return FALLBACK_EDITOR_COLOR;
+}
+
+export function withHighlightAlpha(baseColor: string, opacity = 0.4) {
+  return `${normalizeEditorColor(baseColor)}${Math.round(Math.max(0, Math.min(1, opacity)) * 255)
+    .toString(16)
+    .padStart(2, '0')}`;
+}
+
+function highlightOpacity(stroke: unknown) {
+  if (typeof stroke !== 'string') return 0.4;
+  const alpha = stroke.match(/^#[\da-f]{6}([\da-f]{2})$/i)?.[1];
+  return alpha ? Math.max(0.1, Math.min(0.8, parseInt(alpha, 16) / 255)) : 0.4;
+}
+
+function dashEnabled(value: unknown) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function arrowParts(selected: FabricObject, fabric: FabricModule) {
+  if (!(selected instanceof fabric.Group)) return undefined;
+  const objects = selected.getObjects();
+  const shaft = objects.find(
+    (object) => object instanceof fabric.Line || object.type === 'Line' || object.type === 'line',
+  );
+  const head = objects.find(
+    (object) =>
+      object instanceof fabric.Triangle || object.type === 'Triangle' || object.type === 'triangle',
+  );
+  return shaft ? { shaft, head } : undefined;
+}
+
+export function editorObjectRole(
+  selected: FabricObject,
+  fabric: FabricModule,
+): ImageEditorObjectRole | undefined {
+  const role = selected.get('editorRole');
+  if (isImageEditorObjectRole(role)) return role;
+  const parts = arrowParts(selected, fabric);
+  if (parts?.head) return ImageEditorObjectRole.Arrow;
+  return typeof selected.stroke === 'string' && /^#[\da-f]{6}88$/i.test(selected.stroke)
+    ? ImageEditorObjectRole.Highlight
+    : undefined;
+}
+
+export function readImageEditorObjectStyle(
+  selected: FabricObject,
+  fabric: FabricModule,
+): ImageEditorObjectStyle | undefined {
+  const role = editorObjectRole(selected, fabric);
+  if (role === ImageEditorObjectRole.Arrow) {
+    const parts = arrowParts(selected, fabric);
+    if (!parts) return undefined;
+    return {
+      stroke: normalizeEditorColor(parts.shaft.stroke),
+      strokeWidth: parts.shaft.strokeWidth ?? 1,
+      dash: dashEnabled(parts.shaft.strokeDashArray),
+    };
+  }
+  if (!role || !STYLEABLE_ANNOTATION_ROLES.has(role)) return undefined;
+  return {
+    stroke: normalizeEditorColor(selected.stroke),
+    fill: typeof selected.fill === 'string' ? selected.fill : undefined,
+    strokeWidth: selected.strokeWidth ?? 1,
+    dash: dashEnabled(selected.strokeDashArray),
+    opacity:
+      role === ImageEditorObjectRole.Highlight ? highlightOpacity(selected.stroke) : undefined,
+  };
+}
+
+export function applyArrowStyle({
+  selected,
+  fabric,
+  stroke,
+  strokeWidth,
+  dash,
+}: {
+  selected: FabricObject;
+  fabric: FabricModule;
+  stroke: string;
+  strokeWidth: number;
+  dash: boolean;
+}) {
+  const parts = arrowParts(selected, fabric);
+  if (!parts) return false;
+  const strokeDashArray = dash ? [strokeWidth * 2, strokeWidth * 2] : undefined;
+  if (
+    parts.shaft.stroke === stroke &&
+    parts.shaft.strokeWidth === strokeWidth &&
+    JSON.stringify(parts.shaft.strokeDashArray ?? undefined) === JSON.stringify(strokeDashArray) &&
+    (!parts.head || parts.head.fill === stroke)
+  )
+    return false;
+  parts.shaft.set({ stroke, strokeWidth, strokeDashArray });
+  if (parts.head) parts.head.set({ fill: stroke });
+  selected.set({ dirty: true });
+  selected.setCoords();
+  return true;
+}

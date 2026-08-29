@@ -195,14 +195,14 @@ export function NetworkDetailsNeoPageBody({
       pelengSearch={page.pelengSearch}
       pelengEnabledFreqs={page.pelengEnabledFreqs}
       pelengShowLabels={page.pelengShowLabels}
-      pelengSatelliteEnabled={page.pelengSatelliteEnabled}
+      pelengBaseLayerId={page.pelengBaseLayerId}
       pelengHeatmapEnabled={page.pelengHeatmapEnabled}
       onPelengSinceChange={page.setPelengSince}
       onPelengTillChange={page.setPelengTill}
       onPelengSearchChange={page.setPelengSearch}
       onPelengEnabledFreqsChange={page.setPelengEnabledFreqs}
       onPelengShowLabelsChange={page.setPelengShowLabels}
-      onPelengSatelliteEnabledChange={page.setPelengSatelliteEnabled}
+      onPelengBaseLayerIdChange={page.setPelengBaseLayerId}
       onPelengHeatmapEnabledChange={page.setPelengHeatmapEnabled}
     />
   );

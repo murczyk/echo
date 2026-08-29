@@ -49,10 +49,13 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewProvider', () => (
 }));
 
 vi.mock('../../../../../../web-components/analysis-map/tile-layers', () => ({
+  DEFAULT_BASE_LAYER_ID: 'esriWorldImagery',
   getTileLayers: vi.fn(() => ({
+    esriWorldImagery: { addTo: vi.fn() },
     googleHybrid: {
       addTo: vi.fn(),
     },
+    openStreetMap: { addTo: vi.fn() },
   })),
 }));
 

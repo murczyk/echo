@@ -28,6 +28,7 @@ import type {
   AreaOfResponsibility,
 } from '../../../../Bindings';
 import { L } from '../../../maps/leaflet-markercluster';
+import { DEFAULT_BASE_LAYER_ID } from '../../../maps/base-layers';
 import { getTileLayers } from '../../../web-components/analysis-map/tile-layers';
 import { PowerAlert } from '../../components/PowerAlert';
 import { updateAorBattleLineBoundaries } from '../../services/api/aor';
@@ -69,7 +70,7 @@ function fitMapToLayer(map: L.Map, layer: L.LayerGroup) {
 
 function createMap(host: HTMLDivElement): L.Map {
   const map = L.map(host, { attributionControl: false }).setView([48.5, 35], 7);
-  getTileLayers().googleHybrid.addTo(map);
+  getTileLayers()[DEFAULT_BASE_LAYER_ID].addTo(map);
   return map;
 }
 

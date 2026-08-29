@@ -23,7 +23,11 @@ const tileLayers = vi.hoisted(() => {
     addTo: vi.fn(() => googleHybrid),
     remove: vi.fn(() => googleHybrid),
   };
-  return { openStreetMap, googleHybrid };
+  const esriWorldImagery = {
+    addTo: vi.fn(() => esriWorldImagery),
+    remove: vi.fn(() => esriWorldImagery),
+  };
+  return { esriWorldImagery, openStreetMap, googleHybrid };
 });
 
 type ResizeObserverCallback = (entries: ResizeObserverEntry[], observer: ResizeObserver) => void;
@@ -314,6 +318,12 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('../../../../../../web-components/analysis-map/tile-layers', () => ({
+  DEFAULT_BASE_LAYER_ID: 'esriWorldImagery',
+  BaseLayerId: {
+    Delta: 'esriWorldImagery',
+    Google: 'googleHybrid',
+    OpenStreetMap: 'openStreetMap',
+  },
   getTileLayers: vi.fn(() => tileLayers),
 }));
 
@@ -528,7 +538,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
 
     expect(shellProps.at(-1)).toMatchObject({
       open: true,
-      ariaLabel: 'Перегляд вкладення',
+      ariaLabel: 'Перегляд координат',
       isFullscreen: true,
     });
     expect(document.body.textContent).toContain('Завантаження мапи…');
@@ -546,10 +556,11 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
       await Promise.resolve();
     });
 
-    expect(tileLayers.googleHybrid.addTo).toHaveBeenCalledTimes(1);
+    expect(tileLayers.esriWorldImagery.addTo).toHaveBeenCalledTimes(1);
     expect(tileLayers.openStreetMap.addTo).not.toHaveBeenCalled();
     expect(document.body.querySelectorAll('[data-wgs84-text]').length).toBe(1);
-    expect(document.body.querySelector('button[aria-label="Супутник"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Delta"]')).not.toBeNull();
+    expect(document.body.querySelector('button[aria-label="Google"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="OpenStreetMap"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Копіювати MGRS"]')).not.toBeNull();
     expect(document.body.querySelectorAll('[data-mgrs-text]').length).toBe(1);
@@ -668,14 +679,14 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     });
 
     expect(tileLayers.openStreetMap.addTo).toHaveBeenCalledTimes(1);
-    expect(tileLayers.googleHybrid.remove).toHaveBeenCalledTimes(1);
+    expect(tileLayers.esriWorldImagery.remove).toHaveBeenCalledTimes(1);
     expect(
       document.body
         .querySelector('button[aria-label="OpenStreetMap"]')
         ?.getAttribute('data-selected'),
     ).toBe('true');
     expect(
-      document.body.querySelector('button[aria-label="Супутник"]')?.getAttribute('data-selected'),
+      document.body.querySelector('button[aria-label="Delta"]')?.getAttribute('data-selected'),
     ).toBe('false');
     expect(leaflet.map().setView.mock.calls.length).toBe(setViewCallsBeforeLayerSwitch);
     expect(leaflet.map().invalidateSize.mock.calls.length).toBe(invalidateCallsBeforeLayerSwitch);
@@ -686,7 +697,7 @@ describe('CoordinateAttachmentPreviewRenderer', () => {
     });
 
     expect(tileLayers.openStreetMap.addTo).toHaveBeenCalledTimes(1);
-    expect(tileLayers.googleHybrid.remove).toHaveBeenCalledTimes(1);
+    expect(tileLayers.esriWorldImagery.remove).toHaveBeenCalledTimes(1);
     expect(leaflet.map().setView.mock.calls.length).toBe(setViewCallsBeforeLayerSwitch);
     expect(
       document.body

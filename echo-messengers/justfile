@@ -1,0 +1,214 @@
+set positional-arguments := false
+
+messengers_dir := justfile_directory()
+repo_dir := messengers_dir + "/.."
+default_builder := "echo-build-main"
+builder_repo_dir := "workspace/echo"
+default_branch := "main"
+
+default:
+    @just --list
+
+build-local:
+    cargo build --manifest-path "{{ repo_dir }}/Cargo.toml" -p echo-messengers
+
+package-local:
+    cargo deb --manifest-path "{{ repo_dir }}/Cargo.toml" -p echo-messengers
+
+[arg('builder', long='builder')]
+checkout-dependencies builder=default_builder:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    BUILDER="{{ builder }}"
+
+    echo "Downloading messenger deb packages on ${BUILDER}..."
+    ssh "$BUILDER" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    DEB_DIR="$HOME/{{ builder_repo_dir }}/echo-messengers/.deb"
+
+    sudo apt-get update
+    mkdir -p "${DEB_DIR}"
+    rm -f "${DEB_DIR}"/echo-im-signal_*_amd64.deb "${DEB_DIR}"/echo-im-whatsapp_*_amd64.deb
+    cd "${DEB_DIR}"
+    apt-get download echo-im-signal echo-im-whatsapp
+    REMOTE
+
+[arg('branch', long='branch')]
+[arg('builder', long='builder')]
+build builder=default_builder branch=default_branch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    BUILDER="{{ builder }}"
+    BRANCH="{{ branch }}"
+
+    echo "Building echo-messengers deb package on ${BUILDER}..."
+    ssh "$BUILDER" bash -se -- "$BRANCH" <<'REMOTE'
+    set -euo pipefail
+
+    BRANCH="$1"
+    REPO_DIR="$HOME/{{ builder_repo_dir }}"
+    GIT_CONFIG=(-c url.ssh://git@github.com/.insteadOf=https://github.com/)
+
+    echo "Switching ${REPO_DIR} to ${BRANCH}..."
+    cd "${REPO_DIR}"
+    git "${GIT_CONFIG[@]}" fetch origin "${BRANCH}"
+    git clean -df
+    git checkout "${BRANCH}"
+    git "${GIT_CONFIG[@]}" pull --ff-only origin "${BRANCH}"
+
+    mkdir -p "${REPO_DIR}/target/debian"
+    rm -f "${REPO_DIR}"/target/debian/echo-messengers_*_*.deb
+    "$HOME/.cargo/bin/cargo" deb -p echo-messengers --output "${REPO_DIR}/target/debian"
+
+    DEB_PATH="$(ls -1t "${REPO_DIR}"/target/debian/echo-messengers_*_*.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${DEB_PATH}" ]]; then
+      echo "Failed to build echo-messengers .deb under ${REPO_DIR}/target/debian" >&2
+      find "${REPO_DIR}" -maxdepth 6 -path "*/target/debian/*.deb" -type f -print >&2 || true
+      exit 1
+    fi
+    echo "Built $(basename "${DEB_PATH}")"
+    REMOTE
+
+[arg('server', long='server')]
+deactivate-legacy server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+
+    echo "Checking for legacy echo-swapp on ${SERVER}..."
+    ssh "$SERVER" bash -se <<'REMOTE'
+    set -euo pipefail
+
+    if sudo systemctl list-unit-files echo-swapp.service --no-legend 2>/dev/null \
+      | awk '{ print $1 }' | grep -Fxq echo-swapp.service; then
+      echo "Deactivating legacy echo-swapp.service..."
+      sudo systemctl disable --now echo-swapp.service
+    else
+      echo "Legacy echo-swapp.service is not installed."
+    fi
+
+    if pgrep -x echo-swapp >/dev/null; then
+      echo "Stopping remaining legacy echo-swapp process..."
+      sudo pkill -TERM -x echo-swapp || true
+      for _ in {1..10}; do
+        pgrep -x echo-swapp >/dev/null || break
+        sleep 0.5
+      done
+    fi
+
+    if pgrep -x echo-swapp >/dev/null; then
+      echo "Legacy echo-swapp process is still running." >&2
+      exit 1
+    fi
+    echo "Legacy echo-swapp is inactive."
+    REMOTE
+
+[arg('server', long='server')]
+_sync-systemd-unit-templates server:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    SYSTEMD_UNIT_DIR="/usr/lib/systemd/system"
+
+    echo "Syncing messenger systemd unit templates to ${SERVER}..."
+    scp "{{ messengers_dir }}/deploy/systemd/echo-signal-bot@.service" "${SERVER}:/var/tmp/echo-signal-bot@.service"
+    scp "{{ messengers_dir }}/deploy/systemd/echo-whatsapp-bot@.service" "${SERVER}:/var/tmp/echo-whatsapp-bot@.service"
+
+    ssh "$SERVER" "set -euo pipefail
+      sudo mkdir -p '${SYSTEMD_UNIT_DIR}'
+      sudo install -o root -g root -m 0644 /var/tmp/echo-signal-bot@.service '${SYSTEMD_UNIT_DIR}/echo-signal-bot@.service'
+      sudo install -o root -g root -m 0644 /var/tmp/echo-whatsapp-bot@.service '${SYSTEMD_UNIT_DIR}/echo-whatsapp-bot@.service'
+      rm -f /var/tmp/echo-signal-bot@.service /var/tmp/echo-whatsapp-bot@.service
+      sudo systemctl daemon-reload
+    "
+
+[arg('branch', long='branch')]
+[arg('builder', long='builder')]
+[arg('server', long='server')]
+deploy server builder=default_builder branch=default_branch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    SERVER="{{ server }}"
+    BUILDER="{{ builder }}"
+    BRANCH="{{ branch }}"
+    ARTIFACT_DIR="$(mktemp -d)"
+    trap 'rm -rf -- "${ARTIFACT_DIR}"' EXIT
+
+    just --justfile "{{ messengers_dir }}/justfile" build --builder "$BUILDER" --branch "$BRANCH"
+    just --justfile "{{ messengers_dir }}/justfile" checkout-dependencies --builder "$BUILDER"
+
+    BUILDER_HOME="$(ssh "$BUILDER" 'printf %s "$HOME"')"
+    BUILDER_REPO_DIR="${BUILDER_HOME}/{{ builder_repo_dir }}"
+
+    echo "Downloading deploy artifacts from ${BUILDER}..."
+    scp "${BUILDER}:${BUILDER_REPO_DIR}/echo-messengers/.deb/echo-im-signal_*_amd64.deb" "${ARTIFACT_DIR}/"
+    scp "${BUILDER}:${BUILDER_REPO_DIR}/echo-messengers/.deb/echo-im-whatsapp_*_amd64.deb" "${ARTIFACT_DIR}/"
+
+    REMOTE_DEB_PATH="$(ssh "$BUILDER" "ls -1t ${BUILDER_REPO_DIR}/target/debian/echo-messengers_*_*.deb 2>/dev/null | head -n 1 || true")"
+    if [[ -z "${REMOTE_DEB_PATH}" ]]; then
+      echo "Failed to find built echo-messengers .deb on ${BUILDER}:${BUILDER_REPO_DIR}/target/debian" >&2
+      exit 1
+    fi
+    scp "${BUILDER}:${REMOTE_DEB_PATH}" "${ARTIFACT_DIR}/"
+
+    SIGNAL_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-signal_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    WHATSAPP_DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-im-whatsapp_*_amd64.deb 2>/dev/null | head -n 1 || true)"
+    DEB_PATH="$(ls -1t "${ARTIFACT_DIR}"/echo-messengers_*_*.deb 2>/dev/null | head -n 1 || true)"
+    if [[ -z "${SIGNAL_DEB_PATH}" || -z "${WHATSAPP_DEB_PATH}" || -z "${DEB_PATH}" ]]; then
+      echo "Failed to download all messenger deploy artifacts from ${BUILDER}" >&2
+      exit 1
+    fi
+
+    SIGNAL_DEB_NAME="$(basename "${SIGNAL_DEB_PATH}")"
+    WHATSAPP_DEB_NAME="$(basename "${WHATSAPP_DEB_PATH}")"
+    DEB_NAME="$(basename "${DEB_PATH}")"
+
+    echo "Uploading messenger packages to ${SERVER}..."
+    scp "${SIGNAL_DEB_PATH}" "${SERVER}:/var/tmp/${SIGNAL_DEB_NAME}"
+    scp "${WHATSAPP_DEB_PATH}" "${SERVER}:/var/tmp/${WHATSAPP_DEB_NAME}"
+    scp "${DEB_PATH}" "${SERVER}:/var/tmp/${DEB_NAME}"
+
+    just --justfile "{{ messengers_dir }}/justfile" deactivate-legacy --server "$SERVER"
+
+    echo "Installing messenger packages on ${SERVER}..."
+    ssh "$SERVER" bash -se -- "$SIGNAL_DEB_NAME" "$WHATSAPP_DEB_NAME" "$DEB_NAME" <<'REMOTE'
+    set -euo pipefail
+
+    SIGNAL_DEB_NAME="$1"
+    WHATSAPP_DEB_NAME="$2"
+    DEB_NAME="$3"
+    export DEBIAN_FRONTEND=noninteractive
+
+    sudo apt-get update
+    sudo apt-get install -y openjdk-25-jre-headless
+    cd /var/tmp
+    sudo apt-get install -y --reinstall --allow-downgrades "./${SIGNAL_DEB_NAME}" "./${WHATSAPP_DEB_NAME}"
+    sudo apt-get install -y --reinstall --allow-downgrades "./${DEB_NAME}"
+
+    if [[ -f /etc/goi-echo-worker/config.toml ]]; then
+      tmp_config="$(mktemp)"
+      chmod 0600 "${tmp_config}"
+      sudo awk '/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/goi-echo-worker/config.toml > "${tmp_config}"
+      printf '\n' >> "${tmp_config}"
+      sudo awk '!/^pg_(host|port|user|password|dbname)[[:space:]]*=/ { print }' /etc/echo-messengers/config.toml >> "${tmp_config}"
+      sudo mv "${tmp_config}" /etc/echo-messengers/config.toml
+      sudo chown root:root /etc/echo-messengers/config.toml
+      sudo chmod 0600 /etc/echo-messengers/config.toml
+    fi
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now echo-messengers
+    sudo systemctl restart echo-messengers
+    rm -f "./${SIGNAL_DEB_NAME}" "./${WHATSAPP_DEB_NAME}" "./${DEB_NAME}"
+    REMOTE
+
+    just --justfile "{{ messengers_dir }}/justfile" _sync-systemd-unit-templates --server "$SERVER"
+
+    echo "Checking echo-messengers.service on ${SERVER}..."
+    ssh "$SERVER" "sudo systemctl status echo-messengers --no-pager"

@@ -65,7 +65,8 @@ pub enum RestartCurrentUserGoiService {
     Swapp,
     SwappAlt,
     Goi,
-    EchoSwapp,
+    #[serde(rename = "echo_swapp")]
+    EchoMessengers,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Clone)]
@@ -1128,7 +1129,9 @@ impl From<&RestartCurrentUserGoiService> for goi_echo_worker::api::GoiService {
             RestartCurrentUserGoiService::Swapp => Self::Swapp,
             RestartCurrentUserGoiService::SwappAlt => Self::SwappAlt,
             RestartCurrentUserGoiService::Goi => Self::Goi,
-            RestartCurrentUserGoiService::EchoSwapp => Self::EchoSwapp,
+            RestartCurrentUserGoiService::EchoMessengers => {
+                Self::EchoMessengers
+            }
         }
     }
 }
@@ -1146,7 +1149,7 @@ pub(super) fn goi_restart_service_error_context(
         RestartCurrentUserGoiService::Goi => {
             "Не вдалося перезапустити GOI на інстансі ГОІ"
         }
-        RestartCurrentUserGoiService::EchoSwapp => {
+        RestartCurrentUserGoiService::EchoMessengers => {
             "Не вдалося перезапустити Месенджери на інстансі ГОІ"
         }
     }

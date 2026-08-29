@@ -6,7 +6,14 @@ justfile or override it with `just deploy --server <server> --builder <builder>`
 Use `--fix` to force the deploy to pause GOI, remove `node_modules`, reinstall
 dependencies, and start GOI again even when the pinned Node version is unchanged.
 
-it deploys 3 units:
+GOI deploy delegates the messenger build and deployment to
+[`echo-messengers/justfile`](../echo-messengers/justfile). The messenger service
+can also be deployed independently from that directory with
+`just deploy --server <server>`. GOI deploy deactivates the legacy
+`echo-swapp.service` and verifies that its process has stopped before deploying
+`echo-messengers.service`.
+
+GOI also manages the legacy Node services:
 - port 4000: process goi, data a /etc/goi
 - port 4002: process swapp, data at /etc/swapp
 - port 4003: process swapp-alt, data at /etc/swapp-alt; it's another swapp instance, useful if you need 2 separate accounts like JF (1 account sends from goi, 2nd reads messages and resends them to different chats) 

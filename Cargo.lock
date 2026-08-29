@@ -2872,7 +2872,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202608271520"
+version = "0.1.1-rc.202608290936"
 
 [[package]]
 name = "echo-gpu-client"
@@ -3010,7 +3010,7 @@ source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc9
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202608271520"
+version = "0.1.1-rc.202608290936"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3053,17 +3053,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "echo-migration"
-version = "0.1.0"
-dependencies = [
- "sea-orm",
- "sea-orm-migration",
- "tokio",
-]
-
-[[package]]
-name = "echo-swapp"
-version = "0.1.1-rc.202608271520"
+name = "echo-messengers"
+version = "0.1.1-rc.202608290936"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3082,6 +3073,15 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+]
+
+[[package]]
+name = "echo-migration"
+version = "0.1.0"
+dependencies = [
+ "sea-orm",
+ "sea-orm-migration",
+ "tokio",
 ]
 
 [[package]]
@@ -3798,7 +3798,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202608271520"
+version = "0.1.1-rc.202608290936"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -9898,7 +9898,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202608271520"
+version = "0.1.1-rc.202608290936"
 dependencies = [
  "actix-files",
  "actix-identity",
@@ -9985,6 +9985,7 @@ dependencies = [
  "serial_test",
  "sha2 0.10.9",
  "sha256",
+ "similar",
  "sqlx 0.9.0",
  "ssh2",
  "strong-box",

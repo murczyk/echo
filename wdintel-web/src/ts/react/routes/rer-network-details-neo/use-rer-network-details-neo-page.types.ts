@@ -16,6 +16,7 @@ import type {
   Unit,
   User,
 } from '../../../../Bindings';
+import { DEFAULT_BASE_LAYER_ID, type BaseLayerId } from '../../../maps/base-layers';
 import {
   createDefaultNetworkEtalonkaReportState,
   type NetworkEtalonkaReportState,
@@ -155,7 +156,7 @@ export type NetworkDetailsNeoPageState = {
   pelengSearch: string;
   pelengEnabledFreqs: string[];
   pelengShowLabels: boolean;
-  pelengSatelliteEnabled: boolean;
+  pelengBaseLayerId: BaseLayerId;
   pelengHeatmapEnabled: boolean;
   networkCallsignsLoaded: boolean;
   networkCallsignsLoading: boolean;
@@ -280,7 +281,7 @@ export const EMPTY_STATE: NetworkDetailsNeoPageState = {
   pelengSearch: '',
   pelengEnabledFreqs: [],
   pelengShowLabels: true,
-  pelengSatelliteEnabled: true,
+  pelengBaseLayerId: DEFAULT_BASE_LAYER_ID,
   pelengHeatmapEnabled: false,
   networkCallsignsLoaded: false,
   networkCallsignsLoading: false,

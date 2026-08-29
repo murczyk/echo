@@ -11,14 +11,13 @@ use crate::orbit::types::SourceUnit;
 use crate::types::ShortContext;
 use chrono::{Duration, NaiveDateTime};
 use sea_orm::sea_query::Expr;
-#[cfg(test)]
-use sea_orm::DatabaseConnection;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition,
-    ConnectionTrait, EntityTrait, IntoActiveModel, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait, TransactionSession,
-    TransactionTrait,
+    ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
+    TransactionSession, TransactionTrait,
 };
+#[cfg(test)]
+use sea_orm::{DatabaseConnection, JoinType, QuerySelect, RelationTrait};
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
@@ -234,9 +233,29 @@ pub async fn load_latest_synced_source_units<C>(
 where
     C: ConnectionTrait,
 {
+    Ok(load_latest_synced_source_units_with_sync(db).await?.1)
+}
+
+pub async fn load_latest_synced_source_units_with_sync<C>(
+    db: &C,
+) -> anyhow::Result<(orbit_sync::Model, Vec<SourceUnit>)>
+where
+    C: ConnectionTrait,
+{
     let sync = load_latest_sync(db).await.c(h!())?.ok_or_else(|| {
         anyhow::anyhow!("ORBIT data has not been synchronized")
     })?;
+    let units = load_synced_source_units(db, &sync).await?;
+    Ok((sync, units))
+}
+
+pub(super) async fn load_synced_source_units<C>(
+    db: &C,
+    sync: &orbit_sync::Model,
+) -> anyhow::Result<Vec<SourceUnit>>
+where
+    C: ConnectionTrait,
+{
     let units = orbit_unit::Entity::find()
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(orbit_unit::Column::UpdatedAt.eq(sync.synced_at))
@@ -588,6 +607,7 @@ pub async fn replace_sigint_unit_links(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) async fn replace_sigint_unit_links_in_transaction<C>(
     db: &C,
     sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
@@ -647,6 +667,7 @@ pub async fn replace_automatic_sigint_unit_links(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) async fn replace_automatic_sigint_unit_links_in_transaction<C>(
     db: &C,
     sigint_unit_id: i64,
@@ -702,6 +723,7 @@ where
     Ok(())
 }
 
+#[cfg(test)]
 async fn active_manually_linked_sigint_unit_ids<C>(
     db: &C,
 ) -> Result<BTreeSet<i64>, AppError>
@@ -724,6 +746,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 async fn suppressed_sigint_unit_links<C>(
     db: &C,
 ) -> Result<BTreeSet<(Uuid, i64)>, AppError>
@@ -740,6 +763,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 async fn active_orbit_unit_ids<C>(
     db: &C,
     orbit_unit_ids: &[Uuid],
@@ -761,6 +785,7 @@ where
         .collect())
 }
 
+#[cfg(test)]
 fn automatic_sigint_unit_links(
     sigint_unit_ids_by_orbit_unit: &HashMap<Uuid, BTreeSet<i64>>,
     active_orbit_unit_ids: &BTreeSet<Uuid>,
@@ -801,8 +826,13 @@ pub async fn replace_sigint_unit_link(
         &transaction,
         sigint_unit_id,
         orbit_unit_id,
+        super::LinkProvenance::Manual,
     )
-    .await?;
+    .await
+    .c(h!())?;
+    super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+        .await
+        .c(h!())?;
     transaction.commit().await.c(h!())?;
     Ok(())
 }
@@ -811,6 +841,7 @@ pub(super) async fn replace_sigint_unit_link_in_transaction<C>(
     db: &C,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
+    provenance: super::LinkProvenance,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -832,14 +863,13 @@ where
         orbit_unit_sigint_unit::ActiveModel {
             orbit_unit_id: Set(orbit_unit_id),
             sigint_unit_id: Set(sigint_unit_id),
-            is_manual: Set(true),
+            is_manual: Set(provenance == super::LinkProvenance::Manual),
             is_suppressed: Set(false),
         },
     )
     .exec(db)
     .await
     .c(h!())?;
-    super::reconcile_sigint_unit_deduplicate_candidates(db).await?;
     Ok(())
 }
 

@@ -1131,9 +1131,6 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::unit::orbit::unit_orbit_children)
             .service(crate::sigint::unit::orbit::list_unit_duplicates)
             .service(crate::sigint::unit::orbit::list_inconsistent_units)
-            .service(crate::sigint::unit::names::list_unit_name_reviews)
-            .service(crate::sigint::unit::names::update_unit_name)
-            .service(crate::sigint::unit::names::confirm_unit_name)
             .service(crate::sigint::unit::orbit::orbit_link_candidates)
             .service(
                 crate::sigint::unit::orbit::create_unit_duplicate_candidates,

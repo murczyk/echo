@@ -22,6 +22,54 @@ static COMPANIES_RE: UnitRegexCache = OnceLock::new();
 static ARMIES_RE: UnitRegexCache = OnceLock::new();
 static REGIMENTS_RE: UnitRegexCache = OnceLock::new();
 
+pub(crate) fn normalize_unit_formation_name(value: &str) -> String {
+    let words = value
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    let mut normalized = Vec::new();
+    let mut index = 0;
+    while index < words.len() {
+        if let Some((canonical, word_count)) =
+            equivalent_unit_notation_at(&words, index)
+        {
+            normalized.push(canonical.to_string());
+            index += word_count;
+        } else {
+            normalized.push(words[index].clone());
+            index += 1;
+        }
+    }
+    normalized.join(" ")
+}
+
+fn equivalent_unit_notation_at(
+    words: &[String],
+    index: usize,
+) -> Option<(&'static str, usize)> {
+    let mut best = None;
+    for (canonical, aliases) in crate::config::UNIT_FORMATION_EQUIVALENT_NOTIONS
+    {
+        for alias in *aliases {
+            let alias = alias.split_whitespace().collect::<Vec<_>>();
+            let word_count = alias.len();
+            let matches = words[index..]
+                .iter()
+                .zip(&alias)
+                .take(word_count)
+                .all(|(word, alias)| word == alias)
+                && words.len() - index >= word_count;
+            if matches
+                && best.is_none_or(|(_, best_count)| word_count > best_count)
+            {
+                best = Some((*canonical, word_count));
+            }
+        }
+    }
+    best
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnitInfo {
     pub unit_type: Option<UnitType>,
@@ -631,6 +679,32 @@ fn preprocess_unit_text(input: &String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalizes_equivalent_unit_formation_notions() {
+        for equivalents in [
+            &["об БпС", "обБпС"][..],
+            &["А", "ЗВА", "ОА"],
+            &["В", "B"],
+            &["оптадн", "оптдн"],
+            &["габат", "габатр"],
+            &["шр V", "шр", "шр В"],
+            &["об РЕБ", "обРЕБ"],
+        ] {
+            let expected = normalize_unit_formation_name(equivalents[0]);
+            for equivalent in equivalents {
+                assert_eq!(normalize_unit_formation_name(equivalent), expected);
+            }
+        }
+    }
+
+    #[test]
+    fn unit_formation_matching_ignores_punctuation() {
+        assert_eq!(
+            normalize_unit_formation_name("9-(об БпС), “1 ОА” / 'оптдн'"),
+            normalize_unit_formation_name("9 обБпС 1 ЗВА оптадн")
+        );
+    }
 
     fn mk_unit(
         id: i64,

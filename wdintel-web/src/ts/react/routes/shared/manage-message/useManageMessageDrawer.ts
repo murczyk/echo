@@ -32,6 +32,7 @@ import type {
 import { mapDirectSubmitCopyToForm, mapInboxMessageToForm } from './manage-message-drawer.mappers';
 import { useRecentValues } from './useRecentValues';
 import { isPresent } from '../../../utils/misc';
+import { blurActiveElement } from '../../../utils/focus';
 import {
   makeMessageSchema,
   EMPTY_FORM_VALUES,
@@ -680,6 +681,7 @@ export function useManageMessageDrawer({
   }, [open, isEditMode, editTarget?.id]);
 
   const closeDrawerAfterSubmit = () => {
+    blurActiveElement();
     uppy.cancelAll();
     reset();
     setDeviceNameInput('');

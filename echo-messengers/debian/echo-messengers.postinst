@@ -1,0 +1,21 @@
+#!/bin/sh
+
+set -e
+
+mkdir -p /etc/echo-messengers
+if [ ! -f /etc/echo-messengers/config.toml ]; then
+  if [ -f /etc/echo-swapp/config.toml ]; then
+    cp /etc/echo-swapp/config.toml /etc/echo-messengers/config.toml
+  elif [ -f /etc/echo-messengers/config.toml.example ]; then
+    cp /etc/echo-messengers/config.toml.example /etc/echo-messengers/config.toml
+  fi
+fi
+sed -i 's|^whatsapp_client_config = "/etc/echo-swapp/config.toml"$|whatsapp_client_config = "/etc/echo-messengers/config.toml"|' /etc/echo-messengers/config.toml
+chown root:root /etc/echo-messengers/config.toml
+chmod 0600 /etc/echo-messengers/config.toml
+
+if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  #DEBHELPER#
+else
+  echo "systemctl not available; skipping systemd unit activation in package maintainer scripts."
+fi

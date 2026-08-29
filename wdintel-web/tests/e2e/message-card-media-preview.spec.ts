@@ -11,26 +11,26 @@ function resolveFixtureUrl(page: Page, pathname: string) {
 
 async function openImagePreview(page: Page) {
   await page.getByRole('button', { name: 'Відкрити зображення' }).first().click();
-  return page.getByRole('dialog', { name: 'Перегляд вкладення' });
+  return page.getByRole('dialog', { name: 'Перегляд зображення' });
 }
 
 async function openVideoPreview(page: Page) {
   await page.getByRole('button', { name: 'Відкрити відео' }).first().click();
-  return page.getByRole('dialog', { name: 'Перегляд вкладення' });
+  return page.getByRole('dialog', { name: 'Перегляд відео' });
 }
 
 async function openTextPreview(page: Page) {
   await page
     .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text })
     .click();
-  return page.getByRole('dialog', { name: 'Перегляд вкладення' });
+  return page.getByRole('dialog', { name: 'Перегляд документа' });
 }
 
 async function openMarkdownPreview(page: Page) {
   await page
     .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown })
     .click();
-  return page.getByRole('dialog', { name: 'Перегляд вкладення' });
+  return page.getByRole('dialog', { name: 'Перегляд документа' });
 }
 
 async function expectOpenInNewTab(link: Locator, expectedUrl: string) {
@@ -43,10 +43,43 @@ async function expectDownloadAndFilename(page: Page, link: Locator, expectedFile
   expect(download.suggestedFilename()).toBe(expectedFilename);
 }
 
-async function expectAttachmentCounter(dialog: Locator, value: string) {
-  await expect(
-    dialog.locator('[data-attachment-preview-counter="true"]').filter({ hasText: value }).first(),
-  ).toBeVisible();
+async function expectPreviewCounter(dialog: Locator, value: string) {
+  const counter = dialog.locator(`[data-attachment-preview-counter="true"]:visible`, {
+    hasText: value,
+  });
+  await expect(counter).toHaveCount(1);
+  await expect(counter).toHaveText(value);
+}
+
+async function makeWindowed(dialog: Locator) {
+  const exitFullscreen = dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' });
+  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
+  await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
+}
+
+async function verifyFullscreenEscape(
+  page: Page,
+  dialog: Locator,
+  reopen: () => Promise<Locator>,
+  closesFullscreen: boolean,
+) {
+  await makeWindowed(dialog);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+
+  dialog = await reopen();
+  await makeWindowed(dialog);
+  await dialog.getByRole('button', { name: 'Повноекранний режим' }).click();
+  await expect(dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  if (closesFullscreen) {
+    await expect(dialog).toHaveCount(0);
+    return;
+  }
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
 }
 
 test.describe('@smoke', () => {
@@ -109,13 +142,18 @@ test.describe('message card media preview contract', () => {
   }) => {
     await openMessageCardPreviewHost(page, 'duty');
 
-    let imageDialog = await openImagePreview(page);
-    await expectAttachmentCounter(imageDialog, '1 / 6');
+    const imageDialog = await openImagePreview(page);
+    await expectPreviewCounter(imageDialog, '1 / 6');
 
     await imageDialog.getByRole('button', { name: 'Інформація' }).click();
-    await expect(page.getByText('URL', { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole('dialog', { name: 'Інформація про вкладення' })
+        .getByText(MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1, { exact: true }),
+    ).toBeVisible();
     await page.keyboard.press('Escape');
-    imageDialog = await openImagePreview(page);
+    await expect(page.getByRole('dialog', { name: 'Інформація про вкладення' })).toHaveCount(0);
+    await expect(imageDialog).toBeVisible();
 
     await expectOpenInNewTab(
       imageDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
@@ -132,13 +170,12 @@ test.describe('message card media preview contract', () => {
     );
 
     await imageDialog.getByRole('button', { name: 'Наступне' }).click();
-    await expectAttachmentCounter(imageDialog, '2 / 6');
+    await expectPreviewCounter(imageDialog, '2 / 6');
 
     await page.keyboard.press('ArrowLeft');
-    await expectAttachmentCounter(imageDialog, '1 / 6');
+    await expectPreviewCounter(imageDialog, '1 / 6');
 
-    await page.keyboard.press('Escape');
-    await expect(imageDialog).toHaveCount(0);
+    await verifyFullscreenEscape(page, imageDialog, () => openImagePreview(page), true);
   });
 
   test('video previews preserve carousel controls, info, download, and fullscreen escape', async ({
@@ -147,7 +184,7 @@ test.describe('message card media preview contract', () => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const videoDialog = await openVideoPreview(page);
-    await expectAttachmentCounter(videoDialog, '3 / 6');
+    await expectPreviewCounter(videoDialog, '3 / 6');
     await expect(videoDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
     await expectOpenInNewTab(
       videoDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
@@ -163,13 +200,12 @@ test.describe('message card media preview contract', () => {
     );
 
     await videoDialog.getByRole('button', { name: 'Наступне' }).click();
-    await expectAttachmentCounter(videoDialog, '4 / 6');
+    await expectPreviewCounter(videoDialog, '4 / 6');
 
     await page.keyboard.press('ArrowLeft');
-    await expectAttachmentCounter(videoDialog, '3 / 6');
+    await expectPreviewCounter(videoDialog, '3 / 6');
 
-    await page.keyboard.press('Escape');
-    await expect(videoDialog).toHaveCount(0);
+    await verifyFullscreenEscape(page, videoDialog, () => openVideoPreview(page), false);
   });
 
   test('txt and markdown previews preserve source text, mixed carousel order, and normal escape close', async ({
@@ -178,7 +214,7 @@ test.describe('message card media preview contract', () => {
     await openMessageCardPreviewHost(page, 'duty');
 
     const textDialog = await openTextPreview(page);
-    await expectAttachmentCounter(textDialog, '5 / 6');
+    await expectPreviewCounter(textDialog, '5 / 6');
     await expect(page.getByText('E2E TXT preview line 1')).toBeVisible();
     await expect(textDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
     await expectOpenInNewTab(
@@ -195,8 +231,8 @@ test.describe('message card media preview contract', () => {
     );
     await textDialog.getByRole('button', { name: 'Наступне' }).click();
 
-    const markdownDialog = page.getByRole('dialog', { name: 'Перегляд вкладення' });
-    await expectAttachmentCounter(markdownDialog, '6 / 6');
+    const markdownDialog = page.getByRole('dialog', { name: 'Перегляд документа' });
+    await expectPreviewCounter(markdownDialog, '6 / 6');
     await expect(
       markdownDialog.getByRole('heading', { name: 'E2E Markdown preview', level: 1 }),
     ).toBeVisible();
