@@ -7,6 +7,7 @@ import type {
   BattleLineState,
 } from '../../../../Bindings';
 import { L } from '../../../maps/leaflet-markercluster';
+import { DEFAULT_BASE_LAYER_ID } from '../../../maps/base-layers';
 import { getTileLayers } from '../../../web-components/analysis-map/tile-layers';
 
 type SelectedSettlement = BattleLineCoordinate & { id: number; label: string };
@@ -68,7 +69,7 @@ export function BattleLineMap({ state, selectedSettlements = [] }: Props) {
     const host = hostRef.current;
     if (!host || mapRef.current) return;
     const map = L.map(host, { attributionControl: false }).setView([48.5, 35], 7);
-    getTileLayers().googleHybrid.addTo(map);
+    getTileLayers()[DEFAULT_BASE_LAYER_ID].addTo(map);
     mapRef.current = map;
     geometryLayerRef.current = L.layerGroup().addTo(map);
     const frame = window.requestAnimationFrame(() => map.invalidateSize());

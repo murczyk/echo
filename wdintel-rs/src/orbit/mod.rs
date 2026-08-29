@@ -234,12 +234,12 @@ pub async fn closest_orbit_matches_for_sigint_unit(
         .collect())
 }
 
-pub(crate) async fn link_sigint_unit_if_unlinked<C>(
+pub(crate) async fn try_link_sigint_unit_if_unlinked<C>(
     db: &C,
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
     provenance: LinkProvenance,
-) -> Result<(), AppError>
+) -> Result<bool, AppError>
 where
     C: ConnectionTrait,
 {
@@ -250,18 +250,17 @@ where
         .await
         .c(h!())?
     {
-        return Err(AppError::BL {
-            msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
-        });
+        return Ok(false);
     }
-    Ok(persistence::replace_sigint_unit_link_in_transaction(
+    persistence::replace_sigint_unit_link_in_transaction(
         db,
         sigint_unit_id,
         orbit_unit_id,
         provenance,
     )
     .await
-    .c(h!())?)
+    .c(h!())?;
+    Ok(true)
 }
 
 pub async fn unlink_sigint_unit_with_lock(

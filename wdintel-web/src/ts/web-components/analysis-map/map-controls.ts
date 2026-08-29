@@ -1,4 +1,5 @@
 import * as L from 'leaflet';
+import type { TileLayers } from './tile-layers';
 
 import {
   createAttributionControl,
@@ -17,11 +18,6 @@ import {
   SearchControl,
   TimeswitchControl,
 } from '../../maps/controls';
-
-type TileLayers = {
-  openStreetMap: L.TileLayer;
-  googleHybrid: L.TileLayer;
-};
 
 type InitializeAnalysisMapControlsOptions = {
   map: L.Map;

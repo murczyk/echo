@@ -1,9 +1,6 @@
 import type { NetworkPoint } from '../../../../../Bindings';
 import { NO_DATA_LABEL, sortFrequenciesNumerically } from '../../../utils/misc';
 
-export const SATELLITE_TILE_URL = 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}&hl=uk';
-export const SATELLITE_TILE_SUBDOMAINS = ['mt0', 'mt1', 'mt2', 'mt3'];
-export const BASE_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const PELENG_TOOLTIP_ARROW_COLOR = '#000000';
 export const PELENG_HEATMAP_MAX_ALPHA = 0.58;
 export const PELENG_HEATMAP_MIN_ALPHA = 0.38;

@@ -63,7 +63,8 @@ vi.mock('leaflet', () => ({
 }));
 
 vi.mock('../../../../../web-components/analysis-map/tile-layers', () => ({
-  getTileLayers: () => ({ openStreetMap: { addTo: mocks.tileLayerAddTo } }),
+  DEFAULT_BASE_LAYER_ID: 'esriWorldImagery',
+  getTileLayers: () => ({ esriWorldImagery: { addTo: mocks.tileLayerAddTo } }),
 }));
 
 vi.mock('../../../../services/api/location', () => ({ mapCoordinates: vi.fn() }));

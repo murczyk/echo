@@ -8,7 +8,7 @@ use crate::config::{
 use crate::entities::{
     orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
 };
-use crate::types::{Mode, ShortContext};
+use crate::types::{warn, Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, JoinType,
@@ -36,7 +36,7 @@ struct PersistenceMatcherCache {
     matcher: matching::TestLinkMatcher,
 }
 
-#[derive(FromQueryResult)]
+#[derive(Debug, FromQueryResult)]
 struct CurrentOrbitLink {
     sigint_unit_id: i64,
     orbit_unit_id: uuid::Uuid,
@@ -44,11 +44,12 @@ struct CurrentOrbitLink {
     orbit_unit_deleted: bool,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct CurrentOrbitLinkState {
     has_active_link: bool,
     has_active_manual_link: bool,
     automatic_orbit_unit_ids: BTreeSet<uuid::Uuid>,
+    links: Vec<CurrentOrbitLink>,
 }
 
 impl PersistSummary {
@@ -314,8 +315,7 @@ where
         r#"
 select sigint_unit.*
 from sigint_unit
-where sigint_unit.active = true
-    and sigint_unit.deleted = false
+where sigint_unit.deleted = false
     and not exists (
         select 1
         from orbit_unit_sigint_unit link
@@ -624,15 +624,19 @@ where
             summary.no_longer_matching += 1;
             continue;
         }
-        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        if !persist_orbit_link(
             dbx,
             login,
-            *sigint_unit_id,
+            sigint_unit,
             *orbit_unit_id,
             super::LinkProvenance::Manual,
         )
         .await
-        .c(h!())?;
+        .c(h!())?
+        {
+            summary.already_linked += 1;
+            continue;
+        }
         links_changed = true;
     }
     Ok((summary, links_changed))
@@ -746,18 +750,61 @@ where
             }
             continue;
         };
-        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        if !persist_orbit_link(
             dbx,
             login,
-            *sigint_unit_id,
+            sigint_unit,
             orbit_unit_id,
             super::LinkProvenance::Automatic,
         )
         .await
-        .c(h!())?;
+        .c(h!())?
+        {
+            summary.already_linked += 1;
+            continue;
+        }
         links_changed = true;
     }
     Ok((summary, links_changed))
+}
+
+async fn persist_orbit_link<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    sigint_unit: &sigint_unit::Model,
+    orbit_unit_id: uuid::Uuid,
+    provenance: super::LinkProvenance,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let linked = crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        dbx,
+        login,
+        sigint_unit.id,
+        orbit_unit_id,
+        provenance,
+    )
+    .await
+    .c(h!())?
+    .is_some();
+    if linked {
+        return Ok(true);
+    }
+    let current_link_state = load_current_orbit_link_states(
+        dbx,
+        std::slice::from_ref(&sigint_unit.id),
+    )
+    .await
+    .c(h!())?;
+    let current_links = current_link_state
+        .values()
+        .flat_map(|state| &state.links)
+        .collect::<Vec<_>>();
+    warn!(
+        "Skipping conflicting ORBIT link candidate: sigint_unit={sigint_unit:#?}, requested_orbit_unit_id={orbit_unit_id}, provenance={provenance:#?}, current_links={current_links:#?}"
+    );
+    Ok(false)
 }
 
 async fn remove_unreviewable_automatic_links<C>(
@@ -842,6 +889,7 @@ where
         } else {
             state.automatic_orbit_unit_ids.insert(link.orbit_unit_id);
         }
+        state.links.push(link);
     }
     Ok(states)
 }
@@ -876,7 +924,7 @@ fn suppressions_to_preserve(
 }
 
 fn sigint_unit_is_reviewable(sigint_unit: &sigint_unit::Model) -> bool {
-    sigint_unit.active && !sigint_unit.deleted
+    !sigint_unit.deleted
 }
 
 fn accepted_link_is_current_match(
@@ -1045,9 +1093,7 @@ fn print_summary(summary: ReviewSummary, persist_summary: PersistSummary) {
 mod tests {
     use super::*;
     use crate::orbit::types::SourceUnit;
-    use sea_orm::{
-        ActiveModelTrait, ActiveValue::Set, IntoActiveModel, TransactionTrait,
-    };
+    use sea_orm::{ActiveValue::Set, TransactionTrait};
     use serde_json::json;
 
     #[test]
@@ -1386,10 +1432,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let inactive_automatic_unit = crate::functest::tests::mk_sigint_unit(
+        let inactive_matchable_unit = crate::functest::tests::mk_sigint_unit(
             &db,
             sigint_unit::ActiveModel {
                 created_by_login_id: Set(login),
+                battalion: Set("3 мсб".to_string()),
+                active: Set(false),
                 ..Default::default()
             },
         )
@@ -1400,7 +1448,6 @@ mod tests {
             (manual_unit.id, orbit_unit.unit_id, true),
             (mixed_unit.id, orbit_unit.unit_id, true),
             (mixed_unit.id, stale_orbit_unit.unit_id, false),
-            (inactive_automatic_unit.id, orbit_unit.unit_id, false),
         ] {
             orbit_unit_sigint_unit::Entity::insert(
                 orbit_unit_sigint_unit::ActiveModel {
@@ -1431,16 +1478,11 @@ mod tests {
         assert!(automatic_ids.contains(&automatic_unit.id));
         assert!(!automatic_ids.contains(&manual_unit.id));
         assert!(automatic_ids.contains(&mixed_unit.id));
-        assert!(automatic_ids.contains(&inactive_automatic_unit.id));
+        assert!(automatic_ids.contains(&inactive_matchable_unit.id));
         assert!(!manual_ids.contains(&automatic_unit.id));
         assert!(!manual_ids.contains(&manual_unit.id));
         assert!(!manual_ids.contains(&mixed_unit.id));
-
-        let mut inactive_automatic_unit =
-            inactive_automatic_unit.into_active_model();
-        inactive_automatic_unit.active = Set(false);
-        let inactive_automatic_unit =
-            inactive_automatic_unit.update(&db).await.unwrap();
+        assert!(manual_ids.contains(&inactive_matchable_unit.id));
 
         let current_orbit_units = [orbit_hierarchy_unit(
             orbit_unit.unit_id,
@@ -1458,7 +1500,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
-                inactive_automatic_unit.id,
+                inactive_matchable_unit.id,
             ],
             &matcher,
             &BTreeSet::new(),
@@ -1469,7 +1511,7 @@ mod tests {
 
         assert!(links_changed);
         assert_eq!(summary.already_linked, 2);
-        assert_eq!(summary.no_longer_matching, 1);
+        assert_eq!(summary.no_longer_matching, 0);
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
@@ -1509,15 +1551,17 @@ mod tests {
             .unwrap();
         assert_eq!(newly_created_link.orbit_unit_id, orbit_unit.unit_id);
         assert!(!newly_created_link.is_manual);
-        assert!(orbit_unit_sigint_unit::Entity::find()
+        let inactive_link = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
-                    .eq(inactive_automatic_unit.id),
+                    .eq(inactive_matchable_unit.id),
             )
             .one(&db)
             .await
             .unwrap()
-            .is_none());
+            .unwrap();
+        assert_eq!(inactive_link.orbit_unit_id, orbit_unit.unit_id);
+        assert!(!inactive_link.is_manual);
 
         orbit_unit_sigint_unit::Entity::delete_many()
             .filter(orbit_unit_sigint_unit::Column::SigintUnitId.is_in([
@@ -1525,7 +1569,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
-                inactive_automatic_unit.id,
+                inactive_matchable_unit.id,
             ]))
             .exec(&db)
             .await
@@ -1536,7 +1580,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
-                inactive_automatic_unit.id,
+                inactive_matchable_unit.id,
             ]))
             .exec(&db)
             .await
