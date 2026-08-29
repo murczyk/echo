@@ -698,7 +698,9 @@ async fn exercise_unread_and_webhook(
     )
     .await
     .c(h!())?;
-    ingestion_tick(db, &chat_redis).await.c(h!())?;
+    ingestion_tick(db, &test_config(), &chat_redis)
+        .await
+        .c(h!())?;
     let initial_unread = unread_ids(
         &chat_redis,
         &fixture.private_chat_id,
@@ -733,8 +735,12 @@ async fn exercise_unread_and_webhook(
     )
     .await
     .c(h!())?;
-    ingestion_tick(db, &chat_redis).await.c(h!())?;
-    ingestion_tick(db, &chat_redis).await.c(h!())?;
+    ingestion_tick(db, &test_config(), &chat_redis)
+        .await
+        .c(h!())?;
+    ingestion_tick(db, &test_config(), &chat_redis)
+        .await
+        .c(h!())?;
     let unread = unread_ids(
         &chat_redis,
         &fixture.private_chat_id,
@@ -839,6 +845,24 @@ fn opaque_ids_cursors_and_input_limits_are_stable() {
     assert!(validate_webhook_url("https://198.18.0.1/hook").is_err());
     assert!(validate_webhook_url("https://192.88.99.2/hook").is_err());
     assert!(validate_webhook_url("https://[2001:db8::1]/hook").is_err());
+    let mut attachments = vec![Attachment {
+        id: 11,
+        name: None,
+        url: "/ui-api/chats/chat/attachments/in/11".to_string(),
+        media_kind: "file",
+        content_type: "application/octet-stream",
+        size_bytes: Some(1),
+        available: true,
+    }];
+    make_attachment_urls_absolute(
+        &mut attachments,
+        Some("https://echo.example.test/messengers/"),
+    )
+    .unwrap();
+    assert_eq!(
+        attachments[0].url,
+        "https://echo.example.test/messengers/ui-api/chats/chat/attachments/in/11"
+    );
     assert!(validate_attachments(
         (0..=CHAT_ATTACHMENT_MAX_COUNT)
             .map(|_| AttachmentInput {

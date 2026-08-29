@@ -4,8 +4,8 @@ use crate::{
     chats,
     config::{
         Config, AUTOMATION_WORKER_SLEEP_MILLIS,
-        CHAT_REDIS_RECONNECT_SLEEP_MILLIS, CHAT_WORKER_SLEEP_MILLIS,
-        MESSENGER_FULL_SYNC_WORKER_SLEEP_MILLIS,
+        CHAT_REDIS_RECONNECT_SLEEP_MILLIS, CHAT_WEBHOOK_WORKER_SLEEP_MILLIS,
+        CHAT_WORKER_SLEEP_MILLIS, MESSENGER_FULL_SYNC_WORKER_SLEEP_MILLIS,
         MESSENGER_SIGNAL_OUTBOX_WORKER_SLEEP_MILLIS,
     },
     error::ShortContext,
@@ -25,21 +25,38 @@ pub fn spawn_workers(
     tokio::spawn(signal_outbox_worker(db.clone()));
     tokio::spawn(automation_worker(db.clone()));
     tokio::spawn(cleanup_worker(db.clone(), chat_redis.clone()));
-    tokio::spawn(chat_worker(db.clone(), chat_redis.clone()));
+    tokio::spawn(chat_ingestion_worker(
+        db.clone(),
+        config.clone(),
+        chat_redis.clone(),
+    ));
+    tokio::spawn(chat_webhook_worker(db.clone()));
     tokio::spawn(chat_redis_reconnect_worker(config, chat_redis));
     tokio::spawn(echo_install_utils::tmpdir::cleanup_tmp_worker_nofail());
 }
 
-async fn chat_worker(db: DatabaseConnection, chat_redis: ChatRedis) {
-    log::info!("starting echo-messengers chat worker");
+async fn chat_ingestion_worker(
+    db: DatabaseConnection,
+    config: Config,
+    chat_redis: ChatRedis,
+) {
+    log::info!("starting echo-messengers chat ingestion worker");
     loop {
-        if let Err(err) = chats::ingestion_tick(&db, &chat_redis).await {
+        if let Err(err) = chats::ingestion_tick(&db, &config, &chat_redis).await
+        {
             log::error!("chat ingestion tick failed: {err:#}");
         }
+        sleep(Duration::from_millis(CHAT_WORKER_SLEEP_MILLIS)).await;
+    }
+}
+
+async fn chat_webhook_worker(db: DatabaseConnection) {
+    log::info!("starting echo-messengers chat webhook worker");
+    loop {
         if let Err(err) = chats::webhook_tick(&db).await {
             log::error!("chat webhook delivery tick failed: {err:#}");
         }
-        sleep(Duration::from_millis(CHAT_WORKER_SLEEP_MILLIS)).await;
+        sleep(Duration::from_millis(CHAT_WEBHOOK_WORKER_SLEEP_MILLIS)).await;
     }
 }
 

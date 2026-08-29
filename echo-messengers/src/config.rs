@@ -42,6 +42,7 @@ pub const CHAT_REDIS_PIPELINE_BUFFER_SIZE: usize = 128;
 pub const CHAT_REDIS_RESPONSE_TIMEOUT_SECS: u64 = 5;
 pub const CHAT_UNREAD_KEY_TTL_DAYS: u64 = 35;
 pub const CHAT_WEBHOOK_REQUEST_TIMEOUT_SECS: u64 = 15;
+pub const CHAT_WEBHOOK_WORKER_SLEEP_MILLIS: u64 = 2_000;
 pub const CHAT_WEBHOOK_MAX_ATTEMPTS: i32 = 8;
 pub const CHAT_WEBHOOK_BATCH_SIZE: usize = 50;
 pub const CHAT_WEBHOOK_CLEANUP_BATCH_SIZE: i32 = 5_000;
@@ -81,6 +82,7 @@ pub struct Config {
     pub redis_host: Option<String>,
     pub redis_port: Option<u16>,
     pub chat_storage_dir: Option<String>,
+    pub public_base_url: Option<String>,
     pub signal_client_dir: Option<String>,
     pub whatsapp_client_dir: Option<String>,
     pub whatsapp_client_config: Option<String>,
@@ -130,6 +132,10 @@ impl Config {
         self.chat_storage_dir
             .as_deref()
             .unwrap_or(DEFAULT_CHAT_STORAGE_DIR)
+    }
+
+    pub fn public_base_url(&self) -> Option<&str> {
+        self.public_base_url.as_deref()
     }
 
     pub fn signal_client_dir(&self) -> &str {

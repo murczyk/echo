@@ -182,6 +182,8 @@ addresses. Requests are `POST` JSON without redirects:
 ```
 
 `eventId` is stable across delivery retries. Attachment metadata and scoped
-URLs are present; attachment bytes/base64 are never embedded. Consumers should
-deduplicate by `eventId` and return any 2xx response only after durable
+absolute URLs are present; attachment bytes/base64 are never embedded. Set
+`public_base_url`, including any deployment prefix, to the externally reachable
+Echo Messengers URL when webhook events can contain attachments. Consumers
+should deduplicate by `eventId` and return any 2xx response only after durable
 acceptance.

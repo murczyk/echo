@@ -50,6 +50,9 @@ Network and non-2xx failures retry with bounded exponential backoff; terminal
 failures remain in `echo_chat_webhook_delivery.failed_at` for diagnostics.
 Targets must use credential-free HTTPS and resolve only to public IP addresses;
 delivery pins the validated DNS result and does not follow redirects.
+Webhook delivery runs independently from chat ingestion. Set
+`public_base_url`, including any deployment prefix, to the externally reachable
+Echo Messengers URL when webhook events can contain attachments.
 
 Outbound chat media is stored under
 `/var/lib/echo-messengers/chat-attachments`. The package creates that directory

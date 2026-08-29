@@ -1588,6 +1588,7 @@ async fn read_attachment_bytes(
 
 pub async fn ingestion_tick(
     db: &DatabaseConnection,
+    config: &Config,
     chat_redis: &crate::chat_redis::ChatRedis,
 ) -> anyhow::Result<()> {
     let Some(mut redis) = chat_redis.connection().await else {
@@ -1610,6 +1611,7 @@ pub async fn ingestion_tick(
     for scope in scopes {
         if let Err(err) = ingest_account(
             db,
+            config,
             &mut redis,
             &visibility,
             scope.client_id,
@@ -1725,6 +1727,7 @@ struct IngestMessage {
 
 async fn ingest_account(
     db: &DatabaseConnection,
+    config: &Config,
     redis: &mut redis::aio::ConnectionManager,
     visibility: &Visibility,
     client_id: i32,
@@ -1836,7 +1839,7 @@ async fn ingest_account(
             .query_async::<()>(&mut *redis)
             .await
             .c(h!())?;
-        enqueue_webhook(db, visibility, &key, &message)
+        enqueue_webhook(db, config, visibility, &key, &message)
             .await
             .c(h!())?;
     }
@@ -1900,6 +1903,7 @@ async fn upsert_ingestion_state(
 
 async fn enqueue_webhook(
     db: &DatabaseConnection,
+    config: &Config,
     visibility: &Visibility,
     key: &ChatKey,
     message: &IngestMessage,
@@ -1919,11 +1923,13 @@ async fn enqueue_webhook(
         key.client_id, key.account_id, message.id
     );
     let chat_id = encode_chat_id(key).c(h!())?;
-    let attachments = load_attachments(db, &chat_id, &[message.id], &[])
+    let mut attachments = load_attachments(db, &chat_id, &[message.id], &[])
         .await
         .c(h!())?
         .remove(&format!("in:{}", message.id))
         .unwrap_or_default();
+    make_attachment_urls_absolute(&mut attachments, config.public_base_url())
+        .c(h!())?;
     let reactions = load_reactions(db, &[message.id], &[])
         .await
         .c(h!())?
@@ -2819,6 +2825,32 @@ async fn load_attachments(
             });
     }
     Ok(result)
+}
+
+fn make_attachment_urls_absolute(
+    attachments: &mut [Attachment],
+    public_base_url: Option<&str>,
+) -> anyhow::Result<()> {
+    if attachments.is_empty() {
+        return Ok(());
+    }
+    let public_base_url = public_base_url
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .c("public_base_url is required for webhook attachments")?;
+    let public_base_url = reqwest::Url::parse(public_base_url).c(h!())?;
+    if !matches!(public_base_url.scheme(), "http" | "https")
+        || public_base_url.host_str().is_none()
+        || public_base_url.query().is_some()
+        || public_base_url.fragment().is_some()
+    {
+        anyhow::bail!("public_base_url must be an absolute HTTP(S) URL");
+    }
+    let public_base_url = public_base_url.as_str().trim_end_matches('/');
+    for attachment in attachments {
+        attachment.url = format!("{public_base_url}{}", attachment.url);
+    }
+    Ok(())
 }
 
 async fn load_reactions(

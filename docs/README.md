@@ -73,7 +73,8 @@ unread-state worker, durable webhook dispatcher, and outbound chat attachment
 storage at `/var/lib/echo-messengers/chat-attachments`. PostgreSQL remains the
 source of truth; Redis failure degrades unread operations without taking chat
 history or messenger management offline. Per-client 30-day retention is
-applied through Echo IM and restarts only that client's worker.
+applied through Echo IM and restarts only that client's worker. Chat ingestion
+and webhook delivery run in independent worker loops.
 
 Messenger receipt and processing are separate. Receipt persists snapshots in
 PostgreSQL even while NLP is unavailable. The queue processor waits for

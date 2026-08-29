@@ -286,6 +286,9 @@
 
   async function loadPollingPages(selectedId) {
     const knownIds = new Set(state.messages.map((message) => message.id));
+    if (knownIds.size === 0) {
+      return requestMessagePage(selectedId);
+    }
     let messages = [];
     let cursor = null;
     let unreadAvailable = true;
@@ -321,6 +324,9 @@
         state.messageCursor = page.nextCursor;
         renderMessages({ preserveScroll: true });
       } else if (polling) {
+        if (state.messages.length === 0) {
+          state.messageCursor = page.nextCursor;
+        }
         state.messages = mergeById(state.messages, page.messages);
         renderMessages({
           preservePosition: !stickToBottom,
