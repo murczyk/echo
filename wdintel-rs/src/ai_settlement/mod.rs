@@ -26,7 +26,8 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
     ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, TransactionTrait,
+    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use types::{
@@ -90,7 +91,7 @@ pub async fn update_ai_settlement_test_message(
     let message_id = parse_uuid(&req.id).context(h!())?;
     let message_text = validate_message(req.message).context(h!())?;
     let transaction = env.dbx.begin().await.c(h!())?;
-    let message = find_test_message(&transaction, message_id)
+    let message = lock_test_message(&transaction, message_id)
         .await
         .context(h!())?;
     ai_settlement_parse_result::Entity::delete_many()
@@ -175,10 +176,12 @@ pub async fn recalculate_ai_settlement_parsing(
         .await
         .context(h!())?;
     let messages = load_test_messages(&env.dbx).await.context(h!())?;
-    let results = run_parsing(prompt.clone(), engines, messages).await;
-    let results = save_prompt_and_results(&env.dbx, prompt, results)
-        .await
-        .context(h!())?;
+    let results = run_parsing(prompt.clone(), engines, messages.clone()).await;
+    let results = save_recalculated_prompt_and_results(
+        &env.dbx, prompt, results, &messages,
+    )
+    .await
+    .context(h!())?;
     Ok(Json(AiSettlementParsingRsp { results }))
 }
 
@@ -425,6 +428,18 @@ where
         .ok_or(AppError::NotFound)
 }
 
+async fn lock_test_message(
+    transaction: &DatabaseTransaction,
+    message_id: Uuid,
+) -> Result<ai_settlement_test_message::Model, AppError> {
+    ai_settlement_test_message::Entity::find_by_id(message_id)
+        .lock_exclusive()
+        .one(transaction)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
 fn test_message_item(
     message: ai_settlement_test_message::Model,
     results: Vec<AiSettlementParseResultItem>,
@@ -562,6 +577,11 @@ pub(crate) fn parse_settlements(
                 "Назва має містити не більше {AI_SETTLEMENT_MAX_CHARS} символів"
             ));
         }
+        if settlement.contains('|') {
+            return Err(anyhow::anyhow!(
+                "Назва населеного пункту не повинна містити символ |"
+            ));
+        }
         if seen.insert(settlement.to_string()) {
             settlements.push(settlement.to_string());
         }
@@ -669,6 +689,12 @@ fn normalize_result(
             AI_SETTLEMENT_MAX_CHARS,
         )
         .context(h!())?;
+        if settlement.contains('|') {
+            return Err(AppError::BL {
+                msg: "Назва населеного пункту не повинна містити символ |"
+                    .to_string(),
+            });
+        }
         if seen.insert(settlement.clone()) {
             settlements.push(settlement);
         }
@@ -688,9 +714,33 @@ fn normalize_result(
 async fn save_prompt_and_results(
     dbx: &DatabaseConnection,
     prompt: String,
+    results: Vec<AiSettlementParseResultItem>,
+) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
+    persist_prompt_and_results(dbx, prompt, results, None).await
+}
+
+async fn save_recalculated_prompt_and_results(
+    dbx: &DatabaseConnection,
+    prompt: String,
+    results: Vec<AiSettlementParseResultItem>,
+    source_messages: &[ai_settlement_test_message::Model],
+) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
+    persist_prompt_and_results(dbx, prompt, results, Some(source_messages))
+        .await
+}
+
+async fn persist_prompt_and_results(
+    dbx: &DatabaseConnection,
+    prompt: String,
     mut results: Vec<AiSettlementParseResultItem>,
+    source_messages: Option<&[ai_settlement_test_message::Model]>,
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
+    if let Some(source_messages) = source_messages {
+        lock_and_validate_test_messages(&transaction, source_messages)
+            .await
+            .context(h!())?;
+    }
     let now = Utc::now().naive_utc();
     clear_results_for_other_prompts(&transaction, &prompt)
         .await
@@ -709,6 +759,38 @@ async fn save_prompt_and_results(
         result.updated_at = Some(updated_at);
     }
     Ok(results)
+}
+
+async fn lock_and_validate_test_messages(
+    transaction: &DatabaseTransaction,
+    expected_messages: &[ai_settlement_test_message::Model],
+) -> Result<(), AppError> {
+    if expected_messages.is_empty() {
+        return Ok(());
+    }
+    let message_ids = expected_messages.iter().map(|message| message.id);
+    let current_messages = ai_settlement_test_message::Entity::find()
+        .filter(ai_settlement_test_message::Column::Id.is_in(message_ids))
+        .order_by_asc(ai_settlement_test_message::Column::Id)
+        .lock_exclusive()
+        .all(transaction)
+        .await
+        .c(h!())?;
+    let current_messages: HashMap<Uuid, _> = current_messages
+        .into_iter()
+        .map(|message| (message.id, message))
+        .collect();
+    let unchanged = current_messages.len() == expected_messages.len()
+        && expected_messages.iter().all(|expected_message| {
+            current_messages.get(&expected_message.id) == Some(expected_message)
+        });
+    if !unchanged {
+        return Err(AppError::BL {
+            msg: "Тестові повідомлення змінилися під час розпізнавання; повторіть розрахунок"
+                .to_string(),
+        });
+    }
+    Ok(())
 }
 
 async fn clear_results_for_other_prompts(
@@ -852,14 +934,16 @@ fn parse_unique_uuids(values: Vec<String>) -> Result<HashSet<Uuid>, AppError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        effective_prompt, parse_settlements, prompt_state,
-        strip_json_code_fence,
+        effective_prompt, load_test_messages, parse_settlements, prompt_state,
+        save_recalculated_prompt_and_results, strip_json_code_fence,
     };
     use crate::config::{
         AI_SETTLEMENT_DEFAULT_PROMPT, AI_SETTLEMENT_SETTINGS_ID,
     };
-    use crate::entities::ai_settlement_settings;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait};
+    use crate::entities::{ai_settlement_settings, ai_settlement_test_message};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+    };
     use serial_test::serial;
 
     #[test]
@@ -882,6 +966,11 @@ mod tests {
     }
 
     #[test]
+    fn rejects_location_delimiter_2133() {
+        assert!(parse_settlements(r#"["АРТІЛЬНЕ|КВАШИНЕ"]"#).is_err());
+    }
+
+    #[test]
     fn strips_markdown_json_fence() {
         assert_eq!(
             strip_json_code_fence("```json\n{\"settlements\":[]}\n```"),
@@ -899,6 +988,38 @@ mod tests {
                 "{error}"
             );
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rejects_results_for_changed_test_messages_2133() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let message = ai_settlement_test_message::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            message: Set("old message".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let source_messages = load_test_messages(&env.dbx).await.unwrap();
+        let mut message = message.into_active_model();
+        message.message = Set("new message".to_string());
+        message.updated_at = Set(now + chrono::Duration::seconds(1));
+        message.update(&env.dbx).await.unwrap();
+
+        let error = save_recalculated_prompt_and_results(
+            &env.dbx,
+            "prompt".to_string(),
+            Vec::new(),
+            &source_messages,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("Тестові повідомлення змінилися"));
     }
 
     #[test]
