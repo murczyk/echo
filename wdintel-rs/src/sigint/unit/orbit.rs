@@ -1256,7 +1256,7 @@ pub(crate) async fn link_orbit_unit_in_transaction<C>(
 where
     C: ConnectionTrait,
 {
-    Ok(link_orbit_unit_in_transaction_inner(
+    link_orbit_unit_in_transaction_inner(
         dbx,
         login,
         sigint_unit_id,
@@ -1265,7 +1265,10 @@ where
         true,
     )
     .await
-    .c(h!())?)
+    .c(h!())?
+    .ok_or_else(|| AppError::BL {
+        msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
+    })
 }
 
 pub(crate) async fn link_orbit_unit_with_deferred_deduplicate_reconciliation<
@@ -1276,7 +1279,7 @@ pub(crate) async fn link_orbit_unit_with_deferred_deduplicate_reconciliation<
     sigint_unit_id: i64,
     orbit_unit_id: Uuid,
     provenance: crate::orbit::LinkProvenance,
-) -> Result<sigint_unit::Model, AppError>
+) -> Result<Option<sigint_unit::Model>, AppError>
 where
     C: ConnectionTrait,
 {
@@ -1299,7 +1302,7 @@ async fn link_orbit_unit_in_transaction_inner<C>(
     orbit_unit_id: Uuid,
     provenance: crate::orbit::LinkProvenance,
     reconcile_deduplicate_candidates: bool,
-) -> Result<sigint_unit::Model, AppError>
+) -> Result<Option<sigint_unit::Model>, AppError>
 where
     C: ConnectionTrait,
 {
@@ -1310,14 +1313,17 @@ where
     let orbit_unit = find_available_orbit_unit(dbx, orbit_unit_id)
         .await
         .c(h!())?;
-    crate::orbit::link_sigint_unit_if_unlinked(
+    if !crate::orbit::try_link_sigint_unit_if_unlinked(
         dbx,
         sigint_unit_id,
         orbit_unit_id,
         provenance,
     )
     .await
-    .c(h!())?;
+    .c(h!())?
+    {
+        return Ok(None);
+    }
     import_missing_orbit_ancestors(dbx, login, &orbit_unit)
         .await
         .c(h!())?;
@@ -1340,7 +1346,7 @@ where
         .await
         .c(h!())?;
     }
-    Ok(sigint_unit)
+    Ok(Some(sigint_unit))
 }
 
 #[post("/api/sigint/unit/orbit-unlink")]

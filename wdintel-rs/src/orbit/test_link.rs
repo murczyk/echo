@@ -8,7 +8,7 @@ use crate::config::{
 use crate::entities::{
     orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
 };
-use crate::types::{Mode, ShortContext};
+use crate::types::{warn, Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, JoinType,
@@ -36,7 +36,7 @@ struct PersistenceMatcherCache {
     matcher: matching::TestLinkMatcher,
 }
 
-#[derive(FromQueryResult)]
+#[derive(Debug, FromQueryResult)]
 struct CurrentOrbitLink {
     sigint_unit_id: i64,
     orbit_unit_id: uuid::Uuid,
@@ -44,11 +44,12 @@ struct CurrentOrbitLink {
     orbit_unit_deleted: bool,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct CurrentOrbitLinkState {
     has_active_link: bool,
     has_active_manual_link: bool,
     automatic_orbit_unit_ids: BTreeSet<uuid::Uuid>,
+    links: Vec<CurrentOrbitLink>,
 }
 
 impl PersistSummary {
@@ -624,15 +625,19 @@ where
             summary.no_longer_matching += 1;
             continue;
         }
-        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        if !persist_orbit_link(
             dbx,
             login,
-            *sigint_unit_id,
+            sigint_unit,
             *orbit_unit_id,
             super::LinkProvenance::Manual,
         )
         .await
-        .c(h!())?;
+        .c(h!())?
+        {
+            summary.already_linked += 1;
+            continue;
+        }
         links_changed = true;
     }
     Ok((summary, links_changed))
@@ -746,18 +751,61 @@ where
             }
             continue;
         };
-        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        if !persist_orbit_link(
             dbx,
             login,
-            *sigint_unit_id,
+            sigint_unit,
             orbit_unit_id,
             super::LinkProvenance::Automatic,
         )
         .await
-        .c(h!())?;
+        .c(h!())?
+        {
+            summary.already_linked += 1;
+            continue;
+        }
         links_changed = true;
     }
     Ok((summary, links_changed))
+}
+
+async fn persist_orbit_link<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    sigint_unit: &sigint_unit::Model,
+    orbit_unit_id: uuid::Uuid,
+    provenance: super::LinkProvenance,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let linked = crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        dbx,
+        login,
+        sigint_unit.id,
+        orbit_unit_id,
+        provenance,
+    )
+    .await
+    .c(h!())?
+    .is_some();
+    if linked {
+        return Ok(true);
+    }
+    let current_link_state = load_current_orbit_link_states(
+        dbx,
+        std::slice::from_ref(&sigint_unit.id),
+    )
+    .await
+    .c(h!())?;
+    let current_links = current_link_state
+        .values()
+        .flat_map(|state| &state.links)
+        .collect::<Vec<_>>();
+    warn!(
+        "Skipping conflicting ORBIT link candidate: sigint_unit={sigint_unit:#?}, requested_orbit_unit_id={orbit_unit_id}, provenance={provenance:#?}, current_links={current_links:#?}"
+    );
+    Ok(false)
 }
 
 async fn remove_unreviewable_automatic_links<C>(
@@ -842,6 +890,7 @@ where
         } else {
             state.automatic_orbit_unit_ids.insert(link.orbit_unit_id);
         }
+        state.links.push(link);
     }
     Ok(states)
 }
