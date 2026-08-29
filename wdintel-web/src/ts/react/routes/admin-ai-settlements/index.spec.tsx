@@ -110,6 +110,44 @@ describe('AdminAiSettlementsPage', () => {
     await act(async () => root.unmount());
   });
 
+  it('clears results from the previous prompt when saving a changed prompt', async () => {
+    mocks.getPage.mockResolvedValueOnce({
+      ...(await mocks.getPage()),
+      messages: [
+        {
+          id: 'message-a',
+          message: 'Test message',
+          createdAt: 1,
+          updatedAt: 1,
+          results: [{ ...testResult, updatedAt: 1 }],
+        },
+      ],
+    });
+    mocks.save.mockResolvedValueOnce({ results: [] });
+    const { container, root } = await renderPage();
+    expect(container.textContent).toContain('АРТІЛЬНЕ');
+
+    const prompt = container.querySelector<HTMLTextAreaElement>('textarea');
+    await act(async () => {
+      if (prompt) {
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          'value',
+        )?.set;
+        valueSetter?.call(prompt, 'Changed prompt');
+        prompt.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await act(async () => button(container, 'Зберегти')?.click());
+
+    expect(mocks.save).toHaveBeenCalledWith({
+      prompt: 'Changed prompt',
+      results: [],
+    });
+    expect(container.textContent).not.toContain('АРТІЛЬНЕ');
+    await act(async () => root.unmount());
+  });
+
   it('saves worker settings and resets the prompt override', async () => {
     const { container, root } = await renderPage();
 

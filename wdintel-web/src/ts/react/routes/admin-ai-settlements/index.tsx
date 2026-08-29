@@ -67,12 +67,23 @@ function mergeSavedResults(
   });
 }
 
+function replaceSavedResults(
+  messages: AiSettlementTestMessageItem[],
+  results: AiSettlementParseResultItem[],
+): AiSettlementTestMessageItem[] {
+  return messages.map((message) => ({
+    ...message,
+    results: results.filter((result) => result.testMessageId === message.id),
+  }));
+}
+
 export function AdminAiSettlementsPage() {
   const [engines, setEngines] = useState<
     Awaited<ReturnType<typeof getAiSettlementPage>>['engines']
   >([]);
   const [messages, setMessages] = useState<AiSettlementTestMessageItem[]>([]);
   const [prompt, setPrompt] = useState('');
+  const [savedPrompt, setSavedPrompt] = useState('');
   const [promptOverridden, setPromptOverridden] = useState(false);
   const [selectedEngineIds, setSelectedEngineIds] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<AiSettlementParseResultItem[]>([]);
@@ -104,6 +115,7 @@ export function AdminAiSettlementsPage() {
       setEngines(page.engines);
       setMessages(page.messages);
       setPrompt(page.prompt);
+      setSavedPrompt(page.prompt);
       setPromptOverridden(page.promptOverridden);
       setSelectedEngineIds(page.engines.map((engine) => engine.id));
       setWorkerSettings(page.worker);
@@ -144,17 +156,23 @@ export function AdminAiSettlementsPage() {
 
   async function save() {
     if (!prompt.trim() || action) return;
+    const promptToSave = prompt.trim();
     setTestResults([]);
     setAction('save');
     setError(null);
     try {
       const response = await saveAiSettlementParsing({
-        prompt: prompt.trim(),
+        prompt: promptToSave,
         results: testResults,
       });
-      setMessages((current) => mergeSavedResults(current, response.results));
+      setMessages((current) =>
+        promptToSave === savedPrompt
+          ? mergeSavedResults(current, response.results)
+          : replaceSavedResults(current, response.results),
+      );
       setTestResults([]);
-      setPrompt(prompt.trim());
+      setPrompt(promptToSave);
+      setSavedPrompt(promptToSave);
       setPromptOverridden(true);
       notify({ severity: 'success', message: 'Промпт і результати збережено.' });
     } catch (saveError) {
@@ -166,17 +184,23 @@ export function AdminAiSettlementsPage() {
 
   async function recalculate() {
     if (!canRun || action) return;
+    const promptToSave = prompt.trim();
     setTestResults([]);
     setAction('recalculate');
     setError(null);
     try {
       const response = await recalculateAiSettlementParsing({
-        prompt: prompt.trim(),
+        prompt: promptToSave,
         aiEngineIds: selectedEngineIds,
       });
-      setMessages((current) => mergeSavedResults(current, response.results));
+      setMessages((current) =>
+        promptToSave === savedPrompt
+          ? mergeSavedResults(current, response.results)
+          : replaceSavedResults(current, response.results),
+      );
       setTestResults([]);
-      setPrompt(prompt.trim());
+      setPrompt(promptToSave);
+      setSavedPrompt(promptToSave);
       setPromptOverridden(true);
       notify({ severity: 'success', message: 'Усі результати перераховано і збережено.' });
     } catch (recalculateError) {
@@ -192,7 +216,11 @@ export function AdminAiSettlementsPage() {
     setError(null);
     try {
       const state = await resetAiSettlementPrompt();
+      if (state.prompt !== savedPrompt) {
+        setMessages((current) => replaceSavedResults(current, []));
+      }
       setPrompt(state.prompt);
+      setSavedPrompt(state.prompt);
       setPromptOverridden(state.promptOverridden);
       setTestResults([]);
       notify({ severity: 'success', message: 'Відновлено стандартний промпт.' });

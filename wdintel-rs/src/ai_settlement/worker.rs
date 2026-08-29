@@ -153,7 +153,7 @@ async fn process_next(
                     dbx,
                     job.sigint_inbox_item_id,
                     &body,
-                    format!("{error}; відповідь ШІ: {response_text}"),
+                    format!("{error:#}; відповідь ШІ: {response_text}"),
                 )
                 .await
                 .context(h!())?;
@@ -308,6 +308,15 @@ async fn complete_job(
             &transaction,
             sigint_inbox_item_id,
             Some(&location_v2),
+        )
+        .await
+        .c(h!())?;
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            &transaction,
+            sigint_inbox_item_id,
+            format!(
+                "AI settlements updated for inbox message {sigint_inbox_item_id}"
+            ),
         )
         .await
         .c(h!())?;
@@ -469,12 +478,13 @@ mod tests {
         normalize_settlements, retry_delay_secs,
     };
     use crate::entities::{
-        ai_settlement_worker_job, sigint_inbox_item,
-        sigint_inbox_item_settlement, signal_message,
+        ai_settlement_worker_job, group_stats_recalculation_task,
+        sigint_inbox_item, sigint_inbox_item_settlement, signal_group,
+        signal_message, signal_message_group,
     };
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait,
-        QueryFilter, QueryOrder,
+        QueryFilter, QueryOrder, QuerySelect,
     };
 
     #[test]
@@ -512,6 +522,15 @@ mod tests {
     #[serial_test::serial]
     async fn preserves_pipe_delimited_locations_and_reconciles_links_2133() {
         let env = crate::functest::tests::cleanup().await.unwrap();
+        let group_master_key = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
+            .select_only()
+            .column(signal_group::Column::MasterKey)
+            .into_tuple::<String>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
         let message = crate::functest::tests::mk_signal_message(
             &env.dbx,
             signal_message::ActiveModel {
@@ -519,6 +538,15 @@ mod tests {
                 ..Default::default()
             },
         )
+        .await
+        .unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(message.id),
+            group_master_key: Set(Some(group_master_key.clone())),
+            created_at: Set(message.created_at),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
         .await
         .unwrap();
         sigint_inbox_item::ActiveModel {
@@ -577,6 +605,15 @@ mod tests {
             .await
             .unwrap()
             .is_none());
+        assert!(group_stats_recalculation_task::Entity::find()
+            .filter(
+                group_stats_recalculation_task::Column::GroupMasterKey
+                    .eq(group_master_key)
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[tokio::test]
