@@ -912,9 +912,8 @@ pub async fn user_test_api_login(
 #[post("/api/user/login")]
 pub async fn user_login(
     env: actix_web::web::Data<Env>,
-    http_req: HttpRequest,
     req: Json<LoginReq>,
-) -> Result<Json<()>, AppError> {
+) -> Result<Json<LoginRsp>, AppError> {
     let user_id = req.user.clone();
     let login_obj = match validate_login(&env.dbx, &user_id).await {
         Ok(obj) => obj,
@@ -974,11 +973,41 @@ pub async fn user_login(
         return Err(AppError::Form(errors));
     };
 
-    start_user_session(&env, &http_req, login_obj.id)
-        .await
-        .c(h!())?;
+    let rsp = begin_totp_login_challenge(&env, &login_obj).await.c(h!())?;
+    Ok(Json(rsp))
+}
 
-    Ok(Json(()))
+async fn begin_totp_login_challenge(
+    env: &actix_web::web::Data<Env>,
+    login_obj: &login::Model,
+) -> anyhow::Result<LoginRsp> {
+    let mut redis = env.redis.clone();
+    match login_obj.totp_secret.as_deref().filter(|s| !s.is_empty()) {
+        None => {
+            let enrollment = totp::generate_enrollment(&login_obj.login)?;
+            let challenge_id = totp_challenge::create_enroll_challenge(
+                &mut redis,
+                login_obj.id,
+                &enrollment.secret_base32,
+            )
+            .await?;
+            Ok(LoginRsp::Needs2faSetup {
+                challenge_id: challenge_id.to_string(),
+                qr_base64: enrollment.qr_base64,
+                manual_key: enrollment.manual_key,
+            })
+        }
+        Some(_) => {
+            let challenge_id = totp_challenge::create_verify_challenge(
+                &mut redis,
+                login_obj.id,
+            )
+            .await?;
+            Ok(LoginRsp::Needs2fa {
+                challenge_id: challenge_id.to_string(),
+            })
+        }
+    }
 }
 
 #[post("/api/user/settings-save")]

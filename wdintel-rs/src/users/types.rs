@@ -46,6 +46,20 @@ pub struct LoginReq {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub enum LoginRsp {
+    Needs2faSetup {
+        challenge_id: String,
+        qr_base64: String,
+        manual_key: String,
+    },
+    Needs2fa {
+        challenge_id: String,
+    },
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct SettingsSaveReq {
     pub sigint_zone_id: Option<i64>,
 }

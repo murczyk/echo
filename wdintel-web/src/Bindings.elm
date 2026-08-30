@@ -4179,6 +4179,19 @@ loginReqEncoder struct =
         ]
 
 
+type LoginRsp
+    = Needs2faSetup { challengeId : String, qrBase64 : String, manualKey : String }
+    | Needs2fa { challengeId : String }
+
+
+loginRspEncoder : LoginRsp -> Json.Encode.Value
+loginRspEncoder enum =
+    case enum of
+        Needs2faSetup { challengeId, qrBase64, manualKey } ->
+            Json.Encode.object [ ( "Needs2faSetup", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ), ( "qr_base64", Json.Encode.string qrBase64 ), ( "manual_key", Json.Encode.string manualKey ) ] ) ]
+        Needs2fa { challengeId } ->
+            Json.Encode.object [ ( "Needs2fa", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ) ] ) ]
+
 type alias User =
     { id : String
     , name : String
@@ -16541,6 +16554,19 @@ loginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "user" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.string)))
 
+
+loginRspDecoder : Json.Decode.Decoder LoginRsp
+loginRspDecoder =
+        let
+            elmRsConstructNeeds2faSetup challengeId qrBase64 manualKey =
+                        Needs2faSetup { challengeId = challengeId, qrBase64 = qrBase64, manualKey = manualKey }
+            elmRsConstructNeeds2fa challengeId =
+                        Needs2fa { challengeId = challengeId }
+        in
+    Json.Decode.oneOf
+        [ Json.Decode.field "Needs2faSetup" (Json.Decode.succeed elmRsConstructNeeds2faSetup |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qr_base64" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "manual_key" (Json.Decode.string))))
+        , Json.Decode.field "Needs2fa" (Json.Decode.succeed elmRsConstructNeeds2fa |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))))
+        ]
 
 userDecoder : Json.Decode.Decoder User
 userDecoder =

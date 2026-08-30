@@ -499,14 +499,14 @@ rer_analysis_latest_senders toMsg =
 
 
 users_login :
-    (Result ApiError () -> msg)
+    (Result ApiError LoginRsp -> msg)
     -> LoginReq
     -> Cmd msg
 users_login toMsg req =
     Http.post
         { url = "/api/user/login"
         , body = Http.jsonBody (loginReqEncoder req)
-        , expect = leExpectJson toMsg (Decode.succeed ())
+        , expect = leExpectJson toMsg loginRspDecoder
         }
 
 

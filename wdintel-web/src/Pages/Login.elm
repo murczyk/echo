@@ -99,7 +99,7 @@ type Msg
     | SetPasswordInp String
     | ToggleCredsLogin
     | Login
-    | LoginDone (Result ApiError ())
+    | LoginDone (Result ApiError B.LoginRsp)
     | GotLocation LocationRes
     | GetDeltaRedirectUrl
     | GotDeltaRedirectUrl (Result ApiError B.DeltaLoginUrl)
@@ -187,33 +187,13 @@ update shared msg model =
         LoginDone (Err e) ->
             Api.handleLoginHttpError ToastMsg e model
 
-        LoginDone (Ok ()) ->
-            case shared.location of
-                Nothing ->
-                    ( model, E.none )
-
-                Just loc ->
-                    ( model
-                    , E.sendCmd <|
-                        Browser.Navigation.load
-                            (model.redirect
-                                |> mmap
-                                    (\x ->
-                                        if
-                                            String.contains "localhost" x
-                                                || String.contains "127.0.0.1" x
-                                        then
-                                            x
-
-                                        else
-                                            String.replace "http://" "https://" x
-                                    )
-                                |> def
-                                    (loc.origin
-                                        ++ Url.Builder.absolute [] []
-                                    )
-                            )
-                    )
+        LoginDone (Ok _) ->
+            -- OTP UI lands in step 6; do not navigate without a session cookie.
+            ( model
+            , E.sendCmd <|
+                Shared.Components.Toast.addError ToastMsg
+                    "Потрібен код двофакторної автентифікації"
+            )
 
         GotLocation loc ->
             let
