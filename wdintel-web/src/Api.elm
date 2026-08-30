@@ -510,6 +510,18 @@ users_login toMsg req =
         }
 
 
+users_confirm_2fa :
+    (Result ApiError () -> msg)
+    -> Confirm2faReq
+    -> Cmd msg
+users_confirm_2fa toMsg req =
+    Http.post
+        { url = "/api/user/confirm-2fa"
+        , body = Http.jsonBody (confirm2faReqEncoder req)
+        , expect = leExpectJson toMsg (Decode.succeed ())
+        }
+
+
 user_sigint_groups :
     (Result ApiError (List String) -> msg)
     -> SigintGroupsReq
