@@ -342,7 +342,9 @@ pub(crate) fn build_scoped_network_messages_query(
         .and_where(
             Expr::col((SigintNetwork::Table, SigintNetwork::Deleted)).eq(false),
         )
-        .and_where_option(build_network_message_period_filter(filter)?);
+        .and_where_option(
+            build_network_message_period_filter(filter).context(h!())?,
+        );
     Ok(query)
 }
 
@@ -461,6 +463,15 @@ pub(crate) fn build_network_message_freq_join_condition(
     Ok(join_condition)
 }
 
+pub(crate) fn should_materialize_scoped_network_messages(
+    filter: Option<&NetworkFreqFilter>,
+) -> bool {
+    filter.is_some_and(|filter| {
+        filter.since_date_inclusive_ms.is_some()
+            || filter.till_date_inclusive_ms.is_some()
+    })
+}
+
 fn build_network_freqs_query(
     groups: &Vec<String>,
     network_id: i64,
@@ -470,7 +481,8 @@ fn build_network_freqs_query(
 ) -> Result<WithQuery, AppError> {
     let nf = Alias::new("network_freqs");
     let network_messages =
-        build_scoped_network_messages_query(groups, network_id, filter)?
+        build_scoped_network_messages_query(groups, network_id, filter)
+            .context(h!())?
             .expr_as(
                 build_network_message_callsigns_expr(include_callsigns),
                 Alias::new("callsigns"),
@@ -497,7 +509,8 @@ fn build_network_freqs_query(
             JoinType::InnerJoin,
             SigintNetworkFreq::Table,
             nf.clone(),
-            build_network_message_freq_join_condition(filter, true).c(h!())?,
+            build_network_message_freq_join_condition(filter, true)
+                .context(h!())?,
         )
         .and_where(
             Expr::col((nf.clone(), SigintNetworkFreq::Deleted)).eq(false),
@@ -515,11 +528,16 @@ fn build_network_freqs_query(
         );
     }
 
-    let network_messages_cte = CommonTableExpression::new()
+    let mut network_messages_cte = CommonTableExpression::new();
+    network_messages_cte
         .query(network_messages)
-        .table_name(Alias::new("network_messages"))
-        .materialized(true)
-        .to_owned();
+        .table_name(Alias::new("network_messages"));
+    if network_freq_id.is_none()
+        && should_materialize_scoped_network_messages(filter)
+    {
+        network_messages_cte.materialized(true);
+    }
+    let network_messages_cte = network_messages_cte.to_owned();
 
     q_agg.add_group_by([Expr::col((nf.clone(), SigintNetworkFreq::Id))]);
 
@@ -1671,12 +1689,16 @@ pub async fn get_active_callsigns(
     let nf = Alias::new("network_freqs");
     let callsigns = Alias::new("callsigns");
     let network_messages =
-        build_scoped_network_messages_query(groups, network_id, filter)?;
-    let network_messages_cte = CommonTableExpression::new()
+        build_scoped_network_messages_query(groups, network_id, filter)
+            .context(h!())?;
+    let mut network_messages_cte = CommonTableExpression::new();
+    network_messages_cte
         .query(network_messages)
-        .table_name(Alias::new("network_messages"))
-        .materialized(true)
-        .to_owned();
+        .table_name(Alias::new("network_messages"));
+    if should_materialize_scoped_network_messages(filter) {
+        network_messages_cte.materialized(true);
+    }
+    let network_messages_cte = network_messages_cte.to_owned();
 
     let mut query = Query::select();
     query
@@ -1690,7 +1712,8 @@ pub async fn get_active_callsigns(
             JoinType::InnerJoin,
             SigintNetworkFreq::Table,
             nf.clone(),
-            build_network_message_freq_join_condition(filter, true).c(h!())?,
+            build_network_message_freq_join_condition(filter, true)
+                .context(h!())?,
         )
         .join_as(
             JoinType::InnerJoin,
@@ -2809,6 +2832,25 @@ mod tests {
             sql.contains("\"network_messages\".\"activity_datetime\""),
             "{sql}"
         );
+    }
+
+    #[test]
+    fn build_network_freqs_query_does_not_materialize_single_freq_lookup() {
+        let sql = build_network_freqs_query(
+            &vec!["group-a".to_string()],
+            42,
+            None,
+            false,
+            Some(7),
+        )
+        .expect("network freqs query")
+        .to_string(PostgresQueryBuilder);
+
+        assert!(
+            !sql.contains("WITH \"network_messages\" AS MATERIALIZED"),
+            "{sql}"
+        );
+        assert!(sql.contains("\"sigint_network_freq\".\"id\" = 7"), "{sql}");
     }
 
     #[test]

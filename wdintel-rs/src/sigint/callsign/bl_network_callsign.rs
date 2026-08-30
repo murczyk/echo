@@ -1624,25 +1624,54 @@ where
     let callsigns_alias = Alias::new("callsigns");
     let network_messages =
         build_scoped_network_messages_query(&groups, network_id, filter)
-            .context(h!())?;
-    let network_messages_cte = sea_query::CommonTableExpression::new()
+            .context(h!())?
+            .expr_as(
+                Expr::col((
+                    callsigns_alias.clone(),
+                    SigintInboxItemCallsign::Callsign,
+                )),
+                "callsign",
+            )
+            .join_as(
+                JoinType::InnerJoin,
+                SigintInboxItemCallsign::Table,
+                callsigns_alias.clone(),
+                Expr::col((
+                    callsigns_alias.clone(),
+                    SigintInboxItemCallsign::SigintInboxItemId,
+                ))
+                .equals((SigintInboxItem::Table, SigintInboxItem::Id))
+                .and(
+                    Expr::col((
+                        callsigns_alias.clone(),
+                        SigintInboxItemCallsign::Deleted,
+                    ))
+                    .eq(false),
+                )
+                .and(
+                    Expr::col((
+                        callsigns_alias.clone(),
+                        SigintInboxItemCallsign::Callsign,
+                    ))
+                    .is_in(callsigns.to_owned()),
+                ),
+            )
+            .to_owned();
+    let mut network_messages_cte = sea_query::CommonTableExpression::new();
+    network_messages_cte
         .query(network_messages)
-        .table_name(Alias::new("network_messages"))
-        .materialized(true)
-        .to_owned();
+        .table_name(Alias::new("network_messages"));
+    if should_materialize_scoped_network_messages(filter) {
+        network_messages_cte.materialized(true);
+    }
+    let network_messages_cte = network_messages_cte.to_owned();
 
     let mut subquery = sea_query::Query::select();
     subquery
         .column((NetworkMessages::Table, NetworkMessages::Id))
         .column((NetworkMessages::Table, NetworkMessages::Freq))
         .column((NetworkMessages::Table, NetworkMessages::ActivityDatetime))
-        .expr_as(
-            Expr::col((
-                callsigns_alias.clone(),
-                SigintInboxItemCallsign::Callsign,
-            )),
-            "callsign",
-        )
+        .column((NetworkMessages::Table, Alias::new("callsign")))
         .from(NetworkMessages::Table)
         .join_as(
             JoinType::InnerJoin,
@@ -1650,30 +1679,6 @@ where
             nf.clone(),
             build_network_message_freq_join_condition(filter, true)
                 .context(h!())?,
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            SigintInboxItemCallsign::Table,
-            callsigns_alias.clone(),
-            Expr::col((
-                callsigns_alias.clone(),
-                SigintInboxItemCallsign::SigintInboxItemId,
-            ))
-            .equals((NetworkMessages::Table, NetworkMessages::Id))
-            .and(
-                Expr::col((
-                    callsigns_alias.clone(),
-                    SigintInboxItemCallsign::Deleted,
-                ))
-                .eq(false),
-            )
-            .and(
-                Expr::col((
-                    callsigns_alias.clone(),
-                    SigintInboxItemCallsign::Callsign,
-                ))
-                .is_in(callsigns.to_owned()),
-            ),
         )
         .and_where(
             Expr::col((nf.clone(), SigintNetworkFreq::NetworkId))
