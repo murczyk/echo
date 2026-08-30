@@ -63,8 +63,9 @@ Verify { login_id, attempts }
 | --- | --- |
 | `challenge_id` | UUID v4 |
 | TTL | 300s (`TOTP_2FA_CHALLENGE_TTL_SEC`) |
-| Lockout | after 5 failed OTP attempts (`TOTP_2FA_MAX_ATTEMPTS`) |
-| Delete | on successful confirm, or TTL expiry |
+| Lockout | after 5 failed OTP attempts (`TOTP_2FA_MAX_ATTEMPTS`), via atomic Redis `INCR` script |
+| Stale enroll | confirm persists secret only if still unset; later enroll challenges are rejected |
+| Delete | on successful confirm, lockout, or TTL expiry |
 | Multi-instance | Redis only (same service as sessions; stats use another DB) |
 
 ---
