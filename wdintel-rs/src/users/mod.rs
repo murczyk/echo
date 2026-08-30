@@ -392,6 +392,14 @@ pub async fn update_login(
         info!(
             "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
         );
+        // Revoke pending enroll/verify challenges before nulling the secret so
+        // an older enrollment challenge cannot re-bind after the clear.
+        totp_challenge::invalidate_login_challenges(
+            &mut env.redis.clone(),
+            login_id,
+        )
+        .await
+        .c(h!())?;
         login_obj.totp_secret = Set(None);
     }
     let res = login_obj.update(&txn).await.c(h!())?;
@@ -991,42 +999,60 @@ pub async fn user_login(
         return Err(AppError::Form(errors));
     };
 
-    let rsp = begin_totp_login_challenge(&env, &login_obj).await.c(h!())?;
+    let rsp = begin_totp_login_challenge(&env, &login_obj).await?;
     Ok(Json(rsp))
 }
 
 async fn begin_totp_login_challenge(
     env: &actix_web::web::Data<Env>,
     login_obj: &login::Model,
-) -> anyhow::Result<LoginRsp> {
+) -> Result<LoginRsp, AppError> {
     let mut redis = env.redis.clone();
     match login_obj.totp_secret.as_deref().filter(|s| !s.is_empty()) {
         None => {
             let enrollment =
                 totp::generate_enrollment(&login_obj.login).c(h!())?;
-            let challenge_id = totp_challenge::create_enroll_challenge(
+            match totp_challenge::create_enroll_challenge(
                 &mut redis,
                 login_obj.id,
                 &enrollment.secret_base32,
             )
             .await
-            .c(h!())?;
-            Ok(LoginRsp::Needs2faSetup {
-                challenge_id: challenge_id.to_string(),
-                qr_base64: enrollment.qr_base64,
-                manual_key: enrollment.manual_key,
-            })
+            .c(h!())?
+            {
+                totp_challenge::CreateChallengeOutcome::LockedOut => {
+                    Err(totp_challenge_form_error(
+                        "Забагато невдалих спроб. Спробуйте пізніше",
+                    ))
+                }
+                totp_challenge::CreateChallengeOutcome::Created(
+                    challenge_id,
+                ) => Ok(LoginRsp::Needs2faSetup {
+                    challenge_id: challenge_id.to_string(),
+                    qr_base64: enrollment.qr_base64,
+                    manual_key: enrollment.manual_key,
+                }),
+            }
         }
         Some(_) => {
-            let challenge_id = totp_challenge::create_verify_challenge(
+            match totp_challenge::create_verify_challenge(
                 &mut redis,
                 login_obj.id,
             )
             .await
-            .c(h!())?;
-            Ok(LoginRsp::Needs2fa {
-                challenge_id: challenge_id.to_string(),
-            })
+            .c(h!())?
+            {
+                totp_challenge::CreateChallengeOutcome::LockedOut => {
+                    Err(totp_challenge_form_error(
+                        "Забагато невдалих спроб. Спробуйте пізніше",
+                    ))
+                }
+                totp_challenge::CreateChallengeOutcome::Created(
+                    challenge_id,
+                ) => Ok(LoginRsp::Needs2fa {
+                    challenge_id: challenge_id.to_string(),
+                }),
+            }
         }
     }
 }
@@ -1062,17 +1088,24 @@ pub async fn user_confirm_2fa(
     let login_obj = match validate_login_id(&env.dbx, &login_id).await {
         Ok(obj) => obj,
         Err(_) => {
-            let _ =
-                totp_challenge::delete_challenge(&mut redis, challenge_id)
-                    .await;
+            let _ = totp_challenge::delete_challenge(
+                &mut redis,
+                login_id,
+                challenge_id,
+            )
+            .await;
             return Err(totp_challenge_form_error(
                 "Невірний або прострочений код підтвердження",
             ));
         }
     };
     if let Some(err) = login_obj.validation_error {
-        let _ =
-            totp_challenge::delete_challenge(&mut redis, challenge_id).await;
+        let _ = totp_challenge::delete_challenge(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await;
         return Err(err);
     }
     let login_obj = login_obj.login_model.c(h!())?;
@@ -1083,8 +1116,12 @@ pub async fn user_confirm_2fa(
         totp_challenge::TotpChallenge::Enroll { .. }
     ) && login_totp_enabled(&login_obj.totp_secret)
     {
-        let _ =
-            totp_challenge::delete_challenge(&mut redis, challenge_id).await;
+        let _ = totp_challenge::delete_challenge(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await;
         return Err(totp_challenge_form_error(
             "Невірний або прострочений код підтвердження",
         ));
@@ -1106,9 +1143,13 @@ pub async fn user_confirm_2fa(
 
     let is_valid = totp::verify_token(&secret, req.token.trim()).c(h!())?;
     if !is_valid {
-        match totp_challenge::record_failed_attempt(&mut redis, challenge_id)
-            .await
-            .c(h!())?
+        match totp_challenge::record_failed_attempt(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await
+        .c(h!())?
         {
             totp_challenge::FailedAttemptResult::StillOpen => {
                 return Err(totp_challenge_form_error("Невірний код"));
@@ -1122,9 +1163,24 @@ pub async fn user_confirm_2fa(
         }
     }
 
+    // Valid OTP still has to win the atomic claim; concurrent lockout or a
+    // replaced challenge must not start a session from a stale in-memory read.
+    let Some(claimed) = totp_challenge::claim_challenge(
+        &mut redis,
+        login_id,
+        challenge_id,
+    )
+    .await
+    .c(h!())?
+    else {
+        return Err(totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        ));
+    };
+
     if let totp_challenge::TotpChallenge::Enroll {
         pending_secret, ..
-    } = &challenge
+    } = &claimed
     {
         // Only the first successful enroll wins; later challenges stay rejected.
         let updated = login::Entity::update_many()
@@ -1142,8 +1198,6 @@ pub async fn user_confirm_2fa(
             .await
             .c(h!())?;
         if updated.rows_affected == 0 {
-            let _ = totp_challenge::delete_challenge(&mut redis, challenge_id)
-                .await;
             return Err(totp_challenge_form_error(
                 "Невірний або прострочений код підтвердження",
             ));
@@ -1151,9 +1205,6 @@ pub async fn user_confirm_2fa(
     }
 
     start_user_session(&env, &http_req, login_id).await.c(h!())?;
-    totp_challenge::delete_challenge(&mut redis, challenge_id)
-        .await
-        .c(h!())?;
     Ok(Json(()))
 }
 

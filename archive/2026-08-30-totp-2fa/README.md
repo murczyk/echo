@@ -52,20 +52,25 @@ Raw `totp_secret` is never returned in list/update login payloads. Admin sees `t
 
 ## Challenge store (Redis)
 
-Key: `2fa:challenge:{challenge_id}` (`TOTP_2FA_CHALLENGE_REDIS_PREFIX`).
+Key: `2fa:challenge:{challenge_id}` (`TOTP_2FA_CHALLENGE_REDIS_PREFIX`).  
+Active pointer: `2fa:login:{login_id}:active`.  
+Per-login fails: `2fa:login:{login_id}:fails` (survives challenge rotation).
 
 ```text
-Enroll { login_id, pending_secret, attempts }
-Verify { login_id, attempts }
+Enroll { login_id, pending_secret }
+Verify { login_id }
 ```
 
 | Rule | Value |
 | --- | --- |
 | `challenge_id` | UUID v4 |
 | TTL | 300s (`TOTP_2FA_CHALLENGE_TTL_SEC`) |
-| Lockout | after 5 failed OTP attempts (`TOTP_2FA_MAX_ATTEMPTS`), via atomic Redis `INCR` script |
+| Active challenge | issuing a new challenge deletes the previous one for that login |
+| Lockout | after 5 failed OTP attempts per login (`TOTP_2FA_MAX_ATTEMPTS`), via atomic Redis `INCR`; new challenges refused until TTL |
+| Success | Lua `claim_challenge` deletes active + fails + payload before session |
 | Stale enroll | confirm persists secret only if still unset; later enroll challenges are rejected |
-| Delete | on successful confirm, lockout, or TTL expiry |
+| Admin clear | `invalidate_login_challenges` drops active challenge + fail counter |
+| Delete | on successful claim, lockout (challenge only), admin clear, or TTL expiry |
 | Multi-instance | Redis only (same service as sessions; stats use another DB) |
 
 ---
@@ -122,6 +127,7 @@ Types only via `elm.rs` → `just gen-front`.
 | Constant | Default |
 | --- | --- |
 | `TOTP_2FA_CHALLENGE_REDIS_PREFIX` | `2fa:challenge:` |
+| `TOTP_2FA_LOGIN_REDIS_PREFIX` | `2fa:login:` |
 | `TOTP_2FA_CHALLENGE_TTL_SEC` | `300` |
 | `TOTP_2FA_MAX_ATTEMPTS` | `5` |
 | `TOTP_2FA_ISSUER` | `Echo` |

@@ -1,6 +1,6 @@
 use crate::config::{
     TOTP_2FA_CHALLENGE_REDIS_PREFIX, TOTP_2FA_CHALLENGE_TTL_SEC,
-    TOTP_2FA_MAX_ATTEMPTS,
+    TOTP_2FA_LOGIN_REDIS_PREFIX, TOTP_2FA_MAX_ATTEMPTS,
 };
 use crate::types::*;
 use redis::aio::ConnectionManager;
@@ -14,13 +14,9 @@ pub enum TotpChallenge {
     Enroll {
         login_id: Uuid,
         pending_secret: String,
-        #[serde(default)]
-        attempts: u32,
     },
     Verify {
         login_id: Uuid,
-        #[serde(default)]
-        attempts: u32,
     },
 }
 
@@ -34,6 +30,12 @@ impl TotpChallenge {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CreateChallengeOutcome {
+    Created(Uuid),
+    LockedOut,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FailedAttemptResult {
     StillOpen,
     LockedOut,
@@ -44,19 +46,22 @@ fn challenge_key(challenge_id: Uuid) -> String {
     format!("{TOTP_2FA_CHALLENGE_REDIS_PREFIX}{challenge_id}")
 }
 
-fn attempts_key(challenge_id: Uuid) -> String {
-    format!("{TOTP_2FA_CHALLENGE_REDIS_PREFIX}{challenge_id}:attempts")
+fn login_active_key(login_id: Uuid) -> String {
+    format!("{TOTP_2FA_LOGIN_REDIS_PREFIX}{login_id}:active")
+}
+
+fn login_fails_key(login_id: Uuid) -> String {
+    format!("{TOTP_2FA_LOGIN_REDIS_PREFIX}{login_id}:fails")
 }
 
 pub async fn create_enroll_challenge(
     redis: &mut ConnectionManager,
     login_id: Uuid,
     pending_secret: &str,
-) -> anyhow::Result<Uuid> {
+) -> anyhow::Result<CreateChallengeOutcome> {
     let challenge = TotpChallenge::Enroll {
         login_id,
         pending_secret: pending_secret.to_string(),
-        attempts: 0,
     };
     store_challenge(redis, challenge).await
 }
@@ -64,26 +69,60 @@ pub async fn create_enroll_challenge(
 pub async fn create_verify_challenge(
     redis: &mut ConnectionManager,
     login_id: Uuid,
-) -> anyhow::Result<Uuid> {
-    let challenge = TotpChallenge::Verify {
-        login_id,
-        attempts: 0,
-    };
+) -> anyhow::Result<CreateChallengeOutcome> {
+    let challenge = TotpChallenge::Verify { login_id };
     store_challenge(redis, challenge).await
 }
 
+/// Replaces any prior active challenge for this login. Failure counts are
+/// per-login and are intentionally not reset here.
 async fn store_challenge(
     redis: &mut ConnectionManager,
     challenge: TotpChallenge,
-) -> anyhow::Result<Uuid> {
+) -> anyhow::Result<CreateChallengeOutcome> {
+    let login_id = challenge.login_id();
     let challenge_id = Uuid::new_v4();
-    let key = challenge_key(challenge_id);
     let payload = serde_json::to_string(&challenge).c(h!())?;
-    let _: () = redis
-        .set_ex(key, payload, TOTP_2FA_CHALLENGE_TTL_SEC)
-        .await
-        .c(h!())?;
-    Ok(challenge_id)
+    // 0 = locked out, 1 = created (and prior challenge deleted)
+    let result: i64 = redis::Script::new(
+        r#"
+local active_key = KEYS[1]
+local fails_key = KEYS[2]
+local challenge_key = KEYS[3]
+local challenge_id = ARGV[1]
+local payload = ARGV[2]
+local ttl = tonumber(ARGV[3])
+local max_attempts = tonumber(ARGV[4])
+local challenge_prefix = ARGV[5]
+local fails = tonumber(redis.call('GET', fails_key) or '0')
+if fails >= max_attempts then
+  return 0
+end
+local old = redis.call('GET', active_key)
+if old then
+  redis.call('DEL', challenge_prefix .. old)
+end
+redis.call('SET', challenge_key, payload, 'EX', ttl)
+redis.call('SET', active_key, challenge_id, 'EX', ttl)
+return 1
+        "#,
+    )
+    .key(login_active_key(login_id))
+    .key(login_fails_key(login_id))
+    .key(challenge_key(challenge_id))
+    .arg(challenge_id.to_string())
+    .arg(payload)
+    .arg(TOTP_2FA_CHALLENGE_TTL_SEC)
+    .arg(TOTP_2FA_MAX_ATTEMPTS)
+    .arg(TOTP_2FA_CHALLENGE_REDIS_PREFIX)
+    .invoke_async(redis)
+    .await
+    .c(h!())?;
+
+    Ok(match result {
+        0 => CreateChallengeOutcome::LockedOut,
+        _ => CreateChallengeOutcome::Created(challenge_id),
+    })
 }
 
 pub async fn get_challenge(
@@ -100,48 +139,96 @@ pub async fn get_challenge(
 
 pub async fn delete_challenge(
     redis: &mut ConnectionManager,
+    login_id: Uuid,
     challenge_id: Uuid,
 ) -> anyhow::Result<()> {
-    let keys = [challenge_key(challenge_id), attempts_key(challenge_id)];
-    let _: () = redis.del(&keys).await.c(h!())?;
+    let _: () = redis::Script::new(
+        r#"
+local active_key = KEYS[1]
+local challenge_key = KEYS[2]
+local challenge_id = ARGV[1]
+local active = redis.call('GET', active_key)
+redis.call('DEL', challenge_key)
+if active == challenge_id then
+  redis.call('DEL', active_key)
+end
+return 1
+        "#,
+    )
+    .key(login_active_key(login_id))
+    .key(challenge_key(challenge_id))
+    .arg(challenge_id.to_string())
+    .invoke_async(redis)
+    .await
+    .c(h!())?;
     Ok(())
 }
 
-/// Atomically increments the failed-attempt counter for a challenge.
-/// On lockout, deletes the challenge and counter in the same Redis script.
+/// Drop active challenge + per-login failure counter (admin clear / recovery).
+pub async fn invalidate_login_challenges(
+    redis: &mut ConnectionManager,
+    login_id: Uuid,
+) -> anyhow::Result<()> {
+    let _: () = redis::Script::new(
+        r#"
+local active_key = KEYS[1]
+local fails_key = KEYS[2]
+local challenge_prefix = ARGV[1]
+local active = redis.call('GET', active_key)
+if active then
+  redis.call('DEL', challenge_prefix .. active)
+end
+redis.call('DEL', active_key, fails_key)
+return 1
+        "#,
+    )
+    .key(login_active_key(login_id))
+    .key(login_fails_key(login_id))
+    .arg(TOTP_2FA_CHALLENGE_REDIS_PREFIX)
+    .invoke_async(redis)
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+/// Atomically increments the per-login failed-attempt counter.
+/// On lockout, deletes the active challenge but keeps the fail counter (TTL)
+/// so newly issued challenges stay blocked until the window expires.
 pub async fn record_failed_attempt(
     redis: &mut ConnectionManager,
+    login_id: Uuid,
     challenge_id: Uuid,
 ) -> anyhow::Result<FailedAttemptResult> {
-    // 0 = missing, 1 = still open, 2 = locked out
+    // 0 = missing/stale, 1 = still open, 2 = locked out
     let result: i64 = redis::Script::new(
         r#"
 local challenge_key = KEYS[1]
-local attempts_key = KEYS[2]
-local max_attempts = tonumber(ARGV[1])
-local default_ttl = tonumber(ARGV[2])
-if redis.call('EXISTS', challenge_key) == 0 then
-  redis.call('DEL', attempts_key)
+local active_key = KEYS[2]
+local fails_key = KEYS[3]
+local challenge_id = ARGV[1]
+local max_attempts = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+local active = redis.call('GET', active_key)
+if (not active) or active ~= challenge_id then
   return 0
 end
-local attempts = redis.call('INCR', attempts_key)
-if attempts == 1 then
-  local ttl = redis.call('TTL', challenge_key)
-  if ttl > 0 then
-    redis.call('EXPIRE', attempts_key, ttl)
-  else
-    redis.call('EXPIRE', attempts_key, default_ttl)
-  end
+if redis.call('EXISTS', challenge_key) == 0 then
+  redis.call('DEL', active_key)
+  return 0
 end
-if attempts >= max_attempts then
-  redis.call('DEL', challenge_key, attempts_key)
+local fails = redis.call('INCR', fails_key)
+redis.call('EXPIRE', fails_key, ttl)
+if fails >= max_attempts then
+  redis.call('DEL', challenge_key, active_key)
   return 2
 end
 return 1
         "#,
     )
     .key(challenge_key(challenge_id))
-    .key(attempts_key(challenge_id))
+    .key(login_active_key(login_id))
+    .key(login_fails_key(login_id))
+    .arg(challenge_id.to_string())
     .arg(TOTP_2FA_MAX_ATTEMPTS)
     .arg(TOTP_2FA_CHALLENGE_TTL_SEC)
     .invoke_async(redis)
@@ -153,4 +240,44 @@ return 1
         2 => FailedAttemptResult::LockedOut,
         _ => FailedAttemptResult::StillOpen,
     })
+}
+
+/// Atomically claim the active challenge after a valid OTP.
+/// Returns None if the challenge was replaced, expired, or locked out.
+pub async fn claim_challenge(
+    redis: &mut ConnectionManager,
+    login_id: Uuid,
+    challenge_id: Uuid,
+) -> anyhow::Result<Option<TotpChallenge>> {
+    let raw: Option<String> = redis::Script::new(
+        r#"
+local challenge_key = KEYS[1]
+local active_key = KEYS[2]
+local fails_key = KEYS[3]
+local challenge_id = ARGV[1]
+local active = redis.call('GET', active_key)
+if (not active) or active ~= challenge_id then
+  return false
+end
+local raw = redis.call('GET', challenge_key)
+if not raw then
+  redis.call('DEL', active_key)
+  return false
+end
+redis.call('DEL', challenge_key, active_key, fails_key)
+return raw
+        "#,
+    )
+    .key(challenge_key(challenge_id))
+    .key(login_active_key(login_id))
+    .key(login_fails_key(login_id))
+    .arg(challenge_id.to_string())
+    .invoke_async(redis)
+    .await
+    .c(h!())?;
+
+    match raw {
+        None => Ok(None),
+        Some(raw) => Ok(Some(serde_json::from_str(&raw).c(h!())?)),
+    }
 }
