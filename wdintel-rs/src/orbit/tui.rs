@@ -117,21 +117,18 @@ pub enum EnrichmentDecision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Delete,
-    Merge,
 }
 
 impl Action {
     fn key(self) -> char {
         match self {
             Self::Delete => 'd',
-            Self::Merge => 'm',
         }
     }
 
     fn label(self) -> &'static str {
         match self {
             Self::Delete => "delete",
-            Self::Merge => "merge",
         }
     }
 }
@@ -1268,10 +1265,7 @@ mod tests {
                 sigint_unit_name: "4 мсб (АТ)".to_string(),
                 subject_kind:
                     crate::orbit::test_link::ReviewSubjectKind::SigintUnit,
-                echelons: vec![
-                    "4 мсб (АТ)".to_string(),
-                    "752 мсп".to_string(),
-                ],
+                echelons: vec!["4 мсб (АТ)".to_string(), "752 мсп".to_string()],
                 matches: vec![ReviewMatch {
                     unit_id: uuid::Uuid::nil(),
                     rating: 100,
@@ -1284,18 +1278,22 @@ mod tests {
 
         let lines = duplicate_unit_group_review_lines(&candidates);
 
-        assert!(lines.iter().any(|line| line.spans.iter().any(|span| {
-            span.style.fg == Some(Color::Green)
-        })));
-        assert!(lines.iter().any(|line| line.spans.iter().any(|span| {
-            span.style.fg == Some(Color::Red)
-        })));
-        assert!(lines.iter().map(line_text).any(|line| {
-            line == "INPUT: 4 мсб (АТ) / 752 мсп"
-        }));
-        assert!(lines.iter().map(line_text).any(|line| {
-            line == " ORBIT: 4 мсб (ат) / 752 мсп"
-        }));
+        assert!(lines.iter().any(|line| line
+            .spans
+            .iter()
+            .any(|span| { span.style.fg == Some(Color::Green) })));
+        assert!(lines.iter().any(|line| line
+            .spans
+            .iter()
+            .any(|span| { span.style.fg == Some(Color::Red) })));
+        assert!(lines
+            .iter()
+            .map(line_text)
+            .any(|line| { line == "INPUT: 4 мсб (АТ) / 752 мсп" }));
+        assert!(lines
+            .iter()
+            .map(line_text)
+            .any(|line| { line == " ORBIT: 4 мсб (ат) / 752 мсп" }));
     }
 
     #[test]
@@ -1414,22 +1412,6 @@ mod tests {
                 false
             ),
             Some(Decision::Quit)
-        );
-        assert_eq!(
-            decision_for_key(
-                KeyEvent::new(KeyCode::Char('m'), plain),
-                Action::Merge,
-                false
-            ),
-            Some(Decision::Accept)
-        );
-        assert_eq!(
-            decision_for_key(
-                KeyEvent::new(KeyCode::Char('d'), plain),
-                Action::Merge,
-                false
-            ),
-            None
         );
     }
 

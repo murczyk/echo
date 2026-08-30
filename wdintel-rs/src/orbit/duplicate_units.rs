@@ -307,7 +307,8 @@ async fn persist_selection_batch(
             .await
             .c(h!())?;
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
-    let current_groups = load_duplicate_groups(&transaction, &matcher, link_mode)
+    let current_groups =
+        load_duplicate_groups(&transaction, &matcher, link_mode)
             .await
             .c(h!())?
             .into_iter()
