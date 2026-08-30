@@ -19,7 +19,6 @@ struct DuplicateCandidate {
 #[derive(Debug, Clone)]
 struct DuplicateGroup {
     orbit_unit_id: Uuid,
-    orbit_name: String,
     candidates: Vec<DuplicateCandidate>,
 }
 
@@ -45,9 +44,8 @@ async fn run_with_database(
     let orbit_units = persistence::load_latest_synced_source_units(db)
         .await
         .c(h!())?;
-    let orbit_names = orbit_unit_names(&orbit_units);
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
-    let groups = load_duplicate_groups(db, &matcher, &orbit_names, link_mode)
+    let groups = load_duplicate_groups(db, &matcher, link_mode)
         .await
         .c(h!())?;
     let reviewed = groups.len();
@@ -67,28 +65,9 @@ async fn run_with_database(
     Ok(())
 }
 
-fn orbit_unit_names(
-    units: &[super::types::SourceUnit],
-) -> BTreeMap<Uuid, String> {
-    units
-        .iter()
-        .map(|unit| {
-            let name = unit
-                .operational_unit_name_full
-                .as_deref()
-                .or(unit.generative_unit_name_full.as_deref())
-                .or(unit.unit_name.as_deref())
-                .unwrap_or_default()
-                .to_string();
-            (unit.unit_id, name)
-        })
-        .collect()
-}
-
 async fn load_duplicate_groups<C>(
     db: &C,
     matcher: &matching::TestLinkMatcher,
-    orbit_names: &BTreeMap<Uuid, String>,
     link_mode: tui::LinkMode,
 ) -> anyhow::Result<Vec<DuplicateGroup>>
 where
@@ -159,10 +138,6 @@ where
         }
         let mut group = DuplicateGroup {
             orbit_unit_id,
-            orbit_name: orbit_names
-                .get(&orbit_unit_id)
-                .cloned()
-                .unwrap_or_else(|| orbit_unit_id.to_string()),
             candidates,
         };
         sort_candidates(&mut group.candidates);
@@ -254,53 +229,51 @@ fn review_manually_inner(
 ) -> anyhow::Result<Vec<DuplicateSelection>> {
     let mut selections = Vec::new();
     for (group_index, group) in groups.iter().enumerate() {
-        for candidate in &group.candidates {
-            let hierarchy = matching::sigint_hierarchy(&candidate.unit)
-                .into_iter()
-                .map(|(_, name)| name.trim())
-                .filter(|name| !name.is_empty())
-                .collect::<Vec<_>>()
-                .join(" / ");
-            let lines = vec![
-                format!("SIGINT unit ID: {}", candidate.unit.id),
-                format!("Name: {}", candidate.unit.name),
-                format!("Hierarchy: {hierarchy}"),
-                format!("Active: {}", candidate.unit.active),
-                format!(
-                    "ORBIT rating: {}, Levenshtein distance: {}",
-                    candidate.orbit_match.rating,
-                    candidate.orbit_match.distance
-                ),
-            ];
-            match tui::review(
-                terminal,
-                "Keep this SIGINT unit and merge the other duplicates into it?",
-                Some(&format!(
-                    "ORBIT {}: {}",
-                    group.orbit_unit_id, group.orbit_name
-                )),
-                &lines,
-                &format!(
-                    "Duplicate group {}/{}",
-                    group_index + 1,
-                    groups.len()
-                ),
-                tui::Action::Merge,
-                false,
-            )
-            .c(h!())?
-            {
-                tui::Decision::Accept => {
-                    selections.push(selection(group, candidate.unit.id));
-                    break;
-                }
-                tui::Decision::Skip => {}
-                tui::Decision::SkipAll => break,
-                tui::Decision::Quit => return Ok(selections),
+        let candidates = group
+            .candidates
+            .iter()
+            .map(duplicate_review_candidate)
+            .collect::<Vec<_>>();
+        match tui::review_duplicate_unit_group(
+            terminal,
+            &candidates,
+            group_index + 1,
+            groups.len(),
+        )
+        .c(h!())?
+        {
+            tui::DuplicateReviewDecision::Select(candidate_index) => {
+                selections.push(selection(
+                    group,
+                    group.candidates[candidate_index].unit.id,
+                ));
             }
+            tui::DuplicateReviewDecision::Skip => {}
+            tui::DuplicateReviewDecision::Quit => return Ok(selections),
         }
     }
     Ok(selections)
+}
+
+fn duplicate_review_candidate(
+    candidate: &DuplicateCandidate,
+) -> tui::DuplicateReviewCandidate {
+    let echelons = matching::sigint_hierarchy(&candidate.unit)
+        .into_iter()
+        .map(|(_, name)| name.trim())
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect();
+    tui::DuplicateReviewCandidate {
+        unit: test_link::ReviewUnit {
+            sigint_unit_id: candidate.unit.id,
+            sigint_unit_name: candidate.unit.name.clone(),
+            subject_kind: test_link::ReviewSubjectKind::SigintUnit,
+            echelons,
+            matches: vec![candidate.orbit_match.clone()],
+        },
+        active: candidate.unit.active,
+    }
 }
 
 async fn persist_selections(
@@ -333,10 +306,8 @@ async fn persist_selection_batch(
         persistence::load_latest_synced_source_units(&transaction)
             .await
             .c(h!())?;
-    let orbit_names = orbit_unit_names(&orbit_units);
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
-    let current_groups =
-        load_duplicate_groups(&transaction, &matcher, &orbit_names, link_mode)
+    let current_groups = load_duplicate_groups(&transaction, &matcher, link_mode)
             .await
             .c(h!())?
             .into_iter()

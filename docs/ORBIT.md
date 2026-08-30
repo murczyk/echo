@@ -137,6 +137,8 @@ matches every unit to that ORBIT unit. Automatic mode additionally applies the
 same rating-100, uniquely closest, distance-at-most-10 approval rule used by
 linking, then keeps the closest active SIGINT unit (with the lowest ID as the
 stable final tie-breaker). Manual mode asks which matching SIGINT unit to keep.
+It presents each candidate together on a numbered, paginated screen using the
+same green/red word-level SIGINT-to-ORBIT diff as the link review.
 
 Before merging, each complete group and every match is loaded again under the
 ORBIT advisory lock. Changed membership, links, source revision, or matching
