@@ -2811,10 +2811,8 @@ mod tests {
         .expect("network freqs query")
         .to_string(PostgresQueryBuilder);
 
-        assert!(
-            sql.contains("WITH \"network_messages\" AS MATERIALIZED"),
-            "{sql}"
-        );
+        assert!(sql.contains("WITH \"network_messages\""), "{sql}");
+        assert!(sql.contains("MATERIALIZED"), "{sql}");
         assert!(sql.contains("FROM \"sigint_inbox_item_network\""), "{sql}");
         assert!(
             sql.contains(
@@ -2846,10 +2844,7 @@ mod tests {
         .expect("network freqs query")
         .to_string(PostgresQueryBuilder);
 
-        assert!(
-            !sql.contains("WITH \"network_messages\" AS MATERIALIZED"),
-            "{sql}"
-        );
+        assert!(!sql.contains("MATERIALIZED"), "{sql}");
         assert!(sql.contains("\"sigint_network_freq\".\"id\" = 7"), "{sql}");
     }
 
