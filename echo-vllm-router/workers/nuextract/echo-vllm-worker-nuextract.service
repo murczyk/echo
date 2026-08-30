@@ -1,7 +1,7 @@
 [Unit]
 Description=Echo NuExtract3 vLLM worker
-After=network-online.target tailscaled.service
-Wants=network-online.target tailscaled.service
+After=network-online.target tailscale-online.target
+Wants=network-online.target tailscale-online.target
 
 [Service]
 Type=simple
