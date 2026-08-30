@@ -19,7 +19,7 @@ pub async fn is_enabled<C: ConnectionTrait>(
     db: &C,
     login_id: Uuid,
 ) -> anyhow::Result<bool> {
-    Ok(find_secret(db, login_id).await?.is_some())
+    Ok(find_secret(db, login_id).await.context(h!())?.is_some())
 }
 
 pub async fn clear_secret<C: ConnectionTrait>(

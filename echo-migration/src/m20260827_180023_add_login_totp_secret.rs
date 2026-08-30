@@ -21,27 +21,6 @@ create table if not exists login_totp (
     login_id uuid primary key references login (id),
     totp_secret text not null
 );
-
--- Branch DBs that applied the earlier login.totp_secret column: move + drop.
-do $$
-begin
-    if exists (
-        select 1
-        from information_schema.columns
-        where table_schema = 'public'
-          and table_name = 'login'
-          and column_name = 'totp_secret'
-    ) then
-        insert into login_totp (login_id, totp_secret)
-        select id, totp_secret
-        from login
-        where totp_secret is not null
-          and btrim(totp_secret) <> ''
-        on conflict (login_id) do nothing;
-
-        alter table login drop column totp_secret;
-    end if;
-end $$;
                 "#,
             )
             .await

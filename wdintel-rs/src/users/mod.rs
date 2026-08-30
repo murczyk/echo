@@ -1015,8 +1015,10 @@ async fn begin_totp_login_challenge(
     login_obj: &login::Model,
 ) -> Result<LoginRsp, AppError> {
     // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
-    if login_skips_totp(login_obj)? {
-        start_user_session(env, http_req, login_obj.id).await.c(h!())?;
+    if login_skips_totp(login_obj).context(h!())? {
+        start_user_session(env, http_req, login_obj.id)
+            .await
+            .context(h!())?;
         return Ok(LoginRsp::Authenticated);
     }
 
