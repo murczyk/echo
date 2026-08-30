@@ -1039,7 +1039,7 @@ async fn begin_totp_login_challenge(
             .c(h!())?
             {
                 totp_challenge::CreateChallengeOutcome::LockedOut => {
-                    Err(totp_challenge_form_error(
+                    Err(totp_login_form_error(
                         "Забагато невдалих спроб. Спробуйте пізніше",
                     ))
                 }
@@ -1061,7 +1061,7 @@ async fn begin_totp_login_challenge(
             .c(h!())?
             {
                 totp_challenge::CreateChallengeOutcome::LockedOut => {
-                    Err(totp_challenge_form_error(
+                    Err(totp_login_form_error(
                         "Забагато невдалих спроб. Спробуйте пізніше",
                     ))
                 }
@@ -1075,11 +1075,21 @@ async fn begin_totp_login_challenge(
     }
 }
 
-fn totp_challenge_form_error(msg: &str) -> AppError {
+fn totp_form_error(field: &str, msg: &str) -> AppError {
     AppError::Form(BTreeMap::from_iter([(
-        "token".to_string(),
+        field.to_string(),
         msg.to_string(),
     )]))
+}
+
+/// Lockout / pre-OTP errors for `/api/user/login`
+fn totp_login_form_error(msg: &str) -> AppError {
+    totp_form_error("login", msg)
+}
+
+/// OTP-step errors for `/api/user/confirm-2fa`
+fn totp_challenge_form_error(msg: &str) -> AppError {
+    totp_form_error("token", msg)
 }
 
 #[post("/api/user/confirm-2fa")]

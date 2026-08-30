@@ -18,7 +18,7 @@ impl MigrationTrait for Migration {
                 r#"
 -- PeerDB-excluded credential store: plaintext TOTP seeds must not enter analytics.
 create table if not exists login_totp (
-    login_id uuid primary key references login (id),
+    login_id uuid primary key references login (id) on delete cascade,
     totp_secret text not null
 );
                 "#,

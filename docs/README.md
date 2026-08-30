@@ -2,8 +2,9 @@
 
 Echo is a SIGINT analytical web application deployed as one application
 container per installation. PostgreSQL 18 is the system of record, Redis owns
-sessions and transient coordination, and separate API, background-worker, and
-report-worker processes isolate interactive traffic from long-running work.
+sessions, TOTP login challenges, and other transient coordination, and
+separate API, background-worker, and report-worker processes isolate
+interactive traffic from long-running work.
 
 Quick intelligence-report suggestions are a synchronous, optional API path
 that makes exactly one structured vLLM request. It reads only the selected
@@ -105,6 +106,25 @@ PostgreSQL into Redis. Legacy location facets remain text values split from
 canonical IDs from `sigint_inbox_item_settlement.settlement_id`. The
 `oneoff-calculate-historic-stats` command can rebuild only settlement buckets
 with `--only settlement`.
+
+## Credentials authentication storage
+
+Password login 2FA is owned by the `wdintel-rs` API process. Durable TOTP
+seeds live in PostgreSQL table `login_totp` (`login_id` → `login`, plaintext
+`totp_secret`). That table is PeerDB-excluded and must not appear in the
+analytics replica: second-factor seeds are an operational credential boundary,
+not analytical data. The replicated `login` row never stores the seed; APIs
+expose only `totp_enabled`.
+
+Pending enroll/verify state is Redis-only on the same Redis service as
+sessions (not the group-stats logical database): challenge payloads under
+`2fa:challenge:*`, a per-login active pointer, and a per-login failed-attempt
+counter with TTL. A session cookie is issued only after a successful confirm
+(or immediately for unattended `Api` / `ApiAgent` password logins). Admin
+clear deletes the `login_totp` row and invalidates Redis challenges.
+
+Implementation detail:
+[archive/2026-08-30-totp-2fa/README.md](../archive/2026-08-30-totp-2fa/README.md).
 
 ### Initial Battle Line import from Delta KML
 
