@@ -1665,7 +1665,7 @@ pub async fn merge_units(
     Ok(unit)
 }
 
-async fn merge_units_in_transaction<C>(
+pub(crate) async fn merge_units_in_transaction<C>(
     login: uuid::Uuid,
     dbx: &C,
     unit_to_delete_id: i64,
@@ -2379,7 +2379,7 @@ mod tests {
     use crate::entities::{
         sigint_network, sigint_network_unit, system_settings,
     };
-    use crate::functest::tests::cleanup;
+    use crate::functest::tests::{cleanup, cleanup_locked};
     use chrono::Utc;
     use sea_orm::{
         ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, NotSet,
@@ -4114,7 +4114,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn oneoff_activates_only_linked_generative_ancestors() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await

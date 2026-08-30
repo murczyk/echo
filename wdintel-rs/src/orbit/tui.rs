@@ -1,7 +1,9 @@
 use super::test_link::{
     ReviewInput, ReviewMatch, ReviewSession, ReviewSummary, ReviewUnit,
 };
-use crate::config::ORBIT_TUI_EVENT_POLL_MS;
+use crate::config::{
+    ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TUI_EVENT_POLL_MS,
+};
 use crate::error::AppError;
 use crate::h;
 use crate::types::ShortContext;
@@ -71,6 +73,8 @@ pub enum StartAction {
     PrepareImport,
     Import,
     LinkUnits,
+    MergeUnitDuplicates,
+    ResolveUnparsedUnits,
     ReconcileSigintUnits,
     Reimport,
 }
@@ -86,6 +90,18 @@ pub enum Decision {
     Accept,
     Skip,
     SkipAll,
+    Quit,
+}
+
+pub(super) struct DuplicateReviewCandidate {
+    pub unit: ReviewUnit,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DuplicateReviewDecision {
+    Select(usize),
+    Skip,
     Quit,
 }
 
@@ -290,6 +306,65 @@ pub(super) fn run_test_link_review(
     }
 }
 
+pub(super) fn review_duplicate_unit_group(
+    terminal: &mut OrbitTerminal,
+    candidates: &[DuplicateReviewCandidate],
+    group_index: usize,
+    group_count: usize,
+) -> Result<DuplicateReviewDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let page_count = candidates
+        .len()
+        .div_ceil(ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE);
+    let mut page = 0;
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_duplicate_unit_group_review(
+                    frame,
+                    candidates,
+                    group_index,
+                    group_count,
+                    page,
+                    page_count,
+                    scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) =
+            duplicate_review_decision_for_key(key, page, candidates.len())
+        {
+            return Ok(decision);
+        }
+        if key.kind != KeyEventKind::Press || !key.modifiers.is_empty() {
+            continue;
+        }
+        match key.code {
+            KeyCode::Char('f') if page + 1 < page_count => {
+                page += 1;
+                scroll = 0;
+            }
+            KeyCode::Char('b') if page > 0 => {
+                page -= 1;
+                scroll = 0;
+            }
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
 fn restore_stdout_state() -> io::Result<()> {
     let mut first_error = None;
     record_cleanup_error(&mut first_error, disable_raw_mode());
@@ -379,6 +454,8 @@ fn run_start_menu(
         StartAction::PrepareImport,
         StartAction::Import,
         StartAction::LinkUnits,
+        StartAction::MergeUnitDuplicates,
+        StartAction::ResolveUnparsedUnits,
         StartAction::ReconcileSigintUnits,
         StartAction::Reimport,
     ];
@@ -634,6 +711,124 @@ fn draw_test_link_review(frame: &mut Frame<'_>, session: &ReviewSession) {
     );
 }
 
+fn draw_duplicate_unit_group_review(
+    frame: &mut Frame<'_>,
+    candidates: &[DuplicateReviewCandidate],
+    group_index: usize,
+    group_count: usize,
+    page: usize,
+    page_count: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    let start = page * ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE;
+    let end =
+        (start + ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE).min(candidates.len());
+    frame.render_widget(
+        Paragraph::new(format!(
+            "Duplicate group {group_index} / {group_count} | candidates {}–{} | page {}/{}",
+            start + 1,
+            end,
+            page + 1,
+            page_count,
+        )),
+        sections[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Text::from(duplicate_unit_group_review_lines(
+            &candidates[start..end],
+        )))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Choose the SIGINT unit to keep"),
+        )
+        .scroll((scroll, 0))
+        .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "Enter/y/1–5: keep option and merge the others | f/b: next/previous 5 | 0/n: skip group\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        ),
+        sections[2],
+    );
+}
+
+fn duplicate_unit_group_review_lines(
+    candidates: &[DuplicateReviewCandidate],
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for (option, candidate) in candidates.iter().enumerate() {
+        let orbit_match = candidate
+            .unit
+            .matches
+            .first()
+            .expect("duplicate review candidate must have an ORBIT match");
+        lines.push(Line::styled(
+            format!(
+                "[{}] SIGINT unit ID: {} | active: {} | name: {}",
+                option + 1,
+                candidate.unit.sigint_unit_id,
+                candidate.active,
+                candidate.unit.sigint_unit_name,
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ));
+        lines.extend(test_link_match_lines(
+            option + 1,
+            &candidate.unit,
+            orbit_match,
+        ));
+        lines.push(Line::default());
+    }
+    lines
+}
+
+fn duplicate_review_decision_for_key(
+    key: KeyEvent,
+    page: usize,
+    candidate_count: usize,
+) -> Option<DuplicateReviewDecision> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(DuplicateReviewDecision::Quit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    let visible_count = candidate_count
+        .saturating_sub(page * ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE)
+        .min(ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE);
+    match key.code {
+        KeyCode::Char('q') => Some(DuplicateReviewDecision::Quit),
+        KeyCode::Char('0') | KeyCode::Char('n') => {
+            Some(DuplicateReviewDecision::Skip)
+        }
+        KeyCode::Enter | KeyCode::Char('y') if visible_count > 0 => {
+            Some(DuplicateReviewDecision::Select(
+                page * ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE,
+            ))
+        }
+        KeyCode::Char(option @ '1'..='5') => {
+            let option = option.to_digit(10).expect("digit must be numeric")
+                as usize
+                - 1;
+            (option < visible_count).then_some(DuplicateReviewDecision::Select(
+                page * ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE + option,
+            ))
+        }
+        _ => None,
+    }
+}
+
 fn draw_test_link_exit_confirmation(frame: &mut Frame<'_>) {
     let area = centered_area(frame, 70, 7);
     frame.render_widget(
@@ -666,7 +861,11 @@ fn test_link_review_lines(session: &ReviewSession) -> Vec<Line<'static>> {
     let unit = session.current_unit().expect("review unit must exist");
     let visible_matches = session.visible_matches();
     let mut lines = vec![
-        Line::from(format!("SIGINT unit ID: {}", unit.sigint_unit_id)),
+        Line::from(format!(
+            "{} ID: {}",
+            unit.subject_kind.label(),
+            unit.sigint_unit_id
+        )),
         Line::from(format!("Name: {}", unit.sigint_unit_name)),
         Line::from(format!("Echelons: ({})", unit.echelons.join(", "))),
         Line::default(),
@@ -733,7 +932,7 @@ fn test_link_name_diff_lines(
     let label_style = Style::default().add_modifier(Modifier::BOLD);
     let matched_style = Style::default().fg(Color::Green);
     let mismatched_style = Style::default().fg(Color::Red);
-    let mut sigint_spans = vec![Span::styled("SIGINT: ", label_style)];
+    let mut sigint_spans = vec![Span::styled("INPUT: ", label_style)];
     let mut orbit_spans = vec![Span::styled(" ORBIT: ", label_style)];
     for change in
         TextDiff::from_words(sigint_name, orbit_name).iter_all_changes()
@@ -770,11 +969,13 @@ fn test_link_maximum_scroll(area: Rect, session: &ReviewSession) -> usize {
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 70, 8);
+    let area = centered_area(frame, 78, 10);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
         "Link ORBIT units to SIGINT units",
+        "Merge duplicate SIGINT units linked to one ORBIT unit",
+        "Resolve unparsed unit labels through ORBIT links",
         "Reconcile linked SIGINT units and merge exact duplicates",
         "Erase and reimport all ORBIT data",
     ];
@@ -1008,6 +1209,8 @@ mod tests {
         let unit = ReviewUnit {
             sigint_unit_id: 273,
             sigint_unit_name: "4 мсб (АТ)".to_string(),
+            subject_kind:
+                crate::orbit::test_link::ReviewSubjectKind::SigintUnit,
             echelons: vec![
                 "4 мсб (АТ)".to_string(),
                 "752 мсп".to_string(),
@@ -1030,7 +1233,7 @@ mod tests {
             vec![
                 "[1] rating: 100, Levenshtein distance: 2",
                 "ORBIT UUID: 00000000-0000-0000-0000-000000000000",
-                "SIGINT: 4 мсб (АТ) / 752 мсп / 3 мсд",
+                "INPUT: 4 мсб (АТ) / 752 мсп / 3 мсд",
                 " ORBIT: 4 мсб (ат) / 752 мсп / 3 мсд",
             ]
         );
@@ -1052,6 +1255,75 @@ mod tests {
         assert!(orbit.spans.iter().any(|span| {
             span.style.fg == Some(Color::Red) && span.content.contains("МВО")
         }));
+    }
+
+    #[test]
+    fn duplicate_review_uses_test_link_visual_diff() {
+        let candidates = [DuplicateReviewCandidate {
+            unit: ReviewUnit {
+                sigint_unit_id: 273,
+                sigint_unit_name: "4 мсб (АТ)".to_string(),
+                subject_kind:
+                    crate::orbit::test_link::ReviewSubjectKind::SigintUnit,
+                echelons: vec!["4 мсб (АТ)".to_string(), "752 мсп".to_string()],
+                matches: vec![ReviewMatch {
+                    unit_id: uuid::Uuid::nil(),
+                    rating: 100,
+                    distance: 2,
+                    orbit_name: "4 мсб (ат) / 752 мсп".to_string(),
+                }],
+            },
+            active: true,
+        }];
+
+        let lines = duplicate_unit_group_review_lines(&candidates);
+
+        assert!(lines.iter().any(|line| line
+            .spans
+            .iter()
+            .any(|span| { span.style.fg == Some(Color::Green) })));
+        assert!(lines.iter().any(|line| line
+            .spans
+            .iter()
+            .any(|span| { span.style.fg == Some(Color::Red) })));
+        assert!(lines
+            .iter()
+            .map(line_text)
+            .any(|line| { line == "INPUT: 4 мсб (АТ) / 752 мсп" }));
+        assert!(lines
+            .iter()
+            .map(line_text)
+            .any(|line| { line == " ORBIT: 4 мсб (ат) / 752 мсп" }));
+    }
+
+    #[test]
+    fn duplicate_review_keys_select_from_the_visible_page() {
+        let plain = KeyModifiers::NONE;
+
+        assert_eq!(
+            duplicate_review_decision_for_key(
+                KeyEvent::new(KeyCode::Char('2'), plain),
+                1,
+                7,
+            ),
+            Some(DuplicateReviewDecision::Select(6)),
+        );
+        assert_eq!(
+            duplicate_review_decision_for_key(
+                KeyEvent::new(KeyCode::Char('3'), plain),
+                1,
+                7,
+            ),
+            None,
+        );
+        assert_eq!(
+            duplicate_review_decision_for_key(
+                KeyEvent::new(KeyCode::Char('n'), plain),
+                0,
+                7,
+            ),
+            Some(DuplicateReviewDecision::Skip),
+        );
     }
 
     fn line_text(line: &Line<'_>) -> String {
