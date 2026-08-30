@@ -4192,6 +4192,20 @@ loginRspEncoder enum =
         Needs2fa { challengeId } ->
             Json.Encode.object [ ( "Needs2fa", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ) ] ) ]
 
+type alias Confirm2faReq =
+    { challengeId : String
+    , token : String
+    }
+
+
+confirm2faReqEncoder : Confirm2faReq -> Json.Encode.Value
+confirm2faReqEncoder struct =
+    Json.Encode.object
+        [ ( "challenge_id", (Json.Encode.string) struct.challengeId )
+        , ( "token", (Json.Encode.string) struct.token )
+        ]
+
+
 type alias User =
     { id : String
     , name : String
@@ -16567,6 +16581,13 @@ loginRspDecoder =
         [ Json.Decode.field "Needs2faSetup" (Json.Decode.succeed elmRsConstructNeeds2faSetup |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qr_base64" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "manual_key" (Json.Decode.string))))
         , Json.Decode.field "Needs2fa" (Json.Decode.succeed elmRsConstructNeeds2fa |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))))
         ]
+
+confirm2faReqDecoder : Json.Decode.Decoder Confirm2faReq
+confirm2faReqDecoder =
+    Json.Decode.succeed Confirm2faReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "token" (Json.Decode.string)))
+
 
 userDecoder : Json.Decode.Decoder User
 userDecoder =

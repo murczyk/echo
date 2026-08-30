@@ -1008,6 +1008,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::restapi_errors::signal_restapi_error_latest)
             .service(crate::messenger::restapi_errors::signal_restapi_error_counts)
             .service(crate::users::user_login)
+            .service(crate::users::user_confirm_2fa)
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)
             .service(crate::users::api_user_info)

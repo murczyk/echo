@@ -60,6 +60,14 @@ pub enum LoginRsp {
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
+pub struct Confirm2faReq {
+    pub challenge_id: String,
+    pub token: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
 pub struct SettingsSaveReq {
     pub sigint_zone_id: Option<i64>,
 }
