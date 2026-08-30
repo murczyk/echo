@@ -287,7 +287,7 @@ update shared msg model =
             Api.handleLoginHttpError ToastMsg e model
 
         Confirm2faDone (Ok ()) ->
-            ( { model | pending2fa = Nothing, totpTokenInp = "" }
+            ( model
             , navigateAfterLogin shared model
             )
 
@@ -386,20 +386,21 @@ totpPanel model pending =
                             , style "width" "180px"
                             , style "height" "180px"
                             , style "background" "#fff"
+                            , style "margin" "auto"
                             ]
                             []
                         ]
-                    , div [ class "mb-2 w-100 text-center small text-secondary" ]
+                    , div [ class "mb-2 w-100 text-center small" ]
                         [ text "Відскануйте QR у застосунку автентифікатора або введіть ключ вручну:" ]
                     , div
-                        [ class "mb-3 w-100 text-center small font-monospace"
+                        [ class "mb-3 w-100 text-center text-info small font-monospace"
                         , style "word-break" "break-all"
                         ]
                         [ text manualKey ]
                     ]
 
                 Verify _ ->
-                    [ div [ class "mb-3 w-100 text-center small text-secondary" ]
+                    [ div [ class "mb-3 w-100 text-center small  " ]
                         [ text "Введіть код з застосунку автентифікатора" ]
                     ]
     in
@@ -409,7 +410,7 @@ totpPanel model pending =
                     [ type_ "text"
                     , class "form-control"
                     , id "totp-token"
-                    , placeholder "код 2FA"
+                    , placeholder "код з автентифікатора"
                     , value model.totpTokenInp
                     , onInput SetTotpTokenInp
                     , attribute "autocomplete" "one-time-code"
