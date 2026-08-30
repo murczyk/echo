@@ -98,6 +98,7 @@ pub struct Login {
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
     pub password_auth_enabled: bool,
+    pub totp_enabled: bool,
 }
 
 #[derive(
@@ -161,6 +162,7 @@ pub struct UpdateLoginReq {
     pub deactivation_reason: Option<DeactivationReasonType>,
     pub description: Option<String>,
     pub password_auth_enabled: Option<bool>,
+    pub clear_totp: Option<bool>,
 }
 
 #[derive(

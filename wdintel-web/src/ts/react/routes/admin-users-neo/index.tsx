@@ -16,6 +16,8 @@ import {
   Stack,
   TextField,
   Tooltip,
+  Button,
+  Typography,
 } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
@@ -209,6 +211,7 @@ function buildUserLoadingRows(): Login[] {
     deactivationReason: null,
     description: null,
     passwordAuthEnabled: true,
+    totpEnabled: false,
     organismEnabled: true,
     sigintZoneId: null,
     organismName: null,
@@ -392,6 +395,7 @@ function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
     deactivationReason,
     description: form.description.trim() || null,
     passwordAuthEnabled: form.passwordAuthEnabled,
+    clearTotp: null,
   };
 }
 
@@ -1120,6 +1124,44 @@ function EditUserDialog(props: {
                 }
                 label="Вхід по паролю"
               />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 xl:col-span-2">
+              <Typography variant="body2">
+                2FA: {login?.totpEnabled ? 'увімкнено' : 'вимкнено'}
+              </Typography>
+              {login?.totpEnabled ? (
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    void (async () => {
+                      if (!form) return;
+                      setIsSubmitting(true);
+                      setSubmitError(null);
+                      try {
+                        const updated = await updateLogin({
+                          ...toUpdateLoginReq(form),
+                          clearTotp: true,
+                        });
+                        onUserUpdated(updated);
+                        onClose();
+                      } catch (error) {
+                        setSubmitError(
+                          error instanceof Error && error.message
+                            ? error.message
+                            : 'Не вдалося скинути 2FA',
+                        );
+                      } finally {
+                        setIsSubmitting(false);
+                      }
+                    })();
+                  }}
+                >
+                  Скинути 2FA
+                </Button>
+              ) : null}
             </div>
 
             <div className="flex items-center xl:col-span-2">

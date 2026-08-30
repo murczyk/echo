@@ -115,6 +115,12 @@ fn normalize_login_description(description: Option<String>) -> Option<String> {
         .filter(|description| !description.is_empty())
 }
 
+fn login_totp_enabled(totp_secret: &Option<String>) -> bool {
+    totp_secret
+        .as_deref()
+        .is_some_and(|secret| !secret.is_empty())
+}
+
 fn has_update_login_description(req: &serde_json::Value) -> bool {
     req.as_object()
         .is_some_and(|req| req.contains_key("description"))
@@ -381,6 +387,13 @@ pub async fn update_login(
     if let Some(password_auth_enabled) = req.password_auth_enabled {
         login_obj.password_auth_enabled = Set(password_auth_enabled);
     }
+    if req.clear_totp == Some(true) {
+        let admin_login_id = login_id_from_identity(&user)?;
+        info!(
+            "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
+        );
+        login_obj.totp_secret = Set(None);
+    }
     let res = login_obj.update(&txn).await.c(h!())?;
     if let Some(delta_id) = delta_id {
         unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
@@ -426,6 +439,7 @@ pub async fn update_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        totp_enabled: login_totp_enabled(&res.totp_secret),
     }))
 }
 
@@ -535,6 +549,7 @@ pub async fn create_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        totp_enabled: login_totp_enabled(&res.totp_secret),
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -596,6 +611,7 @@ pub async fn list_logins(
         delta_login: Option<String>,
         description: Option<String>,
         password_auth_enabled: bool,
+        totp_secret: Option<String>,
     }
 
     let users_iter = login::Entity::find()
@@ -622,6 +638,7 @@ pub async fn list_logins(
             login::Column::DeactivationReason,
             login::Column::Description,
             login::Column::PasswordAuthEnabled,
+            login::Column::TotpSecret,
         ])
         .column_as(sigint_zone::Column::Name, "sigint_zone_name")
         .column_as(organism::Column::Name, "organism_name")
@@ -678,6 +695,7 @@ pub async fn list_logins(
                 .map(DeactivationReasonType::from),
             description: login.description,
             password_auth_enabled: login.password_auth_enabled,
+            totp_enabled: login_totp_enabled(&login.totp_secret),
         };
         users.push(user);
     }
@@ -1687,6 +1705,7 @@ async fn register_delta_user(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        totp_enabled: login_totp_enabled(&res.totp_secret),
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
