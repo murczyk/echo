@@ -114,7 +114,9 @@ seeds live in PostgreSQL table `login_totp` (`login_id` → `login`, plaintext
 `totp_secret`). That table is PeerDB-excluded and must not appear in the
 analytics replica: second-factor seeds are an operational credential boundary,
 not analytical data. The replicated `login` row never stores the seed; APIs
-expose only `totp_enabled`.
+expose only `totp_enabled`. Admin clear also bumps `login.totp_epoch` so a
+Redis enroll challenge that was already claimed cannot re-insert a cleared
+secret.
 
 Pending enroll/verify state is Redis-only on the same Redis service as
 sessions (not the group-stats logical database): challenge payloads under

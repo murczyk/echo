@@ -403,6 +403,7 @@ mod m20260827_154846_normalize_failed_unit_labels;
 mod m20260827_180023_add_login_totp_secret;
 mod m20260828_143607_add_ai_settlement_parsing;
 mod m20260828_150352_echo_chat_admin;
+mod m20260830_185225_add_login_totp_epoch;
 mod m20260901_130526_add_callsign_changelog_created_at_index;
 mod m20260902_131822_signal_message_group_access_index;
 mod m20260902_155137_remove_group_stats_pending_unique;
@@ -951,6 +952,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260827_180023_add_login_totp_secret::Migration),
             Box::new(m20260828_143607_add_ai_settlement_parsing::Migration),
             Box::new(m20260828_150352_echo_chat_admin::Migration),
+            Box::new(m20260830_185225_add_login_totp_epoch::Migration),
             Box::new(
                 m20260901_130526_add_callsign_changelog_created_at_index::Migration,
             ),

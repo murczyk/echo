@@ -387,19 +387,21 @@ pub async fn update_login(
     if let Some(password_auth_enabled) = req.password_auth_enabled {
         login_obj.password_auth_enabled = Set(password_auth_enabled);
     }
-    if req.clear_totp == Some(true) {
+    let clear_totp = req.clear_totp == Some(true);
+    if clear_totp {
         let admin_login_id = login_id_from_identity(&user)?;
         info!(
             "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
         );
-        // Revoke pending enroll/verify challenges before nulling the secret so
-        // an older enrollment challenge cannot re-bind after the clear.
-        totp_challenge::invalidate_login_challenges(
-            &mut env.redis.clone(),
-            login_id,
-        )
-        .await
-        .c(h!())?;
+        // Bump enrollment generation in the same txn as deleting the secret so
+        // a Redis challenge claimed just before invalidation cannot re-insert.
+        let current_epoch = match &login_obj.totp_epoch {
+            ActiveValue::Set(v) | ActiveValue::Unchanged(v) => {
+                v.unwrap_or(0)
+            }
+            ActiveValue::NotSet => 0,
+        };
+        login_obj.totp_epoch = Set(Some(current_epoch + 1));
         login_totp::clear_secret(&txn, login_id).await.c(h!())?;
     }
     let res = login_obj.update(&txn).await.c(h!())?;
@@ -412,6 +414,14 @@ pub async fn update_login(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
+    if clear_totp {
+        totp_challenge::invalidate_login_challenges(
+            &mut env.redis.clone(),
+            login_id,
+        )
+        .await
+        .c(h!())?;
+    }
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(res.organism_id))
@@ -515,6 +525,7 @@ pub async fn create_login(
                 req.description.clone(),
             )),
             password_auth_enabled: Set(true),
+            totp_epoch: Set(None),
         },
     )
     .await
@@ -1034,6 +1045,7 @@ async fn begin_totp_login_challenge(
                 &mut redis,
                 login_obj.id,
                 &enrollment.secret_base32,
+                login_totp::epoch_of(login_obj),
             )
             .await
             .c(h!())?
@@ -1056,6 +1068,7 @@ async fn begin_totp_login_challenge(
             match totp_challenge::create_verify_challenge(
                 &mut redis,
                 login_obj.id,
+                login_totp::epoch_of(login_obj),
             )
             .await
             .c(h!())?
@@ -1209,14 +1222,18 @@ pub async fn user_confirm_2fa(
     };
 
     if let totp_challenge::TotpChallenge::Enroll {
-        pending_secret, ..
+        pending_secret,
+        epoch,
+        ..
     } = &claimed
     {
         // Only the first successful enroll wins; later challenges stay rejected.
+        // Epoch must still match so admin clear cannot be undone by a claimed challenge.
         if !login_totp::insert_secret_if_absent(
             &env.dbx,
             login_id,
             pending_secret,
+            *epoch,
         )
         .await
         .c(h!())?
@@ -1280,6 +1297,7 @@ pub async fn register_user(
         last_release_seen: NotSet,
         description: NotSet,
         password_auth_enabled: Set(true),
+            totp_epoch: Set(None),
     }
     .insert(&txn)
     .await
@@ -1739,6 +1757,7 @@ async fn register_delta_user(
             last_release_seen: NotSet,
             description: Set(normalize_login_description(description)),
             password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
         },
     )
     .await
@@ -2424,6 +2443,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
             },
         )
         .await
@@ -2498,6 +2518,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
                 },
             )
             .await
@@ -2570,6 +2591,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
                 },
             )
             .await
@@ -2594,6 +2616,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
             },
         )
         .await
@@ -2647,6 +2670,7 @@ mod tests {
             last_release_seen: Default::default(),
             description: Default::default(),
             password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
         }
         .insert(&env.dbx)
         .await
@@ -2670,6 +2694,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
             },
         )
         .await

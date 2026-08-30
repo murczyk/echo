@@ -9,6 +9,15 @@
     "echo:m20260901_130526_add_callsign_changelog_created_at_index": {
       "changes": []
     },
+    "echo:m20260830_185225_add_login_totp_epoch": {
+      "changes": [
+        {
+          "table": "public.login",
+          "strategy": "replicated_snapshot",
+          "targeted_resnapshot": true
+        }
+      ]
+    },
     "echo:m20260828_150352_echo_chat_admin": {
       "changes": [
         { "table": "public.echo_client_settings", "strategy": "excluded" },

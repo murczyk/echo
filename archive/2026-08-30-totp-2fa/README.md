@@ -38,11 +38,13 @@ Delta and `test-api-login` are unchanged (no 2FA).
 ## Schema
 
 **Table:** `login_totp` (PeerDB-excluded)  
-**Columns:** `login_id UUID PK → login(id)`, `totp_secret TEXT NOT NULL`
+**Columns:** `login_id UUID PK → login(id) ON DELETE CASCADE`, `totp_secret TEXT NOT NULL`
 
-- no row = not enrolled → force enroll after password
+**Also on `login`:** `totp_epoch BIGINT NULL` (replicated; treat NULL as 0) — bumped on admin clear; enroll challenges capture it and insert only when it still matches.
+
+- no `login_totp` row = not enrolled → force enroll after password
 - row present = enrolled → verify after password
-- Admin clear deletes the row
+- Admin clear deletes the row and bumps `totp_epoch`
 
 Migration: `echo-migration/src/m20260827_180023_add_login_totp_secret.rs`  
 Impact: `public.login_totp` → `excluded`  
@@ -73,7 +75,7 @@ Verify { login_id }
 | Lockout | after 5 failed OTP attempts per login (`TOTP_2FA_MAX_ATTEMPTS`), via atomic Redis `INCR`; new challenges refused until TTL |
 | Success | Lua `claim_challenge` deletes active + fails + payload before session |
 | Stale enroll | confirm persists secret only if still unset; later enroll challenges are rejected |
-| Admin clear | `invalidate_login_challenges` + delete `login_totp` row |
+| Admin clear | bumps `login.totp_epoch`, deletes `login_totp`, then invalidates Redis |
 | Delete | on successful claim, lockout (challenge only), admin clear, or TTL expiry |
 | Multi-instance | Redis only (same service as sessions; stats use another DB) |
 

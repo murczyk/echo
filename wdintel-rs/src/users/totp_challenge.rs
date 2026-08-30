@@ -14,9 +14,13 @@ pub enum TotpChallenge {
     Enroll {
         login_id: Uuid,
         pending_secret: String,
+        #[serde(default)]
+        epoch: i64,
     },
     Verify {
         login_id: Uuid,
+        #[serde(default)]
+        epoch: i64,
     },
 }
 
@@ -25,6 +29,13 @@ impl TotpChallenge {
         match self {
             TotpChallenge::Enroll { login_id, .. }
             | TotpChallenge::Verify { login_id, .. } => *login_id,
+        }
+    }
+
+    pub fn epoch(&self) -> i64 {
+        match self {
+            TotpChallenge::Enroll { epoch, .. }
+            | TotpChallenge::Verify { epoch, .. } => *epoch,
         }
     }
 }
@@ -58,10 +69,12 @@ pub async fn create_enroll_challenge(
     redis: &mut ConnectionManager,
     login_id: Uuid,
     pending_secret: &str,
+    epoch: i64,
 ) -> anyhow::Result<CreateChallengeOutcome> {
     let challenge = TotpChallenge::Enroll {
         login_id,
         pending_secret: pending_secret.to_string(),
+        epoch,
     };
     store_challenge(redis, challenge).await
 }
@@ -69,8 +82,9 @@ pub async fn create_enroll_challenge(
 pub async fn create_verify_challenge(
     redis: &mut ConnectionManager,
     login_id: Uuid,
+    epoch: i64,
 ) -> anyhow::Result<CreateChallengeOutcome> {
-    let challenge = TotpChallenge::Verify { login_id };
+    let challenge = TotpChallenge::Verify { login_id, epoch };
     store_challenge(redis, challenge).await
 }
 

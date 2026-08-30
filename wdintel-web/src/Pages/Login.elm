@@ -165,6 +165,29 @@ challengeIdFromPending pending =
             challengeId
 
 
+{-| OTP panel only renders `token` errors. Account/organism failures from confirm
+arrive as `login` (or other) form keys / 401→login; surface them on `token`.
+-}
+remapConfirm2faFormErrors : Dict String String -> Dict String String
+remapConfirm2faFormErrors errors =
+    case Dict.get "token" errors of
+        Just _ ->
+            errors
+
+        Nothing ->
+            case Dict.get "login" errors of
+                Just msg ->
+                    Dict.insert "token" msg errors
+
+                Nothing ->
+                    case Dict.toList errors of
+                        ( _, msg ) :: _ ->
+                            Dict.insert "token" msg errors
+
+                        [] ->
+                            errors
+
+
 navigateAfterLogin : Shared.Model -> Model -> Effect Msg
 navigateAfterLogin shared model =
     case shared.location of
@@ -292,7 +315,16 @@ update shared msg model =
                     )
 
         Confirm2faDone (Err e) ->
-            Api.handleLoginHttpError ToastMsg e model
+            let
+                ( modelWithError, effect ) =
+                    Api.handleLoginHttpError ToastMsg e model
+            in
+            ( { modelWithError
+                | formErrors =
+                    remapConfirm2faFormErrors modelWithError.formErrors
+              }
+            , effect
+            )
 
         Confirm2faDone (Ok ()) ->
             ( model
