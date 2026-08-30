@@ -624,13 +624,16 @@ async fn process_oneoff_item_in_transaction(
     Ok(())
 }
 
-async fn load_oneoff_item_page(
-    dbx: &DatabaseConnection,
+async fn load_oneoff_item_page<C>(
+    dbx: &C,
     since_ts: Option<NaiveDateTime>,
     till_ts: Option<NaiveDateTime>,
     cursor: Option<(NaiveDateTime, i64)>,
     limit: u64,
-) -> anyhow::Result<Vec<(NaiveDateTime, i64)>> {
+) -> anyhow::Result<Vec<(NaiveDateTime, i64)>>
+where
+    C: ConnectionTrait,
+{
     let mut query = oneoff_items_query(since_ts, till_ts)
         .order_by_asc(sigint_inbox_item::Column::Datetime)
         .order_by_asc(sigint_inbox_item::Column::Id);
@@ -1318,18 +1321,17 @@ mod tests {
             .unwrap();
             expected.push((datetime, message.id));
         }
-        setup.commit().await.unwrap();
         expected.sort();
 
         let since = expected.first().unwrap().0;
         let till = expected.last().unwrap().0 + Duration::seconds(1);
         let first_page =
-            load_oneoff_item_page(&dbx, Some(since), Some(till), None, 2)
+            load_oneoff_item_page(&setup, Some(since), Some(till), None, 2)
                 .await
                 .unwrap();
         assert_eq!(first_page.len(), 2);
         let second_page = load_oneoff_item_page(
-            &dbx,
+            &setup,
             Some(since),
             Some(till),
             first_page.last().copied(),
@@ -1346,21 +1348,6 @@ mod tests {
             expected.iter().map(|(_, id)| *id).collect::<Vec<_>>()
         );
 
-        sigint_inbox_item::Entity::delete_many()
-            .filter(
-                sigint_inbox_item::Column::Id
-                    .is_in(expected.iter().map(|(_, id)| *id)),
-            )
-            .exec(&dbx)
-            .await
-            .unwrap();
-        signal_message::Entity::delete_many()
-            .filter(
-                signal_message::Column::Id
-                    .is_in(expected.into_iter().map(|(_, id)| id)),
-            )
-            .exec(&dbx)
-            .await
-            .unwrap();
+        setup.rollback().await.unwrap();
     }
 }
