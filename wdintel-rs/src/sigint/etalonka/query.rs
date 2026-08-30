@@ -2771,6 +2771,47 @@ mod tests {
     }
 
     #[test]
+    fn build_network_freqs_query_scopes_messages_before_freq_join() {
+        let filter = NetworkFreqFilter {
+            active_freqs_only: false,
+            since_date_inclusive_ms: Some(1_740_000_000_000),
+            till_date_inclusive_ms: Some(1_740_000_600_000),
+            till_date_end: ReportPeriodEnd::NonInclusive,
+        };
+        let sql = build_network_freqs_query(
+            &vec!["group-a".to_string()],
+            42,
+            Some(&filter),
+            true,
+            None,
+        )
+        .expect("network freqs query")
+        .to_string(PostgresQueryBuilder);
+
+        assert!(
+            sql.contains("WITH \"network_messages\" AS MATERIALIZED"),
+            "{sql}"
+        );
+        assert!(sql.contains("FROM \"sigint_inbox_item_network\""), "{sql}");
+        assert!(
+            sql.contains(
+                "\"sigint_inbox_item_network\".\"sigint_network_id\" = 42"
+            ),
+            "{sql}"
+        );
+        assert!(
+            sql.contains(
+                "INNER JOIN \"sigint_network_freq\" AS \"network_freqs\" ON \"network_messages\".\"freq\" = \"network_freqs\".\"freq\""
+            ),
+            "{sql}"
+        );
+        assert!(
+            sql.contains("\"network_messages\".\"activity_datetime\""),
+            "{sql}"
+        );
+    }
+
+    #[test]
     fn etalonka_network_sorting_uses_requested_sort_variants() {
         let no_id_sql = build_etalonka_networks_query(
             &empty_list_networks_req(),
