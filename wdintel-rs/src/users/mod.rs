@@ -17,6 +17,7 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
+pub mod login_totp;
 pub mod totp;
 pub mod totp_challenge;
 pub mod types;
@@ -115,10 +116,9 @@ fn normalize_login_description(description: Option<String>) -> Option<String> {
         .filter(|description| !description.is_empty())
 }
 
-fn login_totp_enabled(totp_secret: &Option<String>) -> bool {
-    totp_secret
-        .as_deref()
-        .is_some_and(|secret| !secret.is_empty())
+fn login_skips_totp(login_obj: &login::Model) -> Result<bool, AppError> {
+    let roles: Vec<String> = serde_json::from_value(login_obj.roles.clone()).c(h!())?;
+    Ok(roles.iter().any(|role| role == "Api" || role == "ApiAgent"))
 }
 
 fn has_update_login_description(req: &serde_json::Value) -> bool {
@@ -400,7 +400,7 @@ pub async fn update_login(
         )
         .await
         .c(h!())?;
-        login_obj.totp_secret = Set(None);
+        login_totp::clear_secret(&txn, login_id).await.c(h!())?;
     }
     let res = login_obj.update(&txn).await.c(h!())?;
     if let Some(delta_id) = delta_id {
@@ -447,7 +447,7 @@ pub async fn update_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
-        totp_enabled: login_totp_enabled(&res.totp_secret),
+        totp_enabled: login_totp::is_enabled(&env.dbx, res.id).await.c(h!())?,
     }))
 }
 
@@ -515,7 +515,6 @@ pub async fn create_login(
                 req.description.clone(),
             )),
             password_auth_enabled: Set(true),
-            totp_secret: Set(None),
         },
     )
     .await
@@ -557,7 +556,7 @@ pub async fn create_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
-        totp_enabled: login_totp_enabled(&res.totp_secret),
+        totp_enabled: false,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -619,13 +618,14 @@ pub async fn list_logins(
         delta_login: Option<String>,
         description: Option<String>,
         password_auth_enabled: bool,
-        totp_secret: Option<String>,
+        totp_enabled: bool,
     }
 
     let users_iter = login::Entity::find()
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
+        .join(JoinType::LeftJoin, login::Relation::LoginTotp.def())
         .filter(
             Condition::any()
                 .add(organism::Column::DeletedPermanently.eq(false))
@@ -646,12 +646,15 @@ pub async fn list_logins(
             login::Column::DeactivationReason,
             login::Column::Description,
             login::Column::PasswordAuthEnabled,
-            login::Column::TotpSecret,
         ])
         .column_as(sigint_zone::Column::Name, "sigint_zone_name")
         .column_as(organism::Column::Name, "organism_name")
         .column_as(organism::Column::Enabled, "organism_enabled")
         .column_as(delta_login::Column::Login, "delta_login")
+        .column_as(
+            Expr::cust("login_totp.login_id is not null"),
+            "totp_enabled",
+        )
         .order_by(
             login::Column::CreatedAt,
             if let Some(sort_by) = &req.sort_by {
@@ -703,7 +706,7 @@ pub async fn list_logins(
                 .map(DeactivationReasonType::from),
             description: login.description,
             password_auth_enabled: login.password_auth_enabled,
-            totp_enabled: login_totp_enabled(&login.totp_secret),
+            totp_enabled: login.totp_enabled,
         };
         users.push(user);
     }
@@ -938,6 +941,7 @@ pub async fn user_test_api_login(
 #[post("/api/user/login")]
 pub async fn user_login(
     env: actix_web::web::Data<Env>,
+    http_req: HttpRequest,
     req: Json<LoginReq>,
 ) -> Result<Json<LoginRsp>, AppError> {
     let user_id = req.user.clone();
@@ -999,16 +1003,28 @@ pub async fn user_login(
         return Err(AppError::Form(errors));
     };
 
-    let rsp = begin_totp_login_challenge(&env, &login_obj).await?;
+    let rsp = begin_totp_login_challenge(&env, &http_req, &login_obj)
+        .await
+        .context(h!())?;
     Ok(Json(rsp))
 }
 
 async fn begin_totp_login_challenge(
     env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
     login_obj: &login::Model,
 ) -> Result<LoginRsp, AppError> {
+    // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
+    if login_skips_totp(login_obj)? {
+        start_user_session(env, http_req, login_obj.id).await.c(h!())?;
+        return Ok(LoginRsp::Authenticated);
+    }
+
     let mut redis = env.redis.clone();
-    match login_obj.totp_secret.as_deref().filter(|s| !s.is_empty()) {
+    match login_totp::find_secret(&env.dbx, login_obj.id)
+        .await
+        .c(h!())?
+    {
         None => {
             let enrollment =
                 totp::generate_enrollment(&login_obj.login).c(h!())?;
@@ -1108,13 +1124,13 @@ pub async fn user_confirm_2fa(
         .await;
         return Err(err);
     }
-    let login_obj = login_obj.login_model.c(h!())?;
+    let _login_obj = login_obj.login_model.c(h!())?;
 
     // Stale enroll: another challenge already configured TOTP.
     if matches!(
         &challenge,
         totp_challenge::TotpChallenge::Enroll { .. }
-    ) && login_totp_enabled(&login_obj.totp_secret)
+    ) && login_totp::is_enabled(&env.dbx, login_id).await.c(h!())?
     {
         let _ = totp_challenge::delete_challenge(
             &mut redis,
@@ -1131,14 +1147,16 @@ pub async fn user_confirm_2fa(
         totp_challenge::TotpChallenge::Enroll {
             pending_secret, ..
         } => pending_secret.clone(),
-        totp_challenge::TotpChallenge::Verify { .. } => login_obj
-            .totp_secret
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                totp_challenge_form_error(
-                    "Невірний або прострочений код підтвердження",
-                )
-            })?,
+        totp_challenge::TotpChallenge::Verify { .. } => {
+            login_totp::find_secret(&env.dbx, login_id)
+                .await
+                .c(h!())?
+                .ok_or_else(|| {
+                    totp_challenge_form_error(
+                        "Невірний або прострочений код підтвердження",
+                    )
+                })?
+        }
     };
 
     let is_valid = totp::verify_token(&secret, req.token.trim()).c(h!())?;
@@ -1183,21 +1201,14 @@ pub async fn user_confirm_2fa(
     } = &claimed
     {
         // Only the first successful enroll wins; later challenges stay rejected.
-        let updated = login::Entity::update_many()
-            .col_expr(
-                login::Column::TotpSecret,
-                Expr::value(Some(pending_secret.clone())),
-            )
-            .filter(login::Column::Id.eq(login_id))
-            .filter(
-                Condition::any()
-                    .add(login::Column::TotpSecret.is_null())
-                    .add(login::Column::TotpSecret.eq("")),
-            )
-            .exec(&env.dbx)
-            .await
-            .c(h!())?;
-        if updated.rows_affected == 0 {
+        if !login_totp::insert_secret_if_absent(
+            &env.dbx,
+            login_id,
+            pending_secret,
+        )
+        .await
+        .c(h!())?
+        {
             return Err(totp_challenge_form_error(
                 "Невірний або прострочений код підтвердження",
             ));
@@ -1257,7 +1268,6 @@ pub async fn register_user(
         last_release_seen: NotSet,
         description: NotSet,
         password_auth_enabled: Set(true),
-        totp_secret: Set(None),
     }
     .insert(&txn)
     .await
@@ -1717,7 +1727,6 @@ async fn register_delta_user(
             last_release_seen: NotSet,
             description: Set(normalize_login_description(description)),
             password_auth_enabled: Set(false),
-            totp_secret: Set(None),
         },
     )
     .await
@@ -1780,7 +1789,7 @@ async fn register_delta_user(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
-        totp_enabled: login_totp_enabled(&res.totp_secret),
+        totp_enabled: login_totp::is_enabled(&txn, res.id).await.c(h!())?,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -2403,7 +2412,6 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
-                totp_secret: Set(None),
             },
         )
         .await
@@ -2478,7 +2486,6 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
-                    totp_secret: Set(None),
                 },
             )
             .await
@@ -2551,7 +2558,6 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
-                    totp_secret: Set(None),
                 },
             )
             .await
@@ -2576,7 +2582,6 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
-                totp_secret: Set(None),
             },
         )
         .await
@@ -2630,7 +2635,6 @@ mod tests {
             last_release_seen: Default::default(),
             description: Default::default(),
             password_auth_enabled: Set(false),
-            totp_secret: Set(None),
         }
         .insert(&env.dbx)
         .await
@@ -2654,7 +2658,6 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
-                totp_secret: Set(None),
             },
         )
         .await

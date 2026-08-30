@@ -1588,6 +1588,7 @@ export type LoginReq = {
 };
 
 export type LoginRsp =
+  | 'Authenticated'
   | { Needs2faSetup: { challengeId: string; qrBase64: string; manualKey: string } }
   | { Needs2fa: { challengeId: string } }
 ;

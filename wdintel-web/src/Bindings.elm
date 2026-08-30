@@ -4180,13 +4180,16 @@ loginReqEncoder struct =
 
 
 type LoginRsp
-    = Needs2faSetup { challengeId : String, qrBase64 : String, manualKey : String }
+    = Authenticated
+    | Needs2faSetup { challengeId : String, qrBase64 : String, manualKey : String }
     | Needs2fa { challengeId : String }
 
 
 loginRspEncoder : LoginRsp -> Json.Encode.Value
 loginRspEncoder enum =
     case enum of
+        Authenticated ->
+            Json.Encode.string "Authenticated"
         Needs2faSetup { challengeId, qrBase64, manualKey } ->
             Json.Encode.object [ ( "Needs2faSetup", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ), ( "qr_base64", Json.Encode.string qrBase64 ), ( "manual_key", Json.Encode.string manualKey ) ] ) ]
         Needs2fa { challengeId } ->
@@ -16582,7 +16585,16 @@ loginRspDecoder =
                         Needs2fa { challengeId = challengeId }
         in
     Json.Decode.oneOf
-        [ Json.Decode.field "Needs2faSetup" (Json.Decode.succeed elmRsConstructNeeds2faSetup |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qr_base64" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "manual_key" (Json.Decode.string))))
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Authenticated" ->
+                            Json.Decode.succeed Authenticated
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.field "Needs2faSetup" (Json.Decode.succeed elmRsConstructNeeds2faSetup |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qr_base64" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "manual_key" (Json.Decode.string))))
         , Json.Decode.field "Needs2fa" (Json.Decode.succeed elmRsConstructNeeds2fa |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))))
         ]
 

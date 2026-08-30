@@ -376,6 +376,25 @@ function buildEditUserErrors(form: EditUserForm): EditUserErrors {
   return errors;
 }
 
+function toClearTotpReq(login: Login): UpdateLoginReq {
+  if (!login.organismId) throw new Error('Виберіть організм');
+
+  return {
+    id: login.id,
+    login: login.login,
+    roles: login.roles,
+    sigintZoneId: login.sigintZoneId,
+    organismId: login.organismId,
+    deleted: login.deleted,
+    password: null,
+    deltaLogin: login.deltaLogin,
+    deactivationReason: login.deactivationReason,
+    description: login.description,
+    passwordAuthEnabled: login.passwordAuthEnabled,
+    clearTotp: true,
+  };
+}
+
 function toUpdateLoginReq(form: EditUserForm): UpdateLoginReq {
   if (!form.organismId) throw new Error('Виберіть організм');
 
@@ -1137,14 +1156,11 @@ function EditUserDialog(props: {
                   disabled={isSubmitting}
                   onClick={() => {
                     void (async () => {
-                      if (!form) return;
+                      if (!login) return;
                       setIsSubmitting(true);
                       setSubmitError(null);
                       try {
-                        const updated = await updateLogin({
-                          ...toUpdateLoginReq(form),
-                          clearTotp: true,
-                        });
+                        const updated = await updateLogin(toClearTotpReq(login));
                         onUserUpdated(updated);
                         onClose();
                       } catch (error) {

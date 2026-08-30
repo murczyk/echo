@@ -47,6 +47,7 @@ pub struct LoginReq {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub enum LoginRsp {
+    Authenticated,
     Needs2faSetup {
         challenge_id: String,
         qr_base64: String,

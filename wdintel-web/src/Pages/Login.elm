@@ -142,14 +142,17 @@ focusTotpInput =
     Task.attempt (\_ -> NoOp) (Browser.Dom.focus "totp-token")
 
 
-pendingFromLoginRsp : B.LoginRsp -> Pending2fa
+pendingFromLoginRsp : B.LoginRsp -> Maybe Pending2fa
 pendingFromLoginRsp rsp =
     case rsp of
+        B.Authenticated ->
+            Nothing
+
         B.Needs2faSetup payload ->
-            Setup payload
+            Just (Setup payload)
 
         B.Needs2fa payload ->
-            Verify payload
+            Just (Verify payload)
 
 
 challengeIdFromPending : Pending2fa -> String
@@ -261,13 +264,18 @@ update shared msg model =
             Api.handleLoginHttpError ToastMsg e model
 
         LoginDone (Ok rsp) ->
-            ( { model
-                | pending2fa = Just (pendingFromLoginRsp rsp)
-                , totpTokenInp = ""
-                , formErrors = Dict.empty
-              }
-            , E.sendCmd focusTotpInput
-            )
+            case pendingFromLoginRsp rsp of
+                Nothing ->
+                    ( model, navigateAfterLogin shared model )
+
+                Just pending ->
+                    ( { model
+                        | pending2fa = Just pending
+                        , totpTokenInp = ""
+                        , formErrors = Dict.empty
+                      }
+                    , E.sendCmd focusTotpInput
+                    )
 
         Confirm2fa ->
             case model.pending2fa of

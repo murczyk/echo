@@ -21,12 +21,13 @@ Primary code:
 
 ## Outcome
 
-Credentials login no longer starts a session after password alone. After a valid password:
+Credentials login no longer starts a session after password alone (except unattended `Api` / `ApiAgent` logins). After a valid password:
 
-| `login.totp_secret` | Flow | Login response |
+| Condition | Flow | Login response |
 | --- | --- | --- |
-| `NULL` / empty | Generate pending secret; Redis **Enroll**; QR (otpauth) | `Needs2faSetup { challenge_id, qr_base64, manual_key }` |
-| set | Redis **Verify** only (no secret/QR) | `Needs2fa { challenge_id }` |
+| roles include `Api` or `ApiAgent` | `start_user_session` immediately | `Authenticated` |
+| no `login_totp` row | Generate pending secret; Redis **Enroll**; QR (otpauth) | `Needs2faSetup { challenge_id, qr_base64, manual_key }` |
+| `login_totp` row | Redis **Verify** only (no secret/QR) | `Needs2fa { challenge_id }` |
 
 `POST /api/user/confirm-2fa` with `{ challenge_id, token }` verifies TOTP, persists the secret on enroll, then calls `start_user_session` and deletes the Redis key. Cookie is issued only after confirm.
 
@@ -36,17 +37,20 @@ Delta and `test-api-login` are unchanged (no 2FA).
 
 ## Schema
 
-**Table:** `login`  
-**Column:** `totp_secret TEXT NULL`
+**Table:** `login_totp` (PeerDB-excluded)  
+**Columns:** `login_id UUID PK → login(id)`, `totp_secret TEXT NOT NULL`
 
-- `NULL` = not enrolled → force enroll after password
-- non-`NULL` = enrolled → verify after password
-- Admin clear sets it back to `NULL`
+- no row = not enrolled → force enroll after password
+- row present = enrolled → verify after password
+- Admin clear deletes the row
 
-Migration: `echo-migration/src/m20260827_180023_add_login_totp_secret.rs` (pure SQL, `IF NOT EXISTS`, PeerDB-friendly nullable / no default).  
-ClickHouse impact: `deploy/clickhouse/migration-impact.json` → `public.login` replicated snapshot + targeted resnapshot.
+Migration: `echo-migration/src/m20260827_180023_add_login_totp_secret.rs`  
+Impact: `public.login_totp` → `excluded`  
+Exclude file: `deploy/clickhouse/env/tables-exclude.txt`
 
-Raw `totp_secret` is never returned in list/update login payloads. Admin sees `totp_enabled: bool` only (`secret` present and non-empty).
+Plaintext TOTP seeds never live on replicated `public.login` and must not enter ClickHouse.
+
+Raw `totp_secret` is never returned in list/update login payloads. Admin sees `totp_enabled: bool` only.
 
 ---
 
@@ -69,7 +73,7 @@ Verify { login_id }
 | Lockout | after 5 failed OTP attempts per login (`TOTP_2FA_MAX_ATTEMPTS`), via atomic Redis `INCR`; new challenges refused until TTL |
 | Success | Lua `claim_challenge` deletes active + fails + payload before session |
 | Stale enroll | confirm persists secret only if still unset; later enroll challenges are rejected |
-| Admin clear | `invalidate_login_challenges` drops active challenge + fail counter |
+| Admin clear | `invalidate_login_challenges` + delete `login_totp` row |
 | Delete | on successful claim, lockout (challenge only), admin clear, or TTL expiry |
 | Multi-instance | Redis only (same service as sessions; stats use another DB) |
 

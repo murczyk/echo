@@ -86,3 +86,6 @@ public.ai_agent_chat_mattermost_notification
 
 # Device integration secrets.
 public.device_settings
+
+# Login TOTP seeds (plaintext second-factor credentials).
+public.login_totp

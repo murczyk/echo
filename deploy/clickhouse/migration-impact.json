@@ -27,11 +27,7 @@
     },
     "echo:m20260827_180023_add_login_totp_secret": {
       "changes": [
-        {
-          "table": "public.login",
-          "strategy": "replicated_snapshot",
-          "targeted_resnapshot": true
-        }
+        { "table": "public.login_totp", "strategy": "excluded" }
       ]
     },
     "echo:m20260826_083256_sigint_peleng_battle_line_distance": {
