@@ -12,8 +12,7 @@ use crate::types::*;
 use chrono::*;
 use sea_orm::*;
 use sea_query::{
-    Alias, Expr, ExprTrait, Func, JoinType, PgFunc, SelectStatement,
-    SimpleExpr, UnionType,
+    Alias, Expr, ExprTrait, Func, JoinType, PgFunc, SelectStatement, UnionType,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1620,71 +1619,82 @@ where
         return Ok(Default::default());
     };
 
-    let datasource_group_ids: Vec<i64> = datasource_group::Entity::find()
-        .select_only()
-        .column(datasource_group::Column::Id)
-        // TODO: do we count the messages if datasource got deleted
-        // .filter(datasource_group::Column::Deleted.eq(false))
-        .filter(datasource_group::Column::GroupMasterKey.eq_any(groups))
-        .into_tuple()
-        .all(txn)
-        .await
-        .context(h!())?;
-
     let expr_callsigns = Expr::value(callsigns.to_owned());
-    let activity_datetime: SimpleExpr = Func::coalesce([
-        sigint_inbox_item::Column::Datetime.into_simple_expr(),
-        signal_message::Column::Timestamp.into_simple_expr(),
-        signal_message::Column::CreatedAt.into_simple_expr(),
-    ])
-    .into();
+    let nf = Alias::new("network_freqs");
+    let callsigns_alias = Alias::new("callsigns");
+    let network_messages =
+        build_scoped_network_messages_query(&groups, network_id, filter)
+            .context(h!())?;
+    let network_messages_cte = sea_query::CommonTableExpression::new()
+        .query(network_messages)
+        .table_name(Alias::new("network_messages"))
+        .materialized(true)
+        .to_owned();
 
-    let subquery = sigint_inbox_item_network::Entity::find()
-        .select_only()
-        .column(sigint_inbox_item::Column::Id)
-        .column(sigint_inbox_item::Column::Freq)
-        .expr_as(activity_datetime, "activity_datetime")
-        .column_as(sigint_inbox_item_callsign::Column::Callsign, "callsign")
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item_network::Relation::SigintInboxItem.def(),
+    let mut subquery = sea_query::Query::select();
+    subquery
+        .column((NetworkMessages::Table, NetworkMessages::Id))
+        .column((NetworkMessages::Table, NetworkMessages::Freq))
+        .column((NetworkMessages::Table, NetworkMessages::ActivityDatetime))
+        .expr_as(
+            Expr::col((
+                callsigns_alias.clone(),
+                SigintInboxItemCallsign::Callsign,
+            )),
+            "callsign",
         )
-        .join(
+        .from(NetworkMessages::Table)
+        .join_as(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SignalMessage.def(),
+            SigintNetworkFreq::Table,
+            nf.clone(),
+            build_network_message_freq_join_condition(filter, true)
+                .context(h!())?,
         )
-        .join(
+        .join_as(
             JoinType::InnerJoin,
-            sigint_inbox_item::Relation::SigintInboxItemCallsign.def(),
+            SigintInboxItemCallsign::Table,
+            callsigns_alias.clone(),
+            Expr::col((
+                callsigns_alias.clone(),
+                SigintInboxItemCallsign::SigintInboxItemId,
+            ))
+            .equals((NetworkMessages::Table, NetworkMessages::Id))
+            .and(
+                Expr::col((
+                    callsigns_alias.clone(),
+                    SigintInboxItemCallsign::Deleted,
+                ))
+                .eq(false),
+            )
+            .and(
+                Expr::col((
+                    callsigns_alias.clone(),
+                    SigintInboxItemCallsign::Callsign,
+                ))
+                .is_in(callsigns.to_owned()),
+            ),
         )
-        .join(
-            JoinType::InnerJoin,
-            sigint_inbox_item::Entity::belongs_to(sigint_network_freq::Entity)
-                .from(sigint_inbox_item::Column::Freq)
-                .to(sigint_network_freq::Column::Freq)
+        .and_where(
+            Expr::col((nf.clone(), SigintNetworkFreq::NetworkId))
+                .eq(network_id),
+        )
+        .and_where(
+            Condition::any()
+                .add(
+                    Expr::col((nf.clone(), SigintNetworkFreq::Deleted))
+                        .eq(false),
+                )
+                .add(
+                    Expr::col((nf.clone(), SigintNetworkFreq::ActiveTo))
+                        .is_not_null(),
+                )
                 .into(),
         )
-        .filter(
-            sigint_inbox_item_network::Column::SigintNetworkId.eq(network_id),
-        )
-        .filter(signal_message::Column::Deleted.eq(false))
-        .filter(
-            signal_message::Column::DatasourceGroupId
-                .eq_any(datasource_group_ids),
-        )
-        .filter(sigint_inbox_item_callsign::Column::Deleted.eq(false))
-        .filter(
-            sigint_inbox_item_callsign::Column::Callsign
-                .is_in(callsigns.to_owned()),
-        )
-        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
-        .filter(
-            Condition::any()
-                .add(sigint_network_freq::Column::Deleted.eq(false))
-                .add(sigint_network_freq::Column::ActiveTo.is_not_null()),
-        )
-        .filter(build_datetime_filter(filter)?)
-        .into_query();
+        .and_where_option(filter.as_ref().filter(|f| f.active_freqs_only).map(
+            |_| Expr::col((nf.clone(), SigintNetworkFreq::ActiveTo)).is_null(),
+        ));
+    let subquery = subquery.to_owned();
 
     let has_targets = matches!(target_filter, ActivityTargetFilter::Include(_));
     let activity_subquery = match target_filter {
@@ -1725,6 +1735,11 @@ where
         query.column("target_index").group_by_col("target_index");
     }
 
+    let query = sea_query::Query::with()
+        .cte(network_messages_cte)
+        .clone()
+        .query(query)
+        .to_owned();
     let statement = txn.get_database_backend().build(&query);
     let results = txn.query_all_raw(statement).await.context(h!())?;
 
