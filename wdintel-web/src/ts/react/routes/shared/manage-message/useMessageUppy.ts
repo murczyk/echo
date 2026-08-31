@@ -66,6 +66,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       endpoint: MESSAGE_TUS_ENDPOINT,
       chunkSize: 5 * 1024 * 1024,
       limit: 3,
+      overridePatchMethod: true,
       removeFingerprintOnSuccess: true,
     }),
   );

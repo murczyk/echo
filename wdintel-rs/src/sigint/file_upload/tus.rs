@@ -79,8 +79,8 @@ pub struct TusUploadMetadata {
 }
 
 enum WriteResult {
-    Conflict,
-    TooLarge,
+    Conflict { current_offset: u64 },
+    TooLarge { current_offset: u64 },
     Written(u64),
 }
 
@@ -293,33 +293,75 @@ impl TusHandler {
         payload: web::Payload,
     ) -> Result<HttpResponse, AppError> {
         if !self.is_valid_protocol_version(headers) {
-            return Ok(
-                self.build_status_response(StatusCode::PRECONDITION_FAILED)
-            );
+            return Ok(self.rejected_chunk_response(
+                StatusCode::PRECONDITION_FAILED,
+                "invalid_tus_version",
+                None,
+                None,
+                None,
+                None,
+            ));
         }
         if headers.get(header::CONTENT_TYPE)
             != Some(&HEADER_VALUE_CONTENT_TYPE_PATCH)
         {
-            return Ok(
-                self.build_status_response(StatusCode::UNSUPPORTED_MEDIA_TYPE)
-            );
+            return Ok(self.rejected_chunk_response(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "invalid_content_type",
+                None,
+                None,
+                None,
+                None,
+            ));
         }
 
         let Some((file_path, file_id, upload_length)) = self
             .parse_request_file_path(login, request_file, true)
             .await?
         else {
-            return Ok(self.build_status_response(StatusCode::NOT_FOUND));
+            return Ok(self.rejected_chunk_response(
+                StatusCode::NOT_FOUND,
+                "invalid_upload_url",
+                None,
+                None,
+                None,
+                None,
+            ));
         };
         let Some(upload_offset) = headers.get(HEADER_NAME_UPLOAD_OFFSET) else {
-            return Ok(self.build_status_response(StatusCode::BAD_REQUEST));
+            return Ok(self.rejected_chunk_response(
+                StatusCode::BAD_REQUEST,
+                "missing_upload_offset",
+                Some(file_id),
+                Some(upload_length),
+                None,
+                None,
+            ));
         };
-        let upload_offset =
-            u64::from_str(upload_offset.to_str().c(h!())?).c(h!())?;
+        let Ok(upload_offset) = upload_offset
+            .to_str()
+            .ok()
+            .and_then(|value| u64::from_str(value).ok())
+            .ok_or(())
+        else {
+            return Ok(self.rejected_chunk_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_upload_offset",
+                Some(file_id),
+                Some(upload_length),
+                None,
+                None,
+            ));
+        };
         if upload_offset > upload_length {
-            return Ok(
-                self.build_status_response(StatusCode::PAYLOAD_TOO_LARGE)
-            );
+            return Ok(self.rejected_chunk_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "offset_exceeds_upload_length",
+                Some(file_id),
+                Some(upload_length),
+                Some(upload_offset),
+                None,
+            ));
         }
 
         let mut file = match tokio::fs::File::options()
@@ -330,11 +372,24 @@ impl TusHandler {
         {
             Ok(file) => file,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(self.build_status_response(StatusCode::NOT_FOUND));
+                return Ok(self.rejected_chunk_response(
+                    StatusCode::NOT_FOUND,
+                    "pending_upload_not_found",
+                    Some(file_id),
+                    Some(upload_length),
+                    Some(upload_offset),
+                    None,
+                ));
             }
             Err(_) => {
-                return Ok(self
-                    .build_status_response(StatusCode::INTERNAL_SERVER_ERROR));
+                return Ok(self.rejected_chunk_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "pending_upload_open_failed",
+                    Some(file_id),
+                    Some(upload_length),
+                    Some(upload_offset),
+                    None,
+                ));
             }
         };
 
@@ -346,12 +401,25 @@ impl TusHandler {
             match Self::write(&mut file, upload_offset, upload_length, payload)
                 .await?
             {
-                WriteResult::Conflict => {
-                    return Ok(self.build_status_response(StatusCode::CONFLICT));
+                WriteResult::Conflict { current_offset } => {
+                    return Ok(self.rejected_chunk_response(
+                        StatusCode::CONFLICT,
+                        "upload_offset_conflict",
+                        Some(file_id),
+                        Some(upload_length),
+                        Some(upload_offset),
+                        Some(current_offset),
+                    ));
                 }
-                WriteResult::TooLarge => {
-                    return Ok(self
-                        .build_status_response(StatusCode::PAYLOAD_TOO_LARGE));
+                WriteResult::TooLarge { current_offset } => {
+                    return Ok(self.rejected_chunk_response(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        "chunk_exceeds_upload_length",
+                        Some(file_id),
+                        Some(upload_length),
+                        Some(upload_offset),
+                        Some(current_offset),
+                    ));
                 }
                 WriteResult::Written(new_pos) => new_pos,
             };
@@ -377,17 +445,23 @@ impl TusHandler {
         let current_position =
             file.seek(std::io::SeekFrom::End(0)).await.c(h!())?;
         if expected_offset != current_position {
-            return Ok(WriteResult::Conflict);
+            return Ok(WriteResult::Conflict {
+                current_offset: current_position,
+            });
         }
         let mut size = expected_offset;
         while let Some(chunk) = payload.next().await {
             let chunk = chunk
                 .map_err(|e| AppError::AnyhowError { source: e.into() })?;
             let Some(new_size) = size.checked_add(chunk.len() as u64) else {
-                return Ok(WriteResult::TooLarge);
+                return Ok(WriteResult::TooLarge {
+                    current_offset: size,
+                });
             };
             if new_size > upload_length {
-                return Ok(WriteResult::TooLarge);
+                return Ok(WriteResult::TooLarge {
+                    current_offset: size,
+                });
             }
             file.write_all(&chunk).await.c(h!())?;
             size = new_size;
@@ -614,6 +688,23 @@ impl TusHandler {
         builder
             .insert_header((HEADER_NAME_TUS_VERSION, HEADER_VALUE_TUS_VERSION));
         builder.finish()
+    }
+
+    fn rejected_chunk_response(
+        &self,
+        status_code: StatusCode,
+        reason: &'static str,
+        file_id: Option<Uuid>,
+        upload_length: Option<u64>,
+        upload_offset: Option<u64>,
+        current_offset: Option<u64>,
+    ) -> HttpResponse {
+        log::warn!(
+            target: "tus_upload",
+            "event=chunk_rejected status={} reason={reason} file_id={file_id:?} upload_length={upload_length:?} upload_offset={upload_offset:?} current_offset={current_offset:?}",
+            status_code.as_u16()
+        );
+        self.build_status_response(status_code)
     }
 
     fn add_default_headers(

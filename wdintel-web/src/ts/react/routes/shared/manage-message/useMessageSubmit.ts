@@ -1,6 +1,7 @@
 import type { Dayjs } from 'dayjs';
 import type { InboxMessage } from '../../../../../Bindings';
 import type Uppy from '@uppy/core';
+import type { UppyFile } from '@uppy/core';
 
 import {
   createDeviceName,
@@ -104,7 +105,7 @@ export function useMessageSubmit({
           throw new Error('Помилка завантаження файлів (no result)');
         }
         if ((uploadResult.failed || []).length > 0) {
-          throw new Error('Помилка завантаження файлів');
+          throw new Error(formatMessageUploadError(uploadResult.failed?.[0]));
         }
 
         for (const file of uppy.getFiles()) {
@@ -223,6 +224,28 @@ export function useMessageSubmit({
   };
 
   return { onSubmit };
+}
+
+export function formatMessageUploadError(file: UppyFile<any, any> | undefined): string {
+  const target = file?.name?.trim() ? `файл «${file.name.trim()}»` : 'файли';
+  const status = file?.response?.status;
+
+  if (status === 401) {
+    return `Не вдалося завантажити ${target}: сеанс завершився. Оновіть сторінку та увійдіть знову.`;
+  }
+  if (status === 403) {
+    return `Не вдалося завантажити ${target}: недостатньо прав.`;
+  }
+  if (status === 404 || status === 409) {
+    return `Не вдалося продовжити завантаження ${target}. Видаліть файл, додайте його повторно та спробуйте ще раз.`;
+  }
+  if (status === 413) {
+    return `Не вдалося завантажити ${target}: файл завеликий або змінився після додавання.`;
+  }
+  if (status) {
+    return `Не вдалося завантажити ${target} (HTTP ${status}). Повторіть спробу.`;
+  }
+  return `Не вдалося завантажити ${target}. Перевірте з’єднання та повторіть спробу.`;
 }
 
 function optionalInteger(value: string | null | undefined): number | undefined {

@@ -85,7 +85,10 @@ export async function observeImageEditorSubmission(page: Page) {
   });
   await page.route('**/api/sigint/file-upload/tus/editor-upload', async (route) => {
     const request = route.request();
-    if (request.method() === 'PATCH') {
+    if (
+      request.method() === 'POST' &&
+      request.headers()['x-http-method-override']?.toUpperCase() === 'PATCH'
+    ) {
       uploads.push({
         bytes: request.postDataBuffer() ?? Buffer.alloc(0),
         metadata: parseTusMetadata(uploadMetadata),
