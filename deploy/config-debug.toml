@@ -12,6 +12,7 @@ signal_import_fiven_name = "Rer Importer"
 static_path = "../wdintel-web/public"
 executable_path = "/Users/kon/workspace/wildducks-intel/wdintel-rs/target/debug/wdintel-rs"
 fill_comp_freq_worker = false
+summary_table_callsign_threshold = 3
 #settlements_sources="kurska_oblast_rf, luhanska_oblast"
 settlements_sources = ""
 server_id = 37
