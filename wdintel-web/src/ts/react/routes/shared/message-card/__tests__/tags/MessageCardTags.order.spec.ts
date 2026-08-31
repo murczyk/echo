@@ -50,6 +50,41 @@ const tagsMap = {
   },
 } as Record<number, Tag>;
 
+const mixedTagsMap = {
+  10: {
+    label: 'орг-3',
+    extra: false,
+    ord: 3,
+    keywords: null,
+    isPalitra: false,
+    ownerOrganismId: 7,
+  },
+  11: {
+    label: 'орг-1',
+    extra: false,
+    ord: 1,
+    keywords: null,
+    isPalitra: false,
+    ownerOrganismId: 7,
+  },
+  20: {
+    label: 'глоб-1',
+    extra: false,
+    ord: 1,
+    keywords: null,
+    isPalitra: false,
+    ownerOrganismId: null,
+  },
+  21: {
+    label: 'глоб-2',
+    extra: false,
+    ord: 2,
+    keywords: null,
+    isPalitra: false,
+    ownerOrganismId: null,
+  },
+} as Record<number, Tag>;
+
 describe('compact tag layout ordering', () => {
   it('keeps selected tags first, then sorts each group by ord', () => {
     // Tag 13 (ord 2) is selected; 11 (ord 1) and 10 (ord 3) are not.
@@ -65,6 +100,17 @@ describe('compact tag layout ordering', () => {
     const order = buildSelectedFirstTagOrder(rows);
 
     expect(order).toEqual([11, 13, 10]);
+  });
+
+  it('keeps selected global tags after organism tags', () => {
+    const rows = buildMessageCardTagRows(
+      buildMessage({ tags: [10, 20] }),
+      mixedTagsMap,
+      [10, 11, 20, 21],
+    );
+    const order = buildSelectedFirstTagOrder(rows);
+
+    expect(order).toEqual([10, 11, 20, 21]);
   });
 });
 

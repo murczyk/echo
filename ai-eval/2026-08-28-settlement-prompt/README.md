@@ -7,7 +7,8 @@ parser fixtures, and read-only `echo-kharkiv2` examples paired with their
 pipe-delimited `sigint_inbox_item.location_v2` values.
 
 The prompt treats source-post names, dates, frequencies, coordinates,
-callsigns, unit names, dialogue, comments, and interception tags as negative
-boundaries. It keeps multiword and hyphenated names, normalizes only obvious
-grammatical case, preserves source spelling, and returns ordered JSON under
-the `settlements` key.
+callsigns, unit names, same-header unit aliases repeated in parentheses,
+dialogue, comments, and interception tags as negative boundaries. It keeps
+multiword and hyphenated names, normalizes only obvious grammatical case,
+preserves source spelling, and returns ordered JSON under the `settlements`
+key.

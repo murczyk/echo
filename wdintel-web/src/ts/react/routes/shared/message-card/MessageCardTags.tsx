@@ -23,17 +23,29 @@ export function estimateTagChipWidthPx(label: string, showBadge?: boolean): numb
 }
 
 export function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] {
-  return [...rows.filter((row) => row.isSet), ...rows.filter((row) => !row.isSet)].map(
-    (row) => row.tagId,
-  );
+  const selectedFirst = (groupRows: MessageCardTagRow[]) => [
+    ...groupRows.filter((row) => row.isSet),
+    ...groupRows.filter((row) => !row.isSet),
+  ];
+  return [
+    ...selectedFirst(rows.filter((row) => row.isOrganismTag)),
+    ...selectedFirst(rows.filter((row) => !row.isOrganismTag)),
+  ].map((row) => row.tagId);
+}
+
+function getFirstGlobalTagId(rows: MessageCardTagRow[]): number | null {
+  if (!rows.some((row) => row.isOrganismTag)) return null;
+  return rows.find((row) => !row.isOrganismTag)?.tagId ?? null;
 }
 
 const MessageCardTagChip = memo(function MessageCardTagChip({
   row,
+  showGroupDivider,
   interactive,
   onToggleTag,
 }: {
   row: MessageCardTagRow;
+  showGroupDivider: boolean;
   interactive: boolean;
   onToggleTag?: (tagId: number) => void;
 }) {
@@ -55,7 +67,9 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
       className="inline-flex max-w-full items-start align-top"
       style={{ paddingTop: TAG_CHIP_BADGE_TOP_PADDING_PX }}
     >
-      <span className="relative inline-flex max-w-full shrink-0">
+      <span
+        className={`relative inline-flex max-w-full shrink-0${showGroupDivider ? ' message-card-tag--with-divider' : ''}`}
+      >
         <EchoChip
           label={row.label}
           tone="tag"
@@ -121,9 +135,9 @@ function MessageCardTagsComponent({
   const rowIdKey = useMemo(
     () =>
       rows
-        .map((row) => row.tagId)
+        .map((row) => `${row.tagId}:${row.isOrganismTag ? 'organism' : 'global'}`)
         .slice()
-        .sort((left, right) => left - right)
+        .sort()
         .join(','),
     [rows],
   );
@@ -144,6 +158,8 @@ function MessageCardTagsComponent({
         .filter((row): row is MessageCardTagRow => row != null),
     [orderedTagIds, rowsById],
   );
+  const fullFirstGlobalTagId = getFirstGlobalTagId(rows);
+  const compactFirstGlobalTagId = getFirstGlobalTagId(compactOrderedRows);
   const packingKey = useMemo(
     () =>
       compactOrderedRows
@@ -261,6 +277,7 @@ function MessageCardTagsComponent({
           <MessageCardTagChip
             key={row.tagId}
             row={row}
+            showGroupDivider={row.tagId === fullFirstGlobalTagId}
             interactive={interactive}
             onToggleTag={onToggleTag}
           />
@@ -296,6 +313,7 @@ function MessageCardTagsComponent({
           <MessageCardTagChip
             key={row.tagId}
             row={row}
+            showGroupDivider={row.tagId === compactFirstGlobalTagId}
             interactive={interactive}
             onToggleTag={onToggleTag}
           />
@@ -312,6 +330,7 @@ function MessageCardTagsComponent({
             <MessageCardTagChip
               key={row.tagId}
               row={row}
+              showGroupDivider={row.tagId === compactFirstGlobalTagId}
               interactive={interactive}
               onToggleTag={onToggleTag}
             />
@@ -330,6 +349,7 @@ function MessageCardTagsComponent({
             <MessageCardTagChip
               key={row.tagId}
               row={row}
+              showGroupDivider={row.tagId === compactFirstGlobalTagId}
               interactive={interactive}
               onToggleTag={onToggleTag}
             />
