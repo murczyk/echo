@@ -281,6 +281,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const setFeedUnreadCursor = useCallback((feedId: string, cursor: MessageCursor | null) => {
     unreadCursorByFeedIdRef.current[feedId] = cursor;
   }, []);
+  const installFeedUnreadCursorAndBaseline = useCallback(
+    (feed: MessageFeedState, cursor: MessageCursor | null) => {
+      unreadCursorByFeedIdRef.current[feed.id] = cursor;
+      lastServerCountByFeedIdRef.current[feed.id] = {
+        cursorId: cursor?.id ?? null,
+        quantity: 0,
+        requestSignature: buildFeedCountSignature(feed, freqs),
+      };
+    },
+    [freqs],
+  );
   const advanceFeedReadCursor = useCallback(
     (
       feedId: string,
@@ -666,6 +677,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     clearFeedUnreadBaselines,
     completeFeedReload,
     setFeedUnreadCursor,
+    installFeedUnreadCursorAndBaseline,
   });
 
   const {

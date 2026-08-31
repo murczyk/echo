@@ -126,6 +126,18 @@ describe('FeedNotificationPanel', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
+  it('opens Chrome help when browser permission is not granted', async () => {
+    api.browserStatus.mockReturnValue('runtime-failure');
+    const { container } = await renderPanel();
+
+    await act(async () => {
+      getButton(container, 'Інструкція та діагностика').click();
+    });
+
+    expect(document.body.textContent).toContain('Дозвіл у Chrome');
+    expect(document.body.textContent).toContain('Відомості про сайт');
+  });
+
   it('refreshes browser status from the shared notification-status event', async () => {
     const { container } = await renderPanel();
     expect(container.textContent).toContain('Браузерне сповіщення — Дозволено');

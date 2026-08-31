@@ -2,6 +2,10 @@ import { Box, Button, FormControlLabel, Stack, Switch, Typography } from '@mui/m
 import { useCallback, useEffect, useState } from 'react';
 
 import {
+  DutyNotificationsHelpDialog,
+  DutyNotificationsHelpTopic,
+} from './DutyNotificationsHelpDialog';
+import {
   DUTY_NOTIFICATION_STATUS_CHANGE_EVENT,
   DutyBrowserNotificationStatus,
   DutySoundStatus,
@@ -43,6 +47,7 @@ export function FeedNotificationPanel({
   const [lastSuccessfulPoll, setLastSuccessfulPoll] = useState<Date | null>(() =>
     getLastSuccessfulDutyCountCheck(feedId),
   );
+  const [helpOpen, setHelpOpen] = useState(false);
   const refreshStatus = useCallback(() => {
     setSoundStatus(getDutySoundStatus());
     setBrowserStatus(getBrowserNotificationStatus());
@@ -182,9 +187,14 @@ export function FeedNotificationPanel({
           <Typography variant="caption" color="warning.main">
             Працює лише поки «Оперативний» відкритий. На заблокованому телефоні не працює.
           </Typography>
-          <Typography component="a" href="/docs/duty-notifications/" variant="caption">
-            Як налаштувати браузер і систему
-          </Typography>
+          <Button
+            onClick={() => setHelpOpen(true)}
+            size="small"
+            sx={{ alignSelf: 'flex-start' }}
+            variant="text"
+          >
+            Інструкція та діагностика
+          </Button>
           {storageError ? (
             <Typography variant="caption" color="error">
               Не вдалося зберегти налаштування: {storageError}
@@ -192,6 +202,15 @@ export function FeedNotificationPanel({
           ) : null}
         </Stack>
       </Stack>
+      <DutyNotificationsHelpDialog
+        initialTopic={
+          browserStatus === DutyBrowserNotificationStatus.Granted
+            ? DutyNotificationsHelpTopic.Feed
+            : DutyNotificationsHelpTopic.Chrome
+        }
+        onClose={() => setHelpOpen(false)}
+        open={helpOpen}
+      />
     </Box>
   );
 }

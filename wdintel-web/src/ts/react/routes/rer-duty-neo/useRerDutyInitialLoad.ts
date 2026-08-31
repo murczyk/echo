@@ -51,6 +51,10 @@ type Params = {
   clearFeedUnreadBaselines: (feedId: string) => void;
   completeFeedReload: (feedId: string) => void;
   setFeedUnreadCursor: (feedId: string, cursor: MessageCursor | null) => void;
+  installFeedUnreadCursorAndBaseline: (
+    feed: MessageFeedState,
+    cursor: MessageCursor | null,
+  ) => void;
 };
 
 function preserveUnreadState(
@@ -118,8 +122,8 @@ export function useRerDutyInitialLoad(params: Params) {
         } else {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
-          current.setFeedUnreadCursor(
-            feedId,
+          current.installFeedUnreadCursorAndBaseline(
+            effectiveFeed,
             tail ? { id: tail[0], timestamp: tail[1].timestamp } : pollCursor,
           );
         }
