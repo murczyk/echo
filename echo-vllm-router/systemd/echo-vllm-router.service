@@ -1,8 +1,8 @@
 [Unit]
 Description=Echo vLLM Router (general-gemma pool)
 Documentation=https://github.com/vllm-project/router
-After=network-online.target tailscaled.service
-Wants=network-online.target
+After=network-online.target tailscale-online.target
+Wants=network-online.target tailscale-online.target
 
 [Service]
 Type=simple

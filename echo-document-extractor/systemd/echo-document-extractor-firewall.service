@@ -1,7 +1,7 @@
 [Unit]
 Description=Echo Document Extractor nftables policy
-After=network-online.target tailscaled.service
-Wants=network-online.target tailscaled.service
+After=network-online.target tailscale-online.target
+Wants=network-online.target tailscale-online.target
 Before=echo-document-extractor.service
 
 [Service]
