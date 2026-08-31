@@ -1199,16 +1199,28 @@ pub async fn user_confirm_2fa(
     let totp_key = totp_crypto::require_totp_strongbox_key(
         env.config.totp_strongbox_key.as_deref(),
     )
-    .c(h!())?;
+    .map_err(|_| {
+        totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        )
+    })?;
     let secret = match &challenge {
         totp_challenge::TotpChallenge::Enroll {
             pending_secret, ..
         } => totp_crypto::decrypt_secret(totp_key, login_id, pending_secret)
-            .c(h!())?,
+            .map_err(|_| {
+                totp_challenge_form_error(
+                    "Невірний або прострочений код підтвердження",
+                )
+            })?,
         totp_challenge::TotpChallenge::Verify { .. } => {
             login_totp::find_secret(&env.dbx, login_id, totp_key)
                 .await
-                .c(h!())?
+                .map_err(|_| {
+                    totp_challenge_form_error(
+                        "Невірний або прострочений код підтвердження",
+                    )
+                })?
                 .ok_or_else(|| {
                     totp_challenge_form_error(
                         "Невірний або прострочений код підтвердження",
@@ -1217,7 +1229,11 @@ pub async fn user_confirm_2fa(
         }
     };
 
-    let is_valid = totp::verify_token(&secret, req.token.trim()).c(h!())?;
+    let is_valid = totp::verify_token(&secret, req.token.trim()).map_err(|_| {
+        totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        )
+    })?;
     if !is_valid {
         match totp_challenge::record_failed_attempt(
             &mut redis,
