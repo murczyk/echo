@@ -389,13 +389,11 @@
       "changes": [
         {
           "table": "public.echo_client",
-          "strategy": "replicated_snapshot",
-          "targeted_resnapshot": true
+          "strategy": "excluded"
         },
         {
           "table": "public.echo_client_config",
-          "strategy": "replicated_snapshot",
-          "targeted_resnapshot": true
+          "strategy": "excluded"
         }
       ]
     },

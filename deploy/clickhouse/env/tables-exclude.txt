@@ -14,6 +14,8 @@ public.signal_message_queue_attachment
 public.echo_gpu_transcription_queue
 public.gpu_config
 public.seaql_echo_gpu_migrations
+public.echo_client
+public.echo_client_config
 public.echo_whatsapp_queue
 public.echo_whatsapp_queue_attachment
 public.echo_automation_send_log
