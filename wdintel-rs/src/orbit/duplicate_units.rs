@@ -316,9 +316,11 @@ async fn persist_selections(
     link_mode: tui::LinkMode,
 ) -> anyhow::Result<Vec<MergeAction>> {
     let mut actions = Vec::new();
-    for selections in
-        selections.chunks(ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE)
-    {
+    let batch_size = match link_mode {
+        tui::LinkMode::Automatic => 1,
+        tui::LinkMode::Manual => ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE,
+    };
+    for selections in selections.chunks(batch_size) {
         actions.extend(
             persist_selection_batch(db, selections, link_mode)
                 .await
