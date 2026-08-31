@@ -34,7 +34,10 @@ import { compareMessageTuple } from './utils';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
-import { withDutyFeedRequestDeadline } from './dutyFeedRequestDeadline';
+import {
+  DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+  withDutyFeedRequestDeadline,
+} from './dutyFeedRequestDeadline';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -495,11 +498,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         try {
-          ({ quantity } = await withDutyFeedRequestDeadline((signal) =>
-            fetchInboxCount(
-              buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
-              { signal },
-            ),
+          ({ quantity } = await withDutyFeedRequestDeadline(
+            DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+            (signal) =>
+              fetchInboxCount(
+                buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
+                { signal },
+              ),
           ));
           finishDebugActivity(`ok; quantity=${quantity}`);
         } catch (error) {
@@ -567,10 +572,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         try {
-          ({ quantity } = await withDutyFeedRequestDeadline((signal) =>
-            fetchInboxCount(buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }), {
-              signal,
-            }),
+          ({ quantity } = await withDutyFeedRequestDeadline(
+            DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+            (signal) =>
+              fetchInboxCount(
+                buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
+                {
+                  signal,
+                },
+              ),
           ));
           finishDebugActivity(`ok; quantity=${quantity}; tail=${tailId}`);
         } catch (error) {

@@ -16,6 +16,7 @@ import type {
 import { FeedFilterPanel, type FeedFilterPanelModel } from './FeedFilterPanel';
 import { FeedKeywordsPanel } from './FeedKeywordsPanel';
 import { FeedNotificationPanel } from './FeedNotificationPanel';
+import type { DutyNotificationBellState } from './notifications';
 import { dutyTopActionButtonSx } from './top-action-styles';
 
 /** At this many side-by-side feeds, column header actions use icons only (4+). */
@@ -30,7 +31,7 @@ type FeedColumnHeaderProps = {
   showFilters: boolean;
   showNotificationPanel: boolean;
   showKeywordsPanel: boolean;
-  dutyNotificationBellState: 'off' | 'ready' | 'degraded' | 'unsupported';
+  dutyNotificationBellState: DutyNotificationBellState;
   onCreateFeed?: () => void;
   onToggleFilters: () => void;
   onToggleNotificationPanel: () => void;
@@ -420,10 +421,10 @@ const bellStateLabel = {
   ready: 'Сповіщення готові; вимкнути для стрічки',
   degraded: 'Сповіщення потребують налаштування або взаємодії',
   unsupported: 'Запитані сповіщення не підтримуються',
-} as const;
+} satisfies Record<DutyNotificationBellState, string>;
 const bellStateColor = {
   off: 'text.secondary',
   ready: 'primary.main',
   degraded: 'warning.main',
   unsupported: 'error.main',
-} as const;
+} satisfies Record<DutyNotificationBellState, string>;
