@@ -476,15 +476,14 @@ where
 fn unique_sigint_links(link_inventory: &LinkInventory) -> BTreeMap<Uuid, i64> {
     link_inventory
         .iter()
-        .filter_map(|(orbit_unit_id, sigint_unit_ids)| {
-            (sigint_unit_ids.len() == 1).then(|| {
-                (
-                    *orbit_unit_id,
-                    *sigint_unit_ids
-                        .first()
-                        .expect("one SIGINT unit ID must exist"),
-                )
-            })
+        .filter(|(_, sigint_unit_ids)| sigint_unit_ids.len() == 1)
+        .map(|(orbit_unit_id, sigint_unit_ids)| {
+            (
+                *orbit_unit_id,
+                *sigint_unit_ids
+                    .first()
+                    .expect("one SIGINT unit ID must exist"),
+            )
         })
         .collect()
 }
@@ -672,8 +671,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{
+        failed_inbox_unit, orbit_unit_echelon, sigint_inbox_item,
+        sigint_unit_label,
+    };
     use crate::orbit::types::{DictionaryValue, SourceUnit};
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serde_json::json;
+    use serial_test::serial;
 
     #[test]
     fn parses_unparsed_unit_into_the_link_matcher_hierarchy() {
@@ -689,6 +694,37 @@ mod tests {
     }
 
     #[test]
+    fn parses_brigade_and_corps_hierarchy_levels() {
+        assert_eq!(
+            parsed_hierarchy("60 омсбр 5 а"),
+            Some(vec![
+                (EchoEchelon::Brigade, "60 омсбр".to_string()),
+                (EchoEchelon::Army, "5 а".to_string()),
+            ])
+        );
+        assert_eq!(
+            parsed_hierarchy("38 омсбр 35 а"),
+            Some(vec![
+                (EchoEchelon::Brigade, "38 омсбр".to_string()),
+                (EchoEchelon::Army, "35 а".to_string()),
+            ])
+        );
+        assert_eq!(
+            parsed_hierarchy("1 мсб 68 ак"),
+            Some(vec![
+                (EchoEchelon::Battalion, "1 мсб".to_string()),
+                (EchoEchelon::Corps, "68 ак".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn rejects_decreasing_or_repeated_echelons() {
+        assert_eq!(parsed_hierarchy("60 омсбр 1 мсб"), None);
+        assert_eq!(parsed_hierarchy("60 омсбр 38 омсбр"), None);
+    }
+
+    #[test]
     fn rejects_multiple_units_combined_into_one_unparsed_label() {
         assert_eq!(parsed_hierarchy("4 мсб 752 мсп 5 мсб 753 мсп"), None);
     }
@@ -700,13 +736,13 @@ mod tests {
         let first_id = first.unit_id;
         let matcher =
             matching::TestLinkMatcher::from_units(vec![first, second]);
-        let unique_links = BTreeMap::from([(first_id, 17)]);
+        let link_inventory = BTreeMap::from([(first_id, BTreeSet::from([17]))]);
 
         assert!(prepare_review_unit(
             1,
             "4 мсб",
             &matcher,
-            &unique_links,
+            &link_inventory,
             tui::LinkMode::Automatic,
         )
         .unwrap()
@@ -716,12 +752,273 @@ mod tests {
             1,
             "4 мсб",
             &matcher,
-            &unique_links,
+            &link_inventory,
             tui::LinkMode::Manual,
         )
         .unwrap()
         .unwrap();
         assert_eq!(review_unit.would_automatically_resolve, Some(false));
+    }
+
+    #[test]
+    fn manual_review_includes_a_uniquely_matched_unlinked_orbit_root() {
+        let orbit_unit = source_unit("4 мсб");
+        let orbit_unit_id = orbit_unit.unit_id;
+        let matcher = matching::TestLinkMatcher::from_units(vec![orbit_unit]);
+        let link_inventory = LinkInventory::new();
+
+        let review_unit = prepare_review_unit(
+            1,
+            "4 мсб",
+            &matcher,
+            &link_inventory,
+            tui::LinkMode::Manual,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(review_unit.matches[0].unit_id, orbit_unit_id);
+        assert_eq!(review_unit.would_automatically_resolve, Some(false));
+        assert!(prepare_review_unit(
+            1,
+            "4 мсб",
+            &matcher,
+            &link_inventory,
+            tui::LinkMode::Automatic,
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn dry_run_classifies_unparsed_label_blockers() {
+        let matching_unit = source_unit("4 мсб");
+        let matching_unit_id = matching_unit.unit_id;
+        let matching_matcher =
+            matching::TestLinkMatcher::from_units(vec![matching_unit]);
+        let empty_matcher = matching::TestLinkMatcher::from_units(Vec::new());
+
+        assert_blocker(
+            "невідомий підрозділ",
+            &empty_matcher,
+            &LinkInventory::new(),
+            UnparsedBlocker::ParserRejected,
+        );
+        assert_blocker(
+            "УКХ радіомережа управління",
+            &empty_matcher,
+            &LinkInventory::new(),
+            UnparsedBlocker::NonUnitAutoArchive,
+        );
+        assert_blocker(
+            "4 мсб",
+            &empty_matcher,
+            &LinkInventory::new(),
+            UnparsedBlocker::NoOrbitMatch,
+        );
+        assert_blocker(
+            "4 мсб",
+            &matching_matcher,
+            &LinkInventory::new(),
+            UnparsedBlocker::OrbitHasNoSigintLink,
+        );
+        assert_blocker(
+            "4 мсб",
+            &matching_matcher,
+            &BTreeMap::from([(matching_unit_id, BTreeSet::from([17, 18]))]),
+            UnparsedBlocker::OrbitHasMultipleSigintLinks,
+        );
+        assert_blocker(
+            "4 мсб",
+            &matching_matcher,
+            &BTreeMap::from([(matching_unit_id, BTreeSet::from([17]))]),
+            UnparsedBlocker::AutomaticallyResolvable,
+        );
+    }
+
+    #[test]
+    fn dry_run_distinguishes_ambiguity_from_match_quality() {
+        let first = source_unit("4 мсб");
+        let second = source_unit("4 мсб");
+        let ambiguous_matcher =
+            matching::TestLinkMatcher::from_units(vec![first, second]);
+        assert_blocker(
+            "4 мсб",
+            &ambiguous_matcher,
+            &LinkInventory::new(),
+            UnparsedBlocker::AmbiguousOrbitMatch,
+        );
+
+        let number_only_matcher =
+            matching::TestLinkMatcher::from_units(vec![source_unit("4 тб")]);
+        assert_blocker(
+            "4 мсб",
+            &number_only_matcher,
+            &LinkInventory::new(),
+            UnparsedBlocker::MatchQualityRejected,
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn manual_batch_imports_one_unlinked_root_for_multiple_labels() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let synced_at = chrono::Utc::now().naive_utc();
+        let echelon_id = Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(echelon_id),
+            key: Set("battalion".to_string()),
+            name: Set(format!("test battalion {echelon_id}")),
+            created_at: Set(synced_at),
+            updated_at: Set(synced_at),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let orbit_unit_id = Uuid::new_v4();
+        persistence::insert_unit(
+            &env.dbx,
+            &persistence::ImportUnit {
+                unit_id: orbit_unit_id,
+                unit_name: Some("4 мсб (на БМП)".to_string()),
+                unit_name_original: None,
+                unit_name_short: Some("4 мсб (на БМП)".to_string()),
+                operational_unit_name_full: Some("4 мсб (на БМП)".to_string()),
+                generative_unit_name_full: None,
+                unit_number: None,
+                unit_alternate_names: None,
+                unit_alternate_numbers: None,
+                unit_echelon_id: Some(echelon_id),
+                combat_unit_type_id: None,
+                grouping_of_forces_ids: None,
+                generative_parent_unit_id: None,
+                operational_parent_unit_id: None,
+                partial: false,
+            },
+            synced_at,
+        )
+        .await
+        .unwrap();
+        let sync = persistence::record_sync(
+            &env.dbx,
+            &orbit_unit_id.simple().to_string(),
+            synced_at,
+        )
+        .await
+        .unwrap();
+        for label in ["4 мсб", "4 мсб (на БМП)"] {
+            insert_failed_label(&env.dbx, label).await;
+        }
+
+        let actions = persist_selections(
+            &env.dbx,
+            &[
+                UnparsedSelection {
+                    subject_id: 1,
+                    unit_txt: "4 мсб".to_string(),
+                    orbit_unit_id,
+                },
+                UnparsedSelection {
+                    subject_id: 2,
+                    unit_txt: "4 мсб (на БМП)".to_string(),
+                    orbit_unit_id,
+                },
+            ],
+            tui::LinkMode::Manual,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(actions.len(), 2);
+        let links = load_link_inventory(&env.dbx).await.unwrap();
+        let linked_unit_ids = links.get(&orbit_unit_id).unwrap();
+        assert_eq!(linked_unit_ids.len(), 1);
+        let sigint_unit_id = *linked_unit_ids.first().unwrap();
+        assert!(
+            sigint_unit::Entity::find_by_id(sigint_unit_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .active
+        );
+        assert_eq!(
+            sigint_unit_label::Entity::find()
+                .filter(
+                    sigint_unit_label::Column::SigintUnitId.eq(sigint_unit_id),
+                )
+                .all(&env.dbx)
+                .await
+                .unwrap()
+                .len(),
+            2,
+        );
+        assert!(failed_inbox_unit::Entity::find()
+            .filter(
+                failed_inbox_unit::Column::UnitTxt
+                    .is_in(["4 мсб", "4 мсб (на БМП)",])
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap()
+            .iter()
+            .all(|failure| failure.deleted));
+
+        orbit_unit::Entity::delete_by_id(orbit_unit_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        crate::entities::orbit_sync::Entity::delete_by_id(sync.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        orbit_unit_echelon::Entity::delete_by_id(echelon_id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    async fn insert_failed_label(
+        db: &sea_orm::DatabaseConnection,
+        unit_txt: &str,
+    ) {
+        let inbox_item = crate::functest::tests::mk_sigint_inbox_item(
+            db,
+            sigint_inbox_item::ActiveModel {
+                unit: Set(Some(unit_txt.to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        failed_inbox_unit::ActiveModel {
+            inbox_item_id: Set(inbox_item.id),
+            unit_txt: Set(unit_txt.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    fn assert_blocker(
+        unit_txt: &str,
+        matcher: &matching::TestLinkMatcher,
+        link_inventory: &LinkInventory,
+        expected: UnparsedBlocker,
+    ) {
+        let label = crate::inbox::unresolved_units::UnresolvedUnitLabel {
+            unit_txt: unit_txt.to_string(),
+            quantity: 3,
+            note: String::new(),
+            is_archived: false,
+        };
+        assert_eq!(
+            classify_unparsed_label(1, &label, matcher, link_inventory)
+                .unwrap()
+                .blocker,
+            expected,
+        );
     }
 
     fn source_unit(name: &str) -> SourceUnit {

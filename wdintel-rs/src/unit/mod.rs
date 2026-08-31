@@ -715,7 +715,7 @@ mod tests {
     fn normalizes_equivalent_unit_formation_notions() {
         for equivalents in [
             &["об БпС", "обБпС"][..],
-            &["А", "ЗВА", "ОА"],
+            &["А", "ЗА", "ЗВА", "ОА"],
             &["В", "B"],
             &["оптадн", "оптдн"],
             &["габат", "габатр"],

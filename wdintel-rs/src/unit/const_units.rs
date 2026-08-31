@@ -508,7 +508,7 @@ fn regiments_arr() -> [&'static str; 133] {
     ]
 }
 
-fn brigades_arr() -> [&'static str; 68] {
+fn brigades_arr() -> [&'static str; 65] {
     [
         "абр",
         "брдк",
@@ -575,9 +575,6 @@ fn brigades_arr() -> [&'static str; 68] {
         "тмінбр",
         "утбр",
         "шісбр",
-        "абр",
-        "лабр",
-        "лабр",
     ]
 }
 fn divisions_arr() -> [&'static str; 45] {
@@ -666,10 +663,10 @@ fn armies_arr() -> [&'static str; 32] {
     ]
 }
 
-fn corps_arr() -> [&'static str; 15] {
+fn corps_arr() -> [&'static str; 14] {
     [
         "ак", "АК", "артк", "бак", "вдк", "гск", "КПВО", "ЖДК", "іак", "кк",
-        "мєхк", "бак", "орк", "ск", "шак",
+        "мєхк", "орк", "ск", "шак",
     ]
 }
 

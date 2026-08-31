@@ -961,7 +961,7 @@ pub const FAILED_INBOX_UNIT_WORKER_BATCH_SIZE: u64 = 100;
 pub const FAILED_INBOX_UNIT_RETENTION_DAYS: i64 = 30;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE: u64 = 500;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_PAUSE_MS: u64 = 50;
-pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 15] = [
+pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 9] = [
     "нв",
     "н/в",
     "н.в.",
@@ -970,13 +970,14 @@ pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 15] = [
     "радіомережа",
     "мгц",
     "dmr",
-    "управління",
-    "оповіщення",
-    "пости",
-    "ппс",
     "унпп",
-    "н.п.",
-    "район",
+];
+pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_PATTERNS: &[&str] = &[
+    r"(?:управління|оповіщення).*(?:мережа|радіо|укх|р/м|dmr|мгц)",
+    r"(?:мережа|радіо|укх|р/м|dmr|мгц).*(?:управління|оповіщення)",
+    r"(?:пости?|ппс).*(?:н\.?\s*п\.?|район|р-н)",
+    r"(?:н\.?\s*п\.?|район|р-н).*(?:пости?|ппс)",
+    r"^\s*(?:н\.?\s*п\.?|район|р-н)\s+[\p{L}\p{M}'’\- ]+\s*$",
 ];
 pub const INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE: usize = 20_000;
 pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;

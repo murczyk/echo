@@ -1118,6 +1118,37 @@ mod tests {
     }
 
     #[test]
+    fn test_link_matches_non_identity_qualifiers_at_full_rating() {
+        let orbit_unit = source_unit(
+            "4 мсб (на БМП) / 60 омсбр ТрВ / 5 ЗВА",
+            vec![
+                ("battalion", "4 мсб (на БМП)", 0),
+                ("brigade", "60 омсбр ТрВ", 1),
+                ("fieldArmy", "5 ЗВА", 2),
+            ],
+        );
+        let hierarchy = [
+            (EchoEchelon::Battalion, "4 мсб"),
+            (EchoEchelon::Brigade, "60 омсбр"),
+            (EchoEchelon::Army, "5 ЗА"),
+        ];
+
+        assert_eq!(
+            TestLinkMatcher::new(std::slice::from_ref(&orbit_unit))
+                .best_matches(&hierarchy),
+            vec![(&orbit_unit, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
+        );
+        for qualified in [
+            "60 омсбр (кт)",
+            "60 омсбр (ш)",
+            "60 омсбр УВ(с)",
+            "60 омсбр ОУВ Харків",
+        ] {
+            assert_eq!(normalize_name(qualified), "60 омсбр", "{qualified}");
+        }
+    }
+
+    #[test]
     fn test_link_removes_sigint_only_name_fragments() {
         let orbit_unit = source_unit(
             "1 рота / 1111 бр",

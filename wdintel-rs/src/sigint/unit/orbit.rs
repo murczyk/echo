@@ -1467,9 +1467,14 @@ where
     let sigint_unit = super::insert_unit_with_changelog(dbx, login, &unit_req)
         .await
         .c(h!())?;
-    link_orbit_unit_in_transaction(dbx, login, sigint_unit.id, orbit_unit_id)
-        .await
-        .c(h!())
+    Ok(link_orbit_unit_in_transaction(
+        dbx,
+        login,
+        sigint_unit.id,
+        orbit_unit_id,
+    )
+    .await
+    .c(h!())?)
 }
 
 async fn import_missing_orbit_ancestors<C>(
