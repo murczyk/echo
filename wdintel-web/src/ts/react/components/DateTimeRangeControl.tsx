@@ -62,7 +62,7 @@ export function dateTimeRangeDisplaysYear(
   });
 }
 
-export function formatDateTimeRangeDisplayValue(
+function formatDateTimeRangeDisplayValue(
   value: DateTimeRangeValue,
   now: Date = new Date(),
 ): string {
@@ -80,7 +80,7 @@ function formatDateTimeInAppTimeZone(value: Dayjs | null): string {
   return (value as Dayjs).tz(APP_TIME_ZONE, true).format('YYYY-MM-DDTHH:mm');
 }
 
-export function getDateTimeRangeControlTextFieldSx(open: boolean) {
+function getDateTimeRangeControlTextFieldSx(open: boolean) {
   return {
     width: '100%',
     minWidth: 0,

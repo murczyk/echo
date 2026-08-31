@@ -105,6 +105,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     );
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3099
   it('defers a locally handled editor Escape without closing the preview', async () => {
     const onClose = vi.fn();
     const targetEscape = vi.fn();
@@ -130,6 +131,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3099
   it('consumes attachment arrows while editing and restores them afterwards #3099', async () => {
     const onNext = vi.fn();
     container = document.createElement('div');
@@ -166,6 +168,7 @@ describe('MessageCardAttachmentPreviewDialog', () => {
     expect(onNext).toHaveBeenCalledOnce();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3294
   it('does not replay initial Edit after mixed-media navigation #3294', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);

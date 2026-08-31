@@ -15,6 +15,7 @@ const context = new Proxy(
 HTMLCanvasElement.prototype.getContext = (() =>
   context) as typeof HTMLCanvasElement.prototype.getContext;
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3294
 describe('padded text annotation lifecycle #3294', () => {
   it('serializes and revives editable text background settings', async () => {
     const fabric = await import('fabric');

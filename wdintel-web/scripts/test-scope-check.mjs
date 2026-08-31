@@ -49,10 +49,32 @@ function annotationBefore(sourceText, node) {
 }
 
 function fileAnnotation(sourceText) {
-  const header = sourceText.split('\n').slice(0, 8).join('\n');
-  const match = header.match(scopePattern);
-  if (!match) return null;
-  return { category: match[1], detail: match[2].trim() };
+  let inBlockComment = false;
+  for (const line of sourceText.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '') continue;
+    if (inBlockComment) {
+      if (trimmed.includes('*/')) inBlockComment = false;
+      continue;
+    }
+    if (trimmed.startsWith('/*')) {
+      if (!trimmed.includes('*/')) inBlockComment = true;
+      continue;
+    }
+    const match = trimmed.match(scopePattern);
+    if (match) return { category: match[1], detail: match[2].trim() };
+    if (trimmed.startsWith('//')) continue;
+    return null;
+  }
+  return null;
+}
+
+function ancestorAnnotation(sourceText, node) {
+  for (let current = node; current; current = current.parent) {
+    const annotation = annotationBefore(sourceText, current);
+    if (annotation) return annotation;
+  }
+  return null;
 }
 
 function validateAnnotation(annotation) {
@@ -239,7 +261,7 @@ for (const file of testFiles) {
     );
   }
   for (const node of testDeclarations(sourceFile)) {
-    const annotation = annotationBefore(text, node) ?? fileScope;
+    const annotation = ancestorAnnotation(text, node) ?? fileScope;
     const location = sourceFile.getLineAndCharacterOfPosition(node.getStart());
     const label = `${relative(webRoot, file)}:${location.line + 1}`;
     if (!annotation) {

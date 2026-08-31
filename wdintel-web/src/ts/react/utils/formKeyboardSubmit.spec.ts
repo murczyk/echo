@@ -52,6 +52,7 @@ function buildFormWithTarget(targetTag: 'input' | 'textarea', inputType?: string
   return { form, target, requestSubmit };
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/2746
 describe('formKeyboardSubmit', () => {
   afterEach(() => {
     document.body.innerHTML = '';

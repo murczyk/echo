@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { finalizeImageEditorText } from './use-image-editor-canvas';
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor text exit #3099', () => {
   it('removes empty text without saving and saves non-empty text once', () => {
     const canvas = { remove: vi.fn(), requestRenderAll: vi.fn() } as never;

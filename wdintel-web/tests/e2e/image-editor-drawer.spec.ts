@@ -40,6 +40,7 @@ async function saveMinimalReplacement(
   await confirmation.getByRole('button', { name: 'Замінити', exact: true }).click();
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 test.describe('image editor drawer integration #3099', () => {
   for (const host of ['duty', 'analysis'] as const satisfies ImageEditorDrawerHost[]) {
     test(`${host} opens from preview and saves one pending replacement`, async ({ page }) => {

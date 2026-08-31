@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { restoreImageEditorCanvasReferences } from './image-editor-canvas-references';
 import { IMAGE_EDITOR_TEXT_TYPE } from './image-editor-padded-text';
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor document snapshot restoration', () => {
   it('restores dimensions and source geometry independently of Fabric JSON metadata', () => {
     const source = { set: vi.fn(), type: 'image' };

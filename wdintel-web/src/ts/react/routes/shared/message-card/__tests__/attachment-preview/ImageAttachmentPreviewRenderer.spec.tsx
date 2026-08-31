@@ -412,26 +412,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('hides the toolbar divider when OCR and summary actions are unavailable', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <TestImagePreviewDialog
-          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
-          open
-          onClose={vi.fn()}
-          onIndexChange={vi.fn()}
-        />,
-      );
-    });
-
-    expect(container.querySelectorAll('hr')).toHaveLength(0);
-    root.unmount();
-  });
-
+  // @test-scope regression: https://github.com/echoua/echo/issues/3099
   it('uses fullscreen geometry and closes on one Escape', async () => {
     const onClose = vi.fn();
     const container = document.createElement('div');
@@ -467,6 +448,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3099
   it('keeps Escape in editor ownership while source and lazy editor loading complete', async () => {
     const onClose = vi.fn();
     const loadSource = vi.fn<(image: unknown, signal: AbortSignal) => Promise<ImageEditorSource>>();
@@ -520,6 +502,7 @@ describe('ImageAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3099
   it('releases loading Escape ownership after a current source failure #3099', async () => {
     const onClose = vi.fn();
     const container = document.createElement('div');

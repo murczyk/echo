@@ -58,6 +58,121 @@ The gate was verified with an uncommitted temporary rename of a legacy
 original identity as resolved debt. The title was restored without updating the
 baseline.
 
+2026-08-29 image-editor and Network activity batch: the scope checker now
+accepts truthful suite-level annotations inherited by each test declaration,
+without treating a comment after imports as a file-level annotation. The batch
+classified issue-backed regressions for [#3099](https://github.com/echoua/echo/issues/3099),
+[#3294](https://github.com/echoua/echo/issues/3294), and
+[#3329](https://github.com/echoua/echo/issues/3329); two isolated cosmetic
+preview assertions were removed. The explicit baseline update reduced legacy
+debt from 2,170 to 2,159 identities.
+
+The same audit removed two unsupported analysis performance thresholds and the
+dynamic classic-versus-Neo page-load comparison suite. Neither carried an Echo
+performance contract, measurement rationale, or stable CI environment. The
+explicit baseline update then reduced debt to 2,157 identities.
+
+A focused Snackbar audit retained only the FIFO and exit-transition loss/order
+safeguards, removed static roles, duration, generated-style, and render-count
+checks, and reduced the explicit baseline to 2,144 identities.
+
+The isolated Duty scroll-FAB position resolver table was removed: it only
+restated style tokens and responsive defaults from production configuration.
+The baseline now records 2,143 identities.
+
+The issue-backed shared message-form keyboard-submit regression for
+[#2746](https://github.com/echoua/echo/issues/2746) was documented and
+classified at its shared keyboard boundary, reducing the baseline to 2,130
+identities.
+
+The unused dense-table URL helper spec was removed as isolated default/query
+mapping coverage with no production consumer. The baseline now has 2,127
+identities.
+
+The frontend role hierarchy and Device capability tests were documented as an
+authorization safeguard, reducing the baseline to 2,124 identities.
+
+The login-option batch retained the AI-managed selection loss safeguard and
+removed isolated sort/display/default handling; the baseline now has 2,121
+identities.
+
+The MRT row-action batch retained modal-focus and disabled destructive-action
+safeguards, removed static sizing/menu-action assertions, and reduced the
+baseline to 2,115 identities.
+
+The message-card attachment-preview configuration table was removed after the
+attachment-preview contract documented its shell behavior; it only restated
+static production configuration. The baseline now has 2,114 identities.
+
+The AI-agent request deep-link trim/default helper tests were removed as
+isolated URL parsing coverage without an issue-backed route regression. The
+baseline now has 2,112 identities.
+
+The Admin AI-agent batch removed isolated duration, static field-order, and
+table-column-order assertions. The baseline now has 2,109 identities.
+
+The shared date/time and bulk-autocomplete batches removed isolated
+formatting, JSX structure, style, prop-forwarding, and label assertions while
+retaining draft ownership, bounded values, duplicate prevention, and ambiguous
+selection safeguards. The baseline now has 2,048 identities.
+
+The shared MRT frame batch removed four isolated style-object assertions after
+recording the list/workspace frame contract. The baseline now has 2,044
+identities.
+
+The active-filter batch removed direct preview/label/default helper assertions
+and kept the live table-state interaction coverage. The baseline now has 2,039
+identities.
+
+The shared alert batch recorded the severity/dismissal policy and removed seven
+isolated timeout/default-render assertions. The baseline now has 2,032
+identities.
+
+The `PowerForm` batch linked its real keyboard interaction coverage to
+[#2746](https://github.com/echoua/echo/issues/2746) and removed four ordinary
+native-submit/default assertions. The baseline now has 2,023 identities.
+
+The `EchoChip` batch removed its two static native-element/class assertions;
+the component README already owns its anchor/button/span contract. The baseline
+now has 2,021 identities.
+
+The searchable-option batch documented the selection/input ownership rule and
+removed two mocked selection-sequencing assertions. The baseline now has 2,019
+identities.
+
+The shared MRT-cell text formatter table was removed as isolated trim/default
+coverage; the formatter and shared `NO_DATA_LABEL` remain the production source
+of truth. The baseline now has 2,017 identities.
+
+The profile-navbar batch documented parent-owned navigation, theme, and logout
+delegation and removed seven mocked callback/render checks. The baseline now
+has 2,010 identities.
+
+The navbar menu-tree batch documented role/feature composition and removed 15
+isolated tree, label, URL-default, and active-name assertions. The baseline now
+has 1,995 identities.
+
+The changelog-navbar batch documented maintenance/changelog state ownership and
+removed eight mocked callback, timer, and rendering checks. The baseline now
+has 1,987 identities.
+
+The root-navbar batch removed 17 static visibility, child-wiring, and menu
+rendering assertions. Role authorization safeguards remain in the shared role
+resolver suite, while navbar composition is documented. The baseline now has
+1,970 identities.
+
+The Saved Filters failure-recovery case is documented and classified as a
+draft-loss safeguard. The baseline now has 1,969 identities.
+
+Two static Saved Filters empty-state/tooltip assertions were removed. The
+baseline now has 1,967 identities.
+
+One further static Saved Filters selection/render assertion was removed. The
+baseline now has 1,966 identities.
+
+Two additional static Saved Filters action-menu assertions were removed. The
+baseline now has 1,964 identities.
+
 ## Mutation proof
 
 - 2026-08-24 — The shared API-client authorization safeguards replaced
@@ -97,3 +212,12 @@ replacement proof.
   run of its remaining interaction and responsive tests passed 4 of 6; the two
   failures occur first in the shared media fixture, which no longer exposes the
   expected image buttons.
+- 2026-08-29 — After the shared date/time, bulk-autocomplete, and MRT helper
+  cleanup batches, `npx vitest run --maxWorkers=1 --fileParallelism=false`
+  passed 375 files and 2,909 tests in 144.71 seconds. Happy DOM again emitted
+  unavailable-local-API reset/refusal and aborted-fetch noise, but no test
+  failed.
+- 2026-08-29 — After the subsequent Power, chip, autocomplete, and navbar
+  cleanup batches, the same serial command passed 369 files and 2,870 tests in
+  143.16 seconds. The previously recorded unavailable-local-API Happy DOM
+  messages again did not fail a test.

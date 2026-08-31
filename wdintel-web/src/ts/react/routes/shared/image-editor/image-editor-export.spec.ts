@@ -18,6 +18,7 @@ function canvasFixture() {
   return { canvas, toBlob };
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('exportEditedImage', () => {
   it('exports at source dimensions independently of viewport zoom', async () => {
     const { canvas, toBlob } = canvasFixture();

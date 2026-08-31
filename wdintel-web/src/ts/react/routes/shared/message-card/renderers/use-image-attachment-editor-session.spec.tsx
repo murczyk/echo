@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { useImageAttachmentEditorSession } from './use-image-attachment-editor-session';
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 it('keeps stale sources and replacements bound to the original attachment #3099', async () => {
   const imageA = { id: 'a', href: '/a.png' } as never;
   const imageB = { id: 'b', href: '/b.png' } as never;
@@ -52,6 +53,7 @@ it('keeps stale sources and replacements bound to the original attachment #3099'
   act(() => root.unmount());
 });
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3294
 it('clears a failed image source error when carousel navigation changes the target #3294', async () => {
   const imageA = { id: 'a', href: '/a.png' } as never;
   const imageB = { id: 'b', href: '/b.png' } as never;

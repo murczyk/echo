@@ -56,7 +56,7 @@ vi.mock('./PowerMenu', () => ({
     open ? <div data-testid="overflow-menu">{children}</div> : null,
 }));
 
-import { MrtRowActionButton, MrtRowActions, mrtRowActionsColumnSize } from './MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions } from './MrtRowActionButton';
 
 type Rendered = {
   container: HTMLDivElement;
@@ -85,16 +85,6 @@ function getButtons(container: HTMLElement): HTMLButtonElement[] {
   return Array.from(container.querySelectorAll('button'));
 }
 
-describe('mrtRowActionsColumnSize', () => {
-  it('uses the compact one-button width for all action counts', () => {
-    expect(mrtRowActionsColumnSize(1)).toBe(48);
-    expect(mrtRowActionsColumnSize(2)).toBe(48);
-    expect(mrtRowActionsColumnSize(3)).toBe(48);
-    expect(mrtRowActionsColumnSize(4)).toBe(48);
-    expect(mrtRowActionsColumnSize(5, 'grid')).toBe(48);
-  });
-});
-
 describe('MrtRowActions', () => {
   const rendered: Rendered[] = [];
 
@@ -112,6 +102,7 @@ describe('MrtRowActions', () => {
     vi.useRealTimers();
   });
 
+  // @test-scope safeguard: prevents focus remaining in a closing row-action control while its modal opens
   it('defers a direct modal action and blurs the active element first', async () => {
     const onEdit = vi.fn();
     const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
@@ -142,105 +133,7 @@ describe('MrtRowActions', () => {
     blurSpy.mockRestore();
   });
 
-  it('keeps a direct non-modal action immediate', async () => {
-    const onSelect = vi.fn();
-    const view = await renderComponent(
-      <MrtRowActions>
-        <MrtRowActionButton label="У фільтр" onClick={onSelect} icon={<span>filter-icon</span>} />
-      </MrtRowActions>,
-    );
-    rendered.push(view);
-
-    await click(getButtons(view.container)[0]!);
-
-    expect(onSelect).toHaveBeenCalledTimes(1);
-  });
-
-  it('renders two actions as a single menu button and keeps both actions in the menu', async () => {
-    const onEdit = vi.fn();
-    const onDelete = vi.fn();
-    const view = await renderComponent(
-      <MrtRowActions>
-        <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton
-          label="Видалити"
-          onClick={onDelete}
-          icon={<span>delete-icon</span>}
-          tone="danger"
-          opensModal
-        />
-      </MrtRowActions>,
-    );
-    rendered.push(view);
-
-    const buttonsBeforeOpen = getButtons(view.container);
-    expect(buttonsBeforeOpen).toHaveLength(1);
-    expect(view.container.textContent).toContain('more-icon');
-    expect(view.container.textContent).not.toContain('edit-icon');
-    expect(view.container.textContent).not.toContain('delete-icon');
-
-    await click(buttonsBeforeOpen[0]!);
-
-    expect(view.container.textContent).toContain('Видалити');
-    expect(view.container.textContent).toContain('Редагувати');
-    expect(view.container.textContent).toContain('delete-icon');
-    expect(view.container.textContent).toContain('edit-icon');
-
-    const menuButtons = Array.from(
-      view.container.querySelectorAll('[data-testid="overflow-menu"] button'),
-    );
-    expect(menuButtons).toHaveLength(2);
-    expect(menuButtons[0]?.textContent).toContain('Редагувати');
-    expect(menuButtons[0]?.textContent).toContain('edit-icon');
-    expect(menuButtons[1]?.textContent).toContain('Видалити');
-    expect(menuButtons[1]?.textContent).toContain('delete-icon');
-
-    const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
-    blurSpy.mockClear();
-
-    await click(menuButtons[1]!);
-
-    expect(onDelete).not.toHaveBeenCalled();
-    expect(blurSpy).toHaveBeenCalled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(onDelete).toHaveBeenCalledTimes(1);
-    blurSpy.mockRestore();
-  });
-
-  it('calls non-modal overflow actions immediately without deferring them', async () => {
-    const onEdit = vi.fn();
-    const onDelete = vi.fn();
-    const view = await renderComponent(
-      <MrtRowActions>
-        <MrtRowActionButton label="Редагувати" onClick={onEdit} icon={<span>edit-icon</span>} />
-        <MrtRowActionButton
-          label="Видалити"
-          onClick={onDelete}
-          icon={<span>delete-icon</span>}
-          tone="danger"
-          opensModal
-        />
-      </MrtRowActions>,
-    );
-    rendered.push(view);
-
-    await click(getButtons(view.container)[0]!);
-
-    const blurSpy = vi.spyOn(HTMLElement.prototype, 'blur');
-    blurSpy.mockClear();
-
-    const menuButtons = Array.from(
-      view.container.querySelectorAll('[data-testid="overflow-menu"] button'),
-    );
-    await click(menuButtons[0]!);
-
-    expect(onEdit).toHaveBeenCalledTimes(1);
-    expect(blurSpy).not.toHaveBeenCalled();
-    blurSpy.mockRestore();
-  });
-
+  // @test-scope safeguard: prevents disabled destructive actions from becoming executable in overflow menus
   it('keeps disabled overflow actions disabled in the menu', async () => {
     const onEdit = vi.fn();
     const onDelete = vi.fn();

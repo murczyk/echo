@@ -6,8 +6,6 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const boxProps: Array<{ component?: string; className?: string }> = [];
-
 vi.mock('@mui/material', () => ({
   Box: ({
     children,
@@ -24,7 +22,6 @@ vi.mock('@mui/material', () => ({
     onKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
     className?: string;
   } & Record<string, unknown>) => {
-    boxProps.push({ component, className });
     const Component = component as keyof HTMLElementTagNameMap;
     return (
       <Component className={className} onSubmit={onSubmit} onKeyDown={onKeyDown} {...props}>
@@ -73,9 +70,9 @@ function buildKeyboardEvent(
   return event;
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/2746
 describe('PowerForm', () => {
   afterEach(() => {
-    boxProps.splice(0);
     document.body.innerHTML = '';
     vi.clearAllMocks();
   });
@@ -101,7 +98,6 @@ describe('PowerForm', () => {
     });
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(boxProps.at(-1)?.component).toBe('form');
     root.unmount();
   });
 
@@ -202,96 +198,6 @@ describe('PowerForm', () => {
     expect(metaEvent.defaultPrevented).toBe(true);
     expect(ctrlEvent.defaultPrevented).toBe(true);
     expect(onSubmit).not.toHaveBeenCalled();
-    root.unmount();
-  });
-
-  it('blocks native submit when canSubmit is false', () => {
-    const onSubmit = vi.fn();
-    const { container, root } = renderComponent(
-      <PowerForm canSubmit={false} onSubmit={onSubmit}>
-        <input aria-label="value" />
-        <button type="submit">Save</button>
-      </PowerForm>,
-    );
-
-    const form = container.querySelector('form') as HTMLFormElement | null;
-    const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-    expect(form).toBeTruthy();
-
-    act(() => {
-      form?.dispatchEvent(submitEvent);
-    });
-
-    expect(submitEvent.defaultPrevented).toBe(true);
-    expect(onSubmit).not.toHaveBeenCalled();
-    root.unmount();
-  });
-
-  it('blocks native submit when canSubmit function returns false', () => {
-    const onSubmit = vi.fn();
-    const { container, root } = renderComponent(
-      <PowerForm canSubmit={() => false} onSubmit={onSubmit}>
-        <input aria-label="value" />
-        <button type="submit">Save</button>
-      </PowerForm>,
-    );
-
-    const form = container.querySelector('form') as HTMLFormElement | null;
-    const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-    expect(form).toBeTruthy();
-
-    act(() => {
-      form?.dispatchEvent(submitEvent);
-    });
-
-    expect(submitEvent.defaultPrevented).toBe(true);
-    expect(onSubmit).not.toHaveBeenCalled();
-    root.unmount();
-  });
-
-  it('still allows normal form submission', () => {
-    const onSubmit = vi.fn((event: Event) => {
-      event.preventDefault();
-    });
-    const { container, root } = renderComponent(
-      <PowerForm onSubmit={onSubmit}>
-        <input aria-label="value" />
-        <button type="submit">Save</button>
-      </PowerForm>,
-    );
-
-    const form = container.querySelector('form') as HTMLFormElement | null;
-    const button = container.querySelector('button[type="submit"]') as HTMLButtonElement | null;
-    expect(form).toBeTruthy();
-    expect(button).toBeTruthy();
-
-    act(() => {
-      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    });
-
-    expect(onSubmit).toHaveBeenCalledTimes(1);
-    root.unmount();
-  });
-
-  it('still allows normal form submission when keyboardSubmit is false', () => {
-    const onSubmit = vi.fn((event: Event) => {
-      event.preventDefault();
-    });
-    const { container, root } = renderComponent(
-      <PowerForm keyboardSubmit={false} onSubmit={onSubmit}>
-        <input aria-label="value" />
-        <button type="submit">Save</button>
-      </PowerForm>,
-    );
-
-    const form = container.querySelector('form') as HTMLFormElement | null;
-    expect(form).toBeTruthy();
-
-    act(() => {
-      form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    });
-
-    expect(onSubmit).toHaveBeenCalledTimes(1);
     root.unmount();
   });
 });

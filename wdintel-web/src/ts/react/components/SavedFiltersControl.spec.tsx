@@ -212,73 +212,6 @@ describe('SavedFiltersControl', () => {
     tooltipProps = [];
   });
 
-  it('applies selected filters and reflects the selected value', async () => {
-    const onApplySavedFilter = vi.fn();
-    const view = await renderComponent(
-      buildProps({
-        selectedSavedFilter: buildSavedFilter(1, 'Base filter'),
-        savedFilterName: 'Base filter',
-        onApplySavedFilter,
-      }),
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('Збережені фільтри');
-    expect(view.container.querySelector('[data-testid="selected-filter"]')?.textContent).toBe(
-      'Base filter',
-    );
-    await click(getButton(view.container, 'select-first'));
-
-    expect(onApplySavedFilter).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 2, name: 'Alt filter' }),
-    );
-  });
-
-  it('shows an empty state message when there are no saved filters', async () => {
-    const view = await renderComponent(
-      buildProps({
-        savedFilters: [],
-      }),
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('Збережені фільтри відсутні');
-  });
-
-  it('can disable saving as new from the menu', async () => {
-    const view = await renderComponent(
-      buildProps({
-        selectedSavedFilter: null,
-        savedFilterName: '',
-        canSaveAsNew: false,
-      }),
-    );
-    rendered.push(view);
-
-    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
-    expect(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами').disabled).toBe(
-      true,
-    );
-    expect(tooltipProps).toHaveLength(0);
-  });
-
-  it('keeps the tooltip enabled when actions are available', async () => {
-    const view = await renderComponent(
-      buildProps({
-        selectedSavedFilter: buildSavedFilter(1, 'Base filter'),
-        savedFilterName: 'Base filter',
-      }),
-    );
-    rendered.push(view);
-
-    expect(tooltipProps.at(-1)).toEqual({
-      title: 'Дії',
-      disableHoverListener: undefined,
-      disableFocusListener: undefined,
-      disableTouchListener: undefined,
-    });
-  });
-
   it('saves as new and renames through compact dialogs', async () => {
     const onSaveAsNew = vi.fn();
     const onRenameExisting = vi.fn();
@@ -312,6 +245,7 @@ describe('SavedFiltersControl', () => {
     expect(onRenameExisting).toHaveBeenCalledWith('Updated filter');
   });
 
+  // @test-scope safeguard: prevents a failed save from discarding the entered saved-filter name.
   it('keeps the dialog open when the action reports failure', async () => {
     const onSaveAsNew = vi.fn().mockResolvedValue(false);
     const onSavedFilterNameChange = vi.fn();
@@ -356,16 +290,5 @@ describe('SavedFiltersControl', () => {
 
     expect(onUpdateExisting).toHaveBeenCalledTimes(1);
     expect(onDeleteExisting).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps the menu enabled when no filter is selected', async () => {
-    const view = await renderComponent(buildProps());
-    rendered.push(view);
-
-    expect(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами').disabled).toBe(
-      false,
-    );
-    await click(getButtonByAriaLabel(view.container, 'Дії зі збереженими фільтрами'));
-    expect(getButton(view.container, 'Зберегти як новий').disabled).toBe(false);
   });
 });

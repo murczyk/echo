@@ -22,6 +22,7 @@ function renderedEndpoints(arrow: import('fabric').Group) {
   return { start, end };
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor arrow geometry #3099', () => {
   it.each([
     [

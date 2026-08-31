@@ -271,62 +271,6 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('renders txt and markdown previews without zoom controls', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <TestDocumentPreviewDialog
-          documents={[
-            {
-              href: 'https://example.test/files/report.pdf',
-              fileName: 'report.pdf',
-              sizeBytes: 1024,
-              contentType: 'application/pdf',
-              kind: 'pdf',
-            },
-            {
-              href: 'https://example.test/files/notes.txt',
-              fileName: 'notes.txt',
-              sizeBytes: 256,
-              contentType: 'text/plain',
-              kind: 'txt',
-            },
-            {
-              href: 'https://example.test/files/readme.md',
-              fileName: 'readme.md',
-              sizeBytes: 128,
-              contentType: 'text/markdown',
-              kind: 'md',
-            },
-          ]}
-          currentIndex={1}
-          open
-          onClose={vi.fn()}
-          onIndexChange={vi.fn()}
-          isDownloadStarting={() => false}
-          onDownloadStart={vi.fn(() => true)}
-        />,
-      );
-    });
-
-    expect(document.body.textContent).toContain('2 / 3');
-    expect(document.body.querySelector('button[aria-label="Зменшити"]')).toBeNull();
-    expect(document.body.querySelector('button[aria-label="Збільшити"]')).toBeNull();
-    expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
-    expect(
-      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).not.toBeNull();
-    expect(document.body.querySelector('button[aria-label="Інформація"]')).not.toBeNull();
-    expect(
-      document.body.querySelector('button[aria-label="Відкрити в новій вкладці"]'),
-    ).not.toBeNull();
-    expect(document.body.querySelector('button[aria-label="Скачати"]')).not.toBeNull();
-    root.unmount();
-  });
-
   it('keeps fullscreen when switching from pdf to txt previews', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);

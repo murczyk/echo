@@ -8,6 +8,7 @@ import {
   zoomEditorAtPoint,
 } from './image-editor-viewport';
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor viewport geometry #3099', () => {
   const document = { width: 1200, height: 800 };
   const workspace = { width: 800, height: 600 };

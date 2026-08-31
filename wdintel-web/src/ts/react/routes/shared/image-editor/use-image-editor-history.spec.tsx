@@ -57,6 +57,7 @@ function canvas() {
   };
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor history #3099', () => {
   afterEach(() => {
     vi.useRealTimers();

@@ -37,3 +37,22 @@
 - **Source implementation:** `routes/rer-networks-neo/helpers.ts`
 - **Existing test(s):** `helpers.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational parser coverage.
+
+## Network activity pagination and state
+
+- **Status:** issue-backed regression
+
+- **Behavior ID:** react-networks-activity-pagination-state
+- **Affected route/component:** RER Networks Neo activity column and paginated network loader
+- **User role or permission:** users allowed to inspect RER network data
+- **Preconditions:** a network page has activity requests in flight, including a pagination or filter transition
+- **User action or external event:** the user loads another page, changes the list query, or the activity API succeeds or fails
+- **Expected observable result:** activity from the active query settles the matching rows; pagination does not cancel earlier pages; replaced-query activity cannot overwrite current rows; loading, inactive, and failed activity states remain distinct.
+- **Loading/empty/error/success behavior:** loading has no activity bars or inactivity label; a transport failure shows the activity error rather than a false inactive state; successful zero activity remains inactive.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** activity continues to use the established network-group activity request and query-generation cancellation boundary.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** an earlier query response must not settle the replacement query, while concurrent pagination activity remains independently settleable.
+- **Source implementation:** routes/rer-networks-neo/use-rer-networks-neo-page.load.ts and routes/rer-networks-neo/components/NetworkCells.tsx
+- **Existing test(s):** use-rer-networks-neo-page.spec.tsx, index.spec.tsx
+- **Original Echo issue/PR, if known:** [#3329](https://github.com/echoua/echo/issues/3329).

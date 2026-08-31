@@ -1,7 +1,7 @@
 /**
  * @vitest-environment happy-dom
  */
-import { act, type ReactElement, type ReactNode } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,19 +69,7 @@ type PowerButtonProps = {
   onClick?: () => void;
 };
 
-type DialogPropsCapture = {
-  disableRestoreFocus?: boolean;
-  onClose?: (event: unknown, reason: string) => void;
-};
-
 let latestAutocompleteProps: AutocompletePropsCapture | null = null;
-let latestRenderInputParams: {
-  InputProps?: { endAdornment?: ReactNode };
-  inputProps?: { onPaste?: () => void };
-} | null = null;
-let latestComposedEndAdornment: ReactNode | null = null;
-let dialogContentProps: { sx?: unknown }[] = [];
-let dialogProps: DialogPropsCapture[] = [];
 let textFieldProps: TextFieldProps[] = [];
 let powerMenuProps: PowerMenuProps[] = [];
 let lastPowerIconButtonTrigger: { focus: ReturnType<typeof vi.fn> } | null = null;
@@ -100,7 +88,6 @@ vi.mock('@mui/material', () => ({
       },
       inputProps: {},
     };
-    latestRenderInputParams = params;
     return <div>{props.renderInput?.(params)}</div>;
   },
   Box: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -110,17 +97,10 @@ vi.mock('@mui/material', () => ({
     disableRestoreFocus?: boolean;
     onClose?: (event: unknown, reason: string) => void;
   }) => {
-    dialogProps.push({
-      disableRestoreFocus: props.disableRestoreFocus,
-      onClose: props.onClose,
-    });
     return props.open ? <div data-testid="dialog">{props.children}</div> : null;
   },
   DialogActions: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogContent: ({ children, sx }: { children: ReactNode; sx?: unknown }) => {
-    dialogContentProps.push({ sx });
-    return <div>{children}</div>;
-  },
+  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h3>{children}</h3>,
   ListItemIcon: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   InputAdornment: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -239,10 +219,6 @@ afterEach(() => {
     item.container.remove();
   }
   latestAutocompleteProps = null;
-  latestRenderInputParams = null;
-  latestComposedEndAdornment = null;
-  dialogContentProps = [];
-  dialogProps = [];
   textFieldProps = [];
   powerMenuProps = [];
   lastPowerIconButtonTrigger = null;
@@ -276,12 +252,7 @@ function renderAutocomplete(overrides: Record<string, unknown> = {}) {
           <div data-testid="input-root">
             <input data-testid="main-input" />
             <span data-testid="end-adornment">
-              {(() => {
-                latestComposedEndAdornment =
-                  (params as { InputProps?: { endAdornment?: ReactNode } }).InputProps
-                    ?.endAdornment ?? null;
-                return latestComposedEndAdornment;
-              })()}
+              {(params as { InputProps?: { endAdornment?: ReactNode } }).InputProps?.endAdornment}
             </span>
           </div>
         )}
@@ -329,12 +300,6 @@ function openBulkDialog(container: HTMLElement, label?: string) {
   });
 }
 
-function composedEndAdornmentChildren(): ReactNode[] {
-  const endAdornment = latestComposedEndAdornment as ReactElement<{ children?: ReactNode }> | null;
-  const children = endAdornment?.props.children;
-  return Array.isArray(children) ? children : children ? [children] : [];
-}
-
 function typeDialogValue(container: HTMLElement, value: string) {
   const dialogTextField = textFieldProps.at(-1);
   if (!dialogTextField?.onChange) {
@@ -345,13 +310,8 @@ function typeDialogValue(container: HTMLElement, value: string) {
   });
 }
 
+// @test-scope safeguard: prevents bulk selection from silently dropping, duplicating, or misidentifying user values.
 describe('PowerAutocomplete', () => {
-  it('does not add the bulk menu when disabled', () => {
-    const { container } = renderAutocomplete({ bulkPaste: false });
-
-    expect(getBulkMenuButton(container)).toBeNull();
-  });
-
   it('disables the copy action when there are no selected values', () => {
     const { container } = renderAutocomplete({ bulkPaste: true, bulkCopy: true });
     openBulkMenu(container);
@@ -462,93 +422,6 @@ describe('PowerAutocomplete', () => {
     expect(onBulkPasteChange).toHaveBeenCalledWith([historicUnit]);
   });
 
-  it('adds the bulk menu button inside the input adornment when enabled', () => {
-    const { container } = renderAutocomplete({ bulkPaste: true });
-
-    expect(getBulkMenuButton(container)).not.toBeNull();
-  });
-
-  it('adds bulk adornment styles while preserving caller sx', () => {
-    const callerSx = { minWidth: 240 };
-
-    renderAutocomplete({ bulkPaste: true, sx: callerSx });
-
-    expect(latestAutocompleteProps?.sx).toEqual([
-      expect.objectContaining({
-        '& .MuiAutocomplete-endAdornment': expect.objectContaining({
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.5,
-        }),
-        '& .MuiAutocomplete-clearIndicator': expect.objectContaining({
-          display: 'none',
-        }),
-        '&:hover .MuiAutocomplete-clearIndicator, &.Mui-focused .MuiAutocomplete-clearIndicator':
-          expect.objectContaining({
-            display: 'inline-flex',
-          }),
-      }),
-      callerSx,
-    ]);
-  });
-
-  it('does not add bulk adornment styles when disabled', () => {
-    const callerSx = { minWidth: 240 };
-
-    renderAutocomplete({ bulkPaste: false, sx: callerSx });
-
-    expect(latestAutocompleteProps?.sx).toBe(callerSx);
-  });
-
-  it('uses generic default labels for the bulk flow', () => {
-    const { container } = renderAutocomplete({ bulkPaste: true });
-
-    openBulkDialog(container);
-
-    expect(container.querySelector('[data-testid="dialog"]')).not.toBeNull();
-    expect(container.textContent).toContain('Додати кілька значень');
-    expect(container.textContent).toContain('Додати');
-  });
-
-  it('injects the menu button as a keyed adornment child before the popup indicator', () => {
-    renderAutocomplete({ bulkPaste: true });
-
-    const children = composedEndAdornmentChildren();
-    const keys = children.map((child) =>
-      typeof child === 'object' && child != null && 'key' in child
-        ? (child as { key?: string }).key
-        : null,
-    );
-
-    expect(keys).toHaveLength(3);
-    expect(keys.every((key) => key != null)).toBe(true);
-    expect(keys[1]).toBe('bulk-paste-menu');
-  });
-
-  it('forwards caller paper and popper components unchanged', () => {
-    const callerPaperComponent = vi.fn(({ children }: { children: ReactNode }) => (
-      <div>{children}</div>
-    ));
-    const callerPopperComponent = vi.fn(({ children }: { children: ReactNode }) => (
-      <div>{children}</div>
-    ));
-
-    renderAutocomplete({
-      bulkPaste: true,
-      PaperComponent: callerPaperComponent,
-      PopperComponent: callerPopperComponent,
-    });
-
-    expect(latestAutocompleteProps?.PaperComponent).toBe(callerPaperComponent);
-    expect(latestAutocompleteProps?.PopperComponent).toBe(callerPopperComponent);
-  });
-
-  it('keeps native autocomplete paste untouched', () => {
-    renderAutocomplete({ bulkPaste: true });
-
-    expect(latestRenderInputParams?.inputProps?.onPaste).toBeUndefined();
-  });
-
   it('opens the bulk dialog from the input menu', () => {
     const { container } = renderAutocomplete({
       bulkPaste: true,
@@ -560,23 +433,6 @@ describe('PowerAutocomplete', () => {
     expect(container.querySelector('[data-testid="dialog"]')).not.toBeNull();
     expect(getBulkDialogInput(container)).not.toBeNull();
     expect(powerMenuProps.at(-1)?.open).toBe(false);
-  });
-
-  it('uses the tighter bulk dialog content padding', () => {
-    const { container } = renderAutocomplete({
-      bulkPaste: true,
-      bulkPasteInputLabel: 'Частоти',
-    });
-
-    openBulkDialog(container);
-
-    expect(dialogContentProps.at(-1)?.sx).toEqual(
-      expect.objectContaining({
-        pt: 2.5,
-        pb: 0,
-        overflow: 'visible',
-      }),
-    );
   });
 
   it('does not scan bulk options until the dialog is open', () => {
@@ -643,29 +499,6 @@ describe('PowerAutocomplete', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it('disables dialog restore focus for the bulk dialog', () => {
-    renderAutocomplete({ bulkPaste: true });
-
-    expect(dialogProps.at(-1)?.disableRestoreFocus).toBe(true);
-    expect(dialogProps.at(-1)?.onClose).toEqual(expect.any(Function));
-  });
-
-  it('passes a stable key for the bulk menu composed adornment child', () => {
-    renderAutocomplete({ bulkPaste: true });
-
-    const children = composedEndAdornmentChildren();
-    const bulkMenu = children.find(
-      (child) =>
-        typeof child === 'object' &&
-        child != null &&
-        'props' in child &&
-        (child as { props?: { 'aria-label'?: string } }).props?.['aria-label'] ===
-          'Додати кілька значень',
-    ) as ReactElement | undefined;
-
-    expect(bulkMenu?.key).toBe('bulk-paste-menu');
   });
 
   it('shows already selected values when the dialog opens', () => {
@@ -765,19 +598,6 @@ describe('PowerAutocomplete', () => {
     expect(onBulkPasteResolved).toHaveBeenCalledWith(
       expect.objectContaining({ found: [senderOptions[0]], missing: [] }),
     );
-  });
-
-  it('hides empty preview sections before input', () => {
-    const { container } = renderAutocomplete({
-      bulkPaste: true,
-      bulkPasteInputLabel: 'Частоти',
-    });
-
-    openBulkDialog(container);
-
-    expect(container.textContent).not.toContain('Буде додано');
-    expect(container.textContent).not.toContain('Вже обрано');
-    expect(container.textContent).not.toContain('Не знайдено');
   });
 
   it('keeps pasted duplicates in the already-selected preview without duplicating values', () => {

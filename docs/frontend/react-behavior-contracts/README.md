@@ -14,6 +14,7 @@ Each entry identifies its production boundary, observable outcome, persistence r
 - [Devices](devices.md): file-registry error classification and tag actions.
 - [Duty](duty.md): keyword-set selection and API compatibility.
 - [Document previews](document-previews.md): document parsing, limits, and sanitization.
+- [Image editor](image-editor.md): image-editing geometry, export, history, and replacement safety.
 - [MRT tables](mrt-tables.md): internal column order, persisted table state, and overflow actions.
 - [Message card and inbox compatibility](message-card.md): message wire normalization.
 - [Networks](networks.md): network report, frequency, and callsign API compatibility.

@@ -1331,6 +1331,7 @@ describe('useRerNetworksNeoPage', () => {
     expect(latest?.rows[0]?.activityBars.some((bar) => bar.value === 3)).toBe(true);
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
   it('settles first-page activity after pagination starts', async () => {
     const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const initialActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
@@ -1359,6 +1360,7 @@ describe('useRerNetworksNeoPage', () => {
     await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
   it('does not abort page-two activity when page three starts loading', async () => {
     const pageOne = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
     const pageTwo = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 101));
@@ -1401,6 +1403,7 @@ describe('useRerNetworksNeoPage', () => {
     await vi.waitFor(() => expect(latest?.rows[100]?.activityLoadState).toBe('loaded'));
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
   it('ignores activity from a replaced list query', async () => {
     const oldActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
     const newActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
@@ -1440,6 +1443,7 @@ describe('useRerNetworksNeoPage', () => {
     await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
   it('marks every requested network as activity error without rendering inactivity', async () => {
     apiMock.getNetworksGroupsActivity.mockRejectedValueOnce(new Error('activity unavailable'));
 

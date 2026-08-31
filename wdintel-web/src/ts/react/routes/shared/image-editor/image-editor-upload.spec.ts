@@ -17,6 +17,7 @@ function pendingFile() {
   } as never;
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3294
 describe('replacePendingImageFile', () => {
   it('invalidates fingerprint records before replacement when no URL reached Uppy #3294', async () => {
     const matchingRecords = [

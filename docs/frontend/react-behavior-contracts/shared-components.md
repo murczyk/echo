@@ -26,7 +26,7 @@
 - **User role or permission:** any user receiving a queued application notification
 - **Preconditions:** one snackbar is closing while another notification is queued
 - **User action or external event:** the active notification is dismissed and its transition completes
-- **Expected observable result:** the active notification remains visible until its exit completes; only then does the next queued notification become visible.
+- **Expected observable result:** duplicate notifications retain FIFO order; the active notification remains visible until its exit completes, and only then does the next queued notification become visible.
 - **Loading/empty/error/success behavior:** queued notifications remain pending rather than being replaced or lost during the exit transition.
 - **URL, localStorage, or user-settings persistence:** none.
 - **API endpoint and compatibility requirements:** none.
@@ -35,6 +35,150 @@
 - **Source implementation:** `src/ts/react/components/PowerSnackbar.tsx`
 - **Existing test(s):** `PowerSnackbar.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a notification-ordering safeguard.
+
+## Date and time draft ownership
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-date-time-draft-ownership`
+- **Affected route/component:** `PowerDatePicker`, `PowerDateTimePicker`, and `DateTimeRangeControl`
+- **User role or permission:** any user editing a date or date-time filter.
+- **Preconditions:** a controlled picker is open or a range preset is being changed.
+- **User action or external event:** the user types, accepts, cancels, clears, uses a rolling preset, or the parent rerenders with stale/empty values.
+- **Expected observable result:** drafts remain owned by the active edit until it is committed or dismissed; stale parent values cannot erase an in-progress edit, while a controlled clear restores the empty state. Accepted values, app-timezone presets, and global date bounds remain valid.
+- **Loading/empty/error/success behavior:** disabled controls neither open nor apply presets.
+- **URL, localStorage, or user-settings persistence:** callers own persistence.
+- **API endpoint and compatibility requirements:** none.
+- **Responsive and keyboard requirements:** collapsed typing debounces the latest complete value and keyboard editing retains its active draft.
+- **Known race/idempotency constraints:** pending typing and stale rerenders must not overwrite a newer user edit or submit an obsolete value.
+- **Source implementation:** `PowerDateTimePicker.tsx`, `DateTimeRangeControl.tsx`
+- **Existing test(s):** `PowerDateTimePicker.spec.tsx`, `DateTimeRangeControl.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as a form-data-loss safeguard.
+
+## Bulk autocomplete selection
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-bulk-autocomplete-selection`
+- **Affected route/component:** `PowerAutocomplete` bulk paste and copy flow.
+- **User role or permission:** any user editing a multi-value filter or selection.
+- **Preconditions:** bulk paste is enabled and options may have inactive records, duplicate display labels, or already-selected values.
+- **User action or external event:** the user copies selected values, pastes newline/comma-delimited input, cancels the dialog, or submits the resolved selection.
+- **Expected observable result:** canonical values round-trip; inactive bulk-only options remain selectable; ambiguous or missing entries are never silently chosen; duplicates are previewed without duplicate submission.
+- **Loading/empty/error/success behavior:** an all-missing paste remains editable and cannot submit; the dialog opens only when requested.
+- **URL, localStorage, or user-settings persistence:** callers own persistence.
+- **API endpoint and compatibility requirements:** none.
+- **Responsive and keyboard requirements:** closing the dialog returns focus to its menu trigger.
+- **Known race/idempotency constraints:** option scanning is deferred until interaction and merged submission is idempotent for duplicate tokens.
+- **Source implementation:** `PowerAutocomplete.tsx`
+- **Existing test(s):** `PowerAutocomplete.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as a selection/data-loss safeguard.
+
+## Alert dismissal policy
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-alert-dismissal`
+- **Affected route/component:** `PowerAlert`
+- **User role or permission:** any user receiving an application alert.
+- **Preconditions:** an alert has a severity and may specify an auto-hide duration or explicit dismissibility.
+- **User action or external event:** an alert timeout elapses, the user dismisses an available control, or its content/severity changes.
+- **Expected observable result:** alerts reset for new content; success and error use their shared timeout policy, info remains visible unless explicitly timed, and dismissal availability follows the shared severity policy.
+- **Loading/empty/error/success behavior:** a closed alert is removed until a new alert state is supplied.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** none.
+- **Responsive and keyboard requirements:** dismissible alerts retain the underlying MUI alert control semantics.
+- **Known race/idempotency constraints:** replacing alert content resets an earlier timeout instead of retaining a stale closed state.
+- **Source implementation:** `PowerAlert.tsx`
+- **Existing test(s):** no default-suite test; prior isolated timeout/default-render checks were removed.
+- **Original Echo issue/PR, if known:** none recorded.
+
+## Searchable option selection
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-searchable-option-selection`
+- **Affected route/component:** `SearchableOptionAutocomplete`
+- **User role or permission:** any user selecting an option by a stable numeric ID.
+- **Preconditions:** a selected option may coexist with typed search text.
+- **User action or external event:** the user types, explicitly selects an option, clears a clearable field, or leaves a non-clearable field.
+- **Expected observable result:** typing changes only displayed search text; selection changes only through option selection or an allowed clear. Non-clearable fields restore the selected label on blur.
+- **Loading/empty/error/success behavior:** a missing selected ID displays as no selection.
+- **URL, localStorage, or user-settings persistence:** callers own persistence.
+- **API endpoint and compatibility requirements:** option IDs remain stable numeric identifiers.
+- **Responsive and keyboard requirements:** the underlying MUI autocomplete owns keyboard navigation.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** `SearchableOptionAutocomplete.tsx`
+- **Existing test(s):** no default-suite test; prior mocked selection-sequencing checks were removed.
+- **Original Echo issue/PR, if known:** none recorded.
+
+## Saved-filter failure recovery
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-saved-filter-failure-recovery`
+- **Affected route/component:** `SavedFiltersControl`
+- **User role or permission:** users allowed to save table-filter presets.
+- **Preconditions:** the save-as-new dialog contains an entered name and its parent action may reject the save.
+- **User action or external event:** the user submits a new saved filter and the action reports failure.
+- **Expected observable result:** the dialog remains open with the entered draft available for correction or retry; the parent saved-filter name is not committed as a false success.
+- **Loading/empty/error/success behavior:** successful persistence is parent-owned; failure leaves the local dialog active.
+- **URL, localStorage, or user-settings persistence:** parent table state owns persistence.
+- **API endpoint and compatibility requirements:** none.
+- **Responsive and keyboard requirements:** existing dialog controls retain their normal semantics.
+- **Known race/idempotency constraints:** a failed completion cannot clear or commit the current draft.
+- **Source implementation:** `SavedFiltersControl.tsx`
+- **Existing test(s):** `SavedFiltersControl.spec.tsx`
+- **Original Echo issue/PR, if known:** none recorded; retained as a draft-loss safeguard.
+
+## Message-form keyboard submit
+
+- **Status:** issue-backed regression
+- **Behavior ID:** react-shared-message-form-keyboard-submit
+- **Affected route/component:** shared React message form keyboard-submit handler and `PowerForm` wrapper
+- **User role or permission:** users allowed to create or edit a message
+- **Preconditions:** a form contains a supported single-line input or textarea and its current validation state is known.
+- **User action or external event:** the user presses Enter, Ctrl/Cmd+Enter, Shift+Enter, Alt+Enter, Escape-composition input, or a browser has already consumed the event.
+- **Expected observable result:** valid supported inputs submit once; invalid or composing input never submits; textarea content keeps plain/modified Enter semantics without accidental duplicate form submission.
+- **Loading/empty/error/success behavior:** invalid input prevents the browser default but does not invoke requestSubmit.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** none.
+- **Responsive and keyboard requirements:** keyboard ownership remains with the active input and unsupported controls retain native behavior.
+- **Known race/idempotency constraints:** a qualifying key event must issue one form submission only.
+- **Source implementation:** `utils/formKeyboardSubmit.ts`, `PowerForm.tsx`.
+- **Existing test(s):** `utils/formKeyboardSubmit.spec.ts`, `PowerForm.spec.tsx`.
+- **Original Echo issue/PR, if known:** [#2746](https://github.com/echoua/echo/issues/2746).
+
+## Frontend role hierarchy
+
+- **Status:** inferred characterization
+- **Behavior ID:** react-shared-role-hierarchy
+- **Affected route/component:** shared frontend role/capability resolver
+- **User role or permission:** all authenticated roles.
+- **Preconditions:** a React route determines access to an action or Device capability.
+- **User action or external event:** a role-gated control, route, or mutation is evaluated.
+- **Expected observable result:** inherited roles match the backend hierarchy, while Device read/create/source/analytical capabilities remain action-specific.
+- **Loading/empty/error/success behavior:** unauthorized roles receive no enabled capability.
+- **URL, localStorage, or user-settings persistence:** none.
+- **API endpoint and compatibility requirements:** client-side gating supplements, but never replaces, backend authorization.
+- **Responsive and keyboard requirements:** none.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** utils/roles.ts.
+- **Existing test(s):** utils/roles.spec.ts.
+- **Original Echo issue/PR, if known:** none recorded; retained as an authorization safeguard.
+
+## AI-managed login selection
+
+- **Status:** inferred characterization
+- **Behavior ID:** react-shared-ai-managed-login-selection
+- **Affected route/component:** shared login-option selection used by AI-managed settings.
+- **User role or permission:** users allowed to edit the associated AI settings.
+- **Preconditions:** a selection contains login IDs managed by the AI configuration.
+- **User action or external event:** the user removes a keyboard selection or clears selected logins.
+- **Expected observable result:** user-selected IDs update normally while AI-managed IDs remain selected.
+- **Loading/empty/error/success behavior:** none.
+- **URL, localStorage, or user-settings persistence:** callers own persistence.
+- **API endpoint and compatibility requirements:** login IDs remain stable UUID values.
+- **Responsive and keyboard requirements:** keyboard removal cannot bypass the managed-selection rule.
+- **Known race/idempotency constraints:** none.
+- **Source implementation:** utils/login-options.ts.
+- **Existing test(s):** utils/login-options.spec.ts.
+- **Original Echo issue/PR, if known:** none recorded; retained as a data-loss safeguard.
 
 ## Clipboard fallback
 

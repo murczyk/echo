@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { imageEditorBounds, imageEditorPointer } from './image-editor-pointer';
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor native pointer geometry #3099', () => {
   it('converts CSS-scaled pointer coordinates into native document coordinates', () => {
     const canvas = {

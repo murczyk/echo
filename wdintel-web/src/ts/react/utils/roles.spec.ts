@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canReadDevices, hasAnyRole, hasRole, resolveDevicesCapabilities } from './roles';
 
+// @test-scope safeguard: prevents frontend role inheritance from granting unauthorized device or privileged mutations
 describe('roles', () => {
   it('keeps the frontend hierarchy aligned with backend role checks', () => {
     expect(hasRole(['Admin'], 'Rer')).toBe(true);

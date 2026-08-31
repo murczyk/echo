@@ -52,7 +52,7 @@ function formatPreviewItem(value: unknown): string {
   return 'Складене значення';
 }
 
-export function formatFilterValuePreview(value: unknown): string {
+function formatFilterValuePreview(value: unknown): string {
   if (isNullOrUndefined(value) || value === '') {
     return 'Порожньо';
   }
@@ -70,7 +70,7 @@ export function formatFilterValuePreview(value: unknown): string {
   return formatPreviewItem(value);
 }
 
-export function resolveFilterLabel<TData extends MRT_RowData>(
+function resolveFilterLabel<TData extends MRT_RowData>(
   table: MRT_TableInstance<TData>,
   filterId: string,
 ): string {

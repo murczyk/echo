@@ -810,6 +810,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(video.currentTime).toBe(0);
   });
 
+  // @test-scope regression: https://github.com/echoua/echo/issues/3099
   it('exits fullscreen before closing the dialog on Escape', async () => {
     const onClose = vi.fn();
     const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});

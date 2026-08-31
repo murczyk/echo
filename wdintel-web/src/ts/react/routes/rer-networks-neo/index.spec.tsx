@@ -325,6 +325,7 @@ afterEach(() => {
   container = null;
 });
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3329
 it('renders activity loading without bars or inactivity text', () => {
   if (!container) throw new Error('container not initialized');
   root = createRoot(container);
@@ -341,6 +342,7 @@ it('renders activity loading without bars or inactivity text', () => {
   expect(container.querySelector('[data-testid="activity-bars"]')).toBeNull();
 });
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3329
 it('renders loaded activity states distinctly', () => {
   if (!container) throw new Error('container not initialized');
   root = createRoot(container);

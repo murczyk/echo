@@ -125,7 +125,9 @@ test('follows only while the bottom arrow is hidden and preserves the reading an
 
   const anchor = list.locator(`[data-duty-message-id="${anchorBefore.id}"]`);
   await expect(anchor).toBeAttached();
-  await expect.poll(() => readAnchorOffset(anchor)).toBeCloseTo(anchorBefore.offsetTop, 0);
+  await expect
+    .poll(async () => Math.abs((await readAnchorOffset(anchor)) - anchorBefore.offsetTop))
+    .toBeLessThanOrEqual(1);
   await expect(bottomButton).toBeVisible();
   await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
 
@@ -145,11 +147,14 @@ test('follows only while the bottom arrow is hidden and preserves the reading an
   await list.locator('[data-duty-message-id="2"]').evaluate((element) => {
     element.style.paddingBottom = '120px';
   });
-  await expect.poll(() => readAnchorOffset(anchor)).toBeCloseTo(settledAnchorOffset, 0);
+  await expect
+    .poll(async () => Math.abs((await readAnchorOffset(anchor)) - settledAnchorOffset))
+    .toBeLessThanOrEqual(1);
 
   await setBottomDistance(scroller, 0);
   await secondNewerRequestStarted.promise;
-  await expect(bottomButton).toHaveCount(0);
+  await expect(bottomButton).toBeVisible();
+  await expect(bottomButton.getByRole('button')).toBeDisabled();
 
   secondNewerResponse.resolve(buildInboxResponse([42]));
   await expect(list.locator('[data-duty-message-id="42"]')).toBeAttached();

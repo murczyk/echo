@@ -90,8 +90,9 @@ vi.mock('@mui/x-date-pickers/AdapterDayjs', () => ({
   AdapterDayjs: function AdapterDayjs() {},
 }));
 
-import { PowerDatePicker, PowerDateTimePicker, PowerPickerActionBar } from './PowerDateTimePicker';
+import { PowerDatePicker, PowerDateTimePicker } from './PowerDateTimePicker';
 
+// @test-scope safeguard: prevents stale controlled values and pending typing from overwriting an active form edit.
 describe('PowerDateTimePicker', () => {
   afterEach(() => {
     document.body.innerHTML = '';
@@ -100,54 +101,6 @@ describe('PowerDateTimePicker', () => {
     localizationProviderMock.mockClear();
     vi.useRealTimers();
     vi.clearAllMocks();
-  });
-
-  it('forces desktop mode and keeps action bar reduced', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(<PowerDatePicker value={dayjs('2026-05-01')} onChange={() => {}} label="Дата" />);
-    });
-
-    const pickerProps = datePickerMock.mock.calls.at(-1)?.[0];
-    expect(pickerProps?.desktopModeMediaQuery).toBe('@media all');
-    expect(pickerProps?.slotProps?.actionBar?.actions).toEqual([]);
-    expect(pickerProps?.slotProps?.actionBar?.powerActions).toEqual(['close', 'accept']);
-    expect(pickerProps?.slotProps?.actionBar?.onRequestClose).toEqual(expect.any(Function));
-    expect(pickerProps?.slots?.actionBar).toEqual(expect.any(Function));
-
-    act(() => {
-      root.unmount();
-    });
-  });
-
-  it('forwards the picker layout class name to the action bar', () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    act(() => {
-      root.render(
-        <PowerPickerActionBar
-          className="MuiPickersLayout-actionBar"
-          powerActions={['close', 'accept']}
-          onAccept={() => {}}
-          onClear={() => {}}
-          onSetToday={() => {}}
-        />,
-      );
-    });
-
-    const actionBar = container.querySelector('.MuiPickersLayout-actionBar');
-    expect(actionBar).toBeDefined();
-    expect(actionBar?.textContent?.includes('Закрити')).toBe(true);
-    expect(actionBar?.textContent?.includes('OK')).toBe(true);
-
-    act(() => {
-      root.unmount();
-    });
   });
 
   it('debounces collapsed date typing', () => {

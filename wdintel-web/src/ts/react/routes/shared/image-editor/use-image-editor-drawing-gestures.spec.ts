@@ -108,6 +108,7 @@ function renderGesture(tool: 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'conce
   return { gesture, objects, replaceConcealmentArea, root, saveHistory };
 }
 
+// @test-scope regression: https://github.com/echoua/echo/issues/3099
 describe('image editor Fabric drawing gestures #3099', () => {
   afterEach(() => document.body.replaceChildren());
   it.each([
