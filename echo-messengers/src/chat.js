@@ -504,6 +504,12 @@
   async function sendMessage(event) {
     event.preventDefault();
     if (!state.selectedChat) return;
+    const selectedChatId = state.selectedChat.id;
+    const replyInboxMessageId = state.replyMessage?.inboxId;
+    const text = elements.chatMessageInput.value;
+    const endpoint = replyInboxMessageId
+      ? `/ui-api/chats/${encodeURIComponent(selectedChatId)}/replies`
+      : `/ui-api/chats/${encodeURIComponent(selectedChatId)}/messages`;
     clearError();
     const submit = elements.chatSendForm.querySelector('[type="submit"]');
     submit.disabled = true;
@@ -511,13 +517,9 @@
       const attachments = await Promise.all(
         Array.from(elements.chatFileInput.files || []).map(fileInput),
       );
-      const text = elements.chatMessageInput.value;
-      const endpoint = state.replyMessage
-        ? `/ui-api/chats/${encodeURIComponent(state.selectedChat.id)}/replies`
-        : `/ui-api/chats/${encodeURIComponent(state.selectedChat.id)}/messages`;
-      const payload = state.replyMessage
+      const payload = replyInboxMessageId
         ? {
-            inboxMessageId: state.replyMessage.inboxId,
+            inboxMessageId: replyInboxMessageId,
             text,
             attachments,
           }
@@ -526,6 +528,7 @@
         method: "POST",
         body: JSON.stringify(payload),
       });
+      if (state.selectedChat?.id !== selectedChatId) return;
       state.messages.push(queued.message);
       renderMessages();
       elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
@@ -535,7 +538,7 @@
       clearReply();
       await loadChats({ refreshing: true });
     } catch (error) {
-      showError(error);
+      if (state.selectedChat?.id === selectedChatId) showError(error);
     } finally {
       submit.disabled = false;
     }
@@ -596,6 +599,7 @@
         request(appUrl(`/ui-api/chat-clients/${clientId}/settings`)),
         request(appUrl(`/ui-api/chat-clients/${clientId}/filter-options`)),
       ]);
+      if (Number(elements.chatSettingsClient.value) !== clientId) return;
       elements.hidePrivateChats.checked = settings.hidePrivate;
       elements.hideGroupChats.checked = settings.hideGroups;
       elements.storeChatData.checked = settings.storeData30Days;
@@ -628,6 +632,7 @@
           : "Груповий webhook не налаштовано.",
       ].join(" ");
     } catch (error) {
+      if (Number(elements.chatSettingsClient.value) !== clientId) return;
       elements.chatSettingsStatus.textContent = error.message;
       showError(error);
     }
