@@ -43,6 +43,7 @@ type alias Model =
     , passwordInp : String
     , totpTokenInp : String
     , pending2fa : Maybe Pending2fa
+    , authInFlight : Bool
     , redirect : Maybe String
     , serverInfo : Maybe B.ServerInfo
     , showCredsLogin : Bool
@@ -80,6 +81,7 @@ init route shared _ =
       , passwordInp = ""
       , totpTokenInp = ""
       , pending2fa = Nothing
+      , authInFlight = False
       , redirect = Dict.get "redirect" route.query
       , serverInfo = shared.serverInfo
       , showCredsLogin = False
@@ -271,11 +273,14 @@ update shared msg model =
             )
 
         Login ->
-            if isFeatureDeltaEnabled shared.serverInfo && not model.showCredsLogin then
+            if model.authInFlight then
+                ( model, E.none )
+
+            else if isFeatureDeltaEnabled shared.serverInfo && not model.showCredsLogin then
                 ( model, E.none )
 
             else
-                ( { model | formErrors = Dict.empty }
+                ( { model | formErrors = Dict.empty, authInFlight = True }
                 , E.sendCmd <|
                     Api.users_login LoginDone
                         { user = model.loginInp
@@ -284,29 +289,35 @@ update shared msg model =
                 )
 
         LoginDone (Err e) ->
-            Api.handleLoginHttpError ToastMsg e model
+            Api.handleLoginHttpError ToastMsg e { model | authInFlight = False }
 
         LoginDone (Ok rsp) ->
             case pendingFromLoginRsp rsp of
                 Nothing ->
-                    ( model, navigateAfterLogin shared model )
+                    ( { model | authInFlight = False }
+                    , navigateAfterLogin shared model
+                    )
 
                 Just pending ->
                     ( { model
                         | pending2fa = Just pending
                         , totpTokenInp = ""
                         , formErrors = Dict.empty
+                        , authInFlight = False
                       }
                     , E.sendCmd focusTotpInput
                     )
 
         Confirm2fa ->
-            case model.pending2fa of
-                Nothing ->
+            case ( model.authInFlight, model.pending2fa ) of
+                ( True, _ ) ->
                     ( model, E.none )
 
-                Just pending ->
-                    ( { model | formErrors = Dict.empty }
+                ( False, Nothing ) ->
+                    ( model, E.none )
+
+                ( False, Just pending ) ->
+                    ( { model | formErrors = Dict.empty, authInFlight = True }
                     , E.sendCmd <|
                         Api.users_confirm_2fa Confirm2faDone
                             { challengeId = challengeIdFromPending pending
@@ -315,19 +326,24 @@ update shared msg model =
                     )
 
         Confirm2faDone (Err e) ->
-            let
-                ( modelWithError, effect ) =
-                    Api.handleLoginHttpError ToastMsg e model
-            in
-            ( { modelWithError
-                | formErrors =
-                    remapConfirm2faFormErrors modelWithError.formErrors
-              }
-            , effect
-            )
+            case model.pending2fa of
+                Nothing ->
+                    ( { model | authInFlight = False }, E.none )
+
+                Just _ ->
+                    let
+                        ( modelWithError, effect ) =
+                            Api.handleLoginHttpError ToastMsg e { model | authInFlight = False }
+                    in
+                    ( { modelWithError
+                        | formErrors =
+                            remapConfirm2faFormErrors modelWithError.formErrors
+                      }
+                    , effect
+                    )
 
         Confirm2faDone (Ok ()) ->
-            ( model
+            ( { model | authInFlight = False }
             , navigateAfterLogin shared model
             )
 
@@ -336,6 +352,7 @@ update shared msg model =
                 | pending2fa = Nothing
                 , totpTokenInp = ""
                 , formErrors = Dict.empty
+                , authInFlight = False
               }
             , E.sendCmd focusLoginInput
             )
@@ -453,6 +470,7 @@ totpPanel model pending =
                     , placeholder "код з автентифікатора"
                     , value model.totpTokenInp
                     , onInput SetTotpTokenInp
+                    , disabled model.authInFlight
                     , attribute "autocomplete" "one-time-code"
                     , attribute "inputmode" "numeric"
                     , isInvalidCls "token" model.formErrors
@@ -463,6 +481,7 @@ totpPanel model pending =
                 [ button
                     [ type_ "submit"
                     , class "btn btn-primary btn-dark w-100"
+                    , disabled model.authInFlight
                     ]
                     [ text "підтвердити" ]
                 ]
@@ -472,6 +491,7 @@ totpPanel model pending =
                     , class "btn btn-link btn-sm text-decoration-none p-0"
                     , style "color" "var(--bs-secondary-color)"
                     , onClick Cancel2fa
+                    , disabled model.authInFlight
                     ]
                     [ text "назад" ]
                 ]
@@ -542,6 +562,10 @@ body _ deltaLoginFlag sharedToasts model =
                 ]
 
         credsFields interactive =
+            let
+                fieldsEnabled =
+                    interactive && not model.authInFlight
+            in
             [ div [ class "mb-2 w-100" ] <|
                 input
                     [ type_ "text"
@@ -550,7 +574,7 @@ body _ deltaLoginFlag sharedToasts model =
                     , placeholder "логін"
                     , value model.loginInp
                     , onInput SetLoginInp
-                    , disabled (not interactive)
+                    , disabled (not fieldsEnabled)
                     , isInvalidCls "login" model.formErrors
                     ]
                     []
@@ -562,7 +586,7 @@ body _ deltaLoginFlag sharedToasts model =
                     , placeholder "пароль"
                     , value model.passwordInp
                     , onInput SetPasswordInp
-                    , disabled (not interactive)
+                    , disabled (not fieldsEnabled)
                     , isInvalidCls "password" model.formErrors
                     ]
                     []
@@ -573,7 +597,7 @@ body _ deltaLoginFlag sharedToasts model =
                 [ button
                     [ type_ "submit"
                     , class "btn btn-primary btn-dark w-100"
-                    , disabled (not interactive)
+                    , disabled (not fieldsEnabled)
                     ]
                     [ text "увійти" ]
                 ]

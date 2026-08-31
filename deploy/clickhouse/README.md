@@ -159,6 +159,13 @@ the file so pre-migration reconciliation cannot snapshot the table immediately
 before it is dropped. The migration deliberately discards its rows; run the
 inbox-unit backfill later to rebuild the normalized label and link tables.
 
+`login_totp` stores second-factor enrollment secrets and is intentionally
+excluded from analytics. Before applying
+`m20260827_180023_add_login_totp_secret`, deploy and reconcile the updated
+exclusion file so PeerDB never snapshots or mirrors that table. After
+migration, confirm the analytics health check is green and that no raw
+ClickHouse table or gateway view exists for `login_totp`.
+
 Durable normalized domain tables, including
 `sigint_inbox_item_callsign` and `sigint_inbox_item_settlement`, are
 intentionally not excluded. The automatic table reconciler adds them to PeerDB
