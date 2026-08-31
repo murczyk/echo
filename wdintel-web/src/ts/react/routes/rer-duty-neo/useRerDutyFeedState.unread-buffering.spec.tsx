@@ -1139,7 +1139,8 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     expect(hoisted.fetchInboxCount.mock.calls.at(-1)?.[0]).toEqual(
       expect.objectContaining({ sinceIdNoninclusive: 140 }),
     );
-    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
   });
 
   it('keeps unread cursors independent across feeds', async () => {

@@ -293,10 +293,65 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(scrollToEnd).not.toHaveBeenCalled();
     expect(hoisted.fetchInboxCount).toHaveBeenLastCalledWith(
       expect.objectContaining({ sinceIdNoninclusive: 1, nolimit: true }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(
       feedIndicatorUnreadCount(feed, apiRef.current!.confirmedTailPreviewByFeedId['mf-0']),
     ).toBe(21);
+  });
+
+  it('abandons a stalled tail preview after its hard deadline and accepts a fresh preview', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = false;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = false;
+    const stalledTail = deferred<{ quantity: number; firstElementTs: number | null }>(
+      'stalled tail count',
+    );
+    let tailSignal: AbortSignal | undefined;
+    let countRequests = 0;
+    hoisted.fetchInboxCount.mockReset();
+    hoisted.fetchInboxCount.mockImplementation((_, options?: { signal?: AbortSignal }) => {
+      countRequests += 1;
+      if (countRequests === 1) return Promise.resolve({ quantity: 1, firstElementTs: null });
+      if (countRequests === 2) {
+        tailSignal = options?.signal;
+        tailSignal?.addEventListener('abort', () => {
+          stalledTail.reject(new DOMException('aborted', 'AbortError'));
+        });
+        return stalledTail.promise;
+      }
+      return Promise.resolve({
+        quantity: tailSignal?.aborted ? 5 : 2,
+        firstElementTs: null,
+      });
+    });
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(tailSignal?.aborted).toBe(false);
+
+    hoisted.notifyDutyNewMessages.mockClear();
+    await startPoll();
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8999);
+      await flushMicrotasks();
+    });
+    expect(tailSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+      await flushMicrotasks();
+    });
+    expect(tailSignal?.aborted).toBe(true);
+
+    await startPoll();
+    await act(async () => flushMicrotasks());
+    expect(apiRef.current!.confirmedTailPreviewByFeedId['mf-0']).toMatchObject({
+      tailId: 1,
+      count: 5,
+    });
   });
 
   it('updates unreadCount from poll when count > 0 and column has items', async () => {

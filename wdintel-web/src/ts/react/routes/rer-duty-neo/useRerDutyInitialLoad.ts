@@ -122,10 +122,14 @@ export function useRerDutyInitialLoad(params: Params) {
         } else {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
-          current.installFeedUnreadCursorAndBaseline(
-            effectiveFeed,
-            tail ? { id: tail[0], timestamp: tail[1].timestamp } : pollCursor,
-          );
+          if (tail) {
+            current.installFeedUnreadCursorAndBaseline(effectiveFeed, {
+              id: tail[0],
+              timestamp: tail[1].timestamp,
+            });
+          } else {
+            current.setFeedUnreadCursor(feedId, pollCursor);
+          }
         }
         current.setMessageFeeds((previous) =>
           previous.map((candidate) =>

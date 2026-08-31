@@ -157,7 +157,15 @@ export async function requestBrowserNotificationPermission(): Promise<
 > {
   if (typeof window === 'undefined') return 'unsupported';
   if (!('Notification' in window)) return 'unsupported';
-  if (Notification.permission !== 'default') return Notification.permission;
+  const permission = Notification.permission;
+  if (permission !== 'default') {
+    if (permission === 'granted' && browserNotificationRuntimeFailure !== null) {
+      const previousStatus = getBrowserNotificationStatus();
+      browserNotificationRuntimeFailure = null;
+      publishBrowserNotificationStatusTransition(previousStatus);
+    }
+    return permission;
+  }
   const previousStatus = getBrowserNotificationStatus();
   try {
     const permission = await Notification.requestPermission();

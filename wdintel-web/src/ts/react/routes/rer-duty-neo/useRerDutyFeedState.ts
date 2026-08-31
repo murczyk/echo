@@ -34,6 +34,7 @@ import { compareMessageTuple } from './utils';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
+import { withDutyFeedRequestDeadline } from './dutyFeedRequestDeadline';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -51,8 +52,6 @@ type ServerCountBaseline = {
   requestSignature: string;
 };
 type ConfirmedTailPreview = { tailId: number; count: number; generation: number };
-
-const DUTY_UNREAD_COUNT_REQUEST_HARD_DEADLINE_MS = 10_000;
 
 function getDutyPollIntervalMs(pollIntervalSec: number): number {
   return Math.max(1, Math.floor(pollIntervalSec) || 1) * 1000;
@@ -495,22 +494,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           `cursor=${cursorId ?? '—'}; loadedTail=${feed.items.at(-1)?.[0] ?? '—'}`,
         );
         let quantity: number;
-        const controller = new AbortController();
-        const timeout = setTimeout(
-          () => controller.abort(),
-          DUTY_UNREAD_COUNT_REQUEST_HARD_DEADLINE_MS,
-        );
         try {
-          ({ quantity } = await fetchInboxCount(
-            buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
-            { signal: controller.signal },
+          ({ quantity } = await withDutyFeedRequestDeadline((signal) =>
+            fetchInboxCount(
+              buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
+              { signal },
+            ),
           ));
           finishDebugActivity(`ok; quantity=${quantity}`);
         } catch (error) {
           finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
           throw error;
-        } finally {
-          clearTimeout(timeout);
         }
         const currentFeed = messageFeedsRef.current.find((x) => x.id === feedId);
         if (
@@ -573,8 +567,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         try {
-          ({ quantity } = await fetchInboxCount(
-            buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
+          ({ quantity } = await withDutyFeedRequestDeadline((signal) =>
+            fetchInboxCount(buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }), {
+              signal,
+            }),
           ));
           finishDebugActivity(`ok; quantity=${quantity}; tail=${tailId}`);
         } catch (error) {

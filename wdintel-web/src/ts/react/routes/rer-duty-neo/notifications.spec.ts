@@ -94,6 +94,27 @@ describe('Duty browser notifications', () => {
     window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
   });
 
+  it('reconciles an externally granted permission after a runtime failure', async () => {
+    const requestPermission = vi.fn().mockRejectedValueOnce(new Error('blocked'));
+    const NotificationMock = Object.assign(vi.fn(), {
+      requestPermission,
+    }) as unknown as typeof Notification;
+    installNotification('default', NotificationMock);
+    const onStatusChange = vi.fn();
+    window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
+
+    await expect(requestBrowserNotificationPermission()).resolves.toBe('denied');
+    expect(getBrowserNotificationStatus()).toBe(DutyBrowserNotificationStatus.RuntimeFailure);
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(Notification, 'permission', { configurable: true, value: 'granted' });
+    await expect(requestBrowserNotificationPermission()).resolves.toBe('granted');
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(getBrowserNotificationStatus()).toBe(DutyBrowserNotificationStatus.Granted);
+    expect(onStatusChange).toHaveBeenCalledTimes(2);
+    window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
+  });
+
   it('publishes explicit test failure and recovery transitions once each', () => {
     const onStatusChange = vi.fn();
     window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);

@@ -37,6 +37,45 @@ describe('useRerDutyFeedState — directional loading and races', () => {
 
   afterEach(fixture.cleanup);
   describe('poll autoscroll (scrollToEndAfterLoad)', () => {
+    it('releases a stalled newer lane after the request deadline', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      const stalled = deferred<InboxMessagesRsp>('stalled newer');
+      let signal: AbortSignal | undefined;
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 1));
+      hoisted.fetchInboxMessages.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+        signal = options?.signal;
+        signal?.addEventListener('abort', () => {
+          stalled.reject(new DOMException('aborted', 'AbortError'));
+        });
+        return stalled.promise;
+      });
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      const stalledLoad = apiRef.current!.loadFeedNewerMessages('mf-0');
+      await act(async () => flushMicrotasks());
+      expect(signal?.aborted).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+        await flushMicrotasks();
+      });
+
+      expect(signal?.aborted).toBe(true);
+      await expect(stalledLoad).resolves.toEqual({ ok: false, addedCount: 0 });
+
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(2, 2));
+      let retryResult: { ok: boolean; addedCount: number } | undefined;
+      await act(async () => {
+        retryResult = await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+      expect(retryResult).toEqual({ ok: true, addedCount: 1 });
+      expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(2);
+    });
+
     it('ignores an older-load failure after a filter reload invalidates the request', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,
