@@ -91,6 +91,12 @@ apply only to newly queued data, while AOR changes retain their existing
 behavior of requeueing affected links. Attempted misses remain available for
 administrator review.
 
+`wdintel-rs-bgworker` also owns `ai_settlement_worker`. When enabled by an
+administrator, new or reparsed inbox messages are queued for header-based AI
+location extraction. The worker preserves every existing `location_v2` value,
+appends only missing settlements, and reconciles the settlement-link queue in
+the same transaction. It is disabled by default.
+
 ## Statistics storage
 
 `wdintel-rs-bgworker` derives recent and daily group statistics from

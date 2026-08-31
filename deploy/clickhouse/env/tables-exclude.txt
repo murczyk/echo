@@ -52,6 +52,10 @@ public.ai_callsign_settings
 public.ai_callsign_test_message
 public.ai_callsign_parse_result
 public.ai_callsign_worker_job
+public.ai_settlement_settings
+public.ai_settlement_test_message
+public.ai_settlement_parse_result
+public.ai_settlement_worker_job
 public.ai_intel_report_settings
 public.ai_intel_report_attempt
 public.report_download_history

@@ -673,6 +673,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_settlement_env = env.clone();
+    let ai_settlement_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ai_settlement_worker", bg_set, async move {
+        crate::ai_settlement::worker::run_nofail(
+            ai_settlement_env,
+            ai_settlement_cancellation_token,
+        )
+        .await;
+    });
+
     let ocr_env = env.clone();
     let ocr_cancellation_token = cancel_token.clone();
     spawn_named_worker("ocr_worker", bg_set, async move {
@@ -964,6 +974,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_callsign::save_ai_callsign_parsing)
             .service(crate::ai_callsign::recalculate_ai_callsign_parsing)
             .service(crate::ai_callsign::save_ai_callsign_worker_settings)
+            .service(crate::ai_settlement::get_ai_settlement_page)
+            .service(crate::ai_settlement::reset_ai_settlement_prompt)
+            .service(crate::ai_settlement::create_ai_settlement_test_message)
+            .service(crate::ai_settlement::update_ai_settlement_test_message)
+            .service(crate::ai_settlement::delete_ai_settlement_test_message)
+            .service(crate::ai_settlement::test_ai_settlement_parsing)
+            .service(crate::ai_settlement::save_ai_settlement_parsing)
+            .service(crate::ai_settlement::recalculate_ai_settlement_parsing)
+            .service(crate::ai_settlement::save_ai_settlement_worker_settings)
             .service(crate::ocr::get_ocr_page)
             .service(crate::ocr::save_ocr_settings)
             .service(crate::ocr::reprocess_media_ocr)

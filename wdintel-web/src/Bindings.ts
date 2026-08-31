@@ -5042,6 +5042,86 @@ export type SaveAiCallsignWorkerSettingsReq = {
   aiEngineId: string | null;
 };
 
+export type AiSettlementEngineItem = {
+  id: string;
+  name: string;
+  modelName: string;
+};
+
+export type AiSettlementParseResultItem = {
+  testMessageId: string;
+  aiEngineId: string;
+  settlements: Array<string>;
+  error: string | null;
+  responseText: string;
+  updatedAt: number | null;
+};
+
+export type AiSettlementTestMessageItem = {
+  id: string;
+  message: string;
+  createdAt: number;
+  updatedAt: number;
+  results: Array<AiSettlementParseResultItem>;
+};
+
+export type AiSettlementTestMessageVersionItem = {
+  id: string;
+  version: string;
+};
+
+export type AiSettlementWorkerSettingsItem = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
+export type AiSettlementPageRsp = {
+  prompt: string;
+  promptOverridden: boolean;
+  engines: Array<AiSettlementEngineItem>;
+  messages: Array<AiSettlementTestMessageItem>;
+  worker: AiSettlementWorkerSettingsItem;
+};
+
+export type AiSettlementPromptState = {
+  prompt: string;
+  promptOverridden: boolean;
+};
+
+export type CreateAiSettlementTestMessageReq = {
+  message: string;
+};
+
+export type UpdateAiSettlementTestMessageReq = {
+  id: string;
+  message: string;
+};
+
+export type AiSettlementTestMessageIdReq = {
+  id: string;
+};
+
+export type RunAiSettlementParsingReq = {
+  prompt: string;
+  aiEngineIds: Array<string>;
+};
+
+export type AiSettlementParsingRsp = {
+  results: Array<AiSettlementParseResultItem>;
+  messageVersions: Array<AiSettlementTestMessageVersionItem>;
+};
+
+export type SaveAiSettlementParsingReq = {
+  prompt: string;
+  results: Array<AiSettlementParseResultItem>;
+  messageVersions: Array<AiSettlementTestMessageVersionItem>;
+};
+
+export type SaveAiSettlementWorkerSettingsReq = {
+  enabled: boolean;
+  aiEngineId: string | null;
+};
+
 export type OcrStatusLogItem = {
   at: number;
   message: string;
