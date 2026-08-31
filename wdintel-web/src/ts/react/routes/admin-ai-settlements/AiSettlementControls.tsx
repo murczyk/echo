@@ -50,6 +50,7 @@ export function AiSettlementControls({
       <TextField
         fullWidth
         required
+        disabled={busy}
         multiline
         minRows={5}
         label="Промпт для пошуку населених пунктів"
@@ -58,7 +59,7 @@ export function AiSettlementControls({
         helperText='Очікувана відповідь: JSON-об’єкт {"settlements":["НАЗВА"]} або JSON-масив.'
       />
 
-      <FormControl fullWidth>
+      <FormControl fullWidth disabled={busy}>
         <InputLabel id="ai-settlement-engines-label">ШІ движки</InputLabel>
         <Select
           labelId="ai-settlement-engines-label"
