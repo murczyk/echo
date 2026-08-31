@@ -134,6 +134,7 @@ function MessageCardTagsComponent({
 
   useEffect(() => {
     setOrderedTagIds(buildSelectedFirstTagOrder(rows));
+    setShowCompactRest(false);
   }, [messageResetKey, rowIdKey]);
 
   const compactOrderedRows = useMemo(
@@ -161,8 +162,6 @@ function MessageCardTagsComponent({
 
   useLayoutEffect(() => {
     if (tagsLayout !== 'compact') return;
-    // Expanded rest chips live inside the measure root; remounting them must not re-pack.
-    if (showCompactRest) return;
     const el = compactMeasureRef.current;
     if (!el) return;
     const packing = compactOrderedRows;
@@ -254,12 +253,6 @@ function MessageCardTagsComponent({
     [compactOrderedRows, row1IdSet],
   );
   const hasRest = restRows.length > 0;
-
-  useEffect(() => {
-    if (!hasRest) {
-      setShowCompactRest((open) => (open ? false : open));
-    }
-  }, [hasRest]);
 
   if (tagsLayout === 'full') {
     return (
