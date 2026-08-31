@@ -1027,6 +1027,7 @@ describe('ManageMessageDrawer edit mode', () => {
           currentUser={null}
           onClose={vi.fn()}
           editTarget={{ id: 91, message: report }}
+          editAsReport
         />,
       );
     });
@@ -1053,6 +1054,73 @@ describe('ManageMessageDrawer edit mode', () => {
     expect(
       directSubmitMocks.editDirectSubmit.mock.calls[0][1].parent_signal_message_ids,
     ).toBeUndefined();
+
+    root.unmount();
+  });
+
+  it('edits a message with an accessible parent as an independent message by default', async () => {
+    const onSubmitEdit = vi.fn();
+    const message = buildMessage({
+      text: 'forwarded accessible report body',
+      groupMasterKey: 'g-2',
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: true,
+          isDeleted: false,
+          text: 'original summary body',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: '2026-08-17',
+          time: '09:30',
+          groupName: 'Original group',
+          groupMasterKey: null,
+        },
+      ],
+    });
+    directSubmitMocks.editDirectSubmit.mockResolvedValue({
+      signal_message_id: 91,
+      message,
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 91, message }}
+          onSubmitEdit={onSubmitEdit}
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Редагувати повідомлення');
+    expect(container.textContent).not.toContain('Редагувати розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст повідомлення')?.value).toBe(
+      'forwarded accessible report body',
+    );
+    expect(textFieldPropsByLabel.has('Текст оригінального повідомлення')).toBe(false);
+
+    await act(async () => {
+      (container.querySelector('form') as HTMLFormElement).dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+    });
+
+    expect(directSubmitMocks.editDirectSubmit).toHaveBeenCalledWith(
+      91,
+      expect.objectContaining({
+        full_body: 'forwarded accessible report body',
+        signal_group_master_key: 'g-2',
+      }),
+    );
+    expect(onSubmitEdit).toHaveBeenCalledWith(91, message);
 
     root.unmount();
   });
@@ -1159,6 +1227,7 @@ describe('ManageMessageDrawer edit mode', () => {
           onClose={onClose}
           onDeleteSuccess={onDeleteSuccess}
           editTarget={{ id: 91, message: report }}
+          editAsReport
         />,
       );
     });
@@ -1221,6 +1290,7 @@ describe('ManageMessageDrawer edit mode', () => {
           currentUser={null}
           onClose={onClose}
           editTarget={{ id: 91, message: report }}
+          editAsReport
         />,
       );
     });

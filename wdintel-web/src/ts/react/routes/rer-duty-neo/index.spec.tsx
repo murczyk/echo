@@ -137,7 +137,11 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
               type="button"
               aria-label="Зберегти редагування"
               onClick={async () => {
-                await onEditSuccess?.({ signal_message_id: editTarget.id });
+                if (onSubmitEdit) {
+                  await onSubmitEdit(editTarget.id, editTarget.message);
+                } else {
+                  await onEditSuccess?.({ signal_message_id: editTarget.id });
+                }
                 onClose();
               }}
             />
@@ -435,8 +439,8 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
-    expect(state.handleEditedMessage).not.toHaveBeenCalled();
-    expect(state.reloadEditedFeeds).toHaveBeenCalledTimes(1);
+    expect(state.handleEditedMessage).toHaveBeenCalledTimes(1);
+    expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
 
     await act(async () => {

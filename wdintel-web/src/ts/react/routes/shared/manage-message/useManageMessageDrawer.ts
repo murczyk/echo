@@ -64,6 +64,7 @@ export type UseManageMessageDrawerProps = {
   ) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
   reportSource?: { id: number; message: InboxMessage } | null;
+  editAsReport?: boolean;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
@@ -76,19 +77,21 @@ export function useManageMessageDrawer({
   onEditSuccess,
   editTarget = null,
   reportSource = null,
+  editAsReport = false,
   editSaveInFlight,
   onSubmitEdit,
 }: UseManageMessageDrawerProps) {
   const isEditMode = isPresent(editTarget);
+  const isReportCreateMode = isPresent(reportSource) && !isEditMode;
+  const isReportEditMode = isEditMode && editAsReport;
   const reportParents = isPresent(reportSource)
     ? [summarizeIntelligenceMessage(reportSource.id, reportSource.message)]
-    : isPresent(editTarget)
+    : isReportEditMode && isPresent(editTarget)
       ? getAccessibleParentMessages(editTarget.message)
       : [];
   const reportParentIds = reportParents.map(({ id }) => id);
   const reportParentIdsKey = reportParentIds.join(',');
-  const isReportCreateMode = isPresent(reportSource) && !isEditMode;
-  const isReportMode = reportParentIds.length > 0;
+  const isReportMode = isReportCreateMode || isReportEditMode;
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -507,7 +510,15 @@ export function useManageMessageDrawer({
         unit: recentValues.unit[0] ?? '',
       });
     }
-  }, [open, isEditMode, isReportCreateMode, editTarget?.id, reportSource?.id, recentValues]);
+  }, [
+    open,
+    isEditMode,
+    isReportCreateMode,
+    editAsReport,
+    editTarget?.id,
+    reportSource?.id,
+    recentValues,
+  ]);
 
   useEffect(() => {
     if (!open || !isReportMode) return;
