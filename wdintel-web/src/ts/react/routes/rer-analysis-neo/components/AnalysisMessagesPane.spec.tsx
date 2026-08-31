@@ -939,6 +939,83 @@ describe('AnalysisMessagesPane', () => {
     expect(target.getBoundingClientRect().top).toBe(300);
   });
 
+  it('keeps the first visible message anchored after direct-link focus is cleared', async () => {
+    const onClearFocus = vi.fn();
+    const directMessageNavigation = {
+      targetMessageId: 7,
+      focusActive: true,
+      newestFirst: false,
+      canLoadEarlier: true,
+      canLoadLater: true,
+      loadingEarlier: false,
+      loadingLater: false,
+      onClearFocus,
+      onLoadEarlier: vi.fn().mockResolvedValue(true),
+      onLoadLater: vi.fn().mockResolvedValue(true),
+    };
+    const messages: Array<[number, InboxMessage]> = [
+      [7, buildMessage()],
+      [8, buildMessage()],
+    ];
+    const view = await renderComponent(buildProps({ messages, directMessageNavigation }));
+    rendered.push(view);
+
+    const anchor = view.container.querySelector<HTMLElement>('[data-message-id="7"]');
+    const scrollBox = anchor?.closest('ul')?.parentElement as HTMLElement | null;
+    if (anchor == null || scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 3000, scrollTop: 700 });
+    scrollBox.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    let anchorLayoutTop = 720;
+    anchor.getBoundingClientRect = () =>
+      ({
+        top: anchorLayoutTop - scrollBox.scrollTop,
+        bottom: anchorLayoutTop - scrollBox.scrollTop + 100,
+      }) as DOMRect;
+
+    await act(async () => {
+      scrollBox.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+    });
+    expect(onClearFocus).toHaveBeenCalledTimes(1);
+
+    anchorLayoutTop += 180;
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            messages,
+            directMessageNavigation: {
+              ...directMessageNavigation,
+              focusActive: false,
+              loadingEarlier: true,
+            },
+          })}
+        />,
+      );
+    });
+
+    expect(scrollBox.scrollTop).toBe(880);
+    expect(anchor.getBoundingClientRect().top).toBe(20);
+
+    anchorLayoutTop += 80;
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...buildProps({
+            messages: [[6, buildMessage()], ...messages],
+            directMessageNavigation: {
+              ...directMessageNavigation,
+              focusActive: false,
+              loadingEarlier: false,
+            },
+          })}
+        />,
+      );
+    });
+
+    expect(scrollBox.scrollTop).toBe(960);
+    expect(anchor.getBoundingClientRect().top).toBe(20);
+  });
+
   it('adds only the missing bottom scroll space before loading above a short list', async () => {
     const directMessageNavigation = {
       targetMessageId: 7,

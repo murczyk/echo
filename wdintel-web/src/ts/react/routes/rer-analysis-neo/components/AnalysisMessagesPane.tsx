@@ -160,6 +160,38 @@ const MESSAGE_PREFETCH_DISTANCE_PX = 480;
 
 type MessageLoadPosition = 'above' | 'below';
 
+type MessageViewportAnchor = {
+  messageId: number;
+  offsetTop: number;
+};
+
+function captureMessageViewportAnchor(container: HTMLElement): MessageViewportAnchor | null {
+  const containerTop = container.getBoundingClientRect().top + container.clientTop;
+  const messageElements = container.querySelectorAll<HTMLElement>('[data-message-id]');
+  for (const messageElement of messageElements) {
+    const rect = messageElement.getBoundingClientRect();
+    if (rect.bottom <= containerTop) continue;
+    const messageId = Number(messageElement.dataset.messageId);
+    if (!Number.isFinite(messageId)) continue;
+    return { messageId, offsetTop: rect.top - containerTop };
+  }
+  return null;
+}
+
+function restoreMessageViewportAnchor(
+  container: HTMLElement,
+  anchor: MessageViewportAnchor,
+): boolean {
+  const messageElement = container.querySelector<HTMLElement>(
+    `[data-message-id="${anchor.messageId}"]`,
+  );
+  if (messageElement == null) return false;
+  const containerTop = container.getBoundingClientRect().top + container.clientTop;
+  const offset = messageElement.getBoundingClientRect().top - containerTop - anchor.offsetTop;
+  if (Math.abs(offset) >= 0.5) container.scrollTop += offset;
+  return true;
+}
+
 function getFocusedLoadDirection(
   position: MessageLoadPosition,
   newestFirst: boolean,
@@ -492,6 +524,8 @@ function AnalysisMessagesPaneComponent({
   const targetAnchorCenterRef = useRef<number | null>(null);
   const centeredTargetIdRef = useRef<number | null>(null);
   const preserveTargetAnchorRef = useRef(false);
+  const viewportAnchorRef = useRef<MessageViewportAnchor | null>(null);
+  const preserveViewportAnchorRef = useRef(false);
   const clearTargetHighlightRef = useRef<(() => void) | null>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
 
@@ -586,6 +620,19 @@ function AnalysisMessagesPaneComponent({
     }
   }, [getTargetElement]);
 
+  const captureViewportAnchor = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (container == null) return;
+    viewportAnchorRef.current = captureMessageViewportAnchor(container);
+  }, []);
+
+  const restoreViewportAnchor = useCallback(() => {
+    const container = scrollContainerRef.current;
+    const anchor = viewportAnchorRef.current;
+    if (container == null || anchor == null) return;
+    if (!restoreMessageViewportAnchor(container, anchor)) captureViewportAnchor();
+  }, [captureViewportAnchor]);
+
   const restoreTargetAnchor = useCallback(() => {
     const container = scrollContainerRef.current;
     const targetElement = getTargetElement();
@@ -617,6 +664,10 @@ function AnalysisMessagesPaneComponent({
 
   const beginTargetAnchorRestoration = useCallback(
     (position: MessageLoadPosition) => {
+      if (preserveViewportAnchorRef.current) {
+        if (position === 'above') captureViewportAnchor();
+        return;
+      }
       centerTarget();
       preserveTargetAnchorRef.current = true;
       if (position !== 'above') return;
@@ -625,7 +676,7 @@ function AnalysisMessagesPaneComponent({
       const missingContentBelow = getMissingBottomScrollSpace(container);
       setBottomAnchorSpacerPx((current) => Math.max(current, Math.ceil(missingContentBelow)));
     },
-    [centerTarget],
+    [captureViewportAnchor, centerTarget],
   );
 
   const handleFocusedLoad = useCallback(
@@ -705,12 +756,16 @@ function AnalysisMessagesPaneComponent({
   useEffect(() => {
     if (directMessageNavigation == null) {
       initialFocusedLoadTargetIdRef.current = null;
+      viewportAnchorRef.current = null;
+      preserveViewportAnchorRef.current = false;
       return;
     }
     const targetMessageId = directMessageNavigation.targetMessageId;
     if (initialFocusedLoadTargetIdRef.current === targetMessageId) return;
     focusedRequestsInFlightRef.current.clear();
     initialFocusedLoadTargetIdRef.current = targetMessageId;
+    viewportAnchorRef.current = null;
+    preserveViewportAnchorRef.current = false;
   }, [directMessageNavigation]);
 
   const reconcileBottomAnchorSpacer = useCallback(() => {
@@ -723,7 +778,17 @@ function AnalysisMessagesPaneComponent({
   }, []);
 
   useLayoutEffect(() => {
-    if (directMessageNavigation == null || !directMessageNavigation.focusActive) {
+    if (directMessageNavigation == null) {
+      targetAnchorCenterRef.current = null;
+      centeredTargetIdRef.current = null;
+      preserveTargetAnchorRef.current = false;
+      return;
+    }
+    if (preserveViewportAnchorRef.current) {
+      restoreViewportAnchor();
+      return;
+    }
+    if (!directMessageNavigation.focusActive) {
       targetAnchorCenterRef.current = null;
       centeredTargetIdRef.current = null;
       preserveTargetAnchorRef.current = false;
@@ -749,6 +814,7 @@ function AnalysisMessagesPaneComponent({
     getTargetElement,
     messages,
     restoreTargetAnchor,
+    restoreViewportAnchor,
   ]);
 
   useLayoutEffect(() => {
@@ -756,7 +822,6 @@ function AnalysisMessagesPaneComponent({
     const messageList = container?.querySelector('ul');
     if (
       directMessageNavigation == null ||
-      !directMessageNavigation.focusActive ||
       container == null ||
       messageList == null ||
       typeof ResizeObserver === 'undefined'
@@ -764,6 +829,11 @@ function AnalysisMessagesPaneComponent({
       return;
     }
     const observer = new ResizeObserver(() => {
+      if (preserveViewportAnchorRef.current) {
+        restoreViewportAnchor();
+        return;
+      }
+      if (!directMessageNavigation.focusActive) return;
       centerTarget();
       if (preserveTargetAnchorRef.current) restoreTargetAnchor();
     });
@@ -771,7 +841,7 @@ function AnalysisMessagesPaneComponent({
     observer.observe(messageList);
     for (const messageElement of messageList.children) observer.observe(messageElement);
     return () => observer.disconnect();
-  }, [centerTarget, directMessageNavigation, messages, restoreTargetAnchor]);
+  }, [centerTarget, directMessageNavigation, messages, restoreTargetAnchor, restoreViewportAnchor]);
 
   useLayoutEffect(() => {
     if (directMessageNavigation == null) {
@@ -807,10 +877,17 @@ function AnalysisMessagesPaneComponent({
   const handleScroll = useCallback(() => {
     updateVisiblePageIndex();
     reconcileBottomAnchorSpacer();
-    if (!preserveTargetAnchorRef.current) captureTargetAnchor();
+    if (directMessageNavigation != null && !directMessageNavigation.focusActive) {
+      captureViewportAnchor();
+      preserveViewportAnchorRef.current = true;
+    } else if (!preserveTargetAnchorRef.current) {
+      captureTargetAnchor();
+    }
     loadMessagesNearScrollBoundary();
   }, [
     captureTargetAnchor,
+    captureViewportAnchor,
+    directMessageNavigation,
     loadMessagesNearScrollBoundary,
     reconcileBottomAnchorSpacer,
     updateVisiblePageIndex,
@@ -848,9 +925,11 @@ function AnalysisMessagesPaneComponent({
   }, [autoLoadCheckVersion, loadMessagesNearScrollBoundary, messages]);
 
   const clearFocusOnScrollStart = useCallback(() => {
+    captureViewportAnchor();
+    preserveViewportAnchorRef.current = true;
     preserveTargetAnchorRef.current = false;
     if (directMessageNavigation?.focusActive) directMessageNavigation.onClearFocus();
-  }, [directMessageNavigation]);
+  }, [captureViewportAnchor, directMessageNavigation]);
 
   const showCopiedFeedback = useCallback((value: string) => {
     if (isPresent(copyFeedbackTimerRef.current)) {
