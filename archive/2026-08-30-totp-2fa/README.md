@@ -21,11 +21,11 @@ Primary code:
 
 ## Outcome
 
-Credentials login no longer starts a session after password alone (except unattended `Api` / `ApiAgent` logins). After a valid password:
+Credentials login no longer starts a session after password alone (except unattended `Api` / `ApiAgent` logins and explicit `No2FA`). After a valid password:
 
 | Condition | Flow | Login response |
 | --- | --- | --- |
-| roles include `Api` or `ApiAgent` | `start_user_session` immediately | `Authenticated` |
+| roles include `Api`, `ApiAgent`, or `No2FA` | `start_user_session` immediately | `Authenticated` |
 | no `login_totp` row | Generate pending secret; Redis **Enroll**; QR (otpauth) | `Needs2faSetup { challenge_id, qr_base64, manual_key }` |
 | `login_totp` row | Redis **Verify** only (no secret/QR) | `Needs2fa { challenge_id }` |
 

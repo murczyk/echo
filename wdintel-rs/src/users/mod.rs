@@ -118,8 +118,13 @@ fn normalize_login_description(description: Option<String>) -> Option<String> {
 }
 
 fn login_skips_totp(login_obj: &login::Model) -> Result<bool, AppError> {
-    let roles: Vec<String> = serde_json::from_value(login_obj.roles.clone()).c(h!())?;
-    Ok(roles.iter().any(|role| role == "Api" || role == "ApiAgent"))
+    let roles: Vec<String> =
+        serde_json::from_value(login_obj.roles.clone()).c(h!())?;
+    Ok(roles.iter().any(|role| {
+        role == ROLE_API
+            || role == AI_AGENT_ROLE_API
+            || role == ROLE_NO2FA
+    }))
 }
 
 fn has_update_login_description(req: &serde_json::Value) -> bool {
@@ -209,8 +214,8 @@ pub(crate) fn role_matches(
 ) -> Result<bool, AppError> {
     Ok(match role {
         "Admin" => roles.contains(&"Admin".to_string()),
-        "Api" => roles.contains(&"Api".to_string()),
-        "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
+        "Api" => roles.contains(&ROLE_API.to_string()),
+        "ApiAgent" => roles.contains(&AI_AGENT_ROLE_API.to_string()),
         "Full" => {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"Full".to_string())
@@ -262,6 +267,7 @@ pub(crate) fn role_matches(
                 || roles.contains(&"AdvancedReports".to_string())
         }
         "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
+        "No2FA" => roles.contains(&ROLE_NO2FA.to_string()),
         role => {
             return Err(AppError::BL {
                 msg: format!("impossible! unknown role {role}"),
@@ -2867,5 +2873,12 @@ mod tests {
         assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
         assert!(!role_matches(&roles(&["Api"]), "DeviceSource").unwrap());
         assert!(!role_matches(&roles(&["Full"]), "DeviceSource").unwrap());
+    }
+
+    #[test]
+    fn no2fa_role_is_exact_match_only() {
+        assert!(role_matches(&roles(&[ROLE_NO2FA]), ROLE_NO2FA).unwrap());
+        assert!(!role_matches(&roles(&[ROLE_ADMIN]), ROLE_NO2FA).unwrap());
+        assert!(!role_matches(&roles(&[ROLE_API]), ROLE_NO2FA).unwrap());
     }
 }

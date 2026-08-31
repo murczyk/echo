@@ -82,6 +82,7 @@ const ROLE_OPTIONS = [
   'AdvancedReports',
   'DeleteMsg',
   'NoAutoLogout',
+  'No2FA',
 ];
 
 const STATUS_FILTER_OPTIONS = [

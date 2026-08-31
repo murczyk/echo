@@ -127,8 +127,9 @@ sessions (not the group-stats logical database): challenge payloads under
 `2fa:challenge:*` (enroll `pending_secret` is also StrongBox ciphertext), a
 per-login active pointer, and a per-login failed-attempt counter with TTL. A
 session cookie is issued only after a successful confirm (or immediately for
-unattended `Api` / `ApiAgent` password logins). Admin clear deletes the
-`login_totp` row and invalidates Redis challenges.
+unattended `Api` / `ApiAgent` password logins, or logins with the `No2FA`
+role). Admin clear deletes the `login_totp` row and invalidates Redis
+challenges.
 
 Implementation detail:
 [archive/2026-08-30-totp-2fa/README.md](../archive/2026-08-30-totp-2fa/README.md).
