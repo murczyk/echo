@@ -29,12 +29,17 @@ vi.mock('./notifications', () => ({
 }));
 
 let cleanup: (() => void) | null = null;
+let storedSettings = { soundEnabled: false, browserEnabled: false };
 
 beforeEach(() => {
+  storedSettings = { soundEnabled: false, browserEnabled: false };
   api.getStored.mockReset();
-  api.getStored.mockReturnValue({ soundEnabled: false, browserEnabled: false });
+  api.getStored.mockImplementation(() => storedSettings);
   api.setStored.mockReset();
-  api.setStored.mockReturnValue({ ok: true });
+  api.setStored.mockImplementation((_, settings) => {
+    storedSettings = settings;
+    return { ok: true };
+  });
   api.resume.mockReset();
   api.resume.mockResolvedValue('ready');
   api.play.mockReset();
@@ -190,5 +195,43 @@ describe('FeedNotificationPanel', () => {
     expect(error).toHaveBeenCalledWith(null);
     expect(persisted).toHaveBeenCalledTimes(1);
     expect(sound.checked).toBe(false);
+  });
+
+  it('merges concurrent switch writes with the latest stored settings', async () => {
+    let resume!: () => void;
+    api.resume.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resume = () => resolve('ready');
+        }),
+    );
+    api.permission.mockResolvedValue('granted');
+    const { container } = await renderPanel();
+    const sound = getSwitch(container, 'Звукове сповіщення');
+    const browser = getSwitch(container, 'Браузерне сповіщення');
+
+    await act(async () => {
+      sound.click();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      browser.click();
+    });
+
+    expect(api.setStored).toHaveBeenLastCalledWith('f', {
+      soundEnabled: false,
+      browserEnabled: true,
+    });
+
+    await act(async () => {
+      resume();
+    });
+
+    expect(api.setStored).toHaveBeenLastCalledWith('f', {
+      soundEnabled: true,
+      browserEnabled: true,
+    });
+    expect(sound.checked).toBe(true);
+    expect(browser.checked).toBe(true);
   });
 });

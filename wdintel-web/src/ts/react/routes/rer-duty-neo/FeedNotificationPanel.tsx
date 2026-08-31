@@ -76,7 +76,8 @@ export function FeedNotificationPanel({
   }, [feedId, refreshStatus]);
 
   const persist = useCallback(
-    (next: typeof dutyNotificationSettings) => {
+    (patch: Partial<typeof dutyNotificationSettings>) => {
+      const next = { ...getStoredDutyNotificationSettingsForFeed(feedId), ...patch };
       const result = setStoredDutyNotificationSettingsForFeed(feedId, next);
       if (result.ok) {
         onStorageErrorChange(null);
@@ -114,7 +115,7 @@ export function FeedNotificationPanel({
                     setSoundStatus(await resumeDutyNotificationAudioFromUserGesture());
                     onNotificationStatusChanged();
                   }
-                  persist({ ...dutyNotificationSettings, soundEnabled: checked });
+                  persist({ soundEnabled: checked });
                 }}
               />
             }
@@ -149,7 +150,7 @@ export function FeedNotificationPanel({
                       return;
                     }
                   }
-                  persist({ ...dutyNotificationSettings, browserEnabled: checked });
+                  persist({ browserEnabled: checked });
                 }}
               />
             }

@@ -466,6 +466,72 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(2);
   });
 
+  it('aborts a stalled count request and retries it on the next poll', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/?state=' +
+        encodeURIComponent(
+          JSON.stringify({
+            messageFeeds: [
+              ['mf-0', emptyFilter()],
+              ['mf-1', emptyFilter()],
+            ],
+          }),
+        ),
+    );
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+    await startPoll();
+
+    hoisted.beginDutyNotificationPollCycle.mockClear();
+    hoisted.endDutyNotificationPollCycle.mockClear();
+    hoisted.notifyDutyNewMessages.mockClear();
+    const stalled = deferred<{ quantity: number; firstElementTs: number | null }>('stalled count');
+    let stalledSignal: AbortSignal | undefined;
+    hoisted.fetchInboxCount.mockReset();
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+        stalledSignal = options?.signal;
+        stalledSignal?.addEventListener('abort', () => {
+          stalled.reject(new DOMException('aborted', 'AbortError'));
+        });
+        return stalled.promise;
+      })
+      .mockResolvedValue({ quantity: 0, firstElementTs: null });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.endDutyNotificationPollCycle).not.toHaveBeenCalled();
+    expect(stalledSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+      await flushMicrotasks();
+    });
+
+    expect(stalledSignal?.aborted).toBe(true);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
+    expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(1);
+
+    hoisted.fetchInboxCount.mockClear();
+    await startPoll();
+
+    expect(hoisted.fetchInboxCount.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('requests newer mail from progressive cursors at the physical bottom', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -1004,6 +1070,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
 
     expect(hoisted.fetchInboxCount).toHaveBeenCalledWith(
       expect.objectContaining({ sinceIdNoninclusive: 80, nolimit: true }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
     expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([81]);

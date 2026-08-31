@@ -51,6 +51,7 @@ type ServerCountBaseline = {
   requestSignature: string;
 };
 type ConfirmedTailPreview = { tailId: number; count: number; generation: number };
+const DUTY_UNREAD_COUNT_REQUEST_TIMEOUT_MS = 10_000;
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { freqs, setProfiles, setGroupInfos } = deps;
@@ -475,14 +476,19 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           `cursor=${cursorId ?? '—'}; loadedTail=${feed.items.at(-1)?.[0] ?? '—'}`,
         );
         let quantity: number;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), DUTY_UNREAD_COUNT_REQUEST_TIMEOUT_MS);
         try {
           ({ quantity } = await fetchInboxCount(
             buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
+            { signal: controller.signal },
           ));
           finishDebugActivity(`ok; quantity=${quantity}`);
         } catch (error) {
           finishDebugActivity(`error; ${error instanceof Error ? error.message : String(error)}`);
           throw error;
+        } finally {
+          clearTimeout(timeout);
         }
         const currentFeed = messageFeedsRef.current.find((x) => x.id === feedId);
         if (
