@@ -368,6 +368,8 @@ pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX: usize = 10_000;
 pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
     "summary_table_report_message_limit";
 pub const RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS: i64 = 3;
+pub const RER_SUMMARY_TABLE_CALLSIGN_THRESHOLD_MIN_PERIOD_MS: i64 =
+    3 * 24 * 60 * 60 * 1_000;
 pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT: usize = 32_000;
 pub const RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR: &str = ", ";
@@ -1050,6 +1052,7 @@ pub struct Config {
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
+    pub summary_table_callsign_threshold: Option<i64>,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
     pub disable_suggest_message_tags_worker: Option<bool>,
@@ -1290,6 +1293,11 @@ impl AnalyticsConfig {
 }
 
 impl Config {
+    pub fn summary_table_callsign_threshold(&self) -> i64 {
+        self.summary_table_callsign_threshold
+            .unwrap_or(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS)
+    }
+
     pub fn group_stats_redis_db(&self) -> u8 {
         self.group_stats_redis_db
             .unwrap_or(GROUP_STATS_REDIS_DB_DEFAULT)

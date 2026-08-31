@@ -5637,9 +5637,37 @@ fn summary_table_callsigns_require_minimum_mentions() {
         summary_table_freqs_per_callsign(
             &summary_table,
             &callsign_message_counts,
+            Some(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS),
         ),
         BTreeMap::from([("Zulu".to_string(), vec!["111.1".to_string()])])
     );
+
+    assert_eq!(
+        summary_table_freqs_per_callsign(
+            &summary_table,
+            &callsign_message_counts,
+            None,
+        ),
+        BTreeMap::from([
+            ("Alpha".to_string(), vec!["111.1".to_string()]),
+            ("Zulu".to_string(), vec!["111.1".to_string()]),
+        ])
+    );
+}
+
+#[test]
+fn summary_table_callsign_threshold_is_ignored_for_periods_under_three_days() {
+    let short_req = mk_analysis_stats_req(
+        0,
+        RER_SUMMARY_TABLE_CALLSIGN_THRESHOLD_MIN_PERIOD_MS - 1,
+    );
+    let three_day_req = mk_analysis_stats_req(
+        0,
+        RER_SUMMARY_TABLE_CALLSIGN_THRESHOLD_MIN_PERIOD_MS,
+    );
+
+    assert_eq!(summary_table_callsign_threshold(&short_req, 5), None);
+    assert_eq!(summary_table_callsign_threshold(&three_day_req, 5), Some(5));
 }
 
 #[test]

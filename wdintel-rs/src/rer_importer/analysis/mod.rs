@@ -4233,6 +4233,7 @@ struct SummaryTableReportData {
     last_datetime_by_freq: BTreeMap<String, NaiveDateTime>,
     related_networks_by_freq: BTreeMap<String, Vec<String>>,
     callsign_message_counts: BTreeMap<String, i64>,
+    callsign_threshold: Option<i64>,
 }
 
 struct SummaryTableChunkData {
@@ -4346,6 +4347,10 @@ async fn collect_summary_table_report_data(
     Ok(finish_summary_table_merge(
         describe_analysis_stats_req(req.clone())?,
         accumulator,
+        summary_table_callsign_threshold(
+            req,
+            env.config.summary_table_callsign_threshold(),
+        ),
     ))
 }
 
@@ -4358,7 +4363,22 @@ fn merge_summary_table_chunks(
     for chunk in chunks {
         merge_summary_table_chunk(&mut accumulator, chunk);
     }
-    Ok(finish_summary_table_merge(description, accumulator))
+    Ok(finish_summary_table_merge(
+        description,
+        accumulator,
+        Some(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS),
+    ))
+}
+
+fn summary_table_callsign_threshold(
+    req: &AnalysisStatsReq,
+    configured_threshold: i64,
+) -> Option<i64> {
+    let period_ms = req
+        .till_date_noninclusive_ms
+        .saturating_sub(req.since_date_inclusive_ms);
+    (period_ms >= RER_SUMMARY_TABLE_CALLSIGN_THRESHOLD_MIN_PERIOD_MS)
+        .then_some(configured_threshold)
 }
 
 fn merge_summary_table_chunk(
@@ -4410,6 +4430,7 @@ fn merge_summary_table_chunk(
 fn finish_summary_table_merge(
     description: String,
     mut accumulator: SummaryTableAccumulator,
+    callsign_threshold: Option<i64>,
 ) -> SummaryTableReportData {
     for row in accumulator.rows_by_freq.values_mut() {
         row.callsigns.sort();
@@ -4433,6 +4454,7 @@ fn finish_summary_table_merge(
             .map(|(freq, networks)| (freq, networks.into_iter().collect()))
             .collect(),
         callsign_message_counts: accumulator.callsign_message_counts,
+        callsign_threshold,
     }
 }
 
@@ -4507,6 +4529,7 @@ async fn build_summary_table_report(
     let freqs_per_callsign = summary_table_freqs_per_callsign(
         &data.summary_table,
         &data.callsign_message_counts,
+        data.callsign_threshold,
     );
     let record_count = data
         .summary_table
@@ -4521,6 +4544,7 @@ async fn build_summary_table_report(
         last_datetime_by_freq,
         related_networks_by_freq,
         callsign_message_counts: _,
+        callsign_threshold: _,
     } = data;
     let tmp_dir = TempDir::new()?;
     let outpath = tmp_dir.path().join("summary-table.xlsx");
@@ -4611,14 +4635,17 @@ async fn build_summary_table_report(
 fn summary_table_freqs_per_callsign(
     summary_table: &SummaryTableFreq,
     callsign_message_counts: &BTreeMap<String, i64>,
+    callsign_threshold: Option<i64>,
 ) -> BTreeMap<String, Vec<String>> {
     let mut freqs_per_callsign = BTreeMap::new();
     for row in &summary_table.rows {
         for callsign in &row.callsigns {
-            if callsign_message_counts.get(callsign).copied().unwrap_or(0)
-                < RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS
-            {
-                continue;
+            if let Some(callsign_threshold) = callsign_threshold {
+                if callsign_message_counts.get(callsign).copied().unwrap_or(0)
+                    < callsign_threshold
+                {
+                    continue;
+                }
             }
             freqs_per_callsign
                 .entry(callsign.clone())
@@ -4655,7 +4682,8 @@ async fn summary_table_callsign_message_counts(
     master_keys: &[String],
 ) -> Result<BTreeMap<String, i64>, AppError> {
     let filtered_messages =
-        build_summary_table_filtered_messages_query(login, req, master_keys)?
+        build_summary_table_filtered_messages_query(login, req, master_keys)
+            .context(h!())?
             .select_only()
             .column_as(sigint_inbox_item::Column::Id, "id")
             .distinct();
