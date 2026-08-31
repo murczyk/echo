@@ -254,6 +254,104 @@ describe('Duty browser notifications', () => {
     expect(createOscillator).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps a playback failure blocked until a later chime succeeds', async () => {
+    const gain = {
+      connect: vi.fn(),
+      gain: {
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
+      },
+    };
+    const createGain = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('chime failed');
+      })
+      .mockReturnValue(gain);
+    const AudioContextMock = vi.fn(function () {
+      return {
+        currentTime: 0,
+        state: 'running',
+        destination: {},
+        createGain,
+        createOscillator: vi.fn(() => ({
+          connect: vi.fn(),
+          start: vi.fn(),
+          stop: vi.fn(),
+          type: 'sine',
+          frequency: { setValueAtTime: vi.fn() },
+        })),
+      };
+    });
+    vi.stubGlobal('AudioContext', AudioContextMock);
+    vi.resetModules();
+    const {
+      DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: statusChangeEvent,
+      DutySoundStatus,
+      getDutySoundStatus: getSoundStatus,
+      playNotificationSound: playSound,
+      resumeDutyNotificationAudioFromUserGesture: resumeAudio,
+    } = await import('./notifications');
+    const onStatusChange = vi.fn();
+    window.addEventListener(statusChangeEvent, onStatusChange);
+
+    await expect(playSound()).resolves.toBe(DutySoundStatus.Blocked);
+    expect(getSoundStatus()).toBe(DutySoundStatus.Blocked);
+    await expect(resumeAudio()).resolves.toBe(DutySoundStatus.Blocked);
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+
+    await expect(playSound()).resolves.toBe(DutySoundStatus.Ready);
+    expect(getSoundStatus()).toBe(DutySoundStatus.Ready);
+    expect(onStatusChange).toHaveBeenCalledTimes(2);
+    window.removeEventListener(statusChangeEvent, onStatusChange);
+  });
+
+  it('does not duplicate the status event after successful suspended-context playback', async () => {
+    const context = {
+      currentTime: 0,
+      state: 'suspended' as AudioContextState,
+      resume: vi.fn(),
+      destination: {},
+      createGain: vi.fn(() => ({
+        connect: vi.fn(),
+        gain: {
+          setValueAtTime: vi.fn(),
+          linearRampToValueAtTime: vi.fn(),
+          exponentialRampToValueAtTime: vi.fn(),
+        },
+      })),
+      createOscillator: vi.fn(() => ({
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        type: 'sine',
+        frequency: { setValueAtTime: vi.fn() },
+      })),
+    };
+    context.resume.mockImplementation(async () => {
+      context.state = 'running';
+    });
+    vi.stubGlobal(
+      'AudioContext',
+      vi.fn(function () {
+        return context;
+      }),
+    );
+    vi.resetModules();
+    const {
+      DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: statusChangeEvent,
+      DutySoundStatus,
+      playNotificationSound: playSound,
+    } = await import('./notifications');
+    const onStatusChange = vi.fn();
+    window.addEventListener(statusChangeEvent, onStatusChange);
+
+    await expect(playSound()).resolves.toBe(DutySoundStatus.Ready);
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+    window.removeEventListener(statusChangeEvent, onStatusChange);
+  });
+
   it('publishes a settled audio-status transition from priming listeners once', async () => {
     const context = {
       currentTime: 0,

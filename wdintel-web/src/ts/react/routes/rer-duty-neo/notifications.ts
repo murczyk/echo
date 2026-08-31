@@ -192,6 +192,7 @@ const DUTY_NOTIF_CHIME_PEAK_SECOND = 0.17;
 
 let dutyNotificationAudioContext: AudioContext | null = null;
 let dutySoundStatus = DutySoundStatus.InteractionRequired;
+let dutyPlaybackFailed = false;
 
 function getDutyAudioContextConstructor(): typeof AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -216,6 +217,7 @@ function getOrCreateDutyNotificationAudioContext(): AudioContext | null {
 
 export function getDutySoundStatus(): DutySoundStatus {
   if (!getDutyAudioContextConstructor()) return DutySoundStatus.Unsupported;
+  if (dutyPlaybackFailed) return DutySoundStatus.Blocked;
   return dutyNotificationAudioContext?.state === 'running'
     ? DutySoundStatus.Ready
     : dutySoundStatus;
@@ -239,7 +241,7 @@ export async function resumeDutyNotificationAudioFromUserGesture(): Promise<Duty
   if (previousStatus !== getDutySoundStatus() && typeof window !== 'undefined') {
     window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
   }
-  return dutySoundStatus;
+  return getDutySoundStatus();
 }
 
 /** Attach listeners until the user interacts once; cleanup on unmount. */
@@ -306,6 +308,7 @@ function playDutyNotificationChimeOnContext(ctx: AudioContext): void {
 
 export async function playNotificationSound(): Promise<DutySoundStatus> {
   if (typeof window === 'undefined') return DutySoundStatus.Unsupported;
+  let playbackStatusBaseline = getDutySoundStatus();
   try {
     const ctx = getOrCreateDutyNotificationAudioContext();
     if (!ctx) return DutySoundStatus.Unsupported;
@@ -313,8 +316,10 @@ export async function playNotificationSound(): Promise<DutySoundStatus> {
       if (ctx.state !== 'running') return;
       try {
         playDutyNotificationChimeOnContext(ctx);
+        dutyPlaybackFailed = false;
         dutySoundStatus = DutySoundStatus.Ready;
       } catch {
+        dutyPlaybackFailed = true;
         dutySoundStatus = DutySoundStatus.Blocked;
       }
     };
@@ -322,12 +327,18 @@ export async function playNotificationSound(): Promise<DutySoundStatus> {
       run();
     } else {
       await resumeDutyNotificationAudioFromUserGesture();
+      playbackStatusBaseline = getDutySoundStatus();
       run();
     }
   } catch {
+    dutyPlaybackFailed = true;
     dutySoundStatus = DutySoundStatus.Blocked;
   }
-  return dutySoundStatus;
+  const finalStatus = getDutySoundStatus();
+  if (playbackStatusBaseline !== finalStatus) {
+    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
+  }
+  return finalStatus;
 }
 
 export function testBrowserNotification(): DutyBrowserNotificationStatus {
