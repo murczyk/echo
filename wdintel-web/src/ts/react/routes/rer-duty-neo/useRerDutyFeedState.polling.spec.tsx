@@ -1229,7 +1229,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     });
   });
 
-  it('uses the server poll cursor and reloads an empty feed when matching messages arrive', async () => {
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('notifies from the server poll cursor and reloads an empty feed when matching messages arrive', async () => {
     hoisted.fetchInboxMessages
       .mockResolvedValueOnce(inboxRsp([], 80))
       .mockResolvedValueOnce(inboxRsp([[81, minimalInboxMessage({ timestamp: 8100 })]], 81));
@@ -1260,6 +1261,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       expect.objectContaining({ sinceIdNoninclusive: 80, nolimit: true }),
       expect.objectContaining({ signal: expect.anything() }),
     );
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
     expect(hoisted.fetchInboxMessages).toHaveBeenCalledTimes(2);
     expect(apiRef.current?.messageFeeds[0]?.items.map(([id]) => id)).toEqual([81]);
   });

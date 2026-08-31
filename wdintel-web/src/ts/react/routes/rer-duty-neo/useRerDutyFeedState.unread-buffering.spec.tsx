@@ -378,7 +378,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
   });
 
   it('keeps empty feeds from notifying even when count responses are positive', async () => {
-    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
+    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([], null));
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,

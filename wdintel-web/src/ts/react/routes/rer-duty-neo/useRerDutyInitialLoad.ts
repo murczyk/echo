@@ -127,8 +127,10 @@ export function useRerDutyInitialLoad(params: Params) {
               id: tail[0],
               timestamp: tail[1].timestamp,
             });
+          } else if (pollCursor) {
+            current.installFeedUnreadCursorAndBaseline(effectiveFeed, pollCursor);
           } else {
-            current.setFeedUnreadCursor(feedId, pollCursor);
+            current.setFeedUnreadCursor(feedId, null);
           }
         }
         current.setMessageFeeds((previous) =>
