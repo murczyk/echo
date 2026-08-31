@@ -466,7 +466,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(2);
   });
 
-  it('aborts a stalled count request and retries it on the next poll', async () => {
+  it('lets healthy feeds continue while a stalled count request keeps its hard deadline', async () => {
     window.history.replaceState(
       {},
       '',
@@ -475,7 +475,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
           JSON.stringify({
             messageFeeds: [
               ['mf-0', emptyFilter()],
-              ['mf-1', emptyFilter()],
+              ['mf-1', { ...emptyFilter(), freqsSelected: ['feed-b'] }],
             ],
           }),
         ),
@@ -497,24 +497,34 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     hoisted.notifyDutyNewMessages.mockClear();
     const stalled = deferred<{ quantity: number; firstElementTs: number | null }>('stalled count');
     let stalledSignal: AbortSignal | undefined;
+    let feedACountRequests = 0;
+    let feedBCountRequests = 0;
     hoisted.fetchInboxCount.mockReset();
-    hoisted.fetchInboxCount
-      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
-      .mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
-        stalledSignal = options?.signal;
-        stalledSignal?.addEventListener('abort', () => {
-          stalled.reject(new DOMException('aborted', 'AbortError'));
-        });
-        return stalled.promise;
-      })
-      .mockResolvedValue({ quantity: 0, firstElementTs: null });
+    hoisted.fetchInboxCount.mockImplementation((request, options?: { signal?: AbortSignal }) => {
+      if (!options?.signal) return Promise.resolve({ quantity: 0, firstElementTs: null });
+      if (request.selectedFreqs?.includes('feed-b')) {
+        feedBCountRequests += 1;
+        if (feedBCountRequests === 1) {
+          stalledSignal = options?.signal;
+          stalledSignal?.addEventListener('abort', () => {
+            stalled.reject(new DOMException('aborted', 'AbortError'));
+          });
+          return stalled.promise;
+        }
+        return Promise.resolve({ quantity: 0, firstElementTs: null });
+      }
+      feedACountRequests += 1;
+      return Promise.resolve({
+        quantity: feedACountRequests <= 3 ? feedACountRequests : 0,
+        firstElementTs: null,
+      });
+    });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
       await flushMicrotasks();
     });
 
-    expect(hoisted.endDutyNotificationPollCycle).not.toHaveBeenCalled();
     expect(stalledSignal?.aborted).toBe(false);
 
     await act(async () => {
@@ -528,10 +538,35 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
       await flushMicrotasks();
     });
 
-    expect(stalledSignal?.aborted).toBe(true);
+    expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalled();
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
-    expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(2);
-    expect(hoisted.fetchInboxCount.mock.calls.length).toBeGreaterThanOrEqual(4);
+    expect(stalledSignal?.aborted).toBe(false);
+    expect(feedACountRequests).toBeGreaterThan(1);
+    expect(feedBCountRequests).toBe(1);
+    const feedACountRequestsAfterSoftDeadline = feedACountRequests;
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await flushMicrotasks();
+    });
+
+    expect(feedACountRequests).toBeGreaterThan(feedACountRequestsAfterSoftDeadline);
+    expect(feedBCountRequests).toBe(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000);
+      await flushMicrotasks();
+    });
+
+    expect(stalledSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      await flushMicrotasks();
+    });
+
+    expect(feedBCountRequests).toBeGreaterThanOrEqual(2);
   });
 
   it('requests newer mail from progressive cursors at the physical bottom', async () => {
