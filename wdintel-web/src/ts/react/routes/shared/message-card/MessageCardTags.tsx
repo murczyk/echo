@@ -155,16 +155,13 @@ function MessageCardTagsComponent({
 
   useLayoutEffect(() => {
     measuredChipWidthsRef.current = new Map();
-    setFirstRowCount((count) => {
-      if (showCompactRest) return Math.min(count, compactOrderedRows.length);
-      return count === compactOrderedRows.length ? count : compactOrderedRows.length;
-    });
-  }, [packingKey, compactOrderedRows.length, showCompactRest]);
+    setFirstRowCount((count) =>
+      count === compactOrderedRows.length ? count : compactOrderedRows.length,
+    );
+  }, [packingKey, compactOrderedRows.length]);
 
   useLayoutEffect(() => {
     if (tagsLayout !== 'compact') return;
-    // Expanded rest chips live inside the measure root; remounting them must not re-pack.
-    if (showCompactRest) return;
     const el = compactMeasureRef.current;
     if (!el) return;
     const packing = compactOrderedRows;
