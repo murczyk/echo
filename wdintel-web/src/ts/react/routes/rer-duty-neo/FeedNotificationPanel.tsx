@@ -2,6 +2,7 @@ import { Box, Button, FormControlLabel, Stack, Switch, Typography } from '@mui/m
 import { useCallback, useEffect, useState } from 'react';
 
 import {
+  DUTY_NOTIFICATION_STATUS_CHANGE_EVENT,
   DutyBrowserNotificationStatus,
   DutySoundStatus,
   getBrowserNotificationStatus,
@@ -66,10 +67,12 @@ export function FeedNotificationPanel({
       }
     };
     window.addEventListener('focus', refresh);
+    window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, refresh);
     document.addEventListener('visibilitychange', refresh);
     window.addEventListener('duty-notification-poll-success', onPollSuccess);
     return () => {
       window.removeEventListener('focus', refresh);
+      window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, refresh);
       document.removeEventListener('visibilitychange', refresh);
       window.removeEventListener('duty-notification-poll-success', onPollSuccess);
     };

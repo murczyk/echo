@@ -8,6 +8,7 @@ import {
   getBrowserNotificationStatus,
   showBrowserNotification,
   notifyDutyNewMessages,
+  requestBrowserNotificationPermission,
   setStoredDutyNotificationSettingsForFeed,
   testBrowserNotification,
 } from './notifications';
@@ -71,12 +72,37 @@ describe('Duty browser notifications', () => {
     window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
   });
 
-  it('retries an explicit test after a runtime failure and clears it on success', () => {
+  it('publishes permission-request failure and recovery transitions', async () => {
+    const requestPermission = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('blocked'))
+      .mockResolvedValueOnce('default' as NotificationPermission);
+    const NotificationMock = Object.assign(vi.fn(), {
+      requestPermission,
+    }) as unknown as typeof Notification;
+    installNotification('default', NotificationMock);
+    const onStatusChange = vi.fn();
+    window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
+
+    await expect(requestBrowserNotificationPermission()).resolves.toBe('denied');
+    expect(getBrowserNotificationStatus()).toBe(DutyBrowserNotificationStatus.RuntimeFailure);
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+
+    await expect(requestBrowserNotificationPermission()).resolves.toBe('default');
+    expect(getBrowserNotificationStatus()).toBe(DutyBrowserNotificationStatus.NotRequested);
+    expect(onStatusChange).toHaveBeenCalledTimes(2);
+    window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
+  });
+
+  it('publishes explicit test failure and recovery transitions once each', () => {
+    const onStatusChange = vi.fn();
+    window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
     const failing = vi.fn(function () {
       throw new Error('blocked');
     }) as unknown as typeof Notification;
     installNotification('granted', failing);
     expect(testBrowserNotification()).toBe(DutyBrowserNotificationStatus.RuntimeFailure);
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
 
     const succeeding = vi.fn(function () {
       return { addEventListener: vi.fn() };
@@ -84,6 +110,10 @@ describe('Duty browser notifications', () => {
     installNotification('granted', succeeding);
     expect(testBrowserNotification()).toBe(DutyBrowserNotificationStatus.Granted);
     expect(getBrowserNotificationStatus()).toBe(DutyBrowserNotificationStatus.Granted);
+    expect(onStatusChange).toHaveBeenCalledTimes(2);
+    expect(testBrowserNotification()).toBe(DutyBrowserNotificationStatus.Granted);
+    expect(onStatusChange).toHaveBeenCalledTimes(2);
+    window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
   });
 
   it('does not construct a test notification when permission is denied', () => {

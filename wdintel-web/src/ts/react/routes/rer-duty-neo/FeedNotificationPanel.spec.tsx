@@ -14,8 +14,10 @@ const api = vi.hoisted(() => ({
   testBrowser: vi.fn(() => 'granted'),
   permission: vi.fn(async () => 'denied'),
 }));
+const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
 vi.mock('./notifications', () => ({
-  DutyBrowserNotificationStatus: { Granted: 'granted' },
+  DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: 'duty-notification-status-change',
+  DutyBrowserNotificationStatus: { Granted: 'granted', RuntimeFailure: 'runtime-failure' },
   DutySoundStatus: { Ready: 'ready' },
   getStoredDutyNotificationSettingsForFeed: api.getStored,
   setStoredDutyNotificationSettingsForFeed: api.setStored,
@@ -122,6 +124,18 @@ describe('FeedNotificationPanel', () => {
 
     expect(api.testBrowser).toHaveBeenCalledTimes(1);
     expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes browser status from the shared notification-status event', async () => {
+    const { container } = await renderPanel();
+    expect(container.textContent).toContain('Браузерне сповіщення — Дозволено');
+
+    api.browserStatus.mockReturnValue('runtime-failure');
+    await act(async () => {
+      window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
+    });
+
+    expect(container.textContent).toContain('Браузерне сповіщення — Помилка браузера');
   });
 
   it('does not persist after denied browser permission', async () => {

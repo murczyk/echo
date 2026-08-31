@@ -120,10 +120,19 @@ export function getBrowserNotificationStatus(): DutyBrowserNotificationStatus {
     return DutyBrowserNotificationStatus.Unsupported;
   }
   if (Notification.permission === 'denied') return DutyBrowserNotificationStatus.Denied;
+  if (browserNotificationRuntimeFailure !== null)
+    return DutyBrowserNotificationStatus.RuntimeFailure;
   if (Notification.permission === 'default') return DutyBrowserNotificationStatus.NotRequested;
-  return browserNotificationRuntimeFailure !== null
-    ? DutyBrowserNotificationStatus.RuntimeFailure
-    : DutyBrowserNotificationStatus.Granted;
+  return DutyBrowserNotificationStatus.Granted;
+}
+
+function publishBrowserNotificationStatusTransition(
+  previousStatus: DutyBrowserNotificationStatus,
+): void {
+  if (typeof window === 'undefined') return;
+  if (previousStatus !== getBrowserNotificationStatus()) {
+    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
+  }
 }
 
 export function getDutyNotificationBellState(
@@ -149,12 +158,15 @@ export async function requestBrowserNotificationPermission(): Promise<
   if (typeof window === 'undefined') return 'unsupported';
   if (!('Notification' in window)) return 'unsupported';
   if (Notification.permission !== 'default') return Notification.permission;
+  const previousStatus = getBrowserNotificationStatus();
   try {
     const permission = await Notification.requestPermission();
-    if (permission === 'granted') browserNotificationRuntimeFailure = null;
+    browserNotificationRuntimeFailure = null;
+    publishBrowserNotificationStatusTransition(previousStatus);
     return permission;
   } catch (error) {
     browserNotificationRuntimeFailure = error instanceof Error ? error.message : String(error);
+    publishBrowserNotificationStatusTransition(previousStatus);
     return 'denied';
   }
 }
@@ -171,9 +183,7 @@ export function showBrowserNotification(title: string, options?: NotificationOpt
   } catch (error) {
     browserNotificationRuntimeFailure = error instanceof Error ? error.message : String(error);
   }
-  if (previousStatus !== getBrowserNotificationStatus()) {
-    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
-  }
+  publishBrowserNotificationStatusTransition(previousStatus);
 }
 
 /**
@@ -346,16 +356,19 @@ export function testBrowserNotification(): DutyBrowserNotificationStatus {
     return DutyBrowserNotificationStatus.Unsupported;
   if (Notification.permission === 'denied') return DutyBrowserNotificationStatus.Denied;
   if (Notification.permission !== 'granted') return DutyBrowserNotificationStatus.NotRequested;
+  const previousStatus = getBrowserNotificationStatus();
   try {
     new Notification('Перевірка сповіщення', {
       body: 'Браузер прийняв запит. Доставку визначає система.',
       silent: true,
     });
     browserNotificationRuntimeFailure = null;
-    return DutyBrowserNotificationStatus.Granted;
+    publishBrowserNotificationStatusTransition(previousStatus);
+    return getBrowserNotificationStatus();
   } catch (error) {
     browserNotificationRuntimeFailure = error instanceof Error ? error.message : String(error);
-    return DutyBrowserNotificationStatus.RuntimeFailure;
+    publishBrowserNotificationStatusTransition(previousStatus);
+    return getBrowserNotificationStatus();
   }
 }
 
