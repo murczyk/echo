@@ -13,6 +13,12 @@ can also be deployed independently from that directory with
 `echo-swapp.service` and verifies that its process has stopped before deploying
 `echo-messengers.service`.
 
+The regular and first-deploy flows install and enable `redis-server`, require a
+successful `redis-cli ping`, and only then deploy `echo-messengers`. Redis owns
+chat unread state; durable chat history, ingestion watermarks, settings, and
+webhook delivery state remain in PostgreSQL. If Redis is unavailable, the chat
+history API stays online and the service retries Redis in the background.
+
 GOI also manages the legacy Node services:
 - port 4000: process goi, data a /etc/goi
 - port 4002: process swapp, data at /etc/swapp

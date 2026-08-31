@@ -19,6 +19,7 @@ pub mod ai_agent;
 pub mod ai_callsign;
 pub mod ai_engine;
 pub mod ai_intel_report;
+pub mod ai_settlement;
 mod alpine;
 pub mod api_integrations;
 pub mod atak;

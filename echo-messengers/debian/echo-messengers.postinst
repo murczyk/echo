@@ -3,6 +3,8 @@
 set -e
 
 mkdir -p /etc/echo-messengers
+install -d -o root -g root -m 0750 /var/lib/echo-messengers
+install -d -o root -g root -m 0750 /var/lib/echo-messengers/chat-attachments
 if [ ! -f /etc/echo-messengers/config.toml ]; then
   if [ -f /etc/echo-swapp/config.toml ]; then
     cp /etc/echo-swapp/config.toml /etc/echo-messengers/config.toml
@@ -15,6 +17,7 @@ chown root:root /etc/echo-messengers/config.toml
 chmod 0600 /etc/echo-messengers/config.toml
 
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+  :
   #DEBHELPER#
 else
   echo "systemctl not available; skipping systemd unit activation in package maintainer scripts."

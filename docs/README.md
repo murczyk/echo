@@ -68,6 +68,14 @@ service. Its source, package metadata, and build/deploy commands live beside
 justfile and retire the legacy `echo-swapp` service before starting the renamed
 service.
 
+`echo-messengers` also owns the chat-administration HTTP/UI surface, Redis
+unread-state worker, durable webhook dispatcher, and outbound chat attachment
+storage at `/var/lib/echo-messengers/chat-attachments`. PostgreSQL remains the
+source of truth; Redis failure degrades unread operations without taking chat
+history or messenger management offline. Per-client 30-day retention is
+applied through Echo IM and restarts only that client's worker. Chat ingestion
+and webhook delivery run in independent worker loops.
+
 Messenger receipt and processing are separate. Receipt persists snapshots in
 PostgreSQL even while NLP is unavailable. The queue processor waits for
 `wdintel-py` readiness, then catches up automatically; failed rows use durable
@@ -82,6 +90,12 @@ against the active Battle Line or the item's AOR segments. Battle Line uploads
 apply only to newly queued data, while AOR changes retain their existing
 behavior of requeueing affected links. Attempted misses remain available for
 administrator review.
+
+`wdintel-rs-bgworker` also owns `ai_settlement_worker`. When enabled by an
+administrator, new or reparsed inbox messages are queued for header-based AI
+location extraction. The worker preserves every existing `location_v2` value,
+appends only missing settlements, and reconciles the settlement-link queue in
+the same transaction. It is disabled by default.
 
 ## Statistics storage
 

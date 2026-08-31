@@ -221,6 +221,12 @@ export const aiAgentAdminSubs: Menu[] = [
   },
   {
     type: 'item',
+    link: { type: 'internal', path: '/admin/ai/settlements' },
+    activeName: 'ai-agent-settlements',
+    label: 'Населені пункти',
+  },
+  {
+    type: 'item',
     link: { type: 'internal', path: '/admin/ai/intelligence-reports' },
     activeName: 'ai-agent-intelligence-reports',
     label: 'Розвіддонесення',

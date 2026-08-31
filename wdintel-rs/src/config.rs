@@ -58,6 +58,19 @@ pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
+pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
+pub const AI_SETTLEMENT_PROMPT_MAX_CHARS: usize = 100_000;
+pub const AI_SETTLEMENT_MESSAGE_MAX_CHARS: usize = 100_000;
+pub const AI_SETTLEMENT_MAX_SETTLEMENTS: usize = 500;
+pub const AI_SETTLEMENT_MAX_CHARS: usize = 255;
+pub const AI_SETTLEMENT_MAX_CONCURRENT_REQUESTS: usize = 4;
+pub const AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_SETTLEMENT_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_SETTLEMENT_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_SETTLEMENT_WORKER_MAX_ATTEMPTS: i32 = 8;
+pub const AI_SETTLEMENT_WORKER_MAX_ERROR_CHARS: usize = 2_000;
+pub const AI_SETTLEMENT_DEFAULT_PROMPT: &str =
+    include_str!("../../ai-eval/2026-08-28-settlement-prompt/prompt.txt");
 pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;
 pub const AI_INTEL_REPORT_HISTORY_DAYS: i64 = 3;
 pub const AI_INTEL_REPORT_BUCKET_CANDIDATE_LIMIT: u64 = 12;
@@ -356,6 +369,7 @@ pub const RER_REPORT_CHUNKING_HOURS_MAX: i64 = i32::MAX as i64;
 pub const RER_REPORT_CHUNKS_MAX: usize = 10_000;
 pub const RER_ETALONKA_REPORT_SINCE_DEFAULT_DAYS: i64 = 365;
 pub const RER_ETALONKA_REPORT_SINCE_MIN_MS: i64 = 1_640_995_200_000;
+pub const RER_ETALONKA_PELENGS_MAP_QUERY_CHUNK_MULTIPLIER: i64 = 14;
 pub const RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE: usize = 30_000;
 pub const RER_REPORT_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
 pub const RER_BABAK_CANDIDATE_PAGE_SIZE: u64 = 5_000;
@@ -367,6 +381,9 @@ pub const RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
 pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX: usize = 10_000;
 pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
     "summary_table_report_message_limit";
+pub const RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS: i64 = 3;
+pub const RER_SUMMARY_TABLE_CALLSIGN_THRESHOLD_MIN_PERIOD_MS: i64 =
+    3 * 24 * 60 * 60 * 1_000;
 pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT: usize = 32_000;
 pub const RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR: &str = ", ";
@@ -1049,6 +1066,7 @@ pub struct Config {
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
+    pub summary_table_callsign_threshold: Option<i64>,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
     pub disable_suggest_message_tags_worker: Option<bool>,
@@ -1289,6 +1307,11 @@ impl AnalyticsConfig {
 }
 
 impl Config {
+    pub fn summary_table_callsign_threshold(&self) -> i64 {
+        self.summary_table_callsign_threshold
+            .unwrap_or(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS)
+    }
+
     pub fn group_stats_redis_db(&self) -> u8 {
         self.group_stats_redis_db
             .unwrap_or(GROUP_STATS_REDIS_DB_DEFAULT)

@@ -1,6 +1,10 @@
 use crate::automation::{
     self, PauseAutomationReq, SaveAutomationReq, SavePolygonReq,
 };
+use crate::chats::{
+    self, ChatListQuery, MarkReadReq, MessagePageQuery, ReactionReq, ReplyReq,
+    SaveSettingsReq, SendReq,
+};
 use crate::error::{
     bad_request, not_found, ShortContext, UserError, UserErrorKind,
 };
@@ -48,6 +52,231 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(update_automation)
         .service(pause_automation)
         .service(delete_automation);
+    cfg.service(chat_capability)
+        .service(list_chats)
+        .service(chat_messages)
+        .service(send_chat_message)
+        .service(reply_chat_message)
+        .service(react_chat_message)
+        .service(mark_chat_read)
+        .service(mark_all_chat_read)
+        .service(get_chat_settings)
+        .service(save_chat_settings)
+        .service(chat_filter_options)
+        .service(download_chat_attachment);
+}
+
+#[get("/ui-api/chats/capability")]
+async fn chat_capability(
+    state: web::Data<AppState>,
+) -> actix_web::Result<impl Responder> {
+    Ok(web::Json(
+        chats::capability(&state.db).await.c(h!()).map_err(error)?,
+    ))
+}
+
+#[get("/ui-api/chats")]
+async fn list_chats(
+    state: web::Data<AppState>,
+    query: web::Query<ChatListQuery>,
+) -> actix_web::Result<impl Responder> {
+    Ok(web::Json(
+        chats::list(&state.db, &state.chat_redis, query.into_inner())
+            .await
+            .c(h!())
+            .map_err(error)?,
+    ))
+}
+
+#[get("/ui-api/chats/{chat_id}/messages")]
+async fn chat_messages(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    query: web::Query<MessagePageQuery>,
+) -> actix_web::Result<impl Responder> {
+    Ok(web::Json(
+        chats::messages(
+            &state.db,
+            &state.chat_redis,
+            &path.into_inner(),
+            query.into_inner(),
+        )
+        .await
+        .c(h!())
+        .map_err(error)?,
+    ))
+}
+
+#[post("/ui-api/chats/{chat_id}/messages")]
+async fn send_chat_message(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: web::Json<SendReq>,
+) -> actix_web::Result<impl Responder> {
+    let queued = chats::send(
+        &state.db,
+        &state.config,
+        &path.into_inner(),
+        req.into_inner(),
+    )
+    .await
+    .c(h!())
+    .map_err(error)?;
+    Ok(HttpResponse::Ok().json(queued))
+}
+
+#[post("/ui-api/chats/{chat_id}/replies")]
+async fn reply_chat_message(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: web::Json<ReplyReq>,
+) -> actix_web::Result<impl Responder> {
+    let queued = chats::reply(
+        &state.db,
+        &state.config,
+        &path.into_inner(),
+        req.into_inner(),
+    )
+    .await
+    .c(h!())
+    .map_err(error)?;
+    Ok(HttpResponse::Ok().json(queued))
+}
+
+#[post("/ui-api/chats/{chat_id}/reactions")]
+async fn react_chat_message(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: web::Json<ReactionReq>,
+) -> actix_web::Result<impl Responder> {
+    chats::react(&state.db, &path.into_inner(), req.into_inner())
+        .await
+        .c(h!())
+        .map_err(error)?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
+}
+
+#[post("/ui-api/chats/{chat_id}/read")]
+async fn mark_chat_read(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    req: web::Json<MarkReadReq>,
+) -> actix_web::Result<impl Responder> {
+    chats::mark_read(
+        &state.db,
+        &state.chat_redis,
+        &path.into_inner(),
+        req.into_inner(),
+        false,
+    )
+    .await
+    .c(h!())
+    .map_err(error)?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
+}
+
+#[post("/ui-api/chats/{chat_id}/read-all")]
+async fn mark_all_chat_read(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> actix_web::Result<impl Responder> {
+    chats::mark_read(
+        &state.db,
+        &state.chat_redis,
+        &path.into_inner(),
+        MarkReadReq {
+            inbox_message_ids: Vec::new(),
+        },
+        true,
+    )
+    .await
+    .c(h!())
+    .map_err(error)?;
+    Ok(HttpResponse::Ok().json(json!({ "ok": true })))
+}
+
+#[get("/ui-api/chat-clients/{client_id}/settings")]
+async fn get_chat_settings(
+    state: web::Data<AppState>,
+    path: web::Path<i32>,
+) -> actix_web::Result<impl Responder> {
+    Ok(web::Json(
+        chats::settings(&state.db, path.into_inner())
+            .await
+            .c(h!())
+            .map_err(error)?,
+    ))
+}
+
+#[put("/ui-api/chat-clients/{client_id}/settings")]
+async fn save_chat_settings(
+    state: web::Data<AppState>,
+    path: web::Path<i32>,
+    req: web::Json<SaveSettingsReq>,
+) -> actix_web::Result<impl Responder> {
+    Ok(web::Json(
+        chats::save_settings(&state.db, path.into_inner(), req.into_inner())
+            .await
+            .c(h!())
+            .map_err(error)?,
+    ))
+}
+
+#[get("/ui-api/chat-clients/{client_id}/filter-options")]
+async fn chat_filter_options(
+    state: web::Data<AppState>,
+    path: web::Path<i32>,
+) -> actix_web::Result<impl Responder> {
+    Ok(web::Json(
+        chats::filter_options(&state.db, path.into_inner())
+            .await
+            .c(h!())
+            .map_err(error)?,
+    ))
+}
+
+#[get("/ui-api/chats/{chat_id}/attachments/{direction}/{id}")]
+async fn download_chat_attachment(
+    state: web::Data<AppState>,
+    path: web::Path<(String, String, i32)>,
+) -> actix_web::Result<impl Responder> {
+    let (chat_id, direction, id) = path.into_inner();
+    let (bytes, filename, content_type, inline) =
+        chats::attachment(&state.db, &chat_id, &direction, id)
+            .await
+            .c(h!())
+            .map_err(error)?;
+    let filename = safe_attachment_filename(&filename);
+    let disposition = if inline { "inline" } else { "attachment" };
+    Ok(HttpResponse::Ok()
+        .content_type(content_type)
+        .insert_header(("X-Content-Type-Options", "nosniff"))
+        .insert_header((
+            "Content-Disposition",
+            format!("{disposition}; filename=\"{filename}\""),
+        ))
+        .body(bytes))
+}
+
+fn safe_attachment_filename(filename: &str) -> String {
+    let filename = filename
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric()
+                || matches!(character, '.' | '-' | '_')
+            {
+                character
+            } else {
+                '_'
+            }
+        })
+        .take(180)
+        .collect::<String>();
+    if filename.is_empty() {
+        "attachment.bin".to_string()
+    } else {
+        filename
+    }
 }
 
 #[get("/ui-api/messengers/{name}/automation-impact")]

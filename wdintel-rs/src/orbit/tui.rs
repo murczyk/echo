@@ -309,6 +309,7 @@ pub(super) fn run_test_link_review(
 pub(super) fn review_duplicate_unit_group(
     terminal: &mut OrbitTerminal,
     candidates: &[DuplicateReviewCandidate],
+    would_automatically_resolve: bool,
     group_index: usize,
     group_count: usize,
 ) -> Result<DuplicateReviewDecision, AppError> {
@@ -324,6 +325,7 @@ pub(super) fn review_duplicate_unit_group(
                 draw_duplicate_unit_group_review(
                     frame,
                     candidates,
+                    would_automatically_resolve,
                     group_index,
                     group_count,
                     page,
@@ -714,6 +716,7 @@ fn draw_test_link_review(frame: &mut Frame<'_>, session: &ReviewSession) {
 fn draw_duplicate_unit_group_review(
     frame: &mut Frame<'_>,
     candidates: &[DuplicateReviewCandidate],
+    would_automatically_resolve: bool,
     group_index: usize,
     group_count: usize,
     page: usize,
@@ -737,6 +740,7 @@ fn draw_duplicate_unit_group_review(
     frame.render_widget(
         Paragraph::new(Text::from(duplicate_unit_group_review_lines(
             &candidates[start..end],
+            would_automatically_resolve,
         )))
         .block(
             Block::default()
@@ -757,8 +761,22 @@ fn draw_duplicate_unit_group_review(
 
 fn duplicate_unit_group_review_lines(
     candidates: &[DuplicateReviewCandidate],
+    would_automatically_resolve: bool,
 ) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
+    let mut lines = vec![
+        Line::styled(
+            format!(
+                "Would be automatically resolved: {}",
+                if would_automatically_resolve {
+                    "yes"
+                } else {
+                    "no"
+                }
+            ),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Line::default(),
+    ];
     for (option, candidate) in candidates.iter().enumerate() {
         let orbit_match = candidate
             .unit
@@ -868,13 +886,29 @@ fn test_link_review_lines(session: &ReviewSession) -> Vec<Line<'static>> {
         )),
         Line::from(format!("Name: {}", unit.sigint_unit_name)),
         Line::from(format!("Echelons: ({})", unit.echelons.join(", "))),
+    ];
+    if let Some(would_automatically_resolve) = unit.would_automatically_resolve
+    {
+        lines.push(Line::styled(
+            format!(
+                "Would be automatically resolved: {}",
+                if would_automatically_resolve {
+                    "yes"
+                } else {
+                    "no"
+                }
+            ),
+            Style::default().add_modifier(Modifier::BOLD),
+        ));
+    }
+    lines.extend([
         Line::default(),
         Line::styled(
             format!("Potential ORBIT matches: {}", unit.matches.len()),
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Line::from(test_link_match_page_label(session)),
-    ];
+    ]);
     if unit.matches.is_empty() {
         lines.push(Line::styled(
             "No ORBIT matches exist.",
@@ -1217,6 +1251,7 @@ mod tests {
                 "3 мсд".to_string(),
             ],
             matches: Vec::new(),
+            would_automatically_resolve: None,
         };
         let candidate = ReviewMatch {
             unit_id: uuid::Uuid::nil(),
@@ -1272,11 +1307,12 @@ mod tests {
                     distance: 2,
                     orbit_name: "4 мсб (ат) / 752 мсп".to_string(),
                 }],
+                would_automatically_resolve: None,
             },
             active: true,
         }];
 
-        let lines = duplicate_unit_group_review_lines(&candidates);
+        let lines = duplicate_unit_group_review_lines(&candidates, true);
 
         assert!(lines.iter().any(|line| line
             .spans
@@ -1294,6 +1330,10 @@ mod tests {
             .iter()
             .map(line_text)
             .any(|line| { line == " ORBIT: 4 мсб (ат) / 752 мсп" }));
+        assert!(lines
+            .iter()
+            .map(line_text)
+            .any(|line| { line == "Would be automatically resolved: yes" }));
     }
 
     #[test]

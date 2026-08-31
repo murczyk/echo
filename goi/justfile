@@ -511,6 +511,16 @@ deploy-echo-messengers server builder=goi_builder:
     #!/usr/bin/env bash
     set -euo pipefail
 
+    echo "Ensuring Redis is ready on {{ server }}..."
+    ssh "{{ server }}" 'set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update
+      sudo apt-get install -y redis-server
+      sudo systemctl enable --now redis-server
+      redis-cli ping | grep -qx PONG
+      sudo systemctl status redis-server --no-pager
+    '
+
     # The standalone deploy verifies and deactivates legacy echo-swapp before installation.
     just --justfile "{{ messengers_justfile }}" deploy \
       --server "{{ server }}" \

@@ -176,8 +176,9 @@ gen-seaorm:
     set -euo pipefail
     [[ "$(sea-orm-cli --version)" == "sea-orm-cli 2.0.1" ]]
     sea-orm-cli generate entity --help | grep -q -- "--include-generated-columns"
+    entity_db="${TEST_DB_NAME:-wd}"
     rm -rf wdintel-rs/src/entities
-    (cd wdintel-rs && sea-orm-cli generate entity --entity-format compact --with-serde both --include-generated-columns -u postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd -o src/entities)
+    (cd wdintel-rs && sea-orm-cli generate entity --entity-format compact --with-serde both --include-generated-columns -u "postgres://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/${entity_db}" -o src/entities)
     just fmt
 
 [arg('mode', long='mode')]
@@ -2331,11 +2332,11 @@ migrate-all-up mode="debug":
     cargo run -p wdintel-rs -- --mode={{ mode }} migrate
 
 migrate-up:
-    cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- up
+    cd echo-migration && DATABASE_URL="postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/${TEST_DB_NAME:-wd}" cargo run -- up
     echo '⚠️ WARNING! ECHO-IM and ECHO-GPU-CLIENT migrations are not applied here. Run `just migrate-all-up` for all schemas.'
 
 migrate-down:
-    cd echo-migration && DATABASE_URL=postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/wd cargo run -- down
+    cd echo-migration && DATABASE_URL="postgresql://wd:fee_-_-_-FnoeKFBeebu87bf@localhost:5432/${TEST_DB_NAME:-wd}" cargo run -- down
     echo '⚠️ WARNING! This rolls back only the Echo application schema, not ECHO-IM or ECHO-GPU-CLIENT.'
 
 [arg('dry_run', long='dry-run', value='true')]

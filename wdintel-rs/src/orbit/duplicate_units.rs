@@ -20,6 +20,7 @@ struct DuplicateCandidate {
 struct DuplicateGroup {
     orbit_unit_id: Uuid,
     candidates: Vec<DuplicateCandidate>,
+    would_automatically_resolve: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,14 @@ struct DuplicateSelection {
     orbit_unit_id: Uuid,
     reviewed_unit_ids: BTreeSet<i64>,
     survivor_id: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MergeAction {
+    survivor_id: i64,
+    survivor_name: String,
+    duplicate_id: i64,
+    duplicate_name: String,
 }
 
 pub async fn run(mode: Mode) -> anyhow::Result<()> {
@@ -56,9 +65,21 @@ async fn run_with_database(
         tui::LinkMode::Manual => review_manually(&groups).c(h!())?,
     };
     let selected = selections.len();
-    let merged = persist_selections(db, &selections, link_mode)
+    let actions = persist_selections(db, &selections, link_mode)
         .await
         .c(h!())?;
+    if link_mode == tui::LinkMode::Automatic {
+        for action in &actions {
+            println!(
+                "merged {} [id {}] and {} [id {}]",
+                action.survivor_name,
+                action.survivor_id,
+                action.duplicate_name,
+                action.duplicate_id,
+            );
+        }
+    }
+    let merged = actions.len();
     println!(
         "Duplicate-unit review: {reviewed} safe groups, {selected} selected, {merged} units merged. Groups rejected by ORBIT matching were left unchanged."
     );
@@ -139,6 +160,17 @@ where
         let mut group = DuplicateGroup {
             orbit_unit_id,
             candidates,
+            would_automatically_resolve: unit_ids.iter().all(|unit_id| {
+                units.get(unit_id).is_some_and(|unit| {
+                    test_link::review_match_for_orbit(
+                        unit,
+                        matcher,
+                        tui::LinkMode::Automatic,
+                        orbit_unit_id,
+                    )
+                    .is_some()
+                })
+            }),
         };
         sort_candidates(&mut group.candidates);
         groups.push(group);
@@ -237,6 +269,7 @@ fn review_manually_inner(
         match tui::review_duplicate_unit_group(
             terminal,
             &candidates,
+            group.would_automatically_resolve,
             group_index + 1,
             groups.len(),
         )
@@ -271,6 +304,7 @@ fn duplicate_review_candidate(
             subject_kind: test_link::ReviewSubjectKind::SigintUnit,
             echelons,
             matches: vec![candidate.orbit_match.clone()],
+            would_automatically_resolve: None,
         },
         active: candidate.unit.active,
     }
@@ -280,25 +314,27 @@ async fn persist_selections(
     db: &sea_orm::DatabaseConnection,
     selections: &[DuplicateSelection],
     link_mode: tui::LinkMode,
-) -> anyhow::Result<usize> {
-    let mut merged = 0;
+) -> anyhow::Result<Vec<MergeAction>> {
+    let mut actions = Vec::new();
     for selections in
         selections.chunks(ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE)
     {
-        merged += persist_selection_batch(db, selections, link_mode)
-            .await
-            .c(h!())?;
+        actions.extend(
+            persist_selection_batch(db, selections, link_mode)
+                .await
+                .c(h!())?,
+        );
     }
-    Ok(merged)
+    Ok(actions)
 }
 
 async fn persist_selection_batch(
     db: &sea_orm::DatabaseConnection,
     selections: &[DuplicateSelection],
     link_mode: tui::LinkMode,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<Vec<MergeAction>> {
     if selections.is_empty() {
-        return Ok(0);
+        return Ok(Vec::new());
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
@@ -314,7 +350,7 @@ async fn persist_selection_batch(
             .into_iter()
             .map(|group| (group.orbit_unit_id, group))
             .collect::<BTreeMap<_, _>>();
-    let mut merged = 0;
+    let mut actions = Vec::new();
     for reviewed in selections {
         let Some(group) = current_groups.get(&reviewed.orbit_unit_id) else {
             continue;
@@ -334,10 +370,26 @@ async fn persist_selection_batch(
         if !current_unit_ids.contains(&survivor_id) {
             continue;
         }
+        let survivor_name = group
+            .candidates
+            .iter()
+            .find(|candidate| candidate.unit.id == survivor_id)
+            .expect("selected survivor must be present")
+            .unit
+            .name
+            .clone();
         for duplicate_id in current_unit_ids
             .into_iter()
             .filter(|unit_id| *unit_id != survivor_id)
         {
+            let duplicate_name = group
+                .candidates
+                .iter()
+                .find(|candidate| candidate.unit.id == duplicate_id)
+                .expect("duplicate must be present")
+                .unit
+                .name
+                .clone();
             crate::sigint::unit::merge_units_in_transaction(
                 login,
                 &transaction,
@@ -346,11 +398,16 @@ async fn persist_selection_batch(
             )
             .await
             .c(h!())?;
-            merged += 1;
+            actions.push(MergeAction {
+                survivor_id,
+                survivor_name: survivor_name.clone(),
+                duplicate_id,
+                duplicate_name,
+            });
         }
     }
     transaction.commit().await.c(h!())?;
-    Ok(merged)
+    Ok(actions)
 }
 
 #[cfg(test)]

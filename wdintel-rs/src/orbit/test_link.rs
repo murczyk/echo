@@ -67,6 +67,7 @@ pub(super) struct ReviewUnit {
     pub subject_kind: ReviewSubjectKind,
     pub echelons: Vec<String>,
     pub matches: Vec<ReviewMatch>,
+    pub would_automatically_resolve: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1083,6 +1084,7 @@ pub(super) fn prepare_review_hierarchy(
         subject_kind,
         echelons,
         matches,
+        would_automatically_resolve: None,
     })
 }
 
@@ -1196,6 +1198,7 @@ mod tests {
                     orbit_name: format!("match {index}"),
                 })
                 .collect(),
+            would_automatically_resolve: None,
         }
     }
 

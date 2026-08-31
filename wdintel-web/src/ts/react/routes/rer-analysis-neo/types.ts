@@ -166,6 +166,7 @@ export type AnalysisPageState = {
   copiedFeedbackId: string | null;
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
+  editorEditAsReport: boolean;
   reportSource: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
   currentUser: User | null;
