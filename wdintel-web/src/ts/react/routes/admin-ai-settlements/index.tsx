@@ -10,7 +10,7 @@ import {
   Tab,
   Tabs,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type {
   AiSettlementParseResultItem,
@@ -101,6 +101,7 @@ export function AdminAiSettlementsPage() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const testInputVersion = useRef(0);
   const { notify } = usePowerSnackbar();
 
   useEffect(() => {
@@ -129,12 +130,14 @@ export function AdminAiSettlementsPage() {
   }
 
   function updatePrompt(value: string) {
+    testInputVersion.current += 1;
     setPrompt(value);
     setTestResults([]);
     setMessageVersions([]);
   }
 
   function updateSelectedEngines(ids: string[]) {
+    testInputVersion.current += 1;
     setSelectedEngineIds(ids);
     setTestResults([]);
     setMessageVersions([]);
@@ -146,13 +149,16 @@ export function AdminAiSettlementsPage() {
     setMessageVersions([]);
     setAction('test');
     setError(null);
+    const inputVersion = testInputVersion.current;
     try {
       const response = await testAiSettlementParsing({
         prompt: prompt.trim(),
         aiEngineIds: selectedEngineIds,
       });
-      setTestResults(response.results);
-      setMessageVersions(response.messageVersions);
+      if (inputVersion === testInputVersion.current) {
+        setTestResults(response.results);
+        setMessageVersions(response.messageVersions);
+      }
     } catch (testError) {
       setError(`Помилка тестування населених пунктів: ${errorMessage(testError)}`);
     } finally {

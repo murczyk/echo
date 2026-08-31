@@ -117,6 +117,45 @@ describe('AdminAiSettlementsPage', () => {
     await act(async () => root.unmount());
   });
 
+  it('discards test results when the prompt changes during the request', async () => {
+    let resolveTest: ((value: Awaited<ReturnType<typeof mocks.test>>) => void) | undefined;
+    mocks.test.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTest = resolve;
+        }),
+    );
+    const { container, root } = await renderPage();
+
+    await act(async () => button(container, 'Тест')?.click());
+    const prompt = container.querySelector<HTMLTextAreaElement>('textarea');
+    await act(async () => {
+      if (prompt) {
+        const valueSetter = Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          'value',
+        )?.set;
+        valueSetter?.call(prompt, 'Changed prompt');
+        prompt.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    });
+    await act(async () => {
+      resolveTest?.({
+        results: [testResult],
+        messageVersions: [{ id: 'message-a', version: 'version-a' }],
+      });
+    });
+
+    expect(container.textContent).not.toContain('АРТІЛЬНЕ');
+    await act(async () => button(container, 'Зберегти')?.click());
+    expect(mocks.save).toHaveBeenCalledWith({
+      prompt: 'Changed prompt',
+      results: [],
+      messageVersions: [],
+    });
+    await act(async () => root.unmount());
+  });
+
   it('clears results from the previous prompt when saving a changed prompt', async () => {
     mocks.getPage.mockResolvedValueOnce({
       ...(await mocks.getPage()),
