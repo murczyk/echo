@@ -223,4 +223,45 @@ describe('Duty browser notifications', () => {
     await expect(playNotificationSound()).resolves.toBe(DutySoundStatus.Ready);
     expect(createOscillator).toHaveBeenCalledTimes(2);
   });
+
+  it('publishes a settled audio-status transition from priming listeners once', async () => {
+    const context = {
+      currentTime: 0,
+      state: 'suspended' as AudioContextState,
+      resume: vi.fn(),
+    };
+    context.resume.mockImplementation(async () => {
+      context.state = 'running';
+    });
+    const AudioContextMock = vi.fn(function () {
+      return context;
+    });
+    vi.stubGlobal('AudioContext', AudioContextMock);
+    vi.resetModules();
+    const {
+      attachDutyNotificationAudioPrimingListeners: attachPrimingListeners,
+      DUTY_AUDIO_STATUS_CHANGE_EVENT: statusChangeEvent,
+      DutySoundStatus,
+      getDutySoundStatus: getSoundStatus,
+    } = await import('./notifications');
+    const onStatusChange = vi.fn();
+    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+    window.addEventListener(statusChangeEvent, onStatusChange);
+    const cleanup = attachPrimingListeners();
+
+    window.dispatchEvent(new Event('pointerdown'));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(context.resume).toHaveBeenCalledTimes(1);
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+    expect(getSoundStatus()).toBe(DutySoundStatus.Ready);
+
+    window.dispatchEvent(new Event('keydown'));
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+    cleanup();
+    expect(removeEventListener).toHaveBeenCalledWith('pointerdown', expect.any(Function));
+    window.removeEventListener(statusChangeEvent, onStatusChange);
+  });
 });

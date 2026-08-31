@@ -23,6 +23,8 @@ export enum DutyBrowserNotificationStatus {
 export type DutyStorageResult = { ok: true } | { ok: false; error: string };
 export type DutyNotificationBellState = 'off' | 'ready' | 'degraded' | 'unsupported';
 
+export const DUTY_AUDIO_STATUS_CHANGE_EVENT = 'duty-audio-status-change';
+
 const DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY = 'rer-duty-neo-notifications';
 
 function isLegacyGlobalNotificationShape(parsed: unknown): boolean {
@@ -220,6 +222,7 @@ export function getDutySoundStatus(): DutySoundStatus {
  * Call from a click/key handler (e.g. toggling sound on in settings) so later timer-driven beeps work.
  */
 export async function resumeDutyNotificationAudioFromUserGesture(): Promise<DutySoundStatus> {
+  const previousStatus = getDutySoundStatus();
   const ctx = getOrCreateDutyNotificationAudioContext();
   if (!ctx) return DutySoundStatus.Unsupported;
   try {
@@ -228,6 +231,9 @@ export async function resumeDutyNotificationAudioFromUserGesture(): Promise<Duty
       ctx.state === 'running' ? DutySoundStatus.Ready : DutySoundStatus.InteractionRequired;
   } catch {
     dutySoundStatus = DutySoundStatus.Blocked;
+  }
+  if (previousStatus !== getDutySoundStatus() && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(DUTY_AUDIO_STATUS_CHANGE_EVENT));
   }
   return dutySoundStatus;
 }

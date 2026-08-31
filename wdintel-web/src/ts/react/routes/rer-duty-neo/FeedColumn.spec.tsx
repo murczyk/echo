@@ -18,7 +18,10 @@ const notificationApi = vi.hoisted(() => ({
   resumeAudio: vi.fn(async () => 'ready'),
 }));
 
+const DUTY_AUDIO_STATUS_CHANGE_EVENT = 'duty-audio-status-change';
+
 vi.mock('./notifications', () => ({
+  DUTY_AUDIO_STATUS_CHANGE_EVENT: 'duty-audio-status-change',
   getStoredDutyNotificationSettingsForFeed: notificationApi.getStored,
   getDutyNotificationBellState: notificationApi.getBellState,
   setStoredDutyNotificationSettingsForFeed: notificationApi.setStored,
@@ -463,6 +466,30 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-testid="feed-notification-panel"]')?.textContent).toBe(
       '',
     );
+  });
+
+  it('refreshes the mounted bell after an audio-status transition', async () => {
+    notificationApi.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: false });
+    notificationApi.getBellState.mockReturnValue('degraded');
+
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    expect(
+      container.querySelector(
+        'button[aria-label="Сповіщення потребують налаштування або взаємодії"]',
+      ),
+    ).not.toBeNull();
+
+    notificationApi.getBellState.mockReturnValue('ready');
+    await act(async () => {
+      window.dispatchEvent(new Event(DUTY_AUDIO_STATUS_CHANGE_EVENT));
+    });
+
+    expect(
+      container.querySelector('button[aria-label="Сповіщення готові; вимкнути для стрічки"]'),
+    ).not.toBeNull();
   });
 
   it.each([
