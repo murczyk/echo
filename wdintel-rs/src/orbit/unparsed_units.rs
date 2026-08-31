@@ -18,6 +18,12 @@ struct UnparsedSelection {
     orbit_unit_id: Uuid,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LabelLinkAction {
+    unit_txt: String,
+    sigint_unit_name: String,
+}
+
 pub async fn run(mode: Mode) -> anyhow::Result<()> {
     let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
         return Ok(());
@@ -68,9 +74,18 @@ async fn run_with_database(
             })
         })
         .collect::<Vec<_>>();
-    let resolved = persist_selections(db, &selections, link_mode)
+    let actions = persist_selections(db, &selections, link_mode)
         .await
         .c(h!())?;
+    if link_mode == tui::LinkMode::Automatic {
+        for action in &actions {
+            println!(
+                "linked label {:?} to unit {}",
+                action.unit_txt, action.sigint_unit_name,
+            );
+        }
+    }
+    let resolved = actions.len();
     println!(
         "Unparsed-unit review: accepted {}, denied {}, unreviewed {}; resolved {resolved} labels.",
         summary.accepted, summary.denied, summary.unreviewed,
@@ -108,6 +123,21 @@ fn prepare_review_unit(
     unique_links: &BTreeMap<Uuid, i64>,
     link_mode: tui::LinkMode,
 ) -> anyhow::Result<Option<test_link::ReviewUnit>> {
+    let would_automatically_resolve = if link_mode == tui::LinkMode::Manual {
+        Some(
+            prepare_review_unit(
+                subject_id,
+                unit_txt,
+                matcher,
+                unique_links,
+                tui::LinkMode::Automatic,
+            )
+            .c(h!())?
+            .is_some(),
+        )
+    } else {
+        None
+    };
     let Some(hierarchy) = parsed_hierarchy(unit_txt) else {
         return Ok(None);
     };
@@ -139,6 +169,7 @@ fn prepare_review_unit(
     {
         review_unit.matches.clear();
     }
+    review_unit.would_automatically_resolve = would_automatically_resolve;
     Ok((!review_unit.matches.is_empty()).then_some(review_unit))
 }
 
@@ -207,24 +238,26 @@ async fn persist_selections(
     db: &sea_orm::DatabaseConnection,
     selections: &[UnparsedSelection],
     link_mode: tui::LinkMode,
-) -> anyhow::Result<usize> {
-    let mut resolved = 0;
+) -> anyhow::Result<Vec<LabelLinkAction>> {
+    let mut actions = Vec::new();
     for selections in selections.chunks(ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE)
     {
-        resolved += persist_selection_batch(db, selections, link_mode)
-            .await
-            .c(h!())?;
+        actions.extend(
+            persist_selection_batch(db, selections, link_mode)
+                .await
+                .c(h!())?,
+        );
     }
-    Ok(resolved)
+    Ok(actions)
 }
 
 async fn persist_selection_batch(
     db: &sea_orm::DatabaseConnection,
     selections: &[UnparsedSelection],
     link_mode: tui::LinkMode,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<Vec<LabelLinkAction>> {
     if selections.is_empty() {
-        return Ok(0);
+        return Ok(Vec::new());
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
@@ -234,6 +267,10 @@ async fn persist_selection_batch(
             .c(h!())?;
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let unique_links = load_unique_sigint_links(&transaction).await.c(h!())?;
+    let sigint_units =
+        load_selected_sigint_units(&transaction, selections, &unique_links)
+            .await
+            .c(h!())?;
     let current_labels =
         crate::inbox::unresolved_units::load_new_unresolved_unit_labels(
             &transaction,
@@ -243,7 +280,7 @@ async fn persist_selection_batch(
         .into_iter()
         .map(|label| normalize_unit_label(&label.unit_txt))
         .collect::<BTreeSet<_>>();
-    let mut resolved = 0;
+    let mut actions = Vec::new();
     for selection in selections {
         if !current_labels.contains(&normalize_unit_label(&selection.unit_txt))
         {
@@ -287,10 +324,44 @@ async fn persist_selection_batch(
         )
         .await
         .c(h!())?;
-        resolved += 1;
+        let sigint_unit_name = sigint_units
+            .get(&sigint_unit_id)
+            .expect("linked SIGINT unit must be present")
+            .name
+            .clone();
+        actions.push(LabelLinkAction {
+            unit_txt: selection.unit_txt.clone(),
+            sigint_unit_name,
+        });
     }
     transaction.commit().await.c(h!())?;
-    Ok(resolved)
+    Ok(actions)
+}
+
+async fn load_selected_sigint_units<C>(
+    db: &C,
+    selections: &[UnparsedSelection],
+    unique_links: &BTreeMap<Uuid, i64>,
+) -> anyhow::Result<BTreeMap<i64, sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    let sigint_unit_ids = selections
+        .iter()
+        .filter_map(|selection| unique_links.get(&selection.orbit_unit_id))
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if sigint_unit_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    Ok(sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids))
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .map(|sigint_unit| (sigint_unit.id, sigint_unit))
+        .collect())
 }
 
 #[cfg(test)]
@@ -335,6 +406,17 @@ mod tests {
         )
         .unwrap()
         .is_none());
+
+        let review_unit = prepare_review_unit(
+            1,
+            "4 мсб",
+            &matcher,
+            &unique_links,
+            tui::LinkMode::Manual,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(review_unit.would_automatically_resolve, Some(false));
     }
 
     fn source_unit(name: &str) -> SourceUnit {
