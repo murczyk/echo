@@ -388,13 +388,19 @@ pub async fn update_login(
         login_obj.password_auth_enabled = Set(password_auth_enabled);
     }
     let clear_totp = req.clear_totp == Some(true);
-    if clear_totp {
-        let admin_login_id = login_id_from_identity(&user)?;
-        info!(
-            "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
-        );
-        // Bump enrollment generation in the same txn as deleting the secret so
-        // a Redis challenge claimed just before invalidation cannot re-insert.
+    let password_changed = req.password.is_some();
+    let password_auth_disabled = req.password_auth_enabled == Some(false);
+    let invalidate_totp_challenges =
+        clear_totp || password_changed || password_auth_disabled;
+    if invalidate_totp_challenges {
+        if clear_totp {
+            let admin_login_id = login_id_from_identity(&user)?;
+            info!(
+                "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
+            );
+        }
+        // Bump enrollment generation so claimed Redis challenges cannot finish
+        // enroll/verify after password change or password-auth disable.
         let current_epoch = match &login_obj.totp_epoch {
             ActiveValue::Set(v) | ActiveValue::Unchanged(v) => {
                 v.unwrap_or(0)
@@ -402,6 +408,8 @@ pub async fn update_login(
             ActiveValue::NotSet => 0,
         };
         login_obj.totp_epoch = Set(Some(current_epoch + 1));
+    }
+    if clear_totp {
         login_totp::clear_secret(&txn, login_id).await.c(h!())?;
     }
     let res = login_obj.update(&txn).await.c(h!())?;
@@ -414,7 +422,7 @@ pub async fn update_login(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
-    if clear_totp {
+    if invalidate_totp_challenges {
         totp_challenge::invalidate_login_challenges(
             &mut env.redis.clone(),
             login_id,
@@ -1149,7 +1157,20 @@ pub async fn user_confirm_2fa(
         .await;
         return Err(err);
     }
-    let _login_obj = login_obj.login_model.c(h!())?;
+    let login_obj = login_obj.login_model.c(h!())?;
+    if !login_obj.password_auth_enabled
+        || login_totp::epoch_of(&login_obj) != challenge.epoch()
+    {
+        let _ = totp_challenge::delete_challenge(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await;
+        return Err(totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        ));
+    }
 
     // Stale enroll: another challenge already configured TOTP.
     if matches!(
@@ -1220,6 +1241,25 @@ pub async fn user_confirm_2fa(
             "Невірний або прострочений код підтвердження",
         ));
     };
+
+    // Re-check after claim: password auth may have been disabled or epoch
+    // bumped (password change / clear) while OTP was being verified.
+    let login_after = login::Entity::find_by_id(login_id)
+        .one(&env.dbx)
+        .await
+        .c(h!())?
+        .ok_or_else(|| {
+            totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            )
+        })?;
+    if !login_after.password_auth_enabled
+        || login_totp::epoch_of(&login_after) != claimed.epoch()
+    {
+        return Err(totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        ));
+    }
 
     if let totp_challenge::TotpChallenge::Enroll {
         pending_secret,
