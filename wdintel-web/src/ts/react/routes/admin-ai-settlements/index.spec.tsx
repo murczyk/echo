@@ -76,8 +76,14 @@ beforeEach(() => {
     ],
     worker: { enabled: false, aiEngineId: 'engine-a' },
   });
-  mocks.test.mockResolvedValue({ results: [testResult] });
-  mocks.save.mockResolvedValue({ results: [{ ...testResult, updatedAt: 2 }] });
+  mocks.test.mockResolvedValue({
+    results: [testResult],
+    messageVersions: [{ id: 'message-a', version: 'version-a' }],
+  });
+  mocks.save.mockResolvedValue({
+    results: [{ ...testResult, updatedAt: 2 }],
+    messageVersions: [{ id: 'message-a', version: 'version-a' }],
+  });
   mocks.reset.mockResolvedValue({
     prompt: 'Default settlement prompt',
     promptOverridden: false,
@@ -105,6 +111,7 @@ describe('AdminAiSettlementsPage', () => {
     expect(mocks.save).toHaveBeenCalledWith({
       prompt: 'Find settlements',
       results: [testResult],
+      messageVersions: [{ id: 'message-a', version: 'version-a' }],
     });
     expect(container.textContent).not.toContain('ТЕСТ:');
     await act(async () => root.unmount());
@@ -123,7 +130,7 @@ describe('AdminAiSettlementsPage', () => {
         },
       ],
     });
-    mocks.save.mockResolvedValueOnce({ results: [] });
+    mocks.save.mockResolvedValueOnce({ results: [], messageVersions: [] });
     const { container, root } = await renderPage();
     expect(container.textContent).toContain('АРТІЛЬНЕ');
 
@@ -143,6 +150,7 @@ describe('AdminAiSettlementsPage', () => {
     expect(mocks.save).toHaveBeenCalledWith({
       prompt: 'Changed prompt',
       results: [],
+      messageVersions: [],
     });
     expect(container.textContent).not.toContain('АРТІЛЬНЕ');
     await act(async () => root.unmount());

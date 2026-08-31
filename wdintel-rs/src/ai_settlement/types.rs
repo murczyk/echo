@@ -40,6 +40,15 @@ pub struct AiSettlementTestMessageItem {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 #[serde(rename_all = "camelCase")]
+pub struct AiSettlementTestMessageVersionItem {
+    pub id: String,
+    pub version: String,
+}
+
+#[derive(
+    Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
+)]
+#[serde(rename_all = "camelCase")]
 pub struct AiSettlementWorkerSettingsItem {
     pub enabled: bool,
     pub ai_engine_id: Option<String>,
@@ -106,6 +115,7 @@ pub struct RunAiSettlementParsingReq {
 #[serde(rename_all = "camelCase")]
 pub struct AiSettlementParsingRsp {
     pub results: Vec<AiSettlementParseResultItem>,
+    pub message_versions: Vec<AiSettlementTestMessageVersionItem>,
 }
 
 #[derive(
@@ -115,6 +125,7 @@ pub struct AiSettlementParsingRsp {
 pub struct SaveAiSettlementParsingReq {
     pub prompt: String,
     pub results: Vec<AiSettlementParseResultItem>,
+    pub message_versions: Vec<AiSettlementTestMessageVersionItem>,
 }
 
 #[derive(

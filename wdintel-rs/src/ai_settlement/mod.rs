@@ -25,18 +25,19 @@ use sea_orm::sea_query::OnConflict;
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set},
-    ColumnTrait, DatabaseConnection, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DatabaseTransaction,
+    EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 use types::{
     AiSettlementEngineItem, AiSettlementPageRsp, AiSettlementParseResultItem,
     AiSettlementParsingRsp, AiSettlementPromptState,
     AiSettlementTestMessageIdReq, AiSettlementTestMessageItem,
-    AiSettlementWorkerSettingsItem, CreateAiSettlementTestMessageReq,
-    RunAiSettlementParsingReq, SaveAiSettlementParsingReq,
-    SaveAiSettlementWorkerSettingsReq, UpdateAiSettlementTestMessageReq,
+    AiSettlementTestMessageVersionItem, AiSettlementWorkerSettingsItem,
+    CreateAiSettlementTestMessageReq, RunAiSettlementParsingReq,
+    SaveAiSettlementParsingReq, SaveAiSettlementWorkerSettingsReq,
+    UpdateAiSettlementTestMessageReq,
 };
 use uuid::Uuid;
 
@@ -91,6 +92,12 @@ pub async fn update_ai_settlement_test_message(
     let message_id = parse_uuid(&req.id).context(h!())?;
     let message_text = validate_message(req.message).context(h!())?;
     let transaction = env.dbx.begin().await.c(h!())?;
+    transaction
+        .execute_unprepared(
+            "LOCK TABLE ai_settlement_test_message IN ROW EXCLUSIVE MODE",
+        )
+        .await
+        .c(h!())?;
     let message = lock_test_message(&transaction, message_id)
         .await
         .context(h!())?;
@@ -141,8 +148,12 @@ pub async fn test_ai_settlement_parsing(
         .await
         .context(h!())?;
     let messages = load_test_messages(&env.dbx).await.context(h!())?;
+    let message_versions = test_message_versions(&messages);
     let results = run_parsing(prompt, engines, messages).await;
-    Ok(Json(AiSettlementParsingRsp { results }))
+    Ok(Json(AiSettlementParsingRsp {
+        results,
+        message_versions,
+    }))
 }
 
 #[post("/api/admin/ai-settlements/save")]
@@ -157,10 +168,21 @@ pub async fn save_ai_settlement_parsing(
     let results = validate_results(&env.dbx, req.results)
         .await
         .context(h!())?;
-    let results = save_prompt_and_results(&env.dbx, prompt, results)
-        .await
-        .context(h!())?;
-    Ok(Json(AiSettlementParsingRsp { results }))
+    let message_versions = req.message_versions;
+    let source_message_versions =
+        (!results.is_empty()).then_some(message_versions.as_slice());
+    let results = save_prompt_and_results(
+        &env.dbx,
+        prompt,
+        results,
+        source_message_versions,
+    )
+    .await
+    .context(h!())?;
+    Ok(Json(AiSettlementParsingRsp {
+        results,
+        message_versions,
+    }))
 }
 
 #[post("/api/admin/ai-settlements/recalculate")]
@@ -176,13 +198,20 @@ pub async fn recalculate_ai_settlement_parsing(
         .await
         .context(h!())?;
     let messages = load_test_messages(&env.dbx).await.context(h!())?;
+    let message_versions = test_message_versions(&messages);
     let results = run_parsing(prompt.clone(), engines, messages.clone()).await;
     let results = save_recalculated_prompt_and_results(
-        &env.dbx, prompt, results, &messages,
+        &env.dbx,
+        prompt,
+        results,
+        &message_versions,
     )
     .await
     .context(h!())?;
-    Ok(Json(AiSettlementParsingRsp { results }))
+    Ok(Json(AiSettlementParsingRsp {
+        results,
+        message_versions,
+    }))
 }
 
 #[post("/api/admin/ai-settlements/worker/save")]
@@ -453,6 +482,18 @@ fn test_message_item(
     }
 }
 
+fn test_message_versions(
+    messages: &[ai_settlement_test_message::Model],
+) -> Vec<AiSettlementTestMessageVersionItem> {
+    messages
+        .iter()
+        .map(|message| AiSettlementTestMessageVersionItem {
+            id: message.id.to_string(),
+            version: message.updated_at.to_string(),
+        })
+        .collect()
+}
+
 fn result_item_from_db(
     result: ai_settlement_parse_result::Model,
 ) -> Result<AiSettlementParseResultItem, AppError> {
@@ -715,29 +756,36 @@ async fn save_prompt_and_results(
     dbx: &DatabaseConnection,
     prompt: String,
     results: Vec<AiSettlementParseResultItem>,
+    source_message_versions: Option<&[AiSettlementTestMessageVersionItem]>,
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
-    persist_prompt_and_results(dbx, prompt, results, None).await
+    persist_prompt_and_results(dbx, prompt, results, source_message_versions)
+        .await
 }
 
 async fn save_recalculated_prompt_and_results(
     dbx: &DatabaseConnection,
     prompt: String,
     results: Vec<AiSettlementParseResultItem>,
-    source_messages: &[ai_settlement_test_message::Model],
+    source_message_versions: &[AiSettlementTestMessageVersionItem],
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
-    persist_prompt_and_results(dbx, prompt, results, Some(source_messages))
-        .await
+    persist_prompt_and_results(
+        dbx,
+        prompt,
+        results,
+        Some(source_message_versions),
+    )
+    .await
 }
 
 async fn persist_prompt_and_results(
     dbx: &DatabaseConnection,
     prompt: String,
     mut results: Vec<AiSettlementParseResultItem>,
-    source_messages: Option<&[ai_settlement_test_message::Model]>,
+    source_message_versions: Option<&[AiSettlementTestMessageVersionItem]>,
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
-    if let Some(source_messages) = source_messages {
-        lock_and_validate_test_messages(&transaction, source_messages)
+    if let Some(source_message_versions) = source_message_versions {
+        lock_and_validate_test_messages(&transaction, source_message_versions)
             .await
             .context(h!())?;
     }
@@ -763,26 +811,39 @@ async fn persist_prompt_and_results(
 
 async fn lock_and_validate_test_messages(
     transaction: &DatabaseTransaction,
-    expected_messages: &[ai_settlement_test_message::Model],
+    expected_versions: &[AiSettlementTestMessageVersionItem],
 ) -> Result<(), AppError> {
-    if expected_messages.is_empty() {
-        return Ok(());
+    let mut expected_messages = HashMap::new();
+    for expected_version in expected_versions {
+        let message_id = parse_uuid(&expected_version.id).context(h!())?;
+        if expected_messages
+            .insert(message_id, expected_version.version.as_str())
+            .is_some()
+        {
+            return Err(AppError::BL {
+                msg: "Версія тестового повідомлення дублюється".to_string(),
+            });
+        }
     }
-    let message_ids = expected_messages.iter().map(|message| message.id);
+    transaction
+        .execute_unprepared(
+            "LOCK TABLE ai_settlement_test_message IN SHARE MODE",
+        )
+        .await
+        .c(h!())?;
     let current_messages = ai_settlement_test_message::Entity::find()
-        .filter(ai_settlement_test_message::Column::Id.is_in(message_ids))
         .order_by_asc(ai_settlement_test_message::Column::Id)
         .lock_exclusive()
         .all(transaction)
         .await
         .c(h!())?;
-    let current_messages: HashMap<Uuid, _> = current_messages
-        .into_iter()
-        .map(|message| (message.id, message))
-        .collect();
     let unchanged = current_messages.len() == expected_messages.len()
-        && expected_messages.iter().all(|expected_message| {
-            current_messages.get(&expected_message.id) == Some(expected_message)
+        && current_messages.iter().all(|current_message| {
+            expected_messages.get(&current_message.id).is_some_and(
+                |expected_version| {
+                    *expected_version == current_message.updated_at.to_string()
+                },
+            )
         });
     if !unchanged {
         return Err(AppError::BL {
@@ -935,8 +996,10 @@ fn parse_unique_uuids(values: Vec<String>) -> Result<HashSet<Uuid>, AppError> {
 mod tests {
     use super::{
         effective_prompt, load_test_messages, parse_settlements, prompt_state,
-        save_recalculated_prompt_and_results, strip_json_code_fence,
+        save_prompt_and_results, save_recalculated_prompt_and_results,
+        strip_json_code_fence, test_message_versions,
     };
+    use crate::ai_settlement::types::AiSettlementParseResultItem;
     use crate::config::{
         AI_SETTLEMENT_DEFAULT_PROMPT, AI_SETTLEMENT_SETTINGS_ID,
     };
@@ -1005,6 +1068,7 @@ mod tests {
         .await
         .unwrap();
         let source_messages = load_test_messages(&env.dbx).await.unwrap();
+        let source_message_versions = test_message_versions(&source_messages);
         let mut message = message.into_active_model();
         message.message = Set("new message".to_string());
         message.updated_at = Set(now + chrono::Duration::seconds(1));
@@ -1014,7 +1078,86 @@ mod tests {
             &env.dbx,
             "prompt".to_string(),
             Vec::new(),
-            &source_messages,
+            &source_message_versions,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("Тестові повідомлення змінилися"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rejects_saved_results_for_changed_test_messages_2133() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let message = ai_settlement_test_message::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            message: Set("old message".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let source_messages = load_test_messages(&env.dbx).await.unwrap();
+        let source_message_versions = test_message_versions(&source_messages);
+        let message_id = message.id;
+        let mut message = message.into_active_model();
+        message.message = Set("new message".to_string());
+        message.updated_at = Set(now + chrono::Duration::seconds(1));
+        message.update(&env.dbx).await.unwrap();
+
+        let error = save_prompt_and_results(
+            &env.dbx,
+            "prompt".to_string(),
+            vec![AiSettlementParseResultItem {
+                test_message_id: message_id.to_string(),
+                ai_engine_id: uuid::Uuid::now_v7().to_string(),
+                settlements: Vec::new(),
+                error: None,
+                response_text: String::new(),
+                updated_at: None,
+            }],
+            Some(&source_message_versions),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("Тестові повідомлення змінилися"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rejects_recalculation_when_test_message_is_added_2133() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        ai_settlement_test_message::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            message: Set("first message".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let source_messages = load_test_messages(&env.dbx).await.unwrap();
+        let source_message_versions = test_message_versions(&source_messages);
+        ai_settlement_test_message::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            message: Set("added message".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let error = save_recalculated_prompt_and_results(
+            &env.dbx,
+            "prompt".to_string(),
+            Vec::new(),
+            &source_message_versions,
         )
         .await
         .unwrap_err();

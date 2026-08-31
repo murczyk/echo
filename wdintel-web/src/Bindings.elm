@@ -13082,6 +13082,20 @@ aiSettlementTestMessageItemEncoder struct =
         ]
 
 
+type alias AiSettlementTestMessageVersionItem =
+    { id : String
+    , version : String
+    }
+
+
+aiSettlementTestMessageVersionItemEncoder : AiSettlementTestMessageVersionItem -> Json.Encode.Value
+aiSettlementTestMessageVersionItemEncoder struct =
+    Json.Encode.object
+        [ ( "id", (Json.Encode.string) struct.id )
+        , ( "version", (Json.Encode.string) struct.version )
+        ]
+
+
 type alias AiSettlementWorkerSettingsItem =
     { enabled : Bool
     , aiEngineId : Maybe (String)
@@ -13184,6 +13198,7 @@ runAiSettlementParsingReqEncoder struct =
 
 type alias AiSettlementParsingRsp =
     { results : List (AiSettlementParseResultItem)
+    , messageVersions : List (AiSettlementTestMessageVersionItem)
     }
 
 
@@ -13191,12 +13206,14 @@ aiSettlementParsingRspEncoder : AiSettlementParsingRsp -> Json.Encode.Value
 aiSettlementParsingRspEncoder struct =
     Json.Encode.object
         [ ( "results", (Json.Encode.list (aiSettlementParseResultItemEncoder)) struct.results )
+        , ( "messageVersions", (Json.Encode.list (aiSettlementTestMessageVersionItemEncoder)) struct.messageVersions )
         ]
 
 
 type alias SaveAiSettlementParsingReq =
     { prompt : String
     , results : List (AiSettlementParseResultItem)
+    , messageVersions : List (AiSettlementTestMessageVersionItem)
     }
 
 
@@ -13205,6 +13222,7 @@ saveAiSettlementParsingReqEncoder struct =
     Json.Encode.object
         [ ( "prompt", (Json.Encode.string) struct.prompt )
         , ( "results", (Json.Encode.list (aiSettlementParseResultItemEncoder)) struct.results )
+        , ( "messageVersions", (Json.Encode.list (aiSettlementTestMessageVersionItemEncoder)) struct.messageVersions )
         ]
 
 
@@ -22326,6 +22344,13 @@ aiSettlementTestMessageItemDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiSettlementParseResultItemDecoder))))
 
 
+aiSettlementTestMessageVersionItemDecoder : Json.Decode.Decoder AiSettlementTestMessageVersionItem
+aiSettlementTestMessageVersionItemDecoder =
+    Json.Decode.succeed AiSettlementTestMessageVersionItem
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "version" (Json.Decode.string)))
+
+
 aiSettlementWorkerSettingsItemDecoder : Json.Decode.Decoder AiSettlementWorkerSettingsItem
 aiSettlementWorkerSettingsItemDecoder =
     Json.Decode.succeed AiSettlementWorkerSettingsItem
@@ -22380,6 +22405,7 @@ aiSettlementParsingRspDecoder : Json.Decode.Decoder AiSettlementParsingRsp
 aiSettlementParsingRspDecoder =
     Json.Decode.succeed AiSettlementParsingRsp
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiSettlementParseResultItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageVersions" (Json.Decode.list (aiSettlementTestMessageVersionItemDecoder))))
 
 
 saveAiSettlementParsingReqDecoder : Json.Decode.Decoder SaveAiSettlementParsingReq
@@ -22387,6 +22413,7 @@ saveAiSettlementParsingReqDecoder =
     Json.Decode.succeed SaveAiSettlementParsingReq
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "prompt" (Json.Decode.string)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "results" (Json.Decode.list (aiSettlementParseResultItemDecoder))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "messageVersions" (Json.Decode.list (aiSettlementTestMessageVersionItemDecoder))))
 
 
 saveAiSettlementWorkerSettingsReqDecoder : Json.Decode.Decoder SaveAiSettlementWorkerSettingsReq

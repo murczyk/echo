@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import type {
   AiSettlementParseResultItem,
   AiSettlementTestMessageItem,
+  AiSettlementTestMessageVersionItem,
   AiSettlementWorkerSettingsItem,
 } from '../../../../Bindings';
 import { PageHeader } from '../../components/PageHeader';
@@ -87,6 +88,7 @@ export function AdminAiSettlementsPage() {
   const [promptOverridden, setPromptOverridden] = useState(false);
   const [selectedEngineIds, setSelectedEngineIds] = useState<string[]>([]);
   const [testResults, setTestResults] = useState<AiSettlementParseResultItem[]>([]);
+  const [messageVersions, setMessageVersions] = useState<AiSettlementTestMessageVersionItem[]>([]);
   const [workerSettings, setWorkerSettings] = useState<AiSettlementWorkerSettingsItem>({
     enabled: false,
     aiEngineId: null,
@@ -129,16 +131,19 @@ export function AdminAiSettlementsPage() {
   function updatePrompt(value: string) {
     setPrompt(value);
     setTestResults([]);
+    setMessageVersions([]);
   }
 
   function updateSelectedEngines(ids: string[]) {
     setSelectedEngineIds(ids);
     setTestResults([]);
+    setMessageVersions([]);
   }
 
   async function runTest() {
     if (!canRun || action) return;
     setTestResults([]);
+    setMessageVersions([]);
     setAction('test');
     setError(null);
     try {
@@ -147,6 +152,7 @@ export function AdminAiSettlementsPage() {
         aiEngineIds: selectedEngineIds,
       });
       setTestResults(response.results);
+      setMessageVersions(response.messageVersions);
     } catch (testError) {
       setError(`Помилка тестування населених пунктів: ${errorMessage(testError)}`);
     } finally {
@@ -163,6 +169,7 @@ export function AdminAiSettlementsPage() {
       const response = await saveAiSettlementParsing({
         prompt: promptToSave,
         results: testResults,
+        messageVersions,
       });
       setMessages((current) =>
         promptToSave === savedPrompt
@@ -170,6 +177,7 @@ export function AdminAiSettlementsPage() {
           : replaceSavedResults(current, response.results),
       );
       setTestResults([]);
+      setMessageVersions([]);
       setPrompt(promptToSave);
       setSavedPrompt(promptToSave);
       setPromptOverridden(true);
@@ -185,6 +193,7 @@ export function AdminAiSettlementsPage() {
     if (!canRun || action) return;
     const promptToSave = prompt.trim();
     setTestResults([]);
+    setMessageVersions([]);
     setAction('recalculate');
     setError(null);
     try {
@@ -198,6 +207,7 @@ export function AdminAiSettlementsPage() {
           : replaceSavedResults(current, response.results),
       );
       setTestResults([]);
+      setMessageVersions([]);
       setPrompt(promptToSave);
       setSavedPrompt(promptToSave);
       setPromptOverridden(true);
@@ -222,6 +232,7 @@ export function AdminAiSettlementsPage() {
       setSavedPrompt(state.prompt);
       setPromptOverridden(state.promptOverridden);
       setTestResults([]);
+      setMessageVersions([]);
       notify({ severity: 'success', message: 'Відновлено стандартний промпт.' });
     } catch (resetError) {
       setError(`Помилка скидання промпту: ${errorMessage(resetError)}`);
@@ -238,6 +249,7 @@ export function AdminAiSettlementsPage() {
       return next.sort((left, right) => left.createdAt - right.createdAt);
     });
     setTestResults((current) => current.filter((result) => result.testMessageId !== message.id));
+    setMessageVersions([]);
     setScreen({ kind: 'list' });
     notify({ severity: 'success', message: 'Тестове повідомлення збережено.' });
   }
@@ -252,6 +264,7 @@ export function AdminAiSettlementsPage() {
       setTestResults((current) =>
         current.filter((result) => result.testMessageId !== deleteTarget.id),
       );
+      setMessageVersions([]);
       setDeleteTarget(null);
       notify({ severity: 'success', message: 'Тестове повідомлення видалено.' });
     } catch (deleteError) {
@@ -338,14 +351,17 @@ export function AdminAiSettlementsPage() {
                 testResults={testResults}
                 onCreate={() => {
                   setTestResults([]);
+                  setMessageVersions([]);
                   setScreen({ kind: 'create' });
                 }}
                 onDelete={(message) => {
                   setTestResults([]);
+                  setMessageVersions([]);
                   setDeleteTarget(message);
                 }}
                 onEdit={(message) => {
                   setTestResults([]);
+                  setMessageVersions([]);
                   setScreen({ kind: 'edit', message });
                 }}
               />

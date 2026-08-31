@@ -5065,6 +5065,11 @@ export type AiSettlementTestMessageItem = {
   results: Array<AiSettlementParseResultItem>;
 };
 
+export type AiSettlementTestMessageVersionItem = {
+  id: string;
+  version: string;
+};
+
 export type AiSettlementWorkerSettingsItem = {
   enabled: boolean;
   aiEngineId: string | null;
@@ -5103,11 +5108,13 @@ export type RunAiSettlementParsingReq = {
 
 export type AiSettlementParsingRsp = {
   results: Array<AiSettlementParseResultItem>;
+  messageVersions: Array<AiSettlementTestMessageVersionItem>;
 };
 
 export type SaveAiSettlementParsingReq = {
   prompt: string;
   results: Array<AiSettlementParseResultItem>;
+  messageVersions: Array<AiSettlementTestMessageVersionItem>;
 };
 
 export type SaveAiSettlementWorkerSettingsReq = {
