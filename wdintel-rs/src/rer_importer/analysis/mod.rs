@@ -4232,12 +4232,14 @@ struct SummaryTableReportData {
     summary_table: SummaryTableFreq,
     last_datetime_by_freq: BTreeMap<String, NaiveDateTime>,
     related_networks_by_freq: BTreeMap<String, Vec<String>>,
+    callsign_message_counts: BTreeMap<String, i64>,
 }
 
 struct SummaryTableChunkData {
     summary_table: SummaryTableFreq,
     last_datetime_by_freq: BTreeMap<String, NaiveDateTime>,
     related_networks_by_freq: BTreeMap<String, Vec<String>>,
+    callsign_message_counts: BTreeMap<String, i64>,
 }
 
 #[derive(Default)]
@@ -4245,6 +4247,7 @@ struct SummaryTableAccumulator {
     rows_by_freq: BTreeMap<String, SummaryTableFreqRow>,
     last_datetime_by_freq: BTreeMap<String, NaiveDateTime>,
     networks_by_freq: BTreeMap<String, BTreeSet<String>>,
+    callsign_message_counts: BTreeMap<String, i64>,
 }
 
 pub(crate) async fn summary_table_xlsx_bytes(
@@ -4328,6 +4331,14 @@ async fn collect_summary_table_report_data(
                 )
                 .await
                 .c(h!())?,
+            callsign_message_counts: summary_table_callsign_message_counts(
+                login,
+                env,
+                &chunk_req,
+                &master_keys,
+            )
+            .await
+            .c(h!())?,
         };
         merge_summary_table_chunk(&mut accumulator, chunk_data);
     }
@@ -4388,6 +4399,12 @@ fn merge_summary_table_chunk(
             .or_default()
             .extend(networks);
     }
+    for (callsign, message_count) in chunk.callsign_message_counts {
+        *accumulator
+            .callsign_message_counts
+            .entry(callsign)
+            .or_default() += message_count;
+    }
 }
 
 fn finish_summary_table_merge(
@@ -4415,6 +4432,7 @@ fn finish_summary_table_merge(
             .into_iter()
             .map(|(freq, networks)| (freq, networks.into_iter().collect()))
             .collect(),
+        callsign_message_counts: accumulator.callsign_message_counts,
     }
 }
 
@@ -4486,15 +4504,15 @@ fn append_xlsx_omitted_count_token(
 async fn build_summary_table_report(
     data: &SummaryTableReportData,
 ) -> Result<Vec<u8>, AppError> {
-    let callsign_count = data
+    let freqs_per_callsign = summary_table_freqs_per_callsign(
+        &data.summary_table,
+        &data.callsign_message_counts,
+    );
+    let record_count = data
         .summary_table
         .rows
-        .iter()
-        .flat_map(|row| row.callsigns.iter())
-        .collect::<BTreeSet<_>>()
-        .len();
-    let record_count =
-        data.summary_table.rows.len().saturating_add(callsign_count);
+        .len()
+        .saturating_add(freqs_per_callsign.len());
     crate::report_history::ensure_report_record_count(record_count)
         .context(h!())?;
     let SummaryTableReportData {
@@ -4502,6 +4520,7 @@ async fn build_summary_table_report(
         summary_table,
         last_datetime_by_freq,
         related_networks_by_freq,
+        callsign_message_counts: _,
     } = data;
     let tmp_dir = TempDir::new()?;
     let outpath = tmp_dir.path().join("summary-table.xlsx");
@@ -4574,20 +4593,6 @@ async fn build_summary_table_report(
     // Add and name the second sheet
     let sheet2 = workbook.add_worksheet();
     sheet2.set_name("Позивні").context(h!())?;
-    let mut freqs_per_callsign: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    // ...existing code to populate freqs_per_callsign...
-    for row in summary_table.rows.iter() {
-        for callsign in row.callsigns.iter() {
-            freqs_per_callsign
-                .entry(callsign.clone())
-                .and_modify(|xs| {
-                    if !xs.iter().any(|existing| existing == &row.freq) {
-                        xs.push(row.freq.clone())
-                    }
-                })
-                .or_insert(vec![row.freq.clone()]);
-        }
-    }
     for (i, (callsign, freqs)) in freqs_per_callsign.iter().enumerate() {
         sheet2.write_string(i as u32, 0, callsign).context(h!())?; // Removed None
         for (j, freq) in freqs.iter().enumerate() {
@@ -4601,6 +4606,27 @@ async fn build_summary_table_report(
     workbook.save(&outpath).context(h!())?;
     let bytes = tokio::fs::read(&outpath).await.c(h!())?;
     Ok(bytes)
+}
+
+fn summary_table_freqs_per_callsign(
+    summary_table: &SummaryTableFreq,
+    callsign_message_counts: &BTreeMap<String, i64>,
+) -> BTreeMap<String, Vec<String>> {
+    let mut freqs_per_callsign = BTreeMap::new();
+    for row in &summary_table.rows {
+        for callsign in &row.callsigns {
+            if callsign_message_counts.get(callsign).copied().unwrap_or(0)
+                < RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS
+            {
+                continue;
+            }
+            freqs_per_callsign
+                .entry(callsign.clone())
+                .or_insert_with(Vec::new)
+                .push(row.freq.clone());
+        }
+    }
+    freqs_per_callsign
 }
 
 async fn summary_table_report_message_count(
@@ -4620,6 +4646,29 @@ async fn summary_table_report_message_count(
             .c(h!())?
             .len();
     Ok(message_count)
+}
+
+async fn summary_table_callsign_message_counts(
+    login: &uuid::Uuid,
+    env: &Env,
+    req: &AnalysisStatsReq,
+    master_keys: &[String],
+) -> Result<BTreeMap<String, i64>, AppError> {
+    let filtered_messages =
+        build_summary_table_filtered_messages_query(login, req, master_keys)?
+            .select_only()
+            .column_as(sigint_inbox_item::Column::Id, "id")
+            .distinct();
+    let rows = NewCallsignCountRow::find_by_statement(
+        new_callsign_counts_statement(filtered_messages),
+    )
+    .all(&env.dbx)
+    .await
+    .c(h!())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| (row.callsign, row.message_count))
+        .collect())
 }
 
 fn ensure_summary_table_report_message_limit(
