@@ -92,10 +92,7 @@ export function AttachmentPreviewZoomControls({
   buttonStep: number;
   sliderStep?: number;
   marks: number[];
-  isFullscreen?: boolean;
-  canFullscreen?: boolean;
   onZoomChange: (zoom: number) => void;
-  onToggleFullscreen?: () => void;
 }) {
   return (
     <Box
@@ -212,14 +209,12 @@ export function AttachmentPreviewPlaybackControls({
   onSeek,
 }: {
   playerState: VideoPlayerState;
-  canFullscreen?: boolean;
   onPlayPause: () => void;
   onStop?: () => void;
   onVolumeChange: (volume: number) => void;
   onMuteToggle: () => void;
   onRateChange: (rate: 0.5 | 1 | 1.5 | 2) => void;
   onSeek: (time: number) => void;
-  onToggleFullscreen?: () => void;
   videoRef?: React.RefObject<HTMLVideoElement>;
 }) {
   const { isPlaying, currentTime, duration, volume, muted, playbackRate } = playerState;

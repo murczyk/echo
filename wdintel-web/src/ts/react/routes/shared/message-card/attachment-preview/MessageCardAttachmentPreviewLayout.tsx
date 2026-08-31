@@ -16,14 +16,12 @@ export function MessageCardAttachmentPreviewLayout({
   navigation,
   swipeEnabled = true,
 }: {
-  isFullscreen: boolean;
   config: MessageCardAttachmentPreviewConfig;
   stage: ReactNode;
   header?: ReactNode;
   controls?: ReactNode;
   infoPopover?: ReactNode;
   actions?: ReactNode;
-  onToggleFullscreen?: () => void;
   navigation?: MessageCardPreviewNavigation;
   swipeEnabled?: boolean;
 }) {

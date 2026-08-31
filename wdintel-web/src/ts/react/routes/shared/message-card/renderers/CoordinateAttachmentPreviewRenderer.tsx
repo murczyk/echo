@@ -84,19 +84,15 @@ export function CoordinateAttachmentPreviewRenderer({
   points,
   navigation,
   isFullscreen,
-  onFullscreenChange,
   onClose,
 }: {
   points: CoordinatePreviewPoint[];
   navigation: MessageCardPreviewNavigation;
   isFullscreen: boolean;
-  onFullscreenChange: (isFullscreen: boolean) => void;
   onClose: () => void;
 }) {
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
   const previewConfig = getMessageCardAttachmentPreviewConfig('coordinate-map');
-  const canFullscreen = previewConfig.supportsFullscreen;
-  const dialogIsFullscreen = canFullscreen && isFullscreen;
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -117,15 +113,11 @@ export function CoordinateAttachmentPreviewRenderer({
       fileName="Координати"
       navigation={navigation}
       onClose={onClose}
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
   );
 
   return (
     <MessageCardAttachmentPreviewLayout
-      isFullscreen={dialogIsFullscreen}
       config={previewConfig}
       stage={
         <CoordinateMapPreview
@@ -133,7 +125,7 @@ export function CoordinateAttachmentPreviewRenderer({
           activeIndex={activeIndex}
           onActiveIndexChange={changeActiveIndex}
           baseLayerId={baseLayerId}
-          isFullscreen={dialogIsFullscreen}
+          isFullscreen={isFullscreen}
         />
       }
       header={header}
@@ -151,7 +143,6 @@ export function CoordinateAttachmentPreviewRenderer({
       }
       navigation={navigation}
       swipeEnabled={false}
-      onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
   );
 }

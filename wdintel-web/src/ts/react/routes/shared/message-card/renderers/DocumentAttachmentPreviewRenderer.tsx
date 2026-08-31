@@ -23,7 +23,6 @@ import {
   OcrPreviewAction,
   OcrSplitPreview,
 } from '../attachment-preview/OcrPreview';
-import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
 import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
@@ -85,7 +84,6 @@ export function DocumentAttachmentPreviewRenderer({
   onClose,
   navigation,
   isFullscreen,
-  onFullscreenChange,
   isDownloadStarting,
   onDownloadStart,
 }: {
@@ -93,7 +91,6 @@ export function DocumentAttachmentPreviewRenderer({
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
   isFullscreen: boolean;
-  onFullscreenChange: (isFullscreen: boolean) => void;
 } & MessageCardDownloadGuardProps) {
   const resolvedIndex = navigation.index;
   const currentDocument = document;
@@ -113,12 +110,6 @@ export function DocumentAttachmentPreviewRenderer({
   const currentDocumentCapabilities = getDocumentPreviewCapabilities(currentDocument.kind);
   const canZoom = currentDocumentCapabilities?.zoomable === true;
   const canSwipeCarousel = currentDocumentCapabilities?.carouselSwipeable === true;
-  const canFullscreen = previewConfig.supportsFullscreen;
-  const dialogIsFullscreen = canFullscreen && isFullscreen;
-  const changeFullscreen = useCallback(
-    (value: boolean) => onFullscreenChange(value),
-    [onFullscreenChange],
-  );
   const dialogZoom = canZoom ? zoom : 100;
   const previewFileName = useMemo(
     () => deriveDocumentFileName(currentDocument, resolvedIndex),
@@ -136,7 +127,6 @@ export function DocumentAttachmentPreviewRenderer({
     setOcrFullPane(false);
     setSummaryVisible(false);
     setSummaryStatus(currentDocument.summary ?? null);
-    changeFullscreen(false);
   };
 
   const closeDialog = () => {
@@ -159,10 +149,7 @@ export function DocumentAttachmentPreviewRenderer({
     if (!canZoom && zoom !== 100) {
       setZoom(100);
     }
-    if (!canFullscreen && isFullscreen) {
-      changeFullscreen(false);
-    }
-  }, [canFullscreen, canZoom, changeFullscreen, isFullscreen, zoom]);
+  }, [canZoom, zoom]);
 
   const setPreviewZoom = (nextZoom: number) => {
     setZoom(clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX));
@@ -292,7 +279,7 @@ export function DocumentAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="document"
-      isFullscreen={dialogIsFullscreen}
+      isFullscreen={isFullscreen}
       onDoubleClick={handleStageDoubleClick}
     >
       <DocumentPreview document={currentDocument} zoom={dialogZoom} />
@@ -362,9 +349,6 @@ export function DocumentAttachmentPreviewRenderer({
           onDownloadStart={onDownloadStart}
         />
       }
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
       onClose={closeDialog}
       downloadKey={`media:${String(currentDocument?.id ?? '')}`}
       isDownloadStarting={isDownloadStarting}
@@ -392,14 +376,12 @@ export function DocumentAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      isFullscreen={dialogIsFullscreen}
       config={previewConfig}
       stage={stage}
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={canSwipeCarousel && dialogZoom <= 100}
-      onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
     />
   );
 }

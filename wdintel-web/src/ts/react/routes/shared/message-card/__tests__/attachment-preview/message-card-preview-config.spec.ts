@@ -9,7 +9,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'media',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -17,7 +16,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'media',
         disableRestoreFocus: false,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -25,7 +23,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'media',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -33,7 +30,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -41,7 +37,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -49,7 +44,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -57,7 +51,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -65,7 +58,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -73,7 +65,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
     [
@@ -81,7 +72,6 @@ describe('message-card-preview-config', () => {
       {
         layout: 'document',
         disableRestoreFocus: true,
-        supportsFullscreen: true,
       },
     ],
   ] as const)('resolves %s to the expected shell config', (kind, expected) => {

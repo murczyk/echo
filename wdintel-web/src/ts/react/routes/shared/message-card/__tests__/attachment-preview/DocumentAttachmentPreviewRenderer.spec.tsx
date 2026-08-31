@@ -318,7 +318,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
     expect(
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(document.body.querySelector('button[aria-label="Інформація"]')).not.toBeNull();
     expect(
       document.body.querySelector('button[aria-label="Відкрити в новій вкладці"]'),
@@ -399,7 +399,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
     expect(
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).not.toBeNull();
+    ).toBeNull();
     expect(
       document.body
         .querySelector('[data-preview-stage="document"]')
@@ -538,7 +538,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('hides fullscreen controls when the capability disables fullscreen but keeps zoom controls', async () => {
+  it('renders zoom controls without fullscreen controls', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -551,10 +551,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
           max={300}
           buttonStep={25}
           marks={[50, 100, 150, 200, 300]}
-          isFullscreen={false}
-          canFullscreen={false}
           onZoomChange={vi.fn()}
-          onToggleFullscreen={vi.fn()}
         />,
       );
     });

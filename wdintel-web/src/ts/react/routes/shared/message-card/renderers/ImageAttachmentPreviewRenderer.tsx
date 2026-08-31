@@ -41,7 +41,6 @@ import {
   OcrPreviewAction,
   OcrSplitPreview,
 } from '../attachment-preview/OcrPreview';
-import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
 import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
@@ -231,7 +230,6 @@ export function ImageAttachmentPreviewRenderer({
   onClose,
   navigation,
   isFullscreen,
-  onFullscreenChange,
   isDownloadStarting,
   onDownloadStart,
   imageEditing,
@@ -246,7 +244,6 @@ export function ImageAttachmentPreviewRenderer({
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
   isFullscreen: boolean;
-  onFullscreenChange: (isFullscreen: boolean) => void;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
   onInitialActionConsumed?: () => void;
@@ -308,12 +305,6 @@ export function ImageAttachmentPreviewRenderer({
     [currentImage, resolvedIndex],
   );
   const previewConfig = getMessageCardAttachmentPreviewConfig('image');
-  const canFullscreen = previewConfig.supportsFullscreen;
-  const dialogIsFullscreen = canFullscreen && isFullscreen;
-  const changeFullscreen = useCallback(
-    (value: boolean) => onFullscreenChange(value),
-    [onFullscreenChange],
-  );
   const removePointerListeners = useCallback(() => {
     const listeners = pointerListenersRef.current;
     if (listeners === null) return;
@@ -345,8 +336,7 @@ export function ImageAttachmentPreviewRenderer({
 
   const resetPreviewState = useCallback(() => {
     resetImageState();
-    changeFullscreen(false);
-  }, [changeFullscreen, resetImageState]);
+  }, [resetImageState]);
 
   const addPointerListeners = useCallback(() => {
     removePointerListeners();
@@ -584,11 +574,6 @@ export function ImageAttachmentPreviewRenderer({
     }
   };
 
-  const handleToggleFullscreen = () => {
-    if (!canFullscreen) return;
-    changeFullscreen(!dialogIsFullscreen);
-  };
-
   useEffect(() => {
     if (initialAction !== 'edit-image') return;
     onInitialActionConsumed?.();
@@ -674,7 +659,7 @@ export function ImageAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewStage
       ref={setStageNode}
       kind="image"
-      isFullscreen={dialogIsFullscreen}
+      isFullscreen={isFullscreen}
       cursor={zoom > ZOOM_MIN ? 'grab' : 'default'}
       onPointerDown={startPan}
       onPointerUp={stopPan}
@@ -802,9 +787,6 @@ export function ImageAttachmentPreviewRenderer({
         onChildOverlayChange?.(true);
       }}
       infoSeverity={getOcrInfoSeverity(ocrStatus)}
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onToggleFullscreen={handleToggleFullscreen}
       onClose={closeDialog}
       downloadKey={`media:${String(currentImage?.id ?? '')}`}
       isDownloadStarting={isDownloadStarting}
@@ -836,7 +818,6 @@ export function ImageAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      isFullscreen={dialogIsFullscreen}
       config={previewConfig}
       stage={
         editor.error ? (
@@ -854,7 +835,6 @@ export function ImageAttachmentPreviewRenderer({
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={zoom <= ZOOM_MIN && !editor.isLocked}
-      onToggleFullscreen={handleToggleFullscreen}
     />
   );
 }

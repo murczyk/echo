@@ -53,22 +53,15 @@ const dialogProps: DialogRecord[] = [];
 let previewConfig = {
   layout: 'media' as const,
   disableRestoreFocus: true,
-  supportsFullscreen: true,
 };
 let latestActionProps: {
   copyStatus: 'idle' | 'copying' | 'copied' | 'error';
   canCopyImage: boolean;
   onCopyImage: () => void;
-  isFullscreen: boolean;
-  canFullscreen: boolean;
-  onToggleFullscreen: () => void;
 } | null = null;
 let latestControlsProps: {
   zoom: number;
-  isFullscreen: boolean;
-  canFullscreen: boolean;
   onSetPreviewZoom: (zoom: number) => void;
-  onToggleFullscreen: () => void;
 } | null = null;
 let latestStageProps: {
   currentHref: string;
@@ -141,9 +134,6 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
     additionalActions,
     status,
     onInfoClick,
-    isFullscreen,
-    canFullscreen,
-    onToggleFullscreen,
     onClose,
   }: {
     openHref: string;
@@ -162,9 +152,6 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
     }>;
     status?: ReactNode;
     onInfoClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-    isFullscreen: boolean;
-    canFullscreen: boolean;
-    onToggleFullscreen: () => void;
     onClose: () => void;
   }) => {
     const copyAction = Children.toArray(additionalActions.props.children).find(
@@ -178,9 +165,6 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
       copyStatus: copyAction.props.status,
       canCopyImage: copyAction.props.enabled,
       onCopyImage: copyAction.props.onCopy,
-      isFullscreen,
-      canFullscreen,
-      onToggleFullscreen,
     };
     const hasCarousel = navigation.count > 1;
     return (
@@ -194,12 +178,6 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
         <a aria-label="Відкрити в новій вкладці" href={openHref} />
         <a aria-label="Завантажити" download={download.fileName} href={download.href} />
         {status}
-        {canFullscreen ? (
-          <button
-            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-            onClick={onToggleFullscreen}
-          />
-        ) : null}
         {hasCarousel ? (
           <button
             aria-label="Попереднє"
@@ -226,33 +204,18 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewControls', () => ({
   AttachmentPreviewZoomControls: ({
     zoom,
-    isFullscreen,
-    canFullscreen,
     onZoomChange,
-    onToggleFullscreen,
   }: {
     zoom: number;
-    isFullscreen: boolean;
-    canFullscreen: boolean;
     onZoomChange: (zoom: number) => void;
-    onToggleFullscreen: () => void;
   }) => {
     latestControlsProps = {
       zoom,
-      isFullscreen,
-      canFullscreen,
       onSetPreviewZoom: onZoomChange,
-      onToggleFullscreen,
     };
     return (
-      <div data-controls data-zoom={zoom} data-fullscreen={String(isFullscreen)}>
+      <div data-controls data-zoom={zoom}>
         <button aria-label="Збільшити" onClick={() => onZoomChange(zoom + 10)} />
-        {canFullscreen ? (
-          <button
-            aria-label={isFullscreen ? 'Вийти з повноекранного режиму' : 'Повноекранний режим'}
-            onClick={onToggleFullscreen}
-          />
-        ) : null}
       </div>
     );
   },
@@ -372,7 +335,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
     previewConfig = {
       layout: 'media',
       disableRestoreFocus: true,
-      supportsFullscreen: true,
     };
     latestActionProps = null;
     latestControlsProps = null;
@@ -548,50 +510,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
     );
     expect(onClose).toHaveBeenCalledOnce();
     act(() => root.unmount());
-  });
-
-  it('does not enter fullscreen when the config disables it', async () => {
-    previewConfig = {
-      layout: 'media',
-      disableRestoreFocus: true,
-      supportsFullscreen: false,
-    };
-
-    const onClose = vi.fn();
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <TestImagePreviewDialog
-          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
-          open
-          onClose={onClose}
-          onIndexChange={vi.fn()}
-        />,
-      );
-    });
-
-    expect(latestActionProps?.canFullscreen).toBe(false);
-    expect(document.body.querySelector('[aria-label="Повноекранний режим"]')).toBeNull();
-    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
-    expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
-    expect(document.body.querySelector('[data-actions]')).not.toBeNull();
-
-    await act(async () => {
-      latestActionProps?.onToggleFullscreen();
-    });
-
-    expect(latestActionProps?.isFullscreen).toBe(false);
-    expect(dialogProps.at(-1)?.fullScreen).toBe(false);
-
-    await act(async () => {
-      dialogProps.at(-1)?.onClose?.({} as never, 'escapeKeyDown');
-    });
-
-    expect(onClose).toHaveBeenCalledTimes(1);
-    root.unmount();
   });
 
   it('closes from backdrop and escape outside fullscreen, including blur', async () => {
@@ -870,10 +788,6 @@ describe('ImageAttachmentPreviewRenderer', () => {
       '2 / 2',
     );
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
-
-    await act(async () => {
-      latestActionProps?.onToggleFullscreen();
-    });
 
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
     root.unmount();

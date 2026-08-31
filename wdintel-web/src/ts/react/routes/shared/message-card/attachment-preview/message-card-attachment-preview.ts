@@ -15,10 +15,10 @@ export function blurActiveAttachmentPreviewElement(): void {
   activeElement.blur();
 }
 
-export function getAttachmentPreviewDialogPaperSx(isFullscreen: boolean): SxProps<Theme> {
+export function getAttachmentPreviewDialogPaperSx(): SxProps<Theme> {
   return {
     overflow: 'hidden',
-    borderRadius: isFullscreen ? 0 : 2,
+    borderRadius: 0,
   };
 }
 
