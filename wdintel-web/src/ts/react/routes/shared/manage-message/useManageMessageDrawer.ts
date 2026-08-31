@@ -522,6 +522,11 @@ export function useManageMessageDrawer({
 
   useEffect(() => {
     if (!open || !isReportMode) return;
+    if (reportParentIds.length === 0) {
+      setOriginalReportText('');
+      setCopyLoading(false);
+      return;
+    }
     let active = true;
     setCopyLoading(true);
     copyDirectSubmit(reportParentIds)

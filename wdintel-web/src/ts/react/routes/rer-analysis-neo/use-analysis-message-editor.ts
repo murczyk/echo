@@ -5,6 +5,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
+import { isIntelligenceReport } from '../shared/intelligence-reports';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
@@ -126,7 +127,7 @@ export function useAnalysisMessageEditor({
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
       setReportSource(null);
-      setEditorEditAsReport(false);
+      setEditorEditAsReport(isIntelligenceReport(entry[1]));
       setEditorMessage({ id: entry[0], message: entry[1] });
     },
     [messages],

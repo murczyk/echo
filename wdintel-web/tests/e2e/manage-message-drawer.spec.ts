@@ -8,7 +8,8 @@ import {
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
 type ManageMessageDrawerHost = 'duty' | 'analysis';
-type LinkedMessageKind = 'with-report' | 'forwarded-report';
+type LinkedMessageKind =
+  'with-report' | 'forwarded-report' | 'own-report-without-accessible-parent';
 
 function linkedSummary(id: number, text: string) {
   return {
@@ -32,10 +33,18 @@ function buildLinkedInboxResponse(kind: LinkedMessageKind) {
     text:
       kind === 'with-report'
         ? 'E2E message with an intelligence report'
-        : 'E2E forwarded intelligence report as a message',
+        : kind === 'forwarded-report'
+          ? 'E2E forwarded intelligence report as a message'
+          : 'E2E own intelligence report without accessible parent',
     media: [],
     images: [],
-    parentMessages: kind === 'forwarded-report' ? [linkedSummary(42, 'Original report')] : [],
+    groupMasterKey: kind === 'own-report-without-accessible-parent' ? null : 'e2e-group',
+    parentMessages:
+      kind === 'forwarded-report'
+        ? [linkedSummary(42, 'Original report')]
+        : kind === 'own-report-without-accessible-parent'
+          ? [{ ...linkedSummary(42, 'Original message'), isAccessible: false }]
+          : [],
     intelligenceReports:
       kind === 'with-report' ? [linkedSummary(501, 'Linked intelligence report')] : [],
   });
@@ -48,6 +57,7 @@ async function openLinkedMessageEditDrawer(
   kind: LinkedMessageKind,
 ) {
   const inboxResponse = buildLinkedInboxResponse(kind);
+  let copyRequestCount = 0;
   await installMessageCardMediaPreviewAssetRoutes(page);
 
   if (host === 'analysis') {
@@ -62,11 +72,19 @@ async function openLinkedMessageEditDrawer(
     await dutyMocks.systemSettingsReady;
     await expect(page.getByText('Помилка завантаження системних налаштувань')).toHaveCount(0);
   }
+  await page.route('**/api/1.1/messages/copy', async (route) => {
+    copyRequestCount += 1;
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ payloads: [] }),
+    });
+  });
 
   await expect(
     page.getByText((inboxResponse.inbox_items[0]![1] as { text: string }).text),
   ).toBeVisible();
   await page.getByRole('button', { name: 'Редагувати', exact: true }).first().click();
+  return { getCopyRequestCount: () => copyRequestCount };
 }
 
 test.describe('@smoke manage message drawer linked-message regressions', () => {
@@ -87,6 +105,18 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       await expect(page.getByRole('heading', { name: 'Редагувати розвіддонесення' })).toHaveCount(
         0,
       );
+    });
+
+    test(`${host} edits an own report without accessible parents as a report`, async ({ page }) => {
+      const drawer = await openLinkedMessageEditDrawer(
+        page,
+        host,
+        'own-report-without-accessible-parent',
+      );
+
+      await expect(page.getByRole('heading', { name: 'Редагувати розвіддонесення' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Редагувати повідомлення' })).toHaveCount(0);
+      expect(drawer.getCopyRequestCount()).toBe(0);
     });
   }
 });

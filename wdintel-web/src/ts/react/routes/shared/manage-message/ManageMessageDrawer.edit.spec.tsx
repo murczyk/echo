@@ -1125,6 +1125,50 @@ describe('ManageMessageDrawer edit mode', () => {
     root.unmount();
   });
 
+  it('keeps explicit report edit mode without copying when no parents are accessible', async () => {
+    const report = buildMessage({
+      text: 'existing report body',
+      groupMasterKey: null,
+      parentMessages: [
+        {
+          id: 42,
+          isAccessible: false,
+          isDeleted: false,
+          text: '',
+          attachmentsCount: 0,
+          timestamp: null,
+          date: null,
+          time: null,
+          groupName: null,
+          groupMasterKey: null,
+        },
+      ],
+    });
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <ManageMessageDrawer
+          open
+          cyberEchoEnabled={false}
+          currentUser={null}
+          onClose={vi.fn()}
+          editTarget={{ id: 91, message: report }}
+          editAsReport
+        />,
+      );
+    });
+
+    expect(directSubmitMocks.copyDirectSubmit).not.toHaveBeenCalled();
+    expect(container.textContent).toContain('Редагувати розвіддонесення');
+    expect(textFieldPropsByLabel.get('Текст розвіддонесення')?.value).toBe('existing report body');
+    expect(container.textContent).not.toContain('copy failed');
+
+    root.unmount();
+  });
+
   it('edits a forwarded report with an inaccessible parent as an independent message', async () => {
     const onSubmitEdit = vi.fn();
     const report = buildMessage({

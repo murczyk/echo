@@ -18,6 +18,7 @@ import type { InboxMessage } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerDutyNeoPageProps = {
@@ -76,7 +77,7 @@ export function RerDutyNeoPage({
   const openMessageEditor = useCallback((target: { id: number; message: InboxMessage }) => {
     setCreateMessageOpen(false);
     setReportSource(null);
-    setEditAsReport(false);
+    setEditAsReport(isIntelligenceReport(target.message));
     setEditTarget(target);
   }, []);
   const openReportComposer = useCallback((source: { id: number; message: InboxMessage }) => {
