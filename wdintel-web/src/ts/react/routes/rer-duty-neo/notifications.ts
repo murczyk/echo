@@ -242,7 +242,7 @@ export async function resumeDutyNotificationAudioFromUserGesture(): Promise<Duty
   const ctx = getOrCreateDutyNotificationAudioContext();
   if (!ctx) return DutySoundStatus.Unsupported;
   try {
-    if (ctx.state === 'suspended') await ctx.resume();
+    if (ctx.state !== 'running' && ctx.state !== 'closed') await ctx.resume();
     dutySoundStatus =
       ctx.state === 'running' ? DutySoundStatus.Ready : DutySoundStatus.InteractionRequired;
   } catch {
