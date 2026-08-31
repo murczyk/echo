@@ -156,6 +156,46 @@ describe('AdminAiSettlementsPage', () => {
     await act(async () => root.unmount());
   });
 
+  it('discards in-flight test results when a message is deleted', async () => {
+    let resolveTest: ((value: Awaited<ReturnType<typeof mocks.test>>) => void) | undefined;
+    mocks.test.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveTest = resolve;
+        }),
+    );
+    mocks.deleteMessage.mockResolvedValueOnce(undefined);
+    const { container, root } = await renderPage();
+
+    await act(async () => button(container, 'Тест')?.click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Дії"]')?.click(),
+    );
+    await act(async () => {
+      Array.from(document.querySelectorAll('[role="menuitem"]'))
+        .find((item) => item.textContent?.includes('Видалити'))
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+    });
+    await act(async () => button(document.body, 'Видалити')?.click());
+    expect(mocks.deleteMessage).toHaveBeenCalledWith('message-a');
+
+    await act(async () => {
+      resolveTest?.({
+        results: [testResult],
+        messageVersions: [{ id: 'message-a', version: 'version-a' }],
+      });
+    });
+    await act(async () => button(container, 'Зберегти')?.click());
+
+    expect(mocks.save).toHaveBeenCalledWith({
+      prompt: 'Find settlements',
+      results: [],
+      messageVersions: [],
+    });
+    await act(async () => root.unmount());
+  });
+
   it('clears results from the previous prompt when saving a changed prompt', async () => {
     mocks.getPage.mockResolvedValueOnce({
       ...(await mocks.getPage()),

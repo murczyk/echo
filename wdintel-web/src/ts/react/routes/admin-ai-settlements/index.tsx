@@ -248,6 +248,7 @@ export function AdminAiSettlementsPage() {
   }
 
   function handleMessageSaved(message: AiSettlementTestMessageItem) {
+    testInputVersion.current += 1;
     setMessages((current) => {
       const next = current.some((item) => item.id === message.id)
         ? current.map((item) => (item.id === message.id ? message : item))
@@ -266,6 +267,7 @@ export function AdminAiSettlementsPage() {
     setError(null);
     try {
       await deleteAiSettlementTestMessage(deleteTarget.id);
+      testInputVersion.current += 1;
       setMessages((current) => current.filter((message) => message.id !== deleteTarget.id));
       setTestResults((current) =>
         current.filter((result) => result.testMessageId !== deleteTarget.id),

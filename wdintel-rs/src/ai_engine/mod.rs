@@ -23,8 +23,9 @@ use base64::Engine;
 use chrono::Utc;
 use reqwest::StatusCode;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection,
-    EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseConnection, DatabaseTransaction, EntityTrait, IntoActiveModel,
+    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
 };
 use std::time::Duration;
 use types::{
@@ -201,28 +202,43 @@ pub async fn update_ai_engine(
 ) -> Result<Json<AiEngineItem>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let req = req.into_inner();
-    let ai_engine_id = parse_uuid(&req.id)?;
-    let ai_engine = find_ai_engine(&env.dbx, ai_engine_id).await?;
-    let values = validate_update_values(req, ai_engine.token.clone())?;
+    let ai_engine_id = parse_uuid(&req.id).context(h!())?;
+    let transaction = env.dbx.begin().await.c(h!())?;
+    let ai_engine = lock_ai_engine(&transaction, ai_engine_id)
+        .await
+        .context(h!())?;
+    let values =
+        validate_update_values(req, ai_engine.token.clone()).context(h!())?;
     if !values.enabled || !values.callsign_enabled {
-        ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id)
-            .await?;
-        ensure_not_used_by_enabled_settlement_worker(&env.dbx, ai_engine_id)
+        ensure_not_used_by_enabled_callsign_worker(&transaction, ai_engine_id)
             .await
             .context(h!())?;
-        crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
-            .await
-            .c(h!())?;
+        ensure_not_used_by_enabled_settlement_worker(
+            &transaction,
+            ai_engine_id,
+        )
+        .await
+        .context(h!())?;
+        crate::ai_intel_report::ensure_engine_not_used(
+            &transaction,
+            ai_engine_id,
+        )
+        .await
+        .context(h!())?;
     }
     if !values.enabled {
-        ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+        ensure_not_used_by_media_summary(&transaction, ai_engine_id)
             .await
-            .c(h!())?;
+            .context(h!())?;
     }
     if !values.ocr_enabled {
-        ensure_not_used_by_ocr(&env.dbx, ai_engine_id).await?;
+        ensure_not_used_by_ocr(&transaction, ai_engine_id)
+            .await
+            .context(h!())?;
     }
-    ensure_unique_name(&env.dbx, &values.name, Some(ai_engine_id)).await?;
+    ensure_unique_name(&transaction, &values.name, Some(ai_engine_id))
+        .await
+        .context(h!())?;
     let mut ai_engine = ai_engine.into_active_model();
     ai_engine.name = Set(values.name);
     ai_engine.url = Set(values.url);
@@ -232,7 +248,8 @@ pub async fn update_ai_engine(
     ai_engine.callsign_enabled = Set(values.callsign_enabled);
     ai_engine.ocr_enabled = Set(values.ocr_enabled);
     ai_engine.updated_at = Set(Utc::now().naive_utc());
-    let ai_engine = ai_engine.update(&env.dbx).await.c(h!())?;
+    let ai_engine = ai_engine.update(&transaction).await.c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(Json(AiEngineItem::from(ai_engine)))
 }
 
@@ -243,30 +260,41 @@ pub async fn delete_ai_engine(
     req: Json<AiEngineIdReq>,
 ) -> Result<Json<()>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let ai_engine_id = parse_uuid(&req.id)?;
-    find_ai_engine(&env.dbx, ai_engine_id).await?;
-    ensure_not_used_by_enabled_callsign_worker(&env.dbx, ai_engine_id).await?;
-    ensure_not_used_by_enabled_settlement_worker(&env.dbx, ai_engine_id)
+    let ai_engine_id = parse_uuid(&req.id).context(h!())?;
+    let transaction = env.dbx.begin().await.c(h!())?;
+    lock_ai_engine(&transaction, ai_engine_id)
         .await
         .context(h!())?;
-    crate::ai_intel_report::ensure_engine_not_used(&env.dbx, ai_engine_id)
+    ensure_not_used_by_enabled_callsign_worker(&transaction, ai_engine_id)
         .await
-        .c(h!())?;
-    ensure_not_used_by_media_summary(&env.dbx, ai_engine_id)
+        .context(h!())?;
+    ensure_not_used_by_enabled_settlement_worker(&transaction, ai_engine_id)
         .await
-        .c(h!())?;
-    ensure_not_used_by_ocr(&env.dbx, ai_engine_id).await?;
+        .context(h!())?;
+    crate::ai_intel_report::ensure_engine_not_used(&transaction, ai_engine_id)
+        .await
+        .context(h!())?;
+    ensure_not_used_by_media_summary(&transaction, ai_engine_id)
+        .await
+        .context(h!())?;
+    ensure_not_used_by_ocr(&transaction, ai_engine_id)
+        .await
+        .context(h!())?;
     ai_engine::Entity::delete_by_id(ai_engine_id)
-        .exec(&env.dbx)
+        .exec(&transaction)
         .await
         .c(h!())?;
+    transaction.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
-async fn ensure_not_used_by_enabled_callsign_worker(
-    dbx: &DatabaseConnection,
+async fn ensure_not_used_by_enabled_callsign_worker<C>(
+    dbx: &C,
     ai_engine_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let is_used = ai_callsign_settings::Entity::find()
         .filter(ai_callsign_settings::Column::WorkerEnabled.eq(true))
         .filter(ai_callsign_settings::Column::WorkerAiEngineId.eq(ai_engine_id))
@@ -282,10 +310,13 @@ async fn ensure_not_used_by_enabled_callsign_worker(
     Ok(())
 }
 
-async fn ensure_not_used_by_enabled_settlement_worker(
-    dbx: &DatabaseConnection,
+async fn ensure_not_used_by_enabled_settlement_worker<C>(
+    dbx: &C,
     ai_engine_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let is_used = ai_settlement_settings::Entity::find()
         .filter(ai_settlement_settings::Column::WorkerEnabled.eq(true))
         .filter(
@@ -303,10 +334,13 @@ async fn ensure_not_used_by_enabled_settlement_worker(
     Ok(())
 }
 
-async fn ensure_not_used_by_media_summary(
-    dbx: &DatabaseConnection,
+async fn ensure_not_used_by_media_summary<C>(
+    dbx: &C,
     ai_engine_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let selected_by_enabled_settings = media_summary_settings::Entity::find()
         .filter(media_summary_settings::Column::Enabled.eq(true))
         .filter(media_summary_settings::Column::AiEngineId.eq(ai_engine_id))
@@ -333,10 +367,13 @@ async fn ensure_not_used_by_media_summary(
     Ok(())
 }
 
-async fn ensure_not_used_by_ocr(
-    dbx: &DatabaseConnection,
+async fn ensure_not_used_by_ocr<C>(
+    dbx: &C,
     ai_engine_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let selected = ocr_settings_ai_engine::Entity::find()
         .filter(ocr_settings_ai_engine::Column::AiEngineId.eq(ai_engine_id))
         .one(dbx)
@@ -567,11 +604,14 @@ fn parse_uuid(value: &str) -> Result<Uuid, AppError> {
     })
 }
 
-async fn ensure_unique_name(
-    dbx: &DatabaseConnection,
+async fn ensure_unique_name<C>(
+    dbx: &C,
     name: &str,
     except_id: Option<Uuid>,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let mut query =
         ai_engine::Entity::find().filter(ai_engine::Column::Name.eq(name));
     if let Some(except_id) = except_id {
@@ -591,6 +631,18 @@ async fn find_ai_engine(
 ) -> Result<ai_engine::Model, AppError> {
     ai_engine::Entity::find_by_id(ai_engine_id)
         .one(dbx)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+async fn lock_ai_engine(
+    transaction: &DatabaseTransaction,
+    ai_engine_id: Uuid,
+) -> Result<ai_engine::Model, AppError> {
+    ai_engine::Entity::find_by_id(ai_engine_id)
+        .lock_exclusive()
+        .one(transaction)
         .await
         .c(h!())?
         .ok_or(AppError::NotFound)

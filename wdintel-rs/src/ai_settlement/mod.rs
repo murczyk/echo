@@ -197,6 +197,7 @@ pub async fn recalculate_ai_settlement_parsing(
     let engines = load_enabled_engines(&env.dbx, req.ai_engine_ids)
         .await
         .context(h!())?;
+    let engine_versions = ai_engine_versions(&engines);
     let messages = load_test_messages(&env.dbx).await.context(h!())?;
     let message_versions = test_message_versions(&messages);
     let results = run_parsing(prompt.clone(), engines, messages.clone()).await;
@@ -205,6 +206,7 @@ pub async fn recalculate_ai_settlement_parsing(
         prompt,
         results,
         &message_versions,
+        &engine_versions,
     )
     .await
     .context(h!())?;
@@ -222,10 +224,8 @@ pub async fn save_ai_settlement_worker_settings(
 ) -> Result<Json<AiSettlementWorkerSettingsItem>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
     let req = req.into_inner();
-    let ai_engine_id =
-        validate_worker_engine(&env.dbx, req.enabled, req.ai_engine_id)
-            .await
-            .context(h!())?;
+    let ai_engine_id = validate_worker_engine_id(req.enabled, req.ai_engine_id)
+        .context(h!())?;
     let settings = save_worker_settings(&env.dbx, req.enabled, ai_engine_id)
         .await
         .context(h!())?;
@@ -318,8 +318,7 @@ fn worker_settings_item(
     }
 }
 
-async fn validate_worker_engine(
-    dbx: &DatabaseConnection,
+fn validate_worker_engine_id(
     enabled: bool,
     ai_engine_id: Option<String>,
 ) -> Result<Option<Uuid>, AppError> {
@@ -333,13 +332,21 @@ async fn validate_worker_engine(
             msg: "Оберіть ШІ движок для воркера".to_string(),
         });
     }
+    Ok(ai_engine_id)
+}
+
+async fn lock_worker_engine(
+    transaction: &DatabaseTransaction,
+    ai_engine_id: Option<Uuid>,
+) -> Result<(), AppError> {
     let Some(ai_engine_id) = ai_engine_id else {
-        return Ok(None);
+        return Ok(());
     };
     let exists = ai_engine::Entity::find_by_id(ai_engine_id)
         .filter(ai_engine::Column::Enabled.eq(true))
         .filter(ai_engine::Column::CallsignEnabled.eq(true))
-        .one(dbx)
+        .lock_shared()
+        .one(transaction)
         .await
         .c(h!())?
         .is_some();
@@ -348,7 +355,7 @@ async fn validate_worker_engine(
             msg: "Вибраний ШІ движок вимкнено або видалено".to_string(),
         });
     }
-    Ok(Some(ai_engine_id))
+    Ok(())
 }
 
 async fn save_worker_settings(
@@ -356,6 +363,10 @@ async fn save_worker_settings(
     enabled: bool,
     ai_engine_id: Option<Uuid>,
 ) -> Result<ai_settlement_settings::Model, AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    lock_worker_engine(&transaction, ai_engine_id)
+        .await
+        .context(h!())?;
     let now = Utc::now().naive_utc();
     ai_settlement_settings::Entity::insert(
         ai_settlement_settings::ActiveModel {
@@ -375,16 +386,17 @@ async fn save_worker_settings(
             ])
             .to_owned(),
     )
-    .exec(dbx)
+    .exec(&transaction)
     .await
     .c(h!())?;
-    Ok(
+    let settings =
         ai_settlement_settings::Entity::find_by_id(AI_SETTLEMENT_SETTINGS_ID)
-            .one(dbx)
+            .one(&transaction)
             .await
             .c(h!())?
-            .c(h!())?,
-    )
+            .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(settings)
 }
 
 pub(crate) fn effective_prompt(prompt: &str) -> &str {
@@ -491,6 +503,15 @@ fn test_message_versions(
             id: message.id.to_string(),
             version: message.updated_at.to_string(),
         })
+        .collect()
+}
+
+fn ai_engine_versions(
+    engines: &[ai_engine::Model],
+) -> HashMap<Uuid, NaiveDateTime> {
+    engines
+        .iter()
+        .map(|engine| (engine.id, engine.updated_at))
         .collect()
 }
 
@@ -758,8 +779,14 @@ async fn save_prompt_and_results(
     results: Vec<AiSettlementParseResultItem>,
     source_message_versions: Option<&[AiSettlementTestMessageVersionItem]>,
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
-    persist_prompt_and_results(dbx, prompt, results, source_message_versions)
-        .await
+    persist_prompt_and_results(
+        dbx,
+        prompt,
+        results,
+        source_message_versions,
+        None,
+    )
+    .await
 }
 
 async fn save_recalculated_prompt_and_results(
@@ -767,12 +794,14 @@ async fn save_recalculated_prompt_and_results(
     prompt: String,
     results: Vec<AiSettlementParseResultItem>,
     source_message_versions: &[AiSettlementTestMessageVersionItem],
+    source_engine_versions: &HashMap<Uuid, NaiveDateTime>,
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
     persist_prompt_and_results(
         dbx,
         prompt,
         results,
         Some(source_message_versions),
+        Some(source_engine_versions),
     )
     .await
 }
@@ -782,10 +811,16 @@ async fn persist_prompt_and_results(
     prompt: String,
     mut results: Vec<AiSettlementParseResultItem>,
     source_message_versions: Option<&[AiSettlementTestMessageVersionItem]>,
+    source_engine_versions: Option<&HashMap<Uuid, NaiveDateTime>>,
 ) -> Result<Vec<AiSettlementParseResultItem>, AppError> {
     let transaction = dbx.begin().await.c(h!())?;
     if let Some(source_message_versions) = source_message_versions {
         lock_and_validate_test_messages(&transaction, source_message_versions)
+            .await
+            .context(h!())?;
+    }
+    if let Some(source_engine_versions) = source_engine_versions {
+        lock_and_validate_engines(&transaction, source_engine_versions)
             .await
             .context(h!())?;
     }
@@ -848,6 +883,36 @@ async fn lock_and_validate_test_messages(
     if !unchanged {
         return Err(AppError::BL {
             msg: "Тестові повідомлення змінилися під час розпізнавання; повторіть розрахунок"
+                .to_string(),
+        });
+    }
+    Ok(())
+}
+
+async fn lock_and_validate_engines(
+    transaction: &DatabaseTransaction,
+    expected_versions: &HashMap<Uuid, NaiveDateTime>,
+) -> Result<(), AppError> {
+    if expected_versions.is_empty() {
+        return Ok(());
+    }
+    let engines = ai_engine::Entity::find()
+        .filter(ai_engine::Column::Id.is_in(expected_versions.keys().copied()))
+        .filter(ai_engine::Column::Enabled.eq(true))
+        .filter(ai_engine::Column::CallsignEnabled.eq(true))
+        .lock_shared()
+        .all(transaction)
+        .await
+        .c(h!())?;
+    let unchanged = engines.len() == expected_versions.len()
+        && engines.iter().all(|engine| {
+            expected_versions
+                .get(&engine.id)
+                .is_some_and(|updated_at| *updated_at == engine.updated_at)
+        });
+    if !unchanged {
+        return Err(AppError::BL {
+            msg: "Налаштування ШІ движків змінилися під час розпізнавання; повторіть розрахунок"
                 .to_string(),
         });
     }
@@ -995,19 +1060,24 @@ fn parse_unique_uuids(values: Vec<String>) -> Result<HashSet<Uuid>, AppError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        effective_prompt, load_test_messages, parse_settlements, prompt_state,
-        save_prompt_and_results, save_recalculated_prompt_and_results,
+        ai_engine_versions, effective_prompt, load_test_messages,
+        parse_settlements, prompt_state, save_prompt_and_results,
+        save_recalculated_prompt_and_results, save_worker_settings,
         strip_json_code_fence, test_message_versions,
     };
     use crate::ai_settlement::types::AiSettlementParseResultItem;
     use crate::config::{
         AI_SETTLEMENT_DEFAULT_PROMPT, AI_SETTLEMENT_SETTINGS_ID,
     };
-    use crate::entities::{ai_settlement_settings, ai_settlement_test_message};
+    use crate::entities::{
+        ai_engine, ai_settlement_settings, ai_settlement_test_message,
+    };
     use sea_orm::{
         ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel,
+        QuerySelect, TransactionTrait,
     };
     use serial_test::serial;
+    use std::collections::HashMap;
 
     #[test]
     fn parses_object_and_deduplicates_settlements() {
@@ -1069,6 +1139,7 @@ mod tests {
         .unwrap();
         let source_messages = load_test_messages(&env.dbx).await.unwrap();
         let source_message_versions = test_message_versions(&source_messages);
+        let source_engine_versions = HashMap::new();
         let mut message = message.into_active_model();
         message.message = Set("new message".to_string());
         message.updated_at = Set(now + chrono::Duration::seconds(1));
@@ -1079,6 +1150,7 @@ mod tests {
             "prompt".to_string(),
             Vec::new(),
             &source_message_versions,
+            &source_engine_versions,
         )
         .await
         .unwrap_err();
@@ -1143,6 +1215,7 @@ mod tests {
         .unwrap();
         let source_messages = load_test_messages(&env.dbx).await.unwrap();
         let source_message_versions = test_message_versions(&source_messages);
+        let source_engine_versions = HashMap::new();
         ai_settlement_test_message::ActiveModel {
             id: Set(uuid::Uuid::now_v7()),
             message: Set("added message".to_string()),
@@ -1158,11 +1231,116 @@ mod tests {
             "prompt".to_string(),
             Vec::new(),
             &source_message_versions,
+            &source_engine_versions,
         )
         .await
         .unwrap_err();
 
         assert!(error.to_string().contains("Тестові повідомлення змінилися"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn rejects_recalculation_when_ai_engine_changes_2133() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            name: Set(format!("settlement-engine-{}", uuid::Uuid::now_v7())),
+            url: Set("http://localhost".to_string()),
+            token: Set(None),
+            model_name: Set("old-model".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(false),
+            ocr_request_profile: Set("openai_vision".to_string()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let source_engine_versions =
+            ai_engine_versions(std::slice::from_ref(&ai_engine));
+        let source_messages = load_test_messages(&env.dbx).await.unwrap();
+        let source_message_versions = test_message_versions(&source_messages);
+        let mut ai_engine = ai_engine.into_active_model();
+        ai_engine.model_name = Set("new-model".to_string());
+        ai_engine.updated_at = Set(now + chrono::Duration::seconds(1));
+        ai_engine.update(&env.dbx).await.unwrap();
+
+        let error = save_recalculated_prompt_and_results(
+            &env.dbx,
+            "prompt".to_string(),
+            Vec::new(),
+            &source_message_versions,
+            &source_engine_versions,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains("ШІ движків змінилися"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn worker_enablement_waits_for_concurrent_engine_update_2133() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        ai_settlement_settings::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let now = chrono::Utc::now().naive_utc();
+        let ai_engine = ai_engine::ActiveModel {
+            id: Set(uuid::Uuid::now_v7()),
+            name: Set(format!("settlement-worker-{}", uuid::Uuid::now_v7())),
+            url: Set("http://localhost".to_string()),
+            token: Set(None),
+            model_name: Set("test-model".to_string()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            enabled: Set(true),
+            callsign_enabled: Set(true),
+            ocr_enabled: Set(false),
+            ocr_request_profile: Set("openai_vision".to_string()),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let transaction = env.dbx.begin().await.unwrap();
+        let ai_engine = ai_engine::Entity::find_by_id(ai_engine.id)
+            .lock_exclusive()
+            .one(&transaction)
+            .await
+            .unwrap()
+            .unwrap();
+        let dbx = env.dbx.clone();
+        let ai_engine_id = ai_engine.id;
+        let mut save_task = tokio::spawn(async move {
+            save_worker_settings(&dbx, true, Some(ai_engine_id)).await
+        });
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            &mut save_task,
+        )
+        .await
+        .is_err());
+        let mut ai_engine = ai_engine.into_active_model();
+        ai_engine.enabled = Set(false);
+        ai_engine.updated_at = Set(now + chrono::Duration::seconds(1));
+        ai_engine.update(&transaction).await.unwrap();
+        transaction.commit().await.unwrap();
+
+        let error = save_task.await.unwrap().unwrap_err();
+
+        assert!(error.to_string().contains("вимкнено або видалено"));
+        assert!(ai_settlement_settings::Entity::find_by_id(
+            AI_SETTLEMENT_SETTINGS_ID,
+        )
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .is_none());
     }
 
     #[test]
