@@ -23,6 +23,9 @@ pub struct Model {
     pub is_configured: bool,
     pub signal_mode: SignalCliMode,
     pub outbox_message_ttl_minutes: i64,
+    pub seen_inbox_message_ttl_days: Option<i32>,
+    pub inbox_and_outbox_message_ttl_days: Option<i32>,
+    pub outbound_message_ttl_days: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

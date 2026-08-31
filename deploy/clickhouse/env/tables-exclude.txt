@@ -17,6 +17,10 @@ public.seaql_echo_gpu_migrations
 public.echo_whatsapp_queue
 public.echo_whatsapp_queue_attachment
 public.echo_automation_send_log
+public.echo_client_settings
+public.echo_chat_filter
+public.echo_chat_ingestion_state
+public.echo_chat_webhook_delivery
 public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync
