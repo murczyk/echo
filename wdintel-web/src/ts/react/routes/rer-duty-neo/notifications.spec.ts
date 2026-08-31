@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   beginDutyNotificationPollCycle,
+  DUTY_NOTIFICATION_STATUS_CHANGE_EVENT,
   DutyBrowserNotificationStatus,
   endDutyNotificationPollCycle,
   getBrowserNotificationStatus,
@@ -39,6 +40,35 @@ describe('Duty browser notifications', () => {
 
     expect(NotificationMock).toHaveBeenCalledTimes(1);
     expect(NotificationMock).toHaveBeenLastCalledWith('Виробниче', { silent: true });
+  });
+
+  it('publishes browser runtime-status transitions from production delivery', () => {
+    const onStatusChange = vi.fn();
+    window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
+    const failing = vi.fn(function () {
+      throw new Error('blocked');
+    }) as unknown as typeof Notification;
+    installNotification('granted', failing);
+
+    showBrowserNotification('Виробниче');
+
+    expect(getBrowserNotificationStatus()).toBe(DutyBrowserNotificationStatus.RuntimeFailure);
+    expect(onStatusChange).toHaveBeenCalledTimes(1);
+
+    const succeeding = vi.fn(function () {
+      return { addEventListener: vi.fn() };
+    }) as unknown as typeof Notification;
+    installNotification('granted', succeeding);
+
+    showBrowserNotification('Виробниче');
+
+    expect(getBrowserNotificationStatus()).toBe(DutyBrowserNotificationStatus.Granted);
+    expect(onStatusChange).toHaveBeenCalledTimes(2);
+
+    showBrowserNotification('Виробниче');
+
+    expect(onStatusChange).toHaveBeenCalledTimes(2);
+    window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, onStatusChange);
   });
 
   it('retries an explicit test after a runtime failure and clears it on success', () => {
@@ -240,7 +270,7 @@ describe('Duty browser notifications', () => {
     vi.resetModules();
     const {
       attachDutyNotificationAudioPrimingListeners: attachPrimingListeners,
-      DUTY_AUDIO_STATUS_CHANGE_EVENT: statusChangeEvent,
+      DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: statusChangeEvent,
       DutySoundStatus,
       getDutySoundStatus: getSoundStatus,
     } = await import('./notifications');

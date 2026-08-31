@@ -760,44 +760,57 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     const run = async () => {
       if (!messageFeedsRef.current.length) return;
       beginDutyNotificationPollCycle();
+      const participatingFeeds = [...messageFeedsRef.current];
+      let remainingCountComparisons = participatingFeeds.length;
+      const completeCountComparison = () => {
+        remainingCountComparisons -= 1;
+        if (remainingCountComparisons === 0) endDutyNotificationPollCycle();
+      };
       await Promise.allSettled(
-        messageFeedsRef.current.map(async (feed) => {
+        participatingFeeds.map(async (feed) => {
           let entry: Awaited<ReturnType<typeof requestValidatedInboxCount>>;
+          let feedId: string | null = null;
+          let currentFeed: (typeof messageFeedsRef.current)[number] | undefined;
           try {
-            entry = await requestValidatedInboxCount(feed.id);
-            clearPollingFailure();
-          } catch (error) {
-            reportPollingFailure(error);
-            return;
-          }
-          if (!entry || isNullOrUndefined(entry.quantity)) return;
-          const { feedId } = entry;
-          recordLastSuccessfulDutyCountCheck(feedId);
-          const currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
-          if (!currentFeed || currentFeed.loading) return;
-          const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
-          const canCompareBaseline =
-            prevServerCount?.cursorId === entry.cursorId &&
-            prevServerCount?.requestSignature === entry.requestSignature;
-          if (canCompareBaseline && entry.quantity > prevServerCount.quantity) {
-            notifyDutyNewMessages(feedId, entry.quantity - prevServerCount.quantity);
-          }
-          // Every successful comparable generation establishes a silent baseline. A failed
-          // request never reaches here, so recovery compares against the last known count.
-          lastServerCountByFeedIdRef.current[feedId] = {
-            cursorId: entry.cursorId,
-            quantity: entry.quantity,
-            requestSignature: entry.requestSignature,
-          };
-          if (currentFeed.items.length === 0) {
-            if (entry.quantity > 0) {
-              markFeedReloadRequested(feedId);
-              setMessageFeeds((previous) =>
-                previous.map((feed) => (feed.id === feedId ? { ...feed, loading: true } : feed)),
-              );
+            try {
+              entry = await requestValidatedInboxCount(feed.id);
+              clearPollingFailure();
+            } catch (error) {
+              reportPollingFailure(error);
+              return;
             }
-            return;
+            if (!entry || isNullOrUndefined(entry.quantity)) return;
+            feedId = entry.feedId;
+            recordLastSuccessfulDutyCountCheck(feedId);
+            currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
+            if (!currentFeed || currentFeed.loading) return;
+            const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
+            const canCompareBaseline =
+              prevServerCount?.cursorId === entry.cursorId &&
+              prevServerCount?.requestSignature === entry.requestSignature;
+            if (canCompareBaseline && entry.quantity > prevServerCount.quantity) {
+              notifyDutyNewMessages(feedId, entry.quantity - prevServerCount.quantity);
+            }
+            // Every successful comparable generation establishes a silent baseline. A failed
+            // request never reaches here, so recovery compares against the last known count.
+            lastServerCountByFeedIdRef.current[feedId] = {
+              cursorId: entry.cursorId,
+              quantity: entry.quantity,
+              requestSignature: entry.requestSignature,
+            };
+            if (currentFeed.items.length === 0) {
+              if (entry.quantity > 0) {
+                markFeedReloadRequested(feedId);
+                setMessageFeeds((previous) =>
+                  previous.map((feed) => (feed.id === feedId ? { ...feed, loading: true } : feed)),
+                );
+              }
+              return;
+            }
+          } finally {
+            completeCountComparison();
           }
+          if (!entry || !currentFeed || feedId === null) return;
           const quantity = entry.quantity ?? 0;
           const loadedTailId = currentFeed.items.at(-1)?.[0] ?? null;
           const exhaustedAtTail =
@@ -943,7 +956,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
         }),
       );
-      endDutyNotificationPollCycle();
     };
     const promise = run().finally(() => {
       if (activePollPromiseRef.current === promise) activePollPromiseRef.current = null;

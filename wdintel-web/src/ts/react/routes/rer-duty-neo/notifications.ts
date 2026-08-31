@@ -23,7 +23,7 @@ export enum DutyBrowserNotificationStatus {
 export type DutyStorageResult = { ok: true } | { ok: false; error: string };
 export type DutyNotificationBellState = 'off' | 'ready' | 'degraded' | 'unsupported';
 
-export const DUTY_AUDIO_STATUS_CHANGE_EVENT = 'duty-audio-status-change';
+export const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
 
 const DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY = 'rer-duty-neo-notifications';
 
@@ -163,12 +163,16 @@ export function showBrowserNotification(title: string, options?: NotificationOpt
   if (typeof window === 'undefined') return;
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
+  const previousStatus = getBrowserNotificationStatus();
   try {
     const notification = new Notification(title, options);
     notification.addEventListener('click', () => window.focus());
     browserNotificationRuntimeFailure = null;
   } catch (error) {
     browserNotificationRuntimeFailure = error instanceof Error ? error.message : String(error);
+  }
+  if (previousStatus !== getBrowserNotificationStatus()) {
+    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
   }
 }
 
@@ -233,7 +237,7 @@ export async function resumeDutyNotificationAudioFromUserGesture(): Promise<Duty
     dutySoundStatus = DutySoundStatus.Blocked;
   }
   if (previousStatus !== getDutySoundStatus() && typeof window !== 'undefined') {
-    window.dispatchEvent(new Event(DUTY_AUDIO_STATUS_CHANGE_EVENT));
+    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
   }
   return dutySoundStatus;
 }

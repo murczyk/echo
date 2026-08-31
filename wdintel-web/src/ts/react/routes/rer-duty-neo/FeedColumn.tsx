@@ -11,7 +11,7 @@ import {
 } from 'react';
 import type { MouseEvent } from 'react';
 import {
-  DUTY_AUDIO_STATUS_CHANGE_EVENT,
+  DUTY_NOTIFICATION_STATUS_CHANGE_EVENT,
   getStoredDutyNotificationSettingsForFeed,
   getDutyNotificationBellState,
   requestBrowserNotificationPermission,
@@ -75,11 +75,11 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   useEffect(() => {
     const refresh = () => setNotificationStatusVersion((version) => version + 1);
     window.addEventListener('focus', refresh);
-    window.addEventListener(DUTY_AUDIO_STATUS_CHANGE_EVENT, refresh);
+    window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
       window.removeEventListener('focus', refresh);
-      window.removeEventListener(DUTY_AUDIO_STATUS_CHANGE_EVENT, refresh);
+      window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
   }, []);

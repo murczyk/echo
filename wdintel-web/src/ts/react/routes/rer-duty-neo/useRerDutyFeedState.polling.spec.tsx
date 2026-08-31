@@ -424,6 +424,44 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(ids).toEqual([1, 2]);
   });
 
+  it('delivers aggregated alerts before a pending near-bottom newer load completes', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+    apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+    await startPoll();
+
+    hoisted.beginDutyNotificationPollCycle.mockClear();
+    hoisted.endDutyNotificationPollCycle.mockClear();
+    hoisted.notifyDutyNewMessages.mockClear();
+    hoisted.fetchInboxCount.mockClear();
+    const newerMessages = deferred<InboxMessagesRsp>('pending newer messages');
+    hoisted.fetchInboxCount.mockReset();
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 2, firstElementTs: null });
+    hoisted.fetchInboxMessages.mockImplementationOnce(() => newerMessages.promise);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 2);
+    expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(1);
+    const countRequestsWhileTailPending = hoisted.fetchInboxCount.mock.calls.length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+    });
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(countRequestsWhileTailPending);
+
+    newerMessages.resolve(inboxRsp([]));
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(1);
+  });
+
   it('requests newer mail from progressive cursors at the physical bottom', async () => {
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,

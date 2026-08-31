@@ -18,10 +18,10 @@ const notificationApi = vi.hoisted(() => ({
   resumeAudio: vi.fn(async () => 'ready'),
 }));
 
-const DUTY_AUDIO_STATUS_CHANGE_EVENT = 'duty-audio-status-change';
+const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
 
 vi.mock('./notifications', () => ({
-  DUTY_AUDIO_STATUS_CHANGE_EVENT: 'duty-audio-status-change',
+  DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: 'duty-notification-status-change',
   getStoredDutyNotificationSettingsForFeed: notificationApi.getStored,
   getDutyNotificationBellState: notificationApi.getBellState,
   setStoredDutyNotificationSettingsForFeed: notificationApi.setStored,
@@ -468,7 +468,7 @@ describe('FeedColumn', () => {
     );
   });
 
-  it('refreshes the mounted bell after an audio-status transition', async () => {
+  it('refreshes the mounted bell after a notification-status transition', async () => {
     notificationApi.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: false });
     notificationApi.getBellState.mockReturnValue('degraded');
 
@@ -484,7 +484,7 @@ describe('FeedColumn', () => {
 
     notificationApi.getBellState.mockReturnValue('ready');
     await act(async () => {
-      window.dispatchEvent(new Event(DUTY_AUDIO_STATUS_CHANGE_EVENT));
+      window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
     });
 
     expect(
