@@ -7,23 +7,40 @@ pub fn epoch_of(login: &login::Model) -> i64 {
     login.totp_epoch.unwrap_or(0)
 }
 
+/// Returns decrypted plaintext base32 secret, if enrolled.
 pub async fn find_secret<C: ConnectionTrait>(
     db: &C,
     login_id: Uuid,
+    totp_strongbox_key: &str,
 ) -> anyhow::Result<Option<String>> {
-    Ok(login_totp::Entity::find_by_id(login_id)
+    let Some(ciphertext) = login_totp::Entity::find_by_id(login_id)
         .one(db)
         .await
         .c(h!())?
         .map(|row| row.totp_secret)
-        .filter(|secret| !secret.is_empty()))
+        .filter(|secret| !secret.is_empty())
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
+        super::totp_crypto::decrypt_secret(
+            totp_strongbox_key,
+            login_id,
+            &ciphertext,
+        )
+        .context(h!())?,
+    ))
 }
 
 pub async fn is_enabled<C: ConnectionTrait>(
     db: &C,
     login_id: Uuid,
 ) -> anyhow::Result<bool> {
-    Ok(find_secret(db, login_id).await.context(h!())?.is_some())
+    Ok(login_totp::Entity::find_by_id(login_id)
+        .one(db)
+        .await
+        .c(h!())?
+        .is_some_and(|row| !row.totp_secret.is_empty()))
 }
 
 pub async fn clear_secret<C: ConnectionTrait>(
@@ -60,14 +77,14 @@ WHERE id = $1
     Ok(())
 }
 
-/// Insert secret only when the login has no TOTP row yet and still has the
+/// Insert ciphertext only when the login has no TOTP row yet and still has the
 /// enrollment generation captured when the challenge was issued.
 /// Returns false when a secret was already configured or the epoch advanced
 /// (e.g. admin clear after the challenge was claimed).
 pub async fn insert_secret_if_absent<C: ConnectionTrait>(
     db: &C,
     login_id: Uuid,
-    totp_secret: &str,
+    totp_secret_ciphertext: &str,
     expected_epoch: i64,
 ) -> anyhow::Result<bool> {
     let result = db
@@ -85,7 +102,7 @@ WHERE login.id = $1
             "#,
             [
                 login_id.into(),
-                totp_secret.into(),
+                totp_secret_ciphertext.into(),
                 expected_epoch.into(),
             ],
         ))

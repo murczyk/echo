@@ -1103,6 +1103,10 @@ pub struct Config {
     pub pg_dbname: Option<String>,
     pub file_registry: Option<FileRegistryConfig>,
     pub cookie_session_secret: String,
+    /// Base64 32-byte StrongBox key for encrypting TOTP seeds in Redis and
+    /// `login_totp`. Generate with `oneoff-generate-strongbox-key`.
+    #[serde(default)]
+    pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
     pub signal_api_phone: String,
     pub signal_import_group_name: String,

@@ -13,6 +13,7 @@ use uuid::Uuid;
 pub enum TotpChallenge {
     Enroll {
         login_id: Uuid,
+        /// StrongBox ciphertext (base64), never plaintext base32.
         pending_secret: String,
         #[serde(default)]
         epoch: i64,

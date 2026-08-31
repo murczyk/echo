@@ -38,7 +38,9 @@ Delta and `test-api-login` are unchanged (no 2FA).
 ## Schema
 
 **Table:** `login_totp` (PeerDB-excluded)  
-**Columns:** `login_id UUID PK → login(id) ON DELETE CASCADE`, `totp_secret TEXT NOT NULL`
+**Columns:** `login_id UUID PK → login(id) ON DELETE CASCADE`, `totp_secret TEXT NOT NULL` (StrongBox ciphertext, base64)
+
+**Config:** `totp_strongbox_key` (top-level in `config.toml`) — base64 32-byte key from `oneoff-generate-strongbox-key`. Do not reuse `s3_config.strongbox_key`. AAD is `echo/login_totp/{login_id}`.
 
 **Also on `login`:** `totp_epoch BIGINT NULL` (replicated; treat NULL as 0) — bumped on admin clear; enroll challenges capture it and insert only when it still matches.
 
@@ -50,9 +52,9 @@ Migration: `echo-migration/src/m20260827_180023_add_login_totp_secret.rs`
 Impact: `public.login_totp` → `excluded`  
 Exclude file: `deploy/clickhouse/env/tables-exclude.txt`
 
-Plaintext TOTP seeds never live on replicated `public.login` and must not enter ClickHouse.
+Plaintext TOTP seeds never live on replicated `public.login` and must not enter ClickHouse. Ciphertext also stays out of analytics via PeerDB exclusion.
 
-Raw `totp_secret` is never returned in list/update login payloads. Admin sees `totp_enabled: bool` only.
+Raw `totp_secret` is never returned in list/update login payloads. Admin sees `totp_enabled: bool` only. QR / `manual_key` are shown once at enroll time only.
 
 ---
 
@@ -63,7 +65,7 @@ Active pointer: `2fa:login:{login_id}:active`.
 Per-login fails: `2fa:login:{login_id}:fails` (survives challenge rotation).
 
 ```text
-Enroll { login_id, pending_secret }
+Enroll { login_id, pending_secret }   # pending_secret = StrongBox ciphertext
 Verify { login_id }
 ```
 
@@ -84,12 +86,12 @@ Verify { login_id }
 ## Confirm (`POST /api/user/confirm-2fa`)
 
 1. Load Redis challenge; missing/expired/locked → form error, no session
-2. Secret:
-   - **Enroll** → pending secret from Redis
-   - **Verify** → `login.totp_secret` from DB
+2. Secret (decrypt with `totp_strongbox_key`):
+   - **Enroll** → decrypt `pending_secret` from Redis
+   - **Verify** → decrypt `login_totp.totp_secret` from DB
 3. Verify TOTP (6 digits, 30s step, ±1 skew)
 4. Success:
-   - **Enroll** → persist `totp_secret`
+   - **Enroll** → persist ciphertext (same as Redis pending) into `login_totp`
    - both → `start_user_session`, delete Redis key
 5. Failure → bump attempts; no cookie
 
@@ -101,7 +103,7 @@ Enrollment is only via login → `Needs2faSetup` → confirm. No public `/setup_
 
 `POST /api/login/update` with `clear_totp: true` (`ensure_admin`):
 
-- Sets `totp_secret = NULL`
+- Deletes `login_totp` row and bumps `totp_epoch`
 - Logs the admin action
 - Next password login forces enroll again
 - FE: “Скинути 2FA” when `totp_enabled`

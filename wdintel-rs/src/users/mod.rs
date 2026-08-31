@@ -20,6 +20,7 @@ use uuid::Uuid;
 pub mod login_totp;
 pub mod totp;
 pub mod totp_challenge;
+pub mod totp_crypto;
 pub mod types;
 
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
@@ -1037,56 +1038,60 @@ async fn begin_totp_login_challenge(
         return Ok(LoginRsp::Authenticated);
     }
 
+    let totp_key = totp_crypto::require_totp_strongbox_key(
+        env.config.totp_strongbox_key.as_deref(),
+    )
+    .c(h!())?;
     let mut redis = env.redis.clone();
-    match login_totp::find_secret(&env.dbx, login_obj.id)
+    if login_totp::is_enabled(&env.dbx, login_obj.id).await.c(h!())? {
+        match totp_challenge::create_verify_challenge(
+            &mut redis,
+            login_obj.id,
+            login_totp::epoch_of(login_obj),
+        )
         .await
         .c(h!())?
-    {
-        None => {
-            let enrollment =
-                totp::generate_enrollment(&login_obj.login).c(h!())?;
-            match totp_challenge::create_enroll_challenge(
-                &mut redis,
-                login_obj.id,
-                &enrollment.secret_base32,
-                login_totp::epoch_of(login_obj),
-            )
-            .await
-            .c(h!())?
-            {
-                totp_challenge::CreateChallengeOutcome::LockedOut => {
-                    Err(totp_login_form_error(
-                        "Забагато невдалих спроб. Спробуйте пізніше",
-                    ))
-                }
-                totp_challenge::CreateChallengeOutcome::Created(
-                    challenge_id,
-                ) => Ok(LoginRsp::Needs2faSetup {
+        {
+            totp_challenge::CreateChallengeOutcome::LockedOut => {
+                Err(totp_login_form_error(
+                    "Забагато невдалих спроб. Спробуйте пізніше",
+                ))
+            }
+            totp_challenge::CreateChallengeOutcome::Created(challenge_id) => {
+                Ok(LoginRsp::Needs2fa {
+                    challenge_id: challenge_id.to_string(),
+                })
+            }
+        }
+    } else {
+        let enrollment =
+            totp::generate_enrollment(&login_obj.login).c(h!())?;
+        let pending_secret = totp_crypto::encrypt_secret(
+            totp_key,
+            login_obj.id,
+            &enrollment.secret_base32,
+        )
+        .c(h!())?;
+        match totp_challenge::create_enroll_challenge(
+            &mut redis,
+            login_obj.id,
+            &pending_secret,
+            login_totp::epoch_of(login_obj),
+        )
+        .await
+        .c(h!())?
+        {
+            totp_challenge::CreateChallengeOutcome::LockedOut => {
+                Err(totp_login_form_error(
+                    "Забагато невдалих спроб. Спробуйте пізніше",
+                ))
+            }
+            totp_challenge::CreateChallengeOutcome::Created(challenge_id) => {
+                Ok(LoginRsp::Needs2faSetup {
                     challenge_id: challenge_id.to_string(),
                     qr_base64: enrollment.qr_base64,
                     manual_key: enrollment.manual_key,
-                }),
-            }
-        }
-        Some(_) => {
-            match totp_challenge::create_verify_challenge(
-                &mut redis,
-                login_obj.id,
-                login_totp::epoch_of(login_obj),
-            )
-            .await
-            .c(h!())?
-            {
-                totp_challenge::CreateChallengeOutcome::LockedOut => {
-                    Err(totp_login_form_error(
-                        "Забагато невдалих спроб. Спробуйте пізніше",
-                    ))
-                }
-                totp_challenge::CreateChallengeOutcome::Created(
-                    challenge_id,
-                ) => Ok(LoginRsp::Needs2fa {
-                    challenge_id: challenge_id.to_string(),
-                }),
+                })
             }
         }
     }
@@ -1185,12 +1190,17 @@ pub async fn user_confirm_2fa(
         ));
     }
 
+    let totp_key = totp_crypto::require_totp_strongbox_key(
+        env.config.totp_strongbox_key.as_deref(),
+    )
+    .c(h!())?;
     let secret = match &challenge {
         totp_challenge::TotpChallenge::Enroll {
             pending_secret, ..
-        } => pending_secret.clone(),
+        } => totp_crypto::decrypt_secret(totp_key, login_id, pending_secret)
+            .c(h!())?,
         totp_challenge::TotpChallenge::Verify { .. } => {
-            login_totp::find_secret(&env.dbx, login_id)
+            login_totp::find_secret(&env.dbx, login_id, totp_key)
                 .await
                 .c(h!())?
                 .ok_or_else(|| {
