@@ -411,20 +411,20 @@
 
   async function markAllRead() {
     if (!state.selectedChat) return;
+    const selectedId = state.selectedChat.id;
     clearError();
     try {
       await request(
         appUrl(
-          `/ui-api/chats/${encodeURIComponent(state.selectedChat.id)}/read-all`,
+          `/ui-api/chats/${encodeURIComponent(selectedId)}/read-all`,
         ),
         { method: "POST" },
       );
+      if (state.selectedChat?.id !== selectedId) return;
       state.messages.forEach((message) => {
         message.unread = false;
       });
-      const chat = state.chats.find(
-        (item) => item.id === state.selectedChat.id,
-      );
+      const chat = state.chats.find((item) => item.id === selectedId);
       if (chat) chat.unreadCount = 0;
       renderMessages();
       renderChatList();

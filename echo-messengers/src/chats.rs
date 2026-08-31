@@ -821,6 +821,7 @@ pub async fn messages(
             left join echo_outbox_message outbox on outbox.id = selected.outbox_message_id
             left join echo_inbox_message reply_in on reply_in.id =
                 coalesce(inbox.reply_to_inbox_message_id, outbox_instance.reply_to_inbox_message_id)
+                and not reply_in.deleted and reply_in.duplicate_of is null
             left join echo_sender reply_sender on reply_sender.id = reply_in.sender_id
             left join echo_outbox_message_instance reply_instance
                 on reply_instance.id = inbox.reply_to_outbox_message_id
@@ -1794,6 +1795,7 @@ async fn ingest_account(
             from echo_inbox_message m
             left join echo_sender s on s.id = m.sender_id
             left join echo_inbox_message reply_in on reply_in.id = m.reply_to_inbox_message_id
+                and not reply_in.deleted and reply_in.duplicate_of is null
             left join echo_sender reply_sender on reply_sender.id = reply_in.sender_id
             left join echo_outbox_message_instance reply_instance on reply_instance.id = m.reply_to_outbox_message_id
             left join echo_outbox_message reply_out on reply_out.id = reply_instance.message_id
