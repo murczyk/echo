@@ -303,6 +303,7 @@ export async function playNotificationSound(): Promise<DutySoundStatus> {
       if (ctx.state !== 'running') return;
       try {
         playDutyNotificationChimeOnContext(ctx);
+        dutySoundStatus = DutySoundStatus.Ready;
       } catch {
         dutySoundStatus = DutySoundStatus.Blocked;
       }
@@ -348,12 +349,13 @@ function deliverDutyAlerts(alerts: PendingDutyAlert[]): void {
   if (enabled.some(({ feedId }) => getStoredDutyNotificationSettingsForFeed(feedId).soundEnabled)) {
     void playNotificationSound();
   }
-  if (
-    enabled.some(({ feedId }) => getStoredDutyNotificationSettingsForFeed(feedId).browserEnabled)
-  ) {
-    const total = enabled.reduce((sum, alert) => sum + alert.totalNew, 0);
+  const browserEnabled = enabled.filter(
+    ({ feedId }) => getStoredDutyNotificationSettingsForFeed(feedId).browserEnabled,
+  );
+  if (browserEnabled.length > 0) {
+    const total = browserEnabled.reduce((sum, alert) => sum + alert.totalNew, 0);
     showBrowserNotification('Нові повідомлення в оперативному', {
-      body: `Нових повідомлень: ${total}. Стрічок: ${enabled.length}.`,
+      body: `Нових повідомлень: ${total}. Стрічок: ${browserEnabled.length}.`,
       silent: true,
     });
   }

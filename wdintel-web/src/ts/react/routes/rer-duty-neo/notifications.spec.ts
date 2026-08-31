@@ -126,4 +126,101 @@ describe('Duty browser notifications', () => {
       AudioContextMock.mock.results[0]?.value.createOscillator as ReturnType<typeof vi.fn>,
     ).toHaveBeenCalledTimes(2);
   });
+
+  it('aggregates browser notifications only from browser-enabled feeds while chiming once', async () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    const NotificationMock = vi.fn(function () {
+      return { addEventListener: vi.fn() };
+    }) as unknown as typeof Notification;
+    installNotification('granted', NotificationMock);
+    const createOscillator = vi.fn(() => ({
+      connect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      type: 'sine',
+      frequency: { setValueAtTime: vi.fn() },
+    }));
+    const gain = {
+      connect: vi.fn(),
+      gain: {
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
+      },
+    };
+    const AudioContextMock = vi.fn(function () {
+      return {
+        currentTime: 0,
+        state: 'running',
+        destination: {},
+        createGain: vi.fn(() => gain),
+        createOscillator,
+      };
+    });
+    vi.stubGlobal('AudioContext', AudioContextMock);
+    vi.resetModules();
+    const {
+      beginDutyNotificationPollCycle: beginPollCycle,
+      endDutyNotificationPollCycle: endPollCycle,
+      notifyDutyNewMessages: notifyNewMessages,
+      setStoredDutyNotificationSettingsForFeed: setStoredSettings,
+    } = await import('./notifications');
+    setStoredSettings('feed-a', {
+      soundEnabled: true,
+      browserEnabled: false,
+    });
+    setStoredSettings('feed-b', {
+      soundEnabled: false,
+      browserEnabled: true,
+    });
+
+    beginPollCycle();
+    notifyNewMessages('feed-a', 2);
+    notifyNewMessages('feed-b', 3);
+    endPollCycle();
+
+    expect(NotificationMock).toHaveBeenCalledTimes(1);
+    expect(NotificationMock.mock.calls[0]?.[1]?.body).toBe('Нових повідомлень: 3. Стрічок: 1.');
+    expect(createOscillator).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns Ready after playing a two-note chime on an initially running context', async () => {
+    const createOscillator = vi.fn(() => ({
+      connect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      type: 'sine',
+      frequency: { setValueAtTime: vi.fn() },
+    }));
+    const gain = {
+      connect: vi.fn(),
+      gain: {
+        setValueAtTime: vi.fn(),
+        linearRampToValueAtTime: vi.fn(),
+        exponentialRampToValueAtTime: vi.fn(),
+      },
+    };
+    const AudioContextMock = vi.fn(function () {
+      return {
+        currentTime: 0,
+        state: 'running',
+        destination: {},
+        createGain: vi.fn(() => gain),
+        createOscillator,
+      };
+    });
+    vi.stubGlobal('AudioContext', AudioContextMock);
+    vi.resetModules();
+    const { DutySoundStatus, playNotificationSound } = await import('./notifications');
+
+    await expect(playNotificationSound()).resolves.toBe(DutySoundStatus.Ready);
+    expect(createOscillator).toHaveBeenCalledTimes(2);
+  });
 });
