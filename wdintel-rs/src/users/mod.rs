@@ -399,15 +399,11 @@ pub async fn update_login(
                 "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
             );
         }
-        // Bump enrollment generation so claimed Redis challenges cannot finish
-        // enroll/verify after password change or password-auth disable.
-        let current_epoch = match &login_obj.totp_epoch {
-            ActiveValue::Set(v) | ActiveValue::Unchanged(v) => {
-                v.unwrap_or(0)
-            }
-            ActiveValue::NotSet => 0,
-        };
-        login_obj.totp_epoch = Set(Some(current_epoch + 1));
+        // SQL-side increment under the login row lock; avoid lost updates when
+        // two invalidating admin updates overlap.
+        login_totp::bump_epoch(&txn, login_id).await.c(h!())?;
+        // Keep ActiveModel from writing a stale totp_epoch over the bump.
+        login_obj.totp_epoch = NotSet;
     }
     if clear_totp {
         login_totp::clear_secret(&txn, login_id).await.c(h!())?;

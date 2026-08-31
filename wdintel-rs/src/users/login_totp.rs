@@ -37,6 +37,29 @@ pub async fn clear_secret<C: ConnectionTrait>(
     Ok(())
 }
 
+/// Atomically advance enrollment generation under the login row lock.
+pub async fn bump_epoch<C: ConnectionTrait>(
+    db: &C,
+    login_id: Uuid,
+) -> anyhow::Result<()> {
+    let result = db
+        .execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+UPDATE login
+SET totp_epoch = COALESCE(totp_epoch, 0) + 1
+WHERE id = $1
+            "#,
+            [login_id.into()],
+        ))
+        .await
+        .c(h!())?;
+    if result.rows_affected() == 0 {
+        bail!("login {login_id} missing while bumping totp_epoch");
+    }
+    Ok(())
+}
+
 /// Insert secret only when the login has no TOTP row yet and still has the
 /// enrollment generation captured when the challenge was issued.
 /// Returns false when a secret was already configured or the epoch advanced
