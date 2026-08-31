@@ -496,6 +496,12 @@ a {
   font-size: 0.875rem;
 }
 
+.message-card-tag--with-divider {
+  margin-left: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--color-divider);
+}
+
 .message-card-media-reveal {
   display: inline-flex;
   align-items: center;
