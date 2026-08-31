@@ -51,7 +51,10 @@ type ServerCountBaseline = {
   requestSignature: string;
 };
 type ConfirmedTailPreview = { tailId: number; count: number; generation: number };
-const DUTY_UNREAD_COUNT_REQUEST_TIMEOUT_MS = 10_000;
+
+function getDutyPollIntervalMs(pollIntervalSec: number): number {
+  return Math.max(1, Math.floor(pollIntervalSec) || 1) * 1000;
+}
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { freqs, setProfiles, setGroupInfos } = deps;
@@ -78,6 +81,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeCountPollPromiseRef = useRef<Promise<void> | null>(null);
+  const countPollRerunRequestedRef = useRef(false);
+  const pollCountThenLoadNewerIfNeededRef = useRef<(() => Promise<void>) | null>(null);
   const activePollTailWorkPromiseByFeedIdRef = useRef<Partial<Record<string, Promise<void>>>>({});
   const invalidateFeedLoadsRef = useRef<(feedId: string) => void>(() => {});
   const countRequestPromiseByFeedIdRef = useRef<
@@ -93,6 +98,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     >
   >({});
   const tailCountRequestPromiseByFeedIdRef = useRef<Record<string, Promise<number | null>>>({});
+  const pollIntervalMs = getDutyPollIntervalMs(deps.pollIntervalSec);
   const tailPreviewPromiseByFeedIdRef = useRef<
     Record<string, Promise<ConfirmedTailPreview | null>>
   >({});
@@ -477,7 +483,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), DUTY_UNREAD_COUNT_REQUEST_TIMEOUT_MS);
+        const timeout = setTimeout(() => controller.abort(), pollIntervalMs);
         try {
           ({ quantity } = await fetchInboxCount(
             buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
@@ -531,7 +537,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       );
       return requestPromise;
     },
-    [buildReqForFeed, freqs, getFeedLoadGeneration],
+    [buildReqForFeed, freqs, getFeedLoadGeneration, pollIntervalMs],
   );
   const requestValidatedTailCount = useCallback(
     (feedId: string, tailId: number) => {
@@ -763,7 +769,10 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [messageFeeds, retainFeedIds]);
 
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
-    if (activeCountPollPromiseRef.current) return activeCountPollPromiseRef.current;
+    if (activeCountPollPromiseRef.current) {
+      countPollRerunRequestedRef.current = true;
+      return activeCountPollPromiseRef.current;
+    }
     const run = async () => {
       if (!messageFeedsRef.current.length) return;
       beginDutyNotificationPollCycle();
@@ -1005,6 +1014,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     };
     const promise = run().finally(() => {
       if (activeCountPollPromiseRef.current === promise) activeCountPollPromiseRef.current = null;
+      const rerunRequested = countPollRerunRequestedRef.current;
+      countPollRerunRequestedRef.current = false;
+      if (rerunRequested && messageFeedsRef.current.length > 0) {
+        void pollCountThenLoadNewerIfNeededRef.current?.();
+      }
     });
     activeCountPollPromiseRef.current = promise;
     return promise;
@@ -1021,6 +1035,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     reportPollingFailure,
     clearPollingFailure,
   ]);
+  pollCountThenLoadNewerIfNeededRef.current = pollCountThenLoadNewerIfNeeded;
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
@@ -1071,14 +1086,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useEffect(() => {
     if (shortStateIdRef.current && !shortStateReady) return;
-    const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();
-    }, intervalMs);
+    }, pollIntervalMs);
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded, shortStateReady]);
+  }, [pollCountThenLoadNewerIfNeeded, pollIntervalMs, shortStateReady]);
 
   useEffect(() => {
     const recover = () => {

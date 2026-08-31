@@ -518,18 +518,20 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(stalledSignal?.aborted).toBe(false);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
       await flushMicrotasks();
     });
 
     expect(stalledSignal?.aborted).toBe(true);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
-    expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(1);
-
-    hoisted.fetchInboxCount.mockClear();
-    await startPoll();
-
-    expect(hoisted.fetchInboxCount.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledTimes(2);
+    expect(hoisted.fetchInboxCount.mock.calls.length).toBeGreaterThanOrEqual(4);
   });
 
   it('requests newer mail from progressive cursors at the physical bottom', async () => {
@@ -1253,8 +1255,10 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     });
     expect(startedCount).toBeGreaterThanOrEqual(2);
     await act(async () => {
-      countResolvers.shift()?.({ quantity: 0, firstElementTs: null });
-      await flushMicrotasks();
+      for (let index = 0; index < 3; index += 1) {
+        countResolvers.shift()?.({ quantity: 0, firstElementTs: null });
+        await flushMicrotasks();
+      }
     });
   });
 
