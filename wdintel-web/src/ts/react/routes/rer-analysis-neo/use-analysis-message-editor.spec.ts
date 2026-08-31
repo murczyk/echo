@@ -111,10 +111,11 @@ describe('useAnalysisMessageEditor', () => {
   let container: HTMLDivElement;
   let root: Root;
   let latest: ReturnType<typeof useAnalysisMessageEditor> | null;
+  let harnessMessages: Array<[number, InboxMessage]>;
 
   function Harness() {
     latest = useAnalysisMessageEditor({
-      messages: [],
+      messages: harnessMessages,
       onError: vi.fn(),
       onUnauthorized: vi.fn().mockReturnValue(false),
       onUpdateLocalMessage: vi.fn(),
@@ -126,6 +127,7 @@ describe('useAnalysisMessageEditor', () => {
     hoisted.fetchMessagesByIds.mockReset();
     hoisted.onInboxChangedMessageIds = vi.fn();
     latest = null;
+    harnessMessages = [];
     container = document.createElement('div');
     root = createRoot(container);
     await act(async () => {
@@ -156,5 +158,47 @@ describe('useAnalysisMessageEditor', () => {
     });
 
     expect(latest?.editorMessage?.message.media).toEqual([{ id: 'new' }]);
+  });
+
+  it('opens an own report card in report edit mode from the regular editor action', async () => {
+    harnessMessages = [
+      [
+        91,
+        {
+          groupMasterKey: null,
+          parentMessages: [{ id: 42, isAccessible: false, isDeleted: false }],
+        } as InboxMessage,
+      ],
+    ];
+    await act(async () => {
+      root.render(React.createElement(Harness));
+    });
+
+    await act(async () => {
+      latest?.openEditor(91);
+    });
+
+    expect(latest?.editorEditAsReport).toBe(true);
+  });
+
+  it('opens a forwarded report in regular message edit mode', async () => {
+    harnessMessages = [
+      [
+        91,
+        {
+          groupMasterKey: 'g-2',
+          parentMessages: [{ id: 42, isAccessible: true, isDeleted: false }],
+        } as InboxMessage,
+      ],
+    ];
+    await act(async () => {
+      root.render(React.createElement(Harness));
+    });
+
+    await act(async () => {
+      latest?.openEditor(91);
+    });
+
+    expect(latest?.editorEditAsReport).toBe(false);
   });
 });

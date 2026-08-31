@@ -5,6 +5,7 @@ import { isNullOrUndefined } from '../../utils/misc';
 import { submitAnalysisInboxMessages } from '../../services/api/analysis';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
 import { useInboxChangedMessageIds } from '../shared/useInboxChangedMessageIds';
+import { isIntelligenceReport } from '../shared/intelligence-reports';
 
 type Props = {
   messages: Array<[number, InboxMessage]>;
@@ -18,6 +19,7 @@ type Props = {
 
 type Result = {
   editorMessage: { id: number; message: InboxMessage } | null;
+  editorEditAsReport: boolean;
   reportSource: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
   closeEditor: () => void;
@@ -84,6 +86,7 @@ export function useAnalysisMessageEditor({
   const [editorMessage, setEditorMessage] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
+  const [editorEditAsReport, setEditorEditAsReport] = useState(false);
   const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
@@ -124,6 +127,7 @@ export function useAnalysisMessageEditor({
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
       setReportSource(null);
+      setEditorEditAsReport(isIntelligenceReport(entry[1]));
       setEditorMessage({ id: entry[0], message: entry[1] });
     },
     [messages],
@@ -131,6 +135,7 @@ export function useAnalysisMessageEditor({
 
   const closeEditor = useCallback(() => {
     setEditorMessage(null);
+    setEditorEditAsReport(false);
     setReportSource(null);
   }, []);
 
@@ -139,6 +144,7 @@ export function useAnalysisMessageEditor({
       const entry = messages.find(([id]) => id === messageId) ?? null;
       if (isNullOrUndefined(entry)) return;
       setEditorMessage(null);
+      setEditorEditAsReport(false);
       setReportSource({ id: entry[0], message: entry[1] });
     },
     [messages],
@@ -150,6 +156,7 @@ export function useAnalysisMessageEditor({
         const [entry] = await fetchMessagesByIds([messageId]);
         if (isNullOrUndefined(entry)) throw new Error('Розвіддонесення не знайдено.');
         setReportSource(null);
+        setEditorEditAsReport(true);
         setEditorMessage({ id: entry[0], message: entry[1] });
       } catch (error) {
         if (!onUnauthorized(error)) onError(toErrorMessage(error));
@@ -199,6 +206,7 @@ export function useAnalysisMessageEditor({
 
   return {
     editorMessage,
+    editorEditAsReport,
     reportSource,
     editorSaveInFlight,
     closeEditor,
