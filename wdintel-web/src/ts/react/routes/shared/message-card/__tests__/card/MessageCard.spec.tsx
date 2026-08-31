@@ -3735,6 +3735,68 @@ describe('MessageCard', () => {
     }
   });
 
+  it('keeps compact rest tags expanded after a rest chip is checked', async () => {
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const isTag = this.hasAttribute('data-message-card-tag-id');
+        const width = isTag ? 60 : TAG_ROW_MEASURE_WIDTH_PX;
+        return {
+          width,
+          height: 32,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+    try {
+      const onToggleTag = vi.fn();
+      const view = await renderCard({
+        tagsLayout: 'compact',
+        msg: buildMessage({
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 },
+          ],
+        }),
+        onToggleTag,
+      });
+      rendered.push(view);
+
+      await click(getButton(view.container, 'розгорнути'));
+      await click(getButton(view.container, 'зв’язок'));
+      expect(onToggleTag).toHaveBeenCalledWith(4);
+
+      const nextProps = {
+        ...view.props,
+        msg: buildMessage({
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 },
+            { id: 2, tagId: 4, confidence: 1, login: 'tester', model: null, organismId: 1 },
+          ],
+        }),
+      };
+
+      await act(async () => {
+        view.root.render(
+          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+            <MessageCard {...nextProps} />
+          </AudioTranscriptionPreferencesProvider>,
+        );
+      });
+
+      expect(view.container.textContent).toContain('згорнути');
+      expect(view.container.textContent).toContain('іфо');
+      expect(view.container.textContent).toContain('розвідка');
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
   it('keeps full tag ordering aligned with the tag map', async () => {
     const view = await renderCard({
       msg: buildMessage({

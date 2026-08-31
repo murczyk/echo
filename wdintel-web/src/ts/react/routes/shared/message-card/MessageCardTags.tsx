@@ -134,6 +134,7 @@ function MessageCardTagsComponent({
 
   useEffect(() => {
     setOrderedTagIds(buildSelectedFirstTagOrder(rows));
+    setShowCompactRest(false);
   }, [messageResetKey, rowIdKey]);
 
   const compactOrderedRows = useMemo(
@@ -154,10 +155,11 @@ function MessageCardTagsComponent({
 
   useLayoutEffect(() => {
     measuredChipWidthsRef.current = new Map();
-    setFirstRowCount((count) =>
-      count === compactOrderedRows.length ? count : compactOrderedRows.length,
-    );
-  }, [packingKey, compactOrderedRows.length]);
+    setFirstRowCount((count) => {
+      if (showCompactRest) return Math.min(count, compactOrderedRows.length);
+      return count === compactOrderedRows.length ? count : compactOrderedRows.length;
+    });
+  }, [packingKey, compactOrderedRows.length, showCompactRest]);
 
   useLayoutEffect(() => {
     if (tagsLayout !== 'compact') return;
@@ -254,12 +256,6 @@ function MessageCardTagsComponent({
     [compactOrderedRows, row1IdSet],
   );
   const hasRest = restRows.length > 0;
-
-  useEffect(() => {
-    if (!hasRest) {
-      setShowCompactRest((open) => (open ? false : open));
-    }
-  }, [hasRest]);
 
   if (tagsLayout === 'full') {
     return (
