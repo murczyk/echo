@@ -83,6 +83,7 @@ import {
 } from '../../services/api/ai-agent';
 import { listAiEngines } from '../../services/api/ai-engines';
 import { AdminAiCallsignsPage } from '../admin-ai-callsigns';
+import { AdminAiSettlementsPage } from '../admin-ai-settlements';
 import { AdminAiIntelReportsPage } from '../admin-ai-intel-reports';
 import { AdminOcrPage } from '../admin-ocr';
 import { AiEnginesSection } from '../admin-system-settings-neo/AiEnginesSection';
@@ -101,6 +102,7 @@ export type AiAgentAdminSection =
   | 'dispatcher'
   | 'echo-proxies'
   | 'callsigns'
+  | 'settlements'
   | 'intelligence-reports'
   | 'ocr'
   | 'settings';
@@ -1946,6 +1948,8 @@ export function AdminAiAgentPage({ section }: { section: AiAgentAdminSection }) 
       return <EchoProxiesPage />;
     case 'callsigns':
       return <AdminAiCallsignsPage />;
+    case 'settlements':
+      return <AdminAiSettlementsPage />;
     case 'intelligence-reports':
       return <AdminAiIntelReportsPage />;
     case 'ocr':

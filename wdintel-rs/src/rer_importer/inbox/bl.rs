@@ -2262,6 +2262,9 @@ async fn clear_body_derived_fields(
     crate::ai_callsign::worker::enqueue_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;
+    crate::ai_settlement::worker::enqueue_if_enabled(txn, inbox_id)
+        .await
+        .c(h!())?;
     Ok(())
 }
 

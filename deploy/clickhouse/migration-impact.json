@@ -8,6 +8,14 @@
         { "table": "public.echo_chat_webhook_delivery", "strategy": "excluded" }
       ]
     },
+    "echo:m20260828_143607_add_ai_settlement_parsing": {
+      "changes": [
+        { "table": "public.ai_settlement_settings", "strategy": "excluded" },
+        { "table": "public.ai_settlement_test_message", "strategy": "excluded" },
+        { "table": "public.ai_settlement_parse_result", "strategy": "excluded" },
+        { "table": "public.ai_settlement_worker_job", "strategy": "excluded" }
+      ]
+    },
     "echo:m20260826_083256_sigint_peleng_battle_line_distance": {
       "changes": [
         {
@@ -381,13 +389,11 @@
       "changes": [
         {
           "table": "public.echo_client",
-          "strategy": "replicated_snapshot",
-          "targeted_resnapshot": true
+          "strategy": "excluded"
         },
         {
           "table": "public.echo_client_config",
-          "strategy": "replicated_snapshot",
-          "targeted_resnapshot": true
+          "strategy": "excluded"
         }
       ]
     },
