@@ -811,6 +811,24 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           if (!entry || !currentFeed || feedId === null) return;
           postCountTailWorkByFeedId.set(feedId, async () => {
+            const currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
+            if (
+              !currentFeed ||
+              currentFeed.loading ||
+              pendingReloadFeedIdsRef.current.has(feedId) ||
+              buildFeedCountSignature(currentFeed, freqs) !== entry.requestSignature
+            ) {
+              return;
+            }
+            const currentBaseline = lastServerCountByFeedIdRef.current[feedId];
+            if (
+              (unreadCursorByFeedIdRef.current[feedId]?.id ?? null) !== entry.cursorId ||
+              currentBaseline?.cursorId !== entry.cursorId ||
+              currentBaseline.requestSignature !== entry.requestSignature ||
+              currentBaseline.quantity !== entry.quantity
+            ) {
+              return;
+            }
             const quantity = entry.quantity ?? 0;
             const loadedTailId = currentFeed.items.at(-1)?.[0] ?? null;
             const exhaustedAtTail =
@@ -820,12 +838,22 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             // Inbox count is assist-only near the tail: never write the badge from it while
             // near-bottom. Scrolled-up polls may still seed beyond-tail pending.
             if (!nearBottom) {
-              const nextUnread = Math.max(currentFeed.unreadCount, quantity);
-              if (nextUnread !== currentFeed.unreadCount) {
-                setMessageFeeds((prev) =>
-                  prev.map((f) => (f.id === feedId ? { ...f, unreadCount: nextUnread } : f)),
-                );
-              }
+              setMessageFeeds((prev) =>
+                prev.map((f) => {
+                  if (f.id !== feedId) return f;
+                  const baseline = lastServerCountByFeedIdRef.current[feedId];
+                  if (
+                    (unreadCursorByFeedIdRef.current[feedId]?.id ?? null) !== entry.cursorId ||
+                    baseline?.cursorId !== entry.cursorId ||
+                    baseline.requestSignature !== entry.requestSignature ||
+                    baseline.quantity !== entry.quantity
+                  ) {
+                    return f;
+                  }
+                  const nextUnread = Math.max(f.unreadCount, entry.quantity);
+                  return nextUnread === f.unreadCount ? f : { ...f, unreadCount: nextUnread };
+                }),
+              );
             }
             if (entry.quantity <= 0) {
               invalidateTailPreview(feedId);

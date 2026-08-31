@@ -804,6 +804,102 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     );
   });
 
+  it('does not resurrect unread after a read cursor changes while a peer count is pending', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/?state=' +
+        encodeURIComponent(
+          JSON.stringify({
+            messageFeeds: [
+              ['mf-0', emptyFilter()],
+              ['mf-1', emptyFilter()],
+            ],
+          }),
+        ),
+    );
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+    await startPoll();
+
+    const peerCount = deferred<{ quantity: number; firstElementTs: number | null }>('peer count');
+    hoisted.fetchInboxCount.mockReset();
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockReturnValueOnce(peerCount.promise)
+      .mockResolvedValue({ quantity: 0, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+      apiRef.current!.catchUpFeedUnreadToTail('mf-0');
+      await flushMicrotasks();
+    });
+
+    peerCount.resolve({ quantity: 0, firstElementTs: null });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds.find((feed) => feed.id === 'mf-0')?.unreadCount).toBe(0);
+  });
+
+  it('preserves newer unread state while a peer count is pending', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/?state=' +
+        encodeURIComponent(
+          JSON.stringify({
+            messageFeeds: [
+              ['mf-0', emptyFilter()],
+              ['mf-1', emptyFilter()],
+            ],
+          }),
+        ),
+    );
+    hoisted.fetchInboxMessages
+      .mockResolvedValueOnce(inboxRsp([[1, minimalInboxMessage({ timestamp: 100 })]]))
+      .mockResolvedValueOnce(inboxRsp([[2, minimalInboxMessage({ timestamp: 200 })]]));
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+    await startPoll();
+
+    const peerCount = deferred<{ quantity: number; firstElementTs: number | null }>('peer count');
+    hoisted.fetchInboxCount.mockReset();
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockReturnValueOnce(peerCount.promise)
+      .mockResolvedValue({ quantity: 0, firstElementTs: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+      await flushMicrotasks();
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => (feed.id === 'mf-0' ? { ...feed, unreadCount: 5 } : feed)),
+      );
+      await flushMicrotasks();
+    });
+
+    peerCount.resolve({ quantity: 0, firstElementTs: null });
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(apiRef.current!.messageFeeds.find((feed) => feed.id === 'mf-0')?.unreadCount).toBe(5);
+  });
+
   it('shares one count request per feed across concurrent callers', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
