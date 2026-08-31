@@ -1,5 +1,8 @@
 use super::{matching, persistence, test_link, tui, EchoEchelon};
-use crate::config::ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE;
+use crate::config::{
+    ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE, ORBIT_DRY_RUN_REPORT_TOP_LIMIT,
+    ORBIT_TEST_LINK_UNITS_MAX_RATING, ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE,
+};
 use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
 use crate::inbox::unit_resolution::normalize_unit_label;
 use crate::types::{Mode, ShortContext};
@@ -10,6 +13,45 @@ use sea_orm::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
+
+type LinkInventory = BTreeMap<Uuid, BTreeSet<i64>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum UnparsedBlocker {
+    ParserRejected,
+    NonUnitAutoArchive,
+    NoOrbitMatch,
+    AmbiguousOrbitMatch,
+    MatchQualityRejected,
+    OrbitHasNoSigintLink,
+    OrbitHasMultipleSigintLinks,
+    AutomaticallyResolvable,
+}
+
+impl UnparsedBlocker {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ParserRejected => "parser rejected",
+            Self::NonUnitAutoArchive => "non-unit auto-archive",
+            Self::NoOrbitMatch => "no ORBIT match",
+            Self::AmbiguousOrbitMatch => "ambiguous ORBIT match",
+            Self::MatchQualityRejected => "match distance/rating rejected",
+            Self::OrbitHasNoSigintLink => "ORBIT has no SIGINT link",
+            Self::OrbitHasMultipleSigintLinks => {
+                "ORBIT has multiple SIGINT links"
+            }
+            Self::AutomaticallyResolvable => "automatically resolvable",
+        }
+    }
+}
+
+#[derive(Debug)]
+struct UnparsedReportRow {
+    blocker: UnparsedBlocker,
+    unit_txt: String,
+    quantity: i64,
+    candidates: Vec<test_link::ReviewMatch>,
+}
 
 #[derive(Debug, Clone)]
 struct UnparsedSelection {
@@ -24,7 +66,11 @@ struct LabelLinkAction {
     sigint_unit_name: String,
 }
 
-pub async fn run(mode: Mode) -> anyhow::Result<()> {
+pub async fn run(mode: Mode, dry_run: bool) -> anyhow::Result<()> {
+    if dry_run {
+        let db = new_pg_pool_from_mode(mode).await.c(h!())?;
+        return print_dry_run_report(&db).await.c(h!());
+    }
     let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
         return Ok(());
     };
@@ -44,9 +90,9 @@ async fn run_with_database(
         .await
         .c(h!())?;
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
-    let unique_links = load_unique_sigint_links(db).await.c(h!())?;
+    let link_inventory = load_link_inventory(db).await.c(h!())?;
     let review_units =
-        prepare_review_units(&labels, &matcher, &unique_links, link_mode)
+        prepare_review_units(&labels, &matcher, &link_inventory, link_mode)
             .c(h!())?;
     let (summary, links) = match link_mode {
         tui::LinkMode::Manual => {
@@ -55,10 +101,10 @@ async fn run_with_database(
         tui::LinkMode::Automatic => test_link::approve_automatic(review_units),
     };
     let labels_by_subject_id = labels
-        .into_iter()
+        .iter()
         .enumerate()
         .map(|(index, label)| {
-            Ok((i64::try_from(index + 1).c(h!())?, label.unit_txt))
+            Ok((i64::try_from(index + 1).c(h!())?, label.unit_txt.clone()))
         })
         .collect::<anyhow::Result<BTreeMap<_, _>>>()
         .c(h!())?;
@@ -77,6 +123,11 @@ async fn run_with_database(
     let actions = persist_selections(db, &selections, link_mode)
         .await
         .c(h!())?;
+    let archived = if link_mode == tui::LinkMode::Automatic {
+        archive_non_unit_labels(db, &labels).await.c(h!())?
+    } else {
+        0
+    };
     if link_mode == tui::LinkMode::Automatic {
         for action in &actions {
             println!(
@@ -87,16 +138,209 @@ async fn run_with_database(
     }
     let resolved = actions.len();
     println!(
-        "Unparsed-unit review: accepted {}, denied {}, unreviewed {}; resolved {resolved} labels.",
+        "Unparsed-unit review: accepted {}, denied {}, unreviewed {}; resolved {resolved} labels, archived {archived} non-unit labels.",
         summary.accepted, summary.denied, summary.unreviewed,
     );
     Ok(())
 }
 
+async fn print_dry_run_report(
+    db: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<()> {
+    let labels =
+        crate::inbox::unresolved_units::load_new_unresolved_unit_labels(db)
+            .await
+            .c(h!())?;
+    let orbit_units = persistence::load_latest_synced_source_units(db)
+        .await
+        .c(h!())?;
+    let matcher = matching::TestLinkMatcher::from_units(orbit_units);
+    let link_inventory = load_link_inventory(db).await.c(h!())?;
+    let rows = labels
+        .iter()
+        .enumerate()
+        .map(|(index, label)| {
+            classify_unparsed_label(
+                i64::try_from(index + 1).c(h!())?,
+                label,
+                &matcher,
+                &link_inventory,
+            )
+        })
+        .collect::<anyhow::Result<Vec<_>>>()
+        .c(h!())?;
+    println!("Unparsed-unit dry run: {} normalized labels.", rows.len());
+    for blocker in [
+        UnparsedBlocker::ParserRejected,
+        UnparsedBlocker::NonUnitAutoArchive,
+        UnparsedBlocker::NoOrbitMatch,
+        UnparsedBlocker::AmbiguousOrbitMatch,
+        UnparsedBlocker::MatchQualityRejected,
+        UnparsedBlocker::OrbitHasNoSigintLink,
+        UnparsedBlocker::OrbitHasMultipleSigintLinks,
+        UnparsedBlocker::AutomaticallyResolvable,
+    ] {
+        let mut matching_rows = rows
+            .iter()
+            .filter(|row| row.blocker == blocker)
+            .collect::<Vec<_>>();
+        matching_rows.sort_by_key(|row| std::cmp::Reverse(row.quantity));
+        let quantity =
+            matching_rows.iter().map(|row| row.quantity).sum::<i64>();
+        println!(
+            "{}: {} labels / {} failed rows",
+            blocker.label(),
+            matching_rows.len(),
+            quantity,
+        );
+        for row in matching_rows
+            .into_iter()
+            .take(ORBIT_DRY_RUN_REPORT_TOP_LIMIT)
+        {
+            println!(
+                "  {:?}: {} rows; {}",
+                row.unit_txt,
+                row.quantity,
+                format_report_candidates(&row.candidates, &link_inventory),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn classify_unparsed_label(
+    subject_id: i64,
+    label: &crate::inbox::unresolved_units::UnresolvedUnitLabel,
+    matcher: &matching::TestLinkMatcher,
+    link_inventory: &LinkInventory,
+) -> anyhow::Result<UnparsedReportRow> {
+    let Some(hierarchy) = parsed_hierarchy(&label.unit_txt) else {
+        let blocker =
+            if crate::inbox::unit_resolution::should_auto_archive_failed_unit(
+                &label.unit_txt,
+            ) {
+                UnparsedBlocker::NonUnitAutoArchive
+            } else {
+                UnparsedBlocker::ParserRejected
+            };
+        return Ok(UnparsedReportRow {
+            blocker,
+            unit_txt: label.unit_txt.clone(),
+            quantity: label.quantity,
+            candidates: Vec::new(),
+        });
+    };
+    let hierarchy = hierarchy
+        .iter()
+        .map(|(echelon, name)| (*echelon, name.as_str()))
+        .collect::<Vec<_>>();
+    let manual = test_link::prepare_review_hierarchy(
+        subject_id,
+        &label.unit_txt,
+        test_link::ReviewSubjectKind::UnparsedUnit,
+        &hierarchy,
+        matcher,
+        tui::LinkMode::Manual,
+        &BTreeSet::new(),
+    );
+    let Some(automatic) = test_link::prepare_review_hierarchy(
+        subject_id,
+        &label.unit_txt,
+        test_link::ReviewSubjectKind::UnparsedUnit,
+        &hierarchy,
+        matcher,
+        tui::LinkMode::Automatic,
+        &BTreeSet::new(),
+    ) else {
+        return Ok(UnparsedReportRow {
+            blocker: UnparsedBlocker::NoOrbitMatch,
+            unit_txt: label.unit_txt.clone(),
+            quantity: label.quantity,
+            candidates: manual.map_or_else(Vec::new, |unit| unit.matches),
+        });
+    };
+    let automatically_approved =
+        test_link::automatically_approved_link(&automatic);
+    let blocker = match automatically_approved {
+        None if automatic_match_is_ambiguous(&automatic) => {
+            UnparsedBlocker::AmbiguousOrbitMatch
+        }
+        None => UnparsedBlocker::MatchQualityRejected,
+        Some((_, orbit_unit_id)) => {
+            match link_inventory.get(&orbit_unit_id).map_or(0, BTreeSet::len) {
+                0 => UnparsedBlocker::OrbitHasNoSigintLink,
+                1 => UnparsedBlocker::AutomaticallyResolvable,
+                _ => UnparsedBlocker::OrbitHasMultipleSigintLinks,
+            }
+        }
+    };
+    Ok(UnparsedReportRow {
+        blocker,
+        unit_txt: label.unit_txt.clone(),
+        quantity: label.quantity,
+        candidates: automatic.matches,
+    })
+}
+
+fn automatic_match_is_ambiguous(unit: &test_link::ReviewUnit) -> bool {
+    let minimum_distance = unit
+        .matches
+        .iter()
+        .filter(|candidate| {
+            candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
+                && candidate.distance
+                    <= ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE
+        })
+        .map(|candidate| candidate.distance)
+        .min();
+    minimum_distance.is_some_and(|minimum_distance| {
+        unit.matches
+            .iter()
+            .filter(|candidate| {
+                candidate.rating == ORBIT_TEST_LINK_UNITS_MAX_RATING
+                    && candidate.distance == minimum_distance
+            })
+            .count()
+            > 1
+    })
+}
+
+fn format_report_candidates(
+    candidates: &[test_link::ReviewMatch],
+    link_inventory: &LinkInventory,
+) -> String {
+    if candidates.is_empty() {
+        return "candidates: none".to_string();
+    }
+    candidates
+        .iter()
+        .map(|candidate| {
+            let sigint_unit_ids = link_inventory
+                .get(&candidate.unit_id)
+                .map(|ids| {
+                    ids.iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            format!(
+                "ORBIT {} rating={} distance={} SIGINT=[{}] name={:?}",
+                candidate.unit_id,
+                candidate.rating,
+                candidate.distance,
+                sigint_unit_ids,
+                candidate.orbit_name,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 fn prepare_review_units(
     labels: &[crate::inbox::unresolved_units::UnresolvedUnitLabel],
     matcher: &matching::TestLinkMatcher,
-    unique_links: &BTreeMap<Uuid, i64>,
+    link_inventory: &LinkInventory,
     link_mode: tui::LinkMode,
 ) -> anyhow::Result<Vec<test_link::ReviewUnit>> {
     let mut review_units = Vec::new();
@@ -105,7 +349,7 @@ fn prepare_review_units(
             i64::try_from(index + 1).c(h!())?,
             &label.unit_txt,
             matcher,
-            unique_links,
+            link_inventory,
             link_mode,
         )
         .c(h!())?
@@ -120,7 +364,7 @@ fn prepare_review_unit(
     subject_id: i64,
     unit_txt: &str,
     matcher: &matching::TestLinkMatcher,
-    unique_links: &BTreeMap<Uuid, i64>,
+    link_inventory: &LinkInventory,
     link_mode: tui::LinkMode,
 ) -> anyhow::Result<Option<test_link::ReviewUnit>> {
     let would_automatically_resolve = if link_mode == tui::LinkMode::Manual {
@@ -129,7 +373,7 @@ fn prepare_review_unit(
                 subject_id,
                 unit_txt,
                 matcher,
-                unique_links,
+                link_inventory,
                 tui::LinkMode::Automatic,
             )
             .c(h!())?
@@ -160,7 +404,14 @@ fn prepare_review_unit(
         .then(|| test_link::automatically_approved_link(&review_unit))
         .flatten();
     review_unit.matches.retain(|candidate| {
-        unique_links.contains_key(&candidate.unit_id)
+        let link_count = link_inventory
+            .get(&candidate.unit_id)
+            .map_or(0, BTreeSet::len);
+        let link_is_eligible = match link_mode {
+            tui::LinkMode::Manual => link_count <= 1,
+            tui::LinkMode::Automatic => link_count == 1,
+        };
+        link_is_eligible
             && automatically_approved.is_none_or(|(_, orbit_unit_id)| {
                 candidate.unit_id == orbit_unit_id
             })
@@ -182,7 +433,9 @@ fn parsed_hierarchy(unit_txt: &str) -> Option<Vec<(EchoEchelon, String)>> {
                     crate::unit::UnitType::COMPANY => EchoEchelon::Company,
                     crate::unit::UnitType::BATTALION => EchoEchelon::Battalion,
                     crate::unit::UnitType::REGIMENT => EchoEchelon::Regiment,
+                    crate::unit::UnitType::BRIGADE => EchoEchelon::Brigade,
                     crate::unit::UnitType::DIVISION => EchoEchelon::Division,
+                    crate::unit::UnitType::CORPS => EchoEchelon::Corps,
                     crate::unit::UnitType::ARMY => EchoEchelon::Army,
                 };
                 (echelon, name)
@@ -191,9 +444,7 @@ fn parsed_hierarchy(unit_txt: &str) -> Option<Vec<(EchoEchelon, String)>> {
     })
 }
 
-async fn load_unique_sigint_links<C>(
-    db: &C,
-) -> anyhow::Result<BTreeMap<Uuid, i64>>
+async fn load_link_inventory<C>(db: &C) -> anyhow::Result<LinkInventory>
 where
     C: ConnectionTrait,
 {
@@ -212,26 +463,30 @@ where
         .all(db)
         .await
         .c(h!())?;
-    let mut sigint_unit_ids = BTreeMap::<Uuid, BTreeSet<i64>>::new();
+    let mut sigint_unit_ids = LinkInventory::new();
     for link in links {
         sigint_unit_ids
             .entry(link.orbit_unit_id)
             .or_default()
             .insert(link.sigint_unit_id);
     }
-    Ok(sigint_unit_ids
-        .into_iter()
+    Ok(sigint_unit_ids)
+}
+
+fn unique_sigint_links(link_inventory: &LinkInventory) -> BTreeMap<Uuid, i64> {
+    link_inventory
+        .iter()
         .filter_map(|(orbit_unit_id, sigint_unit_ids)| {
             (sigint_unit_ids.len() == 1).then(|| {
                 (
-                    orbit_unit_id,
+                    *orbit_unit_id,
                     *sigint_unit_ids
                         .first()
                         .expect("one SIGINT unit ID must exist"),
                 )
             })
         })
-        .collect())
+        .collect()
 }
 
 async fn persist_selections(
@@ -269,8 +524,9 @@ async fn persist_selection_batch(
             .await
             .c(h!())?;
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
-    let unique_links = load_unique_sigint_links(&transaction).await.c(h!())?;
-    let sigint_units =
+    let mut link_inventory = load_link_inventory(&transaction).await.c(h!())?;
+    let mut unique_links = unique_sigint_links(&link_inventory);
+    let mut sigint_units =
         load_selected_sigint_units(&transaction, selections, &unique_links)
             .await
             .c(h!())?;
@@ -293,7 +549,7 @@ async fn persist_selection_batch(
             selection.subject_id,
             &selection.unit_txt,
             &matcher,
-            &unique_links,
+            &link_inventory,
             link_mode,
         )
         .c(h!())?
@@ -313,9 +569,34 @@ async fn persist_selection_batch(
         if !selected_is_current {
             continue;
         }
-        let Some(sigint_unit_id) =
+        let sigint_unit = if let Some(sigint_unit_id) =
             unique_links.get(&selection.orbit_unit_id).copied()
-        else {
+        {
+            sigint_units
+                .get(&sigint_unit_id)
+                .expect("linked SIGINT unit must be present")
+                .clone()
+        } else if link_mode == tui::LinkMode::Manual
+            && link_inventory
+                .get(&selection.orbit_unit_id)
+                .is_none_or(BTreeSet::is_empty)
+        {
+            let sigint_unit =
+                crate::sigint::unit::orbit::import_unlinked_orbit_unit_in_transaction(
+                    &transaction,
+                    &login,
+                    selection.orbit_unit_id,
+                )
+                .await
+                .c(h!())?;
+            link_inventory
+                .entry(selection.orbit_unit_id)
+                .or_default()
+                .insert(sigint_unit.id);
+            unique_links.insert(selection.orbit_unit_id, sigint_unit.id);
+            sigint_units.insert(sigint_unit.id, sigint_unit.clone());
+            sigint_unit
+        } else {
             continue;
         };
         crate::inbox::unresolved_units::resolve_unresolved_unit_label_in_transaction(
@@ -323,22 +604,43 @@ async fn persist_selection_batch(
             &login,
             &selection.unit_txt,
             &selection.unit_txt,
-            sigint_unit_id,
+            sigint_unit.id,
         )
         .await
         .c(h!())?;
-        let sigint_unit_name = sigint_units
-            .get(&sigint_unit_id)
-            .expect("linked SIGINT unit must be present")
-            .name
-            .clone();
         actions.push(LabelLinkAction {
             unit_txt: selection.unit_txt.clone(),
-            sigint_unit_name,
+            sigint_unit_name: sigint_unit.name,
         });
     }
     transaction.commit().await.c(h!())?;
     Ok(actions)
+}
+
+async fn archive_non_unit_labels<C>(
+    db: &C,
+    labels: &[crate::inbox::unresolved_units::UnresolvedUnitLabel],
+) -> anyhow::Result<usize>
+where
+    C: ConnectionTrait,
+{
+    let mut archived = 0;
+    for label in labels.iter().filter(|label| {
+        crate::inbox::unit_resolution::should_auto_archive_failed_unit(
+            &label.unit_txt,
+        )
+    }) {
+        archived += usize::from(
+            crate::inbox::unresolved_units::archive_unresolved_unit_label_in_transaction(
+                db,
+                &label.unit_txt,
+            )
+            .await
+            .c(h!())?
+                > 0,
+        );
+    }
+    Ok(archived)
 }
 
 async fn load_selected_sigint_units<C>(

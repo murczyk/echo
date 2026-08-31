@@ -79,3 +79,57 @@ The duplicate workflow is conservative in the right direction, but it lacks usef
    - Add focused backend tests for parser echelons, normalization variants, unparsed dry-run blocker reasons, unlinked ORBIT-root review, and duplicate tier decisions.
    - Run `cargo fmt`, `cargo check`, and targeted backend tests; run `cargo clippy` if the change touches shared matcher/parser code.
    - On `echo-zp2`, run dry-run before and after deployment, then run automatic workflows and compare resolved labels, archived noise, and remaining duplicate blocker counts.
+
+## Implementation Handoff (2026-08-31)
+
+Implementation was intentionally stopped at the user's request. The working tree contains uncommitted, partial changes and must not be treated as ready for a mutating production run.
+
+### Partially Implemented
+
+- Added `--dry-run` CLI parameters to `tui-resolve-orbit-unparsed-units` and `tui-merge-orbit-unit-duplicates` and routed them through the ORBIT entrypoints.
+- Extended `UnitType` with brigade and corps and added separate brigade/corps notion sets so typed parsing can distinguish them from regiments and armies.
+- Added `за` to army-equivalent normalization.
+- Added explicit ORBIT matching normalization for selected non-identity qualifiers: platform parentheses, `(кт)`, `(ш)`, `ТрВ`, `УВ(с)`/`ОУВ(с)`, and named control wrappers.
+- Added guarded failed-label archive words and prevented auto-archive when the typed hierarchy parser recognizes a valid unit chain.
+- Added most of an unparsed-label dry-run classifier and report, including parser, match-quality, ambiguity, missing-link, duplicate-link, and auto-resolvable buckets with candidate IDs.
+- Added partial automatic archival of existing guarded non-unit labels.
+- Added a transaction helper and partial persistence path for manually importing an unlinked ORBIT root before resolving its failed label.
+- Ran `cargo fmt --all`. A subsequent `cargo check -p wdintel-rs` was interrupted before completion and its result is unknown.
+
+### Known Incomplete / Likely Compile Breaks
+
+- `duplicate_units::run` still accepts only `mode`; callers now pass `(mode, dry_run)`. Implement the duplicate dry-run path and update this signature first.
+- Existing `unparsed_units` tests still construct `BTreeMap<Uuid, i64>` link maps; production helpers now expect `BTreeMap<Uuid, BTreeSet<i64>>`.
+- The new brigade/corps arrays, parsing order, normalization regexes, archive helper, and manual import path have not completed compilation or test validation.
+- Review whether broad archive markers such as `район`, `управління`, and `ппс` are sufficiently conservative on real data; the parser guard is present, but the `echo-kharkiv2` dry run is still required before enabling mutation.
+- Review the unlinked-root batch behavior for multiple labels selecting the same ORBIT root and add a focused transaction test.
+- The unparsed dry-run classifier needs tests for every blocker and a check that ambiguity is decided before filtering by SIGINT links.
+
+### Remaining Implementation
+
+1. Finish the duplicate dry-run report using production matcher results. Report safe groups, multi-link members, no-longer-matching members, ineligible hierarchy conflicts, ORBIT IDs, SIGINT IDs, and names.
+2. Implement duplicate merge tiers:
+   - exact-name tier;
+   - normalized-equivalent hierarchy tier with no populated-field conflicts;
+   - one-active/system-created-inactive tier only when missing fields are non-conflicting.
+3. Make automatic survivor selection prefer active, then richer populated user-maintained fields, then lower ID. Include ORBIT ID, survivor/deleted IDs, tier, and normalized reason in every automatic merge log.
+4. Keep manual duplicate review available for safe groups rejected by automatic tiers; continue excluding any member with another active ORBIT link.
+5. Complete parser tests for `60 омсбр 5 а`, `38 омсбр 35 а`, and `1 мсб 68 ак`, plus the strict decreasing/repeated-echelon rejection.
+6. Add matching tests proving qualifiers normalize to rating 100 without weakening the unique-closest, rating-100, distance-10 gate.
+7. Add failed-label cleanup tests and dry-run blocker tests using realistic unresolved examples.
+8. Compile and fix all errors, then run:
+   - `cargo fmt --all -- --check`
+   - targeted parser/ORBIT/inbox tests
+   - `cargo check -p wdintel-rs`
+   - `cargo clippy -p wdintel-rs --all-targets -- -D warnings`
+9. Review `git diff` against `CODE_REVIEW.md`, especially every newly propagated Rust error and the read-only guarantees of both dry-run commands.
+10. Build a temporary binary and run only the two `--dry-run` commands against `echo-kharkiv2`. Inspect every proposed automatic match for vague same-number or shortened-hierarchy matches. Do not run automatic/manual mutation there until the report is reviewed.
+11. After `echo-kharkiv2` is clean, perform the planned before/after dry-run comparison on `echo-zp2` around deployment.
+
+### Resume Commands
+
+```bash
+git status --short
+git diff --stat
+cargo check -p wdintel-rs
+```

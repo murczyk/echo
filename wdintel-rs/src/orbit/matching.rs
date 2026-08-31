@@ -1,10 +1,13 @@
 use crate::config::{
+    ORBIT_MATCHING_NON_IDENTITY_QUALIFIER_PATTERNS,
     ORBIT_MATCHING_SIGINT_NAME_BLACKLIST, ORBIT_TEST_LINK_UNITS_MAX_RATING,
     ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY,
 };
 use crate::entities::sigint_unit;
 use crate::orbit::types::SourceUnit;
 use crate::orbit::{echo_echelon, EchoEchelon};
+use lazy_static::lazy_static;
+use regex::RegexBuilder;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -848,7 +851,31 @@ fn is_subsequence(shorter: &[String], longer: &[String]) -> bool {
 }
 
 pub(super) fn normalize_name(value: &str) -> String {
-    crate::unit::normalize_unit_formation_name(value)
+    lazy_static! {
+        static ref NON_IDENTITY_QUALIFIERS: Vec<regex::Regex> =
+            ORBIT_MATCHING_NON_IDENTITY_QUALIFIER_PATTERNS
+                .iter()
+                .map(|pattern| {
+                    RegexBuilder::new(pattern)
+                        .case_insensitive(true)
+                        .build()
+                        .expect("invalid ORBIT non-identity qualifier regex")
+                })
+                .collect();
+    }
+    let original = crate::unit::normalize_unit_formation_name(value);
+    let without_qualifiers = NON_IDENTITY_QUALIFIERS
+        .iter()
+        .fold(value.to_string(), |value, regex| {
+            regex.replace_all(&value, " ").into_owned()
+        });
+    let without_qualifiers =
+        crate::unit::normalize_unit_formation_name(&without_qualifiers);
+    if without_qualifiers.is_empty() {
+        original
+    } else {
+        without_qualifiers
+    }
 }
 
 pub(super) fn normalize_orbit_hierarchy_name(

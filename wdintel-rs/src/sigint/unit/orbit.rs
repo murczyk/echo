@@ -1442,6 +1442,36 @@ pub(super) async fn import_orbit_unit_for_login(
     .await
 }
 
+pub(crate) async fn import_unlinked_orbit_unit_in_transaction<C>(
+    dbx: &C,
+    login: &Uuid,
+    orbit_unit_id: Uuid,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    let orbit_unit = find_available_orbit_unit(dbx, orbit_unit_id)
+        .await
+        .c(h!())?;
+    if orbit_unit_has_active_sigint_link(dbx, orbit_unit_id)
+        .await
+        .c(h!())?
+    {
+        return Err(AppError::BL {
+            msg: "ORBIT unit is already linked to a SIGINT unit".to_string(),
+        });
+    }
+    let unit_req = create_unit_req_from_orbit(dbx, &orbit_unit, false)
+        .await
+        .c(h!())?;
+    let sigint_unit = super::insert_unit_with_changelog(dbx, login, &unit_req)
+        .await
+        .c(h!())?;
+    link_orbit_unit_in_transaction(dbx, login, sigint_unit.id, orbit_unit_id)
+        .await
+        .c(h!())
+}
+
 async fn import_missing_orbit_ancestors<C>(
     dbx: &C,
     login: &Uuid,

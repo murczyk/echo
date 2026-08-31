@@ -101,7 +101,10 @@ fn contains_word(value: &str, word: &str) -> bool {
     })
 }
 
-fn should_auto_archive_failed_unit(value: &str) -> bool {
+pub(crate) fn should_auto_archive_failed_unit(value: &str) -> bool {
+    if crate::unit::parse_library_unit_typed_segments(value).is_some() {
+        return false;
+    }
     let value = value.to_lowercase();
     FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS
         .iter()
@@ -1485,11 +1488,25 @@ mod tests {
 
     #[test]
     fn detects_failed_unit_auto_archive_words() {
-        for label in ["НВ", "підрозділ н/В резерв", "123 Н.В."]
-        {
+        for label in [
+            "НВ",
+            "підрозділ н/В резерв",
+            "123 Н.В.",
+            "УКХ радіомережа управління 148.5 МГц",
+            "DMR р/м оповіщення",
+            "пости ППС біля н.п. Харків",
+            "УНПП район Вовчанська",
+        ] {
             assert!(should_auto_archive_failed_unit(label), "{label}");
         }
-        for label in ["НВО", "анв", "н/ва", "н.в.о"] {
+        for label in [
+            "НВО",
+            "анв",
+            "н/ва",
+            "н.в.о",
+            "1 мсб 68 ак управління",
+            "60 омсбр 5 а УКХ",
+        ] {
             assert!(!should_auto_archive_failed_unit(label), "{label}");
         }
     }
