@@ -118,9 +118,10 @@ in the analytics replica: second-factor seeds are an operational credential
 boundary, not analytical data. The replicated `login` row never stores the
 seed; APIs expose only `totp_enabled`. Admin clear, password change, and
 disabling password auth bump `login.totp_epoch` and invalidate Redis
-challenges so a challenge that was already claimed cannot finish
-enroll/verify afterward. Confirm also rechecks `password_auth_enabled` and
-the epoch before issuing a session.
+challenges so in-flight OTP prompts cannot continue. Confirm locks the
+`login` row (`FOR UPDATE`) through enroll (if any) and session issuance,
+rechecking `password_auth_enabled` and the epoch under that lock so an
+admin invalidation cannot race a claimed challenge into a new session.
 
 Pending enroll/verify state is Redis-only on the same Redis service as
 sessions (not the group-stats logical database): challenge payloads under

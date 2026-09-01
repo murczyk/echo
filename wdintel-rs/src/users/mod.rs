@@ -32,6 +32,7 @@ pub(crate) async fn start_user_session(
     env: &actix_web::web::Data<Env>,
     http_req: &HttpRequest,
     login_id: Uuid,
+    db: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
     let session_id = Uuid::now_v7();
     crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
@@ -44,7 +45,7 @@ pub(crate) async fn start_user_session(
     .await
     .c(h!())?;
 
-    update_last_active_at(&env.dbx, &login_id).await?;
+    update_last_active_at(db, &login_id).await?;
     record_new_session(&login_id, session_id, env)
         .await
         .c(h!())?;
@@ -1038,7 +1039,7 @@ async fn begin_totp_login_challenge(
 ) -> Result<LoginRsp, AppError> {
     // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
     if login_skips_totp(login_obj).context(h!())? {
-        start_user_session(env, http_req, login_obj.id)
+        start_user_session(env, http_req, login_obj.id, &env.dbx)
             .await
             .context(h!())?;
         return Ok(LoginRsp::Authenticated);
@@ -1256,34 +1257,32 @@ pub async fn user_confirm_2fa(
         }
     };
 
-    // Reject replay of an already-accepted time step within the skew window.
-    // Keep the challenge so the user can retry with the next authenticator code.
-    if !totp_challenge::consume_used_step(&mut redis, login_id, matched_step)
-        .await
-        .c(h!())?
-    {
-        return Err(totp_challenge_form_error("Невірний код"));
-    }
-
-    // Valid OTP still has to win the atomic claim; concurrent lockout or a
-    // replaced challenge must not start a session from a stale in-memory read.
-    let Some(claimed) = totp_challenge::claim_challenge(
+    // Claim + record the accepted step atomically: a failed claim must not
+    // burn the code, and a step replay must leave the challenge for the next code.
+    let claimed = match totp_challenge::claim_challenge_with_step(
         &mut redis,
         login_id,
         challenge_id,
+        matched_step,
     )
     .await
     .c(h!())?
-    else {
-        return Err(totp_challenge_form_error(
-            "Невірний або прострочений код підтвердження",
-        ));
+    {
+        totp_challenge::ClaimChallengeOutcome::Claimed(claimed) => claimed,
+        totp_challenge::ClaimChallengeOutcome::StepReplayed => {
+            return Err(totp_challenge_form_error("Невірний код"));
+        }
+        totp_challenge::ClaimChallengeOutcome::Missing => {
+            return Err(totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            ));
+        }
     };
 
-    // Re-check after claim: password auth may have been disabled or epoch
-    // bumped (password change / clear) while OTP was being verified.
-    let login_after = login::Entity::find_by_id(login_id)
-        .one(&env.dbx)
+    // Hold the login row lock through enroll + session issuance so an admin
+    // epoch bump / password-auth disable cannot slip in after the recheck.
+    let txn = env.dbx.begin().await.c(h!())?;
+    let login_guard = login_totp::lock_for_session_guard(&txn, login_id)
         .await
         .c(h!())?
         .ok_or_else(|| {
@@ -1291,9 +1290,10 @@ pub async fn user_confirm_2fa(
                 "Невірний або прострочений код підтвердження",
             )
         })?;
-    if !login_after.password_auth_enabled
-        || login_totp::epoch_of(&login_after) != claimed.epoch()
+    if !login_guard.password_auth_enabled
+        || login_totp::epoch_of(&login_guard) != claimed.epoch()
     {
+        txn.rollback().await.c(h!())?;
         return Err(totp_challenge_form_error(
             "Невірний або прострочений код підтвердження",
         ));
@@ -1308,7 +1308,7 @@ pub async fn user_confirm_2fa(
         // Only the first successful enroll wins; later challenges stay rejected.
         // Epoch must still match so admin clear cannot be undone by a claimed challenge.
         if !login_totp::insert_secret_if_absent(
-            &env.dbx,
+            &txn,
             login_id,
             pending_secret,
             *epoch,
@@ -1316,13 +1316,17 @@ pub async fn user_confirm_2fa(
         .await
         .c(h!())?
         {
+            txn.rollback().await.c(h!())?;
             return Err(totp_challenge_form_error(
                 "Невірний або прострочений код підтвердження",
             ));
         }
     }
 
-    start_user_session(&env, &http_req, login_id).await.c(h!())?;
+    start_user_session(&env, &http_req, login_id, &txn)
+        .await
+        .c(h!())?;
+    txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -2189,19 +2193,19 @@ async fn inactive_users_worker_1(
 }
 
 pub async fn update_last_active_at(
-    dbx: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     user_id: &Uuid,
 ) -> Result<(), AppError> {
     let mut user: login::ActiveModel = login::Entity::find_by_id(*user_id)
         .filter(login::Column::DeletedPermanently.eq(false))
-        .one(dbx)
+        .one(db)
         .await
         .c(h!())?
         .ok_or(AppError::Unauthenticated)?
         .into_active_model();
 
     user.last_active_at = Set(Some(Utc::now().naive_utc()));
-    user.update(dbx).await.c(h!())?;
+    user.update(db).await.c(h!())?;
 
     Ok(())
 }
@@ -2382,7 +2386,7 @@ mod tests {
         req: HttpRequest,
     ) -> Result<HttpResponse, AppError> {
         let login = find_test_login(&env.dbx).await.c(h!())?;
-        start_user_session(&env, &req, login.id).await.c(h!())?;
+        start_user_session(&env, &req, login.id, &env.dbx).await.c(h!())?;
         Ok(HttpResponse::Ok().finish())
     }
 

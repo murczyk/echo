@@ -215,36 +215,6 @@ return 1
     Ok(())
 }
 
-/// Atomically accept a TOTP counter for this login.
-/// Rejects when `step` is less than or equal to the last accepted counter so
-/// the same (or older skewed) code cannot open another session.
-pub async fn consume_used_step(
-    redis: &mut ConnectionManager,
-    login_id: Uuid,
-    step: u64,
-) -> anyhow::Result<bool> {
-    let accepted: i64 = redis::Script::new(
-        r#"
-local used_step_key = KEYS[1]
-local step = tonumber(ARGV[1])
-local ttl = tonumber(ARGV[2])
-local prev = redis.call('GET', used_step_key)
-if prev and tonumber(prev) >= step then
-  return 0
-end
-redis.call('SET', used_step_key, step, 'EX', ttl)
-return 1
-        "#,
-    )
-    .key(login_used_step_key(login_id))
-    .arg(step)
-    .arg(TOTP_2FA_USED_STEP_TTL_SEC)
-    .invoke_async(redis)
-    .await
-    .c(h!())?;
-    Ok(accepted == 1)
-}
-
 /// Atomically increments the per-login failed-attempt counter.
 /// On lockout, deletes the active challenge but keeps the fail counter (TTL)
 /// so newly issued challenges stay blocked until the window expires.
@@ -296,19 +266,35 @@ return 1
     })
 }
 
-/// Atomically claim the active challenge after a valid OTP.
-/// Returns None if the challenge was replaced, expired, or locked out.
-pub async fn claim_challenge(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClaimChallengeOutcome {
+    Claimed(TotpChallenge),
+    /// Challenge was replaced, expired, or locked out — step was not consumed.
+    Missing,
+    /// Step was already accepted; challenge is left intact for the next code.
+    StepReplayed,
+}
+
+const CLAIM_STEP_REPLAY_MARKER: &str = "__totp_step_replay__";
+
+/// Atomically claim the active challenge and record the accepted TOTP step.
+/// Failed claims do not burn the step; step replays do not delete the challenge.
+pub async fn claim_challenge_with_step(
     redis: &mut ConnectionManager,
     login_id: Uuid,
     challenge_id: Uuid,
-) -> anyhow::Result<Option<TotpChallenge>> {
+    step: u64,
+) -> anyhow::Result<ClaimChallengeOutcome> {
     let raw: Option<String> = redis::Script::new(
         r#"
 local challenge_key = KEYS[1]
 local active_key = KEYS[2]
 local fails_key = KEYS[3]
+local used_step_key = KEYS[4]
 local challenge_id = ARGV[1]
+local step = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+local replay_marker = ARGV[4]
 local active = redis.call('GET', active_key)
 if (not active) or active ~= challenge_id then
   return false
@@ -318,6 +304,11 @@ if not raw then
   redis.call('DEL', active_key)
   return false
 end
+local prev = redis.call('GET', used_step_key)
+if prev and tonumber(prev) >= step then
+  return replay_marker
+end
+redis.call('SET', used_step_key, step, 'EX', ttl)
 redis.call('DEL', challenge_key, active_key, fails_key)
 return raw
         "#,
@@ -325,13 +316,22 @@ return raw
     .key(challenge_key(challenge_id))
     .key(login_active_key(login_id))
     .key(login_fails_key(login_id))
+    .key(login_used_step_key(login_id))
     .arg(challenge_id.to_string())
+    .arg(step)
+    .arg(TOTP_2FA_USED_STEP_TTL_SEC)
+    .arg(CLAIM_STEP_REPLAY_MARKER)
     .invoke_async(redis)
     .await
     .c(h!())?;
 
     match raw {
-        None => Ok(None),
-        Some(raw) => Ok(Some(serde_json::from_str(&raw).c(h!())?)),
+        None => Ok(ClaimChallengeOutcome::Missing),
+        Some(marker) if marker == CLAIM_STEP_REPLAY_MARKER => {
+            Ok(ClaimChallengeOutcome::StepReplayed)
+        }
+        Some(raw) => Ok(ClaimChallengeOutcome::Claimed(
+            serde_json::from_str(&raw).c(h!())?,
+        )),
     }
 }

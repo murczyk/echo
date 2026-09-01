@@ -113,3 +113,17 @@ FOR UPDATE OF login
         .c(h!())?;
     Ok(result.rows_affected() > 0)
 }
+
+/// Lock the login row for the caller's open transaction so concurrent admin
+/// epoch bumps / password-auth changes wait until confirm finishes issuing
+/// the session.
+pub async fn lock_for_session_guard<C: ConnectionTrait>(
+    db: &C,
+    login_id: Uuid,
+) -> anyhow::Result<Option<login::Model>> {
+    Ok(login::Entity::find_by_id(login_id)
+        .lock_exclusive()
+        .one(db)
+        .await
+        .c(h!())?)
+}
