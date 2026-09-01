@@ -281,6 +281,9 @@ async fn list_callsigns_impl(
     let mut callsigns = sigint_callsign::Entity::find()
         .find_also_related(sigint_unit::Entity)
         .filter(sigint_callsign::Column::Deleted.eq(false));
+    if callsigns_sort_uses_latest_changelog(&sort_by) {
+        callsigns = join_callsigns_latest_changelog(callsigns);
+    }
     if let Some(after_id) = &req.after_id {
         let after_cursor =
             load_callsign_seek_cursor(dbx, *after_id).await.c(h!())?;
@@ -472,11 +475,40 @@ fn effective_callsigns_sort(req: &ListCallsignsReq) -> ListCallsignsSortBy {
         .unwrap_or(ListCallsignsSortBy::CallsignUnitAsc)
 }
 
+fn callsigns_sort_uses_latest_changelog(sort_by: &ListCallsignsSortBy) -> bool {
+    matches!(
+        sort_by,
+        ListCallsignsSortBy::CallsignCreatedAtAsc
+            | ListCallsignsSortBy::CallsignCreatedAtDesc
+    )
+}
+
+fn join_callsigns_latest_changelog(
+    mut callsigns: SelectTwo<sigint_callsign::Entity, sigint_unit::Entity>,
+) -> SelectTwo<sigint_callsign::Entity, sigint_unit::Entity> {
+    let latest_changelog = sigint_callsign_changelog::Entity::find()
+        .select_only()
+        .column(sigint_callsign_changelog::Column::SigintCallsignId)
+        .column_as(
+            sigint_callsign_changelog::Column::CreatedAt.max(),
+            "created_at",
+        )
+        .group_by(sigint_callsign_changelog::Column::SigintCallsignId)
+        .into_query();
+    let latest_changelog_alias = Alias::new("latest_callsign_changelog");
+    QuerySelect::query(&mut callsigns).join_subquery(
+        JoinType::LeftJoin,
+        latest_changelog,
+        latest_changelog_alias.clone(),
+        Expr::col((latest_changelog_alias, Alias::new("sigint_callsign_id")))
+            .equals((sigint_callsign::Entity, sigint_callsign::Column::Id)),
+    );
+    callsigns
+}
+
 fn callsigns_sort_created_at_expr() -> SimpleExpr {
     Expr::cust(
-        "COALESCE((SELECT MAX(sigint_callsign_changelog.created_at) \
-         FROM sigint_callsign_changelog \
-         WHERE sigint_callsign_changelog.sigint_callsign_id = sigint_callsign.id), \
+        "COALESCE(latest_callsign_changelog.created_at, \
          sigint_callsign.created_at)",
     )
 }
@@ -1415,7 +1447,7 @@ mod tests {
 
         let callsign_alpha =
             insert_test_callsign(&env.dbx, unit.id, "alpha", now, "").await;
-        let _callsign_bravo = insert_test_callsign(
+        let callsign_bravo = insert_test_callsign(
             &env.dbx,
             unit.id,
             "bravo",
@@ -1469,6 +1501,19 @@ mod tests {
             (now + Duration::minutes(120)).and_utc().timestamp_millis(),
         );
         assert!(callsigns[0].created_at > callsigns[1].created_at);
+
+        let callsigns_after_alpha = list_callsigns_impl(
+            &env.dbx,
+            &list_req(
+                Some(callsign_alpha.id),
+                None,
+                ListCallsignsSortBy::CallsignCreatedAtDesc,
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(callsigns_after_alpha[0].id, callsign_bravo.id);
     }
 
     #[serial]
