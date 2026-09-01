@@ -122,9 +122,7 @@ fn login_skips_totp(login_obj: &login::Model) -> Result<bool, AppError> {
     let roles: Vec<String> =
         serde_json::from_value(login_obj.roles.clone()).c(h!())?;
     Ok(roles.iter().any(|role| {
-        role == ROLE_API
-            || role == AI_AGENT_ROLE_API
-            || role == ROLE_NO2FA
+        role == ROLE_API || role == AI_AGENT_ROLE_API || role == ROLE_NO2FA
     }))
 }
 
@@ -1050,7 +1048,10 @@ async fn begin_totp_login_challenge(
     )
     .c(h!())?;
     let mut redis = env.redis.clone();
-    if login_totp::is_enabled(&env.dbx, login_obj.id).await.c(h!())? {
+    if login_totp::is_enabled(&env.dbx, login_obj.id)
+        .await
+        .c(h!())?
+    {
         match totp_challenge::create_verify_challenge(
             &mut redis,
             login_obj.id,
@@ -1071,8 +1072,7 @@ async fn begin_totp_login_challenge(
             }
         }
     } else {
-        let enrollment =
-            totp::generate_enrollment(&login_obj.login).c(h!())?;
+        let enrollment = totp::generate_enrollment(&login_obj.login).c(h!())?;
         let pending_secret = totp_crypto::encrypt_secret(
             totp_key,
             login_obj.id,
@@ -1105,10 +1105,7 @@ async fn begin_totp_login_challenge(
 }
 
 fn totp_form_error(field: &str, msg: &str) -> AppError {
-    AppError::Form(BTreeMap::from_iter([(
-        field.to_string(),
-        msg.to_string(),
-    )]))
+    AppError::Form(BTreeMap::from_iter([(field.to_string(), msg.to_string())]))
 }
 
 /// Lockout / pre-OTP errors for `/api/user/login`
@@ -1127,9 +1124,12 @@ pub async fn user_confirm_2fa(
     http_req: HttpRequest,
     req: Json<Confirm2faReq>,
 ) -> Result<Json<()>, AppError> {
-    let challenge_id = Uuid::parse_str(req.challenge_id.trim()).map_err(|_| {
-        totp_challenge_form_error("Невірний або прострочений код підтвердження")
-    })?;
+    let challenge_id =
+        Uuid::parse_str(req.challenge_id.trim()).map_err(|_| {
+            totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            )
+        })?;
     let mut redis = env.redis.clone();
     let Some(challenge) =
         totp_challenge::get_challenge(&mut redis, challenge_id)
@@ -1181,10 +1181,8 @@ pub async fn user_confirm_2fa(
     }
 
     // Stale enroll: another challenge already configured TOTP.
-    if matches!(
-        &challenge,
-        totp_challenge::TotpChallenge::Enroll { .. }
-    ) && login_totp::is_enabled(&env.dbx, login_id).await.c(h!())?
+    if matches!(&challenge, totp_challenge::TotpChallenge::Enroll { .. })
+        && login_totp::is_enabled(&env.dbx, login_id).await.c(h!())?
     {
         let _ = totp_challenge::delete_challenge(
             &mut redis,
@@ -1201,19 +1199,17 @@ pub async fn user_confirm_2fa(
         env.config.totp_strongbox_key.as_deref(),
     )
     .map_err(|_| {
-        totp_challenge_form_error(
-            "Невірний або прострочений код підтвердження",
-        )
+        totp_challenge_form_error("Невірний або прострочений код підтвердження")
     })?;
     let secret = match &challenge {
-        totp_challenge::TotpChallenge::Enroll {
-            pending_secret, ..
-        } => totp_crypto::decrypt_secret(totp_key, login_id, pending_secret)
-            .map_err(|_| {
-                totp_challenge_form_error(
-                    "Невірний або прострочений код підтвердження",
-                )
-            })?,
+        totp_challenge::TotpChallenge::Enroll { pending_secret, .. } => {
+            totp_crypto::decrypt_secret(totp_key, login_id, pending_secret)
+                .map_err(|_| {
+                    totp_challenge_form_error(
+                        "Невірний або прострочений код підтвердження",
+                    )
+                })?
+        }
         totp_challenge::TotpChallenge::Verify { .. } => {
             login_totp::find_secret(&env.dbx, login_id, totp_key)
                 .await
@@ -1379,7 +1375,7 @@ pub async fn register_user(
         last_release_seen: NotSet,
         description: NotSet,
         password_auth_enabled: Set(true),
-            totp_epoch: Set(None),
+        totp_epoch: Set(None),
     }
     .insert(&txn)
     .await
@@ -2386,7 +2382,9 @@ mod tests {
         req: HttpRequest,
     ) -> Result<HttpResponse, AppError> {
         let login = find_test_login(&env.dbx).await.c(h!())?;
-        start_user_session(&env, &req, login.id, &env.dbx).await.c(h!())?;
+        start_user_session(&env, &req, login.id, &env.dbx)
+            .await
+            .c(h!())?;
         Ok(HttpResponse::Ok().finish())
     }
 
@@ -2525,7 +2523,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
-            totp_epoch: Set(None),
+                totp_epoch: Set(None),
             },
         )
         .await
@@ -2600,7 +2598,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
-            totp_epoch: Set(None),
+                    totp_epoch: Set(None),
                 },
             )
             .await
@@ -2673,7 +2671,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
-            totp_epoch: Set(None),
+                    totp_epoch: Set(None),
                 },
             )
             .await
@@ -2698,7 +2696,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
-            totp_epoch: Set(None),
+                totp_epoch: Set(None),
             },
         )
         .await
@@ -2776,7 +2774,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
-            totp_epoch: Set(None),
+                totp_epoch: Set(None),
             },
         )
         .await

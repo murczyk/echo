@@ -995,6 +995,7 @@ mod tests {
         crate::inbox::unit_resolution::upsert_failure(
             db,
             inbox_item.id,
+            inbox_item.id_uuid,
             unit_txt,
         )
         .await

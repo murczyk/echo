@@ -2050,6 +2050,7 @@ async fn upsert_submit_signal_message(
     timestamp: Option<NaiveDateTime>,
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
+    signal_message_uuid: Option<Uuid>,
 ) -> Result<signal_message::Model, AppError> {
     upsert_submit_signal_message_inner(
         txn,
@@ -2062,6 +2063,7 @@ async fn upsert_submit_signal_message(
         operator_tags,
         groups,
         false,
+        signal_message_uuid,
     )
     .await
 }
@@ -2115,6 +2117,7 @@ async fn upsert_submit_signal_message_inner(
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
     create_missing_uid: bool,
+    signal_message_uuid: Option<Uuid>,
 ) -> Result<signal_message::Model, AppError> {
     let datasource_group_id = groups.first().map(|(_, id)| *id);
     let group_master_keys = groups
@@ -2162,11 +2165,11 @@ async fn upsert_submit_signal_message_inner(
                 }
                 None if create_missing_uid => signal_message::ActiveModel {
                     id: NotSet,
-                    id_uuid: Set(Some(
+                    id_uuid: Set(Some(signal_message_uuid.unwrap_or_else(|| {
                         crate::sigint::message_id::signal_message_uuid_for_insert(
                             timestamp,
-                        ),
-                    )),
+                        )
+                    }))),
                     body: Set(Some(message.text.clone())),
                     datasource_group_id: Set(datasource_group_id),
                     created_at: NotSet,
@@ -2189,11 +2192,11 @@ async fn upsert_submit_signal_message_inner(
         }
         None => signal_message::ActiveModel {
             id: NotSet,
-            id_uuid: Set(Some(
+            id_uuid: Set(Some(signal_message_uuid.unwrap_or_else(|| {
                 crate::sigint::message_id::signal_message_uuid_for_insert(
                     timestamp,
-                ),
-            )),
+                )
+            }))),
             body: Set(Some(message.text.clone())),
             datasource_group_id: Set(datasource_group_id),
             created_at: NotSet,
@@ -5553,6 +5556,7 @@ mod tests {
             Some(now),
             None,
             &groups,
+            None,
         )
         .await
         .unwrap_err();

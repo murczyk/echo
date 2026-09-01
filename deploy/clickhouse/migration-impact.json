@@ -26,7 +26,6 @@
         { "table": "public.sigint_comment", "strategy": "mirror_resync" },
         { "table": "public.intel_product", "strategy": "mirror_resync" },
         { "table": "public.ai_callsign_worker_job", "strategy": "excluded" },
-        { "table": "public.failed_inbox_unit", "strategy": "excluded" },
         { "table": "public.sigint_inbox_item_callsign", "strategy": "mirror_resync" },
         { "table": "public.sigint_inbox_item_metadata", "strategy": "mirror_resync" },
         { "table": "public.sigint_inbox_item_network", "strategy": "mirror_resync" },

@@ -12,7 +12,9 @@ pub struct TotpEnrollment {
     pub manual_key: String,
 }
 
-pub fn generate_enrollment(account_name: &str) -> anyhow::Result<TotpEnrollment> {
+pub fn generate_enrollment(
+    account_name: &str,
+) -> anyhow::Result<TotpEnrollment> {
     let secret = Secret::generate_secret().to_encoded();
     let secret_base32 = match secret {
         Secret::Encoded(s) => s,
@@ -20,8 +22,8 @@ pub fn generate_enrollment(account_name: &str) -> anyhow::Result<TotpEnrollment>
             return Err(anyhow!("expected encoded totp secret")).c(h!());
         }
     };
-    let qr_base64 = qr_base64_for_secret(&secret_base32, account_name)
-        .context(h!())?;
+    let qr_base64 =
+        qr_base64_for_secret(&secret_base32, account_name).context(h!())?;
     Ok(TotpEnrollment {
         manual_key: secret_base32.clone(),
         secret_base32,

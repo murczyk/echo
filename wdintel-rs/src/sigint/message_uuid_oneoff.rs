@@ -115,8 +115,8 @@ mod shadow_entities {
         "sigint_inbox_item_uuid"
     );
     linked_entity!(
-        failed_inbox_unit,
-        "failed_inbox_unit",
+        inbox_item_failed_unit_label,
+        "sigint_inbox_item_failed_unit_label",
         "inbox_item_id",
         "inbox_item_uuid"
     );
@@ -185,7 +185,7 @@ mod shadow_entities {
 use shadow_entities as signal_message;
 use shadow_entities::inbox_item;
 use shadow_entities::{
-    ai_callsign_worker_job, failed_inbox_unit, inbox_item_callsign,
+    ai_callsign_worker_job, inbox_item_callsign, inbox_item_failed_unit_label,
     inbox_item_metadata, inbox_item_network, inbox_item_point_token,
     inbox_item_settlement, inbox_item_tag, inbox_item_unit,
     inbox_item_unit_tag_queue, inbox_tag_model_error, intel_product_intel,
@@ -487,9 +487,9 @@ async fn update_inbox_linked_columns<C: ConnectionTrait>(
     .c(h!())?;
     linked_rows += update_linked_column(
         db,
-        failed_inbox_unit::Entity,
-        failed_inbox_unit::Column::LegacyId,
-        failed_inbox_unit::Column::Uuid,
+        inbox_item_failed_unit_label::Entity,
+        inbox_item_failed_unit_label::Column::LegacyId,
+        inbox_item_failed_unit_label::Column::Uuid,
         inbox_rows,
     )
     .await

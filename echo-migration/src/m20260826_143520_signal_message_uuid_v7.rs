@@ -46,9 +46,6 @@ alter table intel_product
 alter table ai_callsign_worker_job
     add column sigint_inbox_item_uuid uuid;
 
-alter table failed_inbox_unit
-    add column inbox_item_uuid uuid;
-
 alter table sigint_inbox_item_callsign
     add column sigint_inbox_item_uuid uuid;
 
@@ -118,9 +115,6 @@ alter table sigint_inbox_item_metadata
 
 alter table sigint_inbox_item_callsign
     drop column if exists sigint_inbox_item_uuid;
-
-alter table failed_inbox_unit
-    drop column if exists inbox_item_uuid;
 
 alter table ai_callsign_worker_job
     drop column if exists sigint_inbox_item_uuid;

@@ -2886,6 +2886,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             inbox_item.id,
+            inbox_item.id_uuid,
             inbox_item.unit_v2.as_deref(),
             None,
         )
@@ -3001,18 +3002,20 @@ mod tests {
             None,
         )
         .await;
-        for (inbox_item_id, is_bad_data, deleted_at) in [
+        for (inbox_item_id, inbox_item_uuid, is_bad_data, deleted_at) in [
             (
                 old_item.id,
+                old_item.id_uuid,
                 false,
                 Utc::now().naive_utc()
                     - Duration::days(FAILED_INBOX_UNIT_RETENTION_DAYS + 1),
             ),
-            (bad_item.id, true, Utc::now().naive_utc()),
+            (bad_item.id, bad_item.id_uuid, true, Utc::now().naive_utc()),
         ] {
             upsert_failure(
                 &env.dbx,
                 inbox_item_id,
+                inbox_item_uuid,
                 &format!("pending-{inbox_item_id}"),
             )
             .await

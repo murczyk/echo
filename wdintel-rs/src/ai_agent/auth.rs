@@ -251,9 +251,13 @@ return value
         revoke_after_exchange_failure(&env, &grant).await;
         return Err(err);
     }
-    if let Err(err) =
-        crate::users::start_user_session(&env, &http_req, grant.login_id, &env.dbx)
-            .await
+    if let Err(err) = crate::users::start_user_session(
+        &env,
+        &http_req,
+        grant.login_id,
+        &env.dbx,
+    )
+    .await
     {
         revoke_after_exchange_failure(&env, &grant).await;
         return Err(err);

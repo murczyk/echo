@@ -121,9 +121,9 @@ pub async fn lock_for_session_guard<C: ConnectionTrait>(
     db: &C,
     login_id: Uuid,
 ) -> anyhow::Result<Option<login::Model>> {
-    Ok(login::Entity::find_by_id(login_id)
+    login::Entity::find_by_id(login_id)
         .lock_exclusive()
         .one(db)
         .await
-        .c(h!())?)
+        .c(h!())
 }

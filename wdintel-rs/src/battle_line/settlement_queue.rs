@@ -1399,13 +1399,14 @@ returning id
         let (row, group_master_key, settlement_id) =
             insert_settlement_stats_test_fixture(&setup).await.unwrap();
         let item_id = row.item_id;
+        let item_uuid = row.item_uuid;
         let mut row = row.into_active_model();
         row.settlement_id = Set(Some(settlement_id));
         row.update(&setup).await.unwrap();
         setup.commit().await.unwrap();
 
         let removal = env.dbx.begin().await.unwrap();
-        reconcile_item_locations(&removal, item_id, None)
+        reconcile_item_locations(&removal, item_id, item_uuid, None)
             .await
             .unwrap();
         let task = group_stats_recalculation_task::Entity::find()
