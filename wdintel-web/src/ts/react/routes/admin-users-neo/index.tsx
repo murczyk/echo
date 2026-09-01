@@ -874,6 +874,7 @@ function EditUserDialog(props: {
   const [errors, setErrors] = useState<EditUserErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [totpEnabled, setTotpEnabled] = useState(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
@@ -905,6 +906,7 @@ function EditUserDialog(props: {
       setErrors({});
       setSubmitError(null);
       setIsSubmitting(false);
+      setTotpEnabled(false);
       return;
     }
 
@@ -923,6 +925,7 @@ function EditUserDialog(props: {
     setErrors({});
     setSubmitError(null);
     setIsSubmitting(false);
+    setTotpEnabled(login.totpEnabled);
   }, [open, login]);
 
   useEffect(() => {
@@ -1147,10 +1150,8 @@ function EditUserDialog(props: {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 xl:col-span-2">
-              <Typography variant="body2">
-                2FA: {login?.totpEnabled ? 'увімкнено' : 'вимкнено'}
-              </Typography>
-              {login?.totpEnabled ? (
+              <Typography variant="body2">2FA: {totpEnabled ? 'увімкнено' : 'вимкнено'}</Typography>
+              {totpEnabled ? (
                 <Button
                   variant="outlined"
                   color="warning"
@@ -1163,7 +1164,7 @@ function EditUserDialog(props: {
                       try {
                         const updated = await updateLogin(toClearTotpReq(login));
                         onUserUpdated(updated);
-                        onClose();
+                        setTotpEnabled(updated.totpEnabled);
                       } catch (error) {
                         setSubmitError(
                           error instanceof Error && error.message

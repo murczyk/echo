@@ -79,6 +79,8 @@ WHERE id = $1
 
 /// Insert ciphertext only when the login has no TOTP row yet and still has the
 /// enrollment generation captured when the challenge was issued.
+/// `FOR UPDATE OF login` waits out concurrent epoch bumps and rechecks the
+/// predicate so enroll cannot race an uncommitted admin invalidation.
 /// Returns false when a secret was already configured or the epoch advanced
 /// (e.g. admin clear after the challenge was claimed).
 pub async fn insert_secret_if_absent<C: ConnectionTrait>(
@@ -99,6 +101,7 @@ WHERE login.id = $1
   AND NOT EXISTS (
     SELECT 1 FROM login_totp WHERE login_id = $1
 )
+FOR UPDATE OF login
             "#,
             [
                 login_id.into(),

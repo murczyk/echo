@@ -1229,12 +1229,13 @@ pub async fn user_confirm_2fa(
         }
     };
 
-    let is_valid = totp::verify_token(&secret, req.token.trim()).map_err(|_| {
-        totp_challenge_form_error(
-            "Невірний або прострочений код підтвердження",
-        )
-    })?;
-    if !is_valid {
+    let matched_step =
+        totp::verify_token(&secret, req.token.trim()).map_err(|_| {
+            totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            )
+        })?;
+    let Some(matched_step) = matched_step else {
         match totp_challenge::record_failed_attempt(
             &mut redis,
             login_id,
@@ -1253,6 +1254,15 @@ pub async fn user_confirm_2fa(
                 ));
             }
         }
+    };
+
+    // Reject replay of an already-accepted time step within the skew window.
+    // Keep the challenge so the user can retry with the next authenticator code.
+    if !totp_challenge::consume_used_step(&mut redis, login_id, matched_step)
+        .await
+        .c(h!())?
+    {
+        return Err(totp_challenge_form_error("Невірний код"));
     }
 
     // Valid OTP still has to win the atomic claim; concurrent lockout or a

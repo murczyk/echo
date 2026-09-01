@@ -1,6 +1,7 @@
 use crate::config::{
     TOTP_2FA_CHALLENGE_REDIS_PREFIX, TOTP_2FA_CHALLENGE_TTL_SEC,
     TOTP_2FA_LOGIN_REDIS_PREFIX, TOTP_2FA_MAX_ATTEMPTS,
+    TOTP_2FA_USED_STEP_TTL_SEC,
 };
 use crate::types::*;
 use redis::aio::ConnectionManager;
@@ -64,6 +65,10 @@ fn login_active_key(login_id: Uuid) -> String {
 
 fn login_fails_key(login_id: Uuid) -> String {
     format!("{TOTP_2FA_LOGIN_REDIS_PREFIX}{login_id}:fails")
+}
+
+fn login_used_step_key(login_id: Uuid) -> String {
+    format!("{TOTP_2FA_LOGIN_REDIS_PREFIX}{login_id}:used_step")
 }
 
 pub async fn create_enroll_challenge(
@@ -179,7 +184,9 @@ return 1
     Ok(())
 }
 
-/// Drop active challenge + per-login failure counter (admin clear / recovery).
+/// Drop active challenge, failure counter, and used-step marker (admin clear /
+/// recovery). Clearing the used step lets a fresh enroll succeed in the same
+/// TOTP window after the secret is rotated.
 pub async fn invalidate_login_challenges(
     redis: &mut ConnectionManager,
     login_id: Uuid,
@@ -188,22 +195,54 @@ pub async fn invalidate_login_challenges(
         r#"
 local active_key = KEYS[1]
 local fails_key = KEYS[2]
+local used_step_key = KEYS[3]
 local challenge_prefix = ARGV[1]
 local active = redis.call('GET', active_key)
 if active then
   redis.call('DEL', challenge_prefix .. active)
 end
-redis.call('DEL', active_key, fails_key)
+redis.call('DEL', active_key, fails_key, used_step_key)
 return 1
         "#,
     )
     .key(login_active_key(login_id))
     .key(login_fails_key(login_id))
+    .key(login_used_step_key(login_id))
     .arg(TOTP_2FA_CHALLENGE_REDIS_PREFIX)
     .invoke_async(redis)
     .await
     .c(h!())?;
     Ok(())
+}
+
+/// Atomically accept a TOTP counter for this login.
+/// Rejects when `step` is less than or equal to the last accepted counter so
+/// the same (or older skewed) code cannot open another session.
+pub async fn consume_used_step(
+    redis: &mut ConnectionManager,
+    login_id: Uuid,
+    step: u64,
+) -> anyhow::Result<bool> {
+    let accepted: i64 = redis::Script::new(
+        r#"
+local used_step_key = KEYS[1]
+local step = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local prev = redis.call('GET', used_step_key)
+if prev and tonumber(prev) >= step then
+  return 0
+end
+redis.call('SET', used_step_key, step, 'EX', ttl)
+return 1
+        "#,
+    )
+    .key(login_used_step_key(login_id))
+    .arg(step)
+    .arg(TOTP_2FA_USED_STEP_TTL_SEC)
+    .invoke_async(redis)
+    .await
+    .c(h!())?;
+    Ok(accepted == 1)
 }
 
 /// Atomically increments the per-login failed-attempt counter.

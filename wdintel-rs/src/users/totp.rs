@@ -3,6 +3,7 @@ use crate::config::{
 };
 use crate::types::*;
 use anyhow::anyhow;
+use std::time::{SystemTime, UNIX_EPOCH};
 use totp_rs::{Algorithm, Secret, TOTP};
 
 pub struct TotpEnrollment {
@@ -39,9 +40,31 @@ pub fn qr_base64_for_secret(
         .c(h!())
 }
 
-pub fn verify_token(secret_base32: &str, token: &str) -> anyhow::Result<bool> {
+/// Returns the matched TOTP counter (`unix_time / step`) when `token` is valid
+/// within the configured skew window; `None` when the token does not match.
+pub fn verify_token(
+    secret_base32: &str,
+    token: &str,
+) -> anyhow::Result<Option<u64>> {
     let totp = totp_for_secret(secret_base32, "").context(h!())?;
-    totp.check_current(token).c(h!())
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| anyhow!("system clock before unix epoch: {err}"))
+        .c(h!())?
+        .as_secs();
+    Ok(matching_step(&totp, token, now))
+}
+
+fn matching_step(totp: &TOTP, token: &str, time: u64) -> Option<u64> {
+    let base_step = time / totp.step - u64::from(totp.skew);
+    for i in 0..(u16::from(totp.skew) * 2 + 1) {
+        let step = base_step + u64::from(i);
+        let step_time = step * totp.step;
+        if totp.generate(step_time) == token {
+            return Some(step);
+        }
+    }
+    None
 }
 
 fn totp_for_secret(
@@ -63,4 +86,23 @@ fn totp_for_secret(
     )
     .map_err(|err| anyhow!("totp build failed: {err}"))
     .c(h!())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn matching_step_returns_counter_for_current_token() {
+        let enrollment = generate_enrollment("test").unwrap();
+        let totp = totp_for_secret(&enrollment.secret_base32, "").unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let token = totp.generate_current().unwrap();
+        let step = matching_step(&totp, &token, now).unwrap();
+        assert_eq!(step, now / TOTP_2FA_STEP_SEC);
+        assert!(matching_step(&totp, "000000", now).is_none());
+    }
 }

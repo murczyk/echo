@@ -685,6 +685,10 @@ pub const TOTP_2FA_ISSUER: &str = "Echo";
 pub const TOTP_2FA_DIGITS: usize = 6;
 pub const TOTP_2FA_SKEW: u8 = 1;
 pub const TOTP_2FA_STEP_SEC: u64 = 30;
+/// How long to remember the last accepted TOTP counter per login.
+/// Covers the skew window plus one extra step so replays cannot slip through.
+pub const TOTP_2FA_USED_STEP_TTL_SEC: u64 =
+    TOTP_2FA_STEP_SEC * (2 * TOTP_2FA_SKEW as u64 + 2);
 pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
     "echo:deployment:maintenance";
 pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;
