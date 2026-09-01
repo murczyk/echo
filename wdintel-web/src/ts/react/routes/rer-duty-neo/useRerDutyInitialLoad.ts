@@ -170,12 +170,18 @@ export function useRerDutyInitialLoad(params: Params) {
           (candidate) => candidate.id === feedId,
         );
         const tail = currentFeed?.items.at(-1);
-        const tailCursor = tail ? { id: tail[0], timestamp: tail[1].timestamp } : null;
         if (preserveUnread) {
           current.completeFeedReload(feedId);
         } else {
           current.clearFeedUnreadBaselines(feedId);
-          current.setFeedUnreadCursor(feedId, tailCursor);
+          if (currentFeed && tail) {
+            current.installFeedUnreadCursorAndBaseline(currentFeed, {
+              id: tail[0],
+              timestamp: tail[1].timestamp,
+            });
+          } else {
+            current.setFeedUnreadCursor(feedId, null);
+          }
         }
         current.setError(error instanceof Error ? error.message : String(error));
         current.setMessageFeeds((previous) =>

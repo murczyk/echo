@@ -1179,7 +1179,8 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(0);
   });
 
-  it('releases the pending reload marker after a failed reload and resumes count requests from the retained cursor', async () => {
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('recovers notifications after a failed reload from the retained cursor', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: 10 }, (_, index) => [
@@ -1213,20 +1214,16 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     expect(apiRef.current?.messageFeeds[0]?.items.at(-1)?.[0]).toBe(10);
 
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 7, firstElementTs: null });
-    const countResultPromise = apiRef.current!.requestValidatedInboxCount('mf-0');
     await act(async () => {
-      await countResultPromise;
+      await startPoll();
     });
-    const countResult = await countResultPromise;
-
-    expect(countResult).toEqual(
-      expect.objectContaining({ feedId: 'mf-0', quantity: 7, cursorId: 10, hasItems: true }),
-    );
-    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(1);
-    expectTailCountRequest(10);
     await act(async () => {
       await flushMicrotasks();
     });
+
+    expectTailCountRequest(10);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 7);
   });
 
   // Regression: https://github.com/echoua/echo/pull/3331
