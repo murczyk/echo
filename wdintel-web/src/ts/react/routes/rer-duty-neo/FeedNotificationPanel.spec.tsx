@@ -17,8 +17,19 @@ const api = vi.hoisted(() => ({
 const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
 vi.mock('./notifications', () => ({
   DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: 'duty-notification-status-change',
-  DutyBrowserNotificationStatus: { Granted: 'granted', RuntimeFailure: 'runtime-failure' },
-  DutySoundStatus: { Ready: 'ready' },
+  DutyBrowserNotificationStatus: {
+    Granted: 'granted',
+    RuntimeFailure: 'runtime-failure',
+    Denied: 'denied',
+    NotRequested: 'not-requested',
+    Unsupported: 'unsupported',
+  },
+  DutySoundStatus: {
+    Ready: 'ready',
+    InteractionRequired: 'interaction-required',
+    Blocked: 'blocked',
+    Unsupported: 'unsupported',
+  },
   getStoredDutyNotificationSettingsForFeed: api.getStored,
   setStoredDutyNotificationSettingsForFeed: api.setStored,
   resumeDutyNotificationAudioFromUserGesture: api.resume,
@@ -103,6 +114,7 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
 
 describe('FeedNotificationPanel', () => {
   it('plays sound and reports its status when testing sound', async () => {
+    storedSettings = { soundEnabled: true, browserEnabled: false };
     const changed = vi.fn();
     const { container } = await renderPanel({ onNotificationStatusChanged: changed });
 
@@ -115,15 +127,54 @@ describe('FeedNotificationPanel', () => {
   });
 
   it('tests browser notifications and reports their status', async () => {
+    storedSettings = { soundEnabled: false, browserEnabled: true };
     const changed = vi.fn();
     const { container } = await renderPanel({ onNotificationStatusChanged: changed });
 
     await act(async () => {
-      getButton(container, 'Перевірити браузерне сповіщення').click();
+      getButton(container, 'Перевірити банер').click();
     });
 
     expect(api.testBrowser).toHaveBeenCalledTimes(1);
     expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows system guidance after a successful browser test', async () => {
+    storedSettings = { soundEnabled: false, browserEnabled: true };
+    const { container } = await renderPanel();
+    await act(async () => {
+      getButton(container, 'Перевірити банер').click();
+    });
+    expect(container.textContent).toContain('Банер не з’явився?');
+    await act(async () => {
+      getButton(container, 'Перевірити системні налаштування').click();
+    });
+    expect(document.body.textContent).toContain('Windows');
+  });
+
+  it('opens Chrome guidance for a denied browser status', async () => {
+    api.browserStatus.mockReturnValue('denied');
+    const { container } = await renderPanel();
+    expect(container.textContent).toContain('Сповіщення заборонені');
+    await act(async () => {
+      getButton(container, 'Як виправити').click();
+    });
+    expect(document.body.textContent).toContain('Дозвіл у Chrome');
+  });
+
+  it('navigates from runtime browser diagnostics to system instructions', async () => {
+    api.browserStatus.mockReturnValue('runtime-failure');
+    const { container } = await renderPanel();
+
+    await act(async () => {
+      getButton(container, 'Як виправити').click();
+    });
+    expect(document.body.textContent).toContain('Як знайти причину');
+
+    await act(async () => {
+      getButton(document.body, 'Перевірка банера спрацювала, але банер не з’явився?').click();
+    });
+    expect(document.body.textContent).toContain('Системні параметри → Сповіщення → Google Chrome');
   });
 
   it('opens Chrome help when browser permission is not granted', async () => {
@@ -131,7 +182,7 @@ describe('FeedNotificationPanel', () => {
     const { container } = await renderPanel();
 
     await act(async () => {
-      getButton(container, 'Інструкція та діагностика').click();
+      getButton(container, 'Інструкція').click();
     });
 
     expect(document.body.textContent).toContain('Дозвіл у Chrome');
@@ -140,14 +191,29 @@ describe('FeedNotificationPanel', () => {
 
   it('refreshes browser status from the shared notification-status event', async () => {
     const { container } = await renderPanel();
-    expect(container.textContent).toContain('Браузерне сповіщення — Дозволено');
 
     api.browserStatus.mockReturnValue('runtime-failure');
     await act(async () => {
       window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
     });
 
-    expect(container.textContent).toContain('Браузерне сповіщення — Помилка браузера');
+    expect(container.textContent).toContain('Браузеру не вдалося створити системний банер.');
+  });
+
+  it('tests sound from instructions when the operational channel is disabled', async () => {
+    const changed = vi.fn();
+    const { container } = await renderPanel({ onNotificationStatusChanged: changed });
+
+    await act(async () => {
+      getButton(container, 'Інструкція').click();
+    });
+    expect(document.body.textContent).toContain('Налаштування та діагностика сповіщень');
+
+    await act(async () => {
+      getButton(document.body, 'Перевірити звук').click();
+    });
+    expect(api.play).toHaveBeenCalledTimes(1);
+    expect(changed).toHaveBeenCalledTimes(1);
   });
 
   it('does not persist after denied browser permission', async () => {
@@ -159,7 +225,7 @@ describe('FeedNotificationPanel', () => {
     });
 
     await act(async () => {
-      getSwitch(container, 'Браузерне сповіщення').click();
+      getSwitch(container, 'Системний банер').click();
     });
 
     expect(api.permission).toHaveBeenCalledTimes(1);
@@ -177,7 +243,7 @@ describe('FeedNotificationPanel', () => {
       onStorageErrorChange: changed,
       onPersisted: persisted,
     });
-    const sound = getSwitch(container, 'Звукове сповіщення');
+    const sound = getSwitch(container, 'Звуковий сигнал');
     await act(async () => sound.click());
     expect(changed).toHaveBeenCalledWith('quota');
     expect(persisted).not.toHaveBeenCalled();
@@ -194,7 +260,7 @@ describe('FeedNotificationPanel', () => {
       onStorageErrorChange: error,
       onPersisted: persisted,
     });
-    const sound = getSwitch(container, 'Звукове сповіщення');
+    const sound = getSwitch(container, 'Звуковий сигнал');
     await act(async () => sound.click());
     expect(api.setStored).toHaveBeenCalledWith('failed', {
       soundEnabled: false,
@@ -216,7 +282,7 @@ describe('FeedNotificationPanel', () => {
       onStorageErrorChange: error,
       onPersisted: persisted,
     });
-    const sound = getSwitch(container, 'Звукове сповіщення');
+    const sound = getSwitch(container, 'Звуковий сигнал');
     await act(async () => sound.click());
     expect(error).toHaveBeenCalledWith(null);
     expect(persisted).toHaveBeenCalledTimes(1);
@@ -233,8 +299,8 @@ describe('FeedNotificationPanel', () => {
     );
     api.permission.mockResolvedValue('granted');
     const { container } = await renderPanel();
-    const sound = getSwitch(container, 'Звукове сповіщення');
-    const browser = getSwitch(container, 'Браузерне сповіщення');
+    const sound = getSwitch(container, 'Звуковий сигнал');
+    const browser = getSwitch(container, 'Системний банер');
 
     await act(async () => {
       sound.click();
