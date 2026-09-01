@@ -16,6 +16,11 @@ use anyhow::Result;
 use config::{Config, ECHO_MESSENGERS_JSON_PAYLOAD_MAX_BYTES};
 use sea_orm::DatabaseConnection;
 
+enum Cmd {
+    Serve,
+    Migrate,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Config,
@@ -26,11 +31,33 @@ pub struct AppState {
 #[actix_web::main]
 async fn main() -> Result<()> {
     env_logger::init();
+    let cmd = cmd().c(h!())?;
     let config = config::read_config().c(h!())?;
     let db = db::connect(&config).await.c(h!())?;
-    echo_im::run_migration(&db).await.c(h!())?;
-    automation::ensure_schema(&db).await.c(h!())?;
-    messenger::ensure_schema(&db).await.c(h!())?;
+    migrate(&db).await.c(h!())?;
+    if matches!(cmd, Cmd::Migrate) {
+        return Ok(());
+    }
+    serve(config, db).await.c(h!())
+}
+
+fn cmd() -> Result<Cmd> {
+    match std::env::args().nth(1).as_deref() {
+        None => Ok(Cmd::Serve),
+        Some("migrate") => Ok(Cmd::Migrate),
+        Some(cmd) => Err(anyhow::anyhow!("unknown command: {cmd}")),
+    }
+}
+
+async fn migrate(db: &DatabaseConnection) -> Result<()> {
+    echo_im::run_migration(db).await.c(h!())?;
+    automation::ensure_schema(db).await.c(h!())?;
+    messenger::ensure_schema(db).await.c(h!())?;
+    chats::ensure_schema(db).await.c(h!())?;
+    Ok(())
+}
+
+async fn serve(config: Config, db: DatabaseConnection) -> Result<()> {
     messenger::recover_interrupted_relinks(&db, &config)
         .await
         .c(h!())?;

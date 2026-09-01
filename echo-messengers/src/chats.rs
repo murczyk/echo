@@ -37,6 +37,278 @@ const ACCOUNT_COLORS: [&str; 12] = [
     "#38bdf8", "#f97316", "#a78bfa", "#22c55e", "#f43f5e", "#eab308",
     "#14b8a6", "#ec4899", "#6366f1", "#84cc16", "#06b6d4", "#fb7185",
 ];
+const CHAT_ADMIN_MIGRATION: &str = "m20260828_150352_echo_chat_admin";
+
+pub async fn ensure_schema(db: &DatabaseConnection) -> anyhow::Result<()> {
+    if central_chat_admin_migration_pending(db).await.c(h!())? {
+        return Err(anyhow::anyhow!(
+            "chat admin schema migration {CHAT_ADMIN_MIGRATION} is pending; run wdintel-rs migrate before starting echo-messengers"
+        ));
+    }
+    ensure_settings_schema(db).await.c(h!())?;
+    ensure_filter_schema(db).await.c(h!())?;
+    ensure_ingestion_schema(db).await.c(h!())?;
+    ensure_webhook_schema(db).await.c(h!())?;
+    ensure_history_indexes(db).await.c(h!())?;
+    Ok(())
+}
+
+async fn central_chat_admin_migration_pending(
+    db: &DatabaseConnection,
+) -> anyhow::Result<bool> {
+    if !table_exists(db, "seaql_migrations").await.c(h!())? {
+        return Ok(false);
+    }
+    Ok(!row_exists(
+        db,
+        "select exists (select 1 from seaql_migrations where version = $1) as found",
+        [CHAT_ADMIN_MIGRATION.into()],
+    )
+    .await
+    .c(h!())?)
+}
+
+async fn table_exists(
+    db: &DatabaseConnection,
+    table_name: &str,
+) -> anyhow::Result<bool> {
+    row_exists(
+        db,
+        "select to_regclass($1) is not null as found",
+        [format!("public.{table_name}").into()],
+    )
+    .await
+    .c(h!())
+}
+
+async fn row_exists<const N: usize>(
+    db: &DatabaseConnection,
+    sql: &str,
+    values: [Value; N],
+) -> anyhow::Result<bool> {
+    db.query_one_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        values,
+    ))
+    .await
+    .c(h!())?
+    .c(h!())?
+    .try_get("", "found")
+    .c(h!())
+}
+
+async fn ensure_settings_schema(db: &DatabaseConnection) -> anyhow::Result<()> {
+    db.execute_unprepared(
+        r#"
+        create table if not exists echo_client_settings (
+            client_id integer primary key references echo_client(id) on delete cascade,
+            hide_private boolean not null default false,
+            hide_groups boolean not null default false,
+            private_webhook_url text,
+            group_webhook_url text,
+            store_data_30_days boolean not null default false,
+            created_at timestamp without time zone not null default (now() at time zone 'utc'),
+            updated_at timestamp without time zone not null default (now() at time zone 'utc')
+        );
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_filter_schema(db: &DatabaseConnection) -> anyhow::Result<()> {
+    db.execute_unprepared(
+        r#"
+        create table if not exists echo_chat_filter (
+            id bigserial primary key,
+            client_id integer not null references echo_client(id) on delete cascade,
+            account_id integer not null references echo_account(id) on delete cascade,
+            chat_kind text not null check (chat_kind in ('private', 'group')),
+            participant_key text,
+            group_id integer references echo_group(id) on delete cascade,
+            created_at timestamp without time zone not null default (now() at time zone 'utc'),
+            check (
+                (chat_kind = 'private' and participant_key is not null and group_id is null)
+                or (chat_kind = 'group' and participant_key is null and group_id is not null)
+            )
+        );
+
+        create unique index if not exists echo_chat_filter_private_uq
+            on echo_chat_filter (client_id, account_id, participant_key)
+            where chat_kind = 'private';
+        create unique index if not exists echo_chat_filter_group_uq
+            on echo_chat_filter (client_id, account_id, group_id)
+            where chat_kind = 'group';
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_ingestion_schema(
+    db: &DatabaseConnection,
+) -> anyhow::Result<()> {
+    db.execute_unprepared(
+        r#"
+        create table if not exists echo_chat_ingestion_state (
+            client_id integer not null references echo_client(id) on delete cascade,
+            account_id integer not null references echo_account(id) on delete cascade,
+            linked_at timestamp without time zone,
+            last_inbox_message_id integer not null,
+            updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+            primary key (client_id, account_id)
+        );
+
+        insert into echo_chat_ingestion_state (
+            client_id, account_id, linked_at, last_inbox_message_id
+        )
+        select c.id, a.id, a.linked_at, coalesce(latest.id, 0)
+        from echo_client c
+        join echo_client_lock l
+            on l.client_id = c.id and not l.remove_requested
+        join echo_account a on a.id = l.account_id and a.is_linked
+        left join lateral (
+            select m.id
+            from echo_inbox_message m
+            where m.client_id = c.id and m.account_id = a.id
+            order by m.id desc
+            limit 1
+        ) latest on true
+        where not c.deleted and c.show_chats_admin_panel = true
+        on conflict (client_id, account_id) do nothing;
+
+        create or replace function seed_echo_chat_ingestion_state_on_enable()
+        returns trigger
+        language plpgsql
+        as $$
+        begin
+            insert into echo_chat_ingestion_state (
+                client_id, account_id, linked_at, last_inbox_message_id
+            )
+            select new.id, a.id, a.linked_at, coalesce(latest.id, 0)
+            from echo_client_lock l
+            join echo_account a on a.id = l.account_id and a.is_linked
+            left join lateral (
+                select m.id
+                from echo_inbox_message m
+                where m.client_id = new.id and m.account_id = a.id
+                order by m.id desc
+                limit 1
+            ) latest on true
+            where l.client_id = new.id and not l.remove_requested
+            on conflict (client_id, account_id) do update
+            set linked_at = excluded.linked_at,
+                last_inbox_message_id = excluded.last_inbox_message_id,
+                updated_at = now() at time zone 'utc';
+            return new;
+        end;
+        $$;
+
+        do $$
+        begin
+            if not exists (
+                select 1
+                from pg_trigger
+                where tgname = 'echo_chat_seed_ingestion_state_on_enable'
+            ) then
+                create trigger echo_chat_seed_ingestion_state_on_enable
+                after update of show_chats_admin_panel on echo_client
+                for each row
+                when (
+                    new.show_chats_admin_panel is true
+                    and old.show_chats_admin_panel is distinct from true
+                )
+                execute function seed_echo_chat_ingestion_state_on_enable();
+            end if;
+        end $$;
+
+        create index if not exists echo_chat_inbox_ingestion_idx
+            on echo_inbox_message (client_id, account_id, id);
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_webhook_schema(db: &DatabaseConnection) -> anyhow::Result<()> {
+    db.execute_unprepared(
+        r#"
+        create table if not exists echo_chat_webhook_delivery (
+            id bigserial primary key,
+            event_id text not null unique,
+            client_id integer not null references echo_client(id) on delete cascade,
+            inbox_message_id integer not null,
+            endpoint_url text not null,
+            payload jsonb not null,
+            attempts integer not null default 0,
+            next_attempt_at timestamp without time zone not null default (now() at time zone 'utc'),
+            delivered_at timestamp without time zone,
+            failed_at timestamp without time zone,
+            last_error text,
+            created_at timestamp without time zone not null default (now() at time zone 'utc'),
+            updated_at timestamp without time zone not null default (now() at time zone 'utc'),
+            unique (client_id, inbox_message_id),
+            check (attempts >= 0),
+            check (delivered_at is null or failed_at is null)
+        );
+        create index if not exists echo_chat_webhook_delivery_pending_idx
+            on echo_chat_webhook_delivery (next_attempt_at, id)
+            where delivered_at is null and failed_at is null;
+        create index if not exists echo_chat_webhook_delivery_terminal_idx
+            on echo_chat_webhook_delivery (
+                (coalesce(delivered_at, failed_at)), id
+            )
+            where delivered_at is not null or failed_at is not null;
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn ensure_history_indexes(db: &DatabaseConnection) -> anyhow::Result<()> {
+    db.execute_unprepared(
+        r#"
+        create index if not exists echo_chat_inbox_group_history_idx
+            on echo_inbox_message (
+                client_id, account_id, group_id,
+                (coalesce(timestamp, created_at)) desc, id desc
+            )
+            where deleted = false and group_id is not null;
+        create index if not exists echo_chat_inbox_private_history_idx
+            on echo_inbox_message (
+                client_id, account_id, sender_id,
+                (coalesce(timestamp, created_at)) desc, id desc
+            )
+            where deleted = false and group_id is null;
+        create index if not exists echo_chat_outbox_instance_group_history_idx
+            on echo_outbox_message_instance (
+                account_id, group_id,
+                (coalesce(sent_at, created_at)) desc, id desc
+            )
+            where group_id is not null;
+        create index if not exists echo_chat_outbox_instance_private_history_idx
+            on echo_outbox_message_instance (
+                account_id, recipient_id,
+                (coalesce(sent_at, created_at)) desc, id desc
+            )
+            where recipient_id is not null;
+        create index if not exists echo_chat_outbox_instance_reply_history_idx
+            on echo_outbox_message_instance (
+                account_id, (coalesce(sent_at, created_at)) desc, id desc
+            )
+            where group_id is null
+                and reply_to_inbox_message_id is not null;
+        "#,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]

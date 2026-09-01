@@ -204,6 +204,7 @@ deploy server builder=default_builder branch=default_branch:
       sudo chmod 0600 /etc/echo-messengers/config.toml
     fi
 
+    sudo /usr/bin/echo-messengers migrate
     sudo systemctl daemon-reload
     sudo systemctl enable --now echo-messengers
     sudo systemctl restart echo-messengers
