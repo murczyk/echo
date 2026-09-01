@@ -236,9 +236,15 @@ function getOrCreateDutyNotificationAudioContext(): AudioContext | null {
 export function getDutySoundStatus(): DutySoundStatus {
   if (!getDutyAudioContextConstructor()) return DutySoundStatus.Unsupported;
   if (dutyPlaybackFailed) return DutySoundStatus.Blocked;
-  return dutyNotificationAudioContext?.state === 'running'
-    ? DutySoundStatus.Ready
-    : dutySoundStatus;
+
+  const contextState = dutyNotificationAudioContext?.state;
+  if (contextState === 'running') return DutySoundStatus.Ready;
+
+  if (contextState && dutySoundStatus === DutySoundStatus.Ready) {
+    return DutySoundStatus.InteractionRequired;
+  }
+
+  return dutySoundStatus;
 }
 
 /**

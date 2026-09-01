@@ -482,6 +482,41 @@ describe('Duty browser notifications', () => {
     window.removeEventListener(statusChangeEvent, onStatusChange);
   });
 
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('derives sound readiness from a previously ready context state', async () => {
+    const context = {
+      state: 'running' as AudioContextState,
+      resume: vi.fn(),
+    };
+    vi.stubGlobal(
+      'AudioContext',
+      vi.fn(function () {
+        return context;
+      }),
+    );
+    vi.resetModules();
+    const {
+      DutySoundStatus,
+      getDutyNotificationBellState: getBellState,
+      getDutySoundStatus: getSoundStatus,
+      resumeDutyNotificationAudioFromUserGesture: resumeAudio,
+    } = await import('./notifications');
+
+    await expect(resumeAudio()).resolves.toBe(DutySoundStatus.Ready);
+    expect(getSoundStatus()).toBe(DutySoundStatus.Ready);
+
+    context.state = 'suspended';
+    expect(getSoundStatus()).toBe(DutySoundStatus.InteractionRequired);
+    expect(getBellState({ soundEnabled: true, browserEnabled: false })).toBe('degraded');
+
+    context.state = 'interrupted' as AudioContextState;
+    expect(getSoundStatus()).toBe(DutySoundStatus.InteractionRequired);
+
+    context.state = 'running';
+    expect(getSoundStatus()).toBe(DutySoundStatus.Ready);
+    expect(getBellState({ soundEnabled: true, browserEnabled: false })).toBe('ready');
+  });
+
   it('publishes a settled audio-status transition from priming listeners once', async () => {
     const context = {
       currentTime: 0,
