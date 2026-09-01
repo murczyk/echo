@@ -1,5 +1,9 @@
 use super::tui;
-use crate::config::ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE;
+use crate::config::{
+    ORBIT_UNIT_NAME_CLEANUP_ARMY_NAME_WORDS,
+    ORBIT_UNIT_NAME_CLEANUP_CORPS_NAME_WORDS,
+    ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE,
+};
 use crate::entities::sigint_unit;
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
@@ -76,6 +80,8 @@ where
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(
             Condition::any()
+                .add(sigint_unit::Column::Corps.ne(""))
+                .add(sigint_unit::Column::Army.ne(""))
                 .add(sigint_unit::Column::MilitaryDistrict.ne(""))
                 .add(sigint_unit::Column::ArmyRegion.ne("")),
         )
@@ -89,11 +95,7 @@ where
 }
 
 fn proposed_name_change(unit: &sigint_unit::Model) -> Option<UnitNameChange> {
-    let echelons = [&unit.military_district, &unit.army_region]
-        .into_iter()
-        .map(|echelon| echelon.trim())
-        .filter(|echelon| !echelon.is_empty())
-        .collect::<Vec<_>>();
+    let echelons = removable_name_echelons(unit);
     let mut proposed_name = unit.name.clone();
     let mut removed_echelons = Vec::new();
     for echelon in echelons {
@@ -116,6 +118,35 @@ fn proposed_name_change(unit: &sigint_unit::Model) -> Option<UnitNameChange> {
         proposed_name,
         removed_echelons,
     })
+}
+
+fn removable_name_echelons(unit: &sigint_unit::Model) -> Vec<&str> {
+    [
+        (!contains_name_word(
+            &unit.corps,
+            ORBIT_UNIT_NAME_CLEANUP_CORPS_NAME_WORDS,
+        ))
+        .then_some(unit.corps.as_str()),
+        (!contains_name_word(
+            &unit.army,
+            ORBIT_UNIT_NAME_CLEANUP_ARMY_NAME_WORDS,
+        ))
+        .then_some(unit.army.as_str()),
+        Some(unit.military_district.as_str()),
+        Some(unit.army_region.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .filter(|echelon| !echelon.is_empty())
+    .collect()
+}
+
+fn contains_name_word(value: &str, expected_words: &[&str]) -> bool {
+    value
+        .to_lowercase()
+        .split(|character: char| !character.is_alphanumeric())
+        .any(|word| expected_words.contains(&word))
 }
 
 fn remove_phrase(value: &str, phrase: &str) -> (String, bool) {
@@ -278,6 +309,43 @@ mod tests {
 
         let unit = sigint_unit("МВО ЗС РФ", "МВО", "ЗС РФ");
         assert_eq!(proposed_name_change(&unit), None);
+    }
+
+    #[test]
+    fn removes_army_and_corps_values_that_do_not_name_those_echelons() {
+        let mut unit =
+            sigint_unit("9 мсп ТН \"Сумський\" УВ(с) \"Сєвєр\"", "", "");
+        unit.corps = "ТН \"Сумський\"".to_string();
+        unit.army = "УВ(с) \"Сєвєр\"".to_string();
+
+        assert_eq!(
+            proposed_name_change(&unit),
+            Some(UnitNameChange {
+                unit_id: 1,
+                current_name: unit.name,
+                proposed_name: "9 мсп".to_string(),
+                removed_echelons: vec![
+                    "ТН \"Сумський\"".to_string(),
+                    "УВ(с) \"Сєвєр\"".to_string(),
+                ],
+            })
+        );
+    }
+
+    #[test]
+    fn keeps_valid_army_and_corps_values() {
+        for (corps, army) in [
+            ("11 АК", "20 ЗВА"),
+            ("11 армійський корпус", "20 загальновійськова армія"),
+            ("11 ак", "1 та"),
+        ] {
+            let mut unit =
+                sigint_unit(&format!("9 мсп {corps} {army}"), "", "");
+            unit.corps = corps.to_string();
+            unit.army = army.to_string();
+
+            assert_eq!(proposed_name_change(&unit), None);
+        }
     }
 
     fn sigint_unit(

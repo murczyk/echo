@@ -997,7 +997,7 @@ enum Cmd {
     TuiMergeOrbitUnitDuplicates,
     /// Resolve unparsed unit labels in automatic or manual mode.
     TuiResolveOrbitUnparsedUnits,
-    /// Remove echelons above army from SIGINT unit names.
+    /// Remove invalid army/corps and higher echelons from SIGINT unit names.
     TuiFixOrbitUnitNames,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),

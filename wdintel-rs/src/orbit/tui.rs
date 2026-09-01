@@ -1129,7 +1129,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
         "Link ORBIT units to SIGINT units",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Resolve unparsed unit labels through ORBIT links",
-        "Remove echelons above army from SIGINT unit names",
+        "Remove invalid army/corps and higher echelons from SIGINT unit names",
         "Reconcile linked SIGINT units and merge exact duplicates",
         "Erase and reimport all ORBIT data",
     ];
@@ -1194,7 +1194,7 @@ fn draw_unit_name_change_review(
     let lines = vec![
         Line::from(format!("SIGINT unit ID: {unit_id}")),
         Line::from(format!(
-            "Echelons above army: {}",
+            "Removed name segments: {}",
             removed_echelons.join(" / ")
         )),
         Line::default(),
