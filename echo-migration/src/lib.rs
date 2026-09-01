@@ -401,6 +401,7 @@ mod m20260826_212652_sigint_unit_formation_normalized_name_index;
 mod m20260827_074530_create_report_download_history;
 mod m20260828_143607_add_ai_settlement_parsing;
 mod m20260828_150352_echo_chat_admin;
+mod m20260901_130526_add_callsign_changelog_created_at_index;
 
 pub struct Migrator;
 
@@ -941,6 +942,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260828_143607_add_ai_settlement_parsing::Migration),
             Box::new(m20260828_150352_echo_chat_admin::Migration),
+            Box::new(
+                m20260901_130526_add_callsign_changelog_created_at_index::Migration,
+            ),
         ]
     }
 }
