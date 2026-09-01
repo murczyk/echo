@@ -238,7 +238,7 @@ function PhoneLimitations() {
         <Row>
           <Typography fontWeight={600}>Активна сторінка</Typography>
           <Typography className="mt-2" color="text.secondary" variant="body2">
-            Телефон розблоковано, а «Оперативний» відкрито — звук може відтворюватися.
+            Телефон розблоковано та сторінку відкрито — звук може відтворюватися.
           </Typography>
         </Row>
         <Row>
@@ -261,11 +261,11 @@ function Troubleshooting({
   onSelectTopic: (topic: DutyNotificationsHelpTopic) => void;
 }) {
   const actions: Array<{ text: string; topic: DutyNotificationsHelpTopic }> = [
-    { text: 'Перемикач каналу увімкнено?', topic: DutyNotificationsHelpTopic.Feed },
+    { text: 'Перемикач стрічки увімкнено?', topic: DutyNotificationsHelpTopic.Feed },
     { text: 'Перевірка звуку працює?', topic: DutyNotificationsHelpTopic.Feed },
     { text: 'Дозвіл Chrome надано?', topic: DutyNotificationsHelpTopic.Chrome },
     {
-      text: 'Перевірка банера спрацювала, але банер не з’явився?',
+      text: 'Перевірка банера спрацювала, але він не з’явився?',
       topic: DutyNotificationsHelpTopic.System,
     },
     {
@@ -273,13 +273,13 @@ function Troubleshooting({
       topic: DutyNotificationsHelpTopic.System,
     },
     {
-      text: 'Сторінка «Оперативний» залишається відкритою?',
+      text: 'Сторінка лишається відкритою?',
       topic: DutyNotificationsHelpTopic.Phone,
     },
   ];
 
   return (
-    <Section icon={<SettingsIcon />} title="Як знайти причину">
+    <Section icon={<SettingsIcon />} title="Імовірні причини несправностей">
       <div className="grid gap-2 md:grid-cols-2">
         {actions.map(({ text, topic }) => (
           <PowerButton
@@ -301,7 +301,7 @@ function Troubleshooting({
             {lastSuccessfulPoll ? lastSuccessfulPoll.toLocaleTimeString() : 'Ще не було'}
           </Typography>
           <Typography className="mt-2" color="text.secondary" variant="body2">
-            Поки «Оперативний» працює, час має регулярно оновлюватися.
+            Поки сторінка працює, час має регулярно оновлюватись.
           </Typography>
         </Row>
       </div>

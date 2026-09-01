@@ -348,7 +348,7 @@ describe('FeedColumn', () => {
     });
 
     const bell = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Сповіщення — Сповіщення вимкнені для стрічки"]',
+      'button[aria-label="Сповіщення — Увімкнути сповіщення для стрічки"]',
     );
     expect(bell).not.toBeNull();
 
@@ -391,7 +391,7 @@ describe('FeedColumn', () => {
     });
 
     const bell = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Сповіщення вимкнені для стрічки"]',
+      'button[aria-label="Увімкнути сповіщення для стрічки"]',
     );
     expect(bell).not.toBeNull();
     await act(async () => {
@@ -407,7 +407,7 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-testid="feed-notification-panel"]')?.textContent).toBe(
       'quota exceeded',
     );
-    expect(bell?.getAttribute('aria-label')).toBe('Сповіщення вимкнені для стрічки');
+    expect(bell?.getAttribute('aria-label')).toBe('Увімкнути сповіщення для стрічки');
     expect(bell?.getAttribute('aria-pressed')).toBe('false');
   });
 
@@ -421,7 +421,7 @@ describe('FeedColumn', () => {
     });
 
     const bell = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Сповіщення готові; вимкнути для стрічки"]',
+      'button[aria-label="Вимкнути сповіщення для стрічки"]',
     );
     expect(bell).not.toBeNull();
     await act(async () => {
@@ -435,7 +435,7 @@ describe('FeedColumn', () => {
     expect(container.querySelector('[data-testid="feed-notification-panel"]')?.textContent).toBe(
       'storage blocked',
     );
-    expect(bell?.getAttribute('aria-label')).toBe('Сповіщення готові; вимкнути для стрічки');
+    expect(bell?.getAttribute('aria-label')).toBe('Вимкнути сповіщення для стрічки');
     expect(bell?.getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -449,7 +449,7 @@ describe('FeedColumn', () => {
     });
 
     const bell = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Сповіщення вимкнені для стрічки"]',
+      'button[aria-label="Увімкнути сповіщення для стрічки"]',
     );
     expect(bell).not.toBeNull();
     await act(async () => {
@@ -488,13 +488,13 @@ describe('FeedColumn', () => {
     });
 
     expect(
-      container.querySelector('button[aria-label="Сповіщення готові; вимкнути для стрічки"]'),
+      container.querySelector('button[aria-label="Вимкнути сповіщення для стрічки"]'),
     ).not.toBeNull();
   });
 
   it.each([
-    ['off', 'Сповіщення — Сповіщення вимкнені для стрічки'],
-    ['ready', 'Сповіщення — Сповіщення готові; вимкнути для стрічки'],
+    ['off', 'Сповіщення — Увімкнути сповіщення для стрічки'],
+    ['ready', 'Сповіщення — Вимкнути сповіщення для стрічки'],
     ['degraded', 'Сповіщення — Сповіщення потребують налаштування або взаємодії'],
     ['unsupported', 'Сповіщення — Запитані сповіщення не підтримуються'],
   ] as const)('renders the exact narrow notification label for %s', async (state, label) => {

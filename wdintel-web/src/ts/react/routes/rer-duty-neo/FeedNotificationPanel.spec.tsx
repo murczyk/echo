@@ -169,10 +169,10 @@ describe('FeedNotificationPanel', () => {
     await act(async () => {
       getButton(container, 'Як виправити').click();
     });
-    expect(document.body.textContent).toContain('Як знайти причину');
+    expect(document.body.textContent).toContain('Імовірні причини несправностей');
 
     await act(async () => {
-      getButton(document.body, 'Перевірка банера спрацювала, але банер не з’явився?').click();
+      getButton(document.body, 'Перевірка банера спрацювала, але він не з’явився?').click();
     });
     expect(document.body.textContent).toContain('Системні параметри → Сповіщення → Google Chrome');
   });

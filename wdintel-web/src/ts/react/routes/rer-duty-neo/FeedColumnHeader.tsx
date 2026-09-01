@@ -417,8 +417,8 @@ export function FeedColumnHeader({
 }
 
 const bellStateLabel = {
-  off: 'Сповіщення вимкнені для стрічки',
-  ready: 'Сповіщення готові; вимкнути для стрічки',
+  off: 'Увімкнути сповіщення для стрічки',
+  ready: 'Вимкнути сповіщення для стрічки',
   degraded: 'Сповіщення потребують налаштування або взаємодії',
   unsupported: 'Запитані сповіщення не підтримуються',
 } satisfies Record<DutyNotificationBellState, string>;
