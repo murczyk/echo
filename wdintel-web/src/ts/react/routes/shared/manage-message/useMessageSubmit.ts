@@ -14,6 +14,7 @@ import type { RecentValues } from './useRecentValues';
 import { parseCoords, type MessageFormData } from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
 import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
+import { fallbackFailedMessageUploads, messageUploadFailure } from './message-upload-fallback';
 
 type SubmitOptions = {
   busy: boolean;
@@ -104,8 +105,9 @@ export function useMessageSubmit({
         if (!uploadResult) {
           throw new Error('Помилка завантаження файлів (no result)');
         }
-        if ((uploadResult.failed || []).length > 0) {
-          throw new Error(formatMessageUploadError(uploadResult.failed?.[0]));
+        const failed = await fallbackFailedMessageUploads(uppy, uploadResult.failed || []);
+        if (failed.length > 0) {
+          throw new Error(formatMessageUploadError(uppy, failed[0]));
         }
 
         for (const file of uppy.getFiles()) {
@@ -226,9 +228,13 @@ export function useMessageSubmit({
   return { onSubmit };
 }
 
-export function formatMessageUploadError(file: UppyFile<any, any> | undefined): string {
+export function formatMessageUploadError(
+  uppy: Uppy<any, any>,
+  file: UppyFile<any, any> | undefined,
+): string {
   const target = file?.name?.trim() ? `файл «${file.name.trim()}»` : 'файли';
-  const status = file?.response?.status;
+  const failure = file ? messageUploadFailure(uppy, file.id) : undefined;
+  const status = failure?.status ?? file?.response?.status;
 
   if (status === 401) {
     return `Не вдалося завантажити ${target}: сеанс завершився. Оновіть сторінку та увійдіть знову.`;
@@ -244,6 +250,9 @@ export function formatMessageUploadError(file: UppyFile<any, any> | undefined): 
   }
   if (status) {
     return `Не вдалося завантажити ${target} (HTTP ${status}). Повторіть спробу.`;
+  }
+  if (failure?.message.startsWith('Резервне завантаження')) {
+    return `Не вдалося завантажити ${target}. ${failure.message}`;
   }
   return `Не вдалося завантажити ${target}. Перевірте з’єднання та повторіть спробу.`;
 }

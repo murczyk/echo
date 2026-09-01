@@ -343,6 +343,7 @@ pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `MessageCardMedia.tsx`.
 pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
+pub const SIGINT_FILE_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and

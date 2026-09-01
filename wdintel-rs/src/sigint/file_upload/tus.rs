@@ -1,4 +1,6 @@
-use crate::config::SIGINT_MESSAGE_MAX_ATTACHMENTS;
+use crate::config::{
+    SIGINT_FILE_UPLOAD_MAX_BYTES, SIGINT_MESSAGE_MAX_ATTACHMENTS,
+};
 use crate::error::AppError;
 use crate::messenger::media::MediaUploadInput;
 use crate::types::*;
@@ -7,7 +9,7 @@ use actix_web::http::{header, Method, StatusCode};
 use actix_web::{web, HttpResponse};
 use base64::Engine;
 use chrono::{DateTime, Utc};
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -78,6 +80,17 @@ pub struct TusUploadMetadata {
     pub filename: Option<String>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum CompletedUploadWriteResult {
+    Empty,
+    Stored {
+        file_id: Uuid,
+        size: u64,
+        upload_url: String,
+    },
+    TooLarge,
+}
+
 enum WriteResult {
     Conflict { current_offset: u64 },
     TooLarge { current_offset: u64 },
@@ -87,7 +100,7 @@ enum WriteResult {
 impl Default for TusConfig {
     fn default() -> TusConfig {
         TusConfig {
-            max_size: Some(2 * 1024 * 1024 * 1024),
+            max_size: Some(SIGINT_FILE_UPLOAD_MAX_BYTES),
             pending_expires_in: Duration::from_secs(4 * 3600),
             completed_expires_in: Duration::from_secs(8 * 3600),
         }
@@ -186,6 +199,132 @@ impl TusHandler {
         }
 
         Ok(uploads)
+    }
+
+    pub async fn create_completed_upload<S>(
+        &self,
+        login: &Uuid,
+        metadata: TusUploadMetadata,
+        chunks: S,
+    ) -> Result<CompletedUploadWriteResult, AppError>
+    where
+        S: Stream<Item = Result<web::Bytes, AppError>> + Unpin,
+    {
+        let file_id = Uuid::now_v7();
+        let (temporary_path, file) = self
+            .create_fallback_file(file_id, login)
+            .await
+            .context(h!())?;
+        let result = self
+            .write_completed_upload(file_id, login, metadata, file, chunks)
+            .await;
+
+        if !matches!(result, Ok(CompletedUploadWriteResult::Stored { .. })) {
+            let _ = tokio::fs::remove_file(&temporary_path).await;
+        }
+        result
+    }
+
+    pub async fn remove_completed_upload(
+        &self,
+        login: &Uuid,
+        file_id: Uuid,
+        size: u64,
+    ) {
+        let Ok((file_path, _)) =
+            self.create_file_path(file_id, login, size, false).await
+        else {
+            return;
+        };
+        let _ = tokio::fs::remove_file(self.metadata_path(&file_path)).await;
+        let _ = tokio::fs::remove_file(file_path).await;
+    }
+
+    async fn create_fallback_file(
+        &self,
+        file_id: Uuid,
+        login: &Uuid,
+    ) -> Result<(PathBuf, tokio::fs::File), AppError> {
+        let mut file_path = self.upload_dir.join(PENDING_DIR);
+        file_path.push(login_dir(login));
+        tokio::fs::create_dir_all(&file_path).await.c(h!())?;
+        file_path.push(format!(".{file_id}.fallback"));
+        let file = tokio::fs::File::options()
+            .create_new(true)
+            .write(true)
+            .open(&file_path)
+            .await
+            .c(h!())?;
+        Ok((file_path, file))
+    }
+
+    async fn write_completed_upload<S>(
+        &self,
+        file_id: Uuid,
+        login: &Uuid,
+        metadata: TusUploadMetadata,
+        mut file: tokio::fs::File,
+        mut chunks: S,
+    ) -> Result<CompletedUploadWriteResult, AppError>
+    where
+        S: Stream<Item = Result<web::Bytes, AppError>> + Unpin,
+    {
+        let mut size = 0_u64;
+        while let Some(chunk) = chunks.next().await {
+            let chunk = chunk.context(h!())?;
+            let Some(new_size) = size.checked_add(chunk.len() as u64) else {
+                return Ok(CompletedUploadWriteResult::TooLarge);
+            };
+            if self
+                .config
+                .max_size
+                .is_some_and(|max_size| new_size > max_size)
+            {
+                return Ok(CompletedUploadWriteResult::TooLarge);
+            }
+            file.write_all(&chunk).await.c(h!())?;
+            size = new_size;
+        }
+        if size == 0 {
+            return Ok(CompletedUploadWriteResult::Empty);
+        }
+
+        file.sync_all().await.c(h!())?;
+        drop(file);
+        self.finish_completed_upload(file_id, login, size, metadata)
+            .await
+    }
+
+    async fn finish_completed_upload(
+        &self,
+        file_id: Uuid,
+        login: &Uuid,
+        size: u64,
+        metadata: TusUploadMetadata,
+    ) -> Result<CompletedUploadWriteResult, AppError> {
+        let temporary_path = self
+            .upload_dir
+            .join(PENDING_DIR)
+            .join(login_dir(login))
+            .join(format!(".{file_id}.fallback"));
+        let (completed_path, file_name) = self
+            .create_file_path(file_id, login, size, false)
+            .await
+            .context(h!())?;
+        tokio::fs::rename(&temporary_path, &completed_path)
+            .await
+            .c(h!())?;
+        if let Err(error) =
+            self.write_metadata_value(&completed_path, &metadata).await
+        {
+            let _ = tokio::fs::remove_file(&completed_path).await;
+            return Err(error);
+        }
+        Ok(CompletedUploadWriteResult::Stored {
+            file_id,
+            size,
+            upload_url: format!("{}{}", self.prefix, file_name),
+        })
     }
 
     pub async fn open_completed_file(
@@ -353,6 +492,10 @@ impl TusHandler {
                 None,
             ));
         };
+        log::info!(
+            target: "tus_upload",
+            "event=chunk_request_received file_id={file_id} upload_length={upload_length} upload_offset={upload_offset}"
+        );
         if upload_offset > upload_length {
             return Ok(self.rejected_chunk_response(
                 StatusCode::PAYLOAD_TOO_LARGE,
@@ -433,6 +576,11 @@ impl TusHandler {
                 .await
                 .c(h!())?;
         }
+        log::info!(
+            target: "tus_upload",
+            "event=chunk_written file_id={file_id} upload_length={upload_length} upload_offset={upload_offset} completed={}",
+            upload_offset == upload_length
+        );
         Ok(builder.finish())
     }
 
@@ -577,6 +725,10 @@ impl TusHandler {
             header::LOCATION,
             format!("{}{}", self.prefix, file_name),
         ));
+        log::info!(
+            target: "tus_upload",
+            "event=upload_created file_id={file_id} upload_length={upload_length}"
+        );
         Ok(builder.finish())
     }
 
@@ -638,7 +790,15 @@ impl TusHandler {
         upload_metadata: &HeaderValue,
     ) -> Result<(), AppError> {
         let metadata = parse_upload_metadata(upload_metadata).c(h!())?;
-        let bytes = serde_json::to_vec(&metadata).c(h!())?;
+        self.write_metadata_value(file_path, &metadata).await
+    }
+
+    async fn write_metadata_value(
+        &self,
+        file_path: &Path,
+        metadata: &TusUploadMetadata,
+    ) -> Result<(), AppError> {
+        let bytes = serde_json::to_vec(metadata).c(h!())?;
         tokio::fs::write(self.metadata_path(file_path), bytes)
             .await
             .c(h!())?;
@@ -786,4 +946,111 @@ fn media_upload_input_from_tus_upload(upload: TusUpload) -> MediaUploadInput {
 
 fn login_dir(login: &uuid::Uuid) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(login.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures_util::stream;
+
+    #[tokio::test]
+    async fn fallback_upload_is_available_through_completed_url() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let handler = TusHandler::new(
+            temp_dir.path().display().to_string(),
+            "/api/sigint/file-upload/tus",
+        );
+        let metadata = TusUploadMetadata {
+            filename: Some("evidence.png".to_string()),
+            filetype: Some("image/png".to_string()),
+            ..TusUploadMetadata::default()
+        };
+
+        let result = handler
+            .create_completed_upload(
+                &login,
+                metadata,
+                stream::iter([Ok(web::Bytes::from_static(b"image bytes"))]),
+            )
+            .await
+            .unwrap();
+        let CompletedUploadWriteResult::Stored { upload_url, .. } = result
+        else {
+            panic!("expected a stored fallback upload");
+        };
+        let upload = handler
+            .open_completed_url(&login, &upload_url)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read(upload.file_path).await.unwrap(),
+            b"image bytes"
+        );
+        assert_eq!(upload.metadata.filename.as_deref(), Some("evidence.png"));
+        assert_eq!(upload.metadata.filetype.as_deref(), Some("image/png"));
+    }
+
+    #[tokio::test]
+    async fn fallback_upload_rejects_empty_file_and_removes_temporary_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let handler = TusHandler::new(
+            temp_dir.path().display().to_string(),
+            "/api/sigint/file-upload/tus",
+        );
+
+        let result = handler
+            .create_completed_upload(
+                &login,
+                TusUploadMetadata::default(),
+                stream::empty::<Result<web::Bytes, AppError>>(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, CompletedUploadWriteResult::Empty);
+        assert!(fallback_pending_files(&handler, &login).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fallback_upload_rejects_excess_bytes_and_removes_temporary_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let mut handler = TusHandler::new(
+            temp_dir.path().display().to_string(),
+            "/api/sigint/file-upload/tus",
+        );
+        handler.config.max_size = Some(3);
+
+        let result = handler
+            .create_completed_upload(
+                &login,
+                TusUploadMetadata::default(),
+                stream::iter([Ok(web::Bytes::from_static(b"four"))]),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result, CompletedUploadWriteResult::TooLarge);
+        assert!(fallback_pending_files(&handler, &login).await.is_empty());
+    }
+
+    async fn fallback_pending_files(
+        handler: &TusHandler,
+        login: &Uuid,
+    ) -> Vec<PathBuf> {
+        let directory =
+            handler.upload_dir.join(PENDING_DIR).join(login_dir(login));
+        let Ok(mut entries) = tokio::fs::read_dir(directory).await else {
+            return Vec::new();
+        };
+        let mut paths = Vec::new();
+        while let Some(entry) = entries.next_entry().await.unwrap() {
+            paths.push(entry.path());
+        }
+        paths
+    }
 }

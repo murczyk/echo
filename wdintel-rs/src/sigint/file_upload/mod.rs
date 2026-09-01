@@ -1,12 +1,14 @@
 use crate::users::ensure_rer_role;
 use crate::users::login_id_from_identity;
+pub mod fallback;
 pub mod tus;
 
 use crate::error::AppError;
 use crate::types::*;
+use actix_multipart::Multipart;
 use actix_web::http::header::{HeaderMap, HeaderName};
 use actix_web::http::Method;
-use actix_web::{route, web, HttpRequest, HttpResponse};
+use actix_web::{post, route, web, HttpRequest, HttpResponse};
 
 pub const TUS_PATH_BASE: &str = "/api/sigint/file-upload/tus";
 const HEADER_NAME_HTTP_METHOD_OVERRIDE: HeaderName =
@@ -38,6 +40,25 @@ pub async fn tus_file(
     payload: web::Payload,
 ) -> Result<HttpResponse, AppError> {
     handle_tus(user, env, req, Some(path.into_inner()), payload).await
+}
+
+#[post("/api/sigint/file-upload/fallback")]
+pub async fn fallback_upload(
+    user: actix_identity::Identity,
+    env: web::Data<Env>,
+    req: HttpRequest,
+    payload: Multipart,
+) -> Result<HttpResponse, AppError> {
+    let login = login_id_from_identity(&user).context(h!())?;
+    ensure_request_allowed(&user, &env).await.c(h!())?;
+
+    fallback::upload(
+        tus::TusHandler::new(env.config.storage_dir.clone(), TUS_PATH_BASE),
+        &login,
+        req.headers(),
+        payload,
+    )
+    .await
 }
 
 async fn handle_tus(
