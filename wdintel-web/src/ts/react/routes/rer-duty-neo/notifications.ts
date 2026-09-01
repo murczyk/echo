@@ -387,7 +387,16 @@ export function testBrowserNotification(): DutyBrowserNotificationStatus {
 }
 
 type PendingDutyAlert = { feedId: string; totalNew: number };
-let dutyPollAlerts: PendingDutyAlert[] | null = null;
+declare const dutyNotificationPollCycleBrand: unique symbol;
+export type DutyNotificationPollCycle = { readonly [dutyNotificationPollCycleBrand]: true };
+type DutyNotificationPollCycleState = {
+  alerts: PendingDutyAlert[];
+  status: 'active' | 'ended' | 'cancelled';
+};
+const dutyNotificationPollCycleStates = new WeakMap<
+  DutyNotificationPollCycle,
+  DutyNotificationPollCycleState
+>();
 
 function deliverDutyAlerts(alerts: PendingDutyAlert[]): void {
   const enabled = alerts.filter(({ feedId }) => {
@@ -409,15 +418,26 @@ function deliverDutyAlerts(alerts: PendingDutyAlert[]): void {
   }
 }
 
-/** One explicit poll owns aggregation; overlapping triggers join the poll coordinator. */
-export function beginDutyNotificationPollCycle(): void {
-  dutyPollAlerts = [];
+/** One explicit poll owns aggregation; overlapping triggers retain independent handles. */
+export function beginDutyNotificationPollCycle(): DutyNotificationPollCycle {
+  const cycle = {} as DutyNotificationPollCycle;
+  dutyNotificationPollCycleStates.set(cycle, { alerts: [], status: 'active' });
+  return cycle;
 }
 
-export function endDutyNotificationPollCycle(): void {
-  const alerts = dutyPollAlerts;
-  dutyPollAlerts = null;
-  if (alerts) deliverDutyAlerts(alerts);
+export function endDutyNotificationPollCycle(cycle: DutyNotificationPollCycle): void {
+  const state = dutyNotificationPollCycleStates.get(cycle);
+  if (!state || state.status !== 'active') return;
+  state.status = 'ended';
+  deliverDutyAlerts(state.alerts);
+  state.alerts = [];
+}
+
+export function cancelDutyNotificationPollCycle(cycle: DutyNotificationPollCycle): void {
+  const state = dutyNotificationPollCycleStates.get(cycle);
+  if (!state || state.status === 'cancelled') return;
+  state.status = 'cancelled';
+  state.alerts = [];
 }
 
 export function publishDutyNotificationPollSuccess(feedId: string): void {
@@ -472,9 +492,19 @@ export function setDutyNeoDocumentTitleUnreadCount(totalUnread: number): void {
   applyDutyNeoDocumentTitle();
 }
 
-export function notifyDutyNewMessages(feedId: string, totalNew: number): void {
+export function notifyDutyNewMessages(
+  feedId: string,
+  totalNew: number,
+  cycle?: DutyNotificationPollCycle,
+): void {
   if (totalNew <= 0) return;
   const alert = { feedId, totalNew };
-  if (dutyPollAlerts) dutyPollAlerts.push(alert);
-  else deliverDutyAlerts([alert]);
+  if (!cycle) return deliverDutyAlerts([alert]);
+  const state = dutyNotificationPollCycleStates.get(cycle);
+  if (!state || state.status === 'cancelled') return;
+  if (state.status === 'active') {
+    state.alerts.push(alert);
+    return;
+  }
+  deliverDutyAlerts([alert]);
 }

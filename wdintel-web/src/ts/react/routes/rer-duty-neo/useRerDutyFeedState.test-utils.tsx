@@ -19,6 +19,7 @@ const dutyApiMocks = vi.hoisted(() => ({
   notifyDutyNewMessages: vi.fn(),
   beginDutyNotificationPollCycle: vi.fn(),
   endDutyNotificationPollCycle: vi.fn(),
+  cancelDutyNotificationPollCycle: vi.fn(),
   recordLastSuccessfulDutyCountCheck: vi.fn(),
   removeLastSuccessfulDutyCountCheck: vi.fn(),
 }));
@@ -42,6 +43,7 @@ vi.mock('./notifications', () => ({
   notifyDutyNewMessages: dutyApiMocks.notifyDutyNewMessages,
   beginDutyNotificationPollCycle: dutyApiMocks.beginDutyNotificationPollCycle,
   endDutyNotificationPollCycle: dutyApiMocks.endDutyNotificationPollCycle,
+  cancelDutyNotificationPollCycle: dutyApiMocks.cancelDutyNotificationPollCycle,
   recordLastSuccessfulDutyCountCheck: dutyApiMocks.recordLastSuccessfulDutyCountCheck,
   removeLastSuccessfulDutyCountCheck: dutyApiMocks.removeLastSuccessfulDutyCountCheck,
 }));
@@ -196,6 +198,10 @@ export function createDutyFeedStateFixture() {
     dutyApiMocks.fetchInboxMessages.mockReset();
     dutyApiMocks.fetchInboxCount.mockReset();
     dutyApiMocks.notifyDutyNewMessages.mockReset();
+    dutyApiMocks.beginDutyNotificationPollCycle.mockReset();
+    dutyApiMocks.endDutyNotificationPollCycle.mockReset();
+    dutyApiMocks.cancelDutyNotificationPollCycle.mockReset();
+    dutyApiMocks.beginDutyNotificationPollCycle.mockImplementation(() => ({}));
     deferredRequests.clear();
     window.history.replaceState({}, '', '/');
     dutyApiMocks.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });

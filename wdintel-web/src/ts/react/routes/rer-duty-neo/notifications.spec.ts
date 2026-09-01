@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   beginDutyNotificationPollCycle,
+  cancelDutyNotificationPollCycle,
   DUTY_NOTIFICATION_STATUS_CHANGE_EVENT,
   DutyBrowserNotificationStatus,
   endDutyNotificationPollCycle,
@@ -21,7 +22,6 @@ function installNotification(permission: NotificationPermission, ctor: typeof No
 }
 
 afterEach(() => {
-  endDutyNotificationPollCycle();
   vi.unstubAllGlobals();
   if (originalLocalStorage) {
     Object.defineProperty(window, 'localStorage', originalLocalStorage);
@@ -31,6 +31,77 @@ afterEach(() => {
 });
 
 describe('Duty browser notifications', () => {
+  it('keeps concurrent poll cycles isolated until each is ended', () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    const NotificationMock = vi.fn(function () {
+      return { addEventListener: vi.fn() };
+    }) as unknown as typeof Notification;
+    installNotification('granted', NotificationMock);
+    setStoredDutyNotificationSettingsForFeed('feed-a', {
+      soundEnabled: false,
+      browserEnabled: true,
+    });
+    setStoredDutyNotificationSettingsForFeed('feed-b', {
+      soundEnabled: false,
+      browserEnabled: true,
+    });
+    const first = beginDutyNotificationPollCycle();
+    const second = beginDutyNotificationPollCycle();
+    notifyDutyNewMessages('feed-a', 2, first);
+    notifyDutyNewMessages('feed-b', 3, second);
+
+    endDutyNotificationPollCycle(first);
+    expect(NotificationMock).toHaveBeenCalledTimes(1);
+    expect(NotificationMock.mock.calls[0]?.[1]?.body).toBe('Нових повідомлень: 2. Стрічок: 1.');
+
+    endDutyNotificationPollCycle(second);
+    expect(NotificationMock).toHaveBeenCalledTimes(2);
+    expect(NotificationMock.mock.calls[1]?.[1]?.body).toBe('Нових повідомлень: 3. Стрічок: 1.');
+  });
+
+  it('cancels buffered alerts and suppresses late notifications for that cycle', () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    const NotificationMock = vi.fn(function () {
+      return { addEventListener: vi.fn() };
+    }) as unknown as typeof Notification;
+    installNotification('granted', NotificationMock);
+    setStoredDutyNotificationSettingsForFeed('feed-a', {
+      soundEnabled: false,
+      browserEnabled: true,
+    });
+    const cycle = beginDutyNotificationPollCycle();
+    notifyDutyNewMessages('feed-a', 2, cycle);
+    cancelDutyNotificationPollCycle(cycle);
+    endDutyNotificationPollCycle(cycle);
+    notifyDutyNewMessages('feed-a', 3, cycle);
+    expect(NotificationMock).not.toHaveBeenCalled();
+
+    notifyDutyNewMessages('feed-a', 1);
+    expect(NotificationMock).toHaveBeenCalledTimes(1);
+
+    const ended = beginDutyNotificationPollCycle();
+    endDutyNotificationPollCycle(ended);
+    notifyDutyNewMessages('feed-a', 1, ended);
+    expect(NotificationMock).toHaveBeenCalledTimes(2);
+    cancelDutyNotificationPollCycle(ended);
+    notifyDutyNewMessages('feed-a', 1, ended);
+    expect(NotificationMock).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps production delivery separate from the explicit test path', () => {
     const NotificationMock = vi.fn(function () {
       return { addEventListener: vi.fn() };
@@ -190,10 +261,10 @@ describe('Duty browser notifications', () => {
       soundEnabled: true,
       browserEnabled: true,
     });
-    beginDutyNotificationPollCycle();
-    notifyDutyNewMessages('feed-a', 2);
-    notifyDutyNewMessages('feed-b', 3);
-    endDutyNotificationPollCycle();
+    const cycle = beginDutyNotificationPollCycle();
+    notifyDutyNewMessages('feed-a', 2, cycle);
+    notifyDutyNewMessages('feed-b', 3, cycle);
+    endDutyNotificationPollCycle(cycle);
     expect(NotificationMock).toHaveBeenCalledTimes(1);
     expect(NotificationMock).toHaveBeenCalledWith(
       'Нові повідомлення в оперативному',
@@ -262,10 +333,10 @@ describe('Duty browser notifications', () => {
       browserEnabled: true,
     });
 
-    beginPollCycle();
-    notifyNewMessages('feed-a', 2);
-    notifyNewMessages('feed-b', 3);
-    endPollCycle();
+    const cycle = beginPollCycle();
+    notifyNewMessages('feed-a', 2, cycle);
+    notifyNewMessages('feed-b', 3, cycle);
+    endPollCycle(cycle);
 
     expect(NotificationMock).toHaveBeenCalledTimes(1);
     expect(NotificationMock.mock.calls[0]?.[1]?.body).toBe('Нових повідомлень: 3. Стрічок: 1.');

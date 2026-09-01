@@ -55,6 +55,10 @@ type Params = {
     feed: MessageFeedState,
     cursor: MessageCursor | null,
   ) => void;
+  recoverFeedUnreadBaselineAfterFailedLoad: (
+    feed: MessageFeedState,
+    fallbackCursor: MessageCursor | null,
+  ) => void;
 };
 
 function preserveUnreadState(
@@ -169,19 +173,16 @@ export function useRerDutyInitialLoad(params: Params) {
         const currentFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
-        const tail = currentFeed?.items.at(-1);
+        const effectiveTail = currentFeed?.pendingNewerItems?.at(-1) ?? currentFeed?.items.at(-1);
+        const fallbackCursor = effectiveTail
+          ? { id: effectiveTail[0], timestamp: effectiveTail[1].timestamp }
+          : null;
         if (preserveUnread) {
           current.completeFeedReload(feedId);
+        } else if (currentFeed) {
+          current.recoverFeedUnreadBaselineAfterFailedLoad(currentFeed, fallbackCursor);
         } else {
           current.clearFeedUnreadBaselines(feedId);
-          if (currentFeed && tail) {
-            current.installFeedUnreadCursorAndBaseline(currentFeed, {
-              id: tail[0],
-              timestamp: tail[1].timestamp,
-            });
-          } else {
-            current.setFeedUnreadCursor(feedId, null);
-          }
         }
         current.setError(error instanceof Error ? error.message : String(error));
         current.setMessageFeeds((previous) =>

@@ -19,11 +19,13 @@ import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
 import {
   beginDutyNotificationPollCycle,
+  cancelDutyNotificationPollCycle,
   endDutyNotificationPollCycle,
   notifyDutyNewMessages,
   recordLastSuccessfulDutyCountCheck,
   removeLastSuccessfulDutyCountCheck,
 } from './notifications';
+import type { DutyNotificationPollCycle } from './notifications';
 import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
 import { useRerDutyReferenceData } from './useRerDutyReferenceData';
 import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
@@ -86,6 +88,9 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeCountPollPromiseRef = useRef<Promise<void> | null>(null);
   const countPollRerunRequestedRef = useRef(false);
+  const pollLifecycleMountedRef = useRef(true);
+  const pollLifecycleGenerationRef = useRef(0);
+  const pollNotificationCyclesRef = useRef<Set<DutyNotificationPollCycle>>(new Set());
   const pollCountThenLoadNewerIfNeededRef = useRef<(() => Promise<void>) | null>(null);
   const activePollTailWorkPromiseByFeedIdRef = useRef<Partial<Record<string, Promise<void>>>>({});
   const invalidateFeedLoadsRef = useRef<(feedId: string) => void>(() => {});
@@ -222,10 +227,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         ...loadGenerationByFeedIdRef.current,
         [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
       };
-      if (!preserveUnread) {
-        delete unreadCursorByFeedIdRef.current[feedId];
-        delete lastServerCountByFeedIdRef.current[feedId];
-      }
       resetTailState(feedId);
       followTailByFeedIdRef.current[feedId] = false;
       followGenerationByFeedIdRef.current[feedId] =
@@ -293,6 +294,24 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       };
     },
     [freqs],
+  );
+  const recoverFeedUnreadBaselineAfterFailedLoad = useCallback(
+    (feed: MessageFeedState, fallbackCursor: MessageCursor | null) => {
+      const cursor = unreadCursorByFeedIdRef.current[feed.id] ?? null;
+      const baseline = lastServerCountByFeedIdRef.current[feed.id];
+      const requestSignature = buildFeedCountSignature(feed, freqs);
+      const canPreserveBaseline =
+        baseline?.cursorId === (cursor?.id ?? null) &&
+        baseline.requestSignature === requestSignature;
+
+      if (!canPreserveBaseline) {
+        delete unreadCursorByFeedIdRef.current[feed.id];
+        delete lastServerCountByFeedIdRef.current[feed.id];
+        if (fallbackCursor) installFeedUnreadCursorAndBaseline(feed, fallbackCursor);
+      }
+      completeFeedReload(feed.id);
+    },
+    [completeFeedReload, freqs, installFeedUnreadCursorAndBaseline],
   );
   const advanceFeedReadCursor = useCallback(
     (
@@ -684,6 +703,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     completeFeedReload,
     setFeedUnreadCursor,
     installFeedUnreadCursorAndBaseline,
+    recoverFeedUnreadBaselineAfterFailedLoad,
   });
 
   const {
@@ -796,7 +816,11 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       countPollRerunRequestedRef.current = true;
       return activeCountPollPromiseRef.current;
     }
+    const lifecycleGeneration = pollLifecycleGenerationRef.current;
+    const isLifecycleCurrent = () =>
+      pollLifecycleMountedRef.current && pollLifecycleGenerationRef.current === lifecycleGeneration;
     const run = async () => {
+      if (!isLifecycleCurrent()) return;
       const participatingFeeds = [...messageFeedsRef.current];
       const eligibleFeeds = participatingFeeds.filter(
         (feed) =>
@@ -805,20 +829,25 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           !countRequestPromiseByFeedIdRef.current[feed.id],
       );
       if (!eligibleFeeds.length) return;
-      beginDutyNotificationPollCycle();
+      const cycle = beginDutyNotificationPollCycle();
+      pollNotificationCyclesRef.current.add(cycle);
       const countTasks = eligibleFeeds.map(async (feed) => {
         let entry: Awaited<ReturnType<typeof requestValidatedInboxCount>>;
         let feedId: string | null = null;
         let currentFeed: (typeof messageFeedsRef.current)[number] | undefined;
         try {
           entry = await requestValidatedInboxCount(feed.id);
+          if (!isLifecycleCurrent()) return;
           clearPollingFailure();
         } catch (error) {
+          if (!isLifecycleCurrent()) return;
           reportPollingFailure(error);
           return;
         }
+        if (!isLifecycleCurrent()) return;
         if (!entry || isNullOrUndefined(entry.quantity)) return;
         feedId = entry.feedId;
+        if (!isLifecycleCurrent()) return;
         recordLastSuccessfulDutyCountCheck(feedId);
         currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
         if (!currentFeed || currentFeed.loading) return;
@@ -827,7 +856,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           prevServerCount?.cursorId === entry.cursorId &&
           prevServerCount?.requestSignature === entry.requestSignature;
         if (canCompareBaseline && entry.quantity > prevServerCount.quantity) {
-          notifyDutyNewMessages(feedId, entry.quantity - prevServerCount.quantity);
+          const totalNew = entry.quantity - prevServerCount.quantity;
+          notifyDutyNewMessages(feedId, totalNew, cycle);
         }
         // Every successful comparable generation establishes a silent baseline. A failed
         // request never reaches here, so recovery compares against the last known count.
@@ -1019,29 +1049,40 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
             }
           }
         };
-        if (activePollTailWorkPromiseByFeedIdRef.current[feedId]) return;
+        if (!isLifecycleCurrent() || activePollTailWorkPromiseByFeedIdRef.current[feedId]) return;
         const tailWork = runTailWork();
         activePollTailWorkPromiseByFeedIdRef.current[feedId] = tailWork;
-        void tailWork.catch(reportPollingFailure).finally(() => {
-          if (activePollTailWorkPromiseByFeedIdRef.current[feedId] === tailWork) {
-            delete activePollTailWorkPromiseByFeedIdRef.current[feedId];
-          }
-        });
+        void tailWork
+          .catch((error) => {
+            if (isLifecycleCurrent()) reportPollingFailure(error);
+          })
+          .finally(() => {
+            if (activePollTailWorkPromiseByFeedIdRef.current[feedId] === tailWork) {
+              delete activePollTailWorkPromiseByFeedIdRef.current[feedId];
+            }
+          });
       });
       let softDeadlineTimeout: ReturnType<typeof setTimeout> | null = null;
       const allCountTasksSettled = Promise.allSettled(countTasks);
       const softDeadline = new Promise<void>((resolve) => {
         softDeadlineTimeout = setTimeout(resolve, pollIntervalMs);
       });
-      await Promise.race([allCountTasksSettled, softDeadline]);
-      if (softDeadlineTimeout) clearTimeout(softDeadlineTimeout);
-      endDutyNotificationPollCycle();
+      try {
+        await Promise.race([allCountTasksSettled, softDeadline]);
+      } finally {
+        if (softDeadlineTimeout) clearTimeout(softDeadlineTimeout);
+        if (isLifecycleCurrent()) endDutyNotificationPollCycle(cycle);
+        else cancelDutyNotificationPollCycle(cycle);
+      }
+      void allCountTasksSettled.finally(() => {
+        pollNotificationCyclesRef.current.delete(cycle);
+      });
     };
     const promise = run().finally(() => {
       if (activeCountPollPromiseRef.current === promise) activeCountPollPromiseRef.current = null;
       const rerunRequested = countPollRerunRequestedRef.current;
       countPollRerunRequestedRef.current = false;
-      if (rerunRequested && messageFeedsRef.current.length > 0) {
+      if (isLifecycleCurrent() && rerunRequested && messageFeedsRef.current.length > 0) {
         void pollCountThenLoadNewerIfNeededRef.current?.();
       }
     });
@@ -1119,6 +1160,17 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
   }, [pollCountThenLoadNewerIfNeeded, pollIntervalMs, shortStateReady]);
+
+  useEffect(() => {
+    pollLifecycleMountedRef.current = true;
+    return () => {
+      pollLifecycleMountedRef.current = false;
+      pollLifecycleGenerationRef.current += 1;
+      pollNotificationCyclesRef.current.forEach(cancelDutyNotificationPollCycle);
+      pollNotificationCyclesRef.current.clear();
+      countPollRerunRequestedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const recover = () => {

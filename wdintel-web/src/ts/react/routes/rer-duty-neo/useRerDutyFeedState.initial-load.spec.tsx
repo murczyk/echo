@@ -73,7 +73,11 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       expect.objectContaining({ signal: expect.anything() }),
     );
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith(
+      'mf-0',
+      1,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
 
     hoisted.notifyDutyNewMessages.mockClear();
     await startPoll();
