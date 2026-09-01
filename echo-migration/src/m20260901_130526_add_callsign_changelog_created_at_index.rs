@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-create index concurrently if not exists sigint_callsign_changelog_callsign_created_at_idx
+create index concurrently sigint_callsign_changelog_callsign_created_at_idx
     on sigint_callsign_changelog (sigint_callsign_id, created_at desc);
                 "#,
             )

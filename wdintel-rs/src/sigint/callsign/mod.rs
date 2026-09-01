@@ -281,9 +281,6 @@ async fn list_callsigns_impl(
     let mut callsigns = sigint_callsign::Entity::find()
         .find_also_related(sigint_unit::Entity)
         .filter(sigint_callsign::Column::Deleted.eq(false));
-    if callsigns_sort_uses_latest_changelog(&sort_by) {
-        callsigns = join_callsigns_latest_changelog(callsigns);
-    }
     if let Some(after_id) = &req.after_id {
         let after_cursor =
             load_callsign_seek_cursor(dbx, *after_id).await.c(h!())?;
@@ -475,40 +472,11 @@ fn effective_callsigns_sort(req: &ListCallsignsReq) -> ListCallsignsSortBy {
         .unwrap_or(ListCallsignsSortBy::CallsignUnitAsc)
 }
 
-fn callsigns_sort_uses_latest_changelog(sort_by: &ListCallsignsSortBy) -> bool {
-    matches!(
-        sort_by,
-        ListCallsignsSortBy::CallsignCreatedAtAsc
-            | ListCallsignsSortBy::CallsignCreatedAtDesc
-    )
-}
-
-fn join_callsigns_latest_changelog(
-    mut callsigns: SelectTwo<sigint_callsign::Entity, sigint_unit::Entity>,
-) -> SelectTwo<sigint_callsign::Entity, sigint_unit::Entity> {
-    let latest_changelog = sigint_callsign_changelog::Entity::find()
-        .select_only()
-        .column(sigint_callsign_changelog::Column::SigintCallsignId)
-        .column_as(
-            sigint_callsign_changelog::Column::CreatedAt.max(),
-            "created_at",
-        )
-        .group_by(sigint_callsign_changelog::Column::SigintCallsignId)
-        .into_query();
-    let latest_changelog_alias = Alias::new("latest_callsign_changelog");
-    QuerySelect::query(&mut callsigns).join_subquery(
-        JoinType::LeftJoin,
-        latest_changelog,
-        latest_changelog_alias.clone(),
-        Expr::col((latest_changelog_alias, Alias::new("sigint_callsign_id")))
-            .equals((sigint_callsign::Entity, sigint_callsign::Column::Id)),
-    );
-    callsigns
-}
-
 fn callsigns_sort_created_at_expr() -> SimpleExpr {
     Expr::cust(
-        "COALESCE(latest_callsign_changelog.created_at, \
+        "COALESCE((SELECT MAX(sigint_callsign_changelog.created_at) \
+         FROM sigint_callsign_changelog \
+         WHERE sigint_callsign_changelog.sigint_callsign_id = sigint_callsign.id), \
          sigint_callsign.created_at)",
     )
 }
