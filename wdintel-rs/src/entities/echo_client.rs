@@ -16,16 +16,25 @@ pub struct Model {
     pub deleted: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub display_name: Option<String>,
+    pub show_chats_admin_panel: Option<bool>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(has_many = "super::echo_api_command::Entity")]
     EchoApiCommand,
+    #[sea_orm(has_many = "super::echo_chat_filter::Entity")]
+    EchoChatFilter,
+    #[sea_orm(has_many = "super::echo_chat_ingestion_state::Entity")]
+    EchoChatIngestionState,
+    #[sea_orm(has_many = "super::echo_chat_webhook_delivery::Entity")]
+    EchoChatWebhookDelivery,
     #[sea_orm(has_many = "super::echo_client_config::Entity")]
     EchoClientConfig,
     #[sea_orm(has_many = "super::echo_client_lock::Entity")]
     EchoClientLock,
+    #[sea_orm(has_one = "super::echo_client_settings::Entity")]
+    EchoClientSettings,
     #[sea_orm(has_many = "super::echo_inbox_message::Entity")]
     EchoInboxMessage,
     #[sea_orm(has_many = "super::echo_outbox_message::Entity")]
@@ -44,6 +53,24 @@ impl Related<super::echo_api_command::Entity> for Entity {
     }
 }
 
+impl Related<super::echo_chat_filter::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoChatFilter.def()
+    }
+}
+
+impl Related<super::echo_chat_ingestion_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoChatIngestionState.def()
+    }
+}
+
+impl Related<super::echo_chat_webhook_delivery::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoChatWebhookDelivery.def()
+    }
+}
+
 impl Related<super::echo_client_config::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoClientConfig.def()
@@ -53,6 +80,12 @@ impl Related<super::echo_client_config::Entity> for Entity {
 impl Related<super::echo_client_lock::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoClientLock.def()
+    }
+}
+
+impl Related<super::echo_client_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoClientSettings.def()
     }
 }
 
@@ -83,6 +116,19 @@ impl Related<super::echo_signal_identities::Entity> for Entity {
 impl Related<super::echo_whatsapp_queue::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoWhatsappQueue.def()
+    }
+}
+
+impl Related<super::echo_account::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::echo_chat_ingestion_state::Relation::EchoAccount.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::echo_chat_ingestion_state::Relation::EchoClient
+                .def()
+                .rev(),
+        )
     }
 }
 

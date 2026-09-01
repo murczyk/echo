@@ -495,6 +495,8 @@ pub(super) async fn claim_analysis_batch(
     // Selection with SKIP LOCKED and the lease UPDATE ... RETURNING must be
     // one statement; splitting them into SeaORM reads and writes would let
     // concurrent workers claim the same item.
+    // Keep the item lookup driven by candidate_run. Otherwise PostgreSQL can
+    // scan the global file-id index before discovering that no run is claimable.
     ClaimedAnalysisFile::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Postgres,
         r#"
@@ -523,17 +525,21 @@ pub(super) async fn claim_analysis_batch(
                 limit 1
             ),
             claimed as materialized (
-                select item.id, item.file_id
-                from file_analysis_run_item as item
-                join candidate_run as run on run.id = item.id
-                where item.completed_at is null
-                  and (
-                    item.lease_token is null
-                    or item.lease_expires_at <= clock_timestamp()
-                  )
-                order by item.file_id
-                for update of item skip locked
-                limit $3
+                select claimed_item.id, claimed_item.file_id
+                from candidate_run as run
+                cross join lateral (
+                    select item.id, item.file_id
+                    from file_analysis_run_item as item
+                    where item.id = run.id
+                      and item.completed_at is null
+                      and (
+                        item.lease_token is null
+                        or item.lease_expires_at <= clock_timestamp()
+                      )
+                    order by item.file_id
+                    for update of item skip locked
+                    limit $3
+                ) as claimed_item
             ),
             updated as (
                 update file_analysis_run_item as item

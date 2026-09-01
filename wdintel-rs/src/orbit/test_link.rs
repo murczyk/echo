@@ -64,8 +64,25 @@ impl PersistSummary {
 pub(super) struct ReviewUnit {
     pub sigint_unit_id: i64,
     pub sigint_unit_name: String,
+    pub subject_kind: ReviewSubjectKind,
     pub echelons: Vec<String>,
     pub matches: Vec<ReviewMatch>,
+    pub would_automatically_resolve: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReviewSubjectKind {
+    SigintUnit,
+    UnparsedUnit,
+}
+
+impl ReviewSubjectKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::SigintUnit => "SIGINT unit",
+            Self::UnparsedUnit => "Unparsed unit",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,7 +123,7 @@ pub(super) struct ReviewSession {
 }
 
 impl ReviewSession {
-    fn new(units: Vec<ReviewUnit>) -> Self {
+    pub(super) fn new(units: Vec<ReviewUnit>) -> Self {
         Self {
             units,
             current: 0,
@@ -347,7 +364,7 @@ order by sigint_unit.id
     .c(h!())
 }
 
-fn review_manually(
+pub(super) fn review_manually(
     review_units: Vec<ReviewUnit>,
 ) -> anyhow::Result<(ReviewSummary, Vec<(i64, uuid::Uuid)>)> {
     let mut session = ReviewSession::new(review_units);
@@ -358,7 +375,7 @@ fn review_manually(
     Ok((summary, session.accepted_links().to_vec()))
 }
 
-fn approve_automatic(
+pub(super) fn approve_automatic(
     review_units: Vec<ReviewUnit>,
 ) -> (ReviewSummary, Vec<(i64, uuid::Uuid)>) {
     let total = review_units.len();
@@ -377,7 +394,9 @@ fn approve_automatic(
     )
 }
 
-fn automatically_approved_link(unit: &ReviewUnit) -> Option<(i64, uuid::Uuid)> {
+pub(super) fn automatically_approved_link(
+    unit: &ReviewUnit,
+) -> Option<(i64, uuid::Uuid)> {
     let minimum_distance = unit
         .matches
         .iter()
@@ -1001,6 +1020,26 @@ fn prepare_review_unit(
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> Option<ReviewUnit> {
     let hierarchy = matching::sigint_hierarchy(unit);
+    prepare_review_hierarchy(
+        unit.id,
+        &unit.name,
+        ReviewSubjectKind::SigintUnit,
+        &hierarchy,
+        matcher,
+        link_mode,
+        suppressed_links,
+    )
+}
+
+pub(super) fn prepare_review_hierarchy(
+    subject_id: i64,
+    subject_name: &str,
+    subject_kind: ReviewSubjectKind,
+    hierarchy: &[(super::EchoEchelon, &str)],
+    matcher: &matching::TestLinkMatcher,
+    link_mode: tui::LinkMode,
+    suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+) -> Option<ReviewUnit> {
     let echelons = hierarchy
         .iter()
         .map(|(_, name)| name.trim())
@@ -1016,12 +1055,12 @@ fn prepare_review_unit(
         .collect::<Vec<_>>()
         .join(" ");
     let candidates = match link_mode {
-        tui::LinkMode::Manual => matcher.potential_matches(&hierarchy),
+        tui::LinkMode::Manual => matcher.potential_matches(hierarchy),
         tui::LinkMode::Automatic => matcher
-            .best_matches(&hierarchy)
+            .best_matches(hierarchy)
             .into_iter()
             .filter(|(orbit_unit, _)| {
-                !suppressed_links.contains(&(unit.id, orbit_unit.unit_id))
+                !suppressed_links.contains(&(subject_id, orbit_unit.unit_id))
             })
             .collect(),
     };
@@ -1040,11 +1079,38 @@ fn prepare_review_unit(
         .collect::<Vec<_>>();
     sort_review_matches(&mut matches);
     (!matches.is_empty()).then(|| ReviewUnit {
-        sigint_unit_id: unit.id,
-        sigint_unit_name: unit.name.clone(),
+        sigint_unit_id: subject_id,
+        sigint_unit_name: subject_name.to_string(),
+        subject_kind,
         echelons,
         matches,
+        would_automatically_resolve: None,
     })
+}
+
+pub(super) fn review_match_for_orbit(
+    unit: &sigint_unit::Model,
+    matcher: &matching::TestLinkMatcher,
+    link_mode: tui::LinkMode,
+    orbit_unit_id: uuid::Uuid,
+) -> Option<ReviewMatch> {
+    let review_unit =
+        prepare_review_unit(unit, matcher, link_mode, &BTreeSet::new())?;
+    match link_mode {
+        tui::LinkMode::Manual => review_unit
+            .matches
+            .into_iter()
+            .find(|candidate| candidate.unit_id == orbit_unit_id),
+        tui::LinkMode::Automatic => (automatically_approved_link(&review_unit)
+            == Some((unit.id, orbit_unit_id)))
+        .then(|| {
+            review_unit
+                .matches
+                .into_iter()
+                .find(|candidate| candidate.unit_id == orbit_unit_id)
+                .expect("approved ORBIT match must be present")
+        }),
+    }
 }
 
 fn closest_orbit_name(
@@ -1122,6 +1188,7 @@ mod tests {
         ReviewUnit {
             sigint_unit_id: 1,
             sigint_unit_name: "unit".to_string(),
+            subject_kind: ReviewSubjectKind::SigintUnit,
             echelons: vec!["3 мсб".to_string()],
             matches: (0..match_count)
                 .map(|index| ReviewMatch {
@@ -1131,6 +1198,7 @@ mod tests {
                     orbit_name: format!("match {index}"),
                 })
                 .collect(),
+            would_automatically_resolve: None,
         }
     }
 

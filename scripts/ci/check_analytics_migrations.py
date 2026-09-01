@@ -61,13 +61,21 @@ def default_base() -> str:
 
 
 def changed_paths(base: str) -> list[str]:
-    output = git(
+    committed = git(
         "diff",
         "--name-only",
         "--diff-filter=AM",
         merge_base(base),
     )
-    return [line for line in output.splitlines() if line]
+    worktree = git("diff", "--name-only", "--diff-filter=AM")
+    staged = git("diff", "--cached", "--name-only", "--diff-filter=AM")
+    untracked = git("ls-files", "--others", "--exclude-standard")
+    return sorted({
+        line
+        for output in (committed, worktree, staged, untracked)
+        for line in output.splitlines()
+        if line
+    })
 
 
 def merge_base(base: str) -> str:
@@ -344,6 +352,16 @@ def validate_dependency_changes(
                 errors.append(
                     f"{key}: {table} uses excluded but is not in canonical exclusions"
                 )
+            targeted_resnapshot = change.get("targeted_resnapshot", False)
+            if not isinstance(targeted_resnapshot, bool):
+                errors.append(
+                    f"{key}: {table} has a non-boolean targeted_resnapshot flag"
+                )
+                targeted_resnapshot = False
+            if targeted_resnapshot and strategy != "replicated_snapshot":
+                errors.append(
+                    f"{key}: {table} uses targeted_resnapshot without replicated_snapshot"
+                )
             if (
                 strategy == "cdc_backfill"
                 and table not in CDC_BACKFILL_GUARANTEED_NONEMPTY_TABLES
@@ -353,9 +371,7 @@ def validate_dependency_changes(
                     "use mirror_resync because zero-row DML cannot propagate "
                     "the schema to ClickHouse"
                 )
-            if strategy == "empty_table_resnapshot" or change.get(
-                "targeted_resnapshot", False
-            ):
+            if strategy == "empty_table_resnapshot":
                 errors.append(
                     f"{key}: {table} uses {strategy} in a dependency "
                     "declaration where additive DDL cannot be verified"

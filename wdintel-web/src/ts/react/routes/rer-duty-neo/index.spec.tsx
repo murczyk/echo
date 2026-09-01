@@ -109,6 +109,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onClose,
     onCreated,
     editTarget,
+    editAsReport,
     reportSource,
     onSubmitEdit,
     onEditSuccess,
@@ -118,13 +119,19 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onClose: () => void;
     onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
     editTarget?: { id: number; message: any } | null;
+    editAsReport?: boolean;
     reportSource?: { id: number; message: any } | null;
     onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
     onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
     onDeleteSuccess?: (messageId: number) => Promise<void> | void;
   }) =>
     open ? (
-      <div role="dialog" data-testid="composer" data-report-source-id={reportSource?.id ?? ''}>
+      <div
+        role="dialog"
+        data-testid="composer"
+        data-edit-as-report={editAsReport ? 'true' : 'false'}
+        data-report-source-id={reportSource?.id ?? ''}
+      >
         <button type="button" aria-label="Закрити повідомлення" onClick={onClose}>
           Закрити
         </button>
@@ -137,7 +144,11 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
               type="button"
               aria-label="Зберегти редагування"
               onClick={async () => {
-                await onEditSuccess?.({ signal_message_id: editTarget.id });
+                if (onSubmitEdit) {
+                  await onSubmitEdit(editTarget.id, editTarget.message);
+                } else {
+                  await onEditSuccess?.({ signal_message_id: editTarget.id });
+                }
                 onClose();
               }}
             />
@@ -435,9 +446,59 @@ describe('RerDutyNeoPage creation workflow', () => {
 
     await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
 
-    expect(state.handleEditedMessage).not.toHaveBeenCalled();
-    expect(state.reloadEditedFeeds).toHaveBeenCalledTimes(1);
+    expect(state.handleEditedMessage).toHaveBeenCalledTimes(1);
+    expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it('opens an own report card from the header edit action in report mode', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const state = buildFeedsState();
+    state.messageFeeds[0].items = [
+      [
+        91,
+        minimalInboxMessage({
+          text: 'report body',
+          groupMasterKey: null,
+          parentMessages: [
+            {
+              id: 42,
+              isAccessible: false,
+              isDeleted: false,
+              text: '',
+              attachmentsCount: 0,
+              timestamp: null,
+              date: null,
+              time: null,
+              groupName: null,
+              groupMasterKey: null,
+            },
+          ],
+        }),
+      ],
+    ];
+    useRerDutyFeedsMock.mockReturnValue(state as never);
+
+    await act(async () => {
+      root.render(<RerDutyNeoPage authUserName="tester" />);
+    });
+
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    expect(
+      container.querySelector('[data-testid="composer"]')?.getAttribute('data-edit-as-report'),
+    ).toBe('true');
+
+    await click(container.querySelector('button[aria-label="Зберегти редагування"]'));
+
+    expect(state.handleEditedMessage).not.toHaveBeenCalled();
+    expect(state.reloadFeeds).toHaveBeenCalledTimes(1);
+    expect(state.reloadEditedFeeds).not.toHaveBeenCalled();
 
     await act(async () => {
       root.unmount();

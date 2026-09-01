@@ -19,6 +19,7 @@ pub mod ai_agent;
 pub mod ai_callsign;
 pub mod ai_engine;
 pub mod ai_intel_report;
+pub mod ai_settlement;
 mod alpine;
 pub mod api_integrations;
 pub mod atak;
@@ -976,6 +977,13 @@ pub struct OneoffMergeDatasourceGroupPs {
     pub dry_run: bool,
 }
 
+#[derive(clap::Args, Debug, Clone)]
+pub struct OrbitReviewWorkflowPs {
+    /// Print blocker and candidate details without changing data.
+    #[arg(long, action)]
+    pub dry_run: bool,
+}
+
 #[derive(clap::Subcommand, Debug)]
 #[command(author, version, about, long_about = None)]
 enum Cmd {
@@ -992,6 +1000,12 @@ enum Cmd {
     TuiImportOrbitUnits,
     /// Link database SIGINT units to synchronized ORBIT units.
     OneoffTestLinkUnits,
+    /// Merge safe ORBIT-backed unit duplicates in automatic or manual mode.
+    TuiMergeOrbitUnitDuplicates(OrbitReviewWorkflowPs),
+    /// Resolve unparsed unit labels in automatic or manual mode.
+    TuiResolveOrbitUnparsedUnits(OrbitReviewWorkflowPs),
+    /// Remove invalid army/corps and higher echelons from SIGINT unit names.
+    TuiFixOrbitUnitNames,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -1911,6 +1925,13 @@ async fn async_main(
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
         Cmd::OneoffTestLinkUnits => orbit::oneoff_test_link_units(mode).await,
+        Cmd::TuiMergeOrbitUnitDuplicates(ps) => {
+            orbit::tui_merge_unit_duplicates(mode, ps.dry_run).await
+        }
+        Cmd::TuiResolveOrbitUnparsedUnits(ps) => {
+            orbit::tui_resolve_unparsed_units(mode, ps.dry_run).await
+        }
+        Cmd::TuiFixOrbitUnitNames => orbit::tui_fix_unit_names(mode).await,
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }

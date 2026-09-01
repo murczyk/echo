@@ -26,6 +26,10 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::echo_attachment::Entity")]
     EchoAttachment,
+    #[sea_orm(has_many = "super::echo_chat_filter::Entity")]
+    EchoChatFilter,
+    #[sea_orm(has_many = "super::echo_chat_ingestion_state::Entity")]
+    EchoChatIngestionState,
     #[sea_orm(has_many = "super::echo_client_lock::Entity")]
     EchoClientLock,
     #[sea_orm(has_many = "super::echo_group::Entity")]
@@ -61,6 +65,18 @@ pub enum Relation {
 impl Related<super::echo_attachment::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoAttachment.def()
+    }
+}
+
+impl Related<super::echo_chat_filter::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoChatFilter.def()
+    }
+}
+
+impl Related<super::echo_chat_ingestion_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoChatIngestionState.def()
     }
 }
 
@@ -151,6 +167,19 @@ impl Related<super::echo_whatsapp_queue::Entity> for Entity {
 impl Related<super::echo_whatsapp_queue_attachment::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoWhatsappQueueAttachment.def()
+    }
+}
+
+impl Related<super::echo_client::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::echo_chat_ingestion_state::Relation::EchoClient.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::echo_chat_ingestion_state::Relation::EchoAccount
+                .def()
+                .rev(),
+        )
     }
 }
 

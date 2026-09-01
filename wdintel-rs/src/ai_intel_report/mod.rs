@@ -35,9 +35,9 @@ use chrono::{Duration, Utc};
 use lazy_static::lazy_static;
 use regex::Regex;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseBackend,
-    DatabaseConnection, EntityTrait, FromQueryResult, IntoActiveModel,
-    QueryFilter, QueryOrder, Statement,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait,
+    DatabaseBackend, DatabaseConnection, EntityTrait, FromQueryResult,
+    IntoActiveModel, QueryFilter, QueryOrder, Statement,
 };
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -261,10 +261,13 @@ async fn ensure_quick_suggestion_role(
     has_any_role(dbx, login_id, vec!["Rer", "Cyber"]).await
 }
 
-pub(crate) async fn ensure_engine_not_used(
-    dbx: &DatabaseConnection,
+pub(crate) async fn ensure_engine_not_used<C>(
+    dbx: &C,
     ai_engine_id: Uuid,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    C: ConnectionTrait,
+{
     let is_used = ai_intel_report_settings::Entity::find()
         .filter(
             ai_intel_report_settings::Column::QuickSuggestionEnabled.eq(true),

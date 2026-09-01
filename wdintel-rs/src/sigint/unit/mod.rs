@@ -1409,6 +1409,29 @@ where
     Ok(())
 }
 
+pub(crate) async fn update_unit_name_in_transaction<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    unit: &sigint_unit::Model,
+    name: &str,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    changelog::set_author(dbx, login).await.c(h!())?;
+    let old_value = unit_json(dbx, unit.id).await.c(h!())?;
+    let mut unit = unit.clone().into_active_model();
+    unit.name = Set(name.trim().to_string());
+    unit.updated_at = Set(chrono::Utc::now().naive_utc());
+    let unit = unit.update(dbx).await.c(h!())?;
+    let new_value = unit_json(dbx, unit.id).await.c(h!())?;
+    insert_unit_update_changelog(dbx, login, unit.id, old_value, new_value)
+        .await
+        .c(h!())?;
+    unit_after_insert_update(dbx, unit.id).await.c(h!())?;
+    Ok(unit)
+}
+
 async fn reconcile_parent_unit_activity<C>(
     dbx: &C,
     login: &uuid::Uuid,
@@ -1665,7 +1688,7 @@ pub async fn merge_units(
     Ok(unit)
 }
 
-async fn merge_units_in_transaction<C>(
+pub(crate) async fn merge_units_in_transaction<C>(
     login: uuid::Uuid,
     dbx: &C,
     unit_to_delete_id: i64,
@@ -2379,7 +2402,7 @@ mod tests {
     use crate::entities::{
         sigint_network, sigint_network_unit, system_settings,
     };
-    use crate::functest::tests::cleanup;
+    use crate::functest::tests::{cleanup, cleanup_locked};
     use chrono::Utc;
     use sea_orm::{
         ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, NotSet,
@@ -4114,7 +4137,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn oneoff_activates_only_linked_generative_ancestors() {
-        let env = cleanup().await.unwrap();
+        let (env, _cleanup_guard) = cleanup_locked().await.unwrap();
         orbit_unit::Entity::delete_many()
             .exec(&env.dbx)
             .await

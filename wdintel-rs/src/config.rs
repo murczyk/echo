@@ -58,6 +58,19 @@ pub const AI_CALLSIGN_WORKER_MAX_ATTEMPTS: i32 = 8;
 pub const AI_CALLSIGN_WORKER_MAX_ERROR_CHARS: usize = 2_000;
 pub const AI_CALLSIGN_DEFAULT_PROMPT: &str =
     include_str!("../../ai-eval/2026-08-10-callsign-prompt/prompt.txt");
+pub const AI_SETTLEMENT_SETTINGS_ID: i16 = 1;
+pub const AI_SETTLEMENT_PROMPT_MAX_CHARS: usize = 100_000;
+pub const AI_SETTLEMENT_MESSAGE_MAX_CHARS: usize = 100_000;
+pub const AI_SETTLEMENT_MAX_SETTLEMENTS: usize = 500;
+pub const AI_SETTLEMENT_MAX_CHARS: usize = 255;
+pub const AI_SETTLEMENT_MAX_CONCURRENT_REQUESTS: usize = 4;
+pub const AI_SETTLEMENT_WORKER_IDLE_SLEEP_MS: u64 = 1_000;
+pub const AI_SETTLEMENT_WORKER_RETRY_BASE_SECS: i64 = 5;
+pub const AI_SETTLEMENT_WORKER_RETRY_MAX_SECS: i64 = 300;
+pub const AI_SETTLEMENT_WORKER_MAX_ATTEMPTS: i32 = 8;
+pub const AI_SETTLEMENT_WORKER_MAX_ERROR_CHARS: usize = 2_000;
+pub const AI_SETTLEMENT_DEFAULT_PROMPT: &str =
+    include_str!("../../ai-eval/2026-08-28-settlement-prompt/prompt.txt");
 pub const AI_INTEL_REPORT_SETTINGS_ID: i16 = 1;
 pub const AI_INTEL_REPORT_HISTORY_DAYS: i64 = 3;
 pub const AI_INTEL_REPORT_BUCKET_CANDIDATE_LIMIT: u64 = 12;
@@ -330,6 +343,7 @@ pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `MessageCardMedia.tsx`.
 pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
+pub const SIGINT_FILE_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
@@ -356,6 +370,7 @@ pub const RER_REPORT_CHUNKING_HOURS_MAX: i64 = i32::MAX as i64;
 pub const RER_REPORT_CHUNKS_MAX: usize = 10_000;
 pub const RER_ETALONKA_REPORT_SINCE_DEFAULT_DAYS: i64 = 365;
 pub const RER_ETALONKA_REPORT_SINCE_MIN_MS: i64 = 1_640_995_200_000;
+pub const RER_ETALONKA_PELENGS_MAP_QUERY_CHUNK_MULTIPLIER: i64 = 14;
 pub const RER_CALLSIGN_QUERY_PARAM_CHUNK_SIZE: usize = 30_000;
 pub const RER_REPORT_ENRICHMENT_ID_BATCH_SIZE: usize = 20_000;
 pub const RER_BABAK_CANDIDATE_PAGE_SIZE: u64 = 5_000;
@@ -367,6 +382,9 @@ pub const RER_MOUSE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
 pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_MAX: usize = 10_000;
 pub const RER_SUMMARY_TABLE_REPORT_MESSAGE_LIMIT_ERROR_CODE: &str =
     "summary_table_report_message_limit";
+pub const RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS: i64 = 3;
+pub const RER_SUMMARY_TABLE_CALLSIGN_THRESHOLD_MIN_PERIOD_MS: i64 =
+    3 * 24 * 60 * 60 * 1_000;
 pub const RER_SUMMARY_TABLE_UNKNOWN_LOCALITY: &str = "Невідомо";
 pub const RER_SUMMARY_TABLE_XLSX_LIST_CHARACTER_LIMIT: usize = 32_000;
 pub const RER_SUMMARY_TABLE_XLSX_LIST_SEPARATOR: &str = ", ";
@@ -944,8 +962,24 @@ pub const FAILED_INBOX_UNIT_WORKER_BATCH_SIZE: u64 = 100;
 pub const FAILED_INBOX_UNIT_RETENTION_DAYS: i64 = 30;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE: u64 = 500;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_PAUSE_MS: u64 = 50;
-pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 3] =
-    ["нв", "н/в", "н.в."];
+pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 9] = [
+    "нв",
+    "н/в",
+    "н.в.",
+    "укх",
+    "р/м",
+    "радіомережа",
+    "мгц",
+    "dmr",
+    "унпп",
+];
+pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_PATTERNS: &[&str] = &[
+    r"(?:управління|оповіщення).*(?:мережа|радіо|укх|р/м|dmr|мгц)",
+    r"(?:мережа|радіо|укх|р/м|dmr|мгц).*(?:управління|оповіщення)",
+    r"(?:пости?|ппс).*(?:н\.?\s*п\.?|район|р-н)",
+    r"(?:н\.?\s*п\.?|район|р-н).*(?:пости?|ппс)",
+    r"^\s*(?:н\.?\s*п\.?|район|р-н)\s+[\p{L}\p{M}'’\- ]+\s*$",
+];
 pub const INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE: usize = 20_000;
 pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;
 pub const INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE: u64 = 500;
@@ -979,9 +1013,16 @@ pub const ORBIT_IMPORT_UNIT_ECHELON_FILE_NAME: &str =
     "orbit_unit_echelon.parquet";
 pub const ORBIT_MATCHING_SIGINT_NAME_BLACKLIST: &[&str] =
     &["ТерО", "ТрО", "(ат)"];
+pub const ORBIT_MATCHING_NON_IDENTITY_QUALIFIER_PATTERNS: &[&str] = &[
+    r"\(\s*на\s+(?:бмп|бтр|мт-лб)\s*\)",
+    r"\(\s*(?:кт|ш)\s*\)",
+    r"(?:^|\s)трв(?:\s|$)",
+    r"(?:^|\s)о?ув\s*\(\s*с\s*\)(?:\s|$)",
+    r"(?:^|\s)о?ув\s+(?:запад|север|сєвєр|белгород|бєлгород|харків)(?:\s|$)",
+];
 pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
     ("оббпс", &["об бпс", "оббпс"]),
-    ("а", &["а", "зва", "оа"]),
+    ("а", &["а", "за", "зва", "оа"]),
     ("в", &["в", "b"]),
     ("оптадн", &["оптадн", "оптдн"]),
     ("габат", &["габат", "габатр"]),
@@ -994,6 +1035,13 @@ pub const ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
 pub const ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE: usize = 5;
 pub const ORBIT_TEST_LINK_UNITS_MAX_RATING: u8 = 100;
 pub const ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY: u8 = 1;
+pub const ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE: usize = 20;
+pub const ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_UNIT_NAME_CLEANUP_ARMY_NAME_WORDS: &[&str] =
+    &["армія", "а", "зва", "та"];
+pub const ORBIT_UNIT_NAME_CLEANUP_CORPS_NAME_WORDS: &[&str] = &["корпус", "ак"];
+pub const ORBIT_DRY_RUN_REPORT_TOP_LIMIT: usize = 20;
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
 pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
 pub const NETWORK_INBOX_OLD_WORKER_START_HOUR: u32 = 2;
@@ -1047,6 +1095,7 @@ pub struct Config {
     pub static_path: String,
     pub executable_path: String,
     pub fill_comp_freq_worker: bool,
+    pub summary_table_callsign_threshold: Option<i64>,
     pub disable_cleanup_networks_worker: Option<bool>,
     pub disable_unit_location_v2_worker: Option<bool>,
     pub disable_suggest_message_tags_worker: Option<bool>,
@@ -1287,6 +1336,11 @@ impl AnalyticsConfig {
 }
 
 impl Config {
+    pub fn summary_table_callsign_threshold(&self) -> i64 {
+        self.summary_table_callsign_threshold
+            .unwrap_or(RER_SUMMARY_TABLE_CALLSIGN_MIN_MENTIONS)
+    }
+
     pub fn group_stats_redis_db(&self) -> u8 {
         self.group_stats_redis_db
             .unwrap_or(GROUP_STATS_REDIS_DB_DEFAULT)

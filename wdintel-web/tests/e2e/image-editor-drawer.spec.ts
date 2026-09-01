@@ -79,6 +79,23 @@ test.describe('image editor drawer integration #3099', () => {
     });
   });
 
+  test('falls back to multipart when the TUS chunk is rejected', async ({ page }) => {
+    await openEditMessageDrawer(page);
+    const submitted = await observeImageEditorSubmission(page, { failTusChunks: true });
+    await page.getByRole('button', { name: `Переглянути ${IMAGE_EDITOR_DRAWER_PNG.name}` }).click();
+    const preview = page.getByRole('dialog', { name: 'Перегляд зображення' });
+    await preview.getByRole('button', { name: 'Редагувати зображення' }).click();
+    const editor = page.getByLabel('Редактор зображення');
+    await saveMinimalReplacement(page, editor);
+    await preview.getByRole('button', { name: 'Закрити' }).click();
+    await page.getByRole('button', { name: 'Зберегти', exact: true }).click();
+    await expect.poll(() => submitted.submissions.length).toBe(1);
+    expect(submitted.fallbackUploads).toHaveLength(1);
+    expect(submitted.submissions[0]).toMatchObject({
+      upload_urls: ['/api/sigint/file-upload/tus/fallback-upload'],
+    });
+  });
+
   test('keeps editor actions reachable at representative viewports', async ({ page }) => {
     const { editor } = await openPendingImageEditor(page, 'duty');
     for (const viewport of [

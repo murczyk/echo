@@ -29,6 +29,8 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     EchoAccount,
+    #[sea_orm(has_many = "super::echo_chat_filter::Entity")]
+    EchoChatFilter,
     #[sea_orm(has_many = "super::echo_inbox_message::Entity")]
     EchoInboxMessage,
     #[sea_orm(has_many = "super::echo_outbox_message_instance::Entity")]
@@ -38,6 +40,12 @@ pub enum Relation {
 impl Related<super::echo_account::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::EchoAccount.def()
+    }
+}
+
+impl Related<super::echo_chat_filter::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EchoChatFilter.def()
     }
 }
 

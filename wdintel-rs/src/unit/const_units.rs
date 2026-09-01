@@ -12,9 +12,13 @@ pub enum UnitType {
     #[allow(clippy::upper_case_acronyms)]
     REGIMENT = 3,
     #[allow(clippy::upper_case_acronyms)]
-    DIVISION = 4,
+    BRIGADE = 4,
     #[allow(clippy::upper_case_acronyms)]
-    ARMY = 5,
+    DIVISION = 5,
+    #[allow(clippy::upper_case_acronyms)]
+    CORPS = 6,
+    #[allow(clippy::upper_case_acronyms)]
+    ARMY = 7,
 }
 
 pub fn list_named_unit_names() -> &'static BTreeSet<String> {
@@ -46,10 +50,22 @@ pub fn list_companies() -> &'static BTreeSet<String> {
 
 pub fn list_regiments() -> &'static BTreeSet<String> {
     lazy_static! {
-        static ref REGIMENTS: BTreeSet<String> =
-            collect_set(regiments_arr().into_iter().collect_vec());
+        static ref REGIMENTS: BTreeSet<String> = collect_set(
+            regiments_arr()
+                .into_iter()
+                .filter(|name| !list_brigades().contains(&name.to_lowercase()))
+                .collect_vec(),
+        );
     }
     &REGIMENTS
+}
+
+pub fn list_brigades() -> &'static BTreeSet<String> {
+    lazy_static! {
+        static ref BRIGADES: BTreeSet<String> =
+            collect_set(brigades_arr().into_iter().collect_vec());
+    }
+    &BRIGADES
 }
 
 pub fn list_divisions() -> &'static BTreeSet<String> {
@@ -62,10 +78,22 @@ pub fn list_divisions() -> &'static BTreeSet<String> {
 
 pub fn list_armies() -> &'static BTreeSet<String> {
     lazy_static! {
-        static ref ARMIES: BTreeSet<String> =
-            collect_set(armies_arr().into_iter().collect_vec());
+        static ref ARMIES: BTreeSet<String> = collect_set(
+            armies_arr()
+                .into_iter()
+                .filter(|name| !list_corps().contains(&name.to_lowercase()))
+                .collect_vec(),
+        );
     }
     &ARMIES
+}
+
+pub fn list_corps() -> &'static BTreeSet<String> {
+    lazy_static! {
+        static ref CORPS: BTreeSet<String> =
+            collect_set(corps_arr().into_iter().collect_vec());
+    }
+    &CORPS
 }
 
 pub fn list_battalions() -> &'static BTreeSet<String> {
@@ -479,6 +507,76 @@ fn regiments_arr() -> [&'static str; 133] {
         "шісбр",
     ]
 }
+
+fn brigades_arr() -> [&'static str; 65] {
+    [
+        "абр",
+        "брдк",
+        "бріз",
+        "брмо",
+        "брмп",
+        "брсн",
+        "бр",
+        "брс",
+        "брп",
+        "бру",
+        "бро",
+        "брз",
+        "брк",
+        "брпск",
+        "брхз",
+        "брРХБЗ",
+        "вдбр",
+        "габр",
+        "дкбр",
+        "дршбр",
+        "дшбр",
+        "ждбр",
+        "зрбр",
+        "ісбр",
+        "ібрсн",
+        "смбр",
+        "імбр",
+        "іптабр",
+        "кабр",
+        "кбр",
+        "лабр",
+        "лбр",
+        "мвдбр",
+        "мєхбр",
+        "мбр",
+        "мібр",
+        "мббр",
+        "морсбр",
+        "мсбр",
+        "мшісбр",
+        "омбр",
+        "омсбр",
+        "оібр",
+        "оллбр",
+        "обрспн",
+        "обрспп",
+        "обрбпс",
+        "пабр",
+        "понмбр",
+        "птабр",
+        "пулабр",
+        "рабр",
+        "рбр",
+        "рєабр",
+        "реабр",
+        "ртбр",
+        "сабр",
+        "сапбр",
+        "сбр",
+        "тбр",
+        "тгабр",
+        "тпбр",
+        "тмінбр",
+        "утбр",
+        "шісбр",
+    ]
+}
 fn divisions_arr() -> [&'static str; 45] {
     [
         "ад",
@@ -562,6 +660,13 @@ fn armies_arr() -> [&'static str; 32] {
         "фсб",
         "фсб рф",
         "Фл",
+    ]
+}
+
+fn corps_arr() -> [&'static str; 14] {
+    [
+        "ак", "АК", "артк", "бак", "вдк", "гск", "КПВО", "ЖДК", "іак", "кк",
+        "мєхк", "орк", "ск", "шак",
     ]
 }
 

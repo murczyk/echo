@@ -89,7 +89,7 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers five workflows.
+PostgreSQL advisory lock. The first screen offers seven workflows.
 
 ### IMPORT NEW ORBIT DATA REVISION
 
@@ -112,7 +112,7 @@ or replace SIGINT links.
 
 ### Link ORBIT units to SIGINT units
 
-This is the only automatic linking workflow. It reads active, non-deleted
+This workflow reads non-deleted
 SIGINT units and roots from the latest synchronized ORBIT revision from
 PostgreSQL. Manual mode reviews only unlinked units. Automatic mode also
 revalidates existing automatic links while preserving authoritative manual
@@ -127,6 +127,46 @@ Accepted links use the same transactional implementation as manual linking in
 `/rer-units` and `/rer-units/{id}`. That implementation validates both units,
 creates the link, imports missing ORBIT ancestors, reconciles the SIGINT
 hierarchy and duplicate-candidate state, and updates parent activity.
+
+### Merge duplicate SIGINT units linked to one ORBIT unit
+
+This workflow processes the same active ORBIT-to-SIGINT duplicate groups shown
+under `/admin/units?tab=duplicates`. It considers a group safe only when every
+SIGINT unit has that one active ORBIT link and the normal linking matcher still
+matches every unit to that ORBIT unit. Automatic mode additionally applies the
+same rating-100, uniquely closest, distance-at-most-10 approval rule used by
+linking and merges only exact-name groups, normalized-equivalent hierarchies
+without populated-field conflicts, or a compatible active/system-created
+inactive pair. It prefers an active survivor, then the unit with more populated
+user-maintained fields, then the lower ID. Manual mode asks which matching
+SIGINT unit to keep and remains available for reviewable groups rejected by the
+automatic tiers.
+It presents each candidate together on a numbered, paginated screen using the
+same green/red word-level SIGINT-to-ORBIT diff as the link review.
+
+Before merging, each complete group and every match is loaded again under the
+ORBIT advisory lock. Changed membership, links, source revision, or matching
+results cause the group to be skipped. Multi-ORBIT and matcher-rejected groups
+are always left for explicit administration.
+
+### Resolve unparsed unit labels through ORBIT links
+
+This workflow processes non-archived labels from
+`/admin/units?tab=unparsed`. The operational unit parser converts each label to
+an echelon hierarchy, including brigade and corps levels, then the normal ORBIT
+linking matcher scores it without a second matching implementation. Automatic
+mode preserves the full rating, distance, and ambiguity checks before
+considering whether that ORBIT unit has exactly one active, non-deleted SIGINT
+link. Manual mode also presents a uniquely matched ORBIT root with no SIGINT
+link; accepting it imports and links the SIGINT unit before resolving the
+label.
+
+Accepted labels are re-matched under the advisory lock, added as SIGINT unit
+aliases, and returned to the existing failed-unit worker for reprocessing. A
+selected inactive SIGINT unit is activated through the normal audited unit
+path. In automatic mode, guarded radio-network and location-only labels that do
+not contain a valid parsed hierarchy are archived. Archived labels and labels
+that changed during review remain untouched.
 
 ### Reconcile linked SIGINT units and merge exact duplicates
 
@@ -161,6 +201,21 @@ one-off:
 
 ```sh
 sudo wdintel-rs --mode=live oneoff-test-link-units
+```
+
+The duplicate and unparsed workflows also have direct TUI commands:
+
+```sh
+sudo wdintel-rs --mode=live tui-merge-orbit-unit-duplicates
+sudo wdintel-rs --mode=live tui-resolve-orbit-unparsed-units
+```
+
+Pass `--dry-run` to either command to print blocker counts and top candidate
+details without prompting or changing data:
+
+```sh
+sudo wdintel-rs --mode=live tui-merge-orbit-unit-duplicates --dry-run
+sudo wdintel-rs --mode=live tui-resolve-orbit-unparsed-units --dry-run
 ```
 
 The command first asks for automatic or manual mode. Manual mode evaluates each

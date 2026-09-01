@@ -13,6 +13,8 @@ use std::sync::OnceLock;
 mod const_units;
 pub mod parser;
 
+pub(crate) use const_units::UnitType;
+
 type UnitRegexCache = OnceLock<Result<Vec<Regex>, String>>;
 
 static NAMES_RE: UnitRegexCache = OnceLock::new();
@@ -400,6 +402,29 @@ pub(crate) fn parse_library_unit_segments(text: &str) -> Vec<String> {
     )
 }
 
+pub(crate) fn parse_library_unit_typed_segments(
+    text: &str,
+) -> Option<Vec<(UnitType, String)>> {
+    let text = preprocess_unit_text(&text.to_string());
+    let mut units_info = capture_library_unit(&text);
+    units_info.sort_by_key(|unit| unit.idx);
+    let segments = units_info
+        .into_iter()
+        .filter_map(|unit| {
+            unit.unit_type.map(|unit_type| {
+                let name = match unit.number {
+                    Some(number) => format!("{} {}", number, unit.name),
+                    None => unit.name,
+                };
+                (unit_type, name)
+            })
+        })
+        .collect_vec();
+    (!segments.is_empty()
+        && segments.windows(2).all(|pair| pair[0].0 < pair[1].0))
+    .then_some(segments)
+}
+
 fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
     lazy_static! {
         static ref UNIT_RE: Regex = RegexBuilder::new(
@@ -467,8 +492,14 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
                 if list_regiments().contains(&cropped_name) {
                     unit_type = Some(UnitType::REGIMENT);
                 }
+                if list_brigades().contains(&cropped_name) {
+                    unit_type = Some(UnitType::BRIGADE);
+                }
                 if list_armies().contains(&cropped_name) {
                     unit_type = Some(UnitType::ARMY);
+                }
+                if list_corps().contains(&cropped_name) {
+                    unit_type = Some(UnitType::CORPS);
                 }
                 if list_battalions().contains(&cropped_name) {
                     unit_type = Some(UnitType::BATTALION);
@@ -684,7 +715,7 @@ mod tests {
     fn normalizes_equivalent_unit_formation_notions() {
         for equivalents in [
             &["об БпС", "обБпС"][..],
-            &["А", "ЗВА", "ОА"],
+            &["А", "ЗА", "ЗВА", "ОА"],
             &["В", "B"],
             &["оптадн", "оптдн"],
             &["габат", "габатр"],

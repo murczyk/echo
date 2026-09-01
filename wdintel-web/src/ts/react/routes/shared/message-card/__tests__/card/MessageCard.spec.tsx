@@ -3738,6 +3738,145 @@ describe('MessageCard', () => {
     }
   });
 
+  it('keeps compact rest tags expanded after a rest chip is checked', async () => {
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const isTag = this.hasAttribute('data-message-card-tag-id');
+        const width = isTag ? 60 : TAG_ROW_MEASURE_WIDTH_PX;
+        return {
+          width,
+          height: 32,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+    try {
+      const onToggleTag = vi.fn();
+      const view = await renderCard({
+        tagsLayout: 'compact',
+        msg: buildMessage({
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 },
+          ],
+        }),
+        onToggleTag,
+      });
+      rendered.push(view);
+
+      await click(getButton(view.container, 'розгорнути'));
+      await click(getButton(view.container, 'зв’язок'));
+      expect(onToggleTag).toHaveBeenCalledWith(4);
+
+      const nextProps = {
+        ...view.props,
+        msg: buildMessage({
+          inboxTags: [
+            { id: 1, tagId: 3, confidence: 1, login: 'tester', model: null, organismId: 1 },
+            { id: 2, tagId: 4, confidence: 1, login: 'tester', model: null, organismId: 1 },
+          ],
+        }),
+      };
+
+      await act(async () => {
+        view.root.render(
+          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+            <MessageCard {...nextProps} />
+          </AudioTranscriptionPreferencesProvider>,
+        );
+      });
+
+      expect(view.container.textContent).toContain('згорнути');
+      expect(view.container.textContent).toContain('іфо');
+      expect(view.container.textContent).toContain('розвідка');
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  it('repacks compact first row when tag metadata changes while expanded', async () => {
+    const getCompactFirstRowLabels = (container: HTMLElement) => {
+      const grid = container.querySelector('.grid');
+      const row = grid?.firstElementChild;
+      if (!(row instanceof HTMLElement)) throw new Error('compact first row not found');
+      return Array.from(row.querySelectorAll('button')).map((button) => button.textContent?.trim());
+    };
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const tagId = this.getAttribute('data-message-card-tag-id');
+        const width = this.classList.contains('message-card-tag-expand')
+          ? 80
+          : tagId === '3' && this.textContent?.includes('широкий')
+            ? 90
+            : 40;
+        return {
+          width:
+            tagId == null && !this.classList.contains('message-card-tag-expand')
+              ? TAG_ROW_MEASURE_WIDTH_PX
+              : width,
+          height: 32,
+          x: 0,
+          y: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 32,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+    try {
+      const view = await renderCard({
+        tagsLayout: 'compact',
+        tagsMap: {
+          3: { id: 3, label: 'рух', isPalitra: false },
+          4: { id: 4, label: 'зв’язок', isPalitra: false },
+          5: { id: 5, label: 'РЕБ', isPalitra: false },
+          6: { id: 6, label: 'арта', isPalitra: false },
+          7: { id: 7, label: 'палітра', isPalitra: false },
+          8: { id: 8, label: 'іфо', isPalitra: false },
+        } as Record<number, Tag>,
+        msg: buildMessage({ tags: [3, 4, 5, 6, 7, 8], inboxTags: [] }),
+      });
+      rendered.push(view);
+
+      expect(getCompactFirstRowLabels(view.container)).toEqual(['рух', 'зв’язок']);
+      await click(getButton(view.container, 'розгорнути'));
+
+      const nextProps = {
+        ...view.props,
+        tagsMap: {
+          3: { id: 3, label: 'широкий рух', isPalitra: false },
+          4: { id: 4, label: 'зв’язок', isPalitra: false },
+          5: { id: 5, label: 'РЕБ', isPalitra: false },
+          6: { id: 6, label: 'арта', isPalitra: false },
+          7: { id: 7, label: 'палітра', isPalitra: false },
+          8: { id: 8, label: 'іфо', isPalitra: false },
+        } as Record<number, Tag>,
+      };
+
+      await act(async () => {
+        view.root.render(
+          <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+            <MessageCard {...nextProps} />
+          </AudioTranscriptionPreferencesProvider>,
+        );
+      });
+
+      expect(view.container.textContent).toContain('згорнути');
+      expect(getCompactFirstRowLabels(view.container)).toEqual(['широкий рух']);
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
   it('keeps full tag ordering aligned with the tag map', async () => {
     const view = await renderCard({
       msg: buildMessage({

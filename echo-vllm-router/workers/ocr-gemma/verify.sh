@@ -11,6 +11,10 @@ worker_url="http://$expected_ip:8000"
 [[ $(hostname) == "$expected_hostname" ]]
 [[ $(tailscale ip -4) == "$expected_ip" ]]
 [[ $(nvidia-smi --query-gpu=uuid --format=csv,noheader,nounits) == "$expected_gpu_uuid" ]]
+systemctl show docker.service --property=After --value \
+  | tr ' ' '\n' | grep -Fx tailscale-online.target
+systemctl show docker.service --property=Wants --value \
+  | tr ' ' '\n' | grep -Fx tailscale-online.target
 sudo docker inspect echo-ocr-gemma-vllm --format '{{.State.Health.Status}}' | grep -Fx healthy
 curl -fsS --max-time 10 "$worker_url/health" >/dev/null
 curl -fsS --max-time 10 "$worker_url/v1/models" \
