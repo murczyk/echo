@@ -1005,13 +1005,18 @@ mod tests {
         .await
         .c(h!())?;
         let settlement_id = 2_287_004;
-        settlement::ActiveModel {
+        settlement::Entity::insert(settlement::ActiveModel {
             id: Set(settlement_id),
             kind: Set(SettlementKind::Village),
             name: Set("#2133 STATS INVALIDATION".to_string()),
             ..Default::default()
-        }
-        .insert(txn)
+        })
+        .on_conflict(
+            OnConflict::column(settlement::Column::Id)
+                .do_nothing()
+                .to_owned(),
+        )
+        .exec_without_returning(txn)
         .await
         .c(h!())?;
         let row = sigint_inbox_item_settlement::ActiveModel {
