@@ -997,6 +997,8 @@ enum Cmd {
     TuiMergeOrbitUnitDuplicates,
     /// Resolve unparsed unit labels in automatic or manual mode.
     TuiResolveOrbitUnparsedUnits,
+    /// Remove echelons above army from SIGINT unit names.
+    TuiFixOrbitUnitNames,
     TuiImportUnit(ImportTuiPs),
     TuiImportNetwork(ImportTuiPs),
     OneoffImportNetworkDetails(ImportTuiPs),
@@ -1922,6 +1924,7 @@ async fn async_main(
         Cmd::TuiResolveOrbitUnparsedUnits => {
             orbit::tui_resolve_unparsed_units(mode).await
         }
+        Cmd::TuiFixOrbitUnitNames => orbit::tui_fix_unit_names(mode).await,
         Cmd::OneoffRestartEcho(ps) => {
             oneoff::oneoff_restart_echo(mode, &ps).await
         }

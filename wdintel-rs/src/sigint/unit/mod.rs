@@ -1409,6 +1409,29 @@ where
     Ok(())
 }
 
+pub(crate) async fn update_unit_name_in_transaction<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    unit: &sigint_unit::Model,
+    name: &str,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    changelog::set_author(dbx, login).await.c(h!())?;
+    let old_value = unit_json(dbx, unit.id).await.c(h!())?;
+    let mut unit = unit.clone().into_active_model();
+    unit.name = Set(name.trim().to_string());
+    unit.updated_at = Set(chrono::Utc::now().naive_utc());
+    let unit = unit.update(dbx).await.c(h!())?;
+    let new_value = unit_json(dbx, unit.id).await.c(h!())?;
+    insert_unit_update_changelog(dbx, login, unit.id, old_value, new_value)
+        .await
+        .c(h!())?;
+    unit_after_insert_update(dbx, unit.id).await.c(h!())?;
+    Ok(unit)
+}
+
 async fn reconcile_parent_unit_activity<C>(
     dbx: &C,
     login: &uuid::Uuid,
