@@ -315,26 +315,53 @@ pub async fn archive_unresolved_unit_label(
     req: Json<ArchiveUnresolvedUnitLabelReq>,
 ) -> Result<Json<UpdateUnresolvedUnitLabelsRsp>, AppError> {
     ensure_admin(&env.dbx, &user).await.c(h!())?;
-    let result = failed_inbox_unit::Entity::update_many()
-        .col_expr(
-            failed_inbox_unit::Column::IsBadData,
-            Expr::value(req.archived),
-        )
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
-        .filter(failed_inbox_unit::Column::IsBadData.eq(!req.archived))
-        .filter(Expr::cust_with_values(
-            format!("{} = $1", normalized_text_sql("failed_inbox_unit")),
-            vec![super::unit_resolution::normalize_unit_label(&req.unit_txt)],
-        ))
-        .exec(&env.dbx)
-        .await
-        .c(h!())?;
+    let result = set_unresolved_unit_label_archive_state(
+        &env.dbx,
+        &req.unit_txt,
+        req.archived,
+    )
+    .await
+    .c(h!())?;
     if result.rows_affected == 0 {
         return Err(AppError::NotFound);
     }
     Ok(Json(UpdateUnresolvedUnitLabelsRsp {
         affected_count: result.rows_affected,
     }))
+}
+
+pub(crate) async fn archive_unresolved_unit_label_in_transaction<C>(
+    db: &C,
+    unit_txt: &str,
+) -> anyhow::Result<u64>
+where
+    C: ConnectionTrait,
+{
+    Ok(set_unresolved_unit_label_archive_state(db, unit_txt, true)
+        .await
+        .c(h!())?
+        .rows_affected)
+}
+
+async fn set_unresolved_unit_label_archive_state<C>(
+    db: &C,
+    unit_txt: &str,
+    archived: bool,
+) -> anyhow::Result<sea_orm::UpdateResult>
+where
+    C: ConnectionTrait,
+{
+    failed_inbox_unit::Entity::update_many()
+        .col_expr(failed_inbox_unit::Column::IsBadData, Expr::value(archived))
+        .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        .filter(failed_inbox_unit::Column::IsBadData.eq(!archived))
+        .filter(Expr::cust_with_values(
+            format!("{} = $1", normalized_text_sql("failed_inbox_unit")),
+            vec![super::unit_resolution::normalize_unit_label(unit_txt)],
+        ))
+        .exec(db)
+        .await
+        .c(h!())
 }
 
 #[post("/api/admin/unresolved-unit-label/note")]

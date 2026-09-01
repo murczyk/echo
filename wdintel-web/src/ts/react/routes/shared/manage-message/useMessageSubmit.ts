@@ -1,6 +1,7 @@
 import type { Dayjs } from 'dayjs';
 import type { InboxMessage } from '../../../../../Bindings';
 import type Uppy from '@uppy/core';
+import type { UppyFile } from '@uppy/core';
 
 import {
   createDeviceName,
@@ -13,6 +14,7 @@ import type { RecentValues } from './useRecentValues';
 import { parseCoords, type MessageFormData } from './manage-message-drawer.schema';
 import { combineDateTimeToMs, formatDateInputValueInTimeZone } from '../../../utils/misc';
 import { MAX_MESSAGE_ATTACHMENTS } from './useMessageUppy';
+import { fallbackFailedMessageUploads, messageUploadFailure } from './message-upload-fallback';
 
 type SubmitOptions = {
   busy: boolean;
@@ -103,8 +105,9 @@ export function useMessageSubmit({
         if (!uploadResult) {
           throw new Error('Помилка завантаження файлів (no result)');
         }
-        if ((uploadResult.failed || []).length > 0) {
-          throw new Error('Помилка завантаження файлів');
+        const failed = await fallbackFailedMessageUploads(uppy, uploadResult.failed || []);
+        if (failed.length > 0) {
+          throw new Error(formatMessageUploadError(uppy, failed[0]));
         }
 
         for (const file of uppy.getFiles()) {
@@ -223,6 +226,35 @@ export function useMessageSubmit({
   };
 
   return { onSubmit };
+}
+
+export function formatMessageUploadError(
+  uppy: Uppy<any, any>,
+  file: UppyFile<any, any> | undefined,
+): string {
+  const target = file?.name?.trim() ? `файл «${file.name.trim()}»` : 'файли';
+  const failure = file ? messageUploadFailure(uppy, file.id) : undefined;
+  const status = failure?.status ?? file?.response?.status;
+
+  if (status === 401) {
+    return `Не вдалося завантажити ${target}: сеанс завершився. Оновіть сторінку та увійдіть знову.`;
+  }
+  if (status === 403) {
+    return `Не вдалося завантажити ${target}: недостатньо прав.`;
+  }
+  if (status === 404 || status === 409) {
+    return `Не вдалося продовжити завантаження ${target}. Видаліть файл, додайте його повторно та спробуйте ще раз.`;
+  }
+  if (status === 413) {
+    return `Не вдалося завантажити ${target}: файл завеликий або змінився після додавання.`;
+  }
+  if (status) {
+    return `Не вдалося завантажити ${target} (HTTP ${status}). Повторіть спробу.`;
+  }
+  if (failure?.message.startsWith('Резервне завантаження')) {
+    return `Не вдалося завантажити ${target}. ${failure.message}`;
+  }
+  return `Не вдалося завантажити ${target}. Перевірте з’єднання та повторіть спробу.`;
 }
 
 function optionalInteger(value: string | null | undefined): number | undefined {

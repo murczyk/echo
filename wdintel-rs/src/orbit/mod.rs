@@ -24,6 +24,7 @@ mod snapshot;
 mod test_link;
 mod tui;
 mod types;
+mod unit_name_cleanup;
 mod unparsed_units;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,12 +224,22 @@ pub async fn oneoff_test_link_units(mode: Mode) -> Result<(), AppError> {
     Ok(test_link::run(mode).await.c(h!())?)
 }
 
-pub async fn tui_merge_unit_duplicates(mode: Mode) -> Result<(), AppError> {
-    Ok(duplicate_units::run(mode).await.c(h!())?)
+pub async fn tui_merge_unit_duplicates(
+    mode: Mode,
+    dry_run: bool,
+) -> Result<(), AppError> {
+    Ok(duplicate_units::run(mode, dry_run).await.c(h!())?)
 }
 
-pub async fn tui_resolve_unparsed_units(mode: Mode) -> Result<(), AppError> {
-    Ok(unparsed_units::run(mode).await.c(h!())?)
+pub async fn tui_resolve_unparsed_units(
+    mode: Mode,
+    dry_run: bool,
+) -> Result<(), AppError> {
+    Ok(unparsed_units::run(mode, dry_run).await.c(h!())?)
+}
+
+pub async fn tui_fix_unit_names(mode: Mode) -> Result<(), AppError> {
+    Ok(unit_name_cleanup::run(mode).await.c(h!())?)
 }
 
 pub async fn closest_orbit_matches_for_sigint_unit(
@@ -365,10 +376,13 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         Some(tui::StartAction::Import) => run_import(mode).await.c(h!()),
         Some(tui::StartAction::LinkUnits) => test_link::run(mode).await.c(h!()),
         Some(tui::StartAction::MergeUnitDuplicates) => {
-            duplicate_units::run(mode).await.c(h!())
+            duplicate_units::run(mode, false).await.c(h!())
         }
         Some(tui::StartAction::ResolveUnparsedUnits) => {
-            unparsed_units::run(mode).await.c(h!())
+            unparsed_units::run(mode, false).await.c(h!())
+        }
+        Some(tui::StartAction::FixUnitNames) => {
+            unit_name_cleanup::run(mode).await.c(h!())
         }
         Some(tui::StartAction::ReconcileSigintUnits) => {
             run_sigint_unit_reconciliation(mode).await.c(h!())

@@ -1,4 +1,5 @@
 use crate::config::{
+    FAILED_INBOX_UNIT_AUTO_ARCHIVE_PATTERNS,
     FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS,
     FAILED_INBOX_UNIT_BACKFILL_BATCH_PAUSE_MS,
     FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE, FAILED_INBOX_UNIT_RETENTION_DAYS,
@@ -21,7 +22,9 @@ use anyhow::Context;
 use chrono::{Duration, NaiveDateTime, Utc};
 use indicatif::ProgressBar;
 use itertools::Itertools;
+use lazy_static::lazy_static;
 use log::{debug, info, warn};
+use regex::RegexBuilder;
 use sea_orm::sea_query::{Expr, LockBehavior, LockType, OnConflict};
 use sea_orm::{
     ActiveValue::NotSet, ActiveValue::Set, ColumnTrait, ConnectionTrait,
@@ -101,11 +104,29 @@ fn contains_word(value: &str, word: &str) -> bool {
     })
 }
 
-fn should_auto_archive_failed_unit(value: &str) -> bool {
+pub(crate) fn should_auto_archive_failed_unit(value: &str) -> bool {
+    if crate::unit::parse_library_unit_typed_segments(value).is_some() {
+        return false;
+    }
+    lazy_static! {
+        static ref AUTO_ARCHIVE_PATTERNS: Vec<regex::Regex> =
+            FAILED_INBOX_UNIT_AUTO_ARCHIVE_PATTERNS
+                .iter()
+                .map(|pattern| {
+                    RegexBuilder::new(pattern)
+                        .case_insensitive(true)
+                        .build()
+                        .expect("invalid failed-unit auto-archive regex")
+                })
+                .collect();
+    }
     let value = value.to_lowercase();
     FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS
         .iter()
         .any(|word| contains_word(&value, word))
+        || AUTO_ARCHIVE_PATTERNS
+            .iter()
+            .any(|pattern| pattern.is_match(&value))
 }
 
 fn resolution_texts(value: &str) -> Vec<(String, bool)> {
@@ -1485,11 +1506,28 @@ mod tests {
 
     #[test]
     fn detects_failed_unit_auto_archive_words() {
-        for label in ["НВ", "підрозділ н/В резерв", "123 Н.В."]
-        {
+        for label in [
+            "НВ",
+            "підрозділ н/В резерв",
+            "123 Н.В.",
+            "УКХ радіомережа управління 148.5 МГц",
+            "DMR р/м оповіщення",
+            "пости ППС біля н.п. Харків",
+            "УНПП район Вовчанська",
+            "район Вовчанська",
+        ] {
             assert!(should_auto_archive_failed_unit(label), "{label}");
         }
-        for label in ["НВО", "анв", "н/ва", "н.в.о"] {
+        for label in [
+            "НВО",
+            "анв",
+            "н/ва",
+            "н.в.о",
+            "управління батальйону",
+            "пости охорони",
+            "1 мсб 68 ак управління",
+            "60 омсбр 5 а УКХ",
+        ] {
             assert!(!should_auto_archive_failed_unit(label), "{label}");
         }
     }
