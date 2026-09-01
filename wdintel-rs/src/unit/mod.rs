@@ -492,8 +492,14 @@ fn capture_library_unit(text: &str) -> Vec<UnitInfo> {
                 if list_regiments().contains(&cropped_name) {
                     unit_type = Some(UnitType::REGIMENT);
                 }
+                if list_brigades().contains(&cropped_name) {
+                    unit_type = Some(UnitType::BRIGADE);
+                }
                 if list_armies().contains(&cropped_name) {
                     unit_type = Some(UnitType::ARMY);
+                }
+                if list_corps().contains(&cropped_name) {
+                    unit_type = Some(UnitType::CORPS);
                 }
                 if list_battalions().contains(&cropped_name) {
                     unit_type = Some(UnitType::BATTALION);
@@ -709,7 +715,7 @@ mod tests {
     fn normalizes_equivalent_unit_formation_notions() {
         for equivalents in [
             &["об БпС", "обБпС"][..],
-            &["А", "ЗВА", "ОА"],
+            &["А", "ЗА", "ЗВА", "ОА"],
             &["В", "B"],
             &["оптадн", "оптдн"],
             &["габат", "габатр"],
