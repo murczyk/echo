@@ -1,5 +1,6 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import EditIcon from '@mui/icons-material/Edit';
+import LockResetIcon from '@mui/icons-material/LockReset';
 import {
   Autocomplete,
   Box,
@@ -16,8 +17,6 @@ import {
   Stack,
   TextField,
   Tooltip,
-  Button,
-  Typography,
 } from '@mui/material';
 import { MaterialReactTable } from 'material-react-table';
 import { useEffect, useMemo, useState } from 'react';
@@ -30,7 +29,7 @@ import {
   SigintZone,
   UpdateLoginReq,
 } from '../../../../Bindings';
-import { MrtRowActionButton, mrtRowActionsColumnSize } from '../../components/MrtRowActionButton';
+import { MrtRowActionButton, MrtRowActions } from '../../components/MrtRowActionButton';
 import { PageErrorState } from '../../components/PageErrorState';
 import { TablePageToolbar } from '../../components/TablePageToolbar';
 import { TableContentState } from '../../components/TableContentState';
@@ -61,6 +60,7 @@ import { createLogin, createLoginDelta, listLogins, updateLogin } from '../../se
 import { listOrganisms } from '../../services/api/organisms';
 import { listSigintZones } from '../../services/api/zones';
 import { PowerAlert } from '../../components/PowerAlert';
+import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { copyTextToClipboard } from '../../../copy-to-clipboard';
 import { UserUuidValue } from './UserUuidValue';
 
@@ -874,7 +874,6 @@ function EditUserDialog(props: {
   const [errors, setErrors] = useState<EditUserErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [totpEnabled, setTotpEnabled] = useState(false);
 
   const zonesReady = lookups.zonesStatus === 'success';
   const zonesLoading = lookups.zonesStatus === 'loading';
@@ -906,7 +905,6 @@ function EditUserDialog(props: {
       setErrors({});
       setSubmitError(null);
       setIsSubmitting(false);
-      setTotpEnabled(false);
       return;
     }
 
@@ -925,7 +923,6 @@ function EditUserDialog(props: {
     setErrors({});
     setSubmitError(null);
     setIsSubmitting(false);
-    setTotpEnabled(login.totpEnabled);
   }, [open, login]);
 
   useEffect(() => {
@@ -1149,39 +1146,6 @@ function EditUserDialog(props: {
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 xl:col-span-2">
-              <Typography variant="body2">2FA: {totpEnabled ? 'увімкнено' : 'вимкнено'}</Typography>
-              {totpEnabled ? (
-                <Button
-                  variant="outlined"
-                  color="warning"
-                  disabled={isSubmitting}
-                  onClick={() => {
-                    void (async () => {
-                      if (!login) return;
-                      setIsSubmitting(true);
-                      setSubmitError(null);
-                      try {
-                        const updated = await updateLogin(toClearTotpReq(login));
-                        onUserUpdated(updated);
-                        setTotpEnabled(updated.totpEnabled);
-                      } catch (error) {
-                        setSubmitError(
-                          error instanceof Error && error.message
-                            ? error.message
-                            : 'Не вдалося скинути 2FA',
-                        );
-                      } finally {
-                        setIsSubmitting(false);
-                      }
-                    })();
-                  }}
-                >
-                  Скинути 2FA
-                </Button>
-              ) : null}
-            </div>
-
             <div className="flex items-center xl:col-span-2">
               <FormControlLabel
                 control={
@@ -1223,18 +1187,59 @@ function EditUserDialog(props: {
   );
 }
 
-function RowActions(props: { login: Login; onEdit: (login: Login) => void }) {
+function RowActions(props: {
+  login: Login;
+  onEdit: (login: Login) => void;
+  onUserUpdated: (login: Login) => void;
+}) {
+  const { notify } = usePowerSnackbar();
+  const [isResettingTotp, setIsResettingTotp] = useState(false);
+
+  async function handleReset2fa() {
+    if (!props.login.totpEnabled || isResettingTotp) return;
+    setIsResettingTotp(true);
+    try {
+      const updated = await updateLogin(toClearTotpReq(props.login));
+      props.onUserUpdated(updated);
+      notify({ message: '2FA скинуто', severity: 'success' });
+    } catch (error) {
+      notify({
+        message: error instanceof Error && error.message ? error.message : 'Не вдалося скинути 2FA',
+        severity: 'error',
+      });
+    } finally {
+      setIsResettingTotp(false);
+    }
+  }
+
   return (
-    <MrtRowActionButton
-      label="Редагувати"
-      onClick={() => props.onEdit(props.login)}
-      icon={<EditIcon fontSize="small" />}
-      opensModal
-    />
+    <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+      <MrtRowActionButton
+        label="Редагувати"
+        onClick={() => props.onEdit(props.login)}
+        icon={<EditIcon fontSize="small" />}
+        opensModal
+      />
+      <MrtRowActions forceMenu>
+        <MrtRowActionButton
+          label="Скинути 2FA"
+          onClick={() => {
+            void handleReset2fa();
+          }}
+          disabled={!props.login.totpEnabled || isResettingTotp}
+          icon={<LockResetIcon fontSize="small" />}
+        />
+      </MrtRowActions>
+    </Box>
   );
 }
 
-function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Login) => void }) {
+function UsersTable(props: {
+  data: Login[];
+  loading: boolean;
+  onEdit: (login: Login) => void;
+  onUserUpdated: (login: Login) => void;
+}) {
   const tableStateContext = useTableStateContext();
   const columns = useUsersColumns();
   const basePaperProps = CUSTOM_STYLES.muiTablePaperProps;
@@ -1266,7 +1271,9 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
     enableRowVirtualization: false,
     enableRowActions: !props.loading,
     positionActionsColumn: 'first',
-    renderRowActions: ({ row }) => <RowActions login={row.original} onEdit={props.onEdit} />,
+    renderRowActions: ({ row }) => (
+      <RowActions login={row.original} onEdit={props.onEdit} onUserUpdated={props.onUserUpdated} />
+    ),
     enableColumnOrdering: tableStateContext.enableColumnOrdering,
     enableColumnResizing: tableStateContext.enableColumnResizing,
     columnFilterDisplayMode: 'popover',
@@ -1286,7 +1293,9 @@ function UsersTable(props: { data: Login[]; loading: boolean; onEdit: (login: Lo
       ...CUSTOM_STYLES.displayColumnDefOptions,
       'mrt-row-actions': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-actions'],
-        size: mrtRowActionsColumnSize(1),
+        size: 76,
+        minSize: 76,
+        maxSize: 76,
       },
       'mrt-row-numbers': {
         ...CUSTOM_STYLES.displayColumnDefOptions['mrt-row-numbers'],
@@ -1410,12 +1419,26 @@ function AdminUsersNeoPageBody() {
         errorMessage={error || 'Помилка завантаження'}
         loadingContent={
           <div className="flex w-full min-w-0 flex-1 min-h-0">
-            <UsersTable data={logins} loading onEdit={(login) => setEditingLogin(login)} />
+            <UsersTable
+              data={logins}
+              loading
+              onEdit={(login) => setEditingLogin(login)}
+              onUserUpdated={(login) =>
+                setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
+              }
+            />
           </div>
         }
       >
         <div className="flex w-full min-w-0 flex-1 min-h-0">
-          <UsersTable data={logins} loading={false} onEdit={(login) => setEditingLogin(login)} />
+          <UsersTable
+            data={logins}
+            loading={false}
+            onEdit={(login) => setEditingLogin(login)}
+            onUserUpdated={(login) =>
+              setLogins((prev) => prev.map((item) => (item.id === login.id ? login : item)))
+            }
+          />
         </div>
       </TableContentState>
     );

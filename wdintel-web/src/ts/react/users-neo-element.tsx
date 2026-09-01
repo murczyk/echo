@@ -1,12 +1,15 @@
 import { createRoot, Root } from 'react-dom/client';
 
+import { PowerSnackbarProvider } from './components/PowerSnackbar';
 import { AdminUsersNeoPage } from './routes/admin-users-neo';
 import { NeoMuiThemeProvider } from './mui-theme';
 
 function UsersNeoRoot() {
   return (
     <NeoMuiThemeProvider>
-      <AdminUsersNeoPage />
+      <PowerSnackbarProvider>
+        <AdminUsersNeoPage />
+      </PowerSnackbarProvider>
     </NeoMuiThemeProvider>
   );
 }
