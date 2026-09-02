@@ -108,13 +108,46 @@ vi.mock('@mui/material', () => ({
   Select: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Slider: () => <div />,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  TextField: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  TextField: ({
+    label,
+    value,
+    onChange,
+    fullWidth: _fullWidth,
+    multiline: _multiline,
+    minRows: _minRows,
+    maxRows: _maxRows,
+    autoFocus,
+    size: _size,
+    sx: _sx,
+    ...props
+  }: {
+    label?: string;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+    fullWidth?: boolean;
+    multiline?: boolean;
+    minRows?: number;
+    maxRows?: number;
+    autoFocus?: boolean;
+    size?: string;
+    sx?: unknown;
+  } & Record<string, unknown>) => (
+    <textarea
+      aria-label={label}
+      autoFocus={autoFocus}
+      value={value ?? ''}
+      onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
+      {...props}
+    />
+  ),
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  useMediaQuery: () => false,
 }));
 
 vi.mock('@mui/icons-material/PlayArrow', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Pause', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/ArticleOutlined', () => ({ default: () => <span /> }));
 
 vi.mock('../../attachment-preview/message-card-preview-config', () => ({
   getMessageCardAttachmentPreviewConfig: () => previewConfig,
@@ -201,11 +234,13 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
   MessageCardAttachmentPreviewHeader: ({
     openHref,
     navigation,
+    additionalActions,
     onInfoClick,
     onClose,
   }: {
     openHref?: string | null;
     navigation: { index: number; count: number; onPrevious: () => void; onNext: () => void };
+    additionalActions?: ReactNode;
     onInfoClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
     onClose: () => void;
   }) => {
@@ -224,6 +259,7 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
     return (
       <div data-actions>
         <button aria-label="Інформація" onClick={onInfoClick} />
+        {additionalActions}
         {typeof openHref === 'string' && openHref.trim() !== '' ? (
           <a aria-label="Відкрити в новій вкладці" href={openHref} />
         ) : null}
@@ -258,8 +294,9 @@ type TestVideoPreviewDialogProps = {
   open: boolean;
   onClose: () => void;
   onIndexChange: (index: number) => void;
-  isDownloadStarting: (downloadKey: string) => boolean;
-  onDownloadStart: (downloadKey: string) => boolean;
+  isDownloadStarting?: (downloadKey: string) => boolean;
+  onDownloadStart?: (downloadKey: string) => boolean;
+  reportDraft?: ComponentProps<typeof VideoAttachmentPreviewRenderer>['reportDraft'];
 };
 
 function TestVideoPreviewDialog(props: TestVideoPreviewDialogProps) {
@@ -271,8 +308,9 @@ function TestVideoPreviewDialog(props: TestVideoPreviewDialogProps) {
       initialIndex={props.currentIndex ?? props.initialIndex ?? 0}
       onClose={props.onClose}
       onIndexChange={props.onIndexChange}
-      isDownloadStarting={props.isDownloadStarting}
-      onDownloadStart={props.onDownloadStart}
+      isDownloadStarting={props.isDownloadStarting ?? (() => false)}
+      onDownloadStart={props.onDownloadStart ?? (() => true)}
+      reportDraft={props.reportDraft}
     />
   );
 }
@@ -300,12 +338,14 @@ describe('VideoAttachmentPreviewRenderer', () => {
     onIndexChange = vi.fn(),
     videos,
     currentIndex,
+    reportDraft,
   }: {
     open?: boolean;
     onClose?: () => void;
     onIndexChange?: (index: number) => void;
     videos: VideoPreviewSource[];
     currentIndex?: number;
+    reportDraft?: ComponentProps<typeof VideoAttachmentPreviewRenderer>['reportDraft'];
   }) {
     const container = document.createElement('div');
     document.body.appendChild(container);
@@ -319,6 +359,9 @@ describe('VideoAttachmentPreviewRenderer', () => {
           videos={videos}
           currentIndex={currentIndex}
           onIndexChange={onIndexChange}
+          isDownloadStarting={() => false}
+          onDownloadStart={() => true}
+          reportDraft={reportDraft}
         />,
       );
     });
@@ -341,6 +384,36 @@ describe('VideoAttachmentPreviewRenderer', () => {
       maxHeight: '100svh',
     });
 
+    root.unmount();
+  });
+
+  it('keeps the shared report text field closed until requested', async () => {
+    const { root } = renderDialog({
+      videos: [{ id: 'video-1', name: 'video.mp4', source: '/video.mp4' }],
+      reportDraft: { value: 'Текст із дровера', onChange: vi.fn() },
+    });
+
+    expect(document.body.querySelector('[data-attachment-preview-report-pane]')).toBeNull();
+
+    await act(async () => {
+      document.body
+        .querySelector('button[aria-label="Писати розвіддонесення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const textarea = document.body.querySelector(
+      'textarea[aria-label="Текст розвіддонесення"]',
+    ) as HTMLTextAreaElement | null;
+
+    expect(textarea).not.toBeNull();
+    expect(textarea?.value).toBe('Текст із дровера');
+    expect(textarea?.autofocus).toBe(false);
+    expect(document.body.querySelector('[data-controls]')).not.toBeNull();
+    expect(
+      document.body
+        .querySelector('[data-controls]')
+        ?.closest('[data-attachment-preview-video-controls]'),
+    ).not.toBeNull();
     root.unmount();
   });
 

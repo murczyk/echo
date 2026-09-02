@@ -82,6 +82,37 @@ vi.mock('@mui/material', () => {
       />
     ),
     Stack: passthrough('div'),
+    TextField: ({
+      label,
+      value,
+      onChange,
+      fullWidth: _fullWidth,
+      multiline: _multiline,
+      minRows: _minRows,
+      maxRows: _maxRows,
+      autoFocus: _autoFocus,
+      size: _size,
+      sx: _sx,
+      ...props
+    }: {
+      label?: string;
+      value?: string;
+      onChange?: (event: { target: { value: string } }) => void;
+      fullWidth?: boolean;
+      multiline?: boolean;
+      minRows?: number;
+      maxRows?: number;
+      autoFocus?: boolean;
+      size?: string;
+      sx?: unknown;
+    } & Record<string, unknown>) => (
+      <textarea
+        aria-label={label}
+        value={value ?? ''}
+        onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
+        {...props}
+      />
+    ),
     Tooltip: ({ children }: { children?: ReactNode }) => children,
     Typography: passthrough('div'),
     useMediaQuery: () => false,
@@ -155,6 +186,7 @@ type TestDocumentPreviewDialogProps = {
   onIndexChange: (index: number) => void;
   isDownloadStarting: (downloadKey: string) => boolean;
   onDownloadStart: (downloadKey: string) => boolean;
+  reportDraft?: ComponentProps<typeof DocumentAttachmentPreviewRenderer>['reportDraft'];
 };
 
 function TestDocumentPreviewDialog(props: TestDocumentPreviewDialogProps) {
@@ -168,6 +200,7 @@ function TestDocumentPreviewDialog(props: TestDocumentPreviewDialogProps) {
       onIndexChange={props.onIndexChange}
       isDownloadStarting={props.isDownloadStarting}
       onDownloadStart={props.onDownloadStart}
+      reportDraft={props.reportDraft}
     />
   );
 }
@@ -437,6 +470,8 @@ describe('DocumentAttachmentPreviewRenderer', () => {
       root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={0} />);
     });
 
+    expect(document.body.querySelector('[data-attachment-preview-report-pane]')).toBeNull();
+
     await act(async () => {
       document.body
         .querySelector('[data-preview-stage="document"]')
@@ -451,6 +486,77 @@ describe('DocumentAttachmentPreviewRenderer', () => {
 
     expect(document.body.textContent).toContain('100%');
     expect(document.body.textContent).not.toContain('150%');
+    root.unmount();
+  });
+
+  it('keeps the report editor open while switching documents', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const onReportTextChange = vi.fn();
+    const documents: TestDocumentPreviewDialogProps['documents'] = [
+      {
+        href: 'https://example.test/files/report-1.pdf',
+        fileName: 'report-1.pdf',
+        kind: 'pdf',
+      },
+      {
+        href: 'https://example.test/files/report-2.pdf',
+        fileName: 'report-2.pdf',
+        kind: 'pdf',
+      },
+    ];
+    const commonProps = {
+      documents,
+      open: true,
+      onClose: vi.fn(),
+      onIndexChange: vi.fn(),
+      isDownloadStarting: () => false,
+      onDownloadStart: vi.fn(() => true),
+      reportDraft: {
+        value: 'Чернетка донесення',
+        onChange: onReportTextChange,
+      },
+    };
+
+    await act(async () => {
+      root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={0} />);
+    });
+
+    await act(async () => {
+      document.body
+        .querySelector('button[aria-label="Писати розвіддонесення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const textarea = document.body.querySelector(
+      'textarea[aria-label="Текст розвіддонесення"]',
+    ) as HTMLTextAreaElement | null;
+
+    expect(document.body.querySelector('[data-attachment-preview-report-pane]')).not.toBeNull();
+    expect(textarea?.value).toBe('Чернетка донесення');
+
+    await act(async () => {
+      root.render(<TestDocumentPreviewDialog {...commonProps} currentIndex={1} />);
+    });
+
+    expect(document.body.textContent).toContain('2 / 2');
+    expect(document.body.querySelector('[data-attachment-preview-report-pane]')).not.toBeNull();
+
+    await act(async () => {
+      const nextTextarea = document.body.querySelector(
+        'textarea[aria-label="Текст розвіддонесення"]',
+      ) as HTMLTextAreaElement | null;
+      if (nextTextarea == null) throw new Error('report textarea not found');
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      valueSetter?.call(nextTextarea, 'Оновлений текст');
+      nextTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    expect(onReportTextChange).toHaveBeenCalledWith('Оновлений текст');
     root.unmount();
   });
 

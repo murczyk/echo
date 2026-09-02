@@ -1,7 +1,7 @@
 import { Box, Typography } from '@mui/material';
 import type { Uppy, UppyFile } from '@uppy/core';
 import { useCallback, useMemo, useState, type RefObject } from 'react';
-import { useFormContext } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 
 import type { MessageMediaInfo } from '../../../../../../Bindings';
 import { mediaKind } from '../../../../components/attachment-files';
@@ -42,6 +42,7 @@ type Props = {
   busy: boolean;
   existingMedia?: MessageMediaInfo[];
   errorMsg?: string | null;
+  reportTextPreviewEnabled?: boolean;
 };
 
 function fileUploadPresentation(
@@ -94,9 +95,27 @@ export function AttachmentsSection({
   busy,
   existingMedia = [],
   errorMsg,
+  reportTextPreviewEnabled = false,
 }: Props) {
-  const { watch, setValue } = useFormContext<MessageFormData>();
+  const { control, watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
+  const reportTextValue = useWatch({ control, name: 'full_body' }) ?? '';
+  const reportDraft = useMemo(
+    () =>
+      reportTextPreviewEnabled
+        ? {
+            value: reportTextValue,
+            onChange: (value: string) =>
+              setValue('full_body', value, {
+                shouldDirty: true,
+                shouldTouch: true,
+                shouldValidate: true,
+              }),
+            disabled: busy,
+          }
+        : undefined,
+    [busy, reportTextPreviewEnabled, reportTextValue, setValue],
+  );
   const existingMediaIds = useMemo(
     () => new Set(existingMedia.map((media) => media.id)),
     [existingMedia],
@@ -571,6 +590,7 @@ export function AttachmentsSection({
           }}
           imageEditing={imageEditing}
           initialAction={previewInitialAction ?? undefined}
+          reportDraft={reportDraft}
         />
       ) : null}
     </FormSectionWrapper>

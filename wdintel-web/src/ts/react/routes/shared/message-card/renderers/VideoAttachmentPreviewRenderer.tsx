@@ -21,6 +21,12 @@ import { handleUnauthorizedMediaResponse } from '../message-card-media-fetch';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
+import { OcrSplitPreview } from '../attachment-preview/OcrPreview';
+import {
+  ReportTextPreviewAction,
+  type AttachmentPreviewReportDraft,
+  type AttachmentPreviewReportVisibility,
+} from '../attachment-preview/ReportTextPreview';
 
 const VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES = 10 * 1024 * 1024;
 const VIDEO_LOCAL_PREFLIGHT_RETRY_DELAY_MS = 2_000;
@@ -302,6 +308,9 @@ export function VideoAttachmentPreviewRenderer({
   onDownloadStart,
   onChildOverlayChange,
   dismissChildOverlay,
+  reportDraft,
+  reportVisible,
+  onReportVisibleChange,
 }: {
   onClose: () => void;
   video: VideoPreviewSource;
@@ -309,7 +318,9 @@ export function VideoAttachmentPreviewRenderer({
   isFullscreen: boolean;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
-} & MessageCardDownloadGuardProps) {
+  reportDraft?: AttachmentPreviewReportDraft;
+} & MessageCardDownloadGuardProps &
+  AttachmentPreviewReportVisibility) {
   const [src, setSrc] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -726,7 +737,30 @@ export function VideoAttachmentPreviewRenderer({
     });
   };
 
-  const stage = (
+  const controls = (
+    <Box
+      onMouseMove={resetHideControlsTimer}
+      sx={{
+        opacity: controlsVisible || !playerState.isPlaying ? 1 : 0,
+        transition: 'opacity 300ms ease-out',
+        pointerEvents: controlsVisible || !playerState.isPlaying ? 'auto' : 'none',
+        width: '100%',
+      }}
+    >
+      <AttachmentPreviewPlaybackControls
+        playerState={{ ...playerState, isFullscreen }}
+        videoRef={videoRef}
+        onPlayPause={handlePlayPause}
+        onStop={handleStop}
+        onVolumeChange={handleVolumeChange}
+        onMuteToggle={handleMuteToggle}
+        onRateChange={handleRateChange}
+        onSeek={handleSeek}
+      />
+    </Box>
+  );
+
+  const sourceStage = (
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="video"
@@ -799,29 +833,43 @@ export function VideoAttachmentPreviewRenderer({
           setPan({ x: 0, y: 0 });
         }}
       />
+      <Box
+        data-attachment-preview-video-controls
+        onDoubleClick={(event) => event.stopPropagation()}
+        sx={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1300,
+          width: '100%',
+          pointerEvents: 'none',
+          '& > *': {
+            pointerEvents: 'auto',
+          },
+        }}
+      >
+        {controls}
+      </Box>
     </MessageCardAttachmentPreviewStage>
   );
-  const controls = (
-    <Box
-      onMouseMove={resetHideControlsTimer}
-      sx={{
-        opacity: controlsVisible || !playerState.isPlaying ? 1 : 0,
-        transition: 'opacity 300ms ease-out',
-        pointerEvents: controlsVisible || !playerState.isPlaying ? 'auto' : 'none',
-        width: '100%',
-      }}
-    >
-      <AttachmentPreviewPlaybackControls
-        playerState={{ ...playerState, isFullscreen }}
-        videoRef={videoRef}
-        onPlayPause={handlePlayPause}
-        onStop={handleStop}
-        onVolumeChange={handleVolumeChange}
-        onMuteToggle={handleMuteToggle}
-        onRateChange={handleRateChange}
-        onSeek={handleSeek}
-      />
-    </Box>
+  const stage = (
+    <OcrSplitPreview
+      source={sourceStage}
+      mediaId={video.id}
+      ocr={null}
+      visible={false}
+      fullPane={false}
+      onOcrChange={() => {}}
+      onFullPaneChange={() => {}}
+      summary={null}
+      summaryVisible={false}
+      onSummaryChange={() => {}}
+      onSummaryVisibleChange={() => {}}
+      reportDraft={reportDraft}
+      reportVisible={reportVisible}
+      onReportVisibleChange={onReportVisibleChange}
+    />
   );
 
   const header = (
@@ -830,6 +878,14 @@ export function VideoAttachmentPreviewRenderer({
       openHref={openHref}
       download={{ onDownload: () => downloadOriginalVideo(video) }}
       navigation={navigation}
+      additionalActions={
+        reportDraft != null ? (
+          <ReportTextPreviewAction
+            active={reportVisible}
+            onClick={() => onReportVisibleChange(!reportVisible)}
+          />
+        ) : null
+      }
       onClose={handleClose}
       onInfoClick={(event) => {
         setInfoAnchorEl(event.currentTarget);
@@ -869,7 +925,6 @@ export function VideoAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewLayout
       config={previewConfig}
       stage={stage}
-      controls={controls}
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}

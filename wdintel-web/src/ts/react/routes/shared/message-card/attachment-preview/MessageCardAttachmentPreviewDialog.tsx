@@ -17,6 +17,7 @@ import { CoordinateAttachmentPreviewRenderer } from '../renderers/CoordinateAtta
 import { DocumentAttachmentPreviewRenderer } from '../renderers/DocumentAttachmentPreviewRenderer';
 import { ImageAttachmentPreviewRenderer } from '../renderers/ImageAttachmentPreviewRenderer';
 import { VideoAttachmentPreviewRenderer } from '../renderers/VideoAttachmentPreviewRenderer';
+import type { AttachmentPreviewReportDraft } from './ReportTextPreview';
 import type {
   ImageEditorEscapeHandler,
   ImageEditingCapability,
@@ -50,18 +51,21 @@ export function MessageCardAttachmentPreviewDialog({
   onDownloadStart = allowDownloadStart,
   imageEditing,
   initialAction,
+  reportDraft,
 }: {
   item: MessageCardPreviewItem;
   navigation: MessageCardPreviewNavigation;
   onClose: () => void;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
+  reportDraft?: AttachmentPreviewReportDraft;
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
   const dialogLabel = getPreviewDialogLabel(previewKind);
   const [isEditing, setIsEditing] = useState(false);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
@@ -116,6 +120,7 @@ export function MessageCardAttachmentPreviewDialog({
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
+    setReportVisible(false);
     onClose();
   };
   const paperSx: Record<string, unknown> = {
@@ -168,6 +173,9 @@ export function MessageCardAttachmentPreviewDialog({
           registerEditorEscapeHandler={registerEditorEscapeHandler}
           onChildOverlayChange={setChildOverlayOpen}
           dismissChildOverlay={dismissChildOverlay}
+          reportDraft={reportDraft}
+          reportVisible={reportVisible}
+          onReportVisibleChange={setReportVisible}
           {...rendererProps}
         />
       ) : item.type === 'video' ? (
@@ -175,10 +183,19 @@ export function MessageCardAttachmentPreviewDialog({
           video={item.value}
           onChildOverlayChange={setChildOverlayOpen}
           dismissChildOverlay={dismissChildOverlay}
+          reportDraft={reportDraft}
+          reportVisible={reportVisible}
+          onReportVisibleChange={setReportVisible}
           {...rendererProps}
         />
       ) : item.type === 'document' ? (
-        <DocumentAttachmentPreviewRenderer document={item.value} {...rendererProps} />
+        <DocumentAttachmentPreviewRenderer
+          document={item.value}
+          reportDraft={reportDraft}
+          reportVisible={reportVisible}
+          onReportVisibleChange={setReportVisible}
+          {...rendererProps}
+        />
       ) : (
         <CoordinateAttachmentPreviewRenderer
           points={item.points}

@@ -55,6 +55,11 @@ import {
   MediaReprocessAction,
 } from '../attachment-preview/MediaReprocessAction';
 import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
+import {
+  ReportTextPreviewAction,
+  type AttachmentPreviewReportDraft,
+  type AttachmentPreviewReportVisibility,
+} from '../attachment-preview/ReportTextPreview';
 import { useImageAttachmentEditorSession } from './use-image-attachment-editor-session';
 import type {
   ImageEditingCapability,
@@ -239,6 +244,9 @@ export function ImageAttachmentPreviewRenderer({
   registerEditorEscapeHandler,
   onChildOverlayChange,
   dismissChildOverlay,
+  reportDraft,
+  reportVisible,
+  onReportVisibleChange,
 }: {
   image: MessageCardImage;
   onClose: () => void;
@@ -251,7 +259,9 @@ export function ImageAttachmentPreviewRenderer({
   registerEditorEscapeHandler?: RegisterImageEditorEscapeHandler;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
-} & MessageCardDownloadGuardProps) {
+  reportDraft?: AttachmentPreviewReportDraft;
+} & MessageCardDownloadGuardProps &
+  AttachmentPreviewReportVisibility) {
   const resolvedIndex = navigation.index;
   const currentImage = image;
   const currentHref = currentImage.href;
@@ -580,13 +590,17 @@ export function ImageAttachmentPreviewRenderer({
     void editor.open();
   }, [editor.open, initialAction, onInitialActionConsumed]);
 
-  const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
-    setOcrStatus(nextOcr);
-    setOcrVisible(true);
-    setOcrFullPane(false);
-    setSummaryStatus(null);
-    setSummaryVisible(false);
-  }, []);
+  const handleReprocessQueued = useCallback(
+    (nextOcr: NonNullable<MessageCardImage['ocr']>) => {
+      setOcrStatus(nextOcr);
+      setOcrVisible(true);
+      setOcrFullPane(false);
+      setSummaryStatus(null);
+      setSummaryVisible(false);
+      onReportVisibleChange(false);
+    },
+    [onReportVisibleChange],
+  );
 
   const handleDoubleClick = (event: SyntheticEvent<HTMLDivElement>) => {
     const mouseEvent = event as unknown as MouseEvent;
@@ -694,6 +708,9 @@ export function ImageAttachmentPreviewRenderer({
       summaryVisible={summaryVisible}
       onSummaryChange={setSummaryStatus}
       onSummaryVisibleChange={setSummaryVisible}
+      reportDraft={reportDraft}
+      reportVisible={reportVisible}
+      onReportVisibleChange={onReportVisibleChange}
     />
   );
   const header = (
@@ -711,10 +728,25 @@ export function ImageAttachmentPreviewRenderer({
               setSummaryVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setOcrVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }
           />
+          {reportDraft != null ? (
+            <ReportTextPreviewAction
+              active={reportVisible}
+              onClick={() => {
+                const next = !reportVisible;
+                if (next) {
+                  setOcrVisible(false);
+                  setOcrFullPane(false);
+                  setSummaryVisible(false);
+                }
+                onReportVisibleChange(next);
+              }}
+            />
+          ) : null}
           <OcrPreviewAction
             ocr={ocrStatus}
             active={ocrVisible}
@@ -722,6 +754,7 @@ export function ImageAttachmentPreviewRenderer({
               setOcrVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setSummaryVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }

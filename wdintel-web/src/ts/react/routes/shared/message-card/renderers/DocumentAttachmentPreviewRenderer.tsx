@@ -33,6 +33,11 @@ import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import { MediaReprocessAction } from '../attachment-preview/MediaReprocessAction';
 import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
+import {
+  ReportTextPreviewAction,
+  type AttachmentPreviewReportDraft,
+  type AttachmentPreviewReportVisibility,
+} from '../attachment-preview/ReportTextPreview';
 import { MarkdownDocumentPreview, TxtDocumentPreview } from '../text-document-preview';
 import { CsvDocumentPreview } from './CsvDocumentPreview';
 import { DocxDocumentPreview } from './DocxDocumentPreview';
@@ -86,12 +91,17 @@ export function DocumentAttachmentPreviewRenderer({
   isFullscreen,
   isDownloadStarting,
   onDownloadStart,
+  reportDraft,
+  reportVisible,
+  onReportVisibleChange,
 }: {
   document: MessageCardDocument;
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
   isFullscreen: boolean;
-} & MessageCardDownloadGuardProps) {
+  reportDraft?: AttachmentPreviewReportDraft;
+} & MessageCardDownloadGuardProps &
+  AttachmentPreviewReportVisibility) {
   const resolvedIndex = navigation.index;
   const currentDocument = document;
   const [zoom, setZoom] = useState(100);
@@ -301,6 +311,9 @@ export function DocumentAttachmentPreviewRenderer({
       summaryVisible={summaryVisible}
       onSummaryChange={setSummaryStatus}
       onSummaryVisibleChange={setSummaryVisible}
+      reportDraft={reportDraft}
+      reportVisible={reportVisible}
+      onReportVisibleChange={onReportVisibleChange}
     />
   );
 
@@ -321,10 +334,25 @@ export function DocumentAttachmentPreviewRenderer({
               setSummaryVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setOcrVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }
           />
+          {reportDraft != null ? (
+            <ReportTextPreviewAction
+              active={reportVisible}
+              onClick={() => {
+                const next = !reportVisible;
+                if (next) {
+                  setOcrVisible(false);
+                  setOcrFullPane(false);
+                  setSummaryVisible(false);
+                }
+                onReportVisibleChange(next);
+              }}
+            />
+          ) : null}
           <OcrPreviewAction
             ocr={ocrStatus}
             active={ocrVisible}
@@ -332,6 +360,7 @@ export function DocumentAttachmentPreviewRenderer({
               setOcrVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setSummaryVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }

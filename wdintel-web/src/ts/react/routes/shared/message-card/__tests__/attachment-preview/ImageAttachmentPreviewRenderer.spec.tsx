@@ -114,6 +114,37 @@ vi.mock('@mui/material', () => ({
   IconButton: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => (
     <button {...props}>{children}</button>
   ),
+  TextField: ({
+    label,
+    value,
+    onChange,
+    fullWidth: _fullWidth,
+    multiline: _multiline,
+    minRows: _minRows,
+    maxRows: _maxRows,
+    autoFocus: _autoFocus,
+    size: _size,
+    sx: _sx,
+    ...props
+  }: {
+    label?: string;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+    fullWidth?: boolean;
+    multiline?: boolean;
+    minRows?: number;
+    maxRows?: number;
+    autoFocus?: boolean;
+    size?: string;
+    sx?: unknown;
+  } & Record<string, unknown>) => (
+    <textarea
+      aria-label={label}
+      value={value ?? ''}
+      onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
+      {...props}
+    />
+  ),
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   useMediaQuery: () => false,
@@ -310,6 +341,7 @@ type TestImagePreviewDialogProps = {
   onDownloadStart?: (downloadKey: string) => boolean;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
+  reportDraft?: ComponentProps<typeof ImageAttachmentPreviewRenderer>['reportDraft'];
 };
 
 function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
@@ -325,6 +357,7 @@ function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
       onDownloadStart={props.onDownloadStart}
       imageEditing={props.imageEditing}
       initialAction={props.initialAction}
+      reportDraft={props.reportDraft}
     />
   );
 }
@@ -371,6 +404,43 @@ describe('ImageAttachmentPreviewRenderer', () => {
       maxWidth: '100vw',
       maxHeight: '100svh',
     });
+    root.unmount();
+  });
+
+  it('shows the shared report text field when opened from report mode', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <TestImagePreviewDialog
+          imageHrefs={[{ href: 'https://example.test/image.png' } as never]}
+          open
+          onClose={vi.fn()}
+          onIndexChange={vi.fn()}
+          reportDraft={{ value: 'Текст із дровера', onChange: vi.fn() }}
+        />,
+      );
+    });
+
+    expect(document.body.querySelector('[data-attachment-preview-report-pane]')).toBeNull();
+
+    await act(async () => {
+      document.body
+        .querySelector('button[aria-label="Писати розвіддонесення"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    const textarea = document.body.querySelector(
+      'textarea[aria-label="Текст розвіддонесення"]',
+    ) as HTMLTextAreaElement | null;
+
+    expect(textarea).not.toBeNull();
+    expect(textarea?.value).toBe('Текст із дровера');
+
+    const pane = document.body.querySelector('[data-attachment-preview-report-pane]');
+    expect(pane?.classList.contains('overflow-visible')).toBe(true);
     root.unmount();
   });
 
