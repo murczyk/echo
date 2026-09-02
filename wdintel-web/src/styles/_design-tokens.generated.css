@@ -14,6 +14,7 @@
   --color-echo-background: var(--echo-color-background);
   --color-echo-surface: var(--echo-color-surface);
   --color-echo-surface-raised: var(--echo-color-surface-raised);
+  --color-echo-dialog-surface: var(--echo-color-dialog-surface);
   --color-echo-surface-inactive: var(--echo-color-surface-inactive);
   --color-echo-text: var(--echo-color-text);
   --color-echo-text-muted: var(--echo-color-text-muted);
@@ -21,6 +22,7 @@
   --color-echo-border: var(--echo-color-border);
   --color-echo-border-selected: var(--echo-color-border-selected);
   --color-echo-divider: var(--echo-color-divider);
+  --color-echo-divider-subtle: var(--echo-color-divider-subtle);
   --color-echo-primary: var(--echo-color-primary);
   --color-echo-primary-hover: var(--echo-color-primary-hover);
   --color-echo-primary-active: var(--echo-color-primary-active);
@@ -66,6 +68,7 @@
   --echo-color-background: #eff0f1;
   --echo-color-surface: #f8f9fb;
   --echo-color-surface-raised: #ffffff;
+  --echo-color-dialog-surface: #ffffff;
   --echo-color-surface-inactive: #eff0f1;
   --echo-color-text: #000000;
   --echo-color-text-muted: #6b7280;
@@ -73,6 +76,7 @@
   --echo-color-border: #e2ebf7;
   --echo-color-border-selected: #d3871d;
   --echo-color-divider: #e2ebf7;
+  --echo-color-divider-subtle: #e2ebf7;
   --echo-color-primary: #2c6c91;
   --echo-color-primary-hover: #286183;
   --echo-color-primary-active: #235674;
@@ -141,6 +145,7 @@ html[data-bs-theme='dark'] {
   --echo-color-background: #1f1f1f;
   --echo-color-surface: #2c2c2e;
   --echo-color-surface-raised: #000000;
+  --echo-color-dialog-surface: #5e5e64;
   --echo-color-surface-inactive: #2c2c2e;
   --echo-color-text: #ffffff;
   --echo-color-text-muted: #6b7280;
@@ -148,6 +153,7 @@ html[data-bs-theme='dark'] {
   --echo-color-border: #5e5e64;
   --echo-color-border-selected: #bc8c56;
   --echo-color-divider: #5e5e64;
+  --echo-color-divider-subtle: #383842;
   --echo-color-primary: #93cdf6;
   --echo-color-primary-hover: #84b9dd;
   --echo-color-primary-active: #76a4c5;

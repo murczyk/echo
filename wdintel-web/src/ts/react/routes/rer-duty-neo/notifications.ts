@@ -386,7 +386,26 @@ export function testBrowserNotification(): DutyBrowserNotificationStatus {
   }
 }
 
-type PendingDutyAlert = { feedId: string; totalNew: number };
+export type DutyNotificationPreview = {
+  messageId: number;
+  timestamp: number | null;
+  title: string;
+  body: string;
+};
+export enum DutyNotificationPreviewResultKind {
+  Ready = 'ready',
+  Unavailable = 'unavailable',
+  Stale = 'stale',
+}
+export type DutyNotificationPreviewResult =
+  | { kind: DutyNotificationPreviewResultKind.Ready; preview: DutyNotificationPreview }
+  | { kind: DutyNotificationPreviewResultKind.Unavailable }
+  | { kind: DutyNotificationPreviewResultKind.Stale };
+type PendingDutyAlert = {
+  feedId: string;
+  totalNew: number;
+  loadPreview?: () => Promise<DutyNotificationPreviewResult>;
+};
 declare const dutyNotificationPollCycleBrand: unique symbol;
 export type DutyNotificationPollCycle = { readonly [dutyNotificationPollCycleBrand]: true };
 type DutyNotificationPollCycleState = {
@@ -397,8 +416,22 @@ const dutyNotificationPollCycleStates = new WeakMap<
   DutyNotificationPollCycle,
   DutyNotificationPollCycleState
 >();
+const dutyNotificationPreviewLoaders = new WeakMap<
+  DutyNotificationPollCycle,
+  Map<string, () => Promise<DutyNotificationPreviewResult>>
+>();
 
-function deliverDutyAlerts(alerts: PendingDutyAlert[]): void {
+export function registerDutyNotificationPreview(
+  cycle: DutyNotificationPollCycle,
+  feedId: string,
+  loadPreview: () => Promise<DutyNotificationPreviewResult>,
+): void {
+  const loaders = dutyNotificationPreviewLoaders.get(cycle) ?? new Map();
+  loaders.set(feedId, loadPreview);
+  dutyNotificationPreviewLoaders.set(cycle, loaders);
+}
+
+function deliverDutyAlerts(alerts: PendingDutyAlert[], cycle?: DutyNotificationPollCycle): void {
   const enabled = alerts.filter(({ feedId }) => {
     const settings = getStoredDutyNotificationSettingsForFeed(feedId);
     return settings.soundEnabled || settings.browserEnabled;
@@ -409,13 +442,59 @@ function deliverDutyAlerts(alerts: PendingDutyAlert[]): void {
   const browserEnabled = enabled.filter(
     ({ feedId }) => getStoredDutyNotificationSettingsForFeed(feedId).browserEnabled,
   );
-  if (browserEnabled.length > 0) {
-    const total = browserEnabled.reduce((sum, alert) => sum + alert.totalNew, 0);
-    showBrowserNotification('Нові повідомлення в оперативному', {
-      body: `Нових повідомлень: ${total}. Стрічок: ${browserEnabled.length}.`,
+  if (browserEnabled.length === 0) return;
+  if (!cycle || !browserEnabled.some((alert) => alert.loadPreview)) {
+    showBrowserNotification('Нове повідомлення', {
+      body: 'Відкрийте «Оперативний», щоб переглянути.',
       silent: true,
+      tag: `duty-cycle-${Date.now()}`,
     });
+    return;
   }
+  void Promise.all(
+    browserEnabled.map(
+      (alert) =>
+        alert
+          .loadPreview?.()
+          .catch(() => ({ kind: DutyNotificationPreviewResultKind.Unavailable })) ??
+        Promise.resolve({ kind: DutyNotificationPreviewResultKind.Unavailable }),
+    ),
+  ).then((results) => {
+    const state = dutyNotificationPollCycleStates.get(cycle);
+    if (!state || state.status === 'cancelled') return;
+    const eligible = results.filter(
+      (result, index) =>
+        getStoredDutyNotificationSettingsForFeed(browserEnabled[index]!.feedId).browserEnabled &&
+        result.kind !== DutyNotificationPreviewResultKind.Stale,
+    );
+    if (eligible.length === 0) return;
+    const unique = new Map<number, DutyNotificationPreview>();
+    eligible
+      .filter(
+        (
+          result,
+        ): result is Extract<
+          DutyNotificationPreviewResult,
+          { kind: DutyNotificationPreviewResultKind.Ready }
+        > => result.kind === DutyNotificationPreviewResultKind.Ready,
+      )
+      .forEach(({ preview }) => {
+        unique.set(preview.messageId, preview);
+      });
+    const newest = [...unique.values()].sort(
+      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || b.messageId - a.messageId,
+    )[0];
+    if (
+      !newest &&
+      !eligible.some((result) => result.kind === DutyNotificationPreviewResultKind.Unavailable)
+    )
+      return;
+    showBrowserNotification(newest?.title ?? 'Нове повідомлення', {
+      body: newest?.body ?? 'Відкрийте «Оперативний», щоб переглянути.',
+      silent: true,
+      tag: newest ? `duty-message-${newest.messageId}` : `duty-cycle-${Date.now()}`,
+    });
+  });
 }
 
 /** One explicit poll owns aggregation; overlapping triggers retain independent handles. */
@@ -429,7 +508,7 @@ export function endDutyNotificationPollCycle(cycle: DutyNotificationPollCycle): 
   const state = dutyNotificationPollCycleStates.get(cycle);
   if (!state || state.status !== 'active') return;
   state.status = 'ended';
-  deliverDutyAlerts(state.alerts);
+  deliverDutyAlerts(state.alerts, cycle);
   state.alerts = [];
 }
 
@@ -498,7 +577,11 @@ export function notifyDutyNewMessages(
   cycle?: DutyNotificationPollCycle,
 ): void {
   if (totalNew <= 0) return;
-  const alert = { feedId, totalNew };
+  const alert = {
+    feedId,
+    totalNew,
+    loadPreview: cycle ? dutyNotificationPreviewLoaders.get(cycle)?.get(feedId) : undefined,
+  };
   if (!cycle) return deliverDutyAlerts([alert]);
   const state = dutyNotificationPollCycleStates.get(cycle);
   if (!state || state.status === 'cancelled') return;

@@ -9,6 +9,7 @@ import {
   getBrowserNotificationStatus,
   showBrowserNotification,
   notifyDutyNewMessages,
+  registerDutyNotificationPreview,
   requestBrowserNotificationPermission,
   setStoredDutyNotificationSettingsForFeed,
   testBrowserNotification,
@@ -31,6 +32,217 @@ afterEach(() => {
 });
 
 describe('Duty browser notifications', () => {
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('suppresses stale previews and previews invalidated after an ended cycle', async () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    const NotificationMock = vi.fn(function () {
+      return { addEventListener: vi.fn() };
+    }) as unknown as typeof Notification;
+    installNotification('granted', NotificationMock);
+    setStoredDutyNotificationSettingsForFeed('feed-a', {
+      soundEnabled: false,
+      browserEnabled: true,
+    });
+
+    const stale = beginDutyNotificationPollCycle();
+    registerDutyNotificationPreview(stale, 'feed-a', async () => ({ kind: 'stale' }));
+    notifyDutyNewMessages('feed-a', 1, stale);
+    endDutyNotificationPollCycle(stale);
+    await Promise.resolve();
+    expect(NotificationMock).not.toHaveBeenCalled();
+
+    let resolvePreview!: (value: {
+      kind: 'ready';
+      preview: { messageId: number; timestamp: number; title: string; body: string };
+    }) => void;
+    const pending = new Promise<{
+      kind: 'ready';
+      preview: { messageId: number; timestamp: number; title: string; body: string };
+    }>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const cancelled = beginDutyNotificationPollCycle();
+    registerDutyNotificationPreview(cancelled, 'feed-a', () => pending);
+    notifyDutyNewMessages('feed-a', 1, cancelled);
+    endDutyNotificationPollCycle(cancelled);
+    cancelDutyNotificationPollCycle(cancelled);
+    resolvePreview({
+      kind: 'ready',
+      preview: { messageId: 1, timestamp: 1, title: 'Sender', body: 'Body' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(NotificationMock).not.toHaveBeenCalled();
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('rechecks browser settings before a pending rich preview is delivered', async () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    const NotificationMock = vi.fn(function () {
+      return { addEventListener: vi.fn() };
+    }) as unknown as typeof Notification;
+    installNotification('granted', NotificationMock);
+    setStoredDutyNotificationSettingsForFeed('feed-a', {
+      soundEnabled: false,
+      browserEnabled: true,
+    });
+    let resolvePreview!: (value: {
+      kind: 'ready';
+      preview: { messageId: number; timestamp: number; title: string; body: string };
+    }) => void;
+    const pending = new Promise<{
+      kind: 'ready';
+      preview: { messageId: number; timestamp: number; title: string; body: string };
+    }>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const cycle = beginDutyNotificationPollCycle();
+    registerDutyNotificationPreview(cycle, 'feed-a', () => pending);
+    notifyDutyNewMessages('feed-a', 1, cycle);
+    endDutyNotificationPollCycle(cycle);
+    setStoredDutyNotificationSettingsForFeed('feed-a', {
+      soundEnabled: false,
+      browserEnabled: false,
+    });
+    resolvePreview({
+      kind: 'ready',
+      preview: { messageId: 1, timestamp: 1, title: 'Sender', body: 'Body' },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(NotificationMock).not.toHaveBeenCalled();
+
+    const disabled = beginDutyNotificationPollCycle();
+    const loader = vi.fn(async () => ({
+      kind: 'ready' as const,
+      preview: { messageId: 2, timestamp: 2, title: 'Sender', body: 'Body' },
+    }));
+    registerDutyNotificationPreview(disabled, 'feed-a', loader);
+    notifyDutyNewMessages('feed-a', 1, disabled);
+    endDutyNotificationPollCycle(disabled);
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('aggregates ready previews into the newest unique rich notification', async () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    const NotificationMock = vi.fn(function () {
+      return { addEventListener: vi.fn() };
+    }) as unknown as typeof Notification;
+    installNotification('granted', NotificationMock);
+    for (const feedId of ['stale', 'old', 'new', 'duplicate'])
+      setStoredDutyNotificationSettingsForFeed(feedId, {
+        soundEnabled: false,
+        browserEnabled: true,
+      });
+    const cycle = beginDutyNotificationPollCycle();
+    registerDutyNotificationPreview(cycle, 'stale', async () => ({ kind: 'stale' }));
+    registerDutyNotificationPreview(cycle, 'old', async () => ({
+      kind: 'ready',
+      preview: { messageId: 4, timestamp: 10, title: 'Old', body: 'Old body' },
+    }));
+    registerDutyNotificationPreview(cycle, 'new', async () => ({
+      kind: 'ready',
+      preview: { messageId: 5, timestamp: 20, title: 'New', body: 'New body' },
+    }));
+    registerDutyNotificationPreview(cycle, 'duplicate', async () => ({
+      kind: 'ready',
+      preview: { messageId: 5, timestamp: 20, title: 'Duplicate', body: 'Duplicate body' },
+    }));
+    for (const feedId of ['stale', 'old', 'new', 'duplicate'])
+      notifyDutyNewMessages(feedId, 1, cycle);
+    endDutyNotificationPollCycle(cycle);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(NotificationMock).toHaveBeenCalledTimes(1);
+    expect(NotificationMock).toHaveBeenLastCalledWith(
+      'Duplicate',
+      expect.objectContaining({ body: 'Duplicate body', silent: true }),
+    );
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('starts one sound event before a pending preview settles and does not repeat it on failure', async () => {
+    const values = new Map<string, string>();
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => values.get(key) ?? null,
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    });
+    const createOscillator = vi.fn(() => ({
+      connect: vi.fn(),
+      start: vi.fn(),
+      stop: vi.fn(),
+      type: 'sine',
+      frequency: { setValueAtTime: vi.fn() },
+    }));
+    vi.stubGlobal(
+      'AudioContext',
+      vi.fn(function () {
+        return {
+          currentTime: 0,
+          state: 'running',
+          destination: {},
+          createGain: vi.fn(() => ({
+            connect: vi.fn(),
+            gain: {
+              setValueAtTime: vi.fn(),
+              linearRampToValueAtTime: vi.fn(),
+              exponentialRampToValueAtTime: vi.fn(),
+            },
+          })),
+          createOscillator,
+        };
+      }),
+    );
+    vi.resetModules();
+    const notifications = await import('./notifications');
+    const pending = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('preview failed')), 0),
+    );
+    notifications.setStoredDutyNotificationSettingsForFeed('feed-a', {
+      soundEnabled: true,
+      browserEnabled: true,
+    });
+    const cycle = notifications.beginDutyNotificationPollCycle();
+    notifications.registerDutyNotificationPreview(cycle, 'feed-a', () => pending);
+    notifications.notifyDutyNewMessages('feed-a', 1, cycle);
+    notifications.endDutyNotificationPollCycle(cycle);
+    expect(createOscillator).toHaveBeenCalledTimes(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await Promise.resolve();
+    expect(createOscillator).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps concurrent poll cycles isolated until each is ended', () => {
     const values = new Map<string, string>();
     Object.defineProperty(window, 'localStorage', {
@@ -59,11 +271,15 @@ describe('Duty browser notifications', () => {
 
     endDutyNotificationPollCycle(first);
     expect(NotificationMock).toHaveBeenCalledTimes(1);
-    expect(NotificationMock.mock.calls[0]?.[1]?.body).toBe('Нових повідомлень: 2. Стрічок: 1.');
+    expect(NotificationMock.mock.calls[0]?.[1]?.body).toBe(
+      'Відкрийте «Оперативний», щоб переглянути.',
+    );
 
     endDutyNotificationPollCycle(second);
     expect(NotificationMock).toHaveBeenCalledTimes(2);
-    expect(NotificationMock.mock.calls[1]?.[1]?.body).toBe('Нових повідомлень: 3. Стрічок: 1.');
+    expect(NotificationMock.mock.calls[1]?.[1]?.body).toBe(
+      'Відкрийте «Оперативний», щоб переглянути.',
+    );
   });
 
   it('cancels buffered alerts and suppresses late notifications for that cycle', () => {
@@ -267,13 +483,12 @@ describe('Duty browser notifications', () => {
     endDutyNotificationPollCycle(cycle);
     expect(NotificationMock).toHaveBeenCalledTimes(1);
     expect(NotificationMock).toHaveBeenCalledWith(
-      'Нові повідомлення в оперативному',
+      'Нове повідомлення',
       expect.objectContaining({
-        body: expect.stringContaining('Нових повідомлень: 5'),
+        body: 'Відкрийте «Оперативний», щоб переглянути.',
         silent: true,
       }),
     );
-    expect(NotificationMock.mock.calls[0]?.[1]?.body).toContain('Стрічок: 2');
     expect(
       AudioContextMock.mock.results[0]?.value.createOscillator as ReturnType<typeof vi.fn>,
     ).toHaveBeenCalledTimes(2);
@@ -339,7 +554,9 @@ describe('Duty browser notifications', () => {
     endPollCycle(cycle);
 
     expect(NotificationMock).toHaveBeenCalledTimes(1);
-    expect(NotificationMock.mock.calls[0]?.[1]?.body).toBe('Нових повідомлень: 3. Стрічок: 1.');
+    expect(NotificationMock.mock.calls[0]?.[1]?.body).toBe(
+      'Відкрийте «Оперативний», щоб переглянути.',
+    );
     expect(createOscillator).toHaveBeenCalledTimes(2);
   });
 

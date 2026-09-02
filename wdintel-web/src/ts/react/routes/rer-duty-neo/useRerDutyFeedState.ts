@@ -22,6 +22,7 @@ import {
   cancelDutyNotificationPollCycle,
   endDutyNotificationPollCycle,
   notifyDutyNewMessages,
+  registerDutyNotificationPreview,
   recordLastSuccessfulDutyCountCheck,
   removeLastSuccessfulDutyCountCheck,
 } from './notifications';
@@ -33,6 +34,7 @@ import { useRerDutyShortState } from './useRerDutyShortState';
 import { createEmptyFeedState, useRerDutyInitialLoad } from './useRerDutyInitialLoad';
 import { buildFeedCountSignature } from './rerDutyFeedCount';
 import { compareMessageTuple } from './utils';
+import { loadDutyNotificationPreview } from './dutyNotificationPreview';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
@@ -857,6 +859,26 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           prevServerCount?.requestSignature === entry.requestSignature;
         if (canCompareBaseline && entry.quantity > prevServerCount.quantity) {
           const totalNew = entry.quantity - prevServerCount.quantity;
+          const previewCursorId = unreadCursorByFeedIdRef.current[feedId]?.id ?? null;
+          const previewGeneration = loadGenerationByFeedIdRef.current[feedId] ?? 0;
+          const previewRequest = buildReqForFeed(currentFeed, {
+            sinceIdNoninclusive: previewCursorId,
+            loadLatest: true,
+          });
+          if (typeof registerDutyNotificationPreview === 'function') {
+            registerDutyNotificationPreview(cycle, feedId, () =>
+              loadDutyNotificationPreview(previewRequest, () => {
+                const live = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+                return (
+                  isLifecycleCurrent() &&
+                  live != null &&
+                  (loadGenerationByFeedIdRef.current[feedId] ?? 0) === previewGeneration &&
+                  (unreadCursorByFeedIdRef.current[feedId]?.id ?? null) === previewCursorId &&
+                  buildFeedCountSignature(live, freqs) === entry.requestSignature
+                );
+              }),
+            );
+          }
           notifyDutyNewMessages(feedId, totalNew, cycle);
         }
         // Every successful comparable generation establishes a silent baseline. A failed
@@ -1101,6 +1123,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     pollIntervalMs,
     reportPollingFailure,
     clearPollingFailure,
+    buildReqForFeed,
   ]);
   pollCountThenLoadNewerIfNeededRef.current = pollCountThenLoadNewerIfNeeded;
 

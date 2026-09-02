@@ -36,6 +36,70 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
   });
 
   afterEach(fixture.cleanup);
+
+  // Regression: https://github.com/echoua/echo/pull/3331
+  it('loads a notification preview with the count request’s expanded frequency filters', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/?state=' +
+        encodeURIComponent(
+          JSON.stringify({
+            messageFeeds: [
+              [
+                'mf-0',
+                {
+                  ...emptyFilter(),
+                  freqsSelected: ['100.0'],
+                  freqsDenied: ['200.0'],
+                },
+              ],
+            ],
+          }),
+        ),
+    );
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+    await act(async () => {
+      root.render(
+        <TestHarness
+          apiRef={apiRef}
+          freqs={['99.9', '100.0', '100.1', '199.9', '200.0', '200.1']}
+        />,
+      );
+      await flushMicrotasks();
+    });
+    await act(async () => {
+      apiRef.current!.setMessageFeeds((feeds) =>
+        feeds.map((feed) => ({ ...feed, adjacentFreqsRange: 0.2 })),
+      );
+      await flushMicrotasks();
+    });
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 0, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null });
+    let previewLoader: (() => Promise<unknown>) | undefined;
+    hoisted.registerDutyNotificationPreview.mockImplementation((_cycle, _feedId, loader) => {
+      previewLoader = loader;
+    });
+
+    await startPoll();
+    await startPoll();
+    expect(previewLoader).toBeDefined();
+    hoisted.fetchInboxMessages.mockClear();
+    await previewLoader!();
+
+    expect(hoisted.fetchInboxMessages).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedFreqs: ['100.0', '99.9', '100.1'],
+        deniedFreqs: ['200.0', '199.9', '200.1'],
+        loadLatest: true,
+      }),
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
   it('keeps an empty tail preview from creating a false unread badge loop', async () => {
     const { apiRef, scrollToEnd } = await mountLoadedFeed();
     await act(async () => {

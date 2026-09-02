@@ -39,16 +39,24 @@ type Props = {
 };
 
 function Section({
+  appearance = 'default',
   children,
   icon,
   title,
 }: {
   children: ReactNode;
+  appearance?: 'default' | 'bordered';
   icon: ReactNode;
   title: string;
 }) {
   return (
-    <section className="rounded-xl border border-[var(--color-divider)] bg-black/[.02] p-4 dark:bg-white/[.02]">
+    <section
+      className={
+        appearance === 'bordered'
+          ? 'rounded-echo-sm border border-echo-border p-echo-md'
+          : 'rounded-xl border border-[var(--color-divider)] bg-black/[.02] p-4 dark:bg-white/[.02]'
+      }
+    >
       <header className="flex items-center gap-3">
         <span className="text-[var(--color-primary)]">{icon}</span>
         <Typography component="h3" variant="h6">
@@ -83,7 +91,7 @@ function SchematicSetting({ label, enabled = true }: { label: string; enabled?: 
 function FeedAndSound({ onTestSound }: Pick<Props, 'onTestSound'>) {
   return (
     <div className="grid gap-4">
-      <Section icon={<NotificationsIcon />} title="Сповіщення цієї стрічки">
+      <Section appearance="bordered" icon={<NotificationsIcon />} title="Сповіщення цієї стрічки">
         <Row>
           <Typography variant="caption" color="text.secondary">
             Приклад
@@ -181,7 +189,7 @@ function ChromePermission() {
 function SystemNotifications() {
   return (
     <div className="grid gap-4">
-      <Section icon={<ComputerIcon />} title="Windows">
+      <Section appearance="bordered" icon={<ComputerIcon />} title="Windows">
         <div className="grid gap-3 md:grid-cols-2">
           <Row>
             <Typography fontWeight={600}>Параметри → Система → Сповіщення</Typography>
@@ -201,7 +209,7 @@ function SystemNotifications() {
           «Не турбувати» — окремий режим Windows; він може відкласти або приховати банер.
         </Typography>
       </Section>
-      <Section icon={<ComputerIcon />} title="macOS">
+      <Section appearance="bordered" icon={<ComputerIcon />} title="macOS">
         <div className="grid gap-3 md:grid-cols-2">
           <Row>
             <Typography fontWeight={600}>

@@ -271,7 +271,7 @@ export function FeedNotificationPanel({
           ) : null}
         </NotificationChannelCard>
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-echo-border pt-3">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-echo-divider-subtle pt-3">
         <Typography color="text.secondary" variant="caption">
           Для коректної роботи не закривайте сторінку.
         </Typography>
