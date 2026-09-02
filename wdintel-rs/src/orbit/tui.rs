@@ -1157,9 +1157,6 @@ fn sigint_duplicate_review_field_pairs(
         ),
     ]
     .into_iter()
-    .filter(|(_, left, right)| {
-        !left.trim().is_empty() || !right.trim().is_empty() || left != right
-    })
     .map(|(label, left, right)| (label.to_string(), left, right))
     .collect()
 }
@@ -1824,6 +1821,17 @@ mod tests {
         assert!(lines.iter().map(line_text).any(|line| {
             line == "Shared ORBIT UUIDs: 00000000-0000-0000-0000-000000000000"
         }));
+        for label in [
+            "name",
+            "hierarchy",
+            "active",
+            "comment",
+            "orbit_note",
+            "sigint_origin_id",
+            "original_id",
+        ] {
+            assert!(lines.iter().map(line_text).any(|line| line == label));
+        }
     }
 
     #[test]
