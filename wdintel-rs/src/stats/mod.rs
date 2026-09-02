@@ -221,9 +221,18 @@ struct GroupStatsActivityWindow {
 }
 
 #[derive(FromQueryResult)]
-struct GroupStatsMessageRow {
-    master_key: String,
-    message_ts: NaiveDateTime,
+struct GroupStatsMessagesWindow {
+    master_key: Option<String>,
+    since_ts: Option<NaiveDateTime>,
+    till_ts: Option<NaiveDateTime>,
+}
+
+struct ClaimedGroupStatsRecalculationTask {
+    ids: Vec<i64>,
+    group_master_key: String,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    reason: String,
 }
 
 pub async fn enqueue_group_stats_recalculation_for_group_history<'a, C>(
@@ -305,56 +314,83 @@ pub async fn enqueue_group_stats_recalculation_for_message<'a, C>(
 where
     C: ConnectionTrait + 'a,
 {
+    enqueue_group_stats_recalculation_for_messages(dbx, &[message_id], &reason)
+        .await
+}
+
+pub async fn enqueue_group_stats_recalculation_for_messages<'a, C>(
+    dbx: &'a C,
+    message_ids: &[i64],
+    reason_prefix: &str,
+) -> Result<bool, AppError>
+where
+    C: ConnectionTrait + 'a,
+{
+    if message_ids.is_empty() {
+        return Ok(false);
+    }
     let min_since_ts =
         Utc::now().naive_utc() - Duration::days(STATS_MIN_DATETIME_DAYS);
-    let message_rows = GroupStatsMessageRow::find_by_statement(
+    let window = GroupStatsMessagesWindow::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
                 select
-                    smg.group_master_key as master_key,
-                    coalesce(sii.datetime, sm.created_at) as message_ts
+                    min(smg.group_master_key) as master_key,
+                    min(coalesce(sii.datetime, sm.created_at)) as since_ts,
+                    max(coalesce(sii.datetime, sm.created_at)) as till_ts
                 from signal_message_group smg
                 inner join signal_message sm on sm.id = smg.signal_message_id
                 inner join sigint_inbox_item sii on sii.id = sm.id
-                where smg.signal_message_id = $1
+                where smg.signal_message_id = any($1::bigint[])
                   and smg.group_master_key is not null
                   and sm.deleted = false
                   and coalesce(sii.datetime, sm.created_at) >= $2
             "#,
-            vec![message_id.into(), min_since_ts.into()],
+            vec![message_ids.to_vec().into(), min_since_ts.into()],
         ),
     )
-    .all(dbx)
+    .one(dbx)
     .await
     .c(h!())?;
-    let message_rows = message_rows
-        .into_iter()
-        .unique_by(|row| row.master_key.clone());
+    let Some(window) = window else {
+        return Ok(false);
+    };
+    let Some(master_key) = window.master_key else {
+        return Ok(false);
+    };
+    let Some(raw_since_ts) = window.since_ts else {
+        return Ok(false);
+    };
+    let Some(raw_till_ts) = window.till_ts else {
+        return Ok(false);
+    };
+
+    let since_ts = start_of_day(get_local_date(raw_since_ts)).c(h!())?;
     let now = Utc::now().naive_utc();
-    let mut enqueued = false;
-    for row in message_rows {
-        let since_ts = start_of_day(get_local_date(row.message_ts)).c(h!())?;
-        let till_ts = std::cmp::min(
-            start_of_day(get_local_date(row.message_ts) + Duration::days(1))
-                .c(h!())?,
-            now,
-        );
-        if till_ts <= since_ts {
-            continue;
-        }
-        enqueue_pending_group_stats_task(
-            dbx,
-            &row.master_key,
-            since_ts,
-            till_ts,
-            reason.clone(),
-        )
-        .await
-        .c(h!())?;
-        enqueued = true;
+    let till_ts = std::cmp::min(
+        start_of_day(get_local_date(raw_till_ts) + Duration::days(1))
+            .c(h!())?,
+        now,
+    );
+    if till_ts <= since_ts {
+        return Ok(false);
     }
-    Ok(enqueued)
+    let reason = if message_ids.len() == 1 {
+        reason_prefix.to_string()
+    } else {
+        format!("{reason_prefix} ({} inbox messages)", message_ids.len())
+    };
+    enqueue_pending_group_stats_task(
+        dbx,
+        &master_key,
+        since_ts,
+        till_ts,
+        reason,
+    )
+    .await
+    .c(h!())?;
+    Ok(true)
 }
 
 async fn load_group_stats_activity_window<'a, C>(
@@ -427,40 +463,20 @@ where
             reason
         )
         values ($1, $2, $3, $4)
-        on conflict ((true))
-            where completed_at is null and started_at is null
-        do update set
-            group_master_key = excluded.group_master_key,
-            since_ts = least(
-                group_stats_recalculation_task.since_ts,
-                excluded.since_ts
-            ),
-            till_ts = greatest(
-                group_stats_recalculation_task.till_ts,
-                excluded.till_ts
-            ),
-            reason = excluded.reason
-        where group_stats_recalculation_task.completed_at is null
-          and group_stats_recalculation_task.started_at is null
     "#;
-    loop {
-        let result = dbx
-            .execute_raw(Statement::from_sql_and_values(
-                DatabaseBackend::Postgres,
-                sql,
-                vec![
-                    master_key.into(),
-                    since_ts.into(),
-                    till_ts.into(),
-                    reason.clone().into(),
-                ],
-            ))
-            .await
-            .c(h!())?;
-        if result.rows_affected() > 0 {
-            return Ok(());
-        }
-    }
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        vec![
+            master_key.into(),
+            since_ts.into(),
+            till_ts.into(),
+            reason.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 pub async fn process_pending_group_stats_recalculation_task(
@@ -488,103 +504,205 @@ pub async fn process_pending_group_stats_recalculation_task(
         task.till_ts,
     );
     info!(
-        "recalculating queued group stats task id={} group={} from={} till={} remaining_till={} reason={}",
-        task.id,
+        "recalculating queued group stats task id={} claimed_task_count={} group={} from={} till={} remaining_till={} reason={}",
+        task.ids[0],
+        task.ids.len(),
         task.group_master_key,
         task.since_ts,
         chunk_till_ts,
         task.till_ts,
         task.reason
     );
-    let result =
-        recalculate_group_stats_task(dbx, stats_redis, &task, chunk_till_ts)
-            .await;
-    match result {
-        Ok(()) => {
-            if chunk_till_ts < task.till_ts {
-                enqueue_pending_group_stats_task(
-                    dbx,
-                    &task.group_master_key,
-                    chunk_till_ts,
-                    task.till_ts,
-                    task.reason.clone(),
-                )
-                .await
-                .c(h!())?;
-            }
-            let mut task = task.into_active_model();
-            task.completed_at = Set(Some(Utc::now().naive_utc()));
-            task.update(dbx).await.c(h!())?;
-            Ok(true)
-        }
-        Err(e) => {
-            enqueue_pending_group_stats_task(
-                dbx,
-                &task.group_master_key,
-                task.since_ts,
-                task.till_ts,
-                task.reason.clone(),
-            )
-            .await
-            .c(h!())?;
-            let mut task = task.into_active_model();
-            task.completed_at = Set(Some(Utc::now().naive_utc()));
-            task.update(dbx).await.c(h!())?;
-            Err(e)
-        }
-    }
+    let recalculation = recalculate_group_stats_task(
+        dbx,
+        stats_redis,
+        task.since_ts,
+        chunk_till_ts,
+    )
+    .await;
+    let remainder_since_ts = match &recalculation {
+        Ok(()) if chunk_till_ts < task.till_ts => Some(chunk_till_ts),
+        Ok(()) => None,
+        Err(_) => Some(task.since_ts),
+    };
+    finalize_claimed_group_stats_tasks_with_retry(
+        dbx,
+        &task,
+        remainder_since_ts,
+    )
+    .await
+    .c(h!())?;
+    recalculation.c(h!())?;
+    Ok(true)
 }
 
 async fn claim_pending_group_stats_recalculation_task(
     dbx: &DatabaseConnection,
-) -> Result<Option<group_stats_recalculation_task::Model>, AppError> {
+) -> Result<Option<ClaimedGroupStatsRecalculationTask>, AppError> {
     let now = Utc::now().naive_utc();
     let stale_started_before =
         now - Duration::minutes(GROUP_STATS_RECALCULATION_TASK_STALE_MINUTES);
     let sql = r#"
-        update group_stats_recalculation_task
-        set started_at = $1
-        where id = (
+        with claimed as (
             select id
             from group_stats_recalculation_task
             where completed_at is null
               and (started_at is null or started_at < $2)
             order by created_at asc, id asc
             for update skip locked
-            limit 1
+            limit $3
         )
+        update group_stats_recalculation_task as task
+        set started_at = $1
+        from claimed
+        where task.id = claimed.id
         returning
-            id,
-            group_master_key,
-            since_ts,
-            till_ts,
-            started_at,
-            completed_at,
-            created_at,
-            reason
+            task.id,
+            task.group_master_key,
+            task.since_ts,
+            task.till_ts,
+            task.started_at,
+            task.completed_at,
+            task.created_at,
+            task.reason
     "#;
-    Ok(group_stats_recalculation_task::Model::find_by_statement(
+    let tasks = group_stats_recalculation_task::Model::find_by_statement(
         Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             sql,
-            vec![now.into(), stale_started_before.into()],
+            vec![
+                now.into(),
+                stale_started_before.into(),
+                GROUP_STATS_RECALCULATION_TASK_CLAIM_LIMIT.into(),
+            ],
         ),
     )
-    .one(dbx)
+    .all(dbx)
     .await
-    .c(h!())?)
+    .c(h!())?;
+    Ok(merge_claimed_group_stats_tasks(tasks))
+}
+
+fn merge_claimed_group_stats_tasks(
+    mut tasks: Vec<group_stats_recalculation_task::Model>,
+) -> Option<ClaimedGroupStatsRecalculationTask> {
+    tasks.sort_by_key(|task| (task.created_at, task.id));
+    let first = tasks.first()?;
+    Some(ClaimedGroupStatsRecalculationTask {
+        ids: tasks.iter().map(|task| task.id).collect(),
+        group_master_key: first.group_master_key.clone(),
+        since_ts: tasks.iter().map(|task| task.since_ts).min()?,
+        till_ts: tasks.iter().map(|task| task.till_ts).max()?,
+        reason: if tasks.len() == 1 {
+            first.reason.clone()
+        } else {
+            format!("coalesced {} tasks; {}", tasks.len(), first.reason)
+        },
+    })
+}
+
+async fn finalize_claimed_group_stats_tasks_with_retry(
+    dbx: &DatabaseConnection,
+    task: &ClaimedGroupStatsRecalculationTask,
+    remainder_since_ts: Option<NaiveDateTime>,
+) -> anyhow::Result<u32> {
+    let mut retry_count = 0_u32;
+    loop {
+        match persist_claimed_group_stats_task_outcome(
+            dbx,
+            task,
+            remainder_since_ts,
+        )
+        .await
+        {
+            Ok(()) => return Ok(retry_count),
+            Err(error) if is_postgres_lock_not_available(&error) => {
+                retry_count += 1;
+                let exponent = std::cmp::min(retry_count.saturating_sub(1), 5);
+                let retry_delay_ms = std::cmp::min(
+                    GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_INITIAL_MS
+                        .saturating_mul(1_u64 << exponent),
+                    GROUP_STATS_RECALCULATION_TASK_FINALIZE_RETRY_MAX_MS,
+                );
+                warn!(
+                    "group stats task finalization lock timeout task_id={} retry_count={} retry_delay_ms={} error={error:#?}",
+                    task.ids[0],
+                    retry_count,
+                    retry_delay_ms,
+                );
+                sleep(std::time::Duration::from_millis(retry_delay_ms)).await;
+            }
+            Err(error) => return Err(error).c(h!()),
+        }
+    }
+}
+
+async fn persist_claimed_group_stats_task_outcome(
+    dbx: &DatabaseConnection,
+    task: &ClaimedGroupStatsRecalculationTask,
+    remainder_since_ts: Option<NaiveDateTime>,
+) -> anyhow::Result<()> {
+    let transaction = dbx.begin().await.c(h!())?;
+    if let Some(remainder_since_ts) = remainder_since_ts {
+        enqueue_pending_group_stats_task(
+            &transaction,
+            &task.group_master_key,
+            remainder_since_ts,
+            task.till_ts,
+            task.reason.clone(),
+        )
+        .await
+        .c(h!())?;
+    }
+    group_stats_recalculation_task::Entity::update_many()
+        .col_expr(
+            group_stats_recalculation_task::Column::CompletedAt,
+            Expr::value(Some(Utc::now().naive_utc())),
+        )
+        .filter(
+            group_stats_recalculation_task::Column::Id.is_in(task.ids.clone()),
+        )
+        .exec(&transaction)
+        .await
+        .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+fn is_postgres_lock_not_available(error: &anyhow::Error) -> bool {
+    error.chain().any(|error| {
+        let sea_orm_lock_timeout = match error.downcast_ref::<DbErr>() {
+            Some(
+                DbErr::Conn(RuntimeErr::SqlxError(error))
+                | DbErr::Exec(RuntimeErr::SqlxError(error))
+                | DbErr::Query(RuntimeErr::SqlxError(error)),
+            ) => sqlx_error_is_lock_not_available(error),
+            _ => false,
+        };
+        sea_orm_lock_timeout
+            || error
+                .downcast_ref::<sqlx::Error>()
+                .is_some_and(sqlx_error_is_lock_not_available)
+    })
+}
+
+fn sqlx_error_is_lock_not_available(error: &sqlx::Error) -> bool {
+    let sqlx::Error::Database(error) = error else {
+        return false;
+    };
+    error.code().as_deref() == Some("55P03")
 }
 
 async fn recalculate_group_stats_task(
     dbx: &DatabaseConnection,
     stats_redis: &redis::GroupStatsRedis,
-    task: &group_stats_recalculation_task::Model,
+    since_ts: NaiveDateTime,
     chunk_till_ts: NaiveDateTime,
 ) -> Result<(), AppError> {
     recalculate_group_stats(
         dbx,
         stats_redis,
-        task.since_ts,
+        since_ts,
         chunk_till_ts,
         true,
         true,
@@ -4259,7 +4377,8 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn test_enqueue_group_stats_recalculation_merges_global_window() {
+    async fn test_batch_enqueue_group_stats_recalculation_merges_global_window()
+    {
         let env = cleanup().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
         let old_message_ts = Utc::now().naive_utc() - Duration::days(4);
@@ -4277,15 +4396,24 @@ mod tests {
         )
         .await;
 
-        for group in [&old_group, &recent_group] {
-            assert!(enqueue_group_stats_recalculation_for_group_history(
-                &txn,
-                &group.master_key,
-                format!("test global merge for {}", group.master_key),
+        let message_ids = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .is_in([old_group.master_key, recent_group.master_key]),
             )
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .all(&txn)
             .await
-            .unwrap());
-        }
+            .unwrap();
+        assert!(enqueue_group_stats_recalculation_for_messages(
+            &txn,
+            &message_ids,
+            "test global batch merge",
+        )
+        .await
+        .unwrap());
 
         let tasks = group_stats_recalculation_task::Entity::find()
             .all(&txn)
@@ -4361,6 +4489,199 @@ mod tests {
         );
 
         txn.rollback().await.unwrap();
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn concurrent_enqueues_do_not_wait_for_task_finalization() {
+        let env = cleanup().await.unwrap();
+        let message_ts = Utc::now().naive_utc() - Duration::days(3);
+        let group = mk_group_with_stats_message(
+            &env.dbx,
+            "stats-recalc-concurrent-enqueue",
+            message_ts,
+        )
+        .await;
+        let message_id = signal_message_group::Entity::find()
+            .filter(
+                signal_message_group::Column::GroupMasterKey
+                    .eq(group.master_key.clone()),
+            )
+            .select_only()
+            .column(signal_message_group::Column::SignalMessageId)
+            .into_tuple::<i64>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let since_ts = start_of_day(get_local_date(message_ts)).unwrap();
+        let till_ts =
+            start_of_day(get_local_date(message_ts) + Duration::days(1))
+                .unwrap();
+        let task = group_stats_recalculation_task::ActiveModel {
+            group_master_key: Set(group.master_key.clone()),
+            since_ts: Set(since_ts),
+            till_ts: Set(till_ts),
+            started_at: Set(Some(Utc::now().naive_utc())),
+            reason: Set("finalizing task".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let task_id = task.id;
+        let claimed = ClaimedGroupStatsRecalculationTask {
+            ids: vec![task_id],
+            group_master_key: task.group_master_key,
+            since_ts,
+            till_ts,
+            reason: task.reason,
+        };
+        let blocker = env.dbx.begin().await.unwrap();
+        group_stats_recalculation_task::Entity::find_by_id(task_id)
+            .lock_exclusive()
+            .one(&blocker)
+            .await
+            .unwrap()
+            .unwrap();
+        let finalize_db = env.dbx.clone();
+        let finalizer = tokio::spawn(async move {
+            finalize_claimed_group_stats_tasks_with_retry(
+                &finalize_db,
+                &claimed,
+                None,
+            )
+            .await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+
+        let enqueues =
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                let message_ids = [message_id];
+                tokio::join!(
+                    enqueue_group_stats_recalculation_for_messages(
+                        &env.dbx,
+                        &message_ids,
+                        "concurrent enqueue one",
+                    ),
+                    enqueue_group_stats_recalculation_for_messages(
+                        &env.dbx,
+                        &message_ids,
+                        "concurrent enqueue two",
+                    ),
+                    enqueue_group_stats_recalculation_for_messages(
+                        &env.dbx,
+                        &message_ids,
+                        "concurrent enqueue three",
+                    ),
+                )
+            })
+            .await
+            .expect("enqueues must not wait for the finalizing row lock");
+        assert!(enqueues.0.unwrap());
+        assert!(enqueues.1.unwrap());
+        assert!(enqueues.2.unwrap());
+
+        blocker.rollback().await.unwrap();
+        finalizer.await.unwrap().unwrap();
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .filter(
+                    group_stats_recalculation_task::Column::CompletedAt
+                        .is_null(),
+                )
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            3
+        );
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn finalization_retries_lock_timeout_without_leaving_task_stuck() {
+        let env = cleanup().await.unwrap();
+        let message_ts = Utc::now().naive_utc() - Duration::days(3);
+        let group = mk_group_with_stats_message(
+            &env.dbx,
+            "stats-recalc-finalize-retry",
+            message_ts,
+        )
+        .await;
+        let since_ts = start_of_day(get_local_date(message_ts)).unwrap();
+        let till_ts = since_ts + Duration::days(2);
+        let task = group_stats_recalculation_task::ActiveModel {
+            group_master_key: Set(group.master_key.clone()),
+            since_ts: Set(since_ts),
+            till_ts: Set(till_ts),
+            started_at: Set(Some(Utc::now().naive_utc())),
+            reason: Set("retry finalization".to_string()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let task_id = task.id;
+        let claimed = ClaimedGroupStatsRecalculationTask {
+            ids: vec![task_id],
+            group_master_key: task.group_master_key,
+            since_ts,
+            till_ts,
+            reason: task.reason,
+        };
+        let blocker = env.dbx.begin().await.unwrap();
+        group_stats_recalculation_task::Entity::find_by_id(task_id)
+            .lock_exclusive()
+            .one(&blocker)
+            .await
+            .unwrap()
+            .unwrap();
+
+        let mut config = crate::config::read_config(Mode::Test).unwrap();
+        config.postgres_runtime = Some(PostgresRuntimeConfig {
+            statement_timeout_ms: POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT,
+            report_worker_statement_timeout_ms:
+                POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT,
+            lock_timeout_ms: 25,
+            idle_in_transaction_session_timeout_ms:
+                POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT,
+        });
+        let retry_db = crate::new_pg_runtime_pool_from_config(
+            &config,
+            crate::PgRuntimePoolRole::Bgworker,
+        )
+        .await
+        .unwrap();
+        let finalizer = tokio::spawn(async move {
+            finalize_claimed_group_stats_tasks_with_retry(
+                &retry_db,
+                &claimed,
+                Some(since_ts + Duration::days(1)),
+            )
+            .await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+        blocker.rollback().await.unwrap();
+
+        let retry_count =
+            tokio::time::timeout(std::time::Duration::from_secs(2), finalizer)
+                .await
+                .expect(
+                    "finalization must finish after the row lock is released",
+                )
+                .unwrap()
+                .unwrap();
+        assert!(retry_count >= 1);
+        let tasks = group_stats_recalculation_task::Entity::find()
+            .order_by_asc(group_stats_recalculation_task::Column::Id)
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(tasks.len(), 2);
+        assert!(tasks[0].completed_at.is_some());
+        assert_eq!(tasks[1].started_at, None);
+        assert_eq!(tasks[1].since_ts, since_ts + Duration::days(1));
+        assert_eq!(tasks[1].till_ts, till_ts);
     }
 
     fn ndt(

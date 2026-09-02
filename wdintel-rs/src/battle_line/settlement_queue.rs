@@ -803,19 +803,17 @@ async fn enqueue_stats_invalidations(
     item_ids: BTreeSet<i64>,
     reason: &str,
 ) {
-    for item_id in item_ids {
-        if let Err(error) =
-            crate::stats::enqueue_group_stats_recalculation_for_message(
-                dbx,
-                item_id,
-                format!("{reason} {item_id}"),
-            )
-            .await
-        {
-            warn!(
-                "Post-commit group stats invalidation failed for inbox message {item_id}: {error:#?}"
-            );
-        }
+    let item_ids = item_ids.into_iter().collect::<Vec<_>>();
+    if let Err(error) =
+        crate::stats::enqueue_group_stats_recalculation_for_messages(
+            dbx, &item_ids, reason,
+        )
+        .await
+    {
+        warn!(
+            "Post-commit group stats invalidation failed for {} inbox messages: {error:#?}",
+            item_ids.len()
+        );
     }
 }
 
@@ -1402,8 +1400,6 @@ returning id
     #[tokio::test]
     #[serial_test::serial]
     async fn settlement_update_commits_when_postcommit_stats_enqueue_fails() {
-        use crate::entities::group_stats_recalculation_task;
-
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let setup = env.dbx.begin().await.unwrap();
@@ -1412,20 +1408,12 @@ returning id
         let row_id = row.id;
         let item_id = row.item_id;
         setup.commit().await.unwrap();
-        crate::stats::enqueue_group_stats_recalculation_for_message(
-            &env.dbx,
-            item_id,
-            "block post-commit settlement stats enqueue".to_string(),
-        )
-        .await
-        .unwrap();
-
         let blocker = env.dbx.begin().await.unwrap();
-        group_stats_recalculation_task::Entity::find()
-            .lock_exclusive()
-            .one(&blocker)
+        blocker
+            .execute_unprepared(
+                "lock table group_stats_recalculation_task in access exclusive mode",
+            )
             .await
-            .unwrap()
             .unwrap();
 
         let update = env.dbx.begin().await.unwrap();
@@ -1460,31 +1448,20 @@ returning id
     #[tokio::test]
     #[serial_test::serial]
     async fn worker_releases_update_lock_before_blocked_stats_enqueue_2133() {
-        use crate::entities::group_stats_recalculation_task;
-
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
         let setup = env.dbx.begin().await.unwrap();
         let (row, _, _) =
             insert_settlement_stats_test_fixture(&setup).await.unwrap();
         let row_id = row.id;
-        let item_id = row.item_id;
         insert_active_test_battle_line(&setup).await.unwrap();
         setup.commit().await.unwrap();
-        crate::stats::enqueue_group_stats_recalculation_for_message(
-            &env.dbx,
-            item_id,
-            "block worker settlement stats enqueue".to_string(),
-        )
-        .await
-        .unwrap();
-
         let blocker = env.dbx.begin().await.unwrap();
-        group_stats_recalculation_task::Entity::find()
-            .lock_exclusive()
-            .one(&blocker)
+        blocker
+            .execute_unprepared(
+                "lock table group_stats_recalculation_task in access exclusive mode",
+            )
             .await
-            .unwrap()
             .unwrap();
 
         let worker_env = env.clone();
