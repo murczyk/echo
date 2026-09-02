@@ -143,7 +143,7 @@ vi.mock('@mui/material', () => ({
 
 vi.mock('@mui/icons-material/PlayArrow', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Pause', () => ({ default: () => <span /> }));
-vi.mock('@mui/icons-material/ArticleOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/Article', () => ({ default: () => <span /> }));
 
 vi.mock('../../attachment-preview/message-card-preview-config', () => ({
   getMessageCardAttachmentPreviewConfig: () => ({ disableRestoreFocus: false }),

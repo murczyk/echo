@@ -86,7 +86,7 @@ vi.mock('@mui/icons-material/Fullscreen', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/FullscreenExit', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Refresh', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Visibility', () => ({ default: () => <span /> }));
-vi.mock('@mui/icons-material/ArticleOutlined', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/Article', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Description', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/InfoOutlined', () => ({ default: () => <span /> }));
 

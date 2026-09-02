@@ -1,4 +1,4 @@
-import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
+import ArticleIcon from '@mui/icons-material/Article';
 import { Box, IconButton, TextField, Tooltip } from '@mui/material';
 import type { ReactNode } from 'react';
 
@@ -35,7 +35,7 @@ export function ReportTextPreviewAction({
           '&:hover': { color: active ? 'primary.dark' : 'text.primary' },
         }}
       >
-        <ArticleOutlinedIcon fontSize="small" />
+        <ArticleIcon fontSize="small" />
       </IconButton>
     </Tooltip>
   );
