@@ -1,7 +1,9 @@
 use super::types::*;
 use crate::config::SIGINT_SOURCE_RO_ID;
 use crate::entities::*;
-use crate::sigint::etalonka::types::{KnownCallsignRes, KnownCallsignShortRes};
+use crate::sigint::etalonka::types::{
+    CallsignQueryResult, KnownCallsignRes, KnownCallsignShortRes,
+};
 use crate::types::*;
 use sea_orm::*;
 use std::collections::{HashMap, HashSet};
@@ -384,33 +386,18 @@ pub async fn sync_callsign_additional_source_ids(
 pub fn match_known_callsigns(
     known_callsigns: Option<&Vec<KnownCallsignRes>>,
     callsign: &str,
-    unit_id: Option<i64>,
-    unit_name: &Option<String>,
+    network_unit: &CallsignQueryResult,
 ) -> Option<Vec<KnownCallsignShortRes>> {
     let known_callsigns = known_callsigns?;
 
-    // Collect all matching known_callsigns based on the same top level units
     let matched: Vec<KnownCallsignRes> = known_callsigns
         .iter()
-        .filter(|kc| {
-            kc.callsign == callsign
-                && unit_name
-                    .as_ref()
-                    .is_some_and(|u| kc.unit_name.ends_with(u))
+        .filter(|known_callsign| {
+            known_callsign.callsign == callsign
+                && callsign_units_share_lineage(network_unit, known_callsign)
         })
         .cloned()
         .collect();
-
-    // If no match found, fallback to Callsign + UnitId matching
-    let matched = if matched.is_empty() {
-        known_callsigns
-            .iter()
-            .filter(|kc| kc.callsign == callsign && Some(kc.unit_id) == unit_id)
-            .cloned()
-            .collect()
-    } else {
-        matched
-    };
 
     if matched.is_empty() {
         return None;
@@ -434,6 +421,130 @@ pub fn match_known_callsigns(
     )
 }
 
+struct CallsignUnitScope<'a> {
+    id: Option<i64>,
+    name: Option<&'a str>,
+    hierarchy: [Option<&'a str>; 14],
+}
+
+impl<'a> CallsignUnitScope<'a> {
+    fn from_network_unit(unit: &'a CallsignQueryResult) -> Self {
+        Self {
+            id: unit.unit_id,
+            name: unit.unit_name.as_deref(),
+            hierarchy: [
+                unit.army_region.as_deref(),
+                unit.military_district.as_deref(),
+                unit.army.as_deref(),
+                unit.corps.as_deref(),
+                unit.division.as_deref(),
+                unit.brigade.as_deref(),
+                unit.regiment.as_deref(),
+                unit.battalion.as_deref(),
+                unit.company.as_deref(),
+                unit.platoon.as_deref(),
+                unit.squad.as_deref(),
+                unit.section.as_deref(),
+                unit.team_or_crew.as_deref(),
+                unit.other.as_deref(),
+            ],
+        }
+    }
+
+    fn from_known_callsign(known_callsign: &'a KnownCallsignRes) -> Self {
+        Self {
+            id: Some(known_callsign.unit_id),
+            name: Some(&known_callsign.unit_name),
+            hierarchy: [
+                known_callsign.army_region.as_deref(),
+                known_callsign.military_district.as_deref(),
+                known_callsign.army.as_deref(),
+                known_callsign.corps.as_deref(),
+                known_callsign.division.as_deref(),
+                known_callsign.brigade.as_deref(),
+                known_callsign.regiment.as_deref(),
+                known_callsign.battalion.as_deref(),
+                known_callsign.company.as_deref(),
+                known_callsign.platoon.as_deref(),
+                known_callsign.squad.as_deref(),
+                known_callsign.section.as_deref(),
+                known_callsign.team_or_crew.as_deref(),
+                known_callsign.other.as_deref(),
+            ],
+        }
+    }
+}
+
+fn callsign_units_share_lineage(
+    network_unit: &CallsignQueryResult,
+    known_callsign: &KnownCallsignRes,
+) -> bool {
+    let network_unit = CallsignUnitScope::from_network_unit(network_unit);
+    let catalog_unit = CallsignUnitScope::from_known_callsign(known_callsign);
+
+    unit_identity_matches(&network_unit, &catalog_unit)
+        || unit_is_same_or_child(&network_unit, &catalog_unit)
+        || unit_is_same_or_child(&catalog_unit, &network_unit)
+}
+
+fn unit_identity_matches(
+    left: &CallsignUnitScope<'_>,
+    right: &CallsignUnitScope<'_>,
+) -> bool {
+    if left.id.is_some() && left.id == right.id {
+        return true;
+    }
+
+    match (
+        normalized_unit_value(left.name),
+        normalized_unit_value(right.name),
+    ) {
+        (Some(left), Some(right)) => left == right,
+        _ => false,
+    }
+}
+
+fn unit_is_same_or_child(
+    parent: &CallsignUnitScope<'_>,
+    child: &CallsignUnitScope<'_>,
+) -> bool {
+    let Some(parent_specificity) = unit_hierarchy_specificity(parent) else {
+        return false;
+    };
+    let Some(child_specificity) = unit_hierarchy_specificity(child) else {
+        return false;
+    };
+    if parent_specificity > child_specificity {
+        return false;
+    }
+
+    parent
+        .hierarchy
+        .iter()
+        .zip(&child.hierarchy)
+        .take(parent_specificity + 1)
+        .all(|(parent_value, child_value)| {
+            normalized_unit_value(*parent_value)
+                == normalized_unit_value(*child_value)
+        })
+}
+
+fn unit_hierarchy_specificity(unit: &CallsignUnitScope<'_>) -> Option<usize> {
+    unit.hierarchy
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, value)| normalized_unit_value(**value).is_some())
+        .map(|(level, _)| level)
+}
+
+fn normalized_unit_value(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_lowercase)
+}
+
 pub async fn find_callsign<'a, 'async_trait, C>(
     txn: &'a C,
     callsign_id: i64,
@@ -452,6 +563,82 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn known_callsign(id: i64, unit_name: &str) -> KnownCallsignRes {
+        KnownCallsignRes {
+            id,
+            callsign: "alpha".to_string(),
+            position: String::new(),
+            comment: String::new(),
+            full_name: String::new(),
+            unit_id: id,
+            unit_name: unit_name.to_string(),
+            army_region: None,
+            military_district: None,
+            army: None,
+            corps: None,
+            division: None,
+            brigade: None,
+            regiment: None,
+            battalion: None,
+            company: None,
+            platoon: None,
+            squad: None,
+            section: None,
+            team_or_crew: None,
+            other: None,
+            source_name: None,
+            created_at: Default::default(),
+        }
+    }
+
+    fn unit_with_lineage(
+        id: i64,
+        unit_name: &str,
+        battalion: Option<&str>,
+        company: Option<&str>,
+    ) -> CallsignQueryResult {
+        CallsignQueryResult {
+            unit_id: Some(id),
+            unit_name: Some(unit_name.to_string()),
+            army: Some("1 А".to_string()),
+            division: Some("42 мсд".to_string()),
+            regiment: Some("283 мсп".to_string()),
+            battalion: battalion.map(str::to_string),
+            company: company.map(str::to_string),
+            ..Default::default()
+        }
+    }
+
+    fn known_callsign_with_lineage(
+        id: i64,
+        unit_name: &str,
+        battalion: Option<&str>,
+        company: Option<&str>,
+    ) -> KnownCallsignRes {
+        let mut known_callsign = known_callsign(id, unit_name);
+        known_callsign.army = Some("1 А".to_string());
+        known_callsign.division = Some("42 мсд".to_string());
+        known_callsign.regiment = Some("283 мсп".to_string());
+        known_callsign.battalion = battalion.map(str::to_string);
+        known_callsign.company = company.map(str::to_string);
+        known_callsign
+    }
+
+    fn matched_callsign_ids(
+        network_unit: &CallsignQueryResult,
+        known_callsigns: &[KnownCallsignRes],
+    ) -> Vec<i64> {
+        match_known_callsigns(
+            Some(&known_callsigns.to_vec()),
+            "alpha",
+            network_unit,
+        )
+        .unwrap_or_default()
+        .into_iter()
+        .map(|known_callsign| known_callsign.id)
+        .collect()
+    }
 
     fn create_req() -> CreateCallsignReq {
         CreateCallsignReq {
@@ -483,6 +670,80 @@ mod tests {
             developing: false,
             radio_freq: None,
         }
+    }
+
+    #[test]
+    fn match_known_callsigns_includes_same_unit_and_direct_lineage() {
+        let network_unit = unit_with_lineage(
+            10,
+            "1 мсб 283 мсп 42 мсд 1 А",
+            Some("1 мсб"),
+            None,
+        );
+        let known_callsigns = vec![
+            known_callsign_with_lineage(
+                10,
+                "same unit",
+                Some("different value ignored for same id"),
+                None,
+            ),
+            known_callsign_with_lineage(20, "283 мсп 42 мсд 1 А", None, None),
+            known_callsign_with_lineage(
+                30,
+                "3 мср 1 мсб 283 мсп 42 мсд 1 А",
+                Some("1 мсб"),
+                Some("3 мср"),
+            ),
+        ];
+
+        assert_eq!(
+            matched_callsign_ids(&network_unit, &known_callsigns),
+            [10, 20, 30]
+        );
+    }
+
+    #[test]
+    fn match_known_callsigns_excludes_siblings_and_other_hierarchies() {
+        let network_unit = unit_with_lineage(
+            10,
+            "1 мсб 283 мсп 42 мсд 1 А",
+            Some("1 мсб"),
+            None,
+        );
+        let mut other_regiment = known_callsign_with_lineage(
+            30,
+            "1 мсб 423 мсп 42 мсд 1 А",
+            Some("1 мсб"),
+            None,
+        );
+        other_regiment.regiment = Some("423 мсп".to_string());
+        let known_callsigns = vec![
+            known_callsign_with_lineage(
+                20,
+                "2 мсб 283 мсп 42 мсд 1 А",
+                Some("2 мсб"),
+                None,
+            ),
+            other_regiment,
+        ];
+
+        assert!(
+            matched_callsign_ids(&network_unit, &known_callsigns).is_empty()
+        );
+    }
+
+    #[test]
+    fn match_known_callsigns_does_not_use_unit_name_suffixes() {
+        let network_unit = CallsignQueryResult {
+            unit_id: Some(10),
+            unit_name: Some("1 А".to_string()),
+            ..Default::default()
+        };
+        let known_callsigns = vec![known_callsign(20, "21 А")];
+
+        assert!(
+            matched_callsign_ids(&network_unit, &known_callsigns).is_empty()
+        );
     }
 
     #[test]

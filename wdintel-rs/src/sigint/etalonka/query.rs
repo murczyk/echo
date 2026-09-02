@@ -1242,9 +1242,20 @@ async fn find_known_callsigns(
         .column(sigint_callsign::Column::FullName)
         .column(sigint_callsign::Column::UnitId)
         .column_as(sigint_unit::Column::Name, "unit_name")
-        .column(sigint_unit::Column::Regiment)
-        .column(sigint_unit::Column::Division)
+        .column(sigint_unit::Column::ArmyRegion)
+        .column(sigint_unit::Column::MilitaryDistrict)
         .column(sigint_unit::Column::Army)
+        .column(sigint_unit::Column::Corps)
+        .column(sigint_unit::Column::Division)
+        .column(sigint_unit::Column::Brigade)
+        .column(sigint_unit::Column::Regiment)
+        .column(sigint_unit::Column::Battalion)
+        .column(sigint_unit::Column::Company)
+        .column(sigint_unit::Column::Platoon)
+        .column(sigint_unit::Column::Squad)
+        .column(sigint_unit::Column::Section)
+        .column(sigint_unit::Column::TeamOrCrew)
+        .column(sigint_unit::Column::Other)
         .column_as(source::Column::Name, "source_name")
         .column(sigint_callsign::Column::CreatedAt)
         .filter(sigint_callsign::Column::Deleted.eq(false))
@@ -1435,8 +1446,7 @@ async fn render_active_callsigns(
                 crate::sigint::callsign::bl::match_known_callsigns(
                     known_callsigns.get(&callsign),
                     &callsign,
-                    row.unit_id,
-                    &row.unit_name,
+                    row,
                 );
             CallsignRes {
                 callsign,
@@ -1822,9 +1832,20 @@ async fn build_callsign_query_results(
                     callsign: callsign.clone(),
                     unit_id: Some(unit.id),
                     unit_name: Some(unit.name.clone()),
-                    regiment: Some(unit.regiment.clone()),
-                    division: Some(unit.division.clone()),
+                    army_region: Some(unit.army_region.clone()),
+                    military_district: Some(unit.military_district.clone()),
                     army: Some(unit.army.clone()),
+                    corps: Some(unit.corps.clone()),
+                    division: Some(unit.division.clone()),
+                    brigade: Some(unit.brigade.clone()),
+                    regiment: Some(unit.regiment.clone()),
+                    battalion: Some(unit.battalion.clone()),
+                    company: Some(unit.company.clone()),
+                    platoon: Some(unit.platoon.clone()),
+                    squad: Some(unit.squad.clone()),
+                    section: Some(unit.section.clone()),
+                    team_or_crew: Some(unit.team_or_crew.clone()),
+                    other: Some(unit.other.clone()),
                 };
                 records.push(item);
             }
