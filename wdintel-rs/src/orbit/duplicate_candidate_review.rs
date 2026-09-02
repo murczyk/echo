@@ -61,7 +61,8 @@ struct MergeSelection {
     survivor_id: i64,
     reviewed_unit_to_delete: ReviewedUnitContents,
     reviewed_survivor: ReviewedUnitContents,
-    reviewed_shared_orbit_unit_ids: BTreeSet<Uuid>,
+    reviewed_unit_to_delete_orbit_unit_ids: BTreeSet<Uuid>,
+    reviewed_survivor_orbit_unit_ids: BTreeSet<Uuid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -432,9 +433,9 @@ fn review_manually_inner(
             tui::SigintDuplicatePairReviewDecision::MergeLeftIntoRight => {
                 let selection = merge_selection(
                     &projected_units,
+                    &projected_links_by_unit_id,
                     unit_ids.left_id,
                     unit_ids.right_id,
-                    shared_orbit_unit_ids,
                 )
                 .c(h!())?;
                 project_selection(
@@ -453,9 +454,9 @@ fn review_manually_inner(
             tui::SigintDuplicatePairReviewDecision::MergeRightIntoLeft => {
                 let selection = merge_selection(
                     &projected_units,
+                    &projected_links_by_unit_id,
                     unit_ids.right_id,
                     unit_ids.left_id,
-                    shared_orbit_unit_ids,
                 )
                 .c(h!())?;
                 project_selection(
@@ -482,16 +483,26 @@ fn review_manually_inner(
 
 fn merge_selection(
     units: &BTreeMap<i64, sigint_unit::Model>,
+    links_by_unit_id: &BTreeMap<
+        i64,
+        BTreeMap<Uuid, orbit_unit_sigint_unit::Model>,
+    >,
     unit_to_delete_id: i64,
     survivor_id: i64,
-    reviewed_shared_orbit_unit_ids: BTreeSet<Uuid>,
 ) -> anyhow::Result<MergeSelection> {
     Ok(MergeSelection {
         unit_to_delete_id,
         survivor_id,
         reviewed_unit_to_delete: units.get(&unit_to_delete_id).c(h!())?.into(),
         reviewed_survivor: units.get(&survivor_id).c(h!())?.into(),
-        reviewed_shared_orbit_unit_ids,
+        reviewed_unit_to_delete_orbit_unit_ids: projected_active_orbit_unit_ids(
+            links_by_unit_id,
+            unit_to_delete_id,
+        ),
+        reviewed_survivor_orbit_unit_ids: projected_active_orbit_unit_ids(
+            links_by_unit_id,
+            survivor_id,
+        ),
     })
 }
 
@@ -709,15 +720,26 @@ where
     {
         return Ok(false);
     };
-    let shared_orbit_unit_ids = active_shared_orbit_unit_ids(
-        db,
-        selection.unit_to_delete_id,
-        selection.survivor_id,
-    )
-    .await
-    .c(h!())?;
-    if shared_orbit_unit_ids.is_empty()
-        || shared_orbit_unit_ids != selection.reviewed_shared_orbit_unit_ids
+    let orbit_unit_ids_by_sigint_unit_id =
+        active_orbit_unit_ids_by_sigint_unit_id(
+            db,
+            selection.unit_to_delete_id,
+            selection.survivor_id,
+        )
+        .await
+        .c(h!())?;
+    let unit_to_delete_orbit_unit_ids = orbit_unit_ids_by_sigint_unit_id
+        .get(&selection.unit_to_delete_id)
+        .cloned()
+        .unwrap_or_default();
+    let survivor_orbit_unit_ids = orbit_unit_ids_by_sigint_unit_id
+        .get(&selection.survivor_id)
+        .cloned()
+        .unwrap_or_default();
+    if unit_to_delete_orbit_unit_ids.is_disjoint(&survivor_orbit_unit_ids)
+        || unit_to_delete_orbit_unit_ids
+            != selection.reviewed_unit_to_delete_orbit_unit_ids
+        || survivor_orbit_unit_ids != selection.reviewed_survivor_orbit_unit_ids
     {
         return Ok(false);
     }
@@ -767,11 +789,11 @@ where
         && ReviewedUnitContents::from(survivor) == selection.reviewed_survivor)
 }
 
-async fn active_shared_orbit_unit_ids<C>(
+async fn active_orbit_unit_ids_by_sigint_unit_id<C>(
     db: &C,
     first_sigint_unit_id: i64,
     second_sigint_unit_id: i64,
-) -> anyhow::Result<BTreeSet<Uuid>>
+) -> anyhow::Result<BTreeMap<i64, BTreeSet<Uuid>>>
 where
     C: ConnectionTrait,
 {
@@ -797,20 +819,7 @@ where
             .or_default()
             .insert(link.orbit_unit_id);
     }
-    let Some(first_orbit_unit_ids) =
-        orbit_unit_ids_by_sigint_unit_id.get(&first_sigint_unit_id)
-    else {
-        return Ok(BTreeSet::new());
-    };
-    let Some(second_orbit_unit_ids) =
-        orbit_unit_ids_by_sigint_unit_id.get(&second_sigint_unit_id)
-    else {
-        return Ok(BTreeSet::new());
-    };
-    Ok(first_orbit_unit_ids
-        .intersection(second_orbit_unit_ids)
-        .copied()
-        .collect())
+    Ok(orbit_unit_ids_by_sigint_unit_id)
 }
 
 #[cfg(test)]
