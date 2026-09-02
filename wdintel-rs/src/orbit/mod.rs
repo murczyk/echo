@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 mod dictionary;
+mod duplicate_candidate_review;
 mod duplicate_units;
 mod hierarchy;
 mod matching;
@@ -420,6 +421,9 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         Some(tui::StartAction::LinkUnits) => test_link::run(mode).await.c(h!()),
         Some(tui::StartAction::MergeUnitDuplicates) => {
             duplicate_units::run(mode, false).await.c(h!())
+        }
+        Some(tui::StartAction::ReviewSigintDuplicateCandidates) => {
+            duplicate_candidate_review::run(mode).await.c(h!())
         }
         Some(tui::StartAction::ResolveUnparsedUnits) => {
             unparsed_units::run(mode, false).await.c(h!())

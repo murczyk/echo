@@ -383,7 +383,7 @@ where
     .await
 }
 
-async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
+pub(crate) async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
     dbx: &C,
     login: &Uuid,
     change: &OrbitUnitHierarchyChange,
@@ -525,12 +525,34 @@ where
     let [orbit_unit] = orbit_units else {
         return Ok(false);
     };
-    let orbit_hierarchy =
-        match create_unit_req_from_orbit(dbx, orbit_unit, true).await {
-            Ok(req) => create_unit_req_hierarchy(req),
-            Err(AppError::BL { .. }) => return Ok(false),
-            Err(err) => return Err(err),
-        };
+    let Some(orbit_hierarchy) =
+        orbit_hierarchy_for_propagation(dbx, orbit_unit)
+            .await
+            .c(h!())?
+    else {
+        return Ok(false);
+    };
+    Ok(propagate_orbit_hierarchy(unit, &orbit_hierarchy))
+}
+
+pub(crate) async fn orbit_hierarchy_for_propagation<C>(
+    dbx: &C,
+    orbit_unit: &orbit_unit::Model,
+) -> Result<Option<[String; 14]>, AppError>
+where
+    C: ConnectionTrait,
+{
+    match create_unit_req_from_orbit(dbx, orbit_unit, true).await {
+        Ok(req) => Ok(Some(create_unit_req_hierarchy(req))),
+        Err(AppError::BL { .. }) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+pub(crate) fn propagate_orbit_hierarchy(
+    unit: &mut sigint_unit::Model,
+    orbit_hierarchy: &[String; 14],
+) -> bool {
     let update_name = super::unit_name_is_derived(unit);
     let mut hierarchy = owned_sigint_unit_hierarchy(unit);
     let mut updated = false;
@@ -554,7 +576,7 @@ where
     if updated {
         apply_owned_sigint_unit_hierarchy(unit, hierarchy, update_name);
     }
-    Ok(updated)
+    updated
 }
 
 fn lowest_standard_hierarchy_level(hierarchy: &[String; 14]) -> Option<usize> {
