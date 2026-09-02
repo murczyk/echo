@@ -4,6 +4,10 @@ import type { UppyFile } from '@uppy/core';
 import Tus from '@uppy/tus';
 
 import { MESSAGE_TUS_ENDPOINT } from '../message-tus-resume';
+import {
+  forgetMessageUploadFailure,
+  rememberMessageUploadFailure,
+} from './message-upload-fallback';
 
 // MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this client upload limit synchronized
 // Keep synchronized with `SIGINT_MESSAGE_MAX_ATTACHMENTS` and
@@ -66,6 +70,7 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
       endpoint: MESSAGE_TUS_ENDPOINT,
       chunkSize: 5 * 1024 * 1024,
       limit: 3,
+      overridePatchMethod: true,
       removeFingerprintOnSuccess: true,
     }),
   );
@@ -108,24 +113,40 @@ export function useMessageUppy(busy: boolean, occupiedAttachmentCount = 0) {
     const handleRestrictionFailed = (_file: unknown, error: Error) => {
       setAttachmentErrorMsg(translateAttachmentError(error.message));
     };
+    const handleUploadError = (
+      file: UppyFile<any, any> | undefined,
+      error: unknown,
+      response?: { status?: number },
+    ) => {
+      if (file) rememberMessageUploadFailure(uppy, file, error, response?.status);
+      updateFiles();
+    };
+    const handleUploadSuccess = (file: UppyFile<any, any> | undefined) => {
+      if (file) forgetMessageUploadFailure(uppy, file.id);
+      updateFiles();
+    };
+    const handleFileRemoved = (file: UppyFile<any, any>) => {
+      forgetMessageUploadFailure(uppy, file.id);
+      updateFilesAndClearError();
+    };
 
     uppy.on('file-added', updateFilesAndClearError);
-    uppy.on('file-removed', updateFilesAndClearError);
+    uppy.on('file-removed', handleFileRemoved);
     uppy.on('upload-start', updateFiles);
     uppy.on('upload-progress', updateFiles);
-    uppy.on('upload-success', updateFiles);
-    uppy.on('upload-error', updateFiles);
+    uppy.on('upload-success', handleUploadSuccess);
+    uppy.on('upload-error', handleUploadError);
     uppy.on('upload-pause', updateFiles);
     uppy.on('upload-retry', updateFiles);
     uppy.on('restriction-failed', handleRestrictionFailed);
     uppy.on('state-update', updateFiles);
     return () => {
       uppy.off('file-added', updateFilesAndClearError);
-      uppy.off('file-removed', updateFilesAndClearError);
+      uppy.off('file-removed', handleFileRemoved);
       uppy.off('upload-start', updateFiles);
       uppy.off('upload-progress', updateFiles);
-      uppy.off('upload-success', updateFiles);
-      uppy.off('upload-error', updateFiles);
+      uppy.off('upload-success', handleUploadSuccess);
+      uppy.off('upload-error', handleUploadError);
       uppy.off('upload-pause', updateFiles);
       uppy.off('upload-retry', updateFiles);
       uppy.off('restriction-failed', handleRestrictionFailed);

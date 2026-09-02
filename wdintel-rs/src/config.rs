@@ -343,6 +343,7 @@ pub const SIGINT_SIGNAL_TIMEOUT_MS: u64 = 1000;
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
 /// `RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES` in `MessageCardMedia.tsx`.
 pub const SIGINT_MESSAGE_MAX_ATTACHMENTS: usize = 20;
+pub const SIGINT_FILE_UPLOAD_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// MESSAGE_ATTACHMENT_LIMIT_SYNC: keep this archive-download limit synchronized
 /// with `SIGINT_MESSAGE_MAX_ATTACHMENTS`, frontend
 /// `MAX_MESSAGE_ATTACHMENTS` in `useMessageUppy.ts`, and
@@ -961,8 +962,24 @@ pub const FAILED_INBOX_UNIT_WORKER_BATCH_SIZE: u64 = 100;
 pub const FAILED_INBOX_UNIT_RETENTION_DAYS: i64 = 30;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_SIZE: u64 = 500;
 pub const FAILED_INBOX_UNIT_BACKFILL_BATCH_PAUSE_MS: u64 = 50;
-pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 3] =
-    ["нв", "н/в", "н.в."];
+pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_WORDS: [&str; 9] = [
+    "нв",
+    "н/в",
+    "н.в.",
+    "укх",
+    "р/м",
+    "радіомережа",
+    "мгц",
+    "dmr",
+    "унпп",
+];
+pub const FAILED_INBOX_UNIT_AUTO_ARCHIVE_PATTERNS: &[&str] = &[
+    r"(?:управління|оповіщення).*(?:мережа|радіо|укх|р/м|dmr|мгц)",
+    r"(?:мережа|радіо|укх|р/м|dmr|мгц).*(?:управління|оповіщення)",
+    r"(?:пости?|ппс).*(?:н\.?\s*п\.?|район|р-н)",
+    r"(?:н\.?\s*п\.?|район|р-н).*(?:пости?|ппс)",
+    r"^\s*(?:н\.?\s*п\.?|район|р-н)\s+[\p{L}\p{M}'’\- ]+\s*$",
+];
 pub const INBOX_ITEM_UNIT_SYNC_QUERY_BATCH_SIZE: usize = 20_000;
 pub const INBOX_ITEM_UNIT_SYNC_INSERT_BATCH_SIZE: usize = 5_000;
 pub const INBOX_ITEM_UNIT_REPROCESS_BATCH_SIZE: u64 = 500;
@@ -996,9 +1013,16 @@ pub const ORBIT_IMPORT_UNIT_ECHELON_FILE_NAME: &str =
     "orbit_unit_echelon.parquet";
 pub const ORBIT_MATCHING_SIGINT_NAME_BLACKLIST: &[&str] =
     &["ТерО", "ТрО", "(ат)"];
+pub const ORBIT_MATCHING_NON_IDENTITY_QUALIFIER_PATTERNS: &[&str] = &[
+    r"\(\s*на\s+(?:бмп|бтр|мт-лб)\s*\)",
+    r"\(\s*(?:кт|ш)\s*\)",
+    r"(?:^|\s)трв(?:\s|$)",
+    r"(?:^|\s)о?ув\s*\(\s*с\s*\)(?:\s|$)",
+    r"(?:^|\s)о?ув\s+(?:запад|север|сєвєр|белгород|бєлгород|харків)(?:\s|$)",
+];
 pub const UNIT_FORMATION_EQUIVALENT_NOTIONS: &[(&str, &[&str])] = &[
     ("оббпс", &["об бпс", "оббпс"]),
-    ("а", &["а", "зва", "оа"]),
+    ("а", &["а", "за", "зва", "оа"]),
     ("в", &["в", "b"]),
     ("оптадн", &["оптадн", "оптдн"]),
     ("габат", &["габат", "габатр"]),
@@ -1013,6 +1037,11 @@ pub const ORBIT_TEST_LINK_UNITS_MAX_RATING: u8 = 100;
 pub const ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY: u8 = 1;
 pub const ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE: usize = 20;
 pub const ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE: usize = 100;
+pub const ORBIT_UNIT_NAME_CLEANUP_ARMY_NAME_WORDS: &[&str] =
+    &["армія", "а", "зва", "та"];
+pub const ORBIT_UNIT_NAME_CLEANUP_CORPS_NAME_WORDS: &[&str] = &["корпус", "ак"];
+pub const ORBIT_DRY_RUN_REPORT_TOP_LIMIT: usize = 20;
 pub const SIGINT_INBOX_TUI_CHUNK_COUNT: usize = 10;
 pub const SIGINT_INBOX_TUI_BUCKET_GAP: usize = 2;
 pub const NETWORK_INBOX_OLD_WORKER_START_HOUR: u32 = 2;

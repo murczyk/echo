@@ -1415,7 +1415,7 @@ mod tests {
 
         let callsign_alpha =
             insert_test_callsign(&env.dbx, unit.id, "alpha", now, "").await;
-        let _callsign_bravo = insert_test_callsign(
+        let callsign_bravo = insert_test_callsign(
             &env.dbx,
             unit.id,
             "bravo",
@@ -1469,6 +1469,19 @@ mod tests {
             (now + Duration::minutes(120)).and_utc().timestamp_millis(),
         );
         assert!(callsigns[0].created_at > callsigns[1].created_at);
+
+        let callsigns_after_alpha = list_callsigns_impl(
+            &env.dbx,
+            &list_req(
+                Some(callsign_alpha.id),
+                None,
+                ListCallsignsSortBy::CallsignCreatedAtDesc,
+            ),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(callsigns_after_alpha[0].id, callsign_bravo.id);
     }
 
     #[serial]

@@ -67,8 +67,12 @@ export function parseTusMetadata(value: string | undefined): Record<string, stri
   );
 }
 
-export async function observeImageEditorSubmission(page: Page) {
+export async function observeImageEditorSubmission(
+  page: Page,
+  options: { failTusChunks?: boolean } = {},
+) {
   const uploads: Array<{ bytes: Buffer; metadata: Record<string, string> }> = [];
+  const fallbackUploads: Buffer[] = [];
   const submissions: unknown[] = [];
   let uploadMetadata: string | undefined;
   await page.route('**/api/sigint/file-upload/tus', async (route) => {
@@ -85,7 +89,14 @@ export async function observeImageEditorSubmission(page: Page) {
   });
   await page.route('**/api/sigint/file-upload/tus/editor-upload', async (route) => {
     const request = route.request();
-    if (request.method() === 'PATCH') {
+    if (options.failTusChunks) {
+      await route.fulfill({ status: 405 });
+      return;
+    }
+    if (
+      request.method() === 'POST' &&
+      request.headers()['x-http-method-override']?.toUpperCase() === 'PATCH'
+    ) {
       uploads.push({
         bytes: request.postDataBuffer() ?? Buffer.alloc(0),
         metadata: parseTusMetadata(uploadMetadata),
@@ -97,6 +108,16 @@ export async function observeImageEditorSubmission(page: Page) {
         'Tus-Resumable': '1.0.0',
         'Upload-Offset': String(request.postDataBuffer()?.length ?? 0),
       },
+    });
+  });
+  await page.route('**/api/sigint/file-upload/fallback', async (route) => {
+    fallbackUploads.push(route.request().postDataBuffer() ?? Buffer.alloc(0));
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        upload_url: '/api/sigint/file-upload/tus/fallback-upload',
+      }),
     });
   });
   await page.route('**/api/1.1/submit-direct', async (route) => {
@@ -113,7 +134,7 @@ export async function observeImageEditorSubmission(page: Page) {
       body: JSON.stringify({ signal_message_id: 702 }),
     });
   });
-  return { submissions, uploads };
+  return { submissions, uploads, fallbackUploads };
 }
 
 export async function openCreateMessageDrawer(

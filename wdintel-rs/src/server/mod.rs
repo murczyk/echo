@@ -1023,6 +1023,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::direct_submit::parse_direct_submit)
             .service(crate::sigint::file_upload::tus_base)
             .service(crate::sigint::file_upload::tus_file)
+            .service(crate::sigint::file_upload::fallback_upload)
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::users::list_logins)

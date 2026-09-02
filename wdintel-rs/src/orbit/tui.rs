@@ -75,6 +75,7 @@ pub enum StartAction {
     LinkUnits,
     MergeUnitDuplicates,
     ResolveUnparsedUnits,
+    FixUnitNames,
     ReconcileSigintUnits,
     Reimport,
 }
@@ -115,6 +116,13 @@ pub enum EnrichmentDecision {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum UnitNameReviewDecision {
+    Accept,
+    Skip,
+    Quit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Delete,
 }
@@ -142,7 +150,28 @@ pub fn prompt_start_action() -> Result<Option<StartAction>, AppError> {
 
 pub fn prompt_link_mode() -> Result<Option<LinkMode>, AppError> {
     let mut terminal = setup_terminal().c(h!())?;
-    let result = run_link_mode_menu(&mut terminal);
+    let result = run_mode_menu(
+        &mut terminal,
+        "Choose linking mode (↑/↓, Enter, Esc: quit)",
+        [
+            "Automatic: link unique closest exact-rating match with distance ≤ 10",
+            "Manual: review every potential match (no distance limit)",
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn prompt_unit_name_cleanup_mode() -> Result<Option<LinkMode>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_mode_menu(
+        &mut terminal,
+        "Choose cleanup mode (↑/↓, Enter, Esc: quit)",
+        [
+            "Automatic: apply every proposed SIGINT unit name change",
+            "Manual: review every proposed SIGINT unit name change",
+        ],
+    );
     restore_terminal(&mut terminal).c(h!())?;
     result
 }
@@ -367,6 +396,57 @@ pub(super) fn review_duplicate_unit_group(
     }
 }
 
+pub(super) fn review_unit_name_change(
+    terminal: &mut OrbitTerminal,
+    unit_id: i64,
+    current_name: &str,
+    proposed_name: &str,
+    removed_echelons: &[String],
+    current: usize,
+    total: usize,
+) -> Result<UnitNameReviewDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_unit_name_change_review(
+                    frame,
+                    unit_id,
+                    current_name,
+                    proposed_name,
+                    removed_echelons,
+                    current,
+                    total,
+                    scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) = unit_name_review_decision_for_key(key) {
+            if decision != UnitNameReviewDecision::Quit
+                || confirm_test_link_exit(terminal).c(h!())?
+            {
+                return Ok(decision);
+            }
+            continue;
+        }
+        match key.code {
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
 fn restore_stdout_state() -> io::Result<()> {
     let mut first_error = None;
     record_cleanup_error(&mut first_error, disable_raw_mode());
@@ -458,6 +538,7 @@ fn run_start_menu(
         StartAction::LinkUnits,
         StartAction::MergeUnitDuplicates,
         StartAction::ResolveUnparsedUnits,
+        StartAction::FixUnitNames,
         StartAction::ReconcileSigintUnits,
         StartAction::Reimport,
     ];
@@ -496,15 +577,17 @@ fn run_start_menu(
     }
 }
 
-fn run_link_mode_menu(
+fn run_mode_menu(
     terminal: &mut OrbitTerminal,
+    title: &str,
+    options: [&str; 2],
 ) -> Result<Option<LinkMode>, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
     let modes = [LinkMode::Automatic, LinkMode::Manual];
     let mut selected = 0;
     loop {
         terminal
-            .draw(|frame| draw_link_mode_menu(frame, selected))
+            .draw(|frame| draw_mode_menu(frame, selected, title, options))
             .c(h!())?;
         if !event::poll(poll).c(h!())? {
             continue;
@@ -683,6 +766,33 @@ fn test_link_exit_confirmation_for_key(key: KeyEvent) -> Option<bool> {
     match key.code {
         KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('q') => Some(true),
         KeyCode::Esc | KeyCode::Char('n') => Some(false),
+        _ => None,
+    }
+}
+
+fn unit_name_review_decision_for_key(
+    key: KeyEvent,
+) -> Option<UnitNameReviewDecision> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(UnitNameReviewDecision::Quit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Enter | KeyCode::Char('y') => {
+            Some(UnitNameReviewDecision::Accept)
+        }
+        KeyCode::Char('n') | KeyCode::Char('0') => {
+            Some(UnitNameReviewDecision::Skip)
+        }
+        KeyCode::Char('q') => Some(UnitNameReviewDecision::Quit),
         _ => None,
     }
 }
@@ -963,29 +1073,38 @@ fn test_link_name_diff_lines(
     sigint_name: &str,
     orbit_name: &str,
 ) -> [Line<'static>; 2] {
+    word_diff_lines("INPUT: ", " ORBIT: ", sigint_name, orbit_name)
+}
+
+fn word_diff_lines(
+    current_label: &str,
+    proposed_label: &str,
+    current: &str,
+    proposed: &str,
+) -> [Line<'static>; 2] {
     let label_style = Style::default().add_modifier(Modifier::BOLD);
     let matched_style = Style::default().fg(Color::Green);
     let mismatched_style = Style::default().fg(Color::Red);
-    let mut sigint_spans = vec![Span::styled("INPUT: ", label_style)];
-    let mut orbit_spans = vec![Span::styled(" ORBIT: ", label_style)];
-    for change in
-        TextDiff::from_words(sigint_name, orbit_name).iter_all_changes()
-    {
+    let mut current_spans =
+        vec![Span::styled(current_label.to_string(), label_style)];
+    let mut proposed_spans =
+        vec![Span::styled(proposed_label.to_string(), label_style)];
+    for change in TextDiff::from_words(current, proposed).iter_all_changes() {
         let value = change.value().to_string();
         match change.tag() {
             ChangeTag::Equal => {
-                sigint_spans.push(Span::styled(value.clone(), matched_style));
-                orbit_spans.push(Span::styled(value, matched_style));
+                current_spans.push(Span::styled(value.clone(), matched_style));
+                proposed_spans.push(Span::styled(value, matched_style));
             }
             ChangeTag::Delete => {
-                sigint_spans.push(Span::styled(value, mismatched_style));
+                current_spans.push(Span::styled(value, mismatched_style));
             }
             ChangeTag::Insert => {
-                orbit_spans.push(Span::styled(value, mismatched_style));
+                proposed_spans.push(Span::styled(value, mismatched_style));
             }
         }
     }
-    [Line::from(sigint_spans), Line::from(orbit_spans)]
+    [Line::from(current_spans), Line::from(proposed_spans)]
 }
 
 fn test_link_page_size(area: Rect) -> usize {
@@ -1010,6 +1129,7 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
         "Link ORBIT units to SIGINT units",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Resolve unparsed unit labels through ORBIT links",
+        "Remove invalid army/corps and higher echelons from SIGINT unit names",
         "Reconcile linked SIGINT units and merge exact duplicates",
         "Erase and reimport all ORBIT data",
     ];
@@ -1032,19 +1152,16 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-fn draw_link_mode_menu(frame: &mut Frame<'_>, selected: usize) {
+fn draw_mode_menu(
+    frame: &mut Frame<'_>,
+    selected: usize,
+    title: &str,
+    options: [&str; 2],
+) {
     let area = centered_area(frame, 70, 6);
-    let options = [
-        "Automatic: link unique closest exact-rating match with distance ≤ 10",
-        "Manual: review every potential match (no distance limit)",
-    ];
     let items = options.into_iter().map(ListItem::new);
     let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Choose linking mode (↑/↓, Enter, Esc: quit)"),
-        )
+        .block(Block::default().borders(Borders::ALL).title(title))
         .highlight_style(
             Style::default()
                 .fg(Color::Black)
@@ -1055,6 +1172,52 @@ fn draw_link_mode_menu(frame: &mut Frame<'_>, selected: usize) {
     let mut state = ListState::default();
     state.select(Some(selected));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_unit_name_change_review(
+    frame: &mut Frame<'_>,
+    unit_id: i64,
+    current_name: &str,
+    proposed_name: &str,
+    removed_echelons: &[String],
+    current: usize,
+    total: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    frame.render_widget(
+        Paragraph::new(format!("Progress: {current} / {total}")),
+        sections[0],
+    );
+    let [current_diff, proposed_diff] =
+        word_diff_lines("CURRENT: ", "PROPOSED: ", current_name, proposed_name);
+    let lines = vec![
+        Line::from(format!("SIGINT unit ID: {unit_id}")),
+        Line::from(format!(
+            "Removed name segments: {}",
+            removed_echelons.join(" / ")
+        )),
+        Line::default(),
+        current_diff,
+        proposed_diff,
+    ];
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("SIGINT unit name cleanup"),
+            )
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "Enter/y: apply | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        ),
+        sections[2],
+    );
 }
 
 fn draw_unchanged_archive_warning(
