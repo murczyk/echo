@@ -873,7 +873,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
                   isLifecycleCurrent() &&
                   live != null &&
                   (loadGenerationByFeedIdRef.current[feedId] ?? 0) === previewGeneration &&
-                  (unreadCursorByFeedIdRef.current[feedId]?.id ?? null) === previewCursorId &&
                   buildFeedCountSignature(live, freqs) === entry.requestSignature
                 );
               }),

@@ -38,6 +38,49 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
   afterEach(fixture.cleanup);
 
   // Regression: https://github.com/echoua/echo/pull/3331
+  it('keeps a captured preview current after auto-follow advances the unread cursor', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const arrived = minimalInboxMessage({ timestamp: 200, noHeadersBody: { body: 'arrived' } });
+    hoisted.fetchInboxMessages.mockImplementation(() => Promise.resolve(inboxRsp([[2, arrived]])));
+    hoisted.fetchInboxCount
+      .mockResolvedValueOnce({ quantity: 1, firstElementTs: null })
+      .mockResolvedValueOnce({ quantity: 0, firstElementTs: null });
+    let previewLoader: (() => Promise<unknown>) | undefined;
+    hoisted.registerDutyNotificationPreview.mockImplementation((_cycle, _feedId, loader) => {
+      previewLoader = loader;
+    });
+    hoisted.notifyDutyNewMessages.mockClear();
+
+    await act(async () => {
+      apiRef.current!.nearBottomByFeedIdRef.current['mf-0'] = true;
+      apiRef.current!.physicallyAtBottomByFeedIdRef.current['mf-0'] = true;
+      apiRef.current!.beginFollowTail('mf-0');
+    });
+    await startPoll();
+    await act(async () => flushMicrotasks());
+
+    expect(apiRef.current!.messageFeeds[0].items.map(([id]) => id)).toEqual([1, 2]);
+    expect(previewLoader).toBeDefined();
+    const preview = await previewLoader!();
+    expect(preview).toMatchObject({
+      kind: 'ready',
+      preview: { messageId: 2, body: 'arrived' },
+    });
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith(
+      'mf-0',
+      1,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
+
+    await startPoll();
+    expect(hoisted.fetchInboxCount).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 2 }),
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+  });
+
+  // Regression: https://github.com/echoua/echo/pull/3331
   it('loads a notification preview with the count request’s expanded frequency filters', async () => {
     window.history.replaceState(
       {},
