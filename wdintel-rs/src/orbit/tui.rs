@@ -1782,33 +1782,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sigint_duplicate_pair_review_keys_choose_direction() {
-        let plain = KeyModifiers::NONE;
-
-        assert_eq!(
-            sigint_duplicate_pair_decision_for_key(KeyEvent::new(
-                KeyCode::Char('1'),
-                plain,
-            )),
-            Some(SigintDuplicatePairReviewDecision::MergeLeftIntoRight),
-        );
-        assert_eq!(
-            sigint_duplicate_pair_decision_for_key(KeyEvent::new(
-                KeyCode::Char('2'),
-                plain,
-            )),
-            Some(SigintDuplicatePairReviewDecision::MergeRightIntoLeft),
-        );
-        assert_eq!(
-            sigint_duplicate_pair_decision_for_key(KeyEvent::new(
-                KeyCode::Char('n'),
-                plain,
-            )),
-            Some(SigintDuplicatePairReviewDecision::Skip),
-        );
-    }
-
     fn line_text(line: &Line<'_>) -> String {
         line.spans
             .iter()

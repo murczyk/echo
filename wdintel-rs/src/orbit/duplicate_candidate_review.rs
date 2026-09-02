@@ -13,6 +13,9 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 struct ReviewPlan {
     units: BTreeMap<i64, sigint_unit::Model>,
+    links_by_unit_id:
+        BTreeMap<i64, BTreeMap<Uuid, orbit_unit_sigint_unit::Model>>,
+    orbit_hierarchies: BTreeMap<Uuid, [String; 14]>,
     pairs: Vec<ReviewPair>,
 }
 
@@ -109,11 +112,13 @@ async fn load_review_plan(
         .c(h!())?;
     let units = load_duplicate_candidate_units(&transaction).await.c(h!())?;
     let candidate_ids = units.keys().copied().collect::<BTreeSet<_>>();
-    let links = load_active_candidate_links(&transaction, &candidate_ids)
+    let links = load_candidate_links(&transaction, &candidate_ids)
         .await
         .c(h!())?;
+    let orbit_hierarchies =
+        load_orbit_hierarchies(&transaction, &links).await.c(h!())?;
     transaction.commit().await.c(h!())?;
-    Ok(build_review_plan(units, &links))
+    Ok(build_review_plan(units, links, orbit_hierarchies))
 }
 
 async fn load_duplicate_candidate_units<C>(
@@ -134,7 +139,7 @@ where
         .collect())
 }
 
-async fn load_active_candidate_links<C>(
+async fn load_candidate_links<C>(
     db: &C,
     candidate_ids: &BTreeSet<i64>,
 ) -> anyhow::Result<Vec<orbit_unit_sigint_unit::Model>>
@@ -153,26 +158,67 @@ where
             orbit_unit_sigint_unit::Column::SigintUnitId
                 .is_in(candidate_ids.iter().copied()),
         )
-        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .all(db)
         .await
         .c(h!())
 }
 
+async fn load_orbit_hierarchies<C>(
+    db: &C,
+    links: &[orbit_unit_sigint_unit::Model],
+) -> anyhow::Result<BTreeMap<Uuid, [String; 14]>>
+where
+    C: ConnectionTrait,
+{
+    let orbit_unit_ids = links
+        .iter()
+        .map(|link| link.orbit_unit_id)
+        .collect::<BTreeSet<_>>();
+    if orbit_unit_ids.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let orbit_units = orbit_unit::Entity::find()
+        .filter(orbit_unit::Column::UnitId.is_in(orbit_unit_ids))
+        .all(db)
+        .await
+        .c(h!())?;
+    let mut orbit_hierarchies = BTreeMap::new();
+    for orbit_unit in orbit_units {
+        if let Some(hierarchy) =
+            crate::sigint::unit::orbit::orbit_hierarchy_for_propagation(
+                db,
+                &orbit_unit,
+            )
+            .await
+            .c(h!())?
+        {
+            orbit_hierarchies.insert(orbit_unit.unit_id, hierarchy);
+        }
+    }
+    Ok(orbit_hierarchies)
+}
+
 fn build_review_plan(
     units: BTreeMap<i64, sigint_unit::Model>,
-    links: &[orbit_unit_sigint_unit::Model],
+    links: Vec<orbit_unit_sigint_unit::Model>,
+    orbit_hierarchies: BTreeMap<Uuid, [String; 14]>,
 ) -> ReviewPlan {
     let candidate_ids = units.keys().copied().collect::<BTreeSet<_>>();
     let mut unit_ids_by_orbit_unit = BTreeMap::<Uuid, BTreeSet<i64>>::new();
+    let mut links_by_unit_id =
+        BTreeMap::<i64, BTreeMap<Uuid, orbit_unit_sigint_unit::Model>>::new();
     for link in links {
-        if candidate_ids.contains(&link.sigint_unit_id) {
+        if candidate_ids.contains(&link.sigint_unit_id) && !link.is_suppressed {
             unit_ids_by_orbit_unit
                 .entry(link.orbit_unit_id)
                 .or_default()
                 .insert(link.sigint_unit_id);
         }
+        links_by_unit_id
+            .entry(link.sigint_unit_id)
+            .or_default()
+            .insert(link.orbit_unit_id, link);
     }
 
     let mut shared_orbit_unit_ids_by_pair =
@@ -194,7 +240,12 @@ fn build_review_plan(
         })
         .collect();
 
-    ReviewPlan { units, pairs }
+    ReviewPlan {
+        units,
+        links_by_unit_id,
+        orbit_hierarchies,
+        pairs,
+    }
 }
 
 fn unit_pairs(unit_ids: &BTreeSet<i64>) -> Vec<UnitPairIds> {
@@ -227,6 +278,7 @@ fn review_manually_inner(
     let mut selections = Vec::new();
     let mut tracker = ReviewPairTracker::default();
     let mut projected_units = plan.units.clone();
+    let mut projected_links_by_unit_id = plan.links_by_unit_id.clone();
     let mut displayed = 0;
     for source_pair in &plan.pairs {
         let Some(unit_ids) = tracker.next_pair(source_pair.unit_ids) else {
@@ -252,7 +304,13 @@ fn review_manually_inner(
                     unit_to_delete_id: unit_ids.left_id,
                     survivor_id: unit_ids.right_id,
                 };
-                project_selection(&mut projected_units, &selection).c(h!())?;
+                project_selection(
+                    &mut projected_units,
+                    &mut projected_links_by_unit_id,
+                    &plan.orbit_hierarchies,
+                    &selection,
+                )
+                .c(h!())?;
                 tracker.record_merge(&selection);
                 selections.push(selection);
             }
@@ -261,7 +319,13 @@ fn review_manually_inner(
                     unit_to_delete_id: unit_ids.right_id,
                     survivor_id: unit_ids.left_id,
                 };
-                project_selection(&mut projected_units, &selection).c(h!())?;
+                project_selection(
+                    &mut projected_units,
+                    &mut projected_links_by_unit_id,
+                    &plan.orbit_hierarchies,
+                    &selection,
+                )
+                .c(h!())?;
                 tracker.record_merge(&selection);
                 selections.push(selection);
             }
@@ -288,6 +352,11 @@ fn review_pair(
 
 fn project_selection(
     units: &mut BTreeMap<i64, sigint_unit::Model>,
+    links_by_unit_id: &mut BTreeMap<
+        i64,
+        BTreeMap<Uuid, orbit_unit_sigint_unit::Model>,
+    >,
+    orbit_hierarchies: &BTreeMap<Uuid, [String; 14]>,
     selection: &MergeSelection,
 ) -> anyhow::Result<()> {
     let unit_to_delete =
@@ -295,7 +364,48 @@ fn project_selection(
     let survivor = units.get_mut(&selection.survivor_id).c(h!())?;
     *survivor =
         crate::sigint::unit::project_merged_unit(survivor, &unit_to_delete);
+    project_orbit_links(links_by_unit_id, selection);
+    let active_orbit_unit_ids = links_by_unit_id
+        .get(&selection.survivor_id)
+        .into_iter()
+        .flat_map(BTreeMap::values)
+        .filter(|link| !link.is_suppressed)
+        .map(|link| link.orbit_unit_id)
+        .collect::<Vec<_>>();
+    if let [orbit_unit_id] = active_orbit_unit_ids.as_slice() {
+        if let Some(orbit_hierarchy) = orbit_hierarchies.get(orbit_unit_id) {
+            crate::sigint::unit::orbit::propagate_orbit_hierarchy(
+                survivor,
+                orbit_hierarchy,
+            );
+        }
+    }
     Ok(())
+}
+
+fn project_orbit_links(
+    links_by_unit_id: &mut BTreeMap<
+        i64,
+        BTreeMap<Uuid, orbit_unit_sigint_unit::Model>,
+    >,
+    selection: &MergeSelection,
+) {
+    let links = links_by_unit_id
+        .remove(&selection.unit_to_delete_id)
+        .unwrap_or_default();
+    let survivor_links =
+        links_by_unit_id.entry(selection.survivor_id).or_default();
+    for (_, mut link) in links {
+        let existing_link = survivor_links.get(&link.orbit_unit_id);
+        let is_manual =
+            link.is_manual || existing_link.is_some_and(|link| link.is_manual);
+        link.sigint_unit_id = selection.survivor_id;
+        link.is_manual = is_manual;
+        link.is_suppressed = !is_manual
+            && (link.is_suppressed
+                || existing_link.is_some_and(|link| link.is_suppressed));
+        survivor_links.insert(link.orbit_unit_id, link);
+    }
 }
 
 fn review_unit(unit: &sigint_unit::Model) -> tui::SigintDuplicateReviewUnit {
