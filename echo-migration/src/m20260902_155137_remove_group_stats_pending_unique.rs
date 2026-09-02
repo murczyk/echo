@@ -1,5 +1,11 @@
 use sea_orm_migration::prelude::*;
 
+macro_rules! h {
+    () => {
+        concat!("at ", file!(), " line ", line!(), " column ", column!())
+    };
+}
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -18,7 +24,8 @@ impl MigrationTrait for Migration {
                   and started_at is not null;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 
@@ -58,7 +65,8 @@ impl MigrationTrait for Migration {
                     where completed_at is null and started_at is null;
                 "#,
             )
-            .await?;
+            .await
+            .map_err(|error| DbErr::Migration(format!("{}: {error}", h!())))?;
         Ok(())
     }
 }

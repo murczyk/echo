@@ -1281,16 +1281,16 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
             .context(h!())?;
         affected_inbox_item_ids.insert(inbox_item_id);
     }
-    transaction.commit().await.context(h!())?;
     let affected_inbox_item_ids =
         affected_inbox_item_ids.into_iter().collect::<Vec<_>>();
     crate::stats::enqueue_group_stats_recalculation_for_messages(
-        db,
+        &transaction,
         &affected_inbox_item_ids,
         "resolved pending units for inbox messages",
     )
     .await
     .context(h!())?;
+    transaction.commit().await.context(h!())?;
     Ok(())
 }
 
@@ -2796,7 +2796,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn verification_worker_enqueues_stats_after_committing_batch() {
+    async fn verification_worker_rolls_back_when_stats_enqueue_fails() {
         use crate::entities::{
             group_stats_recalculation_task, signal_group, signal_message_group,
         };
@@ -2849,6 +2849,22 @@ mod tests {
         .await
         .unwrap();
 
+        let mut config = crate::config::read_config(crate::Mode::Test).unwrap();
+        config.postgres_runtime = Some(crate::config::PostgresRuntimeConfig {
+            statement_timeout_ms:
+                crate::config::POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT,
+            report_worker_statement_timeout_ms:
+                crate::config::POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT,
+            lock_timeout_ms: 25,
+            idle_in_transaction_session_timeout_ms:
+                crate::config::POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT,
+        });
+        let worker_db = crate::new_pg_runtime_pool_from_config(
+            &config,
+            crate::PgRuntimePoolRole::Bgworker,
+        )
+        .await
+        .unwrap();
         let blocker = env.dbx.begin().await.unwrap();
         blocker
             .execute_unprepared(
@@ -2856,37 +2872,27 @@ mod tests {
             )
             .await
             .unwrap();
-        let worker_db = env.dbx.clone();
-        let worker = tokio::spawn(async move {
-            run_failed_inbox_unit_worker_once(&worker_db).await
-        });
-        tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            loop {
-                if sigint_inbox_item_failed_unit_label::Entity::find()
-                    .filter(
-                        sigint_inbox_item_failed_unit_label::Column::InboxItemId
-                            .eq(inbox_item.id),
-                    )
-                    .one(&env.dbx)
-                    .await
-                    .unwrap()
-                    .is_none()
-                {
-                    break;
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("verified failure deletion must commit before stats enqueue");
-        assert!(!worker.is_finished());
 
-        blocker.rollback().await.unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(2), worker)
+        assert!(run_failed_inbox_unit_worker_once(&worker_db).await.is_err());
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(inbox_item.id),
+            )
+            .one(&env.dbx)
             .await
             .unwrap()
-            .unwrap()
-            .unwrap();
+            .is_some());
+
+        blocker.rollback().await.unwrap();
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        run_failed_inbox_unit_worker_once(&worker_db).await.unwrap();
         assert_eq!(
             group_stats_recalculation_task::Entity::find()
                 .count(&env.dbx)
@@ -2894,6 +2900,15 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(inbox_item.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
