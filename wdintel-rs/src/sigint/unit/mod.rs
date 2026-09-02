@@ -2246,64 +2246,78 @@ async fn update_original_unit<C>(
 where
     C: ConnectionTrait,
 {
-    let mut unit = unit_original.clone().into_active_model();
-    if unit_name_is_derived(&unit_original) {
-        unit.name = Set(merged_unit_name(&unit_original, unit_to_merge));
+    let projected = project_merged_unit(&unit_original, unit_to_merge);
+    let mut unit = unit_original.into_active_model();
+    unit.name.set_if_not_equals(projected.name);
+    unit.other.set_if_not_equals(projected.other);
+    unit.team_or_crew.set_if_not_equals(projected.team_or_crew);
+    unit.section.set_if_not_equals(projected.section);
+    unit.squad.set_if_not_equals(projected.squad);
+    unit.platoon.set_if_not_equals(projected.platoon);
+    unit.company.set_if_not_equals(projected.company);
+    unit.battalion.set_if_not_equals(projected.battalion);
+    unit.regiment.set_if_not_equals(projected.regiment);
+    unit.brigade.set_if_not_equals(projected.brigade);
+    unit.division.set_if_not_equals(projected.division);
+    unit.corps.set_if_not_equals(projected.corps);
+    unit.army.set_if_not_equals(projected.army);
+    unit.military_district
+        .set_if_not_equals(projected.military_district);
+    unit.army_region.set_if_not_equals(projected.army_region);
+    unit.comment.set_if_not_equals(projected.comment);
+    unit.orbit_note.set_if_not_equals(projected.orbit_note);
+    unit.deleted.set_if_not_equals(projected.deleted);
+
+    let unit = unit.update(dbx).await.context(h!())?;
+    unit_after_insert_update(dbx, unit.id).await.context(h!())?;
+    Ok(unit)
+}
+
+pub(crate) fn project_merged_unit(
+    unit_original: &sigint_unit::Model,
+    unit_to_merge: &sigint_unit::Model,
+) -> sigint_unit::Model {
+    let mut unit = unit_original.clone();
+    if unit_name_is_derived(unit_original) {
+        unit.name = merged_unit_name(unit_original, unit_to_merge);
     }
 
-    if unit_original.other.is_empty() && !unit_to_merge.other.is_empty() {
-        unit.other = Set(unit_to_merge.other.clone());
-    }
-    if unit_original.team_or_crew.is_empty()
-        && !unit_to_merge.team_or_crew.is_empty()
-    {
-        unit.team_or_crew = Set(unit_to_merge.team_or_crew.clone());
-    }
-    if unit_original.section.is_empty() && !unit_to_merge.section.is_empty() {
-        unit.section = Set(unit_to_merge.section.clone());
-    }
-    if unit_original.squad.is_empty() && !unit_to_merge.squad.is_empty() {
-        unit.squad = Set(unit_to_merge.squad.clone());
-    }
-    if unit_original.platoon.is_empty() && !unit_to_merge.platoon.is_empty() {
-        unit.platoon = Set(unit_to_merge.platoon.clone());
-    }
-    if unit_original.company.is_empty() && !unit_to_merge.company.is_empty() {
-        unit.company = Set(unit_to_merge.company.clone());
-    }
-    if unit_original.regiment.is_empty() && !unit_to_merge.regiment.is_empty() {
-        unit.regiment = Set(unit_to_merge.regiment.clone());
-    }
-    if unit_original.battalion.is_empty() && !unit_to_merge.battalion.is_empty()
-    {
-        unit.battalion = Set(unit_to_merge.battalion.clone());
-    }
-    if unit_original.brigade.is_empty() && !unit_to_merge.brigade.is_empty() {
-        unit.brigade = Set(unit_to_merge.brigade.clone());
-    }
-    if unit_original.division.is_empty() && !unit_to_merge.division.is_empty() {
-        unit.division = Set(unit_to_merge.division.clone());
-    }
-    if unit_original.corps.is_empty() && !unit_to_merge.corps.is_empty() {
-        unit.corps = Set(unit_to_merge.corps.clone());
-    }
-    if unit_original.army.is_empty() && !unit_to_merge.army.is_empty() {
-        unit.army = Set(unit_to_merge.army.clone());
-    }
-    if unit_original.military_district.is_empty()
-        && !unit_to_merge.military_district.is_empty()
-    {
-        unit.military_district = Set(unit_to_merge.military_district.clone());
-    }
-    if unit_original.army_region.is_empty()
-        && !unit_to_merge.army_region.is_empty()
-    {
-        unit.army_region = Set(unit_to_merge.army_region.clone());
-    }
-    if unit_original.comment.is_empty() && !unit_to_merge.comment.is_empty() {
-        unit.comment = Set(unit_to_merge.comment.clone());
-    }
-    if unit_original
+    unit.other =
+        merged_unit_value(&unit.other, &unit_to_merge.other).to_string();
+    unit.team_or_crew =
+        merged_unit_value(&unit.team_or_crew, &unit_to_merge.team_or_crew)
+            .to_string();
+    unit.section =
+        merged_unit_value(&unit.section, &unit_to_merge.section).to_string();
+    unit.squad =
+        merged_unit_value(&unit.squad, &unit_to_merge.squad).to_string();
+    unit.platoon =
+        merged_unit_value(&unit.platoon, &unit_to_merge.platoon).to_string();
+    unit.company =
+        merged_unit_value(&unit.company, &unit_to_merge.company).to_string();
+    unit.battalion =
+        merged_unit_value(&unit.battalion, &unit_to_merge.battalion)
+            .to_string();
+    unit.regiment =
+        merged_unit_value(&unit.regiment, &unit_to_merge.regiment).to_string();
+    unit.brigade =
+        merged_unit_value(&unit.brigade, &unit_to_merge.brigade).to_string();
+    unit.division =
+        merged_unit_value(&unit.division, &unit_to_merge.division).to_string();
+    unit.corps =
+        merged_unit_value(&unit.corps, &unit_to_merge.corps).to_string();
+    unit.army = merged_unit_value(&unit.army, &unit_to_merge.army).to_string();
+    unit.military_district = merged_unit_value(
+        &unit.military_district,
+        &unit_to_merge.military_district,
+    )
+    .to_string();
+    unit.army_region =
+        merged_unit_value(&unit.army_region, &unit_to_merge.army_region)
+            .to_string();
+    unit.comment =
+        merged_unit_value(&unit.comment, &unit_to_merge.comment).to_string();
+    if unit
         .orbit_note
         .as_ref()
         .is_none_or(|note| note.trim().is_empty())
@@ -2312,15 +2326,12 @@ where
             .as_ref()
             .is_some_and(|note| !note.trim().is_empty())
     {
-        unit.orbit_note = Set(unit_to_merge.orbit_note.clone());
+        unit.orbit_note.clone_from(&unit_to_merge.orbit_note);
     }
-    if unit_original.deleted && !unit_to_merge.deleted {
-        unit.deleted = Set(false);
+    if unit.deleted && !unit_to_merge.deleted {
+        unit.deleted = false;
     }
-
-    let unit = unit.update(dbx).await.context(h!())?;
-    unit_after_insert_update(dbx, unit.id).await.context(h!())?;
-    Ok(unit)
+    unit
 }
 
 fn merged_unit_name(

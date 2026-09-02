@@ -226,15 +226,19 @@ fn review_manually_inner(
 ) -> anyhow::Result<Vec<MergeSelection>> {
     let mut selections = Vec::new();
     let mut tracker = ReviewPairTracker::default();
+    let mut projected_units = plan.units.clone();
     let mut displayed = 0;
     for source_pair in &plan.pairs {
         let Some(unit_ids) = tracker.next_pair(source_pair.unit_ids) else {
             continue;
         };
         displayed += 1;
-        let pair =
-            review_pair(plan, unit_ids, &source_pair.shared_orbit_unit_ids)
-                .c(h!())?;
+        let pair = review_pair(
+            &projected_units,
+            unit_ids,
+            &source_pair.shared_orbit_unit_ids,
+        )
+        .c(h!())?;
         match tui::review_sigint_duplicate_pair(
             terminal,
             &pair,
@@ -248,6 +252,7 @@ fn review_manually_inner(
                     unit_to_delete_id: unit_ids.left_id,
                     survivor_id: unit_ids.right_id,
                 };
+                project_selection(&mut projected_units, &selection).c(h!())?;
                 tracker.record_merge(&selection);
                 selections.push(selection);
             }
@@ -256,6 +261,7 @@ fn review_manually_inner(
                     unit_to_delete_id: unit_ids.right_id,
                     survivor_id: unit_ids.left_id,
                 };
+                project_selection(&mut projected_units, &selection).c(h!())?;
                 tracker.record_merge(&selection);
                 selections.push(selection);
             }
@@ -269,15 +275,27 @@ fn review_manually_inner(
 }
 
 fn review_pair(
-    plan: &ReviewPlan,
+    units: &BTreeMap<i64, sigint_unit::Model>,
     unit_ids: UnitPairIds,
     shared_orbit_unit_ids: &BTreeSet<Uuid>,
 ) -> anyhow::Result<tui::SigintDuplicateReviewPair> {
     Ok(tui::SigintDuplicateReviewPair {
-        left: review_unit(plan.units.get(&unit_ids.left_id).c(h!())?),
-        right: review_unit(plan.units.get(&unit_ids.right_id).c(h!())?),
+        left: review_unit(units.get(&unit_ids.left_id).c(h!())?),
+        right: review_unit(units.get(&unit_ids.right_id).c(h!())?),
         shared_orbit_unit_ids: shared_orbit_unit_ids.iter().copied().collect(),
     })
+}
+
+fn project_selection(
+    units: &mut BTreeMap<i64, sigint_unit::Model>,
+    selection: &MergeSelection,
+) -> anyhow::Result<()> {
+    let unit_to_delete =
+        units.get(&selection.unit_to_delete_id).cloned().c(h!())?;
+    let survivor = units.get_mut(&selection.survivor_id).c(h!())?;
+    *survivor =
+        crate::sigint::unit::project_merged_unit(survivor, &unit_to_delete);
+    Ok(())
 }
 
 fn review_unit(unit: &sigint_unit::Model) -> tui::SigintDuplicateReviewUnit {

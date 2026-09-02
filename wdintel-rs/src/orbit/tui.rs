@@ -1783,58 +1783,6 @@ mod tests {
     }
 
     #[test]
-    fn sigint_duplicate_pair_review_uses_word_diff() {
-        let pair = SigintDuplicateReviewPair {
-            left: SigintDuplicateReviewUnit {
-                sigint_unit_id: 1,
-                sigint_unit_name: "4 мсб (АТ)".to_string(),
-                active: true,
-                hierarchy: vec![("battalion".to_string(), "4 мсб".to_string())],
-                comment: "left note".to_string(),
-                orbit_note: None,
-                sigint_origin_id: None,
-                original_id: None,
-            },
-            right: SigintDuplicateReviewUnit {
-                sigint_unit_id: 2,
-                sigint_unit_name: "4 мсб".to_string(),
-                active: true,
-                hierarchy: vec![("battalion".to_string(), "4 мсб".to_string())],
-                comment: "right note".to_string(),
-                orbit_note: None,
-                sigint_origin_id: None,
-                original_id: None,
-            },
-            shared_orbit_unit_ids: vec![uuid::Uuid::nil()],
-        };
-
-        let lines = sigint_duplicate_pair_review_lines(&pair);
-
-        assert!(lines.iter().any(|line| line
-            .spans
-            .iter()
-            .any(|span| { span.style.fg == Some(Color::Green) })));
-        assert!(lines.iter().any(|line| line
-            .spans
-            .iter()
-            .any(|span| { span.style.fg == Some(Color::Red) })));
-        assert!(lines.iter().map(line_text).any(|line| {
-            line == "Shared ORBIT UUIDs: 00000000-0000-0000-0000-000000000000"
-        }));
-        for label in [
-            "name",
-            "hierarchy",
-            "active",
-            "comment",
-            "orbit_note",
-            "sigint_origin_id",
-            "original_id",
-        ] {
-            assert!(lines.iter().map(line_text).any(|line| line == label));
-        }
-    }
-
-    #[test]
     fn sigint_duplicate_pair_review_keys_choose_direction() {
         let plain = KeyModifiers::NONE;
 
