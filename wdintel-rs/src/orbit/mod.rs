@@ -172,16 +172,59 @@ pub(crate) async fn reevaluate_sigint_unit_deduplicate_candidate<C>(
 where
     C: ConnectionTrait,
 {
-    sigint_unit::Entity::update_many()
-        .col_expr(
-            sigint_unit::Column::IsDeduplicateCandidate,
-            sea_orm::sea_query::Expr::value(Option::<bool>::None),
-        )
-        .filter(sigint_unit::Column::Id.eq(sigint_unit_id))
-        .exec(db)
-        .await
-        .c(h!())?;
-    reconcile_sigint_unit_deduplicate_candidates(db).await
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        r#"
+            with affected_sigint_units as materialized (
+                select $1::bigint as id
+                union
+                select peer_link.sigint_unit_id
+                from orbit_unit_sigint_unit changed_link
+                inner join orbit_unit changed_orbit_unit
+                    on changed_orbit_unit.unit_id = changed_link.orbit_unit_id
+                inner join orbit_unit_sigint_unit peer_link
+                    on peer_link.orbit_unit_id = changed_link.orbit_unit_id
+                inner join sigint_unit peer_unit
+                    on peer_unit.id = peer_link.sigint_unit_id
+                where changed_link.sigint_unit_id = $1
+                  and changed_link.is_suppressed = false
+                  and changed_orbit_unit.deleted = false
+                  and peer_link.is_suppressed = false
+                  and peer_unit.deleted = false
+            ),
+            candidate_values as (
+                select
+                    affected.id,
+                    exists (
+                        select 1
+                        from orbit_unit_sigint_unit candidate_link
+                        inner join orbit_unit candidate_orbit_unit
+                            on candidate_orbit_unit.unit_id = candidate_link.orbit_unit_id
+                        inner join orbit_unit_sigint_unit duplicate_link
+                            on duplicate_link.orbit_unit_id = candidate_link.orbit_unit_id
+                           and duplicate_link.sigint_unit_id <> candidate_link.sigint_unit_id
+                        inner join sigint_unit duplicate_unit
+                            on duplicate_unit.id = duplicate_link.sigint_unit_id
+                        where candidate_link.sigint_unit_id = affected.id
+                          and candidate_link.is_suppressed = false
+                          and candidate_orbit_unit.deleted = false
+                          and duplicate_link.is_suppressed = false
+                          and duplicate_unit.deleted = false
+                    ) as is_candidate
+                from affected_sigint_units affected
+            )
+            update sigint_unit unit
+            set is_deduplicate_candidate = candidate.is_candidate
+            from candidate_values candidate
+            where unit.id = candidate.id
+              and unit.is_deduplicate_candidate
+                  is distinct from candidate.is_candidate
+        "#,
+        [sigint_unit_id.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
 }
 
 #[derive(Debug, Clone)]

@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260902_131822_signal_message_group_access_index": {
+      "changes": []
+    },
     "echo:m20260901_130526_add_callsign_changelog_created_at_index": {
       "changes": []
     },
