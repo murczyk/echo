@@ -13,7 +13,7 @@ import {
   useAudioTranscriptionPreferences,
 } from './MessageCardAudioTranscription';
 
-const AUDIO_PLAYER_MIN_HEIGHT_PX = 48;
+const AUDIO_PLAYER_MIN_HEIGHT_PX = 40;
 const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
@@ -259,20 +259,19 @@ export function MessageMediaAudioPlayer({
 
   return (
     <div className={`w-full min-w-0${showTranscription ? ' audio-transcription-layout' : ''}`}>
-      <div className="audio-player-row flex w-full min-w-0 items-stretch gap-2">
+      <div className="audio-player-row message-card-audio-row flex w-full min-w-0 items-stretch gap-2">
         <div
           ref={hostRef}
-          className="relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1"
+          className="message-card-audio-host relative z-0 flex w-full min-w-0 items-stretch overflow-hidden"
           data-audio-player-host
           data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
           data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
           data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
         />
+      </div>
+      <div className="mt-1 flex w-full items-center">
         <Tooltip title={downloadLabel} enterDelay={400}>
-          <MessageCardDisabledControlCursorWrapper
-            className="self-stretch items-center"
-            disabled={downloading}
-          >
+          <MessageCardDisabledControlCursorWrapper className="items-center" disabled={downloading}>
             <Button
               component="a"
               size="small"

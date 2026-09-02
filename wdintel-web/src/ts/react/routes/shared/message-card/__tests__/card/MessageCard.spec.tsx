@@ -2696,12 +2696,96 @@ describe('MessageCard', () => {
     expect(players).toHaveLength(2);
     const audioHost = view.container.querySelector('[data-audio-player-host]');
     expect(audioHost?.tagName).toBe('DIV');
-    expect(audioHost?.className).toBe(
-      'relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1',
-    );
-    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('48');
+    expect(audioHost?.classList).toContain('message-card-audio-host');
+    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('40');
     expect(audioHost?.getAttribute('data-audio-player-top-padding-px')).toBe('0');
     expect(audioHost?.getAttribute('data-audio-player-z-index')).toBe('0');
+  });
+
+  it('renders ordered, data-derived attachment summaries without reducing coordinates to a boolean', async () => {
+    const view = await renderCard({
+      msg: buildMessage({
+        images: ['https://example.test/files/image.png'],
+        media: [
+          {
+            id: 'video',
+            href: 'https://example.test/files/video.mp4',
+            contentType: 'video/mp4',
+          },
+          {
+            id: 'audio',
+            href: 'https://example.test/files/audio.mp3',
+            contentType: 'audio/mpeg',
+          },
+        ] as InboxMessage['media'],
+        coordsWithLocality: [
+          { coords: { lat: 49.1, lon: 37.2 }, locality: null },
+          { coords: { lat: 49.2, lon: 37.3 }, locality: null },
+        ],
+      }),
+    });
+    rendered.push(view);
+
+    const summaries = Array.from(
+      view.container.querySelectorAll<HTMLElement>('.message-card-attachment-counter'),
+    );
+    expect(summaries.map((summary) => summary.dataset.attachmentKind)).toEqual([
+      'media',
+      'coordinates',
+      'audio',
+    ]);
+    expect(summaries.map((summary) => summary.textContent?.replace(/\s+/g, ''))).toEqual([
+      'МЕДІА2',
+      'КООРДИНАТИ2',
+      'АУДІО1',
+    ]);
+  });
+
+  it('omits attachment summaries and text dividers when the message has no body or attachments', async () => {
+    const view = await renderCard({
+      msg: buildMessage({ text: null, textMarked: null, images: [], media: [], coords: null }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('.message-card-attachment-counters')).toBeNull();
+    expect(view.container.querySelector('.message-card-main .message-card-divider')).toBeNull();
+  });
+
+  it('only reserves a wide sidebar when tags or reports are visible', async () => {
+    const withoutSidebar = await renderCard({
+      tagsMap: {},
+      msg: buildMessage({ tags: [], inboxTags: [], parentMessages: [], intelligenceReports: [] }),
+    });
+    rendered.push(withoutSidebar);
+    expect(withoutSidebar.container.querySelector('.message-card-sidebar')).toBeNull();
+    expect(
+      withoutSidebar.container
+        .querySelector('.message-card-content-layout')
+        ?.classList.contains('message-card-content-layout--with-sidebar'),
+    ).toBe(false);
+
+    const withSidebar = await renderCard();
+    rendered.push(withSidebar);
+    expect(withSidebar.container.querySelector('.message-card-sidebar')).not.toBeNull();
+    expect(
+      withSidebar.container
+        .querySelector('.message-card-content-layout')
+        ?.classList.contains('message-card-content-layout--with-sidebar'),
+    ).toBe(true);
+  });
+
+  it('uses the compact header border instead of a duplicate leading text divider', async () => {
+    const compact = await renderCard({ feedCount: 3 });
+    rendered.push(compact);
+    expect(
+      compact.container.querySelectorAll('.message-card-main .message-card-divider'),
+    ).toHaveLength(1);
+
+    const expanded = await renderCard({ feedCount: 1 });
+    rendered.push(expanded);
+    expect(
+      expanded.container.querySelectorAll('.message-card-main .message-card-divider'),
+    ).toHaveLength(2);
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {
@@ -2861,9 +2945,9 @@ describe('MessageCard', () => {
     expect(downloadLink?.getAttribute('data-mui-sx')).toContain('action.hover');
     expect(downloadLink?.getAttribute('data-mui-sx')).toContain('"fontSize":14');
     expect(downloadLink?.textContent).toBe('');
-    const audioRow = downloadLink?.closest('.audio-player-row');
+    const audioRow = player?.closest('.audio-player-row');
     expect(audioRow?.classList).toContain('items-stretch');
-    expect(downloadLink?.parentElement?.classList).toContain('self-stretch');
+    expect(downloadLink?.closest('.audio-player-row')).toBeNull();
     expect(downloadLink?.parentElement?.classList).toContain('items-center');
   });
 
@@ -2947,14 +3031,14 @@ describe('MessageCard', () => {
     const layout = view.container.querySelector('.audio-transcription-layout');
     expect(layout).not.toBeNull();
     expect(view.container.querySelector('.audio-transcription-beside-player')).toBeNull();
-    expect(layout?.children).toHaveLength(2);
+    expect(layout?.children).toHaveLength(3);
     const audioRow = layout?.children[0];
     expect(audioRow?.classList).toContain('audio-player-row');
     expect(audioRow?.querySelector('[data-audio-player-host]')).not.toBeNull();
     expect(
-      audioRow?.querySelector('a[aria-label="Завантажити аудіо: transcribed.mp3"]'),
+      layout?.children[1]?.querySelector('a[aria-label="Завантажити аудіо: transcribed.mp3"]'),
     ).not.toBeNull();
-    expect(layout?.children[1]?.hasAttribute('data-audio-transcription-control')).toBe(true);
+    expect(layout?.children[2]?.hasAttribute('data-audio-transcription-control')).toBe(true);
 
     const transcriptions = view.container.querySelectorAll('[data-audio-transcription]');
     expect(transcriptions).toHaveLength(1);

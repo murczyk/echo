@@ -52,8 +52,8 @@ import { formatCoordinatePreviewPointCount } from './message-coordinate-preview'
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
 const EXCLUDE_TITLE = `Виключити${ELLIPSIS}`;
-const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 30;
-const MESSAGE_CARD_ACTION_BUTTON_SIZE_PX = 30;
+const MESSAGE_CARD_HEADER_ROW_MIN_HEIGHT_PX = 28;
+const MESSAGE_CARD_ACTION_BUTTON_SIZE_PX = 28;
 const MESSAGE_CARD_ACTION_GROUP_BORDER_PX = 2;
 
 export type MessageCardDisplayMode = 'duty' | 'analysis';

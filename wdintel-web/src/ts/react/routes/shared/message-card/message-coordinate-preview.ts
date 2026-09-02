@@ -380,7 +380,9 @@ function formatDirectCoordinateLabel(lat: number, lng: number): string {
   return `${renderWgsFloat(lat)}, ${renderWgsFloat(lng)}`;
 }
 
-function resolveDirectCoordinatesFromMessage(message: InboxMessage): CoordinatePreviewPoint[] {
+export function resolveDirectMessageCoordinatePreviewPoints(
+  message: InboxMessage,
+): CoordinatePreviewPoint[] {
   if ((message.coordsWithLocality?.length ?? 0) > 0) {
     return message.coordsWithLocality.map(({ coords, locality }) =>
       createDirectCoordinatePoint(coords.lat, coords.lon, locality),
@@ -393,6 +395,29 @@ function resolveDirectCoordinatesFromMessage(message: InboxMessage): CoordinateP
   }
 
   return resolveDirectCoordinatesFromCoordinateText(message.coords ?? '');
+}
+
+function resolveCoordinateSummaryMediaCount(message: InboxMessage): number {
+  return new Set(
+    (message.media ?? []).flatMap((media) =>
+      media.id != null && media.summary?.state === 'completed' && media.summary.hasCoordinates
+        ? [String(media.id)]
+        : [],
+    ),
+  ).size;
+}
+
+export function resolveMessageCoordinatePreviewSummaryCount(
+  message: InboxMessage,
+  tagsMap: Record<number, Tag> = {},
+): number {
+  const directPoints = resolveDirectMessageCoordinatePreviewPoints(message);
+  if (directPoints.length > 0) return directPoints.length;
+
+  const summaryMediaCount = resolveCoordinateSummaryMediaCount(message);
+  if (summaryMediaCount > 0) return summaryMediaCount;
+
+  return collectCoordinatePreviewEtalons(message, tagsMap).length;
 }
 
 export function hasCoordinatePreviewCandidate(
@@ -523,7 +548,7 @@ async function resolvePointForEtalon(
 async function resolveExistingMessageCoordinatePreview(
   input: CoordinatePreviewInput,
 ): Promise<CoordinatePreviewResult | null> {
-  const directPoints = resolveDirectCoordinatesFromMessage(input.message);
+  const directPoints = resolveDirectMessageCoordinatePreviewPoints(input.message);
 
   if (directPoints.length > 0) {
     return {

@@ -11,6 +11,7 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   image2: 'e2e-image-2.png',
   video1: 'e2e-video-1.mp4',
   video2: 'e2e-video-2.mp4',
+  audio: 'e2e-audio.wav',
   text: 'e2e-preview.txt',
   markdown: 'e2e-preview.md',
 } as const;
@@ -19,6 +20,33 @@ const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
+
+function buildValidWavAudioFixture(): Buffer {
+  const sampleRate = 8_000;
+  const sampleCount = sampleRate / 10;
+  const sampleBytes = 2;
+  const audio = Buffer.alloc(44 + sampleCount * sampleBytes);
+
+  audio.write('RIFF', 0);
+  audio.writeUInt32LE(audio.length - 8, 4);
+  audio.write('WAVEfmt ', 8);
+  audio.writeUInt32LE(16, 16);
+  audio.writeUInt16LE(1, 20);
+  audio.writeUInt16LE(1, 22);
+  audio.writeUInt32LE(sampleRate, 24);
+  audio.writeUInt32LE(sampleRate * sampleBytes, 28);
+  audio.writeUInt16LE(sampleBytes, 32);
+  audio.writeUInt16LE(16, 34);
+  audio.write('data', 36);
+  audio.writeUInt32LE(sampleCount * sampleBytes, 40);
+
+  for (let index = 0; index < sampleCount; index += 1) {
+    const sample = Math.round(Math.sin((index / sampleRate) * Math.PI * 2 * 440) * 3_000);
+    audio.writeInt16LE(sample, 44 + index * sampleBytes);
+  }
+
+  return audio;
+}
 
 const TXT_PREVIEW_TEXT = ['E2E TXT preview line 1', 'E2E TXT preview line 2'].join('\n');
 const MARKDOWN_PREVIEW_TEXT = [
@@ -37,6 +65,7 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
   const video1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`;
   const video2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video2}`;
+  const audio = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`;
   const text = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text}`;
   const markdown = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown}`;
 
@@ -71,6 +100,13 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
         file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown,
         size_bytes: 192,
         href: markdown,
+      },
+      {
+        id: 'e2e-audio',
+        content_type: 'audio/wav',
+        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio,
+        size_bytes: 512,
+        href: audio,
       },
     ],
     images: [image1, image2],
@@ -150,6 +186,11 @@ export async function installMessageCardMediaPreviewAssetRoutes(page: Page): Pro
       return;
     }
 
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio) {
+      await fulfillAsset(route, buildValidWavAudioFixture(), 'audio/wav');
+      return;
+    }
+
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text) {
       await fulfillAsset(route, TXT_PREVIEW_TEXT, 'text/plain; charset=utf-8');
       return;
@@ -181,6 +222,7 @@ async function installMessageCardMediaPreviewHostFixture(
 export async function openMessageCardPreviewHost(
   page: Page,
   host: MessageCardMediaPreviewHost,
+  { revealAudio = false }: { revealAudio?: boolean } = {},
 ): Promise<void> {
   await installMessageCardMediaPreviewAssetRoutes(page);
   await installMessageCardMediaPreviewHostFixture(page, host);
@@ -188,6 +230,9 @@ export async function openMessageCardPreviewHost(
 
   if (host === 'duty') {
     await page.getByRole('button', { name: /^Показати .*фото/ }).click();
+    if (revealAudio) {
+      await page.getByRole('button', { name: /^Показати .*аудіо/ }).click();
+    }
   }
 
   await expect(

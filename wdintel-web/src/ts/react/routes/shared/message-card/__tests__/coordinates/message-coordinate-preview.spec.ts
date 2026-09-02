@@ -18,6 +18,7 @@ import {
   resetCoordinatePreviewStateForTests,
   hasCoordinatePreviewCandidate,
   formatCoordinatePreviewPointCount,
+  resolveMessageCoordinatePreviewSummaryCount,
   resolveMessageCoordinatePreview,
 } from '../../message-coordinate-preview';
 
@@ -84,6 +85,45 @@ describe('message coordinate preview resolver', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetCoordinatePreviewStateForTests();
+  });
+
+  it('summarizes direct, media, and etalon coordinate candidates without requests', () => {
+    expect(
+      resolveMessageCoordinatePreviewSummaryCount(
+        createMessage({
+          coordsWithLocality: [
+            { coords: { lat: 49.1, lon: 37.2 }, locality: null },
+            { coords: { lat: 49.2, lon: 37.3 }, locality: null },
+          ],
+        }),
+      ),
+    ).toBe(2);
+    expect(
+      resolveMessageCoordinatePreviewSummaryCount(
+        createMessage({ text: '50.45044, 30.52355\n49.83968, 24.02972' }),
+      ),
+    ).toBe(2);
+    expect(
+      resolveMessageCoordinatePreviewSummaryCount(
+        createMessage({
+          media: [
+            { id: 'first', summary: { state: 'completed', hasCoordinates: true } },
+            { id: 'second', summary: { state: 'completed', hasCoordinates: true } },
+          ] as InboxMessage['media'],
+        }),
+      ),
+    ).toBe(2);
+    expect(
+      resolveMessageCoordinatePreviewSummaryCount(
+        createMessage({
+          inboxTags: [{ tagId: 7 }],
+          pointTokens: [{ etalon: 'BRAVO' }, { etalon: 'CHARLIE' }],
+        }),
+        palitraTagsMap,
+      ),
+    ).toBe(2);
+    expect(listMapPalitrasV2).not.toHaveBeenCalled();
+    expect(searchPalitraPoints).not.toHaveBeenCalled();
   });
 
   it('resolves direct WGS84 coordinates from msg.coords without loading palitras', async () => {

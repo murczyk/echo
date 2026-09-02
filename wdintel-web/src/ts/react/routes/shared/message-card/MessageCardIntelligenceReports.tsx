@@ -55,6 +55,16 @@ export function getSummaryDisplayText(summary: IntelligenceReportSummary): strin
   return 'Без тексту';
 }
 
+export function hasVisibleMessageCardIntelligenceReports(
+  reports: IntelligenceReportSummary[],
+  parents: IntelligenceReportSummary[],
+): boolean {
+  return (
+    parents.some((parent) => parent.isAccessible && !parent.isDeleted) ||
+    reports.some((report) => !report.isDeleted)
+  );
+}
+
 function MessageSummaryDetails({
   summary,
   editable,

@@ -178,6 +178,177 @@ a {
 
 .message-card-root {
   container-type: inline-size;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--color-divider);
+  border-radius: 8px;
+  background: var(--color-card);
+}
+
+.message-card-item {
+  container-type: inline-size;
+}
+
+.message-card-content {
+  min-width: 0;
+}
+
+.message-card-content-layout {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.message-card-main,
+.message-card-sidebar {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-card-main-section {
+  min-width: 0;
+}
+
+.message-card-message-text {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  line-height: 1.43;
+}
+
+.message-card-text-expand {
+  min-width: 24px !important;
+  min-height: 24px !important;
+  margin: 4px 0 0 !important;
+  padding: 0 4px !important;
+  color: var(--color-action) !important;
+  font-size: 0.875rem !important;
+  text-transform: none !important;
+}
+
+.message-card-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--color-divider);
+}
+
+.message-card-attachment-counters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.message-card-attachment-counter {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border: 1px solid var(--color-divider);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-action);
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.message-card-attachment-counters svg {
+  font-size: 16px;
+}
+
+.message-card-attachment-counter__count {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--color-background);
+  color: var(--color-text-muted);
+}
+
+.message-card-gallery {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.message-card-gallery [data-picture-thumb-layout],
+.message-card-gallery [data-video-thumb-state] {
+  width: 70px !important;
+  min-width: 70px !important;
+  max-width: 70px !important;
+  height: 70px !important;
+}
+
+.message-card-gallery :is([data-picture-thumb-layout], [data-video-thumb-state]) img {
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  object-fit: cover;
+}
+
+.message-card-audio-row {
+  height: 40px;
+  max-width: 523px;
+}
+
+.message-card-audio-host {
+  height: 40px;
+  max-width: 523px;
+}
+
+@container (min-width: 760px) {
+  .message-card-content-layout--with-sidebar {
+    gap: 24px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 32%);
+  }
+}
+
+@container (max-width: 360px) {
+  .message-card-root {
+    padding: 8px;
+  }
+}
+
+@container (max-width: 700px) {
+  .message-card-gallery [data-picture-thumb-layout],
+  .message-card-gallery [data-video-thumb-state] {
+    width: 72px !important;
+    min-width: 72px !important;
+    max-width: 72px !important;
+    height: 72px !important;
+  }
+}
+
+@container (max-width: 470px) {
+  .message-card-gallery [data-picture-thumb-layout],
+  .message-card-gallery [data-video-thumb-state] {
+    width: 76px !important;
+    min-width: 76px !important;
+    max-width: 76px !important;
+    height: 76px !important;
+  }
+}
+
+@container (max-width: 360px) {
+  [data-message-card-header-left='true'] > div {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
+
+@container (max-width: 360px) {
+  .message-card-gallery [data-picture-thumb-layout],
+  .message-card-gallery [data-video-thumb-state] {
+    width: 72px !important;
+    min-width: 72px !important;
+    max-width: 72px !important;
+    height: 72px !important;
+  }
 }
 
 .message-card-action-group {
@@ -192,8 +363,8 @@ a {
 
 .message-card-action-group--stacked {
   display: grid;
-  grid-template-columns: repeat(var(--message-card-action-cols, 4), 30px);
-  grid-auto-rows: 30px;
+  grid-template-columns: repeat(var(--message-card-action-cols, 4), 28px);
+  grid-auto-rows: 28px;
   width: fit-content;
   margin-inline: auto;
 }
@@ -203,9 +374,9 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  min-width: 30px;
-  height: 30px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -255,11 +426,11 @@ a {
 }
 
 .message-card-action-group--stacked[data-action-grid-columns='3'] {
-  grid-template-columns: repeat(3, 30px);
+  grid-template-columns: repeat(3, 28px);
 }
 
 .message-card-action-group--stacked[data-action-grid-columns='4'] {
-  grid-template-columns: repeat(4, 30px);
+  grid-template-columns: repeat(4, 28px);
 }
 
 /* body2-parity text for MessageCard hot path (avoid MUI Typography/Emotion per card).

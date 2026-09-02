@@ -186,6 +186,109 @@ test.describe('message card visual regression', () => {
     });
   }
 
+  for (const cardWidth of [920, 330] as const) {
+    test(`ECHO-3324 keeps a ${cardWidth}px card within bounds without an empty sidebar`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1500, height: 900 });
+      await openMessageCardPreviewHost(page, 'duty');
+      const card = page.locator('.message-card-root').first();
+      await card.evaluate((element, width) => {
+        const item = element.closest<HTMLElement>('.message-card-item');
+        if (item) item.style.width = `${width}px`;
+      }, cardWidth);
+
+      const metrics = await card.evaluate((element) => {
+        return {
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        };
+      });
+
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+      await expect(card.locator('.message-card-content-layout--with-sidebar')).toHaveCount(0);
+    });
+
+    test(`keeps the gallery square and inside a ${cardWidth}px card`, async ({ page }) => {
+      await page.setViewportSize({ width: 1500, height: 900 });
+      await openMessageCardPreviewHost(page, 'duty');
+      const card = page.locator('.message-card-root').first();
+      await card.evaluate((element, width) => {
+        const item = element.closest<HTMLElement>('.message-card-item');
+        if (item) item.style.width = `${width}px`;
+      }, cardWidth);
+
+      const thumbnail = card.locator('[data-picture-thumb-layout]').first();
+      await expect(thumbnail).toBeVisible();
+      const gallery = card.locator('.message-card-gallery');
+      const [thumbnailBox, galleryBox, cardBox] = await Promise.all([
+        thumbnail.boundingBox(),
+        gallery.boundingBox(),
+        card.boundingBox(),
+      ]);
+      expect(thumbnailBox?.width).toBeCloseTo(thumbnailBox?.height ?? 0, 1);
+      expect((galleryBox?.x ?? 0) + (galleryBox?.width ?? 0)).toBeLessThanOrEqual(
+        (cardBox?.x ?? 0) + (cardBox?.width ?? 0) + 1,
+      );
+    });
+  }
+
+  for (const host of ['duty', 'analysis'] as const) {
+    for (const cardWidth of [920, 330] as const) {
+      test(`ECHO-3324 keeps ${host} audio within its ${cardWidth}px card geometry`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width: 1500, height: 900 });
+        await openMessageCardPreviewHost(page, host, { revealAudio: host === 'duty' });
+        const card = page.locator('.message-card-root').first();
+        await card.evaluate((element, width) => {
+          const item = element.closest<HTMLElement>('.message-card-item');
+          if (item) item.style.width = `${width}px`;
+        }, cardWidth);
+
+        const audioRow = card.locator('.message-card-audio-row');
+        const player = audioRow.locator('custom-audio-player');
+        await expect(audioRow).toBeVisible();
+        await expect(player).toBeVisible();
+        await expect(card.getByText('Аудіофайл не знайдено')).toHaveCount(0);
+        await expect(audioRow).toHaveCSS('height', '40px');
+        const width = await audioRow.evaluate((element) => element.getBoundingClientRect().width);
+        expect(width).toBeLessThanOrEqual(523);
+        if (cardWidth === 330) expect(width).toBeGreaterThanOrEqual(312);
+        expect(width).toBeLessThanOrEqual(cardWidth - (cardWidth <= 330 ? 16 : 32));
+        await expect(card.locator('a[aria-label^="Завантажити аудіо"]')).toBeVisible();
+        expect(
+          await card
+            .locator('a[aria-label^="Завантажити аудіо"]')
+            .evaluate((element) => element.closest('.message-card-audio-row') === null),
+        ).toBe(true);
+      });
+    }
+  }
+
+  test('ECHO-3324 keeps 24px attachment counters unclipped inside a narrow card', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+    await openMessageCardPreviewHost(page, 'analysis');
+    const card = page.locator('.message-card-root').first();
+    await card.evaluate((element) => {
+      const item = element.closest<HTMLElement>('.message-card-item');
+      if (item) item.style.width = '330px';
+    });
+    const counters = page.locator('.message-card-attachment-counters').first();
+    const counter = counters.locator('.message-card-attachment-counter').first();
+    await expect(counter).toHaveCSS('height', '24px');
+    const metrics = await counters.evaluate((element) => ({
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+      counterScrollHeight: element.firstElementChild?.scrollHeight,
+      counterClientHeight: element.firstElementChild?.clientHeight,
+    }));
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+    expect(metrics.counterScrollHeight).toBeLessThanOrEqual(metrics.counterClientHeight ?? 0);
+  });
+
   for (const viewportWidth of [360, 768, 1023, 1025, 1280]) {
     test(`keeps theme-relative typography at ${viewportWidth}px`, async ({ page }) => {
       await page.setViewportSize({ width: viewportWidth, height: 960 });
