@@ -68,22 +68,46 @@ function Section({
   );
 }
 
-function Row({ children }: { children: ReactNode }) {
-  return <div className="rounded-md bg-black/[.03] p-3 dark:bg-white/[.03]">{children}</div>;
+function Row({ children, outlined = false }: { children: ReactNode; outlined?: boolean }) {
+  return (
+    <div
+      className={
+        outlined
+          ? 'rounded-echo-sm border border-echo-border bg-black/[.03] p-echo-md dark:bg-white/[.03]'
+          : 'rounded-md bg-black/[.03] p-3 dark:bg-white/[.03]'
+      }
+    >
+      {children}
+    </div>
+  );
 }
 
-function SchematicSetting({ label, enabled = true }: { label: string; enabled?: boolean }) {
+function SchematicToggle({ enabled = true }: { enabled?: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <Typography>{label}</Typography>
+    <span
+      aria-hidden="true"
+      className={`flex h-5 w-9 items-center rounded-echo-pill p-0.5 ${enabled ? 'justify-end bg-echo-primary' : 'justify-start bg-echo-disabled'}`}
+    >
       <span
-        aria-hidden="true"
-        className={`flex h-5 w-9 items-center rounded-echo-pill p-0.5 ${enabled ? 'justify-end bg-echo-primary' : 'justify-start bg-echo-disabled'}`}
-      >
-        <span
-          className={`h-4 w-4 rounded-echo-pill ${enabled ? 'bg-echo-on-primary' : 'bg-echo-surface-raised'}`}
-        />
-      </span>
+        className={`h-4 w-4 rounded-echo-pill ${enabled ? 'bg-echo-on-primary' : 'bg-echo-surface-raised'}`}
+      />
+    </span>
+  );
+}
+
+function SchematicSettingsGroup({ settings }: { settings: string[] }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3">
+      <div className="grid gap-2">
+        {settings.map((label) => (
+          <Typography key={label}>{label}</Typography>
+        ))}
+      </div>
+      <div className="grid gap-2 rounded-echo-sm border border-echo-border p-echo-md">
+        {settings.map((label) => (
+          <SchematicToggle key={label} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -92,12 +116,11 @@ function FeedAndSound({ onTestSound }: Pick<Props, 'onTestSound'>) {
   return (
     <div className="grid gap-4">
       <Section appearance="bordered" icon={<NotificationsIcon />} title="Сповіщення цієї стрічки">
-        <Row>
+        <Row outlined>
           <Typography variant="caption" color="text.secondary">
             Приклад
           </Typography>
-          <SchematicSetting label="Звуковий сигнал" />
-          <SchematicSetting label="Системний банер" />
+          <SchematicSettingsGroup settings={['Звуковий сигнал', 'Системний банер']} />
           <Typography className="mt-2" color="text.secondary" variant="body2">
             Оберіть стрічку і виконайте перевірку в її панелі.
           </Typography>
@@ -197,12 +220,11 @@ function SystemNotifications() {
               У «Сповіщеннях від програм та інших відправників» відкрийте Google Chrome.
             </Typography>
           </Row>
-          <Row>
+          <Row outlined>
             <Typography className="mb-2" color="text.secondary" variant="caption">
               Приклад
             </Typography>
-            <SchematicSetting label="Сповіщення" />
-            <SchematicSetting label="Показувати банери" />
+            <SchematicSettingsGroup settings={['Сповіщення', 'Показувати банери']} />
           </Row>
         </div>
         <Typography className="mt-3" color="text.secondary" variant="body2">
@@ -219,12 +241,13 @@ function SystemNotifications() {
               Відкрийте налаштування сповіщень Google Chrome.
             </Typography>
           </Row>
-          <Row>
+          <Row outlined>
             <Typography className="mb-2" color="text.secondary" variant="caption">
               Приклад
             </Typography>
-            <SchematicSetting label="Дозволити сповіщення" />
-            <SchematicSetting label="Стиль попереджень: Банери" />
+            <SchematicSettingsGroup
+              settings={['Дозволити сповіщення', 'Стиль попереджень: Банери']}
+            />
           </Row>
         </div>
         <Typography className="mt-3" color="text.secondary" variant="body2">

@@ -203,7 +203,7 @@ describe('mui-theme', () => {
       backgroundImage: 'none',
     });
     expect(dark.components.MuiDialog?.styleOverrides?.paper).toMatchObject({
-      backgroundColor: '#5e5e64',
+      backgroundColor: '#2c2c2e',
       backgroundImage: 'none',
     });
   });

@@ -35,7 +35,7 @@ export const designTokens = {
       background: '#1f1f1f',
       surface: '#2c2c2e',
       surfaceRaised: '#000000',
-      dialogSurface: '#5e5e64',
+      dialogSurface: '#2c2c2e',
       surfaceInactive: '#2c2c2e',
       text: '#ffffff',
       textMuted: '#6b7280',

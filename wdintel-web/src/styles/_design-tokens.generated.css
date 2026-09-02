@@ -145,7 +145,7 @@ html[data-bs-theme='dark'] {
   --echo-color-background: #1f1f1f;
   --echo-color-surface: #2c2c2e;
   --echo-color-surface-raised: #000000;
-  --echo-color-dialog-surface: #5e5e64;
+  --echo-color-dialog-surface: #2c2c2e;
   --echo-color-surface-inactive: #2c2c2e;
   --echo-color-text: #ffffff;
   --echo-color-text-muted: #6b7280;
