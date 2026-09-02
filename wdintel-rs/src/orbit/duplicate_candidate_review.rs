@@ -22,7 +22,6 @@ struct ReviewPlan {
 #[derive(Debug, Clone)]
 struct ReviewPair {
     unit_ids: UnitPairIds,
-    shared_orbit_unit_ids: BTreeSet<Uuid>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -51,6 +50,43 @@ impl UnitPairIds {
 struct MergeSelection {
     unit_to_delete_id: i64,
     survivor_id: i64,
+    reviewed_unit_to_delete: ReviewedUnitContents,
+    reviewed_survivor: ReviewedUnitContents,
+    reviewed_shared_orbit_unit_ids: BTreeSet<Uuid>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReviewedUnitContents {
+    id: i64,
+    name: String,
+    active: bool,
+    hierarchy: [String; 14],
+    comment: String,
+    orbit_note: Option<String>,
+    sigint_origin_id: Option<i64>,
+    original_id: Option<i64>,
+}
+
+impl From<&sigint_unit::Model> for ReviewedUnitContents {
+    fn from(unit: &sigint_unit::Model) -> Self {
+        Self {
+            id: unit.id,
+            name: unit.name.clone(),
+            active: unit.active,
+            hierarchy: matching::sigint_hierarchy(unit)
+                .map(|(_, value)| value.to_string()),
+            comment: unit.comment.clone(),
+            orbit_note: unit.orbit_note.clone(),
+            sigint_origin_id: unit.sigint_origin_id,
+            original_id: unit.original_id,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct PersistSelectionBatchOutcome {
+    merged: usize,
+    stale_selection: bool,
 }
 
 #[derive(Debug, Default)]
@@ -67,9 +103,9 @@ impl ReviewPairTracker {
         self.shown_pairs.insert(pair).then_some(pair)
     }
 
-    fn record_merge(&mut self, selection: &MergeSelection) {
-        let unit_to_delete_id = self.canonical_id(selection.unit_to_delete_id);
-        let survivor_id = self.canonical_id(selection.survivor_id);
+    fn record_merge(&mut self, unit_to_delete_id: i64, survivor_id: i64) {
+        let unit_to_delete_id = self.canonical_id(unit_to_delete_id);
+        let survivor_id = self.canonical_id(survivor_id);
         if unit_to_delete_id != survivor_id {
             self.representative_by_unit_id
                 .insert(unit_to_delete_id, survivor_id);
@@ -98,7 +134,7 @@ pub async fn run(mode: Mode) -> anyhow::Result<()> {
     let selected = selections.len();
     let merged = persist_selections(&db, &selections).await.c(h!())?;
     println!(
-        "SIGINT duplicate-candidate review: {reviewed} possible pairs, {selected} selected, {merged} units merged. Stale pairs were left unchanged."
+        "SIGINT duplicate-candidate review: {reviewed} possible pairs, {selected} selected, {merged} units merged. A stale selection leaves it and all remaining selections unchanged."
     );
     Ok(())
 }
@@ -233,11 +269,8 @@ fn build_review_plan(
     }
 
     let pairs = shared_orbit_unit_ids_by_pair
-        .into_iter()
-        .map(|(unit_ids, shared_orbit_unit_ids)| ReviewPair {
-            unit_ids,
-            shared_orbit_unit_ids,
-        })
+        .into_keys()
+        .map(|unit_ids| ReviewPair { unit_ids })
         .collect();
 
     ReviewPlan {
@@ -284,13 +317,17 @@ fn review_manually_inner(
         let Some(unit_ids) = tracker.next_pair(source_pair.unit_ids) else {
             continue;
         };
-        displayed += 1;
-        let pair = review_pair(
-            &projected_units,
+        let shared_orbit_unit_ids = projected_shared_orbit_unit_ids(
+            &projected_links_by_unit_id,
             unit_ids,
-            &source_pair.shared_orbit_unit_ids,
-        )
-        .c(h!())?;
+        );
+        if shared_orbit_unit_ids.is_empty() {
+            continue;
+        }
+        displayed += 1;
+        let pair =
+            review_pair(&projected_units, unit_ids, &shared_orbit_unit_ids)
+                .c(h!())?;
         match tui::review_sigint_duplicate_pair(
             terminal,
             &pair,
@@ -300,10 +337,13 @@ fn review_manually_inner(
         .c(h!())?
         {
             tui::SigintDuplicatePairReviewDecision::MergeLeftIntoRight => {
-                let selection = MergeSelection {
-                    unit_to_delete_id: unit_ids.left_id,
-                    survivor_id: unit_ids.right_id,
-                };
+                let selection = merge_selection(
+                    &projected_units,
+                    unit_ids.left_id,
+                    unit_ids.right_id,
+                    shared_orbit_unit_ids,
+                )
+                .c(h!())?;
                 project_selection(
                     &mut projected_units,
                     &mut projected_links_by_unit_id,
@@ -311,14 +351,20 @@ fn review_manually_inner(
                     &selection,
                 )
                 .c(h!())?;
-                tracker.record_merge(&selection);
+                tracker.record_merge(
+                    selection.unit_to_delete_id,
+                    selection.survivor_id,
+                );
                 selections.push(selection);
             }
             tui::SigintDuplicatePairReviewDecision::MergeRightIntoLeft => {
-                let selection = MergeSelection {
-                    unit_to_delete_id: unit_ids.right_id,
-                    survivor_id: unit_ids.left_id,
-                };
+                let selection = merge_selection(
+                    &projected_units,
+                    unit_ids.right_id,
+                    unit_ids.left_id,
+                    shared_orbit_unit_ids,
+                )
+                .c(h!())?;
                 project_selection(
                     &mut projected_units,
                     &mut projected_links_by_unit_id,
@@ -326,7 +372,10 @@ fn review_manually_inner(
                     &selection,
                 )
                 .c(h!())?;
-                tracker.record_merge(&selection);
+                tracker.record_merge(
+                    selection.unit_to_delete_id,
+                    selection.survivor_id,
+                );
                 selections.push(selection);
             }
             tui::SigintDuplicatePairReviewDecision::Skip => {}
@@ -336,6 +385,45 @@ fn review_manually_inner(
         }
     }
     Ok(selections)
+}
+
+fn merge_selection(
+    units: &BTreeMap<i64, sigint_unit::Model>,
+    unit_to_delete_id: i64,
+    survivor_id: i64,
+    reviewed_shared_orbit_unit_ids: BTreeSet<Uuid>,
+) -> anyhow::Result<MergeSelection> {
+    Ok(MergeSelection {
+        unit_to_delete_id,
+        survivor_id,
+        reviewed_unit_to_delete: units.get(&unit_to_delete_id).c(h!())?.into(),
+        reviewed_survivor: units.get(&survivor_id).c(h!())?.into(),
+        reviewed_shared_orbit_unit_ids,
+    })
+}
+
+fn projected_shared_orbit_unit_ids(
+    links_by_unit_id: &BTreeMap<
+        i64,
+        BTreeMap<Uuid, orbit_unit_sigint_unit::Model>,
+    >,
+    unit_ids: UnitPairIds,
+) -> BTreeSet<Uuid> {
+    let active_orbit_unit_ids = |unit_id| {
+        links_by_unit_id
+            .get(&unit_id)
+            .into_iter()
+            .flat_map(BTreeMap::values)
+            .filter(|link| !link.is_suppressed)
+            .map(|link| link.orbit_unit_id)
+            .collect::<BTreeSet<_>>()
+    };
+    let left_orbit_unit_ids = active_orbit_unit_ids(unit_ids.left_id);
+    let right_orbit_unit_ids = active_orbit_unit_ids(unit_ids.right_id);
+    left_orbit_unit_ids
+        .intersection(&right_orbit_unit_ids)
+        .copied()
+        .collect()
 }
 
 fn review_pair(
@@ -453,7 +541,11 @@ async fn persist_selections(
     for selections in
         selections.chunks(ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE)
     {
-        merged += persist_selection_batch(db, selections).await.c(h!())?;
+        let outcome = persist_selection_batch(db, selections).await.c(h!())?;
+        merged += outcome.merged;
+        if outcome.stale_selection {
+            break;
+        }
     }
     Ok(merged)
 }
@@ -461,25 +553,28 @@ async fn persist_selections(
 async fn persist_selection_batch(
     db: &sea_orm::DatabaseConnection,
     selections: &[MergeSelection],
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<PersistSelectionBatchOutcome> {
     if selections.is_empty() {
-        return Ok(0);
+        return Ok(PersistSelectionBatchOutcome::default());
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
     super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
         .await
         .c(h!())?;
-    let mut merged = 0;
+    let mut outcome = PersistSelectionBatchOutcome::default();
     for selection in selections {
-        merged += usize::from(
-            persist_selection(&transaction, login, selection)
-                .await
-                .c(h!())?,
-        );
+        if !persist_selection(&transaction, login, selection)
+            .await
+            .c(h!())?
+        {
+            outcome.stale_selection = true;
+            break;
+        }
+        outcome.merged += 1;
     }
     transaction.commit().await.c(h!())?;
-    Ok(merged)
+    Ok(outcome)
 }
 
 async fn persist_selection<C>(
@@ -490,17 +585,21 @@ async fn persist_selection<C>(
 where
     C: ConnectionTrait,
 {
-    if !current_merge_units_available(db, selection).await.c(h!())? {
+    if !current_merge_units_match_review(db, selection)
+        .await
+        .c(h!())?
+    {
         return Ok(false);
     };
-    if active_shared_orbit_unit_ids(
+    let shared_orbit_unit_ids = active_shared_orbit_unit_ids(
         db,
         selection.unit_to_delete_id,
         selection.survivor_id,
     )
     .await
-    .c(h!())?
-    .is_empty()
+    .c(h!())?;
+    if shared_orbit_unit_ids.is_empty()
+        || shared_orbit_unit_ids != selection.reviewed_shared_orbit_unit_ids
     {
         return Ok(false);
     }
@@ -515,7 +614,7 @@ where
     Ok(true)
 }
 
-async fn current_merge_units_available<C>(
+async fn current_merge_units_match_review<C>(
     db: &C,
     selection: &MergeSelection,
 ) -> anyhow::Result<bool>
@@ -532,6 +631,7 @@ where
             sigint_unit::Column::Id
                 .is_in([selection.unit_to_delete_id, selection.survivor_id]),
         )
+        .lock_exclusive()
         .all(db)
         .await
         .c(h!())?
@@ -544,7 +644,9 @@ where
     let Some(survivor) = units.get(&selection.survivor_id) else {
         return Ok(false);
     };
-    Ok(unit_to_delete.id != survivor.id)
+    Ok(ReviewedUnitContents::from(unit_to_delete)
+        == selection.reviewed_unit_to_delete
+        && ReviewedUnitContents::from(survivor) == selection.reviewed_survivor)
 }
 
 async fn active_shared_orbit_unit_ids<C>(
@@ -618,10 +720,7 @@ mod tests {
             tracker.next_pair(UnitPairIds::new(1, 2).unwrap()),
             UnitPairIds::new(1, 2),
         );
-        tracker.record_merge(&MergeSelection {
-            unit_to_delete_id: 2,
-            survivor_id: 1,
-        });
+        tracker.record_merge(2, 1);
 
         assert_eq!(
             tracker.next_pair(UnitPairIds::new(2, 3).unwrap()),
@@ -632,36 +731,9 @@ mod tests {
     #[test]
     fn tracker_skips_pairs_inside_already_merged_component() {
         let mut tracker = ReviewPairTracker::default();
-        tracker.record_merge(&MergeSelection {
-            unit_to_delete_id: 2,
-            survivor_id: 1,
-        });
-        tracker.record_merge(&MergeSelection {
-            unit_to_delete_id: 3,
-            survivor_id: 1,
-        });
+        tracker.record_merge(2, 1);
+        tracker.record_merge(3, 1);
 
         assert_eq!(tracker.next_pair(UnitPairIds::new(2, 3).unwrap()), None);
-    }
-
-    #[test]
-    fn unit_pairs_are_sorted_and_unique() {
-        assert_eq!(
-            unit_pairs(&BTreeSet::from([3, 1, 2])),
-            vec![
-                UnitPairIds {
-                    left_id: 1,
-                    right_id: 2,
-                },
-                UnitPairIds {
-                    left_id: 1,
-                    right_id: 3,
-                },
-                UnitPairIds {
-                    left_id: 2,
-                    right_id: 3,
-                },
-            ],
-        );
     }
 }

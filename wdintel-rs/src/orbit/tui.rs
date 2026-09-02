@@ -463,7 +463,7 @@ pub(super) fn review_unit_name_change(
     unit_id: i64,
     current_name: &str,
     proposed_name: &str,
-    removed_echelons: &[String],
+    cleared_echelons: &[String],
     current: usize,
     total: usize,
 ) -> Result<UnitNameReviewDecision, AppError> {
@@ -477,7 +477,7 @@ pub(super) fn review_unit_name_change(
                     unit_id,
                     current_name,
                     proposed_name,
-                    removed_echelons,
+                    cleared_echelons,
                     current,
                     total,
                     scroll,
@@ -1432,7 +1432,7 @@ fn draw_unit_name_change_review(
     unit_id: i64,
     current_name: &str,
     proposed_name: &str,
-    removed_echelons: &[String],
+    cleared_echelons: &[String],
     current: usize,
     total: usize,
     scroll: u16,
@@ -1447,8 +1447,8 @@ fn draw_unit_name_change_review(
     let lines = vec![
         Line::from(format!("SIGINT unit ID: {unit_id}")),
         Line::from(format!(
-            "Removed name segments: {}",
-            removed_echelons.join(" / ")
+            "Cleared SIGINT echelons: {}",
+            cleared_echelons.join(" / ")
         )),
         Line::default(),
         current_diff,

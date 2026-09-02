@@ -383,7 +383,7 @@ where
     .await
 }
 
-async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
+pub(crate) async fn reconcile_sigint_unit_orbit_with_reviewed_change<C>(
     dbx: &C,
     login: &Uuid,
     change: &OrbitUnitHierarchyChange,
