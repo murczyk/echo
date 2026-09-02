@@ -72,6 +72,9 @@ pub mod test {
 
         Migrator::status(&db).await.unwrap();
         echo_im::run_migration(&db).await.unwrap();
+        crate::migration::ensure_echo_gpu_uuid_v7_generator(&db)
+            .await
+            .unwrap();
         echo_gpu_client::run_migration(&db).await.unwrap();
         Migrator::install(&db).await.unwrap();
         Migrator::up(&db, None).await.unwrap();
