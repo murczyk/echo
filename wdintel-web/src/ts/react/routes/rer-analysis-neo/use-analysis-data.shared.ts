@@ -14,9 +14,14 @@ export function topItems<T>(
   list: T[],
   getKey: (item: T) => string,
   getCount: (item: T) => number,
+  getValue?: (item: T) => string,
 ): AnalysisCountItem[] {
   return sortAndTakeTopAnalysisCountItems(
-    list.map((item) => ({ key: getKey(item), count: getCount(item) })),
+    list.map((item) => ({
+      key: getKey(item),
+      count: getCount(item),
+      value: getValue?.(item),
+    })),
   );
 }
 

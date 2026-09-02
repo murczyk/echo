@@ -1,4 +1,7 @@
-use crate::config::ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT;
+use crate::config::{
+    ANALYSIS_CALLSIGN_FREQUENCY_MATCH_LIMIT, ANALYSIS_STATS_UNDEFINED_UNIT_ID,
+    ANALYSIS_STATS_UNDEFINED_UNIT_NAME,
+};
 use crate::rer_importer::types::SenderFrequencyBreakdown;
 use crate::sigint::network::types::NetworkCallsignRelationMessage;
 use crate::sigint::sender::preferred_group_sender_expr;
@@ -133,6 +136,7 @@ pub(super) fn request_without_facet_filter(
         AnalysisFacet::Callsigns => req.selected_callsigns = None,
         AnalysisFacet::Units => {
             req.selected_units = None;
+            req.selected_unit_ids = None;
             req.units_exact_match_only = None;
         }
         AnalysisFacet::Locations => req.selected_locations = None,
@@ -1032,6 +1036,7 @@ fn apply_group_stats_filters(
     let query = apply_analysis_unit_filters(
         query,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -1733,6 +1738,7 @@ fn build_senders_filtered_query(
     let senders_res = apply_analysis_unit_filters(
         senders_res,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -1871,6 +1877,7 @@ where
     let query = apply_analysis_unit_filters(
         query,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -2184,6 +2191,7 @@ fn build_posts_filtered_query(
     let post_res = apply_analysis_unit_filters(
         post_res,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -2590,6 +2598,7 @@ fn build_freqs_filtered_query(
     let freqs_res = apply_analysis_unit_filters(
         freqs_res,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -3327,6 +3336,7 @@ fn build_callsigns_filtered_query(
     let callsigns_res = apply_analysis_unit_filters(
         callsigns_res,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -3661,10 +3671,17 @@ fn build_tags_query_parts(
     let matching_network_ids_alias = Alias::new("matching_unit_network_ids");
     let matching_inbox_item_ids_alias =
         Alias::new("matching_unit_inbox_item_ids");
-    let matching_network_ids = selected_unit_network_ids_query(
-        &req.selected_units,
-        &req.units_exact_match_only,
-    );
+    let matching_network_ids = req
+        .selected_unit_ids
+        .as_ref()
+        .is_none_or(Vec::is_empty)
+        .then(|| {
+            selected_unit_network_ids_query(
+                &req.selected_units,
+                &req.units_exact_match_only,
+            )
+        })
+        .flatten();
     let precomputed_inbox_item_ids_alias = matching_network_ids
         .as_ref()
         .map(|_| matching_inbox_item_ids_alias.clone());
@@ -3922,9 +3939,10 @@ fn build_tags_filtered_query_with_owner_condition(
             sigint_inbox_item::Column::Id.in_subquery(matching_inbox_item_ids),
         )
     } else {
-        filter_selected_units(
+        filter_selected_units_or_ids(
             tags_res,
             &req.selected_units,
+            &req.selected_unit_ids,
             &req.units_exact_match_only,
         )?
     };
@@ -4002,7 +4020,8 @@ fn build_tags_filtered_query_with_owner_condition(
 
 #[derive(FromQueryResult)]
 struct UnitsRes {
-    unit: Option<String>,
+    unit_id: i64,
+    name: String,
     count: i64,
 }
 
@@ -4012,18 +4031,23 @@ pub async fn fetch_units(
     env: &actix_web::web::Data<Env>,
     master_keys: Vec<String>,
 ) -> Result<Vec<AnalysisStatsUnit>, AppError> {
+    let facet_req =
+        Json(request_without_facet_filter(&req.0, AnalysisFacet::Units));
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
 
     if let Some((dt_since, dt_till)) =
-        stats_aggregated_range(req, env, dt_since, dt_till).c(h!())?
+        stats_aggregated_range(&facet_req, env, dt_since, dt_till).c(h!())?
     {
-        let result =
-            read_unit_stats_aggregated(env, master_keys, dt_since, dt_till)
-                .await
-                .c(h!())?;
-        return Ok(result);
+        return Ok(read_unit_stats_aggregated(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .c(h!())?);
     }
 
     fetch_units_with_db(req, user, &env.dbx, master_keys, None).await
@@ -4052,7 +4076,7 @@ async fn fetch_units_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
     let instant = std::time::Instant::now();
     let units_res = build_units_query(
         &req,
@@ -4061,7 +4085,8 @@ async fn fetch_units_with_db(
         dt_till,
         master_keys,
         scope,
-    )?;
+    )
+    .c(h!())?;
     // println!(
     //     "> units_res: {}",
     //     units_res.build(DbBackend::Postgres).to_string()
@@ -4071,14 +4096,14 @@ async fn fetch_units_with_db(
         .all(db)
         .await
         .context(h!())?;
-    let mut units = vec![];
-    for x in units_res {
-        let unit = m_unit_to_unidenfitied(x.unit);
-        units.push(AnalysisStatsUnit {
-            count: x.count,
-            unit,
-        });
-    }
+    let units = units_res
+        .into_iter()
+        .map(|unit| AnalysisStatsUnit {
+            unit_id: unit.unit_id,
+            name: unit.name,
+            count: unit.count,
+        })
+        .collect();
 
     // let units = vec![];
 
@@ -4109,24 +4134,41 @@ pub(super) async fn count_units_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let login_value = login_id_from_identity(user)?;
+    let login_value = login_id_from_identity(user).c(h!())?;
 
     let instant = std::time::Instant::now();
     trace!("get identity master keys op took: {:?}", instant.elapsed());
-    let units_res = build_units_filtered_query(
+    let units_res = build_units_count_query(
+        &req,
+        &login_value,
+        dt_since,
+        dt_till,
+        master_keys.clone(),
+        scope,
+    )
+    .c(h!())?;
+    let canonical_count = count_distinct_with_db(
+        units_res,
+        Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
+        db,
+    )
+    .await
+    .context(h!())?;
+    let undefined_count = build_undefined_unit_query(
         &req,
         &login_value,
         dt_since,
         dt_till,
         master_keys,
         scope,
-    )?;
-    count_distinct_with_db(
-        units_res,
-        Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
-        db,
     )
+    .context(h!())?
+    .into_model::<UnitsRes>()
+    .one(db)
     .await
+    .context(h!())?
+    .is_some() as i64;
+    Ok(canonical_count + undefined_count)
 }
 
 pub async fn count_unit_exact_match_breakdown(
@@ -4201,6 +4243,82 @@ fn build_units_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let mut units = build_units_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys.clone(),
+        scope,
+    )
+    .c(h!())?
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item::Relation::SigintInboxItemUnit.def(),
+    )
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item_unit::Relation::SigintUnit.def(),
+    )
+    .filter(sigint_unit::Column::Deleted.eq(false))
+    .select_only()
+    .column_as(sigint_unit::Column::Id, "unit_id")
+    .column_as(sigint_unit::Column::Name, "name")
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "sigint_inbox_item"."id")"#),
+        "count",
+    )
+    .group_by(sigint_unit::Column::Id)
+    .group_by(sigint_unit::Column::Name);
+    QueryTrait::query(&mut units).union(
+        UnionType::All,
+        build_undefined_unit_query(
+            req,
+            login_str,
+            dt_since,
+            dt_till,
+            master_keys,
+            scope,
+        )
+        .context(h!())?
+        .into_query(),
+    );
+    Ok(units)
+}
+
+fn build_undefined_unit_query(
+    req: &&Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let link_alias = Alias::new("undefined_unit_link");
+    let unit_alias = Alias::new("undefined_unit");
+    let mut linked_unit = Query::select();
+    linked_unit
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_unit::Entity, link_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            unit_alias.clone(),
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Id)).equals((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::UnitId,
+            )),
+        )
+        .and_where(
+            Expr::col((link_alias, sigint_inbox_item_unit::Column::ItemId))
+                .equals((
+                    sigint_inbox_item::Entity,
+                    sigint_inbox_item::Column::Id,
+                )),
+        )
+        .and_where(
+            Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
+        );
     Ok(build_units_filtered_query(
         req,
         login_str,
@@ -4208,17 +4326,47 @@ fn build_units_query(
         dt_till,
         master_keys,
         scope,
-    )?
-    .select_only()
-    .column_as(
-        Expr::col(sigint_inbox_item::Column::UnitV2).if_null(""),
-        "unit",
     )
+    .c(h!())?
+    .filter(Expr::exists(linked_unit.to_owned()).not())
+    .select_only()
+    .column_as(Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_ID), "unit_id")
+    .column_as(Expr::value(ANALYSIS_STATS_UNDEFINED_UNIT_NAME), "name")
     .column_as(
-        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        Expr::cust(r#"COUNT(DISTINCT "sigint_inbox_item"."id")"#),
         "count",
     )
-    .group_by(Expr::cust("1")))
+    .having(Expr::cust(
+        r#"COUNT(DISTINCT "sigint_inbox_item"."id") > 0"#,
+    )))
+}
+
+fn build_units_count_query(
+    req: &&Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_units_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+    )
+    .c(h!())?
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item::Relation::SigintInboxItemUnit.def(),
+    )
+    .join(
+        JoinType::InnerJoin,
+        sigint_inbox_item_unit::Relation::SigintUnit.def(),
+    )
+    .filter(sigint_unit::Column::Deleted.eq(false)))
 }
 
 fn build_units_filtered_query(
@@ -4574,6 +4722,7 @@ fn build_locations_filtered_query_for_login(
     let locations_res = apply_analysis_unit_filters(
         locations_res,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -5167,6 +5316,7 @@ fn build_aor_messages_query(
     let messages = apply_analysis_unit_filters(
         messages,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -5566,6 +5716,7 @@ fn build_network_analytics_messages_query(
     let messages = apply_analysis_unit_filters(
         messages,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -6286,6 +6437,7 @@ fn build_networks_query_for_login(
     let messages_q = apply_analysis_unit_filters(
         messages_q,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -6666,6 +6818,7 @@ async fn fetch_counts_for_login_with_conn(
     let selected_count_res = apply_analysis_unit_filters(
         selected_count_res,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -6863,9 +7016,10 @@ fn build_join_for_sigint_inbox_item() -> Select<Entity> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
     use crate::functest::tests::{
-        cleanup, mk_sigint_inbox_item, mk_signal_group, mk_signal_message,
-        mk_signal_message_group,
+        cleanup, mk_sigint_inbox_item, mk_sigint_unit, mk_signal_group,
+        mk_signal_message, mk_signal_message_group,
     };
     use serial_test::serial;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -6876,7 +7030,7 @@ mod tests {
         datetime: NaiveDateTime,
         post_id: i64,
         deleted: bool,
-    ) {
+    ) -> i64 {
         let message = mk_signal_message(
             db,
             signal_message::ActiveModel {
@@ -6921,6 +7075,184 @@ mod tests {
             .await
             .unwrap();
         }
+        message.id
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn canonical_unit_stats_include_undefined_distinct_messages_and_current_names(
+    ) {
+        let env = cleanup().await.unwrap();
+        let dt_since = Utc::now().naive_utc() - Duration::days(1);
+        let dt_till = dt_since + Duration::days(1);
+        let group_master_key = "canonical-unit-stats";
+        mk_signal_group(
+            &env.dbx,
+            signal_group::ActiveModel {
+                master_key: Set(group_master_key.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let post = sigint_post::ActiveModel {
+            name: Set("canonical-unit-stats-post".to_string()),
+            deleted: Set(false),
+            created_at: Set(dt_since),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let first_message_id = create_post_stats_message(
+            &env.dbx,
+            &[group_master_key],
+            dt_since + Duration::hours(1),
+            post.id,
+            false,
+        )
+        .await;
+        let second_message_id = create_post_stats_message(
+            &env.dbx,
+            &[group_master_key],
+            dt_since + Duration::hours(2),
+            post.id,
+            false,
+        )
+        .await;
+        let deleted_message_id = create_post_stats_message(
+            &env.dbx,
+            &[group_master_key],
+            dt_since + Duration::hours(3),
+            post.id,
+            false,
+        )
+        .await;
+        create_post_stats_message(
+            &env.dbx,
+            &[group_master_key],
+            dt_since + Duration::hours(4),
+            post.id,
+            false,
+        )
+        .await;
+        let first_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Shared unit name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let second_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Shared unit name".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let deleted_unit = mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                name: Set("Deleted unit".to_string()),
+                deleted: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        sigint_inbox_item_unit::Entity::insert_many([
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(first_message_id),
+                unit_id: Set(first_unit.id),
+                kind: Set(SigintInboxItemUnitKind::Parsed),
+                ..Default::default()
+            },
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(first_message_id),
+                unit_id: Set(first_unit.id),
+                kind: Set(SigintInboxItemUnitKind::Network),
+                ..Default::default()
+            },
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(second_message_id),
+                unit_id: Set(second_unit.id),
+                kind: Set(SigintInboxItemUnitKind::Parsed),
+                ..Default::default()
+            },
+            sigint_inbox_item_unit::ActiveModel {
+                item_id: Set(deleted_message_id),
+                unit_id: Set(deleted_unit.id),
+                kind: Set(SigintInboxItemUnitKind::Parsed),
+                ..Default::default()
+            },
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let req: AnalysisStatsReq = serde_json::from_value(serde_json::json!({
+            "since_date_inclusive_ms": dt_since.and_utc().timestamp_millis(),
+            "till_date_noninclusive_ms": dt_till.and_utc().timestamp_millis(),
+            "selected_unit_ids": [first_unit.id]
+        }))
+        .unwrap();
+        let login_id = crate::users::system_login_id(&env.dbx).await.unwrap();
+        let load = || async {
+            build_units_query(
+                &&Json(req.clone()),
+                &login_id,
+                dt_since,
+                dt_till,
+                vec![group_master_key.to_string()],
+                None,
+            )
+            .unwrap()
+            .into_model::<UnitsRes>()
+            .all(&env.dbx)
+            .await
+            .unwrap()
+        };
+        let mut units = load().await;
+        units.sort_by_key(|unit| unit.unit_id);
+        assert_eq!(
+            units
+                .iter()
+                .map(|unit| (unit.unit_id, unit.name.as_str(), unit.count))
+                .collect_vec(),
+            vec![
+                (0, "Не визначено", 2),
+                (first_unit.id, "Shared unit name", 1),
+                (second_unit.id, "Shared unit name", 1),
+            ]
+        );
+        let units_count = count_distinct_with_db(
+            build_units_count_query(
+                &&Json(req.clone()),
+                &login_id,
+                dt_since,
+                dt_till,
+                vec![group_master_key.to_string()],
+                None,
+            )
+            .unwrap(),
+            Expr::col((sigint_unit::Entity, sigint_unit::Column::Id)),
+            &env.dbx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(units_count, 2);
+
+        let first_unit_id = first_unit.id;
+        let mut first_unit = first_unit.into_active_model();
+        first_unit.name = Set("Renamed unit".to_string());
+        first_unit.update(&env.dbx).await.unwrap();
+        units = load().await;
+        assert!(units.iter().any(|unit| {
+            unit.unit_id == first_unit_id && unit.name == "Renamed unit"
+        }));
     }
 
     #[tokio::test]

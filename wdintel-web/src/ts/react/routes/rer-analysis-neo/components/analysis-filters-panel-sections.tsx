@@ -20,6 +20,7 @@ import type { CountStatsRsp } from '../../../../../Bindings';
 import type { AnalysisFilterSectionId } from '../types';
 import { normalizeCallsignFilterValues } from '../../../utils/callsign-normalization';
 import { NO_DATA_LABEL } from '../../../utils/misc';
+import { isCanonicalUnitIdValue } from '../../../utils/unit-search';
 import { AnalysisFilterField } from './AnalysisFilterField';
 import { AnalysisDeviceNamesFilter } from './AnalysisDeviceNamesFilter';
 import type { AnalysisFiltersPanelDerivedData } from './analysis-filters-panel-derived';
@@ -348,7 +349,7 @@ export function AnalysisFiltersPanelSections({
             preserveSelectedOptionValuesOnChange
             onChange={(unitsSelected) => updateQueryState({ unitsSelected })}
           />
-          {queryState.unitsSelected.length > 0 ? (
+          {queryState.unitsSelected.some((value) => !isCanonicalUnitIdValue(value)) ? (
             <FormControlLabel
               control={
                 <Checkbox

@@ -1,4 +1,4 @@
-module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, emptyQueryState, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, updModelFromQueryState, updModelFromSavedFilter)
+module Pages_.RerAnalysis.Query exposing (analysisStatsDefaultParams, analysisStatsParams, canonicalUnitIdFromValue, emptyQueryState, isCanonicalUnitIdValue, modelQueryState, normalizeUnitNameFromMap, normalizeUnitSelections, partitionUnitSelections, unitIdFilterValue, updModelFromQueryState, updModelFromSavedFilter)
 
 import Bindings as B
 import Pages_.RerAnalysis.Model exposing (..)
@@ -75,6 +75,53 @@ normalizeUnitSelections unitNames =
         )
         []
         unitNames
+
+
+partitionUnitSelections : List String -> ( List Int, List String )
+partitionUnitSelections values =
+    List.foldr
+        (\value ( ids, legacy ) ->
+            case canonicalUnitIdFromValue value of
+                Just unitId ->
+                    ( unitId :: ids, legacy )
+
+                Nothing ->
+                    ( ids, value :: legacy )
+        )
+        ( [], [] )
+        values
+
+
+isCanonicalUnitIdValue : String -> Bool
+isCanonicalUnitIdValue value =
+    canonicalUnitIdFromValue value /= Nothing
+
+
+unitIdFilterValue : Int -> String
+unitIdFilterValue unitId =
+    if unitId == 0 then
+        "Не визначено"
+
+    else
+        "unit-id:" ++ String.fromInt unitId
+
+
+canonicalUnitIdFromValue : String -> Maybe Int
+canonicalUnitIdFromValue value =
+    if String.startsWith "unit-id:" value then
+        case String.dropLeft 8 value |> String.toInt of
+            Just unitId ->
+                if unitId > 0 && unitIdFilterValue unitId == value then
+                    Just unitId
+
+                else
+                    Nothing
+
+            Nothing ->
+                Nothing
+
+    else
+        Nothing
 
 
 normalizeQueryStateMetadata : B.RerAnalysisQueryState -> B.RerAnalysisQueryState
@@ -236,6 +283,9 @@ updModelFromQueryState model ms =
 analysisStatsParams : Posix -> Posix -> Model -> B.AnalysisStatsReq
 analysisStatsParams dtFromPosix dtToPosix model =
     let
+        ( selectedUnitIds, selectedLegacyUnits ) =
+            partitionUnitSelections (normalizeUnitSelections model.unitsSelected)
+
         selectedNetworks =
             if model.withoutNetwork then
                 Nothing
@@ -252,7 +302,8 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , selectedSenders = emptyToNothing model.sendersSelected
         , selectedFreqs = emptyToNothing (model.freqsSelected ++ model.filterSelectedAdjacentFreqs)
         , selectedCallsigns = emptyToNothing model.callsignsSelected
-        , selectedUnits = emptyToNothing (normalizeUnitSelections model.unitsSelected)
+        , selectedUnits = emptyToNothing selectedLegacyUnits
+        , selectedUnitIds = emptyToNothing selectedUnitIds
         , selectedDeviceNames = Nothing
         , selectedLocations = emptyToNothing model.locationsSelected
         , selectedPosts = emptyToNothing model.postsSelected
@@ -279,7 +330,12 @@ analysisStatsParams dtFromPosix dtToPosix model =
         , selectedNetworks = selectedNetworks
         , withoutNetwork = Just model.withoutNetwork
         , filterTagsOption = Nothing
-        , unitsExactMatchOnly = Just model.unitsExactMatchOnly
+        , unitsExactMatchOnly =
+            if List.isEmpty selectedLegacyUnits then
+                Nothing
+
+            else
+                Just model.unitsExactMatchOnly
         , withoutModelTags = Just model.withoutModelTags
         , reportTagsOnlyThisUnit = Just model.reportTagsOnlyThisUnit
         }
@@ -294,6 +350,7 @@ analysisStatsDefaultParams dtFromPosix dtToPosix =
     , selectedFreqs = Nothing
     , selectedCallsigns = Nothing
     , selectedUnits = Nothing
+    , selectedUnitIds = Nothing
     , selectedDeviceNames = Nothing
     , selectedLocations = Nothing
     , selectedPosts = Nothing
@@ -338,7 +395,10 @@ updModelFromRerAnalysisStatsReq model req =
         , sendersSelected = normalizedReq.selectedSenders |> def []
         , freqsSelected = normalizedReq.selectedFreqs |> def []
         , callsignsSelected = normalizedReq.selectedCallsigns |> def []
-        , unitsSelected = normalizedReq.selectedUnits |> def [] |> normalizeUnitSelections
+        , unitsSelected =
+            (normalizedReq.selectedUnitIds |> def [] |> List.map unitIdFilterValue)
+                ++ (normalizedReq.selectedUnits |> def [])
+                |> normalizeUnitSelections
         , tagsSelected = normalizedReq.selectedTags |> def []
         , orWithExtendedForm = normalizedReq.orWithExtendedForm |> def False
         , orBookmarked = normalizedReq.orBookmarked |> def False

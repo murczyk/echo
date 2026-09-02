@@ -737,6 +737,9 @@ pub(crate) fn req_allows_stats_aggregated(req: &AnalysisStatsReq) -> bool {
     if !is_filter_empty(&req.selected_units) {
         return false;
     }
+    if !is_filter_empty(&req.selected_unit_ids) {
+        return false;
+    }
     if !is_filter_empty(&req.selected_locations) {
         return false;
     }
@@ -1317,7 +1320,6 @@ enum RedisStringFacet {
     Sender,
     Frequency,
     Callsign,
-    Unit,
     Location,
 }
 
@@ -1368,7 +1370,6 @@ async fn load_redis_string_stats(
             RedisStringFacet::Callsign => {
                 std::mem::take(&mut bucket.callsign_hlls)
             }
-            RedisStringFacet::Unit => std::mem::take(&mut bucket.unit_hlls),
             RedisStringFacet::Location => {
                 std::mem::take(&mut bucket.location_hlls)
             }
@@ -1383,6 +1384,61 @@ async fn load_redis_string_stats(
         .into_iter()
         .map(|(value, sketch)| (value, sketch.estimate()))
         .collect())
+}
+
+async fn load_redis_unit_stats(
+    env: &Env,
+    intervals_5min: &[(NaiveDateTime, NaiveDateTime)],
+    days: &[NaiveDate],
+    batch_ids: &HashSet<i64>,
+) -> anyhow::Result<HashMap<i64, i64>> {
+    let buckets = match load_redis_unit_buckets_once(env, intervals_5min, days)
+        .await
+    {
+        Ok(buckets) => buckets,
+        Err(error) => {
+            warn!(
+                "Redis unit stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
+            );
+            repair_redis_general_stats(env, intervals_5min, days)
+                .await
+                .c(h!())?;
+            load_redis_unit_buckets_once(env, intervals_5min, days)
+                .await
+                .c(h!())?
+        }
+    };
+    let mut result = HashMap::<i64, redis::HllSketch>::new();
+    for row in buckets
+        .into_iter()
+        .flat_map(|bucket| bucket.unit_hlls)
+        .filter(|row| batch_ids.contains(&row.signal_group_batch_id))
+    {
+        result.entry(row.value).or_default().merge(&row.sketch);
+    }
+    Ok(result
+        .into_iter()
+        .map(|(unit_id, sketch)| (unit_id, sketch.estimate()))
+        .collect())
+}
+
+async fn load_redis_unit_buckets_once(
+    env: &Env,
+    intervals_5min: &[(NaiveDateTime, NaiveDateTime)],
+    days: &[NaiveDate],
+) -> anyhow::Result<Vec<redis::UnitBucket>> {
+    let stats_redis = group_stats_redis(env);
+    let mut result = Vec::new();
+    for (since, till) in intervals_5min.iter().copied() {
+        result.extend(
+            stats_redis
+                .read_unit_5min(&five_minute_timestamps(since, till))
+                .await
+                .c(h!())?,
+        );
+    }
+    result.extend(stats_redis.read_unit_days(days).await.c(h!())?);
+    Ok(result)
 }
 
 pub async fn read_redis_network_days(
@@ -1957,28 +2013,33 @@ pub async fn read_unit_stats_aggregated(
     let batch_ids = batches.iter().map(|b| b.id).collect::<Vec<i64>>();
 
     let batch_ids = batch_ids.into_iter().collect::<HashSet<_>>();
-    let stats = load_redis_string_stats(
-        env,
-        &intervals_5min,
-        &days,
-        &batch_ids,
-        RedisStringFacet::Unit,
-    )
-    .await
-    .c(h!())?;
-    Ok(unit_stats_from_counts(stats))
-}
-
-fn unit_stats_from_counts(
-    stats: HashMap<String, i64>,
-) -> Vec<AnalysisStatsUnit> {
-    stats
+    let stats = load_redis_unit_stats(env, &intervals_5min, &days, &batch_ids)
+        .await
+        .c(h!())?;
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(stats.keys().copied()))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .all(&env.dbx)
+        .await
+        .c(h!())?
         .into_iter()
-        .map(|(unit, count)| AnalysisStatsUnit {
-            unit: m_unit_to_unidenfitied(Some(unit)),
-            count,
+        .map(|unit| (unit.id, unit.name))
+        .collect::<HashMap<_, _>>();
+    Ok(stats
+        .into_iter()
+        .filter_map(|(unit_id, count)| {
+            let name = if unit_id == ANALYSIS_STATS_UNDEFINED_UNIT_ID {
+                Some(ANALYSIS_STATS_UNDEFINED_UNIT_NAME.to_string())
+            } else {
+                units.get(&unit_id).cloned()
+            };
+            name.map(|name| AnalysisStatsUnit {
+                unit_id,
+                name,
+                count,
+            })
         })
-        .collect()
+        .collect())
 }
 
 pub async fn read_location_stats_aggregated(
@@ -3310,23 +3371,6 @@ mod tests {
     }
 
     #[test]
-    fn aggregated_unit_stats_normalize_the_unknown_bucket() {
-        let units = unit_stats_from_counts(HashMap::from([
-            (String::new(), 13),
-            ("4 зБпС 50 обрБпС".to_string(), 11),
-        ]));
-
-        assert!(units.contains(&AnalysisStatsUnit {
-            unit: "Не визначено".to_string(),
-            count: 13,
-        }));
-        assert!(units.contains(&AnalysisStatsUnit {
-            unit: "4 зБпС 50 обрБпС".to_string(),
-            count: 11,
-        }));
-    }
-
-    #[test]
     fn consecutive_five_minute_buckets_are_batched() {
         let first = ndt(2026, 7, 29, 12, 0);
         assert_eq!(
@@ -3354,6 +3398,7 @@ mod tests {
             selected_freqs: None,
             selected_posts: None,
             selected_callsigns: None,
+            selected_unit_ids: None,
             selected_units: None,
             selected_locations: None,
             selected_device_names: None,
@@ -3452,7 +3497,7 @@ mod tests {
 
     #[serial]
     #[tokio::test]
-    async fn linked_unit_stats_use_distinct_non_deleted_unit_ids() {
+    async fn linked_unit_stats_include_distinct_units_and_undefined_bucket() {
         use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 
         let env = cleanup().await.unwrap();
@@ -3573,7 +3618,14 @@ mod tests {
             .map(|unit| (unit.value, unit.quantity))
             .collect_vec();
         unit_counts.sort_unstable();
-        assert_eq!(unit_counts, [(active_unit.id, 1), (inactive_unit.id, 1)]);
+        assert_eq!(
+            unit_counts,
+            [
+                (ANALYSIS_STATS_UNDEFINED_UNIT_ID, 1),
+                (active_unit.id, 1),
+                (inactive_unit.id, 1),
+            ]
+        );
         assert!(units
             .unit_hlls
             .iter()
@@ -3587,7 +3639,11 @@ mod tests {
         day_exact_counts.sort_unstable();
         assert_eq!(
             day_exact_counts,
-            [(active_unit.id, 1), (inactive_unit.id, 1)]
+            [
+                (ANALYSIS_STATS_UNDEFINED_UNIT_ID, 1),
+                (active_unit.id, 1),
+                (inactive_unit.id, 1),
+            ]
         );
         let mut day_distinct_counts = day_units
             .unit_hlls
@@ -3597,7 +3653,11 @@ mod tests {
         day_distinct_counts.sort_unstable();
         assert_eq!(
             day_distinct_counts,
-            [(active_unit.id, 1), (inactive_unit.id, 1)]
+            [
+                (ANALYSIS_STATS_UNDEFINED_UNIT_ID, 1),
+                (active_unit.id, 1),
+                (inactive_unit.id, 1),
+            ]
         );
         assert!(enqueue_group_stats_recalculation_for_linked_unit(
             &env.dbx,

@@ -388,6 +388,16 @@
       "changes": [
         { "table": "public.report_download_history", "strategy": "excluded" }
       ]
+    },
+    "echo:m20260827_154846_normalize_failed_unit_labels": {
+      "changes": [
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" },
+        { "table": "public.failed_unit_label", "strategy": "excluded" },
+        {
+          "table": "public.sigint_inbox_item_failed_unit_label",
+          "strategy": "excluded"
+        }
+      ]
     }
   },
   "dependencies": {
