@@ -1681,15 +1681,15 @@ pub async fn merge_units(
         acquire_unit_merge_guard(dbx, unit_to_delete_id, original_id)
             .await
             .c(h!())?;
-    prepare_unit_merge(login, dbx, unit_to_delete_id, original_id).await?;
     let transaction = dbx.begin().await.context(h!())?;
-    let unit = merge_units_after_preparation_in_transaction(
+    let unit = merge_units_in_transaction(
         login,
         &transaction,
         unit_to_delete_id,
         original_id,
     )
-    .await?;
+    .await
+    .context(h!())?;
     transaction.commit().await.context(h!())?;
     merge_guard.commit().await.context(h!())?;
     Ok(unit)
@@ -1706,11 +1706,7 @@ async fn acquire_unit_merge_guard(
     } else {
         (original_id, unit_to_delete_id)
     };
-    let mut lock_names = [
-        format!("clone:{unit_to_delete_id}"),
-        format!("pair:{lower_id}:{higher_id}"),
-    ];
-    lock_names.sort_unstable();
+    let lock_names = [format!("unit:{lower_id}"), format!("unit:{higher_id}")];
     for lock_name in lock_names {
         loop {
             let row = transaction
@@ -1758,62 +1754,18 @@ where
     )
     .await
     .c(h!())?;
-    merge_units_after_preparation_in_transaction(
+    let unit = complete_unit_merge_in_transaction(
         login,
         dbx,
         unit_to_delete_id,
         original_id,
     )
     .await
+    .context(h!())?;
+    Ok(unit)
 }
 
-async fn prepare_unit_merge(
-    login: uuid::Uuid,
-    dbx: &DatabaseConnection,
-    unit_to_delete_id: i64,
-    original_id: i64,
-) -> Result<(), AppError> {
-    if unit_to_delete_id == original_id {
-        return Err(AppError::BL {
-            msg: "unit cannot be merged into itself".to_string(),
-        });
-    }
-    find_available_unit(dbx, unit_to_delete_id).await.c(h!())?;
-    find_available_unit(dbx, original_id).await.c(h!())?;
-    crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
-        dbx,
-        unit_to_delete_id,
-        format!("merged unit {unit_to_delete_id} into {original_id}"),
-    )
-    .await
-    .c(h!())?;
-    move_unit_related_data_before_merge(
-        login,
-        dbx,
-        unit_to_delete_id,
-        original_id,
-    )
-    .await
-    .c(h!())?;
-    Ok(())
-}
-
-async fn move_unit_related_data_before_merge(
-    login: uuid::Uuid,
-    dbx: &DatabaseConnection,
-    old_unit_id: i64,
-    new_unit_id: i64,
-) -> Result<(), AppError> {
-    let transaction = dbx.begin().await.c(h!())?;
-    changelog::set_author(&transaction, &login).await.c(h!())?;
-    swap_units(old_unit_id, new_unit_id, login, &transaction)
-        .await
-        .c(h!())?;
-    transaction.commit().await.c(h!())?;
-    Ok(())
-}
-
-async fn merge_units_after_preparation_in_transaction<C>(
+async fn complete_unit_merge_in_transaction<C>(
     login: uuid::Uuid,
     dbx: &C,
     unit_to_delete_id: i64,
@@ -1891,21 +1843,6 @@ where
             .c(h!())?
             .unit,
     )
-}
-
-async fn find_available_unit<C>(
-    dbx: &C,
-    unit_id: i64,
-) -> Result<sigint_unit::Model, AppError>
-where
-    C: ConnectionTrait,
-{
-    sigint_unit::Entity::find_by_id(unit_id)
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .one(dbx)
-        .await
-        .context(format!("{} unit_id={unit_id}", h!()))?
-        .ok_or(AppError::NotFound)
 }
 
 async fn find_units_for_merge<C>(
@@ -2567,12 +2504,12 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_merge_guard_serializes_the_same_pair() {
+    async fn unit_merge_guard_serializes_overlapping_merges() {
         let env = cleanup().await.unwrap();
         let first = acquire_unit_merge_guard(&env.dbx, 1, 2).await.unwrap();
         let dbx = env.dbx.clone();
         let mut second = tokio::spawn(async move {
-            acquire_unit_merge_guard(&dbx, 2, 1).await.unwrap()
+            acquire_unit_merge_guard(&dbx, 2, 3).await.unwrap()
         });
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         assert!(!second.is_finished());
@@ -5123,7 +5060,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_merge_preparation_commits_related_data_first() {
+    async fn unit_merge_transaction_rolls_back_related_data() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let duplicate = crate::functest::tests::mk_sigint_unit(
@@ -5147,9 +5084,16 @@ mod tests {
         .await
         .unwrap();
 
-        prepare_unit_merge(login_id, &env.dbx, duplicate.id, surviving.id)
-            .await
-            .unwrap();
+        let transaction = env.dbx.begin().await.unwrap();
+        merge_units_in_transaction(
+            login_id,
+            &transaction,
+            duplicate.id,
+            surviving.id,
+        )
+        .await
+        .unwrap();
+        transaction.rollback().await.unwrap();
 
         assert_eq!(
             sigint_unit_label::Entity::find_by_id(label.id)
@@ -5158,9 +5102,16 @@ mod tests {
                 .unwrap()
                 .unwrap()
                 .sigint_unit_id,
-            surviving.id
+            duplicate.id
         );
-        assert!(find_available_unit(&env.dbx, duplicate.id).await.is_ok());
+        assert!(
+            !sigint_unit::Entity::find_by_id(duplicate.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .deleted
+        );
     }
 
     #[tokio::test]
