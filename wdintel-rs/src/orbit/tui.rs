@@ -121,6 +121,8 @@ pub(super) struct SigintDuplicateReviewUnit {
 pub(super) struct SigintDuplicateReviewPair {
     pub left: SigintDuplicateReviewUnit,
     pub right: SigintDuplicateReviewUnit,
+    pub left_orbit_unit_ids: Vec<uuid::Uuid>,
+    pub right_orbit_unit_ids: Vec<uuid::Uuid>,
     pub shared_orbit_unit_ids: Vec<uuid::Uuid>,
 }
 
@@ -1078,12 +1080,16 @@ fn sigint_duplicate_pair_review_lines(
                 .add_modifier(Modifier::BOLD),
         ),
         Line::from(format!(
+            "LEFT active ORBIT UUIDs: {}",
+            orbit_unit_ids_text(&pair.left_orbit_unit_ids)
+        )),
+        Line::from(format!(
+            "RIGHT active ORBIT UUIDs: {}",
+            orbit_unit_ids_text(&pair.right_orbit_unit_ids)
+        )),
+        Line::from(format!(
             "Shared ORBIT UUIDs: {}",
-            pair.shared_orbit_unit_ids
-                .iter()
-                .map(uuid::Uuid::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
+            orbit_unit_ids_text(&pair.shared_orbit_unit_ids)
         )),
         Line::default(),
     ];
@@ -1103,6 +1109,14 @@ fn sigint_duplicate_pair_review_lines(
         lines.extend(sigint_duplicate_field_diff_lines(&label, &left, &right));
     }
     lines
+}
+
+fn orbit_unit_ids_text(orbit_unit_ids: &[uuid::Uuid]) -> String {
+    orbit_unit_ids
+        .iter()
+        .map(uuid::Uuid::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn sigint_duplicate_hierarchy(unit: &SigintDuplicateReviewUnit) -> String {

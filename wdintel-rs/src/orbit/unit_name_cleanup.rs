@@ -1,5 +1,9 @@
 use super::tui;
-use crate::config::ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE;
+use crate::config::{
+    ORBIT_UNIT_NAME_CLEANUP_ARMY_EXCLUDED_WORDS,
+    ORBIT_UNIT_NAME_CLEANUP_CORPS_EXCLUDED_WORDS,
+    ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE,
+};
 use crate::entities::sigint_unit;
 use crate::orbit::EchoEchelon;
 use crate::types::{Mode, ShortContext};
@@ -235,7 +239,9 @@ fn proposed_name_change(
     let cleared_echelons = cleanup_echelons(unit)
         .into_iter()
         .filter(|(echelon, _, value)| {
-            !value.trim().is_empty() && !orbit_echelons.contains(echelon)
+            !value.trim().is_empty()
+                && !orbit_echelons.contains(echelon)
+                && !is_cleanup_exception(*echelon, value)
         })
         .map(|(_, attribute, value)| ClearedEchelon {
             attribute,
@@ -246,12 +252,27 @@ fn proposed_name_change(
         return None;
     }
     let proposed_name = proposed_name(unit, &cleared_echelons);
+    if proposed_name.is_empty() {
+        return None;
+    }
     Some(UnitNameChange {
         unit_id: unit.id,
         current_name: unit.name.clone(),
         proposed_name,
         cleared_echelons,
     })
+}
+
+fn is_cleanup_exception(echelon: EchoEchelon, value: &str) -> bool {
+    let excluded_words = match echelon {
+        EchoEchelon::Army => ORBIT_UNIT_NAME_CLEANUP_ARMY_EXCLUDED_WORDS,
+        EchoEchelon::Corps => ORBIT_UNIT_NAME_CLEANUP_CORPS_EXCLUDED_WORDS,
+        _ => return false,
+    };
+    value
+        .to_lowercase()
+        .split(|character: char| !character.is_alphanumeric())
+        .any(|word| excluded_words.contains(&word))
 }
 
 fn cleanup_echelons(
@@ -536,6 +557,24 @@ mod tests {
                 }],
             })
         );
+    }
+
+    #[test]
+    fn keeps_name_when_clearing_echelons_would_empty_it() {
+        let unit = sigint_unit("МВО ЗС РФ", "МВО", "ЗС РФ");
+
+        assert_eq!(proposed_name_change(&unit, &HashSet::new()), None);
+    }
+
+    #[test]
+    fn keeps_pks_army_and_corps_case_insensitively() {
+        let mut army = sigint_unit("1 ртп ПКС", "", "");
+        army.army = "ПКС".to_string();
+        let mut corps = sigint_unit("1 ртп пКс", "", "");
+        corps.corps = "пКс".to_string();
+
+        assert_eq!(proposed_name_change(&army, &HashSet::new()), None);
+        assert_eq!(proposed_name_change(&corps, &HashSet::new()), None);
     }
 
     fn sigint_unit(

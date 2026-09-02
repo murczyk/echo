@@ -4,8 +4,9 @@ use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, JoinType, QueryFilter,
-    QueryOrder, QuerySelect, RelationTrait,
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait,
+    FromQueryResult, JoinType, QueryFilter, QueryOrder, QuerySelect,
+    RelationTrait, Statement,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -22,6 +23,14 @@ struct ReviewPlan {
 #[derive(Debug, Clone)]
 struct ReviewPair {
     unit_ids: UnitPairIds,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct OrbitHierarchyUnit {
+    unit_id: Uuid,
+    generative_parent_unit_id: Option<Uuid>,
+    echelon_key: Option<String>,
+    preferred_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -214,25 +223,105 @@ where
     if orbit_unit_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let orbit_units = orbit_unit::Entity::find()
-        .filter(orbit_unit::Column::UnitId.is_in(orbit_unit_ids))
+    let sql = r#"
+        with recursive hierarchy_unit_ids(unit_id) as (
+            select unnest($1::uuid[])
+
+            union
+
+            select parent.unit_id
+            from hierarchy_unit_ids hierarchy
+            inner join orbit_unit unit
+                on unit.unit_id = hierarchy.unit_id
+                and unit.deleted = false
+            inner join orbit_unit parent
+                on parent.unit_id = unit.generative_parent_unit_id
+                and parent.deleted = false
+        )
+        select
+            unit.unit_id,
+            unit.generative_parent_unit_id,
+            echelon.key as echelon_key,
+            coalesce(
+                nullif(btrim(unit.unit_name_short), ''),
+                nullif(btrim(unit.unit_name), ''),
+                nullif(btrim(unit.unit_name_original), ''),
+                nullif(btrim(unit.unit_number), '')
+            ) as preferred_name
+        from hierarchy_unit_ids hierarchy
+        inner join orbit_unit unit
+            on unit.unit_id = hierarchy.unit_id
+            and unit.deleted = false
+        left join orbit_unit_echelon echelon
+            on echelon.id = unit.unit_echelon_id
+        order by unit.unit_id
+    "#;
+    let hierarchy_units =
+        OrbitHierarchyUnit::find_by_statement(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            sql,
+            [orbit_unit_ids.iter().copied().collect::<Vec<_>>().into()],
+        ))
         .all(db)
         .await
-        .c(h!())?;
+        .c(h!())?
+        .into_iter()
+        .map(|unit| (unit.unit_id, unit))
+        .collect::<BTreeMap<_, _>>();
     let mut orbit_hierarchies = BTreeMap::new();
-    for orbit_unit in orbit_units {
+    for orbit_unit_id in orbit_unit_ids {
         if let Some(hierarchy) =
-            crate::sigint::unit::orbit::orbit_hierarchy_for_propagation(
-                db,
-                &orbit_unit,
-            )
-            .await
-            .c(h!())?
+            orbit_hierarchy_for_propagation(orbit_unit_id, &hierarchy_units)
+                .c(h!())?
         {
-            orbit_hierarchies.insert(orbit_unit.unit_id, hierarchy);
+            orbit_hierarchies.insert(orbit_unit_id, hierarchy);
         }
     }
     Ok(orbit_hierarchies)
+}
+
+fn orbit_hierarchy_for_propagation(
+    orbit_unit_id: Uuid,
+    hierarchy_units: &BTreeMap<Uuid, OrbitHierarchyUnit>,
+) -> anyhow::Result<Option<[String; 14]>> {
+    let orbit_unit = hierarchy_units.get(&orbit_unit_id).c(h!())?;
+    let mut hierarchy = std::array::from_fn(|_| String::new());
+    if !fill_orbit_hierarchy_level(orbit_unit, &mut hierarchy) {
+        return Ok(None);
+    }
+    let mut visited = BTreeSet::from([orbit_unit_id]);
+    let mut parent_id = orbit_unit.generative_parent_unit_id;
+    while let Some(orbit_unit_id) = parent_id {
+        if !visited.insert(orbit_unit_id) {
+            return Ok(None);
+        }
+        let orbit_unit = hierarchy_units.get(&orbit_unit_id).c(h!())?;
+        parent_id = orbit_unit.generative_parent_unit_id;
+        fill_orbit_hierarchy_level(orbit_unit, &mut hierarchy);
+    }
+    Ok(Some(hierarchy))
+}
+
+fn fill_orbit_hierarchy_level(
+    orbit_unit: &OrbitHierarchyUnit,
+    hierarchy: &mut [String; 14],
+) -> bool {
+    let Some(echelon) = orbit_unit
+        .echelon_key
+        .as_deref()
+        .and_then(super::echo_echelon)
+    else {
+        return false;
+    };
+    let Some(name) = orbit_unit.preferred_name.as_ref() else {
+        return false;
+    };
+    let value = &mut hierarchy[echelon.index()];
+    if !value.is_empty() {
+        return false;
+    }
+    value.clone_from(name);
+    true
 }
 
 fn build_review_plan(
@@ -325,9 +414,13 @@ fn review_manually_inner(
             continue;
         }
         displayed += 1;
-        let pair =
-            review_pair(&projected_units, unit_ids, &shared_orbit_unit_ids)
-                .c(h!())?;
+        let pair = review_pair(
+            &projected_units,
+            &projected_links_by_unit_id,
+            unit_ids,
+            &shared_orbit_unit_ids,
+        )
+        .c(h!())?;
         match tui::review_sigint_duplicate_pair(
             terminal,
             &pair,
@@ -409,31 +502,56 @@ fn projected_shared_orbit_unit_ids(
     >,
     unit_ids: UnitPairIds,
 ) -> BTreeSet<Uuid> {
-    let active_orbit_unit_ids = |unit_id| {
-        links_by_unit_id
-            .get(&unit_id)
-            .into_iter()
-            .flat_map(BTreeMap::values)
-            .filter(|link| !link.is_suppressed)
-            .map(|link| link.orbit_unit_id)
-            .collect::<BTreeSet<_>>()
-    };
-    let left_orbit_unit_ids = active_orbit_unit_ids(unit_ids.left_id);
-    let right_orbit_unit_ids = active_orbit_unit_ids(unit_ids.right_id);
+    let left_orbit_unit_ids =
+        projected_active_orbit_unit_ids(links_by_unit_id, unit_ids.left_id);
+    let right_orbit_unit_ids =
+        projected_active_orbit_unit_ids(links_by_unit_id, unit_ids.right_id);
     left_orbit_unit_ids
         .intersection(&right_orbit_unit_ids)
         .copied()
         .collect()
 }
 
+fn projected_active_orbit_unit_ids(
+    links_by_unit_id: &BTreeMap<
+        i64,
+        BTreeMap<Uuid, orbit_unit_sigint_unit::Model>,
+    >,
+    unit_id: i64,
+) -> BTreeSet<Uuid> {
+    links_by_unit_id
+        .get(&unit_id)
+        .into_iter()
+        .flat_map(BTreeMap::values)
+        .filter(|link| !link.is_suppressed)
+        .map(|link| link.orbit_unit_id)
+        .collect()
+}
+
 fn review_pair(
     units: &BTreeMap<i64, sigint_unit::Model>,
+    links_by_unit_id: &BTreeMap<
+        i64,
+        BTreeMap<Uuid, orbit_unit_sigint_unit::Model>,
+    >,
     unit_ids: UnitPairIds,
     shared_orbit_unit_ids: &BTreeSet<Uuid>,
 ) -> anyhow::Result<tui::SigintDuplicateReviewPair> {
     Ok(tui::SigintDuplicateReviewPair {
         left: review_unit(units.get(&unit_ids.left_id).c(h!())?),
         right: review_unit(units.get(&unit_ids.right_id).c(h!())?),
+        left_orbit_unit_ids: projected_active_orbit_unit_ids(
+            links_by_unit_id,
+            unit_ids.left_id,
+        )
+        .into_iter()
+        .collect(),
+        right_orbit_unit_ids: projected_active_orbit_unit_ids(
+            links_by_unit_id,
+            unit_ids.right_id,
+        )
+        .into_iter()
+        .collect(),
         shared_orbit_unit_ids: shared_orbit_unit_ids.iter().copied().collect(),
     })
 }
