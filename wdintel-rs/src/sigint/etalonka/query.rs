@@ -2144,26 +2144,57 @@ pub async fn get_callsigns_for_network_freq_batch_with_period(
         .collect())
 }
 
-/// Function to filter out duplicate callsigns
-/// and keep only the ones with known callsigns
-/// or the first occurrence of each callsign
-/// in the list of callsigns.
 fn filter_callsigns(callsigns: Vec<CallsignRes>) -> Vec<CallsignRes> {
-    let mut seen_callsigns = HashSet::new();
-    let mut result = Vec::new();
+    let mut callsign_indexes: HashMap<String, usize> = HashMap::new();
+    let mut result: Vec<CallsignRes> = Vec::new();
 
-    for c in callsigns {
-        if c.known_callsigns.is_some() {
-            result.push(c);
-        } else {
-            // Use the callsign string to deduplicate
-            if seen_callsigns.insert(c.callsign.clone()) {
-                result.push(c);
-            }
+    for mut callsign in callsigns {
+        if let Some(index) = callsign_indexes.get(&callsign.callsign).copied() {
+            merge_known_callsigns(
+                &mut result[index].known_callsigns,
+                callsign.known_callsigns,
+            );
+            continue;
         }
+
+        deduplicate_known_callsigns(&mut callsign.known_callsigns);
+        callsign_indexes.insert(callsign.callsign.clone(), result.len());
+        result.push(callsign);
     }
 
     result
+}
+
+fn deduplicate_known_callsigns(
+    known_callsigns: &mut Option<Vec<KnownCallsignShortRes>>,
+) {
+    let Some(known_callsigns) = known_callsigns else {
+        return;
+    };
+    let mut known_callsign_ids = HashSet::new();
+    known_callsigns
+        .retain(|known_callsign| known_callsign_ids.insert(known_callsign.id));
+    known_callsigns.sort_by_key(|known_callsign| known_callsign.id);
+}
+
+fn merge_known_callsigns(
+    target: &mut Option<Vec<KnownCallsignShortRes>>,
+    source: Option<Vec<KnownCallsignShortRes>>,
+) {
+    let Some(source) = source else {
+        return;
+    };
+    let target = target.get_or_insert_with(Vec::new);
+    let mut known_callsign_ids = target
+        .iter()
+        .map(|known_callsign| known_callsign.id)
+        .collect::<HashSet<_>>();
+    target.extend(
+        source.into_iter().filter(|known_callsign| {
+            known_callsign_ids.insert(known_callsign.id)
+        }),
+    );
+    target.sort_by_key(|known_callsign| known_callsign.id);
 }
 
 fn filter_callsigns_for_section(
@@ -2816,6 +2847,20 @@ mod tests {
         }
     }
 
+    fn test_known_callsign(id: i64) -> KnownCallsignShortRes {
+        KnownCallsignShortRes {
+            id,
+            callsign: "KNOWN".to_string(),
+            position: String::new(),
+            comment: String::new(),
+            full_name: String::new(),
+            unit_id: id,
+            unit_name: format!("Unit {id}"),
+            source_name: String::new(),
+            created_at: id,
+        }
+    }
+
     async fn mk_network_with_unit(
         db: &DatabaseConnection,
         network_name: &str,
@@ -3120,6 +3165,41 @@ mod tests {
         assert_primary_sort_before_name(
             &sql,
             "\"sigint_network\".\"updated_at\" DESC",
+        );
+    }
+
+    #[test]
+    fn filter_callsigns_deduplicates_catalog_matches_across_network_units() {
+        let first_match = test_known_callsign(1);
+        let second_match = test_known_callsign(2);
+        let callsigns = vec![
+            test_callsign_res("KNOWN", Some(vec![first_match.clone()])),
+            test_callsign_res(
+                "KNOWN",
+                Some(vec![second_match.clone(), first_match]),
+            ),
+            test_callsign_res("KNOWN", None),
+        ];
+
+        let mut callsigns = filter_callsigns(callsigns);
+        apply_activity_info(
+            &mut callsigns,
+            &HashMap::from([(
+                "KNOWN".to_string(),
+                CallsignActivityInfo {
+                    message_count: 7,
+                    last_datetime: None,
+                    freqs: None,
+                    network_names: None,
+                },
+            )]),
+        );
+
+        assert_eq!(callsigns.len(), 1);
+        assert_eq!(callsigns[0].message_count, 7);
+        assert_eq!(
+            callsigns[0].known_callsigns,
+            Some(vec![test_known_callsign(1), second_match])
         );
     }
 

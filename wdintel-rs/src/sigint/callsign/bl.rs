@@ -494,6 +494,11 @@ fn unit_identity_matches(
     if left.id.is_some() && left.id == right.id {
         return true;
     }
+    if unit_hierarchy_specificity(left).is_some()
+        || unit_hierarchy_specificity(right).is_some()
+    {
+        return false;
+    }
 
     match (
         normalized_unit_value(left.name),
@@ -704,18 +709,9 @@ mod tests {
 
     #[test]
     fn match_known_callsigns_excludes_siblings_and_other_hierarchies() {
-        let network_unit = unit_with_lineage(
-            10,
-            "1 мсб 283 мсп 42 мсд 1 А",
-            Some("1 мсб"),
-            None,
-        );
-        let mut other_regiment = known_callsign_with_lineage(
-            30,
-            "1 мсб 423 мсп 42 мсд 1 А",
-            Some("1 мсб"),
-            None,
-        );
+        let network_unit = unit_with_lineage(10, "1 мсб", Some("1 мсб"), None);
+        let mut other_regiment =
+            known_callsign_with_lineage(30, "1 мсб", Some("1 мсб"), None);
         other_regiment.regiment = Some("423 мсп".to_string());
         let known_callsigns = vec![
             known_callsign_with_lineage(
