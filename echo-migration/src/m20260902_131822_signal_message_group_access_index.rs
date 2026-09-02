@@ -16,7 +16,7 @@ impl MigrationTrait for Migration {
             .get_connection()
             .execute_unprepared(
                 r#"
-create index concurrently if not exists signal_message_group_group_master_key_signal_message_id_idx
+create index concurrently signal_message_group_group_master_key_signal_message_id_idx
     on signal_message_group (group_master_key, signal_message_id);
                 "#,
             )

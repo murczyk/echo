@@ -2517,7 +2517,8 @@ pub(super) async fn count_freqs_with_db(
     )?;
     count_distinct_with_db(
         freqs_res,
-        Expr::col(sigint_inbox_item::Column::Freq).if_null(""),
+        Expr::col((sigint_inbox_item::Entity, sigint_inbox_item::Column::Freq))
+            .if_null(""),
         db,
     )
     .await

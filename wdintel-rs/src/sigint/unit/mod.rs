@@ -1,7 +1,8 @@
 use self::types::*;
 use crate::config::{
     SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME, SIGINT_UNIT_LIST_DEFAULT_LIMIT,
-    SIGINT_UNIT_LIST_MAX_LIMIT,
+    SIGINT_UNIT_LIST_MAX_LIMIT, SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
+    SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
 };
 use crate::entities::sea_orm_active_enums::ChangelogActionEnum;
 use crate::entities::*;
@@ -1647,10 +1648,8 @@ pub async fn delete_unit_duplicate(
 ) -> Result<Json<Unit>, AppError> {
     let dbx = &env.dbx;
     ensure_rer_role(dbx, &user).await.c(h!())?;
-    has_role(dbx, &login_id_from_identity(&user)?, "UnitsEditor")
-        .await
-        .c(h!())?;
-    let login = login_id_from_identity(&user)?;
+    let login = login_id_from_identity(&user).context(h!())?;
+    has_role(dbx, &login, "UnitsEditor").await.c(h!())?;
     let req: DeleteUnitDuplicateReq = req.into_inner();
     let unit_to_delete_id = req.clone_to_delete_id;
     let original_id = req.original_id;
@@ -1662,8 +1661,10 @@ pub async fn delete_unit_duplicate(
     let event = EventMsg::new(EventType::ETUnitChanged);
     fanout(&mut env.redis.clone(), event).await.context(h!())?;
 
-    let mut unit = render_unit(&unit)?;
-    let can_view_orbit = orbit::can_view_orbit_data(dbx, &login).await?;
+    let mut unit = render_unit(&unit).context(h!())?;
+    let can_view_orbit = orbit::can_view_orbit_data(dbx, &login)
+        .await
+        .context(h!())?;
     apply_unit_orbit_visibility(dbx, &mut unit, can_view_orbit)
         .await
         .context(h!())?;
@@ -1676,8 +1677,13 @@ pub async fn merge_units(
     unit_to_delete_id: i64,
     original_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
+    let merge_guard =
+        acquire_unit_merge_guard(dbx, unit_to_delete_id, original_id)
+            .await
+            .c(h!())?;
+    prepare_unit_merge(login, dbx, unit_to_delete_id, original_id).await?;
     let transaction = dbx.begin().await.context(h!())?;
-    let unit = merge_units_in_transaction(
+    let unit = merge_units_after_preparation_in_transaction(
         login,
         &transaction,
         unit_to_delete_id,
@@ -1685,7 +1691,50 @@ pub async fn merge_units(
     )
     .await?;
     transaction.commit().await.context(h!())?;
+    merge_guard.commit().await.context(h!())?;
     Ok(unit)
+}
+
+async fn acquire_unit_merge_guard(
+    dbx: &DatabaseConnection,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> anyhow::Result<DatabaseTransaction> {
+    let transaction = dbx.begin().await.c(h!())?;
+    let (lower_id, higher_id) = if unit_to_delete_id < original_id {
+        (unit_to_delete_id, original_id)
+    } else {
+        (original_id, unit_to_delete_id)
+    };
+    let mut lock_names = [
+        format!("clone:{unit_to_delete_id}"),
+        format!("pair:{lower_id}:{higher_id}"),
+    ];
+    lock_names.sort_unstable();
+    for lock_name in lock_names {
+        loop {
+            let row = transaction
+                .query_one_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    "select pg_try_advisory_xact_lock(hashtextextended($1::text || $2::text, 0)) as acquired",
+                    [
+                        SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE.into(),
+                        lock_name.clone().into(),
+                    ],
+                ))
+                .await
+                .c(h!())?
+                .c(h!())?;
+            if row.try_get::<bool>("", "acquired").c(h!())? {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(
+                SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
+            ))
+            .await;
+        }
+    }
+    Ok(transaction)
 }
 
 pub(crate) async fn merge_units_in_transaction<C>(
@@ -1697,17 +1746,11 @@ pub(crate) async fn merge_units_in_transaction<C>(
 where
     C: ConnectionTrait,
 {
-    changelog::set_author(dbx, &login).await.c(h!())?;
     if unit_to_delete_id == original_id {
         return Err(AppError::BL {
             msg: "unit cannot be merged into itself".to_string(),
         });
     }
-    let unit_to_delete =
-        find_available_unit_for_update(dbx, unit_to_delete_id).await?;
-    let unit_original =
-        find_available_unit_for_update(dbx, original_id).await?;
-    let previous_unit_original = unit_original.clone();
     crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
         dbx,
         unit_to_delete_id,
@@ -1715,6 +1758,76 @@ where
     )
     .await
     .c(h!())?;
+    merge_units_after_preparation_in_transaction(
+        login,
+        dbx,
+        unit_to_delete_id,
+        original_id,
+    )
+    .await
+}
+
+async fn prepare_unit_merge(
+    login: uuid::Uuid,
+    dbx: &DatabaseConnection,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<(), AppError> {
+    if unit_to_delete_id == original_id {
+        return Err(AppError::BL {
+            msg: "unit cannot be merged into itself".to_string(),
+        });
+    }
+    find_available_unit(dbx, unit_to_delete_id).await.c(h!())?;
+    find_available_unit(dbx, original_id).await.c(h!())?;
+    crate::stats::enqueue_group_stats_recalculation_for_linked_unit(
+        dbx,
+        unit_to_delete_id,
+        format!("merged unit {unit_to_delete_id} into {original_id}"),
+    )
+    .await
+    .c(h!())?;
+    move_unit_related_data_before_merge(
+        login,
+        dbx,
+        unit_to_delete_id,
+        original_id,
+    )
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn move_unit_related_data_before_merge(
+    login: uuid::Uuid,
+    dbx: &DatabaseConnection,
+    old_unit_id: i64,
+    new_unit_id: i64,
+) -> Result<(), AppError> {
+    let transaction = dbx.begin().await.c(h!())?;
+    changelog::set_author(&transaction, &login).await.c(h!())?;
+    swap_units(old_unit_id, new_unit_id, login, &transaction)
+        .await
+        .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    Ok(())
+}
+
+async fn merge_units_after_preparation_in_transaction<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    changelog::set_author(dbx, &login).await.c(h!())?;
+    let (unit_to_delete, unit_original) =
+        find_units_for_merge(dbx, unit_to_delete_id, original_id)
+            .await
+            .context(h!())?;
+    let previous_unit_original = unit_original.clone();
     let unit_original =
         update_original_unit(unit_original, &unit_to_delete, dbx)
             .await
@@ -1739,6 +1852,7 @@ where
 
     let mut unit = unit_to_delete.clone().into_active_model();
     unit.deleted = Set(true);
+    unit.is_deduplicate_candidate = Set(Some(false));
     unit.update(dbx).await.context(h!())?;
 
     let _changelog = sigint_unit_changelog::ActiveModel {
@@ -1763,12 +1877,14 @@ where
             unit_original.clone(),
         ],
     )
-    .await?;
+    .await
+    .context(h!())?;
     crate::orbit::reevaluate_sigint_unit_deduplicate_candidate(
         dbx,
         unit_original.id,
     )
-    .await?;
+    .await
+    .context(h!())?;
     Ok(
         orbit::reconcile_sigint_unit_orbit(dbx, &login, unit_original.id, true)
             .await
@@ -1777,7 +1893,7 @@ where
     )
 }
 
-async fn find_available_unit_for_update<C>(
+async fn find_available_unit<C>(
     dbx: &C,
     unit_id: i64,
 ) -> Result<sigint_unit::Model, AppError>
@@ -1786,11 +1902,41 @@ where
 {
     sigint_unit::Entity::find_by_id(unit_id)
         .filter(sigint_unit::Column::Deleted.eq(false))
-        .lock_exclusive()
         .one(dbx)
         .await
-        .context(h!())?
+        .context(format!("{} unit_id={unit_id}", h!()))?
         .ok_or(AppError::NotFound)
+}
+
+async fn find_units_for_merge<C>(
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<(sigint_unit::Model, sigint_unit::Model), AppError>
+where
+    C: ConnectionTrait,
+{
+    let units = sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in([unit_to_delete_id, original_id]))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .order_by_asc(sigint_unit::Column::Id)
+        .lock_exclusive()
+        .all(dbx)
+        .await
+        .context(format!(
+            "{} clone_id={unit_to_delete_id} original_id={original_id}",
+            h!()
+        ))?;
+    let unit_to_delete = units
+        .iter()
+        .find(|unit| unit.id == unit_to_delete_id)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let unit_original = units
+        .into_iter()
+        .find(|unit| unit.id == original_id)
+        .ok_or(AppError::NotFound)?;
+    Ok((unit_to_delete, unit_original))
 }
 
 pub async fn find_unit<C>(
@@ -2417,6 +2563,29 @@ mod tests {
         crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
             .await
             .unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn unit_merge_guard_serializes_the_same_pair() {
+        let env = cleanup().await.unwrap();
+        let first = acquire_unit_merge_guard(&env.dbx, 1, 2).await.unwrap();
+        let dbx = env.dbx.clone();
+        let mut second = tokio::spawn(async move {
+            acquire_unit_merge_guard(&dbx, 2, 1).await.unwrap()
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        assert!(!second.is_finished());
+
+        first.commit().await.unwrap();
+        let second = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            &mut second,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        second.commit().await.unwrap();
     }
 
     fn unit_req() -> CreateUnitReq {
@@ -4954,6 +5123,48 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn unit_merge_preparation_commits_related_data_first() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let surviving = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let label = sigint_unit_label::ActiveModel {
+            sigint_unit_id: Set(duplicate.id),
+            label: Set(format!("merge-label-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        prepare_unit_merge(login_id, &env.dbx, duplicate.id, surviving.id)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            sigint_unit_label::Entity::find_by_id(label.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .sigint_unit_id,
+            surviving.id
+        );
+        assert!(find_available_unit(&env.dbx, duplicate.id).await.is_ok());
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn merge_units_moves_orbit_links_and_returns_surviving_unit() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
@@ -4976,6 +5187,15 @@ mod tests {
         .await
         .unwrap();
         let remaining_duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                is_deduplicate_candidate: Set(Some(true)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let unrelated = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
                 is_deduplicate_candidate: Set(Some(true)),
@@ -5062,6 +5282,15 @@ mod tests {
         assert_eq!(merged.id, surviving.id);
         assert!(!merged.deleted);
         assert_eq!(merged.is_deduplicate_candidate, Some(true));
+        assert_eq!(
+            sigint_unit::Entity::find_by_id(unrelated.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_deduplicate_candidate,
+            Some(true)
+        );
         assert_eq!(merged.orbit_note.as_deref(), Some("Duplicate Orbit note"));
         assert_eq!(
             sigint_unit_label::Entity::find_by_id(label.id)
