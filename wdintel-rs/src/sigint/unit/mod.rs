@@ -1677,11 +1677,10 @@ pub async fn merge_units(
     unit_to_delete_id: i64,
     original_id: i64,
 ) -> Result<sigint_unit::Model, AppError> {
-    let merge_guard =
-        acquire_unit_merge_guard(dbx, unit_to_delete_id, original_id)
-            .await
-            .c(h!())?;
     let transaction = dbx.begin().await.context(h!())?;
+    acquire_unit_merge_locks(&transaction, unit_to_delete_id, original_id)
+        .await
+        .c(h!())?;
     let unit = merge_units_in_transaction(
         login,
         &transaction,
@@ -1691,16 +1690,14 @@ pub async fn merge_units(
     .await
     .context(h!())?;
     transaction.commit().await.context(h!())?;
-    merge_guard.commit().await.context(h!())?;
     Ok(unit)
 }
 
-async fn acquire_unit_merge_guard(
-    dbx: &DatabaseConnection,
+async fn acquire_unit_merge_locks(
+    transaction: &DatabaseTransaction,
     unit_to_delete_id: i64,
     original_id: i64,
-) -> anyhow::Result<DatabaseTransaction> {
-    let transaction = dbx.begin().await.c(h!())?;
+) -> anyhow::Result<()> {
     let (lower_id, higher_id) = if unit_to_delete_id < original_id {
         (unit_to_delete_id, original_id)
     } else {
@@ -1730,7 +1727,7 @@ async fn acquire_unit_merge_guard(
             .await;
         }
     }
-    Ok(transaction)
+    Ok(())
 }
 
 pub(crate) async fn merge_units_in_transaction<C>(
@@ -2504,12 +2501,15 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn unit_merge_guard_serializes_overlapping_merges() {
+    async fn unit_merge_locks_serialize_overlapping_merges() {
         let env = cleanup().await.unwrap();
-        let first = acquire_unit_merge_guard(&env.dbx, 1, 2).await.unwrap();
+        let first = env.dbx.begin().await.unwrap();
+        acquire_unit_merge_locks(&first, 1, 2).await.unwrap();
         let dbx = env.dbx.clone();
         let mut second = tokio::spawn(async move {
-            acquire_unit_merge_guard(&dbx, 2, 3).await.unwrap()
+            let transaction = dbx.begin().await.unwrap();
+            acquire_unit_merge_locks(&transaction, 2, 3).await.unwrap();
+            transaction
         });
         tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         assert!(!second.is_finished());
