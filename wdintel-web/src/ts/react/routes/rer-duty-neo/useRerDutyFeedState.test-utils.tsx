@@ -17,6 +17,12 @@ const dutyApiMocks = vi.hoisted(() => ({
   fetchServerInfo: vi.fn(),
   systemSettingsCurrent: vi.fn(),
   notifyDutyNewMessages: vi.fn(),
+  registerDutyNotificationPreview: vi.fn(),
+  beginDutyNotificationPollCycle: vi.fn(),
+  endDutyNotificationPollCycle: vi.fn(),
+  cancelDutyNotificationPollCycle: vi.fn(),
+  recordLastSuccessfulDutyCountCheck: vi.fn(),
+  removeLastSuccessfulDutyCountCheck: vi.fn(),
 }));
 
 export function getDutyApiMocks() {
@@ -35,7 +41,18 @@ vi.mock('../../services/api/system-settings', () => ({
 }));
 
 vi.mock('./notifications', () => ({
+  DutyNotificationPreviewResultKind: {
+    Ready: 'ready',
+    Unavailable: 'unavailable',
+    Stale: 'stale',
+  },
   notifyDutyNewMessages: dutyApiMocks.notifyDutyNewMessages,
+  registerDutyNotificationPreview: dutyApiMocks.registerDutyNotificationPreview,
+  beginDutyNotificationPollCycle: dutyApiMocks.beginDutyNotificationPollCycle,
+  endDutyNotificationPollCycle: dutyApiMocks.endDutyNotificationPollCycle,
+  cancelDutyNotificationPollCycle: dutyApiMocks.cancelDutyNotificationPollCycle,
+  recordLastSuccessfulDutyCountCheck: dutyApiMocks.recordLastSuccessfulDutyCountCheck,
+  removeLastSuccessfulDutyCountCheck: dutyApiMocks.removeLastSuccessfulDutyCountCheck,
 }));
 
 vi.mock('../../services/api/networks', () => ({
@@ -77,9 +94,10 @@ export function rangeRsp(from: number, to: number): InboxMessagesRsp {
 export function DutyFeedStateHarness(props: {
   apiRef: DutyFeedStateApiRef;
   disableAutoScroll?: boolean;
+  freqs?: string[];
 }) {
   const api = useRerDutyFeedState({
-    freqs: [],
+    freqs: props.freqs ?? [],
     setProfiles: vi.fn(),
     setGroupInfos: vi.fn(),
     testEnabled: false,
@@ -188,6 +206,11 @@ export function createDutyFeedStateFixture() {
     dutyApiMocks.fetchInboxMessages.mockReset();
     dutyApiMocks.fetchInboxCount.mockReset();
     dutyApiMocks.notifyDutyNewMessages.mockReset();
+    dutyApiMocks.registerDutyNotificationPreview.mockReset();
+    dutyApiMocks.beginDutyNotificationPollCycle.mockReset();
+    dutyApiMocks.endDutyNotificationPollCycle.mockReset();
+    dutyApiMocks.cancelDutyNotificationPollCycle.mockReset();
+    dutyApiMocks.beginDutyNotificationPollCycle.mockImplementation(() => ({}));
     deferredRequests.clear();
     window.history.replaceState({}, '', '/');
     dutyApiMocks.fetchInboxCount.mockResolvedValue({ quantity: 0, firstElementTs: null });

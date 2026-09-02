@@ -184,7 +184,7 @@ stop_existing_report_worker() {
 
 run_bgworker() {
     local worker_args=("$@")
-    local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug bgworker "$@"'
+    local cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run --quiet -- --mode=debug bgworker "$@"'
 
     ensure_pid_dir
     stop_existing_bgworker
@@ -203,7 +203,7 @@ run_bgworker() {
     local pid=$!
     echo "$pid" > "$pidfile"
 
-    local report_cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run -- --mode=debug report-worker'
+    local report_cmd='cd "$REPO_ROOT/wdintel-rs" && RUST_BACKTRACE=0 cargo watch -- cargo run --quiet -- --mode=debug report-worker'
     if [ "$quiet" = "true" ]; then
         : > "$report_logfile"
         setsid env REPO_ROOT="$repo_root" bash -lc "$report_cmd" bash > "$report_logfile" 2>&1 &
