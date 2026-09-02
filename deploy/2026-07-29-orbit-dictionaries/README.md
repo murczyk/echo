@@ -36,6 +36,8 @@ The first TUI screen offers:
 - synchronize ORBIT units;
 - link ORBIT units to SIGINT units in automatic or manual mode;
 - merge safe duplicate SIGINT units in automatic or manual mode;
+- review all SIGINT duplicate candidates pair by pair and merge confirmed
+  pairs;
 - resolve non-archived unparsed unit labels in automatic or manual mode;
 - reconcile linked SIGINT hierarchies and merge exact duplicates;
 - erase and reimport all ORBIT data.
@@ -79,6 +81,9 @@ non-deleted SIGINT link. Automatic mode retains the rating-100, unique-distance,
 distance-at-most-10 gate. Both workflows re-read their full candidate set and
 the latest ORBIT revision under the advisory lock before writing, and skip
 stale or ambiguous work.
+The all-candidate duplicate review walks SIGINT duplicate-candidate pairs once,
+rewrites later comparisons through any survivor selected during review, and
+persists confirmed merges in bounded batches after rechecking live links.
 
 The reconciliation action reviews proposed hierarchy enrichments, recalculates
 linked-unit inconsistency flags, and merges exact-name duplicate candidates

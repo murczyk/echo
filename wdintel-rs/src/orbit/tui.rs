@@ -74,6 +74,7 @@ pub enum StartAction {
     Import,
     LinkUnits,
     MergeUnitDuplicates,
+    ReviewSigintDuplicateCandidates,
     ResolveUnparsedUnits,
     FixUnitNames,
     ReconcileSigintUnits,
@@ -102,6 +103,31 @@ pub(super) struct DuplicateReviewCandidate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DuplicateReviewDecision {
     Select(usize),
+    Skip,
+    Quit,
+}
+
+pub(super) struct SigintDuplicateReviewUnit {
+    pub sigint_unit_id: i64,
+    pub sigint_unit_name: String,
+    pub active: bool,
+    pub hierarchy: Vec<(String, String)>,
+    pub comment: String,
+    pub orbit_note: Option<String>,
+    pub sigint_origin_id: Option<i64>,
+    pub original_id: Option<i64>,
+}
+
+pub(super) struct SigintDuplicateReviewPair {
+    pub left: SigintDuplicateReviewUnit,
+    pub right: SigintDuplicateReviewUnit,
+    pub shared_orbit_unit_ids: Vec<uuid::Uuid>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SigintDuplicatePairReviewDecision {
+    MergeLeftIntoRight,
+    MergeRightIntoLeft,
     Skip,
     Quit,
 }
@@ -396,6 +422,42 @@ pub(super) fn review_duplicate_unit_group(
     }
 }
 
+pub(super) fn review_sigint_duplicate_pair(
+    terminal: &mut OrbitTerminal,
+    pair: &SigintDuplicateReviewPair,
+    current: usize,
+    total: usize,
+) -> Result<SigintDuplicatePairReviewDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_sigint_duplicate_pair_review(
+                    frame, pair, current, total, scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) = sigint_duplicate_pair_decision_for_key(key) {
+            return Ok(decision);
+        }
+        match key.code {
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
 pub(super) fn review_unit_name_change(
     terminal: &mut OrbitTerminal,
     unit_id: i64,
@@ -537,6 +599,7 @@ fn run_start_menu(
         StartAction::Import,
         StartAction::LinkUnits,
         StartAction::MergeUnitDuplicates,
+        StartAction::ReviewSigintDuplicateCandidates,
         StartAction::ResolveUnparsedUnits,
         StartAction::FixUnitNames,
         StartAction::ReconcileSigintUnits,
@@ -957,6 +1020,198 @@ fn duplicate_review_decision_for_key(
     }
 }
 
+fn draw_sigint_duplicate_pair_review(
+    frame: &mut Frame<'_>,
+    pair: &SigintDuplicateReviewPair,
+    current: usize,
+    total: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    frame.render_widget(
+        Paragraph::new(format!("Duplicate pair {current} / {total}")),
+        sections[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Text::from(sigint_duplicate_pair_review_lines(pair)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Compare SIGINT duplicate candidates"),
+            )
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "1: merge LEFT into RIGHT | 2: merge RIGHT into LEFT | 0/n: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        ),
+        sections[2],
+    );
+}
+
+fn sigint_duplicate_pair_review_lines(
+    pair: &SigintDuplicateReviewPair,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::styled(
+            format!(
+                "LEFT  SIGINT unit ID: {} | active: {} | name: {}",
+                pair.left.sigint_unit_id,
+                pair.left.active,
+                pair.left.sigint_unit_name,
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::styled(
+            format!(
+                "RIGHT SIGINT unit ID: {} | active: {} | name: {}",
+                pair.right.sigint_unit_id,
+                pair.right.active,
+                pair.right.sigint_unit_name,
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::from(format!(
+            "Shared ORBIT UUIDs: {}",
+            pair.shared_orbit_unit_ids
+                .iter()
+                .map(uuid::Uuid::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+        Line::default(),
+    ];
+    lines.extend(sigint_duplicate_field_diff_lines(
+        "name",
+        &pair.left.sigint_unit_name,
+        &pair.right.sigint_unit_name,
+    ));
+    let left_hierarchy = sigint_duplicate_hierarchy(&pair.left);
+    let right_hierarchy = sigint_duplicate_hierarchy(&pair.right);
+    lines.extend(sigint_duplicate_field_diff_lines(
+        "hierarchy",
+        &left_hierarchy,
+        &right_hierarchy,
+    ));
+    for (label, left, right) in sigint_duplicate_review_field_pairs(pair) {
+        lines.extend(sigint_duplicate_field_diff_lines(&label, &left, &right));
+    }
+    lines
+}
+
+fn sigint_duplicate_hierarchy(unit: &SigintDuplicateReviewUnit) -> String {
+    unit.hierarchy
+        .iter()
+        .filter(|(_, value)| !value.trim().is_empty())
+        .map(|(label, value)| format!("{label}: {}", value.trim()))
+        .collect::<Vec<_>>()
+        .join(" / ")
+}
+
+fn sigint_duplicate_review_field_pairs(
+    pair: &SigintDuplicateReviewPair,
+) -> Vec<(String, String, String)> {
+    [
+        (
+            "active",
+            pair.left.active.to_string(),
+            pair.right.active.to_string(),
+        ),
+        (
+            "comment",
+            pair.left.comment.clone(),
+            pair.right.comment.clone(),
+        ),
+        (
+            "orbit_note",
+            pair.left.orbit_note.clone().unwrap_or_default(),
+            pair.right.orbit_note.clone().unwrap_or_default(),
+        ),
+        (
+            "sigint_origin_id",
+            pair.left
+                .sigint_origin_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            pair.right
+                .sigint_origin_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "original_id",
+            pair.left
+                .original_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            pair.right
+                .original_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, left, right)| {
+        !left.trim().is_empty() || !right.trim().is_empty() || left != right
+    })
+    .map(|(label, left, right)| (label.to_string(), left, right))
+    .collect()
+}
+
+fn sigint_duplicate_field_diff_lines(
+    label: &str,
+    left: &str,
+    right: &str,
+) -> Vec<Line<'static>> {
+    let [left_diff, right_diff] =
+        word_diff_lines("  LEFT: ", " RIGHT: ", left, right);
+    vec![
+        Line::styled(
+            label.to_string(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        left_diff,
+        right_diff,
+        Line::default(),
+    ]
+}
+
+fn sigint_duplicate_pair_decision_for_key(
+    key: KeyEvent,
+) -> Option<SigintDuplicatePairReviewDecision> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(SigintDuplicatePairReviewDecision::Quit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('q') => Some(SigintDuplicatePairReviewDecision::Quit),
+        KeyCode::Char('0') | KeyCode::Char('n') => {
+            Some(SigintDuplicatePairReviewDecision::Skip)
+        }
+        KeyCode::Char('1') => {
+            Some(SigintDuplicatePairReviewDecision::MergeLeftIntoRight)
+        }
+        KeyCode::Char('2') => {
+            Some(SigintDuplicatePairReviewDecision::MergeRightIntoLeft)
+        }
+        _ => None,
+    }
+}
+
 fn draw_test_link_exit_confirmation(frame: &mut Frame<'_>) {
     let area = centered_area(frame, 70, 7);
     frame.render_widget(
@@ -1122,12 +1377,13 @@ fn test_link_maximum_scroll(area: Rect, session: &ReviewSession) -> usize {
 }
 
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 78, 10);
+    let area = centered_area(frame, 86, 11);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
         "Link ORBIT units to SIGINT units",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
+        "Review all SIGINT duplicate candidates pair by pair",
         "Resolve unparsed unit labels through ORBIT links",
         "Remove invalid army/corps and higher echelons from SIGINT unit names",
         "Reconcile linked SIGINT units and merge exact duplicates",
@@ -1526,6 +1782,74 @@ mod tests {
                 7,
             ),
             Some(DuplicateReviewDecision::Skip),
+        );
+    }
+
+    #[test]
+    fn sigint_duplicate_pair_review_uses_word_diff() {
+        let pair = SigintDuplicateReviewPair {
+            left: SigintDuplicateReviewUnit {
+                sigint_unit_id: 1,
+                sigint_unit_name: "4 мсб (АТ)".to_string(),
+                active: true,
+                hierarchy: vec![("battalion".to_string(), "4 мсб".to_string())],
+                comment: "left note".to_string(),
+                orbit_note: None,
+                sigint_origin_id: None,
+                original_id: None,
+            },
+            right: SigintDuplicateReviewUnit {
+                sigint_unit_id: 2,
+                sigint_unit_name: "4 мсб".to_string(),
+                active: true,
+                hierarchy: vec![("battalion".to_string(), "4 мсб".to_string())],
+                comment: "right note".to_string(),
+                orbit_note: None,
+                sigint_origin_id: None,
+                original_id: None,
+            },
+            shared_orbit_unit_ids: vec![uuid::Uuid::nil()],
+        };
+
+        let lines = sigint_duplicate_pair_review_lines(&pair);
+
+        assert!(lines.iter().any(|line| line
+            .spans
+            .iter()
+            .any(|span| { span.style.fg == Some(Color::Green) })));
+        assert!(lines.iter().any(|line| line
+            .spans
+            .iter()
+            .any(|span| { span.style.fg == Some(Color::Red) })));
+        assert!(lines.iter().map(line_text).any(|line| {
+            line == "Shared ORBIT UUIDs: 00000000-0000-0000-0000-000000000000"
+        }));
+    }
+
+    #[test]
+    fn sigint_duplicate_pair_review_keys_choose_direction() {
+        let plain = KeyModifiers::NONE;
+
+        assert_eq!(
+            sigint_duplicate_pair_decision_for_key(KeyEvent::new(
+                KeyCode::Char('1'),
+                plain,
+            )),
+            Some(SigintDuplicatePairReviewDecision::MergeLeftIntoRight),
+        );
+        assert_eq!(
+            sigint_duplicate_pair_decision_for_key(KeyEvent::new(
+                KeyCode::Char('2'),
+                plain,
+            )),
+            Some(SigintDuplicatePairReviewDecision::MergeRightIntoLeft),
+        );
+        assert_eq!(
+            sigint_duplicate_pair_decision_for_key(KeyEvent::new(
+                KeyCode::Char('n'),
+                plain,
+            )),
+            Some(SigintDuplicatePairReviewDecision::Skip),
         );
     }
 
