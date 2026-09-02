@@ -529,8 +529,9 @@ fn unit_is_same_or_child(
         .zip(&child.hierarchy)
         .take(parent_specificity + 1)
         .all(|(parent_value, child_value)| {
-            normalized_unit_value(*parent_value)
-                == normalized_unit_value(*child_value)
+            normalized_unit_value(*parent_value).is_none_or(|parent_value| {
+                Some(parent_value) == normalized_unit_value(*child_value)
+            })
         })
 }
 
@@ -705,6 +706,25 @@ mod tests {
             matched_callsign_ids(&network_unit, &known_callsigns),
             [10, 20, 30]
         );
+    }
+
+    #[test]
+    fn match_known_callsigns_includes_legacy_parent_without_army_region() {
+        let mut network_unit = unit_with_lineage(
+            10,
+            "1 мсб 283 мсп 42 мсд 1 А",
+            Some("1 мсб"),
+            None,
+        );
+        network_unit.army_region = Some("ЗС РФ".to_string());
+        let known_callsigns = vec![known_callsign_with_lineage(
+            20,
+            "283 мсп 42 мсд 1 А",
+            None,
+            None,
+        )];
+
+        assert_eq!(matched_callsign_ids(&network_unit, &known_callsigns), [20]);
     }
 
     #[test]
