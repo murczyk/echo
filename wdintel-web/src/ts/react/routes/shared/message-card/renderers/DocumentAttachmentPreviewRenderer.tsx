@@ -27,7 +27,6 @@ import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/M
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
 import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
@@ -88,7 +87,6 @@ export function DocumentAttachmentPreviewRenderer({
   document,
   onClose,
   navigation,
-  isFullscreen,
   isDownloadStarting,
   onDownloadStart,
   reportDraft,
@@ -98,7 +96,6 @@ export function DocumentAttachmentPreviewRenderer({
   document: MessageCardDocument;
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
   reportDraft?: AttachmentPreviewReportDraft;
 } & MessageCardDownloadGuardProps &
   AttachmentPreviewReportVisibility) {
@@ -116,7 +113,6 @@ export function DocumentAttachmentPreviewRenderer({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
-  const previewConfig = getMessageCardAttachmentPreviewConfig(currentDocumentKind);
   const currentDocumentCapabilities = getDocumentPreviewCapabilities(currentDocument.kind);
   const canZoom = currentDocumentCapabilities?.zoomable === true;
   const canSwipeCarousel = currentDocumentCapabilities?.carouselSwipeable === true;
@@ -289,7 +285,6 @@ export function DocumentAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="document"
-      isFullscreen={isFullscreen}
       onDoubleClick={handleStageDoubleClick}
     >
       <DocumentPreview document={currentDocument} zoom={dialogZoom} />
@@ -405,7 +400,6 @@ export function DocumentAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      config={previewConfig}
       stage={stage}
       header={header}
       infoPopover={infoPopover}

@@ -20,7 +20,6 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 import { getAttachmentPreviewStageSx } from '../attachment-preview/message-card-attachment-preview';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 
 type MapInitState = 'loading' | 'ready' | 'error';
@@ -83,16 +82,13 @@ function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
 export function CoordinateAttachmentPreviewRenderer({
   points,
   navigation,
-  isFullscreen,
   onClose,
 }: {
   points: CoordinatePreviewPoint[];
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
   onClose: () => void;
 }) {
   const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
-  const previewConfig = getMessageCardAttachmentPreviewConfig('coordinate-map');
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -118,14 +114,12 @@ export function CoordinateAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      config={previewConfig}
       stage={
         <CoordinateMapPreview
           points={points}
           activeIndex={activeIndex}
           onActiveIndexChange={changeActiveIndex}
           baseLayerId={baseLayerId}
-          isFullscreen={isFullscreen}
         />
       }
       header={header}
@@ -152,13 +146,11 @@ function CoordinateMapPreview({
   activeIndex,
   onActiveIndexChange,
   baseLayerId,
-  isFullscreen,
 }: {
   points: CoordinatePreviewPoint[];
   activeIndex: number;
   onActiveIndexChange: (index: number) => void;
   baseLayerId: BaseLayerId;
-  isFullscreen: boolean;
 }) {
   const theme = useTheme();
   const [mapHostEl, setMapHostEl] = useState<HTMLDivElement | null>(null);
@@ -254,25 +246,6 @@ function CoordinateMapPreview({
       mapRef.current?.invalidateSize();
     });
   }, [activeIndex]);
-
-  useEffect(() => {
-    if (invalidateFrameRef.current !== null) {
-      window.cancelAnimationFrame(invalidateFrameRef.current);
-      invalidateFrameRef.current = null;
-    }
-
-    invalidateFrameRef.current = window.requestAnimationFrame(() => {
-      invalidateFrameRef.current = null;
-      mapRef.current?.invalidateSize();
-    });
-
-    return () => {
-      if (invalidateFrameRef.current !== null) {
-        window.cancelAnimationFrame(invalidateFrameRef.current);
-        invalidateFrameRef.current = null;
-      }
-    };
-  }, [isFullscreen]);
 
   useEffect(() => {
     if (mapHostEl == null) {
@@ -550,7 +523,7 @@ function CoordinateMapPreview({
         overflow: 'hidden',
         borderRadius: 0,
         backgroundColor: 'background.paper',
-        ...getAttachmentPreviewStageSx(theme, isFullscreen),
+        ...getAttachmentPreviewStageSx(),
       }}
     >
       <Box

@@ -46,7 +46,6 @@ import { MessageCardAttachmentPreviewStage } from '../attachment-preview/Message
 import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { canCopyImageToClipboard, copyImageToClipboard } from '../copy-image-to-clipboard';
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
@@ -234,7 +233,6 @@ export function ImageAttachmentPreviewRenderer({
   image,
   onClose,
   navigation,
-  isFullscreen,
   isDownloadStarting,
   onDownloadStart,
   imageEditing,
@@ -251,7 +249,6 @@ export function ImageAttachmentPreviewRenderer({
   image: MessageCardImage;
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
   onInitialActionConsumed?: () => void;
@@ -314,7 +311,6 @@ export function ImageAttachmentPreviewRenderer({
     () => deriveImageDownloadName(currentImage, resolvedIndex),
     [currentImage, resolvedIndex],
   );
-  const previewConfig = getMessageCardAttachmentPreviewConfig('image');
   const removePointerListeners = useCallback(() => {
     const listeners = pointerListenersRef.current;
     if (listeners === null) return;
@@ -673,7 +669,6 @@ export function ImageAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewStage
       ref={setStageNode}
       kind="image"
-      isFullscreen={isFullscreen}
       cursor={zoom > ZOOM_MIN ? 'grab' : 'default'}
       onPointerDown={startPan}
       onPointerUp={stopPan}
@@ -851,7 +846,6 @@ export function ImageAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      config={previewConfig}
       stage={
         editor.error ? (
           <>

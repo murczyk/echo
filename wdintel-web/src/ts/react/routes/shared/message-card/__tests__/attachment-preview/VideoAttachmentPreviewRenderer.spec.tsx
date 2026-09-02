@@ -23,10 +23,6 @@ type DialogRecord = {
 };
 
 const dialogProps: DialogRecord[] = [];
-let previewConfig = {
-  layout: 'media' as const,
-  disableRestoreFocus: false,
-};
 let latestControlsProps: {
   playerState: VideoPlayerState;
   onPlayPause: () => void;
@@ -150,7 +146,7 @@ vi.mock('@mui/icons-material/Pause', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/ArticleOutlined', () => ({ default: () => <span /> }));
 
 vi.mock('../../attachment-preview/message-card-preview-config', () => ({
-  getMessageCardAttachmentPreviewConfig: () => previewConfig,
+  getMessageCardAttachmentPreviewConfig: () => ({ disableRestoreFocus: false }),
 }));
 
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
@@ -203,7 +199,6 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewControls', () => (
         data-volume={playerState.volume}
         data-muted={String(playerState.muted)}
         data-rate={playerState.playbackRate}
-        data-fullscreen={String(playerState.isFullscreen)}
       >
         <button aria-label="play-pause" onClick={onPlayPause} />
         <button aria-label="stop" onClick={onStop} />
@@ -319,10 +314,6 @@ describe('VideoAttachmentPreviewRenderer', () => {
   afterEach(() => {
     vi.useRealTimers();
     dialogProps.splice(0);
-    previewConfig = {
-      layout: 'media',
-      disableRestoreFocus: false,
-    };
     latestControlsProps = null;
     latestActionProps = null;
     latestInfoProps = null;
@@ -858,7 +849,7 @@ describe('VideoAttachmentPreviewRenderer', () => {
     expect(video.currentTime).toBe(0);
   });
 
-  it('closes the fullscreen dialog on Escape', async () => {
+  it('closes the dialog on Escape', async () => {
     const onClose = vi.fn();
     const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     renderDialog({
@@ -867,7 +858,6 @@ describe('VideoAttachmentPreviewRenderer', () => {
     });
 
     expect(dialogProps.at(-1)?.disableEscapeKeyDown).toBe(true);
-    expect(latestControlsProps?.playerState.isFullscreen).toBe(true);
     expect(document.body.querySelector('[data-actions]')).not.toBeNull();
 
     await act(async () => {

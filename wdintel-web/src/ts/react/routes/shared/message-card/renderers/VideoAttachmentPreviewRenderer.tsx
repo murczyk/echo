@@ -16,14 +16,13 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { AttachmentPreviewPlaybackControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import { handleUnauthorizedMediaResponse } from '../message-card-media-fetch';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
-import { OcrSplitPreview } from '../attachment-preview/OcrPreview';
 import {
   ReportTextPreviewAction,
+  ReportTextPreviewLayout,
   type AttachmentPreviewReportDraft,
   type AttachmentPreviewReportVisibility,
 } from '../attachment-preview/ReportTextPreview';
@@ -303,7 +302,6 @@ export function VideoAttachmentPreviewRenderer({
   onClose,
   video,
   navigation,
-  isFullscreen,
   isDownloadStarting,
   onDownloadStart,
   onChildOverlayChange,
@@ -315,7 +313,6 @@ export function VideoAttachmentPreviewRenderer({
   onClose: () => void;
   video: VideoPreviewSource;
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
   reportDraft?: AttachmentPreviewReportDraft;
@@ -338,9 +335,7 @@ export function VideoAttachmentPreviewRenderer({
     volume: 1,
     muted: false,
     playbackRate: 1,
-    isFullscreen: false,
   });
-  const previewConfig = getMessageCardAttachmentPreviewConfig('video');
   const openHref = typeof video.source === 'string' ? video.source : null;
 
   useEffect(() => {
@@ -748,7 +743,7 @@ export function VideoAttachmentPreviewRenderer({
       }}
     >
       <AttachmentPreviewPlaybackControls
-        playerState={{ ...playerState, isFullscreen }}
+        playerState={playerState}
         videoRef={videoRef}
         onPlayPause={handlePlayPause}
         onStop={handleStop}
@@ -764,7 +759,6 @@ export function VideoAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="video"
-      isFullscreen={isFullscreen}
       onPointerDown={resetHideControlsTimer}
       onDoubleClick={handleStageDoubleClick}
     >
@@ -854,22 +848,7 @@ export function VideoAttachmentPreviewRenderer({
     </MessageCardAttachmentPreviewStage>
   );
   const stage = (
-    <OcrSplitPreview
-      source={sourceStage}
-      mediaId={video.id}
-      ocr={null}
-      visible={false}
-      fullPane={false}
-      onOcrChange={() => {}}
-      onFullPaneChange={() => {}}
-      summary={null}
-      summaryVisible={false}
-      onSummaryChange={() => {}}
-      onSummaryVisibleChange={() => {}}
-      reportDraft={reportDraft}
-      reportVisible={reportVisible}
-      onReportVisibleChange={onReportVisibleChange}
-    />
+    <ReportTextPreviewLayout source={sourceStage} draft={reportDraft} visible={reportVisible} />
   );
 
   const header = (
@@ -923,7 +902,6 @@ export function VideoAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      config={previewConfig}
       stage={stage}
       header={header}
       infoPopover={infoPopover}

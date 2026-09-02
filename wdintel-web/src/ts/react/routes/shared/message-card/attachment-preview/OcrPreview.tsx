@@ -25,7 +25,7 @@ import { getMediaOcrStatus } from '../../../../services/api/ocr';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
 import { MediaSummaryOverlay } from './MediaSummaryPreview';
 import type { AttachmentPreviewDownloadItem } from './message-card-preview.types';
-import { ReportTextPreviewPane, type AttachmentPreviewReportDraft } from './ReportTextPreview';
+import { ReportTextPreviewLayout, type AttachmentPreviewReportDraft } from './ReportTextPreview';
 
 const OCR_STATE_LABELS: Record<string, string> = {
   pending: 'У черзі',
@@ -527,13 +527,16 @@ export function OcrSplitPreview({
   );
 
   const showReport = reportDraft != null && reportVisible;
-  if (mediaId == null && !showReport) return source;
-  if (!visible && !showReport && summary == null) return source;
+  if (showReport) {
+    return <ReportTextPreviewLayout source={source} draft={reportDraft} visible />;
+  }
+  if (mediaId == null) return source;
+  if (!visible && summary == null) return source;
 
   const ocrMediaId = mediaId ?? '';
-  const hasSplitPane = visible && !showReport;
+  const hasSplitPane = visible;
   const showSource = hasSplitPane ? (mobile ? true : !fullPane) : true;
-  const showOcr = visible && !showReport;
+  const showOcr = visible;
 
   return (
     <Box
@@ -543,7 +546,7 @@ export function OcrSplitPreview({
         minWidth: 0,
         minHeight: 0,
         display: 'flex',
-        flexDirection: showReport || mobile ? 'column' : 'row',
+        flexDirection: mobile ? 'column' : 'row',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -563,23 +566,7 @@ export function OcrSplitPreview({
       >
         {sourceWithSummary}
       </Box>
-      {showReport ? (
-        <Box
-          data-attachment-preview-scroll
-          className="relative flex-col overscroll-contain touch-pan-y px-4 py-2.5 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            flex: '0 0 auto',
-            minWidth: 0,
-            minHeight: 0,
-            maxHeight: 176,
-            overflow: 'hidden',
-          }}
-        >
-          <ReportTextPreviewPane draft={reportDraft} />
-        </Box>
-      ) : visible ? (
+      {visible ? (
         <Box
           data-attachment-preview-scroll
           sx={{

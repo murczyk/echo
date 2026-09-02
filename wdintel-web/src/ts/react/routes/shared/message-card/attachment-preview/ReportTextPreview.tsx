@@ -1,5 +1,6 @@
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
-import { IconButton, TextField, Tooltip } from '@mui/material';
+import { Box, IconButton, TextField, Tooltip } from '@mui/material';
+import type { ReactNode } from 'react';
 
 export type AttachmentPreviewReportDraft = {
   value: string;
@@ -60,5 +61,53 @@ export function ReportTextPreviewPane({ draft }: { draft: AttachmentPreviewRepor
         size="small"
       />
     </div>
+  );
+}
+
+export function ReportTextPreviewLayout({
+  source,
+  draft,
+  visible,
+}: {
+  source: ReactNode;
+  draft?: AttachmentPreviewReportDraft;
+  visible: boolean;
+}) {
+  if (draft == null || !visible) return source;
+
+  return (
+    <Box
+      sx={{
+        flex: '1 1 0',
+        height: 0,
+        minWidth: 0,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <Box
+        sx={{ display: 'flex', flex: '1 1 100%', minWidth: 0, minHeight: 0, overflow: 'hidden' }}
+      >
+        {source}
+      </Box>
+      <Box
+        data-attachment-preview-scroll
+        className="relative flex-col overscroll-contain touch-pan-y px-4 py-2.5 border-t border-white/12 bg-inherit text-(--color-text) transition-[max-height] duration-200 ease-out"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flex: '0 0 auto',
+          minWidth: 0,
+          minHeight: 0,
+          maxHeight: 176,
+          overflow: 'hidden',
+        }}
+      >
+        <ReportTextPreviewPane draft={draft} />
+      </Box>
+    </Box>
   );
 }

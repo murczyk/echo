@@ -135,7 +135,6 @@ export function MessageCardAttachmentPreviewDialog({
   };
   const rendererProps = {
     navigation,
-    isFullscreen: true,
     onClose: closeDialog,
     isDownloadStarting,
     onDownloadStart,
@@ -200,7 +199,6 @@ export function MessageCardAttachmentPreviewDialog({
         <CoordinateAttachmentPreviewRenderer
           points={item.points}
           navigation={navigation}
-          isFullscreen
           onClose={closeDialog}
         />
       )}

@@ -20,7 +20,6 @@ export type VideoPlayerState = {
   volume: number;
   muted: boolean;
   playbackRate: 0.5 | 1 | 1.5 | 2;
-  isFullscreen: boolean;
   error?: VideoPreviewError;
 };
 

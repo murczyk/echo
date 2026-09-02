@@ -2,13 +2,11 @@ import { Box, DialogContent } from '@mui/material';
 import { useState, type ReactNode } from 'react';
 
 import { getAttachmentPreviewStageBg } from './message-card-attachment-preview';
-import type { MessageCardAttachmentPreviewConfig } from './message-card-preview-config';
 import type { MessageCardPreviewNavigation } from './message-card-preview.types';
 import { AttachmentPreviewMobileCarouselNav } from './MessageCardAttachmentPreviewControls';
 import { useAttachmentPreviewSwipe } from './useAttachmentPreviewSwipe';
 
 export function MessageCardAttachmentPreviewLayout({
-  config,
   stage,
   header,
   controls,
@@ -16,16 +14,13 @@ export function MessageCardAttachmentPreviewLayout({
   navigation,
   swipeEnabled = true,
 }: {
-  config: MessageCardAttachmentPreviewConfig;
   stage: ReactNode;
   header?: ReactNode;
   controls?: ReactNode;
   infoPopover?: ReactNode;
-  actions?: ReactNode;
   navigation?: MessageCardPreviewNavigation;
   swipeEnabled?: boolean;
 }) {
-  const isMediaLayout = config.layout === 'media';
   const [stageContainerEl, setStageContainerEl] = useState<HTMLDivElement | null>(null);
 
   useAttachmentPreviewSwipe({
@@ -46,7 +41,7 @@ export function MessageCardAttachmentPreviewLayout({
           height: 0,
           flex: '1 1 0',
           overflow: 'hidden',
-          backgroundColor: (theme) => getAttachmentPreviewStageBg(theme, isMediaLayout),
+          backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
         }}
       >
         {header ?? null}
@@ -61,7 +56,7 @@ export function MessageCardAttachmentPreviewLayout({
             position: 'relative',
             borderRadius: 0,
             overflow: 'hidden',
-            backgroundColor: (theme) => getAttachmentPreviewStageBg(theme, isMediaLayout),
+            backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
           }}
         >
           {stage}

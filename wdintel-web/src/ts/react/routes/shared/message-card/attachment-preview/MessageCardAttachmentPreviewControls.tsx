@@ -1,8 +1,6 @@
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import { Box, IconButton, Slider, Stack, Tooltip, Typography } from '@mui/material';
+import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 
 import type { MessageCardPreviewNavigation } from './message-card-preview.types';
 import type { VideoPlayerState } from '../message-card-video-utils';
@@ -74,129 +72,6 @@ export function AttachmentPreviewMobileCarouselNav({
         <ChevronRightIcon fontSize="small" />
       </IconButton>
     </Stack>
-  );
-}
-
-export function AttachmentPreviewZoomControls({
-  zoom,
-  min,
-  max,
-  buttonStep,
-  sliderStep = buttonStep,
-  marks,
-  onZoomChange,
-}: {
-  zoom: number;
-  min: number;
-  max: number;
-  buttonStep: number;
-  sliderStep?: number;
-  marks: number[];
-  onZoomChange: (zoom: number) => void;
-}) {
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'center',
-        pb: { xs: 0, sm: 2 },
-        width: '100%',
-        pointerEvents: 'none',
-      }}
-    >
-      <Box
-        sx={{
-          pointerEvents: 'auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: { xs: 1, sm: 1.5 },
-          backgroundColor: { xs: 'transparent', sm: 'rgba(18, 18, 18, 0.75)' },
-          backdropFilter: { xs: 'none', sm: 'blur(12px)' },
-          borderRadius: 3,
-          boxShadow: { xs: 'none', sm: '0 4px 20px rgba(0, 0, 0, 0.25)' },
-          py: { xs: 0.25, sm: 1 },
-          px: { xs: 1, sm: 2.5 },
-          color: '#fff',
-        }}
-      >
-        <Tooltip title="Зменшити" enterDelay={300}>
-          <span>
-            <IconButton
-              aria-label="Зменшити"
-              size="small"
-              onClick={() => onZoomChange(zoom - buttonStep)}
-              disabled={zoom <= min}
-              sx={{
-                color: 'rgba(255, 255, 255, 0.85)',
-                '&.Mui-disabled': { color: 'rgba(255, 255, 255, 0.3)' },
-                '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' },
-              }}
-            >
-              <ZoomOutIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Slider
-          size="small"
-          value={zoom}
-          min={min}
-          max={max}
-          step={sliderStep}
-          marks={marks.map((value) => ({ value }))}
-          aria-label="Масштаб"
-          onChange={(_, value) => onZoomChange(Array.isArray(value) ? (value[0] ?? min) : value)}
-          sx={{
-            width: { xs: 140, sm: 220 },
-            color: 'primary.light',
-            padding: 0,
-            height: 4,
-            '& .MuiSlider-track': { border: 'none' },
-            '& .MuiSlider-thumb': {
-              width: 12,
-              height: 12,
-              backgroundColor: '#fff',
-              '&.Mui-active': { width: 16, height: 16 },
-            },
-            '& .MuiSlider-rail': { opacity: 0.3, backgroundColor: '#fff' },
-            '& .MuiSlider-mark': {
-              width: 2,
-              height: 4,
-              backgroundColor: 'rgba(255, 255, 255, 0.5)',
-            },
-          }}
-        />
-        <Tooltip title="Збільшити" enterDelay={300}>
-          <span>
-            <IconButton
-              aria-label="Збільшити"
-              size="small"
-              onClick={() => onZoomChange(zoom + buttonStep)}
-              disabled={zoom >= max}
-              sx={{
-                color: 'rgba(255, 255, 255, 0.85)',
-                '&.Mui-disabled': { color: 'rgba(255, 255, 255, 0.3)' },
-                '&:hover': { backgroundColor: 'rgba(255, 255, 255, 0.1)' },
-              }}
-            >
-              <ZoomInIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Typography
-          variant="caption"
-          className="font-mono"
-          sx={{
-            color: 'rgba(255, 255, 255, 0.85)',
-            minWidth: 44,
-            textAlign: 'center',
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {Math.round(zoom)}%
-        </Typography>
-      </Box>
-    </Box>
   );
 }
 

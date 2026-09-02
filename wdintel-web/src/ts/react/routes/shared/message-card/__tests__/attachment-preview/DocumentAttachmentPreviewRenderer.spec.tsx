@@ -123,18 +123,12 @@ vi.mock('@mui/material', () => {
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewStage', () => ({
   MessageCardAttachmentPreviewStage: ({
     children,
-    isFullscreen,
     onDoubleClick,
   }: {
     children?: ReactNode;
-    isFullscreen: boolean;
     onDoubleClick?: () => void;
   }) => (
-    <div
-      data-preview-stage="document"
-      data-fullscreen={String(isFullscreen)}
-      onDoubleClick={onDoubleClick}
-    >
+    <div data-preview-stage="document" onDoubleClick={onDoubleClick}>
       {children}
     </div>
   ),
@@ -174,7 +168,6 @@ vi.mock('../../text-document-preview', () => ({
 }));
 
 import { MessageCardAttachmentPreviewProvider } from '../../attachment-preview/MessageCardAttachmentPreviewProvider';
-import { AttachmentPreviewZoomControls } from '../../attachment-preview/MessageCardAttachmentPreviewControls';
 import { DocumentAttachmentPreviewRenderer } from '../../renderers/DocumentAttachmentPreviewRenderer';
 
 type TestDocumentPreviewDialogProps = {
@@ -215,7 +208,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     latestSwipeEnabled = null;
   });
 
-  it('closes the fullscreen dialog on Escape', async () => {
+  it('closes the dialog on Escape', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -243,12 +236,6 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     });
 
     expect(dialogProps.at(-1)?.disableRestoreFocus).toBe(true);
-
-    expect(
-      document.body
-        .querySelector('[data-preview-stage="document"]')
-        ?.getAttribute('data-fullscreen'),
-    ).toBe('true');
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -360,7 +347,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     root.unmount();
   });
 
-  it('keeps fullscreen when switching from pdf to txt previews', async () => {
+  it('keeps the dialog open when switching from pdf to txt previews', async () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
     const root = createRoot(container);
@@ -393,12 +380,6 @@ describe('DocumentAttachmentPreviewRenderer', () => {
         />,
       );
     });
-
-    expect(
-      document.body
-        .querySelector('[data-preview-stage="document"]')
-        ?.getAttribute('data-fullscreen'),
-    ).toBe('true');
 
     await act(async () => {
       root.render(
@@ -433,11 +414,7 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     expect(
       document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
     ).toBeNull();
-    expect(
-      document.body
-        .querySelector('[data-preview-stage="document"]')
-        ?.getAttribute('data-fullscreen'),
-    ).toBe('true');
+    expect(document.body.querySelector('[data-preview-stage="document"]')).not.toBeNull();
     root.unmount();
   });
 
@@ -641,34 +618,6 @@ describe('DocumentAttachmentPreviewRenderer', () => {
     ).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Скачати"]')).not.toBeNull();
     expect(document.body.querySelector('button[aria-label="Закрити"]')).not.toBeNull();
-    root.unmount();
-  });
-
-  it('renders zoom controls without fullscreen controls', async () => {
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <AttachmentPreviewZoomControls
-          zoom={150}
-          min={50}
-          max={300}
-          buttonStep={25}
-          marks={[50, 100, 150, 200, 300]}
-          onZoomChange={vi.fn()}
-        />,
-      );
-    });
-
-    expect(document.body.querySelector('button[aria-label="Зменшити"]')).not.toBeNull();
-    expect(document.body.querySelector('button[aria-label="Збільшити"]')).not.toBeNull();
-    expect(document.body.querySelector('input[type="range"]')).not.toBeNull();
-    expect(document.body.querySelector('button[aria-label="Повноекранний режим"]')).toBeNull();
-    expect(
-      document.body.querySelector('button[aria-label="Вийти з повноекранного режиму"]'),
-    ).toBeNull();
     root.unmount();
   });
 });

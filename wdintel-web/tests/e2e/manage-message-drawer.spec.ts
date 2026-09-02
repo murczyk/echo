@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { installAnalysisNeoApiMocks } from './analysis-neo.fixtures';
+import { IMAGE_EDITOR_DRAWER_PNG, openCreateReportDrawer } from './image-editor-drawer.fixtures';
 import {
   buildMessageCardMediaPreviewInboxResponse,
   installMessageCardMediaPreviewAssetRoutes,
@@ -119,4 +120,53 @@ test.describe('@smoke manage message drawer linked-message regressions', () => {
       expect(drawer.getCopyRequestCount()).toBe(0);
     });
   }
+});
+
+test.describe('@smoke manage message drawer attachment preview', () => {
+  test('keeps report text shared across image and video previews', async ({ page }) => {
+    await openCreateReportDrawer(page);
+
+    const drawerReportText = page.getByRole('textbox', { name: 'Текст розвіддонесення' });
+    await expect(drawerReportText).toHaveValue('');
+    await drawerReportText.fill('Початковий текст розвіддонесення');
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'report-preview.mp4',
+      mimeType: 'video/mp4',
+      buffer: Buffer.from('report-preview-video'),
+    });
+
+    await page.getByRole('button', { name: `Переглянути ${IMAGE_EDITOR_DRAWER_PNG.name}` }).click();
+
+    const preview = page.locator('[role="dialog"][aria-label^="Перегляд"]');
+    await expect(preview).toHaveAttribute('aria-label', 'Перегляд зображення');
+    await expect(preview.getByRole('textbox', { name: 'Текст розвіддонесення' })).toHaveCount(0);
+
+    const reportAction = preview.getByRole('button', { name: 'Писати розвіддонесення' });
+    await expect(reportAction).toHaveAttribute('aria-pressed', 'false');
+    await reportAction.click();
+
+    const previewReportText = preview.getByRole('textbox', {
+      name: 'Текст розвіддонесення',
+    });
+    await expect(previewReportText).toHaveValue('Початковий текст розвіддонесення');
+    await expect(previewReportText).not.toBeFocused();
+    await previewReportText.fill('Оновлений текст розвіддонесення');
+
+    await preview.getByRole('button', { name: 'Наступне' }).click();
+    await expect(preview).toHaveAttribute('aria-label', 'Перегляд відео');
+    await expect(previewReportText).toHaveValue('Оновлений текст розвіддонесення');
+
+    const videoControls = preview.locator('[data-attachment-preview-video-controls]');
+    const reportPane = preview.locator('[data-attachment-preview-report-pane]');
+    await expect(videoControls).toBeVisible();
+    await expect(reportPane).toBeVisible();
+    const controlsBox = await videoControls.boundingBox();
+    const reportPaneBox = await reportPane.boundingBox();
+    expect(controlsBox).not.toBeNull();
+    expect(reportPaneBox).not.toBeNull();
+    expect(controlsBox!.y + controlsBox!.height).toBeLessThanOrEqual(reportPaneBox!.y + 1);
+
+    await preview.getByRole('button', { name: 'Закрити' }).click();
+    await expect(drawerReportText).toHaveValue('Оновлений текст розвіддонесення');
+  });
 });

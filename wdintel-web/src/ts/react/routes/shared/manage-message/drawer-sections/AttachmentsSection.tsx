@@ -99,7 +99,8 @@ export function AttachmentsSection({
 }: Props) {
   const { control, watch, setValue } = useFormContext<MessageFormData>();
   const deletedMediaIds = watch('deleted_media_ids') || [];
-  const reportTextValue = useWatch({ control, name: 'full_body' }) ?? '';
+  const reportTextValue =
+    useWatch({ control, name: 'full_body', disabled: !reportTextPreviewEnabled }) ?? '';
   const reportDraft = useMemo(
     () =>
       reportTextPreviewEnabled

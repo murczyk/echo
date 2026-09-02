@@ -50,18 +50,10 @@ type DialogRecord = {
 };
 
 const dialogProps: DialogRecord[] = [];
-let previewConfig = {
-  layout: 'media' as const,
-  disableRestoreFocus: true,
-};
 let latestActionProps: {
   copyStatus: 'idle' | 'copying' | 'copied' | 'error';
   canCopyImage: boolean;
   onCopyImage: () => void;
-} | null = null;
-let latestControlsProps: {
-  zoom: number;
-  onSetPreviewZoom: (zoom: number) => void;
 } | null = null;
 let latestStageProps: {
   currentHref: string;
@@ -154,7 +146,7 @@ vi.mock('@mui/material', () => ({
 }));
 
 vi.mock('../../attachment-preview/message-card-preview-config', () => ({
-  getMessageCardAttachmentPreviewConfig: () => previewConfig,
+  getMessageCardAttachmentPreviewConfig: () => ({ disableRestoreFocus: true }),
 }));
 
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
@@ -233,23 +225,6 @@ vi.mock('../../attachment-preview/MessageCardAttachmentPreviewHeader', () => ({
 }));
 
 vi.mock('../../attachment-preview/MessageCardAttachmentPreviewControls', () => ({
-  AttachmentPreviewZoomControls: ({
-    zoom,
-    onZoomChange,
-  }: {
-    zoom: number;
-    onZoomChange: (zoom: number) => void;
-  }) => {
-    latestControlsProps = {
-      zoom,
-      onSetPreviewZoom: onZoomChange,
-    };
-    return (
-      <div data-controls data-zoom={zoom}>
-        <button aria-label="Збільшити" onClick={() => onZoomChange(zoom + 10)} />
-      </div>
-    );
-  },
   AttachmentPreviewMobileCarouselNav: ({
     navigation,
   }: {
@@ -365,12 +340,7 @@ function TestImagePreviewDialog(props: TestImagePreviewDialogProps) {
 describe('ImageAttachmentPreviewRenderer', () => {
   afterEach(() => {
     dialogProps.splice(0);
-    previewConfig = {
-      layout: 'media',
-      disableRestoreFocus: true,
-    };
     latestActionProps = null;
-    latestControlsProps = null;
     latestStageProps = null;
     imageEditorMocks.handleEscape.mockClear();
     document.body.innerHTML = '';
