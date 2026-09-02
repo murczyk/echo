@@ -7912,8 +7912,8 @@ async fn count_stats(
     Ok(Json(response))
 }
 
-fn analytics_count_request_supported(_req: &AnalysisStatsReq) -> bool {
-    true
+fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
+    !analysis_request_has_unit_filters(req)
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -7925,7 +7925,6 @@ fn analytics_stats_request_supported(
     env: &Env,
 ) -> bool {
     analytics_count_request_supported(req)
-        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
         && !crate::stats::should_prefer_redis_stats(req, &env.config)
 }
 
@@ -7961,7 +7960,20 @@ pub(crate) fn analytics_inbox_candidates_supported(
 }
 
 fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
-    req.only_with_media != Some(true)
+    req.only_with_media != Some(true) && !inbox_request_has_unit_filters(req)
+}
+
+fn analysis_request_has_unit_filters(req: &AnalysisStatsReq) -> bool {
+    option_vec_has_values(&req.selected_units)
+}
+
+fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
+    option_vec_has_values(&req.selected_units)
+        || option_vec_has_values(&req.denied_units)
+}
+
+fn option_vec_has_values<T>(values: &Option<Vec<T>>) -> bool {
+    values.as_ref().is_some_and(|values| !values.is_empty())
 }
 
 #[derive(Clone)]

@@ -14,7 +14,6 @@ pub async fn unstage_message(
     m_duplicate_of: Option<(signal_message::Model, datasource_group::Model)>,
 ) -> anyhow::Result<UnstageResult> {
     if let Some((original, _group)) = m_duplicate_of {
-        crate::battle_line::lock_updates(txn).await.c(h!())?;
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),

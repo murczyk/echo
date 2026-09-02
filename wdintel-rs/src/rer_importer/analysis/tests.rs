@@ -7230,21 +7230,20 @@ fn count_stats_analytics_supports_callsign_and_search_filters() {
 }
 
 #[test]
-fn count_stats_analytics_supports_unit_filters() {
+fn count_stats_analytics_rejects_unit_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
-
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
 }
 
 #[test]
-fn summary_table_analytics_supports_unit_and_search_filters() {
+fn summary_table_analytics_rejects_unit_filters_and_supports_search() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
+    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
 
-    assert!(analytics_summary_table_request_supported(&req));
-    assert!(analytics_count_request_supported(&req));
-
+    req.selected_units = None;
     req.search = Some("message".to_string());
     assert!(analytics_summary_table_request_supported(&req));
 }
@@ -7273,17 +7272,17 @@ fn analytical_inbox_reads_support_callsign_and_search_filters() {
 }
 
 #[test]
-fn analytical_inbox_reads_support_unit_filters() {
+fn analytical_inbox_reads_reject_unit_filters() {
     let mut req = InboxMessagesReq {
         since_date_inclusive_ms: Some(1),
         ..Default::default()
     };
     req.selected_units = Some(vec!["unit".to_string()]);
-    assert!(analytics_inbox_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&req));
 
     req.selected_units = None;
     req.denied_units = Some(vec!["unit".to_string()]);
-    assert!(analytics_inbox_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&req));
 }
 
 #[test]
