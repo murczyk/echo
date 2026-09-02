@@ -65,7 +65,7 @@ For token or theme work run, at minimum:
 ```bash
 cd wdintel-web
 npm run tokens:check
-npx vitest run src/ts/react/mui-theme.spec.tsx
+npm run test:ts:gate
 npm run test:ts:ci
 just build-front
 ```

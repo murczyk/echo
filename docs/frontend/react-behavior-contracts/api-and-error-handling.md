@@ -16,7 +16,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** redirect is a terminal authorization transition; a 401 must not be swallowed as an ordinary empty response.
 - **Source implementation:** `src/ts/react/services/api/client.ts`, `src/ts/react/auth-redirect.ts`
-- **Existing test(s):** `src/ts/react/services/api/client.spec.ts`
+- **Existing test(s):** `src/ts/react/services/api/__tests__/client.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as an authorization safeguard.
 
 ## Direct-submit error presentation
@@ -35,7 +35,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** none.
 - **Source implementation:** `src/ts/react/services/api/direct-submit.ts`
-- **Existing test(s):** `src/ts/react/services/api/direct-submit.spec.ts` retains response compatibility fixtures; isolated string-format tests were removed.
+- **Existing test(s):** `src/ts/react/services/api/__tests__/direct-submit.spec.ts` retains response compatibility fixtures; isolated string-format tests were removed.
 - **Original Echo issue/PR, if known:** none recorded.
 
 ## Legacy API compatibility

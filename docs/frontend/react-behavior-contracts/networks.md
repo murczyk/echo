@@ -56,3 +56,15 @@
 - **Source implementation:** routes/rer-networks-neo/use-rer-networks-neo-page.load.ts and routes/rer-networks-neo/components/NetworkCells.tsx
 - **Existing test(s):** use-rer-networks-neo-page.spec.tsx, index.spec.tsx
 - **Original Echo issue/PR, if known:** [#3329](https://github.com/echoua/echo/issues/3329).
+
+## Network details workspace interaction integrity
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-network-details-workspace-interaction-integrity`
+- **Affected route/component:** Network Details Neo tabs, drawers, callsign relations, frequency panels, activity, and map panels.
+- **User action or external event:** the user changes a tab, edits network/frequency details, opens relation/report dialogs, or follows activity and map controls.
+- **Expected observable result:** actions stay associated with the selected network, frequency, callsign, and tab; drawers preserve their intended edit/create behavior; detail, graph, table, map, and activity panels retain their visible controls and error states.
+- **Known race/idempotency constraints:** route/tab changes and refreshes cannot apply a prior entity’s action to the current network.
+- **Source implementation:** `routes/rer-network-details-neo/`.
+- **Existing test(s):** Network Details Neo route and component interaction suites.
+- **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.

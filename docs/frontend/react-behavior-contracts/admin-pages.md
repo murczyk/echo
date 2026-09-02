@@ -91,3 +91,27 @@
 - **Source implementation:** `src/ts/react/routes/admin-transcription-settings/TranscriptionResultsTab.tsx`
 - **Existing test(s):** pagination, filter isolation, and failure cases in `index.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility and query-safety coverage.
+
+## AI settlement evaluation result ownership
+
+- **Status:** inferred characterization
+- **Behavior ID:** `admin-ai-settlement-evaluation-result-ownership`
+
+## Administration workspace interaction integrity
+
+- **Status:** inferred characterization
+- **Behavior ID:** `admin-workspace-interaction-integrity`
+- **Affected route/component:** React administration drawers, tables, settings panels, action menus, and secondary RER maintenance views.
+- **User action or external event:** an administrator changes a form, table selection, tab, pagination state, action menu, or asynchronous maintenance workflow.
+- **Expected observable result:** actions remain bound to the selected entity and role; drawers, confirmation flows, retries, loading/empty states, and table actions remain reachable and do not apply stale state.
+- **Known race/idempotency constraints:** late loads or repeated actions cannot overwrite the current selected entity or duplicate a mutation.
+- **Source implementation:** `routes/admin-*/` and related RER maintenance routes.
+- **Existing test(s):** administration and maintenance interaction suites under `src/ts/react/routes/`.
+- **Original Echo issue/PR, if known:** none recorded; retained as operational safeguards.
+- **Affected route/component:** AI settlement prompt, result, and worker settings page.
+- **User action or external event:** an evaluation finishes after its prompt changes or a source message is deleted; the user saves a prompt, results, or worker configuration.
+- **Expected observable result:** only results matching the current prompt and messages can be saved; resetting the prompt or saving worker settings cannot restore stale local state.
+- **Known race/idempotency constraints:** an obsolete evaluation completion is discarded before it can update the saved payload.
+- **Source implementation:** `routes/admin-ai-settlements/index.tsx`.
+- **Existing test(s):** stale-result and settings cases in `index.spec.tsx`.
+- **Original Echo issue/PR, if known:** none recorded; retained as persistence safeguards.

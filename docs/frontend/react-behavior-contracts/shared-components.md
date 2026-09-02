@@ -54,6 +54,38 @@
 - **Existing test(s):** `PowerDateTimePicker.spec.tsx`, `DateTimeRangeControl.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as a form-data-loss safeguard.
 
+## Navbar capability navigation and operator notices
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-navbar-capability-navigation`
+- **Affected route/component:** `src/ts/react/components/app-navbar/AppNavbar.tsx` and its menu/dropdown components.
+- **User role or permission:** every authenticated user; visible navigation depends on RER, Admin, Devices, AI-chat, transcription, and basic-user capabilities.
+- **Expected observable result:** navigation exposes only routes the current feature state and roles permit. Database and administration groups retain their intentional grouping and ordering; mobile navigation remains operable; profile, changelog, and maintenance controls remain available when their prerequisites are met.
+- **Loading/empty/error/success behavior:** while identity is loading, the profile control does not present an anonymous identity. A maintenance notice is shown once per deployment window and closes when that window ends.
+- **Responsive and keyboard requirements:** mobile navigation can be opened and closed without changing the available route set; flyout and dropdown actions remain reachable.
+- **Source implementation:** `src/ts/react/components/app-navbar/AppNavbar.tsx`, `menu-items.ts`, `ProfileDropdown.tsx`, and `ChangelogDropdown.tsx`.
+- **Current retained test(s):** none; the recovered mocked rendering/configuration checks were removed after this contract captured the behavior.
+
+## Shared MRT table state, filters, and overflow
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-mrt-state-and-overflow`
+- **Affected route/component:** `src/ts/react/components/mui-customized/table/`.
+- **User role or permission:** any table user.
+- **Expected observable result:** table controls keep internal columns out of ordinary visibility menus, retain controlled visibility/order state, clear a writable global filter without mutating disabled or read-only controls, and distinguish filtered-empty from ordinary-empty results. Select-all affects only selectable rows.
+- **Responsive and keyboard requirements:** overflowing values keep whole items and usable links intact, disclose hidden content without extra tab stops, and keep focus valid after a disclosure closes. Resizing and virtualization cannot expose stale measurement content.
+- **Known race/idempotency constraints:** measurement work is bounded, shared among equivalent cells, abort-safe on unmount, and invalidated when fonts, visibility, virtualized row signatures, or widths change. Deferred offscreen work cannot block visible cells.
+- **Source implementation:** `src/ts/react/components/mui-customized/table/get-default-table-options.tsx`, `mrt-overflow.tsx`, `table-state-provider.tsx`, and toolbar internal-action components.
+- **Recovered test inventory:** `src/ts/react/components/mui-customized/table/**/__tests__/recovery/`.
+
+## Shared chip semantics
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-shared-chip-semantics`
+- **Affected route/component:** `src/ts/react/components/EchoChip.tsx`.
+- **Expected observable result:** chips distinguish tag, table, read-only, link, and button meanings through their native semantics; a read-only chip is not presented as a keyboard action.
+- **Source implementation:** `src/ts/react/components/EchoChip.tsx`.
+
 ## Bulk autocomplete selection
 
 - **Status:** inferred characterization
@@ -217,6 +249,18 @@
 - **Source implementation:** `copy-image-to-clipboard.ts`
 - **Existing test(s):** `copy-image-to-clipboard.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as browser/resource safeguards.
+
+## Manage-message attachment and edit safety
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-manage-message-attachment-and-edit-safety`
+- **Affected route/component:** Manage Message drawer and its failed-upload fallback.
+- **User action or external event:** the user edits a linked/report message, removes an attachment, or a TUS upload fails.
+- **Expected observable result:** regular linked-message edits do not mutate accessible parents; report edits do not copy inaccessible parents; a recoverable upload failure falls back to multipart and preserves its uploaded URL, while authentication failures are not retried through another transport.
+- **Known race/idempotency constraints:** removing a file clears its tracked failure; terminal authentication failures remain terminal.
+- **Source implementation:** `routes/shared/manage-message/ManageMessageDrawer.tsx`, `message-upload-fallback.ts`.
+- **Existing test(s):** edit and upload-fallback safeguards in `ManageMessageDrawer.edit.spec.tsx` and `message-upload-fallback.spec.ts`.
+- **Original Echo issue/PR, if known:** none recorded; retained as data and attachment integrity safeguards.
 
 ## Portal-aware outside dismissal
 

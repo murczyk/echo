@@ -94,7 +94,6 @@ describe('misc utils', () => {
     expect(combineDateTimeToMs('2022-01-01', '12:00')).not.toBeNull();
   });
 
-  // @test-scope parser: application-timezone date-time input and display format
   it('parses and formats analysis date-times in the app timezone', () => {
     const millis = combineDateTimeToMs('2026-01-15', '12:00', APP_TIME_ZONE);
 

@@ -120,7 +120,6 @@ describe('useDeviceFilesLoad', () => {
     expect(apiMock.searchDeviceFiles).not.toHaveBeenCalled();
   });
 
-  // @test-scope safeguard: prevents a stale file search response from overwriting the newly selected root scope
   it('ignores a stale search response after the search scope changes', async () => {
     const first = deferred<SearchDeviceFilesRsp>();
     const second = deferred<SearchDeviceFilesRsp>();
@@ -169,7 +168,6 @@ describe('useDeviceFilesLoad', () => {
     expect(latest?.searchEntries.map((entry) => entry.parentEntryId)).toEqual([ROOT_ONE_ID]);
   });
 
-  // @test-scope safeguard: prevents distinct file entries from being lost when paginated results share a path
   it('appends cursor pages while preserving distinct duplicate paths', async () => {
     apiMock.searchDeviceFiles
       .mockResolvedValueOnce({

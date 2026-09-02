@@ -54,7 +54,7 @@
 - **Responsive and keyboard requirements:** none.
 - **Known race/idempotency constraints:** an atomic blacklist mutation must not target another palette or source message.
 - **Source implementation:** `src/ts/react/services/api/palitra.ts`
-- **Existing test(s):** `src/ts/react/services/api/palitra.spec.ts`
+- **Existing test(s):** `src/ts/react/services/api/__tests__/palitra.spec.ts`
 - **Original Echo issue/PR, if known:** none recorded; retained as authorization, safeguard, and parser coverage.
 
 ## Persisted analysis-map feature state

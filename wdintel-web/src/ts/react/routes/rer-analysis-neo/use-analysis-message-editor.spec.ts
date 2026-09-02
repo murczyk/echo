@@ -45,6 +45,7 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
+// @test-scope safeguard: prevents concurrent saves for one message from applying in an order different from the user's edits.
 describe('enqueueMessageSave', () => {
   it('serializes saves per message id', async () => {
     const queue = new Map<number, Promise<void>>();
@@ -74,6 +75,7 @@ describe('enqueueMessageSave', () => {
   });
 });
 
+// @test-scope safeguard: preserves the latest queued message draft when React state has not committed yet, preventing a later edit from restoring stale fields.
 describe('prepareQueuedMessageUpdate', () => {
   it('uses the queued draft snapshot before React state commits', () => {
     const message = { callsigns: ['A'], callsignsAlg2: [] } as InboxMessage;
@@ -107,6 +109,7 @@ describe('prepareQueuedMessageUpdate', () => {
   });
 });
 
+// @test-scope safeguard: preserves remote attachment refresh and correct report-versus-message edit ownership for the selected analysis message.
 describe('useAnalysisMessageEditor', () => {
   let container: HTMLDivElement;
   let root: Root;

@@ -1,0 +1,1493 @@
+/**
+ * @vitest-environment happy-dom
+ */
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import { act, createElement, useState } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { AreaOfResponsibility, Network, Unit } from '../../../../../Bindings';
+import { HttpRequestError } from '../../../services/api/client';
+import {
+  NETWORK_STATUS_ACTIVE,
+  NETWORK_STATUS_INACTIVE,
+} from '../../rer-network-details-neo/network-status';
+import { useRerNetworksNeoPage } from '../use-rer-networks-neo-page';
+
+const apiMock = vi.hoisted(() => ({
+  createNetwork: vi.fn(),
+  deleteNetwork: vi.fn(),
+  downloadNetworkEtalonkaReportTaskResult: vi.fn(),
+  getNetworksGroupsActivity: vi.fn(),
+  getNetworkUnitStats: vi.fn(),
+  getEncryptions: vi.fn(),
+  currentSystemSettings: vi.fn(),
+  listAors: vi.fn(),
+  listNetworks: vi.fn(),
+  listPosts: vi.fn(),
+  launchNetworkEtalonkaBatchReportTask: vi.fn(),
+  launchNetworksEtalonkaReportTask: vi.fn(),
+  getUnitsList: vi.fn(),
+  getUnitsByIds: vi.fn(),
+  updateNetwork: vi.fn(),
+  updateNetworkPosts: vi.fn(),
+  updateNetworkUnits: vi.fn(),
+}));
+
+const bgtaskMock = vi.hoisted(() => ({
+  fetchBgtaskStatusAndLogs: vi.fn(),
+}));
+
+const reportHistoryMock = vi.hoisted(() => ({
+  fetchReportHistoryStatus: vi.fn(),
+  fetchReportHistoryTaskStatus: vi.fn(),
+  parseUtcDateTime: (value: string | null | undefined) => {
+    if (value == null || value.trim() === '') return null;
+    const normalized = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  },
+}));
+
+const tableStateMock = vi.hoisted(() => ({
+  globalFilter: '',
+  columnFilters: [],
+  sorting: [],
+  columnSizing: {},
+  onChangeGlobalFilter: vi.fn(),
+  onColumnFiltersChange: vi.fn(),
+  onSortingChange: vi.fn(),
+}));
+
+const downloadBlobMock = vi.hoisted(() => vi.fn());
+const browserMock = vi.hoisted(() => ({
+  navigateWithinSpa: vi.fn(),
+}));
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+dayjs.extend(utc);
+
+vi.mock('../../../components/mui-customized/table/table-state-provider', () => ({
+  useTableStateContext: () => tableStateMock,
+}));
+
+vi.mock('../../../services/api/aor', () => ({
+  listAors: apiMock.listAors,
+}));
+
+vi.mock('../../../services/api/units', () => ({
+  getUnitsList: apiMock.getUnitsList,
+  getUnitsByIds: apiMock.getUnitsByIds,
+  mergeUnitsById: (...unitLists: Unit[][]) => {
+    const unitsById = new Map<number, Unit>();
+    unitLists.flat().forEach((unit) => unitsById.set(unit.id, unit));
+    return Array.from(unitsById.values());
+  },
+}));
+
+vi.mock('../../../services/api/posts', () => ({
+  listPosts: apiMock.listPosts,
+}));
+
+vi.mock('../../../services/api/networks', () => ({
+  createNetwork: apiMock.createNetwork,
+  deleteNetwork: apiMock.deleteNetwork,
+  downloadNetworkEtalonkaReportTaskResult: apiMock.downloadNetworkEtalonkaReportTaskResult,
+  getNetworksGroupsActivity: apiMock.getNetworksGroupsActivity,
+  getNetworkUnitStats: apiMock.getNetworkUnitStats,
+  listNetworks: apiMock.listNetworks,
+  launchNetworkEtalonkaBatchReportTask: apiMock.launchNetworkEtalonkaBatchReportTask,
+  launchNetworksEtalonkaReportTask: apiMock.launchNetworksEtalonkaReportTask,
+  updateNetwork: apiMock.updateNetwork,
+  updateNetworkPosts: apiMock.updateNetworkPosts,
+  updateNetworkUnits: apiMock.updateNetworkUnits,
+}));
+
+vi.mock('../../../utils/browser', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../utils/browser')>();
+  return {
+    ...actual,
+    navigateWithinSpa: browserMock.navigateWithinSpa,
+  };
+});
+
+vi.mock('../../../services/api/bgtask', () => ({
+  fetchBgtaskStatusAndLogs: bgtaskMock.fetchBgtaskStatusAndLogs,
+  getBgtaskProgress: (loglines: string[]) => ({
+    curr: loglines.length > 0 ? 1 : 1,
+    overall: 4,
+  }),
+  getBgtaskProgressFromPercent: (loglines: string[], progress?: number) => {
+    if (typeof progress === 'number' && Number.isFinite(progress)) {
+      return { curr: Math.max(0, Math.min(100, Math.round(progress))), overall: 100 };
+    }
+    return {
+      curr: loglines.length > 0 ? 1 : 1,
+      overall: 4,
+    };
+  },
+}));
+
+vi.mock('../../../services/api/report-history', () => ({
+  fetchReportHistoryStatus: reportHistoryMock.fetchReportHistoryStatus,
+  fetchReportHistoryTaskStatus: reportHistoryMock.fetchReportHistoryTaskStatus,
+  isCancelledReportHistory: (row: { status: string; lastError: string | null | undefined }) =>
+    row.status === 'failed' && (row.lastError ?? '').includes('Скасовано користувачем'),
+  isCancelledReportHistoryError: (value: string | null | undefined) =>
+    value?.includes('Скасовано користувачем') ?? false,
+  parseUtcDateTime: reportHistoryMock.parseUtcDateTime,
+}));
+
+vi.mock('../../../services/api/encryptions', () => ({
+  getEncryptions: apiMock.getEncryptions,
+}));
+
+vi.mock('../../../services/api/system-settings', () => ({
+  currentSystemSettings: apiMock.currentSystemSettings,
+}));
+
+vi.mock('../../../utils/download-blob', () => ({
+  downloadBlob: downloadBlobMock,
+}));
+
+type HookResult = ReturnType<typeof useRerNetworksNeoPage>;
+
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+let latest: HookResult | null = null;
+let locationReplaceSpy: any = null;
+let authUserRoles: string[] = ['Rer', 'Full'];
+
+function buildNetwork(id: number, overrides: Partial<Network> = {}): Network {
+  const now = 1_751_000_000_000;
+  return {
+    id,
+    freqs: [],
+    unitIds: [],
+    aorIds: [],
+    name: `Network ${id}`,
+    location: `Location ${id}`,
+    radioStation: null,
+    createdAt: now,
+    purpose: null,
+    operationMode: null,
+    operationType: null,
+    operationPeriod: null,
+    doNotArchive: false,
+    lastUpdatedAt: now,
+    lastUpdatedBy: 'tester',
+    activeFrom: null,
+    activeTo: null,
+    postIds: [],
+    descriptions: [],
+    deleted: false,
+    status: NETWORK_STATUS_ACTIVE,
+    ...overrides,
+  };
+}
+
+function buildAor(id: number, name: string): AreaOfResponsibility {
+  return { id, name } as AreaOfResponsibility;
+}
+
+function buildUnit(id: number, name: string): Unit {
+  return {
+    id,
+    name,
+    army: '',
+    division: '',
+    regiment: '',
+    battalion: '',
+  } as Unit;
+}
+
+function Harness() {
+  latest = useRerNetworksNeoPage({ authUserRoles });
+  return null;
+}
+
+async function flushEffects() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function renderHook() {
+  if (container === null) throw new Error('container not initialized');
+
+  root = createRoot(container);
+  await act(async () => {
+    root?.render(createElement(Harness));
+  });
+}
+
+// @test-scope safeguard: prevents stale network-list loads, selections, and mutations from replacing the current page state.
+describe('useRerNetworksNeoPage', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    window.history.replaceState({}, '', '/rer-networks/42');
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    latest = null;
+
+    apiMock.deleteNetwork.mockReset();
+    apiMock.createNetwork.mockReset();
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
+    apiMock.launchNetworkEtalonkaBatchReportTask.mockReset();
+    apiMock.launchNetworksEtalonkaReportTask.mockReset();
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+    reportHistoryMock.fetchReportHistoryStatus.mockReset();
+    reportHistoryMock.fetchReportHistoryTaskStatus.mockReset();
+    apiMock.getNetworksGroupsActivity.mockReset();
+    apiMock.getNetworkUnitStats.mockReset();
+    apiMock.getEncryptions.mockReset();
+    apiMock.currentSystemSettings.mockReset();
+    apiMock.listAors.mockReset();
+    apiMock.listNetworks.mockReset();
+    apiMock.listPosts.mockReset();
+    apiMock.getUnitsList.mockReset();
+    apiMock.getUnitsByIds.mockReset();
+    apiMock.updateNetwork.mockReset();
+    apiMock.updateNetworkPosts.mockReset();
+    apiMock.updateNetworkUnits.mockReset();
+
+    apiMock.listAors.mockResolvedValue([buildAor(1, 'AOR 1')]);
+    apiMock.getUnitsList.mockResolvedValue([buildUnit(1, 'Unit 1')]);
+    apiMock.getUnitsByIds.mockResolvedValue([]);
+    apiMock.getNetworkUnitStats.mockResolvedValue([]);
+    apiMock.listPosts.mockResolvedValue([]);
+    apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+    apiMock.getEncryptions.mockResolvedValue([{ id: 11, name: 'FM' } as never]);
+    apiMock.currentSystemSettings.mockResolvedValue({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 0,
+      rerDutyPollIntervalSec: 0,
+      rerShortUrlEnabled: false,
+      supportNonRerInterceptions: false,
+    });
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockResolvedValue(new Blob(['report']));
+    apiMock.launchNetworkEtalonkaBatchReportTask.mockResolvedValue(123);
+    apiMock.launchNetworksEtalonkaReportTask.mockResolvedValue(456);
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockResolvedValue({
+      running: false,
+      loglines: [],
+      finishedWithError: null,
+      finishedWithErrorCode: null,
+    });
+    apiMock.createNetwork.mockResolvedValue(buildNetwork(3));
+    apiMock.updateNetwork.mockResolvedValue(buildNetwork(1));
+    apiMock.updateNetworkPosts.mockResolvedValue(buildNetwork(1));
+    apiMock.updateNetworkUnits.mockResolvedValue(buildNetwork(1));
+    apiMock.deleteNetwork.mockResolvedValue(buildNetwork(1, { deleted: true }));
+    apiMock.listNetworks.mockResolvedValue({
+      list: [buildNetwork(1), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    tableStateMock.globalFilter = '';
+    tableStateMock.columnFilters = [];
+    tableStateMock.sorting = [];
+    tableStateMock.columnSizing = {};
+    tableStateMock.onChangeGlobalFilter.mockReset();
+    tableStateMock.onColumnFiltersChange.mockReset();
+    tableStateMock.onSortingChange.mockReset();
+
+    downloadBlobMock.mockReset();
+    browserMock.navigateWithinSpa.mockReset();
+    authUserRoles = ['Rer', 'Full'];
+
+    locationReplaceSpy = vi.spyOn(window.location, 'replace').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    act(() => {
+      root?.unmount();
+    });
+    root = null;
+    container?.remove();
+    container = null;
+    latest = null;
+    locationReplaceSpy?.mockRestore();
+    locationReplaceSpy = null;
+    vi.useRealTimers();
+  });
+
+  it('starts with the sidebar collapsed', async () => {
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.sidebarOpen).toBe(false);
+  });
+
+  it('opens the create drawer with the classic defaults', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.openCreateDialog();
+    });
+    await flushEffects();
+
+    expect(latest?.createDialog).toEqual({
+      id: null,
+      name: 'управління',
+      location: '',
+      radioStation: '',
+      purpose: 'для управління підлеглим особовим складом',
+      operationMode: 'дуплекс',
+      operationType: 'ведення службового радіообміну',
+      operationPeriod: 'цілодобово',
+      doNotArchive: false,
+      unitMask: [],
+      status: NETWORK_STATUS_ACTIVE,
+      aorIds: [],
+      unitIds: [],
+      postIds: [],
+      freq: '',
+      modulation: 'DMR',
+      encryptionId: null,
+      activeFrom: '',
+      activeTo: '',
+      encryptionKeyIds: [],
+    });
+  });
+
+  it('filters blank posts from create drawer options', async () => {
+    apiMock.listPosts.mockResolvedValueOnce([
+      { id: 1, name: '   ' } as never,
+      { id: 2, name: '_stihl_XN Пост' } as never,
+    ]);
+
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.postOptions).toEqual([{ id: 2, label: '_stihl_XN Пост' }]);
+  });
+
+  it('creates a network and redirects to the new network details page', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.openCreateDialog();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setCreateDialog({
+        id: null,
+        name: 'Радіомережа 1',
+        location: 'Київ',
+        radioStation: '',
+        purpose: 'для управління підлеглим особовим складом',
+        operationMode: 'дуплекс',
+        operationType: 'ведення службового радіообміну',
+        operationPeriod: 'цілодобово',
+        doNotArchive: false,
+        unitMask: [],
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [1],
+        postIds: [1],
+        freq: '123.4500',
+        modulation: 'DMR',
+        encryptionId: 11,
+        activeFrom: '2026-06-01',
+        activeTo: '2026-06-30',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+    expect(latest?.createDialog?.name).toBe('Радіомережа 1');
+
+    await act(async () => {
+      await latest?.saveNetworkCreate();
+    });
+    await flushEffects();
+
+    expect(latest?.createError).toBeNull();
+    expect(apiMock.createNetwork).toHaveBeenCalledWith({
+      freqs: [
+        {
+          freq: '123.4500',
+          modulation: 'DMR',
+          encryptionId: 11,
+          encryptionKeyIds: [],
+          description: null,
+          activeFrom: expect.any(Number),
+          activeTo: expect.any(Number),
+        },
+      ],
+      unitIds: [1],
+      areaOfResponsibilityIds: [1],
+      name: 'Радіомережа 1',
+      location: 'Київ',
+      radioStation: null,
+      purpose: 'для управління підлеглим особовим складом',
+      operationMode: 'дуплекс',
+      operationType: 'ведення службового радіообміну',
+      operationPeriod: 'цілодобово',
+      doNotArchive: false,
+      unitMask: [],
+      postIds: [1],
+      descriptions: [],
+    });
+    expect(latest?.createDialog).toBeNull();
+    expect(latest?.status).toEqual({ kind: 'success', text: 'Мережу створено.' });
+    expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/3');
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a network without frequency when non-RER interceptions are enabled', async () => {
+    apiMock.currentSystemSettings.mockResolvedValueOnce({
+      id: 1,
+      rerAnalysisUnitsExactMatchOnlyDefault: false,
+      rerDutyTestEnabled: false,
+      rerDutyInsertHistoricalInterceptions: false,
+      rerDutyTestSinceMs: 0,
+      rerDutyTestLimit: 0,
+      rerDutyPollIntervalSec: 0,
+      rerShortUrlEnabled: false,
+      supportNonRerInterceptions: true,
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setCreateDialog({
+        id: null,
+        name: 'Радіомережа без частоти',
+        location: 'Київ',
+        radioStation: '',
+        purpose: 'для управління підлеглим особовим складом',
+        operationMode: 'дуплекс',
+        operationType: 'ведення службового радіообміну',
+        operationPeriod: 'цілодобово',
+        doNotArchive: false,
+        unitMask: [],
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [1],
+        postIds: [],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.saveNetworkCreate();
+    });
+    await flushEffects();
+
+    expect(apiMock.createNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        freqs: null,
+        name: 'Радіомережа без частоти',
+      }),
+    );
+    expect(browserMock.navigateWithinSpa).toHaveBeenCalledWith('/rer-networks-neo/3');
+  });
+
+  it('keeps backend row order when the server returns a custom sort', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(2), buildNetwork(1)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.rows.map((row) => row.id)).toEqual([2, 1]);
+  });
+
+  it('refreshes an edited row with updated relations from the server', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [1],
+        postIds: [2],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { unitIds: [1], postIds: [2] }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        areaOfResponsibilityIds: [1],
+        status: NETWORK_STATUS_ACTIVE,
+      }),
+    );
+    expect(apiMock.updateNetworkPosts).toHaveBeenCalledWith({
+      networkId: 1,
+      postIds: [2],
+    });
+    expect(apiMock.updateNetworkUnits).toHaveBeenCalledWith({
+      networkId: 1,
+      unitIds: [1],
+    });
+    expect(latest?.rows.find((row) => row.id === 1)?.network.unitIds).toEqual([1]);
+    expect(latest?.rows.find((row) => row.id === 1)?.network.postIds).toEqual([2]);
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not request a restore for archived rows without an active window', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: null }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: null }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        restoreNetwork: true,
+      }),
+    );
+  });
+
+  it('requests a restore when an archived row still has an active window', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: 1_751_000_000_000 }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: 1_751_000_000_000 }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        restoreNetwork: true,
+      }),
+    );
+  });
+
+  it('requests a restore when an archived row is inactive', async () => {
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1, { deleted: true, activeTo: 1_751_000_000_000 }), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_INACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(apiMock.updateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 1,
+        restoreNetwork: true,
+      }),
+    );
+  });
+
+  it('drops an edited row when it no longer matches the active filter', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setEditDialog({
+        id: 1,
+        name: 'Network 1',
+        location: 'Location 1',
+        radioStation: '',
+        purpose: '',
+        operationMode: '',
+        operationType: '',
+        operationPeriod: '',
+        status: NETWORK_STATUS_INACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '',
+        modulation: 'DMR',
+        encryptionId: null,
+        activeFrom: '',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(2)],
+      statusCounts: { active: 1, inactive: 1, archived: 1 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 1, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      await latest?.saveNetworkEdit();
+    });
+    await flushEffects();
+
+    expect(latest?.rows.map((row) => row.id)).toEqual([2]);
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(4);
+  });
+
+  it('blocks create submission when the first frequency is invalid', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.openCreateDialog();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setCreateDialog({
+        id: null,
+        name: 'Радіомережа 1',
+        location: 'Київ',
+        radioStation: '',
+        purpose: 'для управління підлеглим особовим складом',
+        operationMode: 'дуплекс',
+        operationType: 'ведення службового радіообміну',
+        operationPeriod: 'цілодобово',
+        status: NETWORK_STATUS_ACTIVE,
+        aorIds: [1],
+        unitIds: [],
+        postIds: [],
+        freq: '123.45',
+        modulation: 'DMR',
+        encryptionId: 11,
+        activeFrom: '2026-06-01',
+        activeTo: '',
+        encryptionKeyIds: [],
+      });
+    });
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.saveNetworkCreate();
+    });
+    await flushEffects();
+
+    expect(apiMock.createNetwork).not.toHaveBeenCalled();
+    expect(latest?.createError).toBe('Невірний формат частоти (наприклад: 146.5000)');
+  });
+
+  it('replays a filter change after bootstrap completes', async () => {
+    const firstLoad = deferred<{
+      list: Network[];
+      statusCounts: { active: number; inactive: number; archived: number };
+    }>();
+    apiMock.listNetworks.mockImplementationOnce(() => firstLoad.promise);
+    apiMock.getNetworksGroupsActivity.mockResolvedValue({});
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    firstLoad.resolve({
+      list: [buildNetwork(1), buildNetwork(2)],
+      statusCounts: { active: 7, inactive: 1, archived: 1 },
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+    expect(apiMock.listNetworks).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        showInactive: false,
+        showOnlyDeleted: false,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('keeps status counts when only the status chip changes', async () => {
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.statusCounts).toEqual({ active: 7, inactive: 1, archived: 1 });
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    expect(latest?.statusCounts).toEqual({ active: 7, inactive: 1, archived: 1 });
+  });
+
+  it('does not reload networks when only column sizing changes', async () => {
+    await renderHook();
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
+
+    tableStateMock.columnSizing = { network: 320 };
+    await act(async () => {
+      root?.render(createElement(Harness));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
+  });
+
+  it('redirects to login on unauthorized network load', async () => {
+    apiMock.listNetworks.mockRejectedValueOnce(new HttpRequestError(401, 'unauthorized'));
+
+    await renderHook();
+    await flushEffects();
+
+    expect(locationReplaceSpy).toHaveBeenCalled();
+    expect(String(locationReplaceSpy.mock.calls[0]?.[0] ?? '')).toContain('/login');
+  });
+
+  it('opens the top report with the current settings and loaded network ids', async () => {
+    await renderHook();
+    await flushEffects();
+
+    vi.useFakeTimers();
+    reportHistoryMock.fetchReportHistoryStatus
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: null,
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'planned',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: null,
+        lastError: null,
+        details: '',
+        progress: 0,
+        errorLog: null,
+      })
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: '2026-05-01T10:00:01',
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'in_progress',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: null,
+        details: '',
+        progress: 45,
+        errorLog: null,
+      });
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockResolvedValueOnce({
+      running: false,
+      loglines: ['backend step'],
+      finishedWithError: null,
+      finishedWithErrorCode: null,
+      progress: 100,
+    });
+
+    await act(async () => {
+      latest?.setEtalonkaReport((current) => ({
+        ...current,
+        reportType: 'ExtendedReport',
+        activeFreqsOnly: false,
+        includeSigintSigns: false,
+        includeConfirmation: false,
+        includeUnitCallsigns: true,
+        includePelengsMap: false,
+        fromDateTimeStr: '2026-05-02T10:00',
+        toDateTimeStr: '2026-05-03T11:30',
+      }));
+      latest?.openTopReportDialog();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      const downloadPromise = latest?.downloadEtalonkaReport();
+      await vi.advanceTimersByTimeAsync(2000);
+      await downloadPromise;
+    });
+    vi.useRealTimers();
+
+    expect(apiMock.launchNetworksEtalonkaReportTask).toHaveBeenCalledWith({
+      req: {
+        filterFreq: null,
+        filterUnit: null,
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
+        filterUnitArmy: null,
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: null,
+        filterText: null,
+        filterName: null,
+        filterLocation: null,
+        showOnlyFurtherInverstigation: null,
+        showInactive: true,
+        showOnlyDeleted: false,
+        statusFilter: null,
+        aorIds: null,
+        ids: null,
+        limit: null,
+        offset: null,
+        sortBy: ['NameAsc'],
+      },
+      etalonkaType: {
+        ExtendedReport: {
+          sinceDateInclusiveMs: expect.any(Number),
+          tillDateInclusiveMs: expect.any(Number),
+          activeFreqsOnly: false,
+          includeFreqActiveFrom: false,
+          includeFreqCreatedAt: true,
+          includeCallsignFullNames: false,
+          includeUnitCallsigns: true,
+          includeSigintSigns: false,
+          includeConfirmation: false,
+          includePelengsMap: false,
+          includeHeadingsAndFreqs: false,
+        },
+      },
+    });
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(1, 456);
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenNthCalledWith(2, 456);
+    expect(bgtaskMock.fetchBgtaskStatusAndLogs).toHaveBeenNthCalledWith(1, 77, 0);
+    expect(apiMock.downloadNetworkEtalonkaReportTaskResult).toHaveBeenCalledWith(456);
+    expect(downloadBlobMock).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'etalonka_2026-05-02T10-00_2026-05-03T11-30.docx',
+    );
+  });
+
+  it('shows the cancelled message when the dialog etalonka report is cancelled', async () => {
+    await renderHook();
+    await flushEffects();
+
+    vi.useFakeTimers();
+    reportHistoryMock.fetchReportHistoryStatus.mockReset();
+    reportHistoryMock.fetchReportHistoryStatus
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: null,
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'planned',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: null,
+        lastError: null,
+        details: '',
+        progress: 0,
+        errorLog: null,
+      })
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: '2026-05-01T10:00:01',
+        plannedForTs: null,
+        queuePosition: 1,
+        status: 'failed',
+        completedAt: '2026-05-01T10:00:10',
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: 'Скасовано користувачем',
+        details: '',
+        progress: 0,
+        errorLog: null,
+      });
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
+
+    await act(async () => {
+      latest?.openTopReportDialog();
+    });
+    await flushEffects();
+
+    await act(async () => {
+      const downloadPromise = latest?.downloadEtalonkaReport();
+      await vi.advanceTimersByTimeAsync(1000);
+      await downloadPromise;
+    });
+    vi.useRealTimers();
+
+    expect(latest?.etalonkaReport.running).toBe(false);
+    expect(latest?.etalonkaReport.error).toBe('Звіт скасовано в Моїх звітах.');
+    expect(latest?.status).toBeNull();
+    expect(apiMock.downloadNetworkEtalonkaReportTaskResult).not.toHaveBeenCalled();
+  });
+
+  it('shows the cancelled message when cancellation races with bgtask polling', async () => {
+    await renderHook();
+    await flushEffects();
+
+    vi.useFakeTimers();
+    reportHistoryMock.fetchReportHistoryStatus.mockReset();
+    reportHistoryMock.fetchReportHistoryStatus
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: '2026-05-01T10:00:01',
+        plannedForTs: null,
+        queuePosition: null,
+        status: 'in_progress',
+        completedAt: null,
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: null,
+        details: '',
+        progress: 45,
+        errorLog: null,
+      })
+      .mockResolvedValueOnce({
+        id: 456,
+        reportKind: 'etalonka',
+        requestedBy: 'tester',
+        createdAt: '2026-05-01T10:00:00',
+        startedAt: '2026-05-01T10:00:01',
+        plannedForTs: null,
+        queuePosition: null,
+        status: 'failed',
+        completedAt: '2026-05-01T10:00:10',
+        hasFile: false,
+        fileName: null,
+        contentType: null,
+        bgtaskId: 77,
+        lastError: 'Скасовано користувачем',
+        details: '',
+        progress: 45,
+        errorLog: null,
+      });
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockReset();
+    bgtaskMock.fetchBgtaskStatusAndLogs.mockResolvedValueOnce({
+      running: false,
+      loglines: [],
+      finishedWithError: 'BL { msg: "Скасовано користувачем" }',
+      finishedWithErrorCode: null,
+      progress: 45,
+    });
+    apiMock.downloadNetworkEtalonkaReportTaskResult.mockReset();
+
+    await act(async () => {
+      const downloadPromise = latest?.runDownload('etalonka');
+      await downloadPromise;
+    });
+    vi.useRealTimers();
+
+    expect(reportHistoryMock.fetchReportHistoryStatus).toHaveBeenCalledTimes(2);
+    expect(latest?.status).toEqual({ kind: 'info', text: 'Звіт скасовано в Моїх звітах.' });
+    expect(latest?.etalonkaReport.running).toBe(false);
+    expect(latest?.etalonkaReport.error).toBe('Звіт скасовано в Моїх звітах.');
+    expect(apiMock.downloadNetworkEtalonkaReportTaskResult).not.toHaveBeenCalled();
+  });
+
+  it('uses the backend status counts', async () => {
+    await renderHook();
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledWith(
+      {
+        filterFreq: null,
+        filterUnit: null,
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
+        filterUnitArmy: null,
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: null,
+        filterText: null,
+        filterName: null,
+        filterLocation: null,
+        showOnlyFurtherInverstigation: null,
+        showInactive: true,
+        showOnlyDeleted: false,
+        statusFilter: null,
+        aorIds: null,
+        ids: null,
+        limit: 100,
+        offset: 0,
+        sortBy: ['NameAsc'],
+      },
+      expect.any(Object),
+    );
+    expect(latest?.statusCounts).toEqual({ active: 7, inactive: 1, archived: 1 });
+  });
+
+  it('maps status chips to the expected backend status filters', async () => {
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        statusFilter: null,
+        showInactive: false,
+        showOnlyDeleted: false,
+        filterUnitArmyRegion: null,
+        filterUnitMilitaryDistrict: null,
+        filterUnitArmy: null,
+        filterUnitDivision: null,
+        filterUnitRegiment: null,
+        filterUnitBattalion: null,
+      }),
+      expect.any(Object),
+    );
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'inactive' }));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        statusFilter: 'ListNetworksInactive',
+      }),
+      expect.any(Object),
+    );
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'deleted' }));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        statusFilter: 'ListNetworksArchived',
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('allows retrying a failed reload for the same query later', async () => {
+    await renderHook();
+    await flushEffects();
+
+    apiMock.listNetworks.mockRejectedValueOnce(new Error('transient'));
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1), buildNetwork(2)],
+      statusCounts: { active: 6, inactive: 1, archived: 1 },
+    });
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'inactive' }));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(4);
+  });
+
+  it('reloads immediately for status changes and debounces global search', async () => {
+    vi.useFakeTimers();
+
+    await renderHook();
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+
+    tableStateMock.globalFilter = 'alpha';
+    await act(async () => {
+      root?.render(createElement(Harness));
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      vi.advanceTimersByTime(249);
+    });
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    await flushEffects();
+
+    expect(apiMock.listNetworks).toHaveBeenCalledTimes(3);
+  });
+
+  it('requests activity data with a concrete upper bound and maps returned bars', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-12T15:34:56Z'));
+
+    const todayKey = dayjs().startOf('day').valueOf();
+    apiMock.getNetworksGroupsActivity.mockResolvedValueOnce({
+      1: {
+        [todayKey]: { alpha: 3 },
+      },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    expect(apiMock.getNetworksGroupsActivity).toHaveBeenCalledWith(
+      {
+        networkIds: [1, 2],
+        tillDateNoninclusiveMs: dayjs().startOf('day').add(1, 'day').valueOf(),
+        period: null,
+      },
+      expect.any(Object),
+    );
+    expect(latest?.rows[0]?.activityBars.some((bar) => bar.value === 3)).toBe(true);
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  it('settles first-page activity after pagination starts', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
+    const initialActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: firstPage,
+      statusCounts: { active: 100, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(101)],
+      statusCounts: { active: 101, inactive: 0, archived: 0 },
+    });
+    apiMock.getNetworksGroupsActivity.mockImplementationOnce(() => initialActivity.promise);
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      await latest?.loadMoreNetworks();
+    });
+    expect(latest?.rows[0]?.activityLoadState).toBe('loading');
+
+    await act(async () => {
+      initialActivity.resolve({});
+      await initialActivity.promise;
+    });
+    await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  it('does not abort page-two activity when page three starts loading', async () => {
+    const pageOne = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 1));
+    const pageTwo = Array.from({ length: 100 }, (_, index) => buildNetwork(index + 101));
+    const pageTwoActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: pageOne,
+      statusCounts: { active: 100, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: pageTwo,
+      statusCounts: { active: 200, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(201)],
+      statusCounts: { active: 201, inactive: 0, archived: 0 },
+    });
+    apiMock.getNetworksGroupsActivity
+      .mockResolvedValueOnce({})
+      .mockImplementationOnce(() => pageTwoActivity.promise)
+      .mockResolvedValueOnce({});
+
+    await renderHook();
+    await flushEffects();
+    await act(async () => {
+      await latest?.loadMoreNetworks();
+    });
+    await act(async () => {
+      await latest?.loadMoreNetworks();
+    });
+
+    const pageTwoActivityCall = apiMock.getNetworksGroupsActivity.mock.results[1];
+    expect(pageTwoActivityCall).toBeDefined();
+    const pageTwoSignal = apiMock.getNetworksGroupsActivity.mock.calls[1]?.[1]?.signal;
+    expect(pageTwoSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      pageTwoActivity.resolve({});
+      await pageTwoActivity.promise;
+    });
+    await vi.waitFor(() => expect(latest?.rows[100]?.activityLoadState).toBe('loaded'));
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  it('ignores activity from a replaced list query', async () => {
+    const oldActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    const newActivity = deferred<Record<string, Record<string, Record<string, number>>>>();
+    apiMock.getNetworksGroupsActivity
+      .mockImplementationOnce(() => oldActivity.promise)
+      .mockImplementationOnce(() => newActivity.promise);
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(1), buildNetwork(2)],
+      statusCounts: { active: 2, inactive: 0, archived: 0 },
+    });
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [buildNetwork(3)],
+      statusCounts: { active: 1, inactive: 0, archived: 0 },
+    });
+
+    await renderHook();
+    await flushEffects();
+
+    await act(async () => {
+      latest?.setFilters((current) => ({ ...current, status: 'active' }));
+    });
+    await flushEffects();
+    expect(latest?.rows.map((row) => row.id)).toEqual([3]);
+    expect(latest?.rows[0]?.activityLoadState).toBe('loading');
+
+    await act(async () => {
+      oldActivity.resolve({});
+      await oldActivity.promise;
+    });
+    await flushEffects();
+    expect(latest?.rows[0]?.activityLoadState).toBe('loading');
+
+    await act(async () => {
+      newActivity.resolve({});
+      await newActivity.promise;
+    });
+    await vi.waitFor(() => expect(latest?.rows[0]?.activityLoadState).toBe('loaded'));
+  });
+
+  // @test-scope regression: https://github.com/echoua/echo/issues/3329
+  it('marks every requested network as activity error without rendering inactivity', async () => {
+    apiMock.getNetworksGroupsActivity.mockRejectedValueOnce(new Error('activity unavailable'));
+
+    await renderHook();
+    await vi.waitFor(() =>
+      expect(latest?.rows.every((row) => row.activityLoadState === 'error')).toBe(true),
+    );
+    expect(latest?.rows.every((row) => row.activityLoadState !== 'loaded')).toBe(true);
+  });
+
+  it('enables edit and delete permissions for UnitsEditor roles', async () => {
+    authUserRoles = ['Rer', 'UnitsEditor'];
+
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.permissions).toEqual({
+      canEdit: true,
+      canExport: true,
+      canDelete: true,
+    });
+  });
+
+  it('removes a soft-deleted network from the active list', async () => {
+    await renderHook();
+    await flushEffects();
+
+    expect(latest?.rows).toHaveLength(2);
+
+    await act(async () => {
+      latest?.openDeleteDialog(buildNetwork(1));
+    });
+
+    apiMock.listNetworks.mockResolvedValueOnce({
+      list: [],
+      statusCounts: { active: 1, inactive: 0, archived: 0 },
+    });
+
+    await act(async () => {
+      await latest?.confirmDeleteNetwork();
+    });
+
+    expect(apiMock.deleteNetwork).toHaveBeenCalledWith(1);
+    expect(latest?.rows.map((row) => row.id)).toEqual([2]);
+  });
+});

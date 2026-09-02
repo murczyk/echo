@@ -132,3 +132,48 @@
 - **Source implementation:** `message-coordinate-preview.ts`
 - **Existing test(s):** `message-coordinate-preview.spec.ts`; isolated plural-formatting and mocked component-prop coverage were removed.
 - **Original Echo issue/PR, if known:** none recorded; retained as operational coordinate parser coverage.
+
+## Compact tag expansion continuity
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-message-card-compact-tag-expansion-continuity`
+- **Affected route/component:** compact MessageCard tag rows.
+- **User action or external event:** the user checks a rest tag, then tag metadata refreshes while the row is expanded.
+- **Expected observable result:** checked tags remain visible and the first compact row repacks using current metadata.
+- **Known race/idempotency constraints:** metadata refresh cannot restore stale compact geometry or collapse an active selection.
+- **Source implementation:** `routes/shared/message-card/MessageCard.tsx`.
+- **Existing test(s):** compact-tag cases in `__tests__/card/MessageCard.spec.tsx`.
+- **Original Echo issue/PR, if known:** none recorded; retained as interaction safeguards.
+
+## Message-card evidence hierarchy and actions
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-message-card-evidence-hierarchy`
+- **Affected route/component:** `src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardContent.tsx`, and action/renderer children.
+- **User role or permission:** users with message visibility; editing, archive, intelligence-report, and analysis actions remain capability-dependent.
+- **Expected observable result:** a card presents the message identity, time/source, text, locations, attachments, comments/authorship, tags, and available actions in a stable operational hierarchy. Duty and Analysis variants expose only the actions meaningful for their respective workflow. A message archive/download action preserves the original evidence identity and never substitutes an unrelated attachment.
+- **Loading/empty/error/success behavior:** comments, intelligence reports, summaries, transcription, and attachment metadata show their own pending/error/empty state without hiding already available message evidence.
+- **Responsive and keyboard requirements:** card actions, attachment controls, tag controls, and comments remain reachable by keyboard; media dialogs close with Escape without moving focus to an unrelated card control.
+- **Known race/idempotency constraints:** a message refresh or action response cannot replace the card's newer message identity, selected attachment, comment set, tag state, or active report result.
+- **Source implementation:** `src/ts/react/routes/shared/message-card/MessageCard.tsx`, `MessageCardContent.tsx`, `MessageCardIntelligenceReports.tsx`, and attachment-preview components.
+- **Current retained test(s):** browser preview safeguards in `wdintel-web/tests/e2e/message-card-media-preview.spec.ts`; focused React safety tests are recorded in the disposition ledger.
+
+## Audio, transcription, and document evidence
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-message-card-media-evidence`
+- **Affected route/component:** Message Card image/video/audio/document/coordinate renderers and attachment-preview shell.
+- **Expected observable result:** each supported evidence type has a truthful presentation: audio exposes playback/transcription state, documents expose safe preview/download/open actions, coordinates preserve their source and map meaning, and image/video previews retain carousel order. Unsupported or unavailable media remains an explicit unavailable state rather than a fabricated preview.
+- **Loading/empty/error/success behavior:** pending transcription/preview processing remains visible; completed results remain associated with their media revision; archive/download actions remain available only when the corresponding artifact exists.
+- **Source implementation:** `src/ts/react/routes/shared/message-card/attachment-preview/`, `renderers/`, and coordinate components.
+- **Current retained test(s):** `wdintel-web/tests/e2e/message-card-media-preview.spec.ts` plus retained parser and stale-response safeguards in the disposition ledger.
+
+## Manage Message draft and coordinate safeguards
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-manage-message-draft-coordinates`
+- **Affected route/component:** `src/ts/react/routes/shared/manage-message/ManageMessageDrawer.tsx` and coordinate sections.
+- **Expected observable result:** coordinate entry and previews preserve the entered coordinate list and its selected interpretation; a draft cannot submit until required message fields are satisfied. Closing or reopening a drawer preserves only the session behavior explicitly owned by its caller and does not silently submit incomplete data.
+- **Known race/idempotency constraints:** coordinate parsing, map preview, and submit eligibility remain tied to the current draft; stale validation cannot enable a superseded draft.
+- **Source implementation:** `src/ts/react/routes/shared/manage-message/ManageMessageDrawer.tsx`, `drawer-sections/CoordinateListInput.tsx`, and `CoordinateInputPreview.tsx`.
+- **Current retained test(s):** `src/ts/react/routes/shared/manage-message/__tests__/ManageMessageDrawer.edit.spec.tsx` and recovered parser/safety records in the disposition ledger.

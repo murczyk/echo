@@ -1,0 +1,325 @@
+/** @vitest-environment happy-dom */
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const mocks = vi.hoisted(() => ({
+  archiveTag: vi.fn(),
+  createTag: vi.fn(),
+  listTags: vi.fn(),
+  notify: vi.fn(),
+  reanalyzeAll: vi.fn(),
+  restoreTag: vi.fn(),
+  saveRule: vi.fn(),
+  updateTag: vi.fn(),
+  updateDeviceSettings: vi.fn(),
+}));
+
+vi.mock('../../../services/api/device-analytics', () => ({
+  archiveAnalyticsTag: mocks.archiveTag,
+  createAnalyticsTag: mocks.createTag,
+  listAdminAnalyticsTags: mocks.listTags,
+  restoreAnalyticsTag: mocks.restoreTag,
+  saveAnalyticsTagRule: mocks.saveRule,
+  updateAnalyticsTag: mocks.updateTag,
+}));
+
+vi.mock('../../../services/api/devices', () => ({
+  reanalyzeAll: mocks.reanalyzeAll,
+  updateDeviceSettings: mocks.updateDeviceSettings,
+}));
+
+vi.mock('../../../components/PowerSnackbar', () => ({
+  usePowerSnackbar: () => ({ notify: mocks.notify }),
+}));
+
+vi.mock('../RuleExpressionEditor', () => ({
+  RuleExpressionEditor: ({ onChange }: { onChange: (value: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onChange({ match: { field: 'file_name', matcher: 'contains', values: ['звіт'] } })
+      }
+    >
+      Встановити тестове правило
+    </button>
+  ),
+}));
+
+vi.mock('../RuleTestPanel', () => ({
+  RuleTestPanel: ({ tagId, expression }: { tagId: string | null; expression: unknown }) => (
+    <div data-testid="rule-test-panel" data-tag-id={tagId ?? ''}>
+      {expression === null ? 'Без правила' : 'Локальне правило'}
+    </div>
+  ),
+}));
+
+import { AdminDeviceAnalyticsPage } from '..';
+import { HttpRequestError } from '../../../services/api/client';
+
+const TAG_ID = '018f0000-0000-7000-8000-000000000101';
+const NOW = '2026-08-06T12:00:00Z';
+const localExpression = { match: { field: 'file_name', matcher: 'contains', values: ['звіт'] } };
+const createdTag = {
+  id: TAG_ID,
+  name: 'Звіти',
+  ruleExpression: null,
+  archivedAt: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+let container: HTMLDivElement;
+let root: Root;
+
+function buttonWithText(text: string) {
+  return Array.from(document.querySelectorAll('button')).find(
+    (button) => button.textContent?.trim() === text,
+  );
+}
+
+function menuItemWithText(text: string) {
+  return Array.from(document.querySelectorAll('[role="menuitem"]')).find(
+    (item) => item.textContent?.trim() === text,
+  );
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+  setter?.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve();
+    const { promise, resolve } = Promise.withResolvers<void>();
+    globalThis.setTimeout(resolve, 0);
+    await promise;
+  });
+}
+
+async function openDeviceTagsTab() {
+  const tab = buttonWithText('Теги пристроїв');
+  if (!tab) throw new Error('Device tags tab was not rendered');
+  await act(async () => tab.click());
+  await flush();
+}
+
+async function openTagActions() {
+  const trigger = Array.from(document.querySelectorAll('button'))
+    .filter((button) => button.getAttribute('aria-label') === 'Дії')
+    .at(-1);
+  if (!trigger) throw new Error('Tag actions trigger was not rendered');
+  await act(async () => trigger.click());
+  await flush();
+}
+
+beforeEach(async () => {
+  window.history.replaceState(null, '', '/admin/device-analytics?tab=general');
+  Object.defineProperty(window, 'confirm', {
+    configurable: true,
+    value: vi.fn(() => true),
+  });
+  mocks.listTags.mockResolvedValue({ tags: [] });
+  mocks.createTag.mockResolvedValue(createdTag);
+  mocks.saveRule.mockResolvedValue({ ...createdTag, ruleExpression: localExpression });
+  mocks.archiveTag.mockResolvedValue({ ...createdTag, archivedAt: NOW });
+  mocks.restoreTag.mockResolvedValue(createdTag);
+  mocks.reanalyzeAll.mockResolvedValue({ definitionId: 'definition-1', createdRunCount: 42 });
+  mocks.updateDeviceSettings.mockResolvedValue({ hasMattermostWebhook: false });
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => root.render(<AdminDeviceAnalyticsPage />));
+  await flush();
+});
+
+afterEach(() => {
+  act(() => root?.unmount());
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
+
+describe('AdminDeviceAnalyticsPage', () => {
+  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  it('shows a persistent registry configuration warning without an empty catalog', async () => {
+    mocks.listTags.mockRejectedValueOnce(
+      new HttpRequestError(
+        503,
+        'Device file operations are unavailable because the [file_registry] configuration section is missing.',
+      ),
+    );
+    await openDeviceTagsTab();
+
+    expect(container.textContent).toContain('Сховище файлів пристроїв не налаштоване');
+    expect(container.textContent).not.toContain('Device file operations are unavailable');
+    expect(container.textContent).not.toContain('Каталог порожній');
+    expect(buttonWithText('Повторити')).toBeUndefined();
+    expect(buttonWithText('Створити тег')).toHaveProperty('disabled', true);
+  });
+
+  // @test-scope safeguard: prevents a masked device webhook from being overwritten or cleared without its explicit mutation
+  it('replaces the masked device webhook and clears it only through the explicit action', async () => {
+    const input = container.querySelector<HTMLInputElement>('input[type="password"]');
+    expect(input).not.toBeNull();
+
+    act(() => setInputValue(input!, '  https://mattermost.example/hooks/device-secret  '));
+    mocks.updateDeviceSettings.mockResolvedValueOnce({ hasMattermostWebhook: true });
+    await act(async () => buttonWithText('Зберегти webhook')?.click());
+    await flush();
+
+    expect(mocks.updateDeviceSettings).toHaveBeenNthCalledWith(2, {
+      mattermostWebhookUrl: 'https://mattermost.example/hooks/device-secret',
+    });
+    expect(container.textContent).toContain('Webhook налаштовано. Поточний URL приховано.');
+    expect(input?.value).toBe('');
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Mattermost webhook для пристроїв збережено.',
+    });
+
+    mocks.updateDeviceSettings.mockResolvedValueOnce({ hasMattermostWebhook: false });
+    await act(async () => buttonWithText('Видалити webhook')?.click());
+    await flush();
+
+    expect(mocks.updateDeviceSettings).toHaveBeenNthCalledWith(3, {
+      clearMattermostWebhook: true,
+    });
+    expect(container.textContent).toContain('Webhook ще не налаштовано.');
+  });
+
+  // @test-scope safeguard: prevents a newly created device tag from persisting the wrong rule expression
+  it('creates the first tag and saves only the current local rule expression', async () => {
+    await openDeviceTagsTab();
+
+    expect(container.textContent).toContain('Каталог порожній');
+    expect(container.textContent).toContain('Теги пристроїв');
+
+    await act(async () => buttonWithText('Створити тег')?.click());
+    const nameInput = document.querySelector<HTMLInputElement>('input');
+    expect(nameInput).not.toBeNull();
+    act(() => setInputValue(nameInput!, '  Звіти  '));
+    await act(async () => buttonWithText('Встановити тестове правило')?.click());
+
+    expect(document.querySelector('[data-testid="rule-test-panel"]')?.textContent).toBe(
+      'Локальне правило',
+    );
+    expect(mocks.createTag).not.toHaveBeenCalled();
+    expect(mocks.saveRule).not.toHaveBeenCalled();
+
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    expect(mocks.createTag).toHaveBeenCalledWith({ name: 'Звіти' });
+    expect(mocks.saveRule).toHaveBeenCalledWith({
+      id: TAG_ID,
+      ruleExpression: localExpression,
+    });
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Тег пристроїв і його активне правило збережено.',
+    });
+  });
+
+  // @test-scope safeguard: prevents an unchanged empty device-tag rule from creating an unintended rule mutation
+  it('creates a tag without saving an unchanged empty rule', async () => {
+    await openDeviceTagsTab();
+
+    await act(async () => buttonWithText('Створити тег')?.click());
+    const nameInput = document.querySelector<HTMLInputElement>('input');
+    expect(nameInput).not.toBeNull();
+    act(() => setInputValue(nameInput!, 'Звіти'));
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    expect(mocks.createTag).toHaveBeenCalledWith({ name: 'Звіти' });
+    expect(mocks.saveRule).not.toHaveBeenCalled();
+  });
+
+  // @test-scope safeguard: prevents a rename or unchanged tag edit from emitting an unnecessary rule mutation
+  it('skips rule saving when a renamed or unchanged tag keeps the same rule', async () => {
+    const existingTag = { ...createdTag, ruleExpression: localExpression };
+    const renamedTag = { ...existingTag, name: 'Оновлені звіти' };
+    mocks.listTags.mockResolvedValue({ tags: [existingTag] });
+    mocks.updateTag.mockResolvedValue(renamedTag);
+    await openDeviceTagsTab();
+
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Редагувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
+    const nameInput = document.querySelector<HTMLInputElement>('input');
+    expect(nameInput).not.toBeNull();
+    act(() => setInputValue(nameInput!, renamedTag.name));
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    expect(mocks.updateTag).toHaveBeenCalledWith({ id: TAG_ID, name: renamedTag.name });
+    expect(mocks.saveRule).not.toHaveBeenCalled();
+
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Редагувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    expect(mocks.updateTag).toHaveBeenCalledTimes(1);
+    expect(mocks.saveRule).not.toHaveBeenCalled();
+  });
+
+  // @test-scope safeguard: prevents archive or restore actions from targeting the wrong device-analytics tag
+  it('archives and restores an existing tag from its action menu', async () => {
+    await openDeviceTagsTab();
+
+    await act(async () => buttonWithText('Створити тег')?.click());
+    const nameInput = document.querySelector<HTMLInputElement>('input');
+    act(() => setInputValue(nameInput!, 'Звіти'));
+    await act(async () => buttonWithText('Зберегти')?.click());
+    await flush();
+
+    await openTagActions();
+    await act(async () =>
+      menuItemWithText('Архівувати')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
+    await flush();
+
+    expect(mocks.archiveTag).toHaveBeenCalledWith({ id: TAG_ID });
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Архівний'));
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 410));
+    });
+
+    await openTagActions();
+    expect(menuItemWithText('Відновити')).toBeDefined();
+    await act(async () =>
+      menuItemWithText('Відновити')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+    );
+    await flush();
+    await flush();
+
+    expect(mocks.restoreTag).toHaveBeenCalledWith({ id: TAG_ID });
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Активний'));
+    expect(window.confirm).toHaveBeenCalledTimes(2);
+  });
+
+  // @test-scope safeguard: prevents an irreversible global reanalysis from being scheduled without confirmation
+  it('requires confirmation before scheduling global reanalysis', async () => {
+    await openDeviceTagsTab();
+
+    await act(async () => buttonWithText('Повторно проаналізувати всі файли')?.click());
+    await flush();
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(mocks.reanalyzeAll).toHaveBeenCalledTimes(1);
+    expect(mocks.notify).toHaveBeenCalledWith({
+      severity: 'success',
+      message: 'Створено запусків повторного аналізу: 42.',
+    });
+  });
+});

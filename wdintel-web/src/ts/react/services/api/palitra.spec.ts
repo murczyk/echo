@@ -7,6 +7,7 @@ import {
   addPalitraHighlightBlacklistEntry,
   analyzePalitraKmz,
   deletePalitraHighlightBlacklistEntry,
+  downloadPalitras,
   fetchPalitraReferenceData,
   getPalitraHighlightBlacklist,
   listPalitras,
@@ -19,7 +20,6 @@ describe('palitra API 401 handling', () => {
     window.history.replaceState({}, '', '/rer/palitras?folder=demo#tools');
   });
 
-  // @test-scope safeguard: prevents an unauthorized palette upload from retaining protected route access
   it('redirects multipart uploads on 401', async () => {
     const file = new File(['kmz'], 'sample.kmz', { type: 'application/vnd.google-earth.kmz' });
     vi.stubGlobal(
@@ -45,7 +45,6 @@ describe('palitra reference loading', () => {
     window.history.replaceState({}, '', '/rer/palitras?folder=demo#tools');
   });
 
-  // @test-scope safeguard: prevents an ordinary reference-data failure from being handled as an authorization loss
   it('returns null for non-401 reference errors', async () => {
     vi.stubGlobal(
       'fetch',
@@ -61,7 +60,6 @@ describe('palitra reference loading', () => {
     });
   });
 
-  // @test-scope safeguard: prevents Rer users from receiving editable login reference data
   it('does not load editable login references for Rer users', async () => {
     const requestedUrls: string[] = [];
     vi.stubGlobal(
@@ -87,7 +85,6 @@ describe('palitra reference loading', () => {
     expect(requestedUrls).not.toContain('/api/logins');
   });
 
-  // @test-scope safeguard: prevents non-admin users from receiving editable palette reference data
   it('does not load editable palitra references for non-admin users', async () => {
     const requestedUrls: string[] = [];
     vi.stubGlobal(
@@ -108,7 +105,6 @@ describe('palitra reference loading', () => {
 });
 
 describe('palitra list normalization', () => {
-  // @test-scope parser: palette list legacy blacklist-count normalization fixture
   it('accepts the generated blacklist count and defaults older responses to zero', async () => {
     vi.stubGlobal(
       'fetch',
@@ -126,10 +122,30 @@ describe('palitra list normalization', () => {
   });
 });
 
+describe('palitra downloads', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uses the Delta split endpoint when requested', async () => {
+    const requestedUrls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        requestedUrls.push(String(input));
+        return new Response(new Blob(['zip']), { status: 200 });
+      }),
+    );
+
+    await downloadPalitras([42], { splitForDelta: true });
+
+    expect(requestedUrls).toEqual(['/api/palitra/download-delta-split']);
+  });
+});
+
 describe('palitra highlight blacklist', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  // @test-scope parser: palette blacklist response normalization and duplicate-elision fixture
   it('normalizes and deduplicates blacklist entries', async () => {
     vi.stubGlobal(
       'fetch',
@@ -167,7 +183,6 @@ describe('palitra highlight blacklist', () => {
     ]);
   });
 
-  // @test-scope safeguard: prevents blacklist mutations from targeting the wrong palette or source message
   it('uses the atomic add and delete endpoints', async () => {
     const requested: Array<{ url: string; method: string; body?: string }> = [];
     vi.stubGlobal(
@@ -208,7 +223,6 @@ describe('palitra highlight blacklist', () => {
     ]);
   });
 
-  // @test-scope parser: palette blacklist generated response compatibility fixture
   it('accepts the generated camel-case blacklist response shape', async () => {
     vi.stubGlobal(
       'fetch',
@@ -239,7 +253,6 @@ describe('palitra highlight blacklist', () => {
 describe('palitra name resolution', () => {
   beforeEach(() => vi.restoreAllMocks());
 
-  // @test-scope parser: palette name lookup request and response normalization fixture
   it('deduplicates IDs and preserves valid response items', async () => {
     const fetchMock = vi
       .fn()
@@ -254,7 +267,6 @@ describe('palitra name resolution', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ palitra_ids: [7, 12] });
   });
 
-  // @test-scope parser: palette name lookup empty and malformed response fixture
   it('does not request empty IDs and rejects malformed items', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

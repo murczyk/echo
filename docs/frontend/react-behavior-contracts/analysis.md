@@ -189,3 +189,29 @@
 - **Source implementation:** `routes/rer-analysis-neo/use-analysis-data.message-actions.ts`
 - **Existing test(s):** mutation failure, race, duplicate, and 401 cases in `use-analysis-data.message-actions.spec.tsx`
 - **Original Echo issue/PR, if known:** none recorded; retained as integrity and authorization safeguards.
+
+## Analysis linked-message edit ownership
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-linked-message-edit-ownership`
+- **Affected route/component:** RER Analysis message editor.
+- **User action or external event:** the user edits a linked message with an accessible parent.
+- **Expected observable result:** the message opens in regular edit mode and saves only that message; it is not converted into a report edit or copied from its parent.
+- **Known race/idempotency constraints:** the chosen edit mode must remain associated with the selected message.
+- **Source implementation:** `routes/rer-analysis-neo/index.tsx`.
+- **Existing test(s):** linked-message case in `index.spec.tsx`.
+- **Original Echo issue/PR, if known:** none recorded; retained as a data-integrity safeguard.
+
+## Analysis workspace interaction integrity
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-analysis-workspace-interaction-integrity`
+- **Affected route/component:** RER Analysis header, filters, center panes, sidebar, pagination, report dialog, map, and summary panels.
+- **User action or external event:** the user changes a filter, opens a pane/dialog, follows pagination, changes a report, or switches between analysis views.
+- **Expected observable result:** controls remain available in their active layout; selected filters and result navigation act on the intended data; messages, map, callsigns, frequencies, and summary views retain their distinct interaction affordances.
+- **Loading/empty/error/success behavior:** loading and empty states do not expose stale actions; failed report/filter work remains retryable.
+- **URL, localStorage, or user-settings persistence:** route-owned analysis state remains the source of truth.
+- **Known race/idempotency constraints:** panel refreshes and pagination must not apply actions to a stale selection.
+- **Source implementation:** `routes/rer-analysis-neo/index.tsx` and `routes/rer-analysis-neo/components/`.
+- **Existing test(s):** component interaction suites under `routes/rer-analysis-neo/components/__tests__/` and the page suite.
+- **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.

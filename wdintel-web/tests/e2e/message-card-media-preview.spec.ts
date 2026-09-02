@@ -82,6 +82,7 @@ async function verifyFullscreenEscape(
   await expect(dialog).toHaveCount(0);
 }
 
+// @test-scope regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke', () => {
   for (const host of ['duty', 'analysis'] as const) {
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
@@ -137,6 +138,7 @@ test.describe('@smoke', () => {
 });
 
 test.describe('message card media preview contract', () => {
+  // @test-scope safeguard: preserves operators' ability to inspect the correct image attachment and safely leave its fullscreen preview
   test('image previews preserve carousel order, info, download, and fullscreen escape', async ({
     page,
   }) => {
@@ -178,6 +180,7 @@ test.describe('message card media preview contract', () => {
     await verifyFullscreenEscape(page, imageDialog, () => openImagePreview(page), true);
   });
 
+  // @test-scope safeguard: preserves operators' ability to inspect, download, and close video attachments without losing carousel position
   test('video previews preserve carousel controls, info, download, and fullscreen escape', async ({
     page,
   }) => {
@@ -208,6 +211,7 @@ test.describe('message card media preview contract', () => {
     await verifyFullscreenEscape(page, videoDialog, () => openVideoPreview(page), false);
   });
 
+  // @test-scope safeguard: preserves source-text inspection and predictable escape behavior for text and Markdown evidence
   test('txt and markdown previews preserve source text, mixed carousel order, and normal escape close', async ({
     page,
   }) => {

@@ -20,7 +20,7 @@ Result: 352 files and 2,845 tests passed; one file and one test failed in 181.54
 
 Baseline failure:
 
-- `src/ts/react/routes/rer-networks-neo/use-rer-networks-neo-page.spec.tsx` — `requests activity data with a concrete upper bound and maps returned bars` expects an API request without the now-present `period: null` field.
+- `src/ts/react/routes/rer-networks-neo/__tests__/use-rer-networks-neo-page.spec.tsx` — `requests activity data with a concrete upper bound and maps returned bars` expects an API request without the now-present `period: null` field.
 
 The run also emitted existing Happy DOM requests to the unavailable local API on port 3000, including `ECONNREFUSED`, `ECONNRESET`, and abort messages. These messages did not create additional failed Vitest tests.
 
@@ -177,7 +177,7 @@ baseline now has 1,964 identities.
 
 - 2026-08-24 — The shared API-client authorization safeguards replaced
   `auth-redirect.spec.ts`. Three temporary, uncommitted mutations each made
-  `npx vitest run src/ts/react/services/api/client.spec.ts` fail: allowing a
+  `npx vitest run src/ts/react/services/api/__tests__/client.spec.ts` fail: allowing a
   redirect on `/login` failed the redirect-loop case; returning `null` for a
   401 failed the unauthorized-rethrow case; and treating a 500 as unauthorized
   failed the non-401 session-preservation case. Each mutation was reverted and
@@ -221,3 +221,44 @@ replacement proof.
   cleanup batches, the same serial command passed 369 files and 2,870 tests in
   143.16 seconds. The previously recorded unavailable-local-API Happy DOM
   messages again did not fail a test.
+- 2026-09-01 — The first RER Analysis homogeneous-suite audit removed 31
+  static/helper identities. The remaining baseline is 1,933 identities;
+  retained map-payload and report-request fixtures are explicitly admitted as
+  compatibility parsers.
+- 2026-09-01 — The next RER Analysis component-suite audit removed 59 static
+  rendering, control-wiring, and layout identities. The remaining baseline is
+  1,874; retained activity/card request cases name their user-visible stale or
+  unrequested-load safeguards.
+- 2026-09-01 — RER Analysis filter-reload, page-state, and message-pagination
+  suites were audited as homogeneous compatibility/concurrency coverage. Their
+  82 identities are now admitted through suite annotations; the remaining
+  baseline is 1,756.
+- 2026-09-01 — The remaining RER Analysis data-loader, mutation, map, report,
+  sidebar, editor, saved-filter, and comment suites were classified as
+  compatibility or stale-state safeguards. The remaining baseline is 1,635.
+- 2026-09-01 — RER Analysis is fully audited: its remaining presentation and
+  mocked-composition suites were removed, leaving no baseline identities under
+  `routes/rer-analysis-neo`. The serial Vitest suite passed 346 files and
+  2,622 tests in 175.52 seconds despite expected unavailable-local-API noise.
+- 2026-09-01 — Shared routes cleanup began: 15 trivial helper identities were
+  removed, while mapper/validation/copy/event boundaries and the real
+  Manage Message drawer lifecycle were explicitly admitted. The remaining
+  baseline is 1,426.
+- 2026-09-01 — Removed the mocked Message Card presentation/configuration
+  suite (112 identities). Its documented interaction and preview contracts
+  remain covered at admitted boundary/browser levels; the baseline is 1,314.
+- 2026-09-01 — Removed 41 static attachment-renderer identities. OCR preview,
+  settlement autocomplete, and marked-message node coverage remain admitted as
+  stale-response or parser safeguards; the baseline is 1,206.
+- 2026-09-01 — Shared routes are fully audited: the remaining coordinate,
+  preview-shell, document-renderer, and label suites were removed or admitted
+  at their real parser/safeguard boundaries. The serial suite passed 320 files
+  and 2,339 tests in 131.95 seconds; no shared-route baseline identities remain.
+- 2026-09-01 — Duty Neo is fully audited: feed parsing, polling, unread,
+  mutation, directional-load, and scroll-state suites are admitted safeguards;
+  mocked presentation suites were removed. The serial suite passed 313 files
+  and 2,283 tests in 173.78 seconds; no Duty Neo baseline identities remain.
+- 2026-09-01 — Network Details Neo is fully audited: network relation,
+  callsign, frequency, load, form, and report boundaries are admitted while
+  mocked component/presentation suites were removed. The baseline is 534;
+  no Network Details Neo identities remain.

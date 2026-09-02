@@ -145,7 +145,6 @@ describe('applyAiAgentEvent', () => {
     expect(hidden.progress).toEqual([]);
   });
 
-  // @test-scope parser: persisted AI-agent tool event payload without raw reasoning fields
   it('normalizes persisted event payloads without exposing reasoning fields', () => {
     const normalized = normalizeAiAgentEvent({
       sequence: 2,
@@ -164,7 +163,6 @@ describe('applyAiAgentEvent', () => {
     expect(JSON.stringify(normalized)).not.toContain('не показувати');
   });
 
-  // @test-scope parser: structured persisted AI-agent tool route and result payload
   it('normalizes structured API route and result fields', () => {
     const normalized = normalizeAiAgentEvent({
       sequence: 3,

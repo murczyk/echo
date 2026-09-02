@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { installRerDutyShortStateMocks } from './rer-duty-short-state.fixtures';
 
+// @test-scope regression: https://github.com/echoua/echo/pull/3268
 test.describe('@smoke', () => {
   test('rer-duty-neo hydrates filters from short state id', async ({ page }) => {
     const shortStateId = 'short-1';

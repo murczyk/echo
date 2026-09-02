@@ -122,7 +122,11 @@ function collectReferencedTestFiles() {
     for (const entry of entries) {
       const entryPath = join(path, entry.name);
       if (entry.isDirectory()) visit(entryPath);
-      else if (/\.(?:md|ya?ml|json)$/.test(entry.name)) references.push(entryPath);
+      else if (
+        /\.(?:md|ya?ml|json)$/.test(entry.name) &&
+        entry.name !== 'react-test-removal-dispositions.json'
+      )
+        references.push(entryPath);
     }
   };
   for (const candidate of candidates) {

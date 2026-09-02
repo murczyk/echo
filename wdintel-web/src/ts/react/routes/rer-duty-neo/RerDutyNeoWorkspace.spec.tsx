@@ -177,6 +177,7 @@ function buildFeedColumnModel(feed: MessageFeedState): FeedColumnModel {
   };
 }
 
+// @test-scope safeguard: preserves per-feed loading, active-column scroll ownership, and create-feed limits so responsive workspace transitions cannot act on the wrong Duty column.
 describe('RerDutyNeoWorkspace', () => {
   let container: HTMLElement;
   let root: Root;

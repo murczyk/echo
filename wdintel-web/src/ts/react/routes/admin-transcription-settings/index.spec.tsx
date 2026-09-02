@@ -192,7 +192,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope parser: transcription result response fixture with instance metadata
   it('shows paginated transcription results with the processing instance', async () => {
     mocks.listResults.mockResolvedValue({
       rows: [
@@ -235,7 +234,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope safeguard: prevents instance-table filters from producing incorrect transcription-result queries
   it('does not send instance column filters to transcription results', async () => {
     const columnFilters = encodeURIComponent(JSON.stringify([{ id: 'name', value: 'GPU 1' }]));
     window.history.replaceState(
@@ -258,7 +256,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope safeguard: prevents a transcription-result load failure from leaving the user with silently stale data
   it('shows transcription-result load failures in a toast', async () => {
     mocks.listResults.mockRejectedValue(new Error('results unavailable'));
     const { root } = await renderPage();
@@ -272,7 +269,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope parser: transcription result cursor pagination response fixture
   it('uses the server cursor for the next transcription-results page', async () => {
     mocks.listResults
       .mockResolvedValueOnce({
@@ -306,7 +302,6 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
-  // @test-scope parser: transcription result total-count pagination response fixture
   it('derives the last transcription-results page from the response total', async () => {
     const result = {
       id: '01900000-0000-7000-8000-000000000002',

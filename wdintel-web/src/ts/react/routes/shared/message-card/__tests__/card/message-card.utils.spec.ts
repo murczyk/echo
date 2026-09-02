@@ -1,3 +1,5 @@
+// @test-scope parser: preserves copied operational message text across supported importer header formats.
+
 import { describe, expect, it } from 'vitest';
 
 import {

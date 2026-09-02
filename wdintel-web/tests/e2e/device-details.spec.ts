@@ -343,6 +343,7 @@ async function installMocks(page: Page): Promise<ApiTracker> {
   return tracker;
 }
 
+// @test-scope safeguard: prevents device operators from losing access to synchronized evidence and filesystem roots during detail navigation
 test('@smoke device details uses tabs, a synchronization journal, a collapsible network-width sidebar, and an all-roots file tree', async ({
   page,
 }) => {
@@ -500,6 +501,7 @@ test('@smoke device details uses tabs, a synchronization journal, a collapsible 
   expect(browserFailures).toEqual([]);
 });
 
+// @test-scope safeguard: prevents creation of an unusable DeviceSource record without its required name
 test('@smoke device creation requires and submits a name for DeviceSource', async ({ page }) => {
   const browserFailures: string[] = [];
   page.on('console', (message) => {

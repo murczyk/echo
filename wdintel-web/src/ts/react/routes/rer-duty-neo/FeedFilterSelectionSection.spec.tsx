@@ -208,6 +208,7 @@ function DutyFrequencyColumnsHarness() {
   );
 }
 
+// @test-scope safeguard: preserves deferred Duty filter selections and exclude-mode transitions so updates in one feed cannot clear the active draft or mutate another column.
 describe('FeedFilterSelectionSection', () => {
   function latestAutocompleteProps() {
     return autocompleteSpy.mock.calls.at(-1)?.[0] as {

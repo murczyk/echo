@@ -89,6 +89,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+// @test-scope safeguard: prevents OCR results or errors for an old attachment from replacing the currently selected preview.
 describe('OcrPreview', () => {
   afterEach(() => {
     document.body.innerHTML = '';

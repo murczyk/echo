@@ -178,7 +178,7 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.listTags).toHaveBeenCalledTimes(1);
   });
 
-  // @test-scope regression: https://github.com/echoua/echo/pull/3268
+  // Regression: https://github.com/echoua/echo/pull/3268
   it('shows a persistent registry configuration warning without an empty catalog', async () => {
     mocks.listTags.mockRejectedValueOnce(
       new HttpRequestError(
@@ -303,7 +303,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(mocks.saveRule).not.toHaveBeenCalled();
   });
 
-  // @test-scope safeguard: prevents archive or restore actions from targeting the wrong device-analytics tag
   it('archives and restores an existing tag from its action menu', async () => {
     await openDeviceTagsTab();
 
@@ -339,7 +338,6 @@ describe('AdminDeviceAnalyticsPage', () => {
     expect(window.confirm).toHaveBeenCalledTimes(2);
   });
 
-  // @test-scope safeguard: prevents an irreversible global reanalysis from being scheduled without confirmation
   it('requires confirmation before scheduling global reanalysis', async () => {
     await openDeviceTagsTab();
 

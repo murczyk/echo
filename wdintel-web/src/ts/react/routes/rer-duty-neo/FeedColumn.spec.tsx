@@ -271,6 +271,45 @@ describe('FeedColumn', () => {
     expect(container.querySelectorAll('[data-duty-message-id]')).toHaveLength(2);
   });
 
+  // @test-scope safeguard: preserves a changed preview preference for already mounted Duty messages instead of leaving users with stale message visibility.
+  it('updates mounted message cards when the preview limit changes', async () => {
+    const props = buildProps();
+    props.column.feed.items = [[1, minimalInboxMessage({ timestamp: 100 })]];
+    props.column.messageCard.messageTextPreviewLines = 20;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+    expect(
+      container
+        .querySelector('[data-testid="message-card"]')
+        ?.getAttribute('data-message-text-preview-lines'),
+    ).toBe('20');
+
+    for (const [value, renderedValue] of [
+      [40, '40'],
+      [null, 'off'],
+      [20, '20'],
+    ] as const) {
+      const updatedColumn = {
+        ...props.column,
+        messageCard: {
+          ...props.column.messageCard,
+          messageTextPreviewLines: value,
+        },
+      };
+      await act(async () => {
+        root.render(<FeedColumn column={updatedColumn} />);
+      });
+
+      expect(
+        container
+          .querySelector('[data-testid="message-card"]')
+          ?.getAttribute('data-message-text-preview-lines'),
+      ).toBe(renderedValue);
+    }
+  });
+
   it('shows waterfall debug info after eight quick bell presses', async () => {
     const props = buildProps();
     props.column.view.feedCount = 4;

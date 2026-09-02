@@ -192,6 +192,32 @@ describe('analysis-map-palitras', () => {
     expect(element.querySelector('button[aria-label="Показати обрані палітри"]')).toBeNull();
   });
 
+  // @test-scope safeguard: prevents map palitra overflow actions from appearing before a user has selected the group they would affect.
+  it('shows the per-group overflow only after a group selection exists', async () => {
+    const element = createElement();
+    element.setPalitras([
+      createPalitraDetails({
+        palitra: {
+          id: 7,
+          name: 'Group palette',
+          color_hex: '#00aa00',
+          geometry: createPolygonGeometry(),
+        },
+      }),
+    ]);
+    element.setVisibleIds([]);
+    element.setLoadState('success');
+    await mountElement(element, container);
+
+    expect(element.querySelector('button[aria-label="Дії палітри"]')).toBeNull();
+
+    await act(async () => {
+      element.setVisibleIds([7]);
+    });
+
+    expect(element.querySelector('button[aria-label="Дії палітри"]')).toBeTruthy();
+  });
+
   it('dispatches the selected ids from the global focus button', async () => {
     const element = createElement();
     element.setPalitras([

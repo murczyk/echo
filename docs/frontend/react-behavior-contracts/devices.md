@@ -109,5 +109,17 @@
 - **Responsive and keyboard requirements:** none at the API boundary.
 - **Known race/idempotency constraints:** synchronization must target the exact path identity supplied by the current file view; an in-flight submission freezes its row snapshot, never retries an uncertain transport failure automatically, and rejects mutation after capability revocation.
 - **Source implementation:** `wdintel-web/src/ts/react/services/api/devices.ts`.
-- **Existing test(s):** `wdintel-web/src/ts/react/services/api/devices.spec.ts`, `routes/device-files/use-device-files.sync.spec.tsx`.
+- **Existing test(s):** `wdintel-web/src/ts/react/services/api/__tests__/devices.spec.ts`, `routes/device-files/use-device-files.sync.spec.tsx`.
 - **Original Echo issue/PR, if known:** none recorded; retained as operational compatibility coverage.
+
+## Device workspace interaction integrity
+
+- **Status:** inferred characterization
+- **Behavior ID:** `device-workspace-interaction-integrity`
+- **Affected route/component:** device list, detail, analytics, file tree, journal, and synchronization views.
+- **User action or external event:** the user changes a device selection, browses files/journal entries, opens synchronization, or follows a detail/analytics action.
+- **Expected observable result:** selection, pagination, tree expansion, synchronization, and result actions remain associated with the intended device/path and retain visible loading, empty, error, and success states.
+- **Known race/idempotency constraints:** a refresh or route change cannot apply a prior device/path operation to the current view.
+- **Source implementation:** `routes/devices/`, `routes/device-details/`, and `routes/device-files/`.
+- **Existing test(s):** route and component interaction suites under those directories.
+- **Original Echo issue/PR, if known:** none recorded; retained as user-visible operational safeguards.

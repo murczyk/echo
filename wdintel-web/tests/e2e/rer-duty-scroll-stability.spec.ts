@@ -78,6 +78,7 @@ async function readBottomDistance(scroller: Locator) {
   );
 }
 
+// @test-scope regression: https://github.com/echoua/echo/pull/3268
 test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke', async ({
   page,
 }) => {

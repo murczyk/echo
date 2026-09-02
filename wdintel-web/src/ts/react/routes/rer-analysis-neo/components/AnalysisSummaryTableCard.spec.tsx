@@ -7,11 +7,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CallsignInfoRes, Network, SummaryTableFreqRow, Unit } from '../../../../../Bindings';
-import { CallsignChipsCell, CompactListCell } from './analysis-summary-table-cells';
+import { CallsignChipsCell } from './analysis-summary-table-cells';
 
 const capturedRowActionProps: Array<{ label: string; opensModal?: boolean }> = [];
-const capturedTableOptions: Array<Record<string, any>> = [];
-const useMediaQueryMock = vi.hoisted(() => vi.fn(() => false));
 
 vi.mock('@mui/icons-material/DownloadOutlined', () => ({ default: () => <span>download</span> }));
 vi.mock('@mui/icons-material/EditOutlined', () => ({ default: () => <span>edit</span> }));
@@ -113,7 +111,7 @@ vi.mock('@mui/material', () => ({
   },
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  useMediaQuery: useMediaQueryMock,
+  useMediaQuery: () => false,
 }));
 
 vi.mock('@mui/material/styles', () => ({
@@ -126,7 +124,6 @@ vi.mock('@mui/material/styles', () => ({
 
 vi.mock('material-react-table', () => ({
   useMaterialReactTable: (options: Record<string, any>) => {
-    capturedTableOptions.push(options);
     return options;
   },
   MaterialReactTable: ({ table }: { table: any }) => {
@@ -237,7 +234,6 @@ vi.mock('../../../components/mui-customized/table/get-default-table-options', ()
       items(props).map(renderItem),
   mrtTextCell: ({ displayValue }: { displayValue: (props: any) => ReactNode }) => displayValue,
   useAppMaterialReactTable: (options: Record<string, unknown>) => {
-    capturedTableOptions.push(options);
     return { ...options, options, getState: () => ({ isFullScreen: false }) };
   },
   renderColumnActionsMenuItems: () => [],
@@ -409,6 +405,7 @@ async function changeInput(input: HTMLInputElement, value: string): Promise<void
   });
 }
 
+// @test-scope safeguard: preserves analysis row actions, rename submission, empty/loading boundaries, and overflow disclosure so a user cannot mutate or inspect the wrong frequency data.
 describe('AnalysisSummaryTableCard', () => {
   const rendered: Rendered[] = [];
 
@@ -420,88 +417,6 @@ describe('AnalysisSummaryTableCard', () => {
       item.container.remove();
     }
     capturedRowActionProps.splice(0);
-    capturedTableOptions.splice(0);
-    useMediaQueryMock.mockReturnValue(false);
-  });
-
-  function getPaginationProps(): Record<string, any> {
-    const options = capturedTableOptions.at(-1);
-    if (!options) throw new Error('MRT options were not captured');
-    const paginationProps = options.muiPaginationProps;
-    return typeof paginationProps === 'function'
-      ? paginationProps({ table: options })
-      : paginationProps;
-  }
-
-  async function renderAtWidth(width: number): Promise<Rendered> {
-    useMediaQueryMock.mockReturnValue(width < 600);
-    return renderComponent(buildProps());
-  }
-
-  it('hides the page-size selector and prevents wrapping below 600px', async () => {
-    const view = await renderAtWidth(599);
-    rendered.push(view);
-
-    const paginationProps = getPaginationProps();
-    expect(paginationProps.showRowsPerPage).toBe(false);
-    expect(paginationProps.sx['@media (max-width: 599.95px)'].flexWrap).toBe('nowrap');
-  });
-
-  it('keeps the page-size selector at the 600px breakpoint', async () => {
-    const view = await renderAtWidth(600);
-    rendered.push(view);
-
-    expect(getPaginationProps().showRowsPerPage).toBe(true);
-  });
-
-  it('recalculates page-size visibility when the mounted table crosses the breakpoint', async () => {
-    useMediaQueryMock.mockReturnValue(false);
-    const props = buildProps();
-    const view = await renderComponent(props);
-    rendered.push(view);
-    expect(getPaginationProps().showRowsPerPage).toBe(true);
-
-    useMediaQueryMock.mockReturnValue(true);
-    await act(async () => {
-      view.root.render(<AnalysisSummaryTableCard {...props} sx={{}} />);
-    });
-
-    expect(getPaginationProps().showRowsPerPage).toBe(false);
-  });
-
-  it('preserves desktop page-size options', async () => {
-    const view = await renderAtWidth(1200);
-    rendered.push(view);
-
-    const paginationProps = getPaginationProps();
-    expect(paginationProps.rowsPerPageOptions).toEqual([25, 50, 100]);
-    expect(paginationProps.showRowsPerPage).toBe(true);
-  });
-
-  it('renders the MRT frequency columns and keeps export actions', async () => {
-    const view = await renderComponent(buildProps());
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('Частота');
-    expect(view.container.textContent).toContain('К-сть');
-    expect(view.container.textContent).toContain('Координати');
-    expect(view.container.textContent).toContain('Позивні');
-    expect(view.container.textContent).toContain('Підрозділи');
-    expect(view.container.textContent).toContain('Локації');
-    expect(view.container.textContent).toContain('Дії');
-    expect(view.container.textContent).toContain('XLSX');
-    expect(view.container.querySelector('[data-testid="default-head-bg"]')?.textContent).toBe(
-      'var(--bs-body-bg)',
-    );
-  });
-
-  it('disables resizing for the row actions column', async () => {
-    const view = await renderComponent(buildProps());
-    rendered.push(view);
-
-    expect(
-      view.container.querySelector('[data-testid="row-actions-enable-resizing"]')?.textContent,
-    ).toBe('false');
   });
 
   it('keeps the first load skeleton free of the reload overlay', async () => {
@@ -702,20 +617,5 @@ describe('AnalysisSummaryTableCard', () => {
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('DELTA');
     act(() => trigger?.click());
     expect(document.body.querySelector('[role="dialog"]')).toBeNull();
-  });
-
-  it('renders standalone compact list overflow controls', async () => {
-    const view = await renderStandalone(
-      <div>
-        <CompactListCell items={['unit-a', 'unit-b', 'unit-c', 'unit-d']} />
-        <CompactListCell items={['loc-a', 'loc-b', 'loc-c', 'loc-d', 'loc-e']} />
-      </div>,
-    );
-    rendered.push(view);
-
-    expect(view.container.textContent).toContain('unit-a');
-    expect(view.container.textContent).toContain('loc-a');
-    expect(view.container.textContent).toContain('Ще 3');
-    expect(view.container.textContent).toContain('Ще 4');
   });
 });

@@ -41,6 +41,7 @@ function RelativeLabel({
   );
 }
 
+// @test-scope safeguard: prevents visible relative-time labels from stale ticking or unsafe long browser timers.
 describe('useRelativeTimeDisplayMs', () => {
   let container: HTMLElement;
   let root: Root;

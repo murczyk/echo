@@ -75,3 +75,15 @@
 - **Source implementation:** `src/ts/react/services/api/organism-keyword-sets.ts`, `routes/rer-duty-neo/FeedKeywordsPanel.tsx`
 - **Existing test(s):** `services/api/organism-keyword-sets.spec.ts` retains the operational ACL normalization fixture.
 - **Original Echo issue/PR, if known:** none recorded.
+
+## Own-report edit routing
+
+- **Status:** inferred characterization
+- **Behavior ID:** `react-duty-own-report-edit-routing`
+- **Affected route/component:** Duty feed header edit action.
+- **User action or external event:** the user edits an own report card.
+- **Expected observable result:** the editor uses report mode and reloads the feed after save, rather than applying the regular-message update path.
+- **Known race/idempotency constraints:** the report-mode decision remains tied to the selected card.
+- **Source implementation:** `routes/rer-duty-neo/index.tsx`.
+- **Existing test(s):** own-report edit case in `index.spec.tsx`.
+- **Original Echo issue/PR, if known:** none recorded; retained as a data-integrity safeguard.

@@ -205,6 +205,7 @@ function contrastRatio(fg: string, bg: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+// @test-scope parser: preserves supported marked-message ContentNode rendering and interaction semantics.
 describe('MarkedText', () => {
   const originalGetComputedStyle = window.getComputedStyle;
   let container: HTMLElement;

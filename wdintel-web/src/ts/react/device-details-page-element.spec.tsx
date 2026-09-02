@@ -131,7 +131,7 @@ describe('device-details-page custom element', () => {
     ).toBe(true);
   });
 
-  // @test-scope safeguard: prevents a stale device detail response from replacing the newly selected device
+  // @test-scope safeguard: prevents a late device response from replacing the details for the newly selected device.
   it('ignores stale detail responses after the device-id attribute changes', async () => {
     let resolveFirst!: (response: Response) => void;
     let resolveSecond!: (response: Response) => void;

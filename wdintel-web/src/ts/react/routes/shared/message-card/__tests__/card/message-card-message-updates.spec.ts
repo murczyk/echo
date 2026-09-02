@@ -16,6 +16,7 @@ function inboxMessage(overrides: Partial<InboxMessage> = {}): InboxMessage {
   } as InboxMessage;
 }
 
+// @test-scope safeguard: prevents refreshed duty-feed messages from losing metadata or retaining deleted rows.
 describe('mergeUpdatedDutyFeedMessages', () => {
   it('replaces refreshed messages and preserves feed metadata', () => {
     const first = inboxMessage({ text: 'one' });
