@@ -1269,6 +1269,7 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
         .into_iter()
         .map(|label| (label.id, label))
         .collect::<HashMap<_, _>>();
+    let mut affected_inbox_item_ids = BTreeSet::new();
     for failure in failures {
         let label = labels
             .get(&failure.failed_unit_label_id)
@@ -1278,15 +1279,18 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
         verify_pending_failure(&transaction, failure, label)
             .await
             .context(h!())?;
-        crate::stats::enqueue_group_stats_recalculation_for_message(
-            &transaction,
-            inbox_item_id,
-            format!("resolved pending unit for inbox message {inbox_item_id}"),
-        )
-        .await
-        .context(h!())?;
+        affected_inbox_item_ids.insert(inbox_item_id);
     }
     transaction.commit().await.context(h!())?;
+    let affected_inbox_item_ids =
+        affected_inbox_item_ids.into_iter().collect::<Vec<_>>();
+    crate::stats::enqueue_group_stats_recalculation_for_messages(
+        db,
+        &affected_inbox_item_ids,
+        "resolved pending units for inbox messages",
+    )
+    .await
+    .context(h!())?;
     Ok(())
 }
 
@@ -2788,6 +2792,108 @@ mod tests {
             normalize_unit_label(&current_label)
         );
         assert!(!failures[0].0.deleted);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn verification_worker_enqueues_stats_after_committing_batch() {
+        use crate::entities::{
+            group_stats_recalculation_task, signal_group, signal_message_group,
+        };
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let label = format!("postcommit-worker-label-{}", Uuid::new_v4());
+        let inbox_item =
+            insert_inbox_item(&env.dbx, Some(&label), None, None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            inbox_item.id,
+            inbox_item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+        crate::sigint::unit::labels::insert_label(
+            &env.dbx,
+            sigint_unit.id,
+            &label,
+        )
+        .await
+        .unwrap();
+        mark_failures_pending_for_text(&env.dbx, &label)
+            .await
+            .unwrap();
+        let group_master_key = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
+            .select_only()
+            .column(signal_group::Column::MasterKey)
+            .into_tuple::<String>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(inbox_item.id),
+            group_master_key: Set(Some(group_master_key)),
+            created_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let blocker = env.dbx.begin().await.unwrap();
+        blocker
+            .execute_unprepared(
+                "lock table group_stats_recalculation_task in access exclusive mode",
+            )
+            .await
+            .unwrap();
+        let worker_db = env.dbx.clone();
+        let worker = tokio::spawn(async move {
+            run_failed_inbox_unit_worker_once(&worker_db).await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if sigint_inbox_item_failed_unit_label::Entity::find()
+                    .filter(
+                        sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                            .eq(inbox_item.id),
+                    )
+                    .one(&env.dbx)
+                    .await
+                    .unwrap()
+                    .is_none()
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("verified failure deletion must commit before stats enqueue");
+        assert!(!worker.is_finished());
+
+        blocker.rollback().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), worker)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
     }
 
     #[tokio::test]
