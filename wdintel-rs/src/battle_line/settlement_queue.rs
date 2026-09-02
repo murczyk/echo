@@ -123,6 +123,29 @@ pub async fn reconcile_item_locations<C>(
     dbx: &C,
     item_id: i64,
     location_v2: Option<&str>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    if reconcile_item_location_rows(dbx, item_id, location_v2)
+        .await
+        .c(h!())?
+    {
+        crate::stats::enqueue_group_stats_recalculation_for_message(
+            dbx,
+            item_id,
+            format!("removed settlements from inbox message {item_id}"),
+        )
+        .await
+        .c(h!())?;
+    }
+    Ok(())
+}
+
+async fn reconcile_item_location_rows<C>(
+    dbx: &C,
+    item_id: i64,
+    location_v2: Option<&str>,
 ) -> anyhow::Result<bool>
 where
     C: ConnectionTrait,
@@ -720,7 +743,7 @@ async fn process_oneoff_item_in_transaction(
     resolutions: Vec<BattleLineLocationResult>,
     stats: &mut OneoffLinkInboxSettlementsStats,
 ) -> anyhow::Result<i64> {
-    reconcile_item_locations(
+    reconcile_item_location_rows(
         txn,
         request.item_id,
         request.location_v2.as_deref(),
@@ -1324,7 +1347,7 @@ returning id
             .unwrap();
         let removal = env.dbx.begin().await.unwrap();
         let requires_invalidation =
-            reconcile_item_locations(&removal, item_id, None)
+            reconcile_item_location_rows(&removal, item_id, None)
                 .await
                 .unwrap();
         assert!(requires_invalidation);
@@ -1345,6 +1368,35 @@ returning id
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reconciliation_enqueues_stats_for_removed_linked_settlement() {
+        use crate::entities::group_stats_recalculation_task;
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let setup = env.dbx.begin().await.unwrap();
+        let (row, group_master_key, settlement_id) =
+            insert_settlement_stats_test_fixture(&setup).await.unwrap();
+        let item_id = row.item_id;
+        let mut row = row.into_active_model();
+        row.settlement_id = Set(Some(settlement_id));
+        row.update(&setup).await.unwrap();
+        setup.commit().await.unwrap();
+
+        let removal = env.dbx.begin().await.unwrap();
+        reconcile_item_locations(&removal, item_id, None)
+            .await
+            .unwrap();
+        let task = group_stats_recalculation_task::Entity::find()
+            .one(&removal)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(task.group_master_key, group_master_key);
+        removal.rollback().await.unwrap();
     }
 
     #[tokio::test]
