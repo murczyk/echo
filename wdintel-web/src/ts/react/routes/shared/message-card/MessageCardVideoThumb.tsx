@@ -160,10 +160,12 @@ function useVideoThumbnail(thumbnailSrc: string, isActive: boolean) {
 export function MessageCardVideoThumb({
   attachment,
   index,
+  selected = false,
   onOpen,
 }: {
   attachment: MessageMediaInfo;
   index: number;
+  selected?: boolean;
   onOpen: (index: number) => void;
 }) {
   const fullVideoHref = String(attachment.href ?? '');
@@ -184,6 +186,8 @@ export function MessageCardVideoThumb({
       disabled={!canOpen}
       aria-label="Відкрити відео"
       data-video-thumb-state={thumbnail.state}
+      data-summary-selected={selected ? 'true' : undefined}
+      aria-current={selected ? 'true' : undefined}
       sx={{
         display: 'inline-flex',
         maxWidth: 150,
@@ -196,8 +200,9 @@ export function MessageCardVideoThumb({
         borderRadius: 1.5,
         overflow: 'hidden',
         border: '1px solid',
-        borderColor: 'divider',
-        backgroundColor: 'action.hover',
+        borderColor: selected ? 'primary.light' : 'divider',
+        backgroundColor: selected ? 'action.selected' : 'action.hover',
+        boxShadow: selected ? 1 : 0,
         '&:disabled': {
           color: 'text.disabled',
         },

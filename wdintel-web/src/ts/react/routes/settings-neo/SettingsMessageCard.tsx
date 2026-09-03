@@ -118,6 +118,8 @@ export type SettingsMessageCardProps = {
   onMessageTextPreviewLinesChange: (value: MessageTextPreviewLineLimit) => void;
   mediaSummaryEnabled: boolean;
   onMediaSummaryEnabledChange: (value: boolean) => void;
+  collapseMediaPreviews: boolean;
+  onCollapseMediaPreviewsChange: (value: boolean) => void;
   loadInProgress: boolean;
 };
 
@@ -128,6 +130,8 @@ export function SettingsMessageCard({
   onMessageTextPreviewLinesChange,
   mediaSummaryEnabled,
   onMediaSummaryEnabledChange,
+  collapseMediaPreviews,
+  onCollapseMediaPreviewsChange,
   loadInProgress,
 }: SettingsMessageCardProps) {
   return (
@@ -229,6 +233,33 @@ export function SettingsMessageCard({
               <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
                 Відображати блок стислого опису для зображень та документів у картках повідомлень
                 стрічки.
+              </Typography>
+            </Stack>
+          }
+        />
+
+        <FormControlLabel
+          sx={{
+            alignItems: 'flex-start',
+            m: 0,
+            gap: 1.5,
+            '& .MuiFormControlLabel-label': { width: '100%' },
+          }}
+          control={
+            <Switch
+              checked={collapseMediaPreviews}
+              onChange={(_, checked) => onCollapseMediaPreviewsChange(checked)}
+              disabled={loadInProgress}
+            />
+          }
+          label={
+            <Stack spacing={0.5} sx={{ pt: 0.25 }}>
+              <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
+                Згортати медіа в картках
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
+                Фото, відео, інші медіа, координати та аудіо спочатку згорнуті; кожен розділ можна
+                розгорнути окремо.
               </Typography>
             </Stack>
           }

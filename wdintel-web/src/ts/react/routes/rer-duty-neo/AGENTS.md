@@ -28,7 +28,7 @@ Rules:
 - Window `items` identity changes should commit via `startTransition` (`commitFeedWindowUpdate`) so scrolling stays responsive during MessageCard reconcile; keep urgent updates for loading flags and physical-bottom / follow / activate flushes.
 - Near-bottom newer pages that are not following stay in `pendingNewerItems` (off DOM) until scroll idle / physical bottom / follow / arrow — do not force those pages into `items` mid-scroll in the near zone.
 - Closed card action chrome should prefer native `button` + CSS (not always-mounted Tooltip/`Button`/`ButtonBase`) on the repeated Duty row; keep MUI menus unmounted until opened.
-- On Duty, when `dutyCollapseMediaPreviews` is enabled (user setting, default on), do not mount audio players, image/video thumbs, or coordinate map previews until the user opens the compact reveal banner (e.g. “1 аудіо”). Analysis keeps media expanded.
+- When `dutyCollapseMediaPreviews` is enabled (user setting, default on), do not mount audio players, image/video thumbs, or coordinate map previews until the user independently expands the applicable attachment control. The shared setting applies to both Duty and Analysis.
 - Preserve the current custom Duty windowing and scroll-anchor behavior.
 - Do not restore Virtuoso to the Duty feed without deliberate performance validation. Its XLSX usage is valid and unrelated.
 - Do not reverse these decisions during cleanup or unrelated feature work.

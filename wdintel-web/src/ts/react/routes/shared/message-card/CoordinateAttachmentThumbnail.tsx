@@ -55,10 +55,12 @@ export function CoordinateAttachmentThumbnail({
   points,
   onOpen,
   fullWidth = false,
+  messageCardTile = false,
 }: {
   points: CoordinatePreviewPoint[];
   onOpen: () => void;
   fullWidth?: boolean;
+  messageCardTile?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -177,27 +179,28 @@ export function CoordinateAttachmentThumbnail({
     return null;
   }
 
-  const widthStyle = fullWidth ? '100%' : '180px';
-  const heightStyle = fullWidth ? '100%' : '120px';
-  const flexStyle = fullWidth ? '1 1 auto' : '0 0 120px';
+  const widthStyle = fullWidth ? '100%' : messageCardTile ? '100%' : '180px';
+  const heightStyle = fullWidth ? '100%' : messageCardTile ? '100%' : '120px';
+  const flexStyle = fullWidth ? '1 1 auto' : messageCardTile ? '0 0 auto' : '0 0 120px';
   const maxWidthStyle = fullWidth ? '100%' : 'none';
 
   return (
     <Box
       ref={hostRef}
       data-coordinate-preview-tile="true"
+      data-message-card-tile={messageCardTile ? 'true' : undefined}
       style={{
         flex: flexStyle,
         width: widthStyle,
         height: heightStyle,
-        aspectRatio: fullWidth ? '1 / 1' : undefined,
+        aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
         maxWidth: maxWidthStyle,
       }}
       sx={{
         flex: flexStyle,
-        width: fullWidth ? '100%' : 180,
-        height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
-        aspectRatio: fullWidth ? '1 / 1' : undefined,
+        width: fullWidth || messageCardTile ? '100%' : 180,
+        height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
+        aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
         maxWidth: maxWidthStyle,
         alignSelf: 'flex-start',
       }}
@@ -205,13 +208,13 @@ export function CoordinateAttachmentThumbnail({
       {!isNearViewport ? (
         <Skeleton
           variant="rounded"
-          height={fullWidth ? '100%' : PREVIEW_HEIGHT_PX}
+          height={fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX}
           animation="wave"
           sx={{
             width: '100%',
-            height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
+            height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
             maxWidth: fullWidth ? '100%' : `${PREVIEW_MAX_WIDTH_PX}px`,
-            aspectRatio: fullWidth ? '1 / 1' : undefined,
+            aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
           }}
         />
       ) : (
@@ -224,7 +227,7 @@ export function CoordinateAttachmentThumbnail({
               flex: flexStyle,
               width: widthStyle,
               height: heightStyle,
-              aspectRatio: fullWidth ? '1 / 1' : undefined,
+              aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
               maxWidth: maxWidthStyle,
             }}
             sx={{
@@ -232,10 +235,10 @@ export function CoordinateAttachmentThumbnail({
               isolation: 'isolate',
               zIndex: 0,
               flex: flexStyle,
-              width: fullWidth ? '100%' : 180,
+              width: fullWidth || messageCardTile ? '100%' : 180,
               maxWidth: maxWidthStyle,
-              height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
-              aspectRatio: fullWidth ? '1 / 1' : undefined,
+              height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
+              aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
               overflow: 'hidden',
               borderRadius: 2,
               border: '1px solid',

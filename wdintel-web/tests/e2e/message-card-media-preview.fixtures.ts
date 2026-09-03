@@ -14,6 +14,7 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
   audio: 'e2e-audio.wav',
   text: 'e2e-preview.txt',
   markdown: 'e2e-preview.md',
+  download: 'e2e-download.bin',
 } as const;
 
 const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media-preview';
@@ -66,8 +67,12 @@ const MARKDOWN_PREVIEW_TEXT = [
 
 function buildMessageCardMediaPreviewMessage({
   withPolishContent = false,
+  withPartialCoordinateError = false,
+  withCompleteCoordinateError = false,
 }: {
   withPolishContent?: boolean;
+  withPartialCoordinateError?: boolean;
+  withCompleteCoordinateError?: boolean;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
@@ -76,6 +81,7 @@ function buildMessageCardMediaPreviewMessage({
   const audio = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.audio}`;
   const text = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text}`;
   const markdown = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown}`;
+  const download = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.download}`;
 
   return {
     messageUid: 'e2e-message-card-preview',
@@ -116,13 +122,32 @@ function buildMessageCardMediaPreviewMessage({
         size_bytes: 512,
         href: audio,
       },
+      {
+        id: 'e2e-download',
+        content_type: 'application/octet-stream',
+        file_name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.download,
+        size_bytes: 256,
+        href: download,
+      },
+      ...(withPartialCoordinateError || withCompleteCoordinateError
+        ? [
+            {
+              id: 'e2e-coordinate-error',
+              content_type: 'application/octet-stream',
+              file_name: 'e2e-coordinate-error.bin',
+              size_bytes: 64,
+              href: download,
+              summary: { state: 'completed', has_coordinates: true },
+            },
+          ]
+        : []),
     ],
     images: [image1, image2],
     imageRecognized: [],
     date: '13.07.2026',
     time: '12:34',
     freq: '123.4',
-    coords: null,
+    coords: withCompleteCoordinateError ? null : '50.45044, 30.52355',
     callsigns: withPolishContent ? ['E2E-ALPHA'] : [],
     callsignsAlg2: [],
     checked: false,
@@ -169,11 +194,24 @@ function buildMessageCardMediaPreviewMessage({
 
 export function buildMessageCardMediaPreviewInboxResponse({
   withPolishContent = false,
+  withPartialCoordinateError = false,
+  withCompleteCoordinateError = false,
 }: {
   withPolishContent?: boolean;
+  withPartialCoordinateError?: boolean;
+  withCompleteCoordinateError?: boolean;
 } = {}): InboxMessagesRspRaw {
   return {
-    inbox_items: [[101, buildMessageCardMediaPreviewMessage({ withPolishContent }) as never]],
+    inbox_items: [
+      [
+        101,
+        buildMessageCardMediaPreviewMessage({
+          withPolishContent,
+          withPartialCoordinateError,
+          withCompleteCoordinateError,
+        }) as never,
+      ],
+    ],
     callsigns: [],
     signal_profiles: {},
     signal_groups: [],
@@ -229,6 +267,11 @@ export async function installMessageCardMediaPreviewAssetRoutes(page: Page): Pro
       return;
     }
 
+    if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.download) {
+      await fulfillAsset(route, Buffer.from('e2e-download'), 'application/octet-stream');
+      return;
+    }
+
     await route.fulfill({ status: 404, body: 'Not found' });
   });
 }
@@ -237,17 +280,51 @@ async function installMessageCardMediaPreviewHostFixture(
   page: Page,
   host: MessageCardMediaPreviewHost,
   withPolishContent: boolean,
+  withPartialCoordinateError: boolean,
+  withCompleteCoordinateError: boolean,
 ): Promise<void> {
-  const inboxResponse = buildMessageCardMediaPreviewInboxResponse({ withPolishContent });
+  const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
+    withPolishContent,
+    withPartialCoordinateError,
+    withCompleteCoordinateError,
+  });
 
   const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
 
   if (host === 'analysis') {
     await installAnalysisNeoApiMocks(page, { inboxResponse, networkInfoResponse });
-    return;
+  } else {
+    await installRerDutyShortStateMocks(page, { inboxResponse, networkInfoResponse });
   }
 
-  await installRerDutyShortStateMocks(page, { inboxResponse, networkInfoResponse });
+  if (withPartialCoordinateError || withCompleteCoordinateError) {
+    let requestCount = 0;
+    await page.route(
+      '**/api/messenger/media/e2e-coordinate-error/summary/coordinates',
+      async (route) => {
+        requestCount += 1;
+        if (withPartialCoordinateError || requestCount === 1) {
+          await route.fulfill({ status: 500, body: 'coordinate lookup failed' });
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            coordinates: [
+              {
+                title: 'E2E coordinate',
+                description: 'Recovered coordinate',
+                plannedMeans: null,
+                coordinateSystem: 'wgs84',
+                value: '50.45044, 30.52355',
+              },
+            ],
+          }),
+        });
+      },
+    );
+  }
 }
 
 export async function openMessageCardPreviewHost(
@@ -255,18 +332,43 @@ export async function openMessageCardPreviewHost(
   host: MessageCardMediaPreviewHost,
   {
     revealAudio = false,
+    revealCoordinates = false,
     withPolishContent = false,
-  }: { revealAudio?: boolean; withPolishContent?: boolean } = {},
+    withPartialCoordinateError = false,
+    withCompleteCoordinateError = false,
+  }: {
+    revealAudio?: boolean;
+    revealCoordinates?: boolean;
+    withPolishContent?: boolean;
+    withPartialCoordinateError?: boolean;
+    withCompleteCoordinateError?: boolean;
+  } = {},
 ): Promise<void> {
   await installMessageCardMediaPreviewAssetRoutes(page);
-  await installMessageCardMediaPreviewHostFixture(page, host, withPolishContent);
+  await installMessageCardMediaPreviewHostFixture(
+    page,
+    host,
+    withPolishContent,
+    withPartialCoordinateError,
+    withCompleteCoordinateError,
+  );
   await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
 
-  if (host === 'duty') {
-    await page.getByRole('button', { name: /^Показати .*фото/ }).click();
-    if (revealAudio) {
-      await page.getByRole('button', { name: /^Показати .*аудіо/ }).click();
+  const ensureAttachmentExpanded = async (name: RegExp) => {
+    const control = page.getByRole('button', { name });
+    await expect(control).toBeVisible();
+    if ((await control.getAttribute('aria-expanded')) !== 'true') {
+      await control.click();
+      await expect(control).toHaveAttribute('aria-expanded', 'true');
     }
+  };
+
+  await ensureAttachmentExpanded(/^Розгорнути медіа:|^Згорнути медіа:/);
+  if (revealAudio) {
+    await ensureAttachmentExpanded(/^Розгорнути аудіо:|^Згорнути аудіо:/);
+  }
+  if (revealCoordinates) {
+    await ensureAttachmentExpanded(/^Розгорнути координати:|^Згорнути координати:/);
   }
 
   await expect(

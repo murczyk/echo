@@ -950,12 +950,12 @@ function MessageCardHeaderComponent({
   const dateTimeBlock = (
     <div className="inline-flex flex-wrap items-center gap-2">
       <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
-        <ScheduleOutlinedIcon className="message-card-header-icon" />
+        <ScheduleOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
         <HeaderText>{formatTime(msg.time)}</HeaderText>
       </div>
       {isPresent(msg.date) ? (
         <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
-          <CalendarTodayOutlinedIcon className="message-card-header-icon" />
+          <CalendarTodayOutlinedIcon className="message-card-header-icon message-card-timestamp-icon" />
           <HeaderText>{formatDateNoYear(msg.date)}</HeaderText>
         </div>
       ) : null}

@@ -576,6 +576,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     queryState,
     tagsLayout: dutySettings.tagsLayout,
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
+    collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
     audioTranscriptionEnabled,

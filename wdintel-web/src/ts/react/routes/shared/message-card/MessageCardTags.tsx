@@ -17,7 +17,7 @@ export function estimateTagChipWidthPx(
   provenance: MessageCardTagProvenance = 'none',
 ): number {
   const dotWidth = provenance === 'none' ? 0 : 13;
-  return Math.max(32, Math.round(label.length * 7 + 10 + dotWidth));
+  return Math.max(32, Math.round(label.length * 7 + 14 + dotWidth));
 }
 
 export function buildSelectedFirstTagOrder(rows: MessageCardTagRow[]): number[] {

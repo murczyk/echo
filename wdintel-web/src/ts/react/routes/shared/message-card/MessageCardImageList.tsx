@@ -7,12 +7,14 @@ export function MessageCardImageList({
   images,
   videos = [],
   selectedImageIndex = null,
+  selectedVideoIndex = null,
   onOpen,
   onOpenVideo,
 }: {
   images: MessageCardImage[];
   videos?: MessageMediaInfo[];
   selectedImageIndex?: number | null;
+  selectedVideoIndex?: number | null;
   onOpen: (index: number) => void;
   onOpenVideo?: (index: number) => void;
 }) {
@@ -38,6 +40,7 @@ export function MessageCardImageList({
           key={attachment.id ?? `${attachment.href}-${index}`}
           attachment={attachment}
           index={index}
+          selected={selectedVideoIndex === index}
           onOpen={onOpenVideo ?? (() => {})}
         />
       ))}

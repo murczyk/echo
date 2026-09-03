@@ -124,6 +124,124 @@ test.describe('@smoke', () => {
 });
 
 test.describe('message card media preview contract', () => {
+  test('ECHO-3324 keeps Media, Coordinates, and Audio controls independent', async ({ page }) => {
+    await openMessageCardPreviewHost(page, 'duty', {
+      revealAudio: true,
+      revealCoordinates: true,
+    });
+
+    const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+    const coordinates = page.getByRole('button', {
+      name: /^(Розгорнути|Згорнути) координати:/,
+    });
+    const audio = page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ });
+    await expect(media).toHaveAttribute('aria-expanded', 'true');
+    await expect(coordinates).toHaveAttribute('aria-expanded', 'true');
+    await expect(audio).toHaveAttribute('aria-expanded', 'true');
+
+    await media.click();
+    await expect(media).toHaveAttribute('aria-expanded', 'false');
+    await expect(coordinates).toHaveAttribute('aria-expanded', 'true');
+    await expect(audio).toHaveAttribute('aria-expanded', 'true');
+
+    await media.click();
+    await expect(media).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty', {
+      revealCoordinates: true,
+      withPartialCoordinateError: true,
+    });
+    const card = page.locator('.message-card-root').first();
+
+    for (const cardWidth of [920, 330]) {
+      await card.evaluate((element, width) => {
+        const item = element.closest<HTMLElement>('.message-card-item');
+        if (item) item.style.width = `${width}px`;
+      }, cardWidth);
+
+      const coordinateHost = card.locator('[data-coordinate-preview-root]');
+      const coordinateTile = card.locator('[data-coordinate-preview-tile]');
+      const retryOverlay = card.locator('[data-coordinate-preview-retry-overlay]');
+      const imageTile = card.locator('[data-picture-thumb-layout]').first();
+      await expect(coordinateHost).toBeVisible();
+      await expect(coordinateTile).toBeVisible();
+      await expect(retryOverlay).toBeVisible();
+      const [hostBox, coordinateBox, imageBox] = await Promise.all([
+        coordinateHost.boundingBox(),
+        coordinateTile.boundingBox(),
+        imageTile.boundingBox(),
+      ]);
+      expect(hostBox?.width).toBe(hostBox?.height);
+      expect(coordinateBox?.width).toBe(coordinateBox?.height);
+      expect(coordinateBox?.width).toBe(hostBox?.width);
+      expect(coordinateBox?.width).toBe(imageBox?.width);
+      const [overlayBox, hostOverflow] = await Promise.all([
+        retryOverlay.boundingBox(),
+        coordinateHost.evaluate((element) => getComputedStyle(element).overflow),
+      ]);
+      expect(hostOverflow).toBe('hidden');
+      expect(overlayBox?.x).toBeGreaterThanOrEqual(hostBox?.x ?? 0);
+      expect((overlayBox?.x ?? 0) + (overlayBox?.width ?? 0)).toBeLessThanOrEqual(
+        (hostBox?.x ?? 0) + (hostBox?.width ?? 0),
+      );
+      expect(overlayBox?.y).toBeGreaterThanOrEqual(hostBox?.y ?? 0);
+      expect((overlayBox?.y ?? 0) + (overlayBox?.height ?? 0)).toBeLessThanOrEqual(
+        (hostBox?.y ?? 0) + (hostBox?.height ?? 0),
+      );
+    }
+  });
+
+  test('ECHO-3324 keeps complete coordinate failures square and retries into a map', async ({
+    page,
+  }) => {
+    await openMessageCardPreviewHost(page, 'duty', {
+      revealCoordinates: true,
+      withCompleteCoordinateError: true,
+    });
+    const card = page.locator('.message-card-root').first();
+
+    for (const cardWidth of [920, 330]) {
+      await card.evaluate((element, width) => {
+        const item = element.closest<HTMLElement>('.message-card-item');
+        if (item) item.style.width = `${width}px`;
+      }, cardWidth);
+      const host = card.locator('[data-coordinate-preview-root]');
+      const failureTile = card.locator('[data-coordinate-preview-retry-tile]');
+      const retry = failureTile.getByRole('button', { name: 'Повторити завантаження координат' });
+      await expect(failureTile).toBeVisible();
+      await expect(retry).toBeVisible();
+      const [hostBox, tileBox, retryBox, hostOverflow] = await Promise.all([
+        host.boundingBox(),
+        failureTile.boundingBox(),
+        retry.boundingBox(),
+        host.evaluate((element) => getComputedStyle(element).overflow),
+      ]);
+      expect(hostBox?.width).toBe(hostBox?.height);
+      expect(tileBox?.width).toBe(hostBox?.width);
+      expect(tileBox?.height).toBe(hostBox?.height);
+      expect(hostOverflow).toBe('hidden');
+      expect(retryBox?.x).toBeGreaterThanOrEqual(hostBox?.x ?? 0);
+      expect((retryBox?.x ?? 0) + (retryBox?.width ?? 0)).toBeLessThanOrEqual(
+        (hostBox?.x ?? 0) + (hostBox?.width ?? 0),
+      );
+      expect(retryBox?.y).toBeGreaterThanOrEqual(hostBox?.y ?? 0);
+      expect((retryBox?.y ?? 0) + (retryBox?.height ?? 0)).toBeLessThanOrEqual(
+        (hostBox?.y ?? 0) + (hostBox?.height ?? 0),
+      );
+    }
+
+    const failureTile = card.locator('[data-coordinate-preview-retry-tile]');
+    const retry = failureTile.getByRole('button', { name: 'Повторити завантаження координат' });
+    await retry.click();
+    await expect(retry).toBeDisabled();
+    await expect(card.locator('[data-coordinate-preview-tile]')).toBeVisible();
+    await expect(failureTile).toHaveCount(0);
+  });
+
   test('image previews preserve carousel order, info, and download', async ({ page }) => {
     await openMessageCardPreviewHost(page, 'duty');
 

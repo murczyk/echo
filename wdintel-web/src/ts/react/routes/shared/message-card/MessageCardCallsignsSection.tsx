@@ -75,7 +75,7 @@ export function MessageCardCallsignsSection({
               color="primary"
               size="small"
               fontWeight={400}
-              labelPaddingX={0.5}
+              labelPaddingX={0.75}
               sx={{
                 height: 24,
                 borderRadius: 16,

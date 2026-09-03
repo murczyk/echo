@@ -9,13 +9,18 @@ import { SettingsMessageCard } from './SettingsMessageCard';
 
 const mounted: Array<{ container: HTMLDivElement; root: Root }> = [];
 
-function renderCard(messageTextPreviewLines: 20 | 40 | null, mediaSummaryEnabled = true) {
+function renderCard(
+  messageTextPreviewLines: 20 | 40 | null,
+  mediaSummaryEnabled = true,
+  collapseMediaPreviews = true,
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   const onTagsLayoutChange = vi.fn();
   const onMessageTextPreviewLinesChange = vi.fn();
   const onMediaSummaryEnabledChange = vi.fn();
+  const onCollapseMediaPreviewsChange = vi.fn();
 
   act(() => {
     root.render(
@@ -26,6 +31,8 @@ function renderCard(messageTextPreviewLines: 20 | 40 | null, mediaSummaryEnabled
         onMessageTextPreviewLinesChange={onMessageTextPreviewLinesChange}
         mediaSummaryEnabled={mediaSummaryEnabled}
         onMediaSummaryEnabledChange={onMediaSummaryEnabledChange}
+        collapseMediaPreviews={collapseMediaPreviews}
+        onCollapseMediaPreviewsChange={onCollapseMediaPreviewsChange}
         loadInProgress={false}
       />,
     );
@@ -37,6 +44,7 @@ function renderCard(messageTextPreviewLines: 20 | 40 | null, mediaSummaryEnabled
     onTagsLayoutChange,
     onMessageTextPreviewLinesChange,
     onMediaSummaryEnabledChange,
+    onCollapseMediaPreviewsChange,
   };
 }
 
@@ -116,5 +124,23 @@ describe('SettingsMessageCard', () => {
     });
 
     expect(onMediaSummaryEnabledChange).toHaveBeenCalledWith(false);
+  });
+
+  it.each([true, false])('ECHO-3324 reflects collapsed-media preference %s', (value) => {
+    const { container } = renderCard(20, true, value);
+    const label = Array.from(container.querySelectorAll('label')).find((item) =>
+      item.textContent?.includes('Згортати медіа в картках'),
+    );
+    expect(label?.querySelector('input[type="checkbox"]')).toHaveProperty('checked', value);
+  });
+
+  it('ECHO-3324 changes collapsed-media preference', () => {
+    const { container, onCollapseMediaPreviewsChange } = renderCard(20, true, true);
+    const label = Array.from(container.querySelectorAll('label')).find((item) =>
+      item.textContent?.includes('Згортати медіа в картках'),
+    );
+    const input = label?.querySelector('input[type="checkbox"]');
+    act(() => input?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(onCollapseMediaPreviewsChange).toHaveBeenCalledWith(false);
   });
 });

@@ -361,7 +361,7 @@ test.describe('message card visual regression', () => {
         page,
       }) => {
         await page.setViewportSize({ width: 1500, height: 900 });
-        await openMessageCardPreviewHost(page, host, { revealAudio: host === 'duty' });
+        await openMessageCardPreviewHost(page, host, { revealAudio: true });
         const card = page.locator('.message-card-root').first();
         await card.evaluate((element, width) => {
           const item = element.closest<HTMLElement>('.message-card-item');
