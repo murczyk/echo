@@ -13,7 +13,7 @@ import type {
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { MessageCardContent } from './MessageCardContent';
+import { MessageCardContentWithDownloadGuard } from './MessageCardContent';
 import { MessageCardWatermark } from './MessageCardWatermark';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import {
@@ -371,7 +371,7 @@ function MessageCardComponent({
           </div>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardContent
+        <MessageCardContentWithDownloadGuard
           messageId={id}
           msg={msg}
           tagsMap={tagsMap}

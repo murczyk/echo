@@ -262,8 +262,8 @@ export function MessageCardMessageBody({
   collapseMediaPreviews = false,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines = 20,
-  isDownloadStarting: providedIsDownloadStarting,
-  onDownloadStart: providedOnDownloadStart,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   compact?: boolean;
   messageId: number;
@@ -294,12 +294,9 @@ export function MessageCardMessageBody({
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines?: 20 | 40 | null;
-} & Partial<MessageCardDownloadGuardProps>) {
+} & MessageCardDownloadGuardProps) {
   const nameCache = usePointBlacklistPaletteNamesCache();
   const { notify } = useOptionalPowerSnackbar();
-  const fallbackDownloadGuard = useMessageCardDownloadGuard();
-  const isDownloadStarting = providedIsDownloadStarting ?? fallbackDownloadGuard.isDownloadStarting;
-  const onDownloadStart = providedOnDownloadStart ?? fallbackDownloadGuard.onDownloadStart;
   const images = collectMessageImages(msg);
   const messageText = msg.text ?? '';
   const hasMessageTextOverflow = hasMoreThanPreviewLineLimit(messageText, messageTextPreviewLines);
@@ -875,4 +872,27 @@ function useMemoText(
 
 // Repeated card-content path: avoid structural MUI wrappers and per-card layout sx.
 // Preserve MUI theme parity through semantic styles; see ./AGENTS.md.
-export const MessageCardContent = memo(MessageCardMessageBody);
+export const MessageCardContentWithDownloadGuard = memo(MessageCardMessageBody);
+
+type MessageCardContentFallbackProps = Omit<
+  Parameters<typeof MessageCardMessageBody>[0],
+  keyof MessageCardDownloadGuardProps
+> &
+  Partial<MessageCardDownloadGuardProps>;
+
+function MessageCardContentWithFallbackGuard({
+  isDownloadStarting: providedIsDownloadStarting,
+  onDownloadStart: providedOnDownloadStart,
+  ...props
+}: MessageCardContentFallbackProps) {
+  const fallbackDownloadGuard = useMessageCardDownloadGuard();
+  return (
+    <MessageCardMessageBody
+      {...props}
+      isDownloadStarting={providedIsDownloadStarting ?? fallbackDownloadGuard.isDownloadStarting}
+      onDownloadStart={providedOnDownloadStart ?? fallbackDownloadGuard.onDownloadStart}
+    />
+  );
+}
+
+export const MessageCardContent = memo(MessageCardContentWithFallbackGuard);

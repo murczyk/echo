@@ -1080,7 +1080,7 @@ describe('MessageCard', () => {
     expect(headerSource).toContain(
       'isPresent(overflowMenuAnchorPosition) && canShowOverflowMenu ?',
     );
-    expect(headerSource).toContain('isPresent(copyMenuAnchorPosition) ?');
+    expect(headerSource).toContain('isPresent(copyMenuAnchorPosition) && canShowPrimaryActions ?');
     expect(headerSource).toContain(
       'isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu ?',
     );
@@ -3428,7 +3428,7 @@ describe('MessageCard', () => {
     expect(view.container.querySelectorAll('a[download]')).toHaveLength(3);
   });
 
-  it.each([2, 21])('shows archive action for %s attachments', async (count) => {
+  it.each([2, 20])('shows archive action for %s attachments', async (count) => {
     const media = Array.from({ length: count }, (_, index) => ({
       id: `count-${index}`,
       href: `/api/messenger/media/count-${index}`,
@@ -3442,6 +3442,76 @@ describe('MessageCard', () => {
     await openOverflowMenu(view.container);
     expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
     expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + 1);
+  });
+
+  it('hides archive action when attachment count exceeds backend limit', async () => {
+    const media = Array.from({ length: 21 }, (_, index) => ({
+      id: `count-${index}`,
+      href: `/api/messenger/media/count-${index}`,
+      contentType: 'text/plain',
+      fileName: `count-${index}.txt`,
+      sizeBytes: 1,
+    })) as InboxMessage['media'];
+
+    expect(canDownloadAllMessageAttachments(media)).toBe(false);
+    const view = await renderCard({ msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(21);
+  });
+
+  it('hides archive action when known attachment sizes exceed backend limit', async () => {
+    const media = [
+      {
+        id: 'large-first',
+        href: '/api/messenger/media/large-first',
+        contentType: 'video/mp4',
+        fileName: 'large-first.mp4',
+        sizeBytes: 200 * 1024 * 1024,
+      },
+      {
+        id: 'large-second',
+        href: '/api/messenger/media/large-second',
+        contentType: 'video/mp4',
+        fileName: 'large-second.mp4',
+        sizeBytes: 1,
+      },
+    ] as InboxMessage['media'];
+
+    expect(canDownloadAllMessageAttachments(media)).toBe(false);
+    const view = await renderCard({ msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
+  });
+
+  it('keeps archive action available for read-only cards', async () => {
+    const media = [
+      {
+        id: 'readonly-first',
+        href: '/api/messenger/media/readonly-first',
+        contentType: 'text/plain',
+        fileName: 'readonly-first.txt',
+        sizeBytes: 1,
+      },
+      {
+        id: 'readonly-second',
+        href: '/api/messenger/media/readonly-second',
+        contentType: 'text/plain',
+        fileName: 'readonly-second.txt',
+        sizeBytes: 1,
+      },
+    ] as InboxMessage['media'];
+    const view = await renderCard({ readOnly: true, msg: { ...buildMessage(), media } });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Позначити як важливе"]')).toBeNull();
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
   });
 
   it.each([

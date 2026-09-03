@@ -225,9 +225,18 @@ function ActionIconsRow({
   const [navigationMenuAnchorPosition, setNavigationMenuAnchorPosition] =
     useState<MenuAnchorPosition | null>(null);
   const [stackedLayout, setStackedLayout] = useState(false);
+  const canShowPrimaryActions =
+    !readOnly &&
+    isPresent(onBookmark) &&
+    isPresent(onImportant) &&
+    isPresent(onCopyText) &&
+    isPresent(onCopyFreq);
   const canShowExcludeMenu =
-    displayMode === 'duty' && isPresent(onExcludeMessageEntity) && excludeMenuOptions.length > 0;
-  const canShowNavigationMenu = navigationMenuItems.length > 0;
+    !readOnly &&
+    displayMode === 'duty' &&
+    isPresent(onExcludeMessageEntity) &&
+    excludeMenuOptions.length > 0;
+  const canShowNavigationMenu = !readOnly && navigationMenuItems.length > 0;
   const navigationMenuHasNetwork = navigationMenuItems.some((item) => item.kind === 'network');
   const hasFrequencyCopy = isPresent(msg.freq) && String(msg.freq).trim() !== '';
   const hasCopyTextWithNetwork = isPresent(onCopyTextWithNetwork);
@@ -250,7 +259,7 @@ function ActionIconsRow({
           onClick: attachmentArchiveDownload.onClick,
         }
       : null,
-    isPresent(onDelete)
+    !readOnly && isPresent(onDelete)
       ? {
           key: 'delete',
           title: 'Видалити',
@@ -336,12 +345,17 @@ function ActionIconsRow({
     closeOverflowMenu();
   }
 
-  if (!onBookmark || !onImportant || !onCopyText || !onCopyFreq) {
+  if (
+    !canShowPrimaryActions &&
+    !canShowNavigationMenu &&
+    !canShowExcludeMenu &&
+    !canShowOverflowMenu
+  ) {
     return null;
   }
 
   const buttons = [
-    isPresent(onCreateReport) ? (
+    canShowPrimaryActions && isPresent(onCreateReport) ? (
       <ActionIconButton
         key="report"
         title="Створити розвіддонесення"
@@ -349,44 +363,50 @@ function ActionIconsRow({
         onClick={onCreateReport}
       />
     ) : null,
-    <ActionIconButton
-      key="important"
-      title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
-      icon={
-        msg.important ? (
-          <FlagIcon className="message-card-action-btn__icon" />
-        ) : (
-          <FlagOutlinedIcon className="message-card-action-btn__icon" />
-        )
-      }
-      onClick={onImportant}
-      selected={msg.important}
-    />,
-    <ActionIconButton
-      key="bookmark"
-      title={msg.bookmarked ? 'Прибрати з закладок' : 'Додати в закладки'}
-      icon={
-        msg.bookmarked ? (
-          <BookmarkIcon className="message-card-action-btn__icon" />
-        ) : (
-          <BookmarkBorderOutlinedIcon className="message-card-action-btn__icon" />
-        )
-      }
-      onClick={onBookmark}
-      selected={msg.bookmarked}
-    />,
-    <ActionIconButton
-      key="copy"
-      title={COPY_TITLE}
-      icon={<ContentCopyOutlinedIcon className="message-card-action-btn__icon" />}
-      onClick={openCopyMenu}
-      buttonProps={{
-        'aria-controls': copyMenuAnchorPosition ? copyMenuId : undefined,
-        'aria-haspopup': 'menu',
-        'aria-expanded': copyMenuAnchorPosition ? 'true' : undefined,
-      }}
-    />,
-    isPresent(onEditDetails) ? (
+    canShowPrimaryActions ? (
+      <ActionIconButton
+        key="important"
+        title={msg.important ? 'Позначити як не важливе' : 'Позначити як важливе'}
+        icon={
+          msg.important ? (
+            <FlagIcon className="message-card-action-btn__icon" />
+          ) : (
+            <FlagOutlinedIcon className="message-card-action-btn__icon" />
+          )
+        }
+        onClick={onImportant!}
+        selected={msg.important}
+      />
+    ) : null,
+    canShowPrimaryActions ? (
+      <ActionIconButton
+        key="bookmark"
+        title={msg.bookmarked ? 'Прибрати з закладок' : 'Додати в закладки'}
+        icon={
+          msg.bookmarked ? (
+            <BookmarkIcon className="message-card-action-btn__icon" />
+          ) : (
+            <BookmarkBorderOutlinedIcon className="message-card-action-btn__icon" />
+          )
+        }
+        onClick={onBookmark!}
+        selected={msg.bookmarked}
+      />
+    ) : null,
+    canShowPrimaryActions ? (
+      <ActionIconButton
+        key="copy"
+        title={COPY_TITLE}
+        icon={<ContentCopyOutlinedIcon className="message-card-action-btn__icon" />}
+        onClick={openCopyMenu}
+        buttonProps={{
+          'aria-controls': copyMenuAnchorPosition ? copyMenuId : undefined,
+          'aria-haspopup': 'menu',
+          'aria-expanded': copyMenuAnchorPosition ? 'true' : undefined,
+        }}
+      />
+    ) : null,
+    canShowPrimaryActions && isPresent(onEditDetails) ? (
       <ActionIconButton
         key="edit"
         title="Редагувати"
@@ -544,49 +564,52 @@ function ActionIconsRow({
       </Menu>
     ) : null;
 
-  const copyMenu = isPresent(copyMenuAnchorPosition) ? (
-    <Menu
-      id={copyMenuId}
-      anchorReference="anchorPosition"
-      anchorPosition={copyMenuAnchorPosition ?? undefined}
-      open
-      onClose={closeCopyMenu}
-      MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
-    >
-      <MenuItem onClick={() => handleCopyMenuItemClick(onCopyText)}>
-        <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
-      </MenuItem>
-      {hasCopyTextWithNetwork ? (
-        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
-          <MenuRow icon={<PeopleIcon fontSize="small" />}>
-            Копіювати повідомлення з назвою мережі
-          </MenuRow>
+  const copyMenu =
+    isPresent(copyMenuAnchorPosition) && canShowPrimaryActions ? (
+      <Menu
+        id={copyMenuId}
+        anchorReference="anchorPosition"
+        anchorPosition={copyMenuAnchorPosition ?? undefined}
+        open
+        onClose={closeCopyMenu}
+        MenuListProps={{ 'aria-label': 'Копіювання повідомлення' }}
+      >
+        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyText!)}>
+          <MenuRow icon={<MessageIcon fontSize="small" />}>Копіювати повідомлення</MenuRow>
         </MenuItem>
-      ) : null}
-      {hasCopyTextWithNetworkAndNote ? (
-        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
-          <MenuRow icon={<ChatBubbleOutlineOutlinedIcon fontSize="small" />}>
-            Копіювати повідомлення з мережею та коментарем
-          </MenuRow>
-        </MenuItem>
-      ) : null}
-      {hasFrequencyCopy ? (
-        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq)}>
-          <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>Копіювати частоту</MenuRow>
-        </MenuItem>
-      ) : null}
-      {canShowLocationCopy ? (
-        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyLocation!)}>
-          <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
-        </MenuItem>
-      ) : null}
-      {hasEtalonCopy ? (
-        <MenuItem onClick={() => handleCopyMenuItemClick(onCopyEtalon!)}>
-          <MenuRow icon={<PeopleIcon fontSize="small" />}>Копіювати прив&apos;язку</MenuRow>
-        </MenuItem>
-      ) : null}
-    </Menu>
-  ) : null;
+        {hasCopyTextWithNetwork ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetwork!)}>
+            <MenuRow icon={<PeopleIcon fontSize="small" />}>
+              Копіювати повідомлення з назвою мережі
+            </MenuRow>
+          </MenuItem>
+        ) : null}
+        {hasCopyTextWithNetworkAndNote ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyTextWithNetworkAndNote!)}>
+            <MenuRow icon={<ChatBubbleOutlineOutlinedIcon fontSize="small" />}>
+              Копіювати повідомлення з мережею та коментарем
+            </MenuRow>
+          </MenuItem>
+        ) : null}
+        {hasFrequencyCopy ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyFreq!)}>
+            <MenuRow icon={<SettingsInputAntennaIcon fontSize="small" />}>
+              Копіювати частоту
+            </MenuRow>
+          </MenuItem>
+        ) : null}
+        {canShowLocationCopy ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyLocation!)}>
+            <MenuRow icon={<PlaceIcon fontSize="small" />}>Копіювати локацію</MenuRow>
+          </MenuItem>
+        ) : null}
+        {hasEtalonCopy ? (
+          <MenuItem onClick={() => handleCopyMenuItemClick(onCopyEtalon!)}>
+            <MenuRow icon={<PeopleIcon fontSize="small" />}>Копіювати прив&apos;язку</MenuRow>
+          </MenuItem>
+        ) : null}
+      </Menu>
+    ) : null;
 
   const navigationMenu =
     isPresent(navigationMenuAnchorPosition) && canShowNavigationMenu ? (
@@ -1007,12 +1030,13 @@ function MessageCardHeaderComponent({
           {dateTimeBlock}
         </div>
       </div>
-      {!readOnly ? (
+      {!readOnly || isPresent(attachmentArchiveDownload) ? (
         <div className="flex items-center justify-center">
           <ActionIconsRow
             id={id}
             msg={msg}
             compact={compact}
+            readOnly={readOnly}
             displayMode={displayMode}
             excludeMenuOptions={excludeMenuOptions}
             etalonDisplayModel={etalonDisplayModel}

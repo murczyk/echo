@@ -21,6 +21,8 @@ export const MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS = 3_000;
 export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY = 'archive';
 export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME = 'attachments.zip';
 export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL = 'Завантажити всі вкладення';
+export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES = 20;
+export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
 export type MessageCardDownloadGuardProps = {
   isDownloadStarting: (downloadKey: string) => boolean;
@@ -190,7 +192,16 @@ export function mediaDownloadAttr(displayName: string, fallbackName: string): st
 }
 
 export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]): boolean {
-  return attachments.length > 1;
+  if (attachments.length <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
+    return false;
+  }
+  const knownTotalBytes = attachments.reduce((totalBytes, attachment) => {
+    const sizeBytes = mediaAttachmentSizeBytes(attachment);
+    return typeof sizeBytes === 'number' && Number.isFinite(sizeBytes) && sizeBytes > 0
+      ? totalBytes + sizeBytes
+      : totalBytes;
+  }, 0);
+  return knownTotalBytes <= RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES;
 }
 
 const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;
