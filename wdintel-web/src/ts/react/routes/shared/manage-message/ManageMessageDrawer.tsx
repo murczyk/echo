@@ -444,6 +444,7 @@ export function ManageMessageDrawer(props: Props) {
                       busy={busy}
                       existingMedia={existingMedia}
                       errorMsg={drawerState.attachmentErrorMsg}
+                      reportTextPreviewEnabled={isReportMode}
                     />
                   </Stack>
                 </Box>

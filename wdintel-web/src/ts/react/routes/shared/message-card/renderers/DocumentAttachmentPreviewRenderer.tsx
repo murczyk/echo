@@ -23,17 +23,20 @@ import {
   OcrPreviewAction,
   OcrSplitPreview,
 } from '../attachment-preview/OcrPreview';
-import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
 import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 import { MediaReprocessAction } from '../attachment-preview/MediaReprocessAction';
 import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
+import {
+  ReportTextPreviewAction,
+  type AttachmentPreviewReportDraft,
+  type AttachmentPreviewReportVisibility,
+} from '../attachment-preview/ReportTextPreview';
 import { MarkdownDocumentPreview, TxtDocumentPreview } from '../text-document-preview';
 import { CsvDocumentPreview } from './CsvDocumentPreview';
 import { DocxDocumentPreview } from './DocxDocumentPreview';
@@ -84,17 +87,18 @@ export function DocumentAttachmentPreviewRenderer({
   document,
   onClose,
   navigation,
-  isFullscreen,
-  onFullscreenChange,
   isDownloadStarting,
   onDownloadStart,
+  reportDraft,
+  reportVisible,
+  onReportVisibleChange,
 }: {
   document: MessageCardDocument;
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
-  onFullscreenChange: (isFullscreen: boolean) => void;
-} & MessageCardDownloadGuardProps) {
+  reportDraft?: AttachmentPreviewReportDraft;
+} & MessageCardDownloadGuardProps &
+  AttachmentPreviewReportVisibility) {
   const resolvedIndex = navigation.index;
   const currentDocument = document;
   const [zoom, setZoom] = useState(100);
@@ -109,16 +113,9 @@ export function DocumentAttachmentPreviewRenderer({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const infoOpen = infoAnchorEl !== null;
   const currentDocumentKind = currentDocument.kind;
-  const previewConfig = getMessageCardAttachmentPreviewConfig(currentDocumentKind);
   const currentDocumentCapabilities = getDocumentPreviewCapabilities(currentDocument.kind);
   const canZoom = currentDocumentCapabilities?.zoomable === true;
   const canSwipeCarousel = currentDocumentCapabilities?.carouselSwipeable === true;
-  const canFullscreen = previewConfig.supportsFullscreen;
-  const dialogIsFullscreen = canFullscreen && isFullscreen;
-  const changeFullscreen = useCallback(
-    (value: boolean) => onFullscreenChange(value),
-    [onFullscreenChange],
-  );
   const dialogZoom = canZoom ? zoom : 100;
   const previewFileName = useMemo(
     () => deriveDocumentFileName(currentDocument, resolvedIndex),
@@ -136,7 +133,6 @@ export function DocumentAttachmentPreviewRenderer({
     setOcrFullPane(false);
     setSummaryVisible(false);
     setSummaryStatus(currentDocument.summary ?? null);
-    changeFullscreen(false);
   };
 
   const closeDialog = () => {
@@ -159,10 +155,7 @@ export function DocumentAttachmentPreviewRenderer({
     if (!canZoom && zoom !== 100) {
       setZoom(100);
     }
-    if (!canFullscreen && isFullscreen) {
-      changeFullscreen(false);
-    }
-  }, [canFullscreen, canZoom, changeFullscreen, isFullscreen, zoom]);
+  }, [canZoom, zoom]);
 
   const setPreviewZoom = (nextZoom: number) => {
     setZoom(clamp(nextZoom, DOCUMENT_PREVIEW_ZOOM_MIN, DOCUMENT_PREVIEW_ZOOM_MAX));
@@ -292,7 +285,6 @@ export function DocumentAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="document"
-      isFullscreen={dialogIsFullscreen}
       onDoubleClick={handleStageDoubleClick}
     >
       <DocumentPreview document={currentDocument} zoom={dialogZoom} />
@@ -314,6 +306,9 @@ export function DocumentAttachmentPreviewRenderer({
       summaryVisible={summaryVisible}
       onSummaryChange={setSummaryStatus}
       onSummaryVisibleChange={setSummaryVisible}
+      reportDraft={reportDraft}
+      reportVisible={reportVisible}
+      onReportVisibleChange={onReportVisibleChange}
     />
   );
 
@@ -334,10 +329,25 @@ export function DocumentAttachmentPreviewRenderer({
               setSummaryVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setOcrVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }
           />
+          {reportDraft != null ? (
+            <ReportTextPreviewAction
+              active={reportVisible}
+              onClick={() => {
+                const next = !reportVisible;
+                if (next) {
+                  setOcrVisible(false);
+                  setOcrFullPane(false);
+                  setSummaryVisible(false);
+                }
+                onReportVisibleChange(next);
+              }}
+            />
+          ) : null}
           <OcrPreviewAction
             ocr={ocrStatus}
             active={ocrVisible}
@@ -345,6 +355,7 @@ export function DocumentAttachmentPreviewRenderer({
               setOcrVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setSummaryVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }
@@ -362,9 +373,6 @@ export function DocumentAttachmentPreviewRenderer({
           onDownloadStart={onDownloadStart}
         />
       }
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
       onClose={closeDialog}
       downloadKey={`media:${String(currentDocument?.id ?? '')}`}
       isDownloadStarting={isDownloadStarting}
@@ -392,14 +400,11 @@ export function DocumentAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      isFullscreen={dialogIsFullscreen}
-      config={previewConfig}
       stage={stage}
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={canSwipeCarousel && dialogZoom <= 100}
-      onToggleFullscreen={() => changeFullscreen(!dialogIsFullscreen)}
     />
   );
 }

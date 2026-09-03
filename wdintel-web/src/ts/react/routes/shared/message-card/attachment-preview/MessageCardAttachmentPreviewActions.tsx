@@ -20,9 +20,6 @@ export function MessageCardAttachmentPreviewActions(props: {
   status?: ReactNode;
   onInfoClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   infoSeverity?: 'warning' | 'error';
-  isFullscreen?: boolean;
-  canFullscreen?: boolean;
-  onToggleFullscreen?: () => void;
   onClose: () => void;
   isDownloadStarting?: (downloadKey: string) => boolean;
   onDownloadStart?: (downloadKey: string) => boolean;

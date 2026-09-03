@@ -41,13 +41,11 @@ import {
   OcrPreviewAction,
   OcrSplitPreview,
 } from '../attachment-preview/OcrPreview';
-import { AttachmentPreviewZoomControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
 import { AttachmentPreviewZoomBadge } from '../attachment-preview/AttachmentPreviewZoomBadge';
 import { canCopyImageToClipboard, copyImageToClipboard } from '../copy-image-to-clipboard';
 import { blurActiveAttachmentPreviewElement } from '../attachment-preview/message-card-attachment-preview';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
@@ -56,6 +54,11 @@ import {
   MediaReprocessAction,
 } from '../attachment-preview/MediaReprocessAction';
 import { MediaSummaryAction } from '../attachment-preview/MediaSummaryPreview';
+import {
+  ReportTextPreviewAction,
+  type AttachmentPreviewReportDraft,
+  type AttachmentPreviewReportVisibility,
+} from '../attachment-preview/ReportTextPreview';
 import { useImageAttachmentEditorSession } from './use-image-attachment-editor-session';
 import type {
   ImageEditingCapability,
@@ -230,8 +233,6 @@ export function ImageAttachmentPreviewRenderer({
   image,
   onClose,
   navigation,
-  isFullscreen,
-  onFullscreenChange,
   isDownloadStarting,
   onDownloadStart,
   imageEditing,
@@ -241,12 +242,13 @@ export function ImageAttachmentPreviewRenderer({
   registerEditorEscapeHandler,
   onChildOverlayChange,
   dismissChildOverlay,
+  reportDraft,
+  reportVisible,
+  onReportVisibleChange,
 }: {
   image: MessageCardImage;
   onClose: () => void;
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
-  onFullscreenChange: (isFullscreen: boolean) => void;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
   onInitialActionConsumed?: () => void;
@@ -254,7 +256,9 @@ export function ImageAttachmentPreviewRenderer({
   registerEditorEscapeHandler?: RegisterImageEditorEscapeHandler;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
-} & MessageCardDownloadGuardProps) {
+  reportDraft?: AttachmentPreviewReportDraft;
+} & MessageCardDownloadGuardProps &
+  AttachmentPreviewReportVisibility) {
   const resolvedIndex = navigation.index;
   const currentImage = image;
   const currentHref = currentImage.href;
@@ -307,13 +311,6 @@ export function ImageAttachmentPreviewRenderer({
     () => deriveImageDownloadName(currentImage, resolvedIndex),
     [currentImage, resolvedIndex],
   );
-  const previewConfig = getMessageCardAttachmentPreviewConfig('image');
-  const canFullscreen = previewConfig.supportsFullscreen;
-  const dialogIsFullscreen = canFullscreen && isFullscreen;
-  const changeFullscreen = useCallback(
-    (value: boolean) => onFullscreenChange(value),
-    [onFullscreenChange],
-  );
   const removePointerListeners = useCallback(() => {
     const listeners = pointerListenersRef.current;
     if (listeners === null) return;
@@ -345,8 +342,7 @@ export function ImageAttachmentPreviewRenderer({
 
   const resetPreviewState = useCallback(() => {
     resetImageState();
-    changeFullscreen(false);
-  }, [changeFullscreen, resetImageState]);
+  }, [resetImageState]);
 
   const addPointerListeners = useCallback(() => {
     removePointerListeners();
@@ -584,24 +580,23 @@ export function ImageAttachmentPreviewRenderer({
     }
   };
 
-  const handleToggleFullscreen = () => {
-    if (!canFullscreen) return;
-    changeFullscreen(!dialogIsFullscreen);
-  };
-
   useEffect(() => {
     if (initialAction !== 'edit-image') return;
     onInitialActionConsumed?.();
     void editor.open();
   }, [editor.open, initialAction, onInitialActionConsumed]);
 
-  const handleReprocessQueued = useCallback((nextOcr: NonNullable<MessageCardImage['ocr']>) => {
-    setOcrStatus(nextOcr);
-    setOcrVisible(true);
-    setOcrFullPane(false);
-    setSummaryStatus(null);
-    setSummaryVisible(false);
-  }, []);
+  const handleReprocessQueued = useCallback(
+    (nextOcr: NonNullable<MessageCardImage['ocr']>) => {
+      setOcrStatus(nextOcr);
+      setOcrVisible(true);
+      setOcrFullPane(false);
+      setSummaryStatus(null);
+      setSummaryVisible(false);
+      onReportVisibleChange(false);
+    },
+    [onReportVisibleChange],
+  );
 
   const handleDoubleClick = (event: SyntheticEvent<HTMLDivElement>) => {
     const mouseEvent = event as unknown as MouseEvent;
@@ -674,7 +669,6 @@ export function ImageAttachmentPreviewRenderer({
     <MessageCardAttachmentPreviewStage
       ref={setStageNode}
       kind="image"
-      isFullscreen={dialogIsFullscreen}
       cursor={zoom > ZOOM_MIN ? 'grab' : 'default'}
       onPointerDown={startPan}
       onPointerUp={stopPan}
@@ -709,6 +703,9 @@ export function ImageAttachmentPreviewRenderer({
       summaryVisible={summaryVisible}
       onSummaryChange={setSummaryStatus}
       onSummaryVisibleChange={setSummaryVisible}
+      reportDraft={reportDraft}
+      reportVisible={reportVisible}
+      onReportVisibleChange={onReportVisibleChange}
     />
   );
   const header = (
@@ -726,10 +723,25 @@ export function ImageAttachmentPreviewRenderer({
               setSummaryVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setOcrVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }
           />
+          {reportDraft != null ? (
+            <ReportTextPreviewAction
+              active={reportVisible}
+              onClick={() => {
+                const next = !reportVisible;
+                if (next) {
+                  setOcrVisible(false);
+                  setOcrFullPane(false);
+                  setSummaryVisible(false);
+                }
+                onReportVisibleChange(next);
+              }}
+            />
+          ) : null}
           <OcrPreviewAction
             ocr={ocrStatus}
             active={ocrVisible}
@@ -737,6 +749,7 @@ export function ImageAttachmentPreviewRenderer({
               setOcrVisible((visible) => {
                 const next = !visible;
                 if (next && isMobile) setSummaryVisible(false);
+                if (next) onReportVisibleChange(false);
                 return next;
               })
             }
@@ -802,9 +815,6 @@ export function ImageAttachmentPreviewRenderer({
         onChildOverlayChange?.(true);
       }}
       infoSeverity={getOcrInfoSeverity(ocrStatus)}
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onToggleFullscreen={handleToggleFullscreen}
       onClose={closeDialog}
       downloadKey={`media:${String(currentImage?.id ?? '')}`}
       isDownloadStarting={isDownloadStarting}
@@ -836,8 +846,6 @@ export function ImageAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      isFullscreen={dialogIsFullscreen}
-      config={previewConfig}
       stage={
         editor.error ? (
           <>
@@ -854,7 +862,6 @@ export function ImageAttachmentPreviewRenderer({
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={zoom <= ZOOM_MIN && !editor.isLocked}
-      onToggleFullscreen={handleToggleFullscreen}
     />
   );
 }

@@ -25,6 +25,7 @@ import { getMediaOcrStatus } from '../../../../services/api/ocr';
 import type { AttachmentPreviewInfoSection } from './MessageCardAttachmentPreviewInfoPopover';
 import { MediaSummaryOverlay } from './MediaSummaryPreview';
 import type { AttachmentPreviewDownloadItem } from './message-card-preview.types';
+import { ReportTextPreviewLayout, type AttachmentPreviewReportDraft } from './ReportTextPreview';
 
 const OCR_STATE_LABELS: Record<string, string> = {
   pending: 'У черзі',
@@ -412,6 +413,9 @@ export function OcrSplitPreview({
   summaryVisible,
   onSummaryChange,
   onSummaryVisibleChange,
+  reportDraft,
+  reportVisible = false,
+  onReportVisibleChange,
 }: {
   source: ReactNode;
   mediaId?: string | null;
@@ -424,6 +428,9 @@ export function OcrSplitPreview({
   summaryVisible: boolean;
   onSummaryChange: (summary: MediaSummaryStatus) => void;
   onSummaryVisibleChange: (value: boolean) => void;
+  reportDraft?: AttachmentPreviewReportDraft;
+  reportVisible?: boolean;
+  onReportVisibleChange?: (value: boolean) => void;
 }) {
   const theme = useTheme();
   const mobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -486,6 +493,12 @@ export function OcrSplitPreview({
   }, [mobile, onSummaryVisibleChange, summaryVisible, visible]);
 
   useEffect(() => {
+    if (mobile && visible && reportVisible) {
+      onReportVisibleChange?.(false);
+    }
+  }, [mobile, onReportVisibleChange, reportVisible, visible]);
+
+  useEffect(() => {
     if (!visible || ocr == null || !isProcessing(ocr)) return;
     void refresh(true);
     const interval = window.setInterval(() => void refresh(true), 5_000);
@@ -496,6 +509,11 @@ export function OcrSplitPreview({
     if (!summaryVisible) return;
     onFullPaneChange(false);
   }, [onFullPaneChange, summaryVisible]);
+
+  useEffect(() => {
+    if (!reportVisible) return;
+    onFullPaneChange(false);
+  }, [onFullPaneChange, reportVisible]);
 
   const sourceWithSummary = (
     <MediaSummaryOverlay
@@ -508,10 +526,16 @@ export function OcrSplitPreview({
     />
   );
 
+  const showReport = reportDraft != null && reportVisible;
+  if (showReport) {
+    return <ReportTextPreviewLayout source={source} draft={reportDraft} visible />;
+  }
   if (mediaId == null) return source;
   if (!visible && summary == null) return source;
 
-  const showSource = visible ? (mobile ? true : !fullPane) : true;
+  const ocrMediaId = mediaId ?? '';
+  const hasSplitPane = visible;
+  const showSource = hasSplitPane ? (mobile ? true : !fullPane) : true;
   const showOcr = visible;
 
   return (
@@ -530,13 +554,13 @@ export function OcrSplitPreview({
       <Box
         sx={{
           display: showSource ? 'flex' : 'none',
-          flex: !visible || fullPane ? '1 1 100%' : mobile ? '0 0 50%' : '1 1 50%',
-          height: visible && mobile ? '50%' : 'auto',
+          flex: !hasSplitPane || fullPane ? '1 1 100%' : mobile ? '0 0 50%' : '1 1 50%',
+          height: hasSplitPane && mobile ? '50%' : 'auto',
           minWidth: 0,
           minHeight: 0,
           overflow: 'hidden',
-          borderBottom: visible && mobile ? 1 : 0,
-          borderRight: visible && !mobile && showSource && showOcr ? 1 : 0,
+          borderBottom: hasSplitPane && mobile ? 1 : 0,
+          borderRight: hasSplitPane && !mobile && showSource ? 1 : 0,
           borderColor: 'divider',
         }}
       >
@@ -560,7 +584,7 @@ export function OcrSplitPreview({
           }}
         >
           {ocr != null && isOcrReady(ocr) ? (
-            <ScrollableOcrFrame mediaId={mediaId} revision={iframeRevision} />
+            <ScrollableOcrFrame mediaId={ocrMediaId} revision={iframeRevision} />
           ) : ocr != null ? (
             <OcrStatusPane
               ocr={ocr}
