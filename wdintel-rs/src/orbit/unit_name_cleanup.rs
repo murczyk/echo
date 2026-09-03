@@ -653,7 +653,7 @@ mod tests {
     fn keeps_name_when_only_echelons_are_corps_or_above() {
         let mut unit = sigint_unit("Повна назва корпусу", "", "");
         unit.regiment.clear();
-        unit.corps = "МВО".to_string();
+        unit.corps = "ТН".to_string();
         let orbit_echelons = HashSet::from([EchoEchelon::Corps]);
 
         let change =
@@ -665,7 +665,7 @@ mod tests {
             change.cleared_echelons,
             vec![ClearedEchelon {
                 attribute: "corps",
-                current: "МВО".to_string(),
+                current: "ТН".to_string(),
             }]
         );
     }
@@ -683,10 +683,7 @@ mod tests {
 
     #[test]
     fn clears_blacklisted_army_and_corps_values_case_insensitively() {
-        for value in [
-            "УВ(с)", "ТН", "ПдВО", "ЛВО", "СхВО", "МВО", "ЦВО", "ПВО", "ЗхВО",
-            "ЗВО",
-        ] {
+        for value in ["УВ(с)", "УВ", "ТН"] {
             let echelon_value = format!("командування {value}");
             let name = format!("1 ртп {echelon_value}");
             let mut army = sigint_unit(&name, "", "");
@@ -728,8 +725,8 @@ mod tests {
             sigint_unit::ActiveModel {
                 other: Set("OtherToken".to_string()),
                 regiment: Set("RegimentToken".to_string()),
-                corps: Set("МВО".to_string()),
-                name: Set("OtherToken RegimentToken МВО".to_string()),
+                corps: Set("ТН".to_string()),
+                name: Set("OtherToken RegimentToken ТН".to_string()),
                 active: Set(false),
                 ..Default::default()
             },

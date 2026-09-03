@@ -158,8 +158,8 @@ that changed during review remain untouched.
 
 ### Remove invalid army/corps and higher echelons from SIGINT unit names
 
-This workflow finds blacklisted army and corps values, including `УВ(с)`, `ТН`,
-and `МВО`, as well as army, corps, military-district, and army-region values
+This workflow finds blacklisted army and corps values `УВ(с)`, `УВ`, and `ТН`,
+as well as army, corps, military-district, and army-region values
 absent from the unit's single linked ORBIT generative hierarchy.
 Automatic mode applies every safe proposal; manual mode shows the current and
 proposed name diff one unit at a time. Accepted changes clear invalid echelon

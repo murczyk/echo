@@ -2663,16 +2663,39 @@ mod tests {
 
     #[test]
     fn generated_unit_names_exclude_blacklisted_army_and_corps_values() {
-        for (echelon, value) in [
-            (SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX, "УВ(с)"),
-            (SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX, "ТН"),
-            (SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX, "МВО"),
+        for echelon in [
+            SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX,
+            SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX,
         ] {
-            let mut hierarchy = [""; 14];
-            hierarchy[6] = "2 бат";
-            hierarchy[echelon] = value;
+            for value in ["УВ(с)", "УВ", "ТН"] {
+                let mut hierarchy = [""; 14];
+                hierarchy[6] = "2 бат";
+                hierarchy[echelon] = value;
 
-            assert_eq!(unit_name_from_hierarchy(hierarchy), "2 бат");
+                assert_eq!(unit_name_from_hierarchy(hierarchy), "2 бат");
+            }
+        }
+    }
+
+    #[test]
+    fn generated_unit_names_include_military_district_abbreviations_in_army_or_corps(
+    ) {
+        for echelon in [
+            SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX,
+            SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX,
+        ] {
+            for value in
+                ["ПдВО", "ЛВО", "СхВО", "МВО", "ЦВО", "ПВО", "ЗхВО", "ЗВО"]
+            {
+                let mut hierarchy = [""; 14];
+                hierarchy[6] = "2 бат";
+                hierarchy[echelon] = value;
+
+                assert_eq!(
+                    unit_name_from_hierarchy(hierarchy),
+                    format!("2 бат {value}")
+                );
+            }
         }
     }
 

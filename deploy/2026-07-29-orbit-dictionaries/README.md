@@ -89,8 +89,8 @@ rewrites later comparisons through any survivor selected during review, and
 persists confirmed merges in bounded batches after rechecking live links.
 
 The hierarchy-cleanup action can automatically or manually clear blacklisted
-army and corps values, including `УВ(с)`, `ТН`, and `МВО`, as well as army,
-corps, military-district, and army-region values absent from the unit's single
+army and corps values `УВ(с)`, `УВ`, and `ТН`, as well as army, corps,
+military-district, and army-region values absent from the unit's single
 linked ORBIT generative hierarchy. It also removes `other` values from names
 without clearing their hierarchy fields. The generated-name action offers
 automatic application or manual review of every non-deleted SIGINT unit whose
