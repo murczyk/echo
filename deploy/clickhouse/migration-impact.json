@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260903_105929_disable_media_summary_for_all_users": {
+      "changes": []
+    },
     "echo:m20260902_131822_signal_message_group_access_index": {
       "changes": []
     },
