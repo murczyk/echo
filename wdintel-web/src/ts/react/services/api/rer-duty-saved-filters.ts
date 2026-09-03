@@ -10,10 +10,30 @@ import type {
 import { transformCamelToSnake, transformSnakeToCamel } from '../../../snake-to-camel';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 import { postJson, postVoid } from './client';
+import { getCanonicalUnitIdValue } from '../../utils/unit-search';
+
+function partitionUnitValues(
+  values: string[] | null,
+  storedUnitIds: number[] | null,
+): { legacyValues: string[] | null; unitIds: number[] | null } {
+  const legacyValues: string[] = [];
+  const unitIds = new Set(storedUnitIds ?? []);
+  for (const value of values ?? []) {
+    const unitId = getCanonicalUnitIdValue(value);
+    if (unitId === null) legacyValues.push(value);
+    else unitIds.add(unitId);
+  }
+  return {
+    legacyValues: legacyValues.length > 0 ? legacyValues : null,
+    unitIds: unitIds.size > 0 ? [...unitIds] : null,
+  };
+}
 
 function rerDutyQueryStateWfToSnake(
   w: RerDutyFeedFilterState,
-): Record<string, string[] | number | boolean | null> {
+): Record<string, string[] | number[] | number | boolean | null> {
+  const selectedUnits = partitionUnitValues(w.unitsSelected, w.selectedUnitIds);
+  const deniedUnits = partitionUnitValues(w.unitsDenied, w.deniedUnitIds);
   return {
     groups_selected: w.groupsSelected,
     groups_denied: w.groupsDenied,
@@ -23,8 +43,10 @@ function rerDutyQueryStateWfToSnake(
     freqs_denied: w.freqsDenied,
     posts_selected: w.postsSelected,
     posts_denied: w.postsDenied,
-    units_selected: w.unitsSelected,
-    units_denied: w.unitsDenied,
+    units_selected: selectedUnits.legacyValues,
+    units_denied: deniedUnits.legacyValues,
+    selected_unit_ids: selectedUnits.unitIds,
+    denied_unit_ids: deniedUnits.unitIds,
     units_exact_match_only: w.unitsExactMatchOnly,
     last_viewed_message_id: w.lastViewedMessageId,
   };

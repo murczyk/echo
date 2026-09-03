@@ -1119,6 +1119,8 @@ enum Cmd {
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
+    /// Review and migrate saved unit filters from labels to unit IDs.
+    OneoffMigrateSavedFilterUnitIds,
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
@@ -1934,6 +1936,9 @@ async fn async_main(
         }
         Cmd::OneoffReprocessInboxPosts(ps) => {
             rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
+        }
+        Cmd::OneoffMigrateSavedFilterUnitIds => {
+            rer_importer::saved_filter_unit_ids::run(mode).await
         }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await

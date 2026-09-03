@@ -183,6 +183,8 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     unitsSelected: null,
     unitsDenied: null,
+    selectedUnitIds: null,
+    deniedUnitIds: null,
     unitsExactMatchOnly: false,
     lastViewedMessageId: null,
     highlightKeywordsEnabled: null,

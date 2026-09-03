@@ -105,6 +105,8 @@ fn short_state_filter(
         posts_denied: None,
         units_selected: None,
         units_denied: None,
+        selected_unit_ids: None,
+        denied_unit_ids: None,
         units_exact_match_only: None,
         last_viewed_message_id: None,
         highlight_keywords_enabled: None,
