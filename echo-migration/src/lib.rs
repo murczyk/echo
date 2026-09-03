@@ -405,6 +405,7 @@ mod m20260828_150352_echo_chat_admin;
 mod m20260901_130526_add_callsign_changelog_created_at_index;
 mod m20260902_131822_signal_message_group_access_index;
 mod m20260902_155137_remove_group_stats_pending_unique;
+mod m20260903_071138_disable_media_summary_card_default;
 
 pub struct Migrator;
 
@@ -956,6 +957,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(
                 m20260902_155137_remove_group_stats_pending_unique::Migration,
+            ),
+            Box::new(
+                m20260903_071138_disable_media_summary_card_default::Migration,
             ),
         ]
     }

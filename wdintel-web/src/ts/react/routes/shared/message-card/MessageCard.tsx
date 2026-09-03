@@ -40,6 +40,7 @@ import {
 import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 import type { MessageTextPreviewLineLimit } from '../../../services/api/user-settings';
+import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 
 dayjs.extend(customParseFormat);
 
@@ -197,7 +198,7 @@ function MessageCardComponent({
   analysisCallsignActions,
   showCallsignAddForm = false,
   collapseMediaPreviews,
-  mediaSummaryEnabled = true,
+  mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines = 20,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);

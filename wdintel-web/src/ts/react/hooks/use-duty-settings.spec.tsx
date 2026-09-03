@@ -83,5 +83,6 @@ describe('useDutySettings', () => {
     await act(async () => {});
 
     expect(latestSettings?.messageTextPreviewLines).toBe(20);
+    expect(latestSettings?.mediaSummaryEnabled).toBe(false);
   });
 });

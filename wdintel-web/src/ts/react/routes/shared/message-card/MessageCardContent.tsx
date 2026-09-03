@@ -43,6 +43,7 @@ import {
   hasCoordinatePreviewCandidate,
   type CoordinatePreviewPoint,
 } from './message-coordinate-preview';
+import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 import {
   isAudioMediaAttachment,
   canDownloadAllMessageAttachments,
@@ -260,7 +261,7 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   collapseMediaPreviews = false,
-  mediaSummaryEnabled = true,
+  mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines = 20,
 }: {
   compact?: boolean;

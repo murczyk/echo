@@ -1,1 +1,2 @@
 export const DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS = true;
+export const DEFAULT_MEDIA_SUMMARY_ENABLED = false;
