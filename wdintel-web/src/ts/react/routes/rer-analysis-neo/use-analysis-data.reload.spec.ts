@@ -527,7 +527,9 @@ describe('reloadAnalysisData', () => {
     mocks.fetchAnalysisCallsigns.mockResolvedValue({
       callsigns: [{ callsign: 'ALPHA', count: 11 }],
     });
-    mocks.fetchAnalysisUnits.mockResolvedValue({ units: [{ unit: 'UNIT-1', count: 12 }] });
+    mocks.fetchAnalysisUnits.mockResolvedValue({
+      units: [{ unitId: 1, name: 'UNIT-1', count: 12 }],
+    });
     mocks.fetchAnalysisLocations.mockResolvedValue({
       locations: [{ location: 'LOC-1', count: 13 }],
     });

@@ -171,7 +171,7 @@ async fn test_bl_group_update_add_second_aor() {
         .all(&txn)
         .await
         .unwrap();
-    assert_eq!(tasks_after_second.len(), 1);
+    assert_eq!(tasks_after_second.len(), 2);
 
     assert_eq!(
         res2.group_data.short_note,

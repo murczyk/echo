@@ -1,4 +1,5 @@
 use crate::config::SYSTEM_LOGIN_NAME;
+use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 use crate::functest::tests::*;
 use crate::h;
 use crate::rer_importer::analysis::*;
@@ -132,6 +133,7 @@ fn mk_analysis_stats_req(
         selected_freqs: None,
         selected_posts: None,
         selected_callsigns: None,
+        selected_unit_ids: None,
         selected_units: None,
         selected_locations: None,
         selected_device_names: None,
@@ -4448,7 +4450,7 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         test_dt(2026, 3, 2, 10, 7),
         &[&fixture.group_x],
         &[],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -4463,7 +4465,7 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         test_dt(2026, 3, 2, 10, 8),
         &[&fixture.group_x],
         &[],
-        false,
+        true,
     )
     .await
     .unwrap();
@@ -4558,6 +4560,58 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         fetch_tag_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([(unit_tag.id, 1)])
     );
+
+    sigint_inbox_item_unit::ActiveModel {
+        item_id: Set(msg_etalon.id),
+        unit_id: Set(etalon_unit.id),
+        kind: Set(SigintInboxItemUnitKind::Network),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .unwrap();
+    req.selected_unit_ids = Some(vec![etalon_unit.id]);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([("944.1".to_string(), 1), ("944.3".to_string(), 1),])
+    );
+
+    let identity = mk_test_identity().await.unwrap();
+    let login_id = test_identity_login_id(&fixture.env, &identity).await;
+    let inbox_req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_units: req.selected_units,
+        selected_unit_ids: req.selected_unit_ids,
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let item_ids =
+        crate::rer_importer::inbox::query::build_filtered_inbox_query(
+            db,
+            &login_id,
+            &fixture.env,
+            &inbox_req,
+        )
+        .await
+        .unwrap()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .unwrap()
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    assert!(item_ids.contains(&msg_etalon.id));
+    assert!(item_ids.contains(&msg_unknown.id));
+    assert!(!item_ids.contains(&msg_header_only.id));
 }
 
 #[tokio::test]
@@ -4640,6 +4694,125 @@ async fn rer_analysis_units_match_etalon_units_during_active_window() {
     assert_eq!(
         fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
         BTreeMap::from([("944.4".to_string(), 1)])
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn rer_analysis_unit_id_filter_keeps_same_name_units_distinct() {
+    let fixture = mk_aor_filter_fixture().await.unwrap();
+    let db = &fixture.env.dbx;
+    let created_by_login_id =
+        crate::users::login_id_by_name(db, "Tester").await.unwrap();
+    let first_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("Duplicate unit name".to_string()),
+            created_by_login_id: Set(created_by_login_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let second_unit = mk_sigint_unit(
+        db,
+        sigint_unit::ActiveModel {
+            name: Set("Duplicate unit name".to_string()),
+            created_by_login_id: Set(created_by_login_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let first_message = mk_analysis_message(
+        db,
+        "msg-unit-id-first",
+        "944.51",
+        test_dt(2026, 3, 2, 10, 7),
+        &[&fixture.group_x],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    let second_message = mk_analysis_message(
+        db,
+        "msg-unit-id-second",
+        "944.52",
+        test_dt(2026, 3, 2, 10, 8),
+        &[&fixture.group_x],
+        &[],
+        false,
+    )
+    .await
+    .unwrap();
+    for (item_id, unit_id) in [
+        (first_message.id, first_unit.id),
+        (second_message.id, second_unit.id),
+    ] {
+        sigint_inbox_item_unit::ActiveModel {
+            item_id: Set(item_id),
+            unit_id: Set(unit_id),
+            kind: Set(SigintInboxItemUnitKind::Parsed),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .unwrap();
+    }
+
+    let mut req = analysis_stats_req_for_aor_fixture(&fixture);
+    req.selected_unit_ids = Some(vec![first_unit.id]);
+    assert_eq!(
+        fetch_freq_counts_for_req(&fixture.env, &req).await.unwrap(),
+        BTreeMap::from([("944.51".to_string(), 1)])
+    );
+
+    req.selected_unit_ids = Some(vec![first_unit.id, second_unit.id]);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        2
+    );
+
+    let test_identity = mk_test_identity().await.unwrap();
+    let inbox_req = InboxMessagesReq {
+        since_date_inclusive_ms: Some(fixture.since_date_inclusive_ms),
+        till_date_inclusive_ms: Some(fixture.till_date_noninclusive_ms),
+        selected_unit_ids: Some(vec![first_unit.id, second_unit.id]),
+        denied_unit_ids: Some(vec![first_unit.id]),
+        nolimit: Some(true),
+        ..Default::default()
+    };
+    let login_id = test_identity_login_id(&fixture.env, &test_identity).await;
+    let item_ids =
+        crate::rer_importer::inbox::query::build_filtered_inbox_query(
+            &fixture.env.dbx,
+            &login_id,
+            &fixture.env,
+            &inbox_req,
+        )
+        .await
+        .unwrap()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .unwrap();
+    assert_eq!(item_ids, vec![second_message.id]);
+
+    let first_unit_id = first_unit.id;
+    let mut first_unit = first_unit.into_active_model();
+    first_unit.deleted = Set(true);
+    first_unit.update(db).await.unwrap();
+    req.selected_unit_ids = Some(vec![first_unit_id]);
+    assert_eq!(
+        fetch_selected_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        0
     );
 }
 
@@ -7230,21 +7403,20 @@ fn count_stats_analytics_supports_callsign_and_search_filters() {
 }
 
 #[test]
-fn count_stats_analytics_supports_unit_filters() {
+fn count_stats_analytics_rejects_unit_filters() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
-
-    assert!(analytics_count_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
 }
 
 #[test]
-fn summary_table_analytics_supports_unit_and_search_filters() {
+fn summary_table_analytics_rejects_unit_filters_and_supports_search() {
     let mut req = mk_analysis_stats_req(0, 1);
     req.selected_units = Some(vec!["unit".to_string()]);
+    assert!(!analytics_summary_table_request_supported(&req));
+    assert!(!analytics_count_request_supported(&req));
 
-    assert!(analytics_summary_table_request_supported(&req));
-    assert!(analytics_count_request_supported(&req));
-
+    req.selected_units = None;
     req.search = Some("message".to_string());
     assert!(analytics_summary_table_request_supported(&req));
 }
@@ -7273,17 +7445,17 @@ fn analytical_inbox_reads_support_callsign_and_search_filters() {
 }
 
 #[test]
-fn analytical_inbox_reads_support_unit_filters() {
+fn analytical_inbox_reads_reject_unit_filters() {
     let mut req = InboxMessagesReq {
         since_date_inclusive_ms: Some(1),
         ..Default::default()
     };
     req.selected_units = Some(vec!["unit".to_string()]);
-    assert!(analytics_inbox_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&req));
 
     req.selected_units = None;
     req.denied_units = Some(vec!["unit".to_string()]);
-    assert!(analytics_inbox_request_supported(&req));
+    assert!(!analytics_inbox_request_supported(&req));
 }
 
 #[test]

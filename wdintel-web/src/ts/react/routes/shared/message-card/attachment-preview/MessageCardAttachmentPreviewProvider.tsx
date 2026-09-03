@@ -5,6 +5,7 @@ import { MessageCardAttachmentPreviewDialog } from './MessageCardAttachmentPrevi
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewItem } from './message-card-preview.types';
 import type { ImageEditingCapability } from '../../image-editor/image-editor.types';
+import type { AttachmentPreviewReportDraft } from './ReportTextPreview';
 
 export type MessageCardPreviewAttachment = MessageCardPreviewItem;
 
@@ -17,6 +18,7 @@ export function MessageCardAttachmentPreviewProvider({
   onDownloadStart,
   imageEditing,
   initialAction,
+  reportDraft,
 }: {
   attachments: MessageCardPreviewItem[];
   initialIndex: number;
@@ -24,6 +26,7 @@ export function MessageCardAttachmentPreviewProvider({
   onIndexChange?: (index: number) => void;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
+  reportDraft?: AttachmentPreviewReportDraft;
 } & Partial<MessageCardDownloadGuardProps>) {
   const [currentIndex, setCurrentIndex] = useState(() =>
     normalizePreviewIndex(initialIndex, attachments.length),
@@ -67,6 +70,7 @@ export function MessageCardAttachmentPreviewProvider({
       onDownloadStart={onDownloadStart}
       imageEditing={imageEditing}
       initialAction={initialAction}
+      reportDraft={reportDraft}
     />
   );
 }

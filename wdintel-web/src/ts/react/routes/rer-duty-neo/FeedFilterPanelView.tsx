@@ -86,6 +86,7 @@ export type FeedFilterPanelViewProps = {
   };
   posts: FeedFilterSelectionConfig<string>;
   units: FeedFilterSelectionConfig<string> & {
+    showExactMatchControl: boolean;
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
@@ -291,49 +292,51 @@ export function FeedFilterPanelView({
             getBulkPasteAliases={units.getBulkPasteAliases}
             getBulkCopyText={units.getBulkCopyText}
           />
-          <Box className="mt-3 flex w-full items-center gap-1">
-            <Tooltip
-              arrow
-              placement="right"
-              slotProps={{ tooltip: { sx: { maxWidth: 280 } } }}
-              title="Точний збіг — лише підрозділи з прив'язки в Еталонних мережах. Неточний — також підрозділ з шапки повідомлення."
-            >
-              <Box
-                component="span"
-                aria-label="Пояснення збігу з еталонкою"
-                sx={{
-                  display: 'inline-flex',
-                  flexShrink: 0,
-                  lineHeight: 0,
-                  cursor: 'default',
-                  color: 'text.secondary',
-                }}
+          {units.showExactMatchControl ? (
+            <Box className="mt-3 flex w-full items-center gap-1">
+              <Tooltip
+                arrow
+                placement="right"
+                slotProps={{ tooltip: { sx: { maxWidth: 280 } } }}
+                title="Точний збіг — лише підрозділи з прив'язки в Еталонних мережах. Неточний — також підрозділ з шапки повідомлення."
               >
-                <InfoOutlinedIcon sx={{ fontSize: 18 }} />
-              </Box>
-            </Tooltip>
-            <FormControl fullWidth size="small">
-              <InputLabel id="units-exact-match-only-label">Збіг з еталонкою</InputLabel>
-              <Select
-                labelId="units-exact-match-only-label"
-                value={unitsExactMatchSelectValue(units.unitsExactMatchOnly)}
-                label="Збіг з еталонкою"
-                renderValue={(value) =>
-                  unitsExactMatchSelectLabel(value as UnitsExactMatchSelectValue)
-                }
-                onChange={(e) => {
-                  const value = e.target.value as UnitsExactMatchSelectValue;
-                  units.onUnitsExactMatchOnlyChange(value === 'exact');
-                }}
-              >
-                {UNITS_EXACT_MATCH_OPTIONS.map((option) => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
+                <Box
+                  component="span"
+                  aria-label="Пояснення збігу з еталонкою"
+                  sx={{
+                    display: 'inline-flex',
+                    flexShrink: 0,
+                    lineHeight: 0,
+                    cursor: 'default',
+                    color: 'text.secondary',
+                  }}
+                >
+                  <InfoOutlinedIcon sx={{ fontSize: 18 }} />
+                </Box>
+              </Tooltip>
+              <FormControl fullWidth size="small">
+                <InputLabel id="units-exact-match-only-label">Збіг з еталонкою</InputLabel>
+                <Select
+                  labelId="units-exact-match-only-label"
+                  value={unitsExactMatchSelectValue(units.unitsExactMatchOnly)}
+                  label="Збіг з еталонкою"
+                  renderValue={(value) =>
+                    unitsExactMatchSelectLabel(value as UnitsExactMatchSelectValue)
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value as UnitsExactMatchSelectValue;
+                    units.onUnitsExactMatchOnlyChange(value === 'exact');
+                  }}
+                >
+                  {UNITS_EXACT_MATCH_OPTIONS.map((option) => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+          ) : null}
         </Box>
 
         <FeedFilterAdvancedSection

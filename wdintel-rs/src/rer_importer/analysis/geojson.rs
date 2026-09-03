@@ -354,9 +354,10 @@ async fn load_geojson_report_items(
         sigint_groups,
     )
     .context(h!())?;
-    let items = filter_selected_units(
+    let items = filter_selected_units_or_ids(
         items,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
     )
     .context(h!())?;

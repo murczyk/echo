@@ -16,11 +16,16 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { AttachmentPreviewPlaybackControls } from '../attachment-preview/MessageCardAttachmentPreviewControls';
 import { MessageCardAttachmentPreviewInfoPopover } from '../attachment-preview/MessageCardAttachmentPreviewInfoPopover';
 import { MessageCardAttachmentPreviewStage } from '../attachment-preview/MessageCardAttachmentPreviewStage';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import { handleUnauthorizedMediaResponse } from '../message-card-media-fetch';
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { MessageCardDownloadGuardProps } from '../MessageCardMedia';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
+import {
+  ReportTextPreviewAction,
+  ReportTextPreviewLayout,
+  type AttachmentPreviewReportDraft,
+  type AttachmentPreviewReportVisibility,
+} from '../attachment-preview/ReportTextPreview';
 
 const VIDEO_LOCAL_PREFLIGHT_MIN_SIZE_BYTES = 10 * 1024 * 1024;
 const VIDEO_LOCAL_PREFLIGHT_RETRY_DELAY_MS = 2_000;
@@ -297,21 +302,22 @@ export function VideoAttachmentPreviewRenderer({
   onClose,
   video,
   navigation,
-  isFullscreen,
-  onFullscreenChange,
   isDownloadStarting,
   onDownloadStart,
   onChildOverlayChange,
   dismissChildOverlay,
+  reportDraft,
+  reportVisible,
+  onReportVisibleChange,
 }: {
   onClose: () => void;
   video: VideoPreviewSource;
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
-  onFullscreenChange: (isFullscreen: boolean) => void;
   onChildOverlayChange?: (open: boolean) => void;
   dismissChildOverlay?: number;
-} & MessageCardDownloadGuardProps) {
+  reportDraft?: AttachmentPreviewReportDraft;
+} & MessageCardDownloadGuardProps &
+  AttachmentPreviewReportVisibility) {
   const [src, setSrc] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -329,16 +335,8 @@ export function VideoAttachmentPreviewRenderer({
     volume: 1,
     muted: false,
     playbackRate: 1,
-    isFullscreen: false,
   });
-  const previewConfig = getMessageCardAttachmentPreviewConfig('video');
-  const canFullscreen = previewConfig.supportsFullscreen;
-  const dialogIsFullscreen = canFullscreen && isFullscreen;
   const openHref = typeof video.source === 'string' ? video.source : null;
-  const changeFullscreen = useCallback(
-    (value: boolean) => onFullscreenChange(value),
-    [onFullscreenChange],
-  );
 
   useEffect(() => {
     const cacheKey =
@@ -575,17 +573,11 @@ export function VideoAttachmentPreviewRenderer({
     v.currentTime = time;
   }, []);
 
-  const handleToggleFullscreen = useCallback(() => {
-    if (!canFullscreen) return;
-    changeFullscreen(!dialogIsFullscreen);
-  }, [canFullscreen, changeFullscreen, dialogIsFullscreen]);
-
   const handleClose = useCallback(() => {
     const v = videoRef.current;
     if (v) v.pause();
-    changeFullscreen(false);
     onClose();
-  }, [changeFullscreen, onClose]);
+  }, [onClose]);
   const [controlsVisible, setControlsVisible] = useState(true);
   const hideControlsTimerRef = useRef<number | null>(null);
 
@@ -740,11 +732,33 @@ export function VideoAttachmentPreviewRenderer({
     });
   };
 
-  const stage = (
+  const controls = (
+    <Box
+      onMouseMove={resetHideControlsTimer}
+      sx={{
+        opacity: controlsVisible || !playerState.isPlaying ? 1 : 0,
+        transition: 'opacity 300ms ease-out',
+        pointerEvents: controlsVisible || !playerState.isPlaying ? 'auto' : 'none',
+        width: '100%',
+      }}
+    >
+      <AttachmentPreviewPlaybackControls
+        playerState={playerState}
+        videoRef={videoRef}
+        onPlayPause={handlePlayPause}
+        onStop={handleStop}
+        onVolumeChange={handleVolumeChange}
+        onMuteToggle={handleMuteToggle}
+        onRateChange={handleRateChange}
+        onSeek={handleSeek}
+      />
+    </Box>
+  );
+
+  const sourceStage = (
     <MessageCardAttachmentPreviewStage
       ref={setStageEl}
       kind="video"
-      isFullscreen={dialogIsFullscreen}
       onPointerDown={resetHideControlsTimer}
       onDoubleClick={handleStageDoubleClick}
     >
@@ -813,31 +827,28 @@ export function VideoAttachmentPreviewRenderer({
           setPan({ x: 0, y: 0 });
         }}
       />
+      <Box
+        data-attachment-preview-video-controls
+        onDoubleClick={(event) => event.stopPropagation()}
+        sx={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1300,
+          width: '100%',
+          pointerEvents: 'none',
+          '& > *': {
+            pointerEvents: 'auto',
+          },
+        }}
+      >
+        {controls}
+      </Box>
     </MessageCardAttachmentPreviewStage>
   );
-  const controls = (
-    <Box
-      onMouseMove={resetHideControlsTimer}
-      sx={{
-        opacity: controlsVisible || !playerState.isPlaying ? 1 : 0,
-        transition: 'opacity 300ms ease-out',
-        pointerEvents: controlsVisible || !playerState.isPlaying ? 'auto' : 'none',
-        width: '100%',
-      }}
-    >
-      <AttachmentPreviewPlaybackControls
-        playerState={{ ...playerState, isFullscreen: dialogIsFullscreen }}
-        canFullscreen={canFullscreen}
-        videoRef={videoRef}
-        onPlayPause={handlePlayPause}
-        onStop={handleStop}
-        onVolumeChange={handleVolumeChange}
-        onMuteToggle={handleMuteToggle}
-        onRateChange={handleRateChange}
-        onSeek={handleSeek}
-        onToggleFullscreen={handleToggleFullscreen}
-      />
-    </Box>
+  const stage = (
+    <ReportTextPreviewLayout source={sourceStage} draft={reportDraft} visible={reportVisible} />
   );
 
   const header = (
@@ -846,14 +857,19 @@ export function VideoAttachmentPreviewRenderer({
       openHref={openHref}
       download={{ onDownload: () => downloadOriginalVideo(video) }}
       navigation={navigation}
+      additionalActions={
+        reportDraft != null ? (
+          <ReportTextPreviewAction
+            active={reportVisible}
+            onClick={() => onReportVisibleChange(!reportVisible)}
+          />
+        ) : null
+      }
       onClose={handleClose}
       onInfoClick={(event) => {
         setInfoAnchorEl(event.currentTarget);
         onChildOverlayChange?.(true);
       }}
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onToggleFullscreen={handleToggleFullscreen}
       downloadKey={`media:${String(video.id ?? '')}`}
       isDownloadStarting={isDownloadStarting}
       onDownloadStart={onDownloadStart}
@@ -886,15 +902,11 @@ export function VideoAttachmentPreviewRenderer({
 
   return (
     <MessageCardAttachmentPreviewLayout
-      isFullscreen={dialogIsFullscreen}
-      config={previewConfig}
       stage={stage}
-      controls={controls}
       header={header}
       infoPopover={infoPopover}
       navigation={navigation}
       swipeEnabled={zoom <= 100}
-      onToggleFullscreen={handleToggleFullscreen}
     />
   );
 }
