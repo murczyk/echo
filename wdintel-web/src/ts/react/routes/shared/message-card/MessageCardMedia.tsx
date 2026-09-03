@@ -21,11 +21,6 @@ export const MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS = 3_000;
 export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY = 'archive';
 export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME = 'attachments.zip';
 export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL = 'Завантажити всі вкладення';
-// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES
-// and useMessageUppy.ts:MAX_MESSAGE_ATTACHMENTS.
-export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES = 20;
-// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES.
-export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
 export type MessageCardDownloadGuardProps = {
   isDownloadStarting: (downloadKey: string) => boolean;
@@ -195,22 +190,7 @@ export function mediaDownloadAttr(displayName: string, fallbackName: string): st
 }
 
 export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]): boolean {
-  if (attachments.length <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
-    return false;
-  }
-
-  let totalBytes = 0;
-  for (const attachment of attachments) {
-    const sizeBytes = mediaAttachmentSizeBytes(attachment);
-    if (sizeBytes === null || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
-      return false;
-    }
-    totalBytes += sizeBytes;
-    if (totalBytes > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES) {
-      return false;
-    }
-  }
-  return true;
+  return attachments.length > 1;
 }
 
 const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;

@@ -29,8 +29,6 @@ import {
   isVideoMediaAttachment,
   MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
-  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES,
-  RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
 } from '../../MessageCardMedia';
 import { AudioTranscriptionPreferencesProvider } from '../../MessageCardAudioTranscription';
 import {
@@ -3379,12 +3377,11 @@ describe('MessageCard', () => {
   });
 
   it.each([
-    ['exactly at the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 0], true],
-    ['over the limit', [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES, 1], false],
-    ['missing metadata', [undefined, 1], false],
-    ['negative metadata', [-1, 1], false],
-    ['non-finite metadata', [Number.NaN, 1], false],
-  ])('validates archive visibility for %s metadata', async (_, sizes, expected) => {
+    ['known metadata', [1024, 2048]],
+    ['missing metadata', [undefined, 1]],
+    ['negative metadata', [-1, 1]],
+    ['non-finite metadata', [Number.NaN, 1]],
+  ])('shows archive action for multiple attachments with %s', async (_, sizes) => {
     const attachments = sizes.map((sizeBytes, index) => ({
       id: `size-${index}`,
       href: `/api/messenger/media/size-${index}`,
@@ -3393,15 +3390,13 @@ describe('MessageCard', () => {
       ...(sizeBytes === undefined ? {} : { sizeBytes }),
     })) as InboxMessage['media'];
 
-    expect(canDownloadAllMessageAttachments(attachments)).toBe(expected);
+    expect(canDownloadAllMessageAttachments(attachments)).toBe(true);
     const view = await renderCard({
       msg: { ...buildMessage(), media: attachments },
     });
     rendered.push(view);
-    if (expected) {
-      await openOverflowMenu(view.container);
-    }
-    expect(queryArchiveDownloadLink(view.container) !== null).toBe(expected);
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
   });
 
   it('keeps individual downloads visible when archive metadata is unavailable', async () => {
@@ -3428,12 +3423,12 @@ describe('MessageCard', () => {
 
     expect(queryArchiveDownloadLink(view.container)).toBeNull();
     expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(3);
   });
 
-  it.each([
-    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES, true],
-    [RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES + 1, false],
-  ])('applies the archive file-count limit at %s attachments', async (count, expected) => {
+  it.each([2, 21])('shows archive action for %s attachments', async (count) => {
     const media = Array.from({ length: count }, (_, index) => ({
       id: `count-${index}`,
       href: `/api/messenger/media/count-${index}`,
@@ -3444,11 +3439,9 @@ describe('MessageCard', () => {
     const view = await renderCard({ msg: { ...buildMessage(), media } });
     rendered.push(view);
 
-    if (expected) {
-      await openOverflowMenu(view.container);
-    }
-    expect(queryArchiveDownloadLink(view.container) !== null).toBe(expected);
-    expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + (expected ? 1 : 0));
+    await openOverflowMenu(view.container);
+    expect(queryArchiveDownloadLink(view.container)).not.toBeNull();
+    expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + 1);
   });
 
   it.each([
