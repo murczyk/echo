@@ -1,13 +1,5 @@
 {
   "migrations": {
-    "echo:m20260903_071138_disable_media_summary_card_default": {
-      "changes": [
-        {
-          "table": "public.user_settings",
-          "strategy": "mirror_resync"
-        }
-      ]
-    },
     "echo:m20260902_131822_signal_message_group_access_index": {
       "changes": []
     },
