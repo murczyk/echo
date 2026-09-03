@@ -46,6 +46,7 @@ import { useWindowedFeedScroll } from './useWindowedFeedScroll';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
 import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 import { useFeedColumnFab } from './feedColumnFab';
+import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../hooks/duty-settings-defaults';
 
 /** Start loading older messages when the user scrolls close to the top of the DOM list. */
 const LOAD_OLDER_BUFFER_PX = 160;
@@ -138,7 +139,7 @@ const DutyMessageCardItem = memo(function DutyMessageCardItem({
   feedCount,
   tagsLayout,
   collapseMediaPreviews = false,
-  mediaSummaryEnabled = true,
+  mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
   botTagAction,
   onCancelBotTagAction,
@@ -323,7 +324,7 @@ const DutyMessageList = memo(
     feedCount,
     tagsLayout,
     collapseMediaPreviews = false,
-    mediaSummaryEnabled = true,
+    mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
     messageTextPreviewLines,
     botTagAction,
     onCancelBotTagAction,
@@ -626,7 +627,7 @@ export const FeedColumnContent = memo(
       featureStrictNetworks,
       tagsLayout,
       collapseMediaPreviews = false,
-      mediaSummaryEnabled = true,
+      mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
       messageTextPreviewLines,
       tagsMap,
       tagsOrder,

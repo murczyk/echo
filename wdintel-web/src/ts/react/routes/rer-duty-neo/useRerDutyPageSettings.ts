@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { User } from '../../../../Bindings';
-import { DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS } from '../../hooks/duty-settings-defaults';
+import {
+  DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+  DEFAULT_MEDIA_SUMMARY_ENABLED,
+} from '../../hooks/duty-settings-defaults';
 import { currentSystemSettings } from '../../services/api/system-settings';
 import { fetchCurrentUser } from '../../services/api/user';
 import {
@@ -31,7 +34,7 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
   const [collapseMediaPreviews, setCollapseMediaPreviews] = useState(
     DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
   );
-  const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(true);
+  const [mediaSummaryEnabled, setMediaSummaryEnabled] = useState(DEFAULT_MEDIA_SUMMARY_ENABLED);
   const [messageTextPreviewLines, setMessageTextPreviewLines] =
     useState<MessageTextPreviewLineLimit>(20);
 
@@ -46,14 +49,14 @@ export function useRerDutyPageSettings(): RerDutyPageSettings {
         setCollapseMediaPreviews(
           prefs.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
         );
-        setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? true);
+        setMediaSummaryEnabled(prefs.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(prefs.messageTextPreviewLines);
       } catch {
         if (cancelled) return;
         setTagsLayout(DEFAULT_DUTY_TAGS_LAYOUT);
         setAudioTranscriptionCollapsed(false);
         setCollapseMediaPreviews(true);
-        setMediaSummaryEnabled(true);
+        setMediaSummaryEnabled(DEFAULT_MEDIA_SUMMARY_ENABLED);
         setMessageTextPreviewLines(20);
       }
     };

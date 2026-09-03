@@ -82,7 +82,7 @@ fn default_duty_collapse_media_previews() -> bool {
 }
 
 fn default_media_summary_enabled() -> bool {
-    true
+    false
 }
 
 impl Default for UserDutySettingsDto {
@@ -98,7 +98,7 @@ impl Default for UserDutySettingsDto {
             show_classic_duty: false,
             show_classic_analysis: false,
             duty_collapse_media_previews: false,
-            media_summary_enabled: true,
+            media_summary_enabled: false,
         }
     }
 }
