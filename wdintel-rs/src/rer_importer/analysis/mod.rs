@@ -677,22 +677,6 @@ where
     )
 }
 
-pub(crate) fn filter_selected_units_correlated<Q>(
-    q: Q,
-    selected_units: &Option<Vec<String>>,
-    units_exact_match_only: &Option<bool>,
-) -> Result<Q, AppError>
-where
-    Q: QueryFilter,
-{
-    filter_selected_units_with_correlation(
-        q,
-        selected_units,
-        units_exact_match_only,
-        true,
-    )
-}
-
 fn filter_selected_units_with_correlation<Q>(
     q: Q,
     selected_units: &Option<Vec<String>>,
@@ -702,6 +686,22 @@ fn filter_selected_units_with_correlation<Q>(
 where
     Q: QueryFilter,
 {
+    let condition = selected_units_condition(
+        selected_units,
+        units_exact_match_only,
+        force_correlation,
+    );
+    Ok(match condition {
+        Some(condition) => q.filter(condition),
+        None => q,
+    })
+}
+
+fn selected_units_condition(
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    force_correlation: bool,
+) -> Option<SimpleExpr> {
     let mut m_empty_filter = None;
     let mut m_filter = None;
     let selected_units = expand_unit_filter_values(selected_units);
@@ -747,11 +747,76 @@ where
         }
     }
     match (m_filter, m_empty_filter) {
-        (None, None) => Ok(q),
-        (None, Some(f)) => Ok(q.filter(f)),
-        (Some(f), None) => Ok(q.filter(f)),
-        (Some(f1), Some(f2)) => Ok(q.filter(f1.or(f2))),
+        (None, None) => None,
+        (None, Some(f)) | (Some(f), None) => Some(f),
+        (Some(f1), Some(f2)) => Some(f1.or(f2)),
     }
+}
+
+pub fn filter_selected_units_or_ids<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_units_or_ids_with_correlation(
+        q,
+        selected_units,
+        selected_unit_ids,
+        units_exact_match_only,
+        false,
+    )
+}
+
+pub(crate) fn filter_selected_units_or_ids_correlated<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_units_or_ids_with_correlation(
+        q,
+        selected_units,
+        selected_unit_ids,
+        units_exact_match_only,
+        true,
+    )
+}
+
+fn filter_selected_units_or_ids_with_correlation<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+    force_correlation: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let units = selected_units_condition(
+        selected_units,
+        units_exact_match_only,
+        force_correlation,
+    );
+    let unit_ids = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+        .map(|unit_ids| {
+            message_has_linked_unit_ids(unit_ids, force_correlation)
+        });
+    Ok(match (units, unit_ids) {
+        (None, None) => q,
+        (None, Some(condition)) | (Some(condition), None) => {
+            q.filter(condition)
+        }
+        (Some(units), Some(unit_ids)) => q.filter(units.or(unit_ids)),
+    })
 }
 
 /// Фільтрує запит, виключаючи повідомлення, що відповідають вказаним підрозділам.
@@ -776,6 +841,90 @@ where
         units_exact_match_only,
         false,
     )
+}
+
+pub fn filter_selected_unit_ids<Q>(
+    q: Q,
+    selected_unit_ids: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(selected_unit_ids) = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(selected_unit_ids, false))
+}
+
+pub fn filter_denied_unit_ids<Q>(q: Q, denied_unit_ids: &Option<Vec<i64>>) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(denied_unit_ids) = denied_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(denied_unit_ids, false).not())
+}
+
+pub(crate) fn filter_denied_unit_ids_correlated<Q>(
+    q: Q,
+    denied_unit_ids: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(denied_unit_ids) = denied_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(denied_unit_ids, true).not())
+}
+
+fn message_has_linked_unit_ids(
+    unit_ids: &[i64],
+    force_correlation: bool,
+) -> SimpleExpr {
+    let link_alias = Alias::new("selected_unit_link");
+    let unit_alias = Alias::new("selected_unit_by_id");
+    let mut query = Query::select();
+    query
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_unit::Entity, link_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            unit_alias.clone(),
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Id)).equals((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::UnitId,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::ItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .and_where(
+            Expr::col((link_alias, sigint_inbox_item_unit::Column::UnitId))
+                .is_in(unit_ids.to_vec()),
+        )
+        .and_where(
+            Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
+        );
+    if force_correlation {
+        query.offset(0);
+    }
+    Expr::exists(query.to_owned())
 }
 
 pub(crate) fn filter_denied_units_correlated<Q>(
@@ -1099,6 +1248,43 @@ where
     Ok(q.filter(Expr::cust(format!(
         r#""sigint_inbox_item"."id" IN ({matching_ids})"#
     ))))
+}
+
+pub(super) fn filter_selected_units_or_ids_for_period<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let units = unit_match_ids_for_period(
+        selected_units,
+        units_exact_match_only,
+        dt_since,
+        dt_till,
+    )
+    .context(h!())?
+    .map(|matching_ids| {
+        Expr::cust(format!(r#""sigint_inbox_item"."id" IN ({matching_ids})"#))
+    })
+    .or_else(|| {
+        selected_units_condition(selected_units, units_exact_match_only, false)
+    });
+    let unit_ids = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+        .map(|unit_ids| message_has_linked_unit_ids(unit_ids, false));
+    Ok(match (units, unit_ids) {
+        (None, None) => q,
+        (None, Some(condition)) | (Some(condition), None) => {
+            q.filter(condition)
+        }
+        (Some(units), Some(unit_ids)) => q.filter(units.or(unit_ids)),
+    })
 }
 
 pub(super) fn filter_denied_units_for_period<Q>(
@@ -3281,6 +3467,7 @@ async fn query_summary_table_freq_analytics(
     }
     let mut analytics_req = req.clone();
     analytics_req.selected_units = None;
+    analytics_req.selected_unit_ids = None;
     let filtered_messages =
         build_summary_table_filtered_messages_query_with_access(
             login,
@@ -3291,11 +3478,12 @@ async fn query_summary_table_freq_analytics(
         )
         .context(h!())?;
     let filtered_messages =
-        analytics_unit::apply_resolved_analytics_unit_filters(
+        analytics_unit::apply_resolved_analytics_unit_filters_with_ids(
             filtered_messages,
             &resolved_units,
             &scope,
             req.units_exact_match_only.unwrap_or(false),
+            &req.selected_unit_ids,
         );
     let counts = filtered_messages
         .clone()
@@ -3891,6 +4079,7 @@ fn build_summary_table_filtered_messages_query_with_access(
     let q = crate::rer_importer::analysis::analytics_unit::apply_analysis_unit_filters(
         q,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -5255,9 +5444,10 @@ pub async fn edit_freq_unit_name(
         &reqan.selected_senders,
         &sigint_groups,
     )?;
-    let rows_res = filter_selected_units(
+    let rows_res = filter_selected_units_or_ids(
         rows_res,
         &reqan.selected_units,
+        &reqan.selected_unit_ids,
         &req.analysis_stats_req.units_exact_match_only,
     )?;
     let rows_res =
@@ -6108,9 +6298,10 @@ fn build_new_callsign_filtered_items_query(
     let query = filter_selected_senders(query, &req.selected_senders)?;
     let query = filter_selected_freqs(query, &req.selected_freqs)?;
     let query = filter_selected_posts(query, &req.selected_posts)?;
-    let query = filter_selected_units(
+    let query = filter_selected_units_or_ids(
         query,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
     )?;
     let query = filter_selected_locations(
@@ -7912,8 +8103,8 @@ async fn count_stats(
     Ok(Json(response))
 }
 
-fn analytics_count_request_supported(_req: &AnalysisStatsReq) -> bool {
-    true
+fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
+    !analysis_request_has_unit_filters(req)
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -7925,7 +8116,6 @@ fn analytics_stats_request_supported(
     env: &Env,
 ) -> bool {
     analytics_count_request_supported(req)
-        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
         && !crate::stats::should_prefer_redis_stats(req, &env.config)
 }
 
@@ -7961,7 +8151,23 @@ pub(crate) fn analytics_inbox_candidates_supported(
 }
 
 fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
-    req.only_with_media != Some(true)
+    req.only_with_media != Some(true) && !inbox_request_has_unit_filters(req)
+}
+
+fn analysis_request_has_unit_filters(req: &AnalysisStatsReq) -> bool {
+    option_vec_has_values(&req.selected_units)
+        || option_vec_has_values(&req.selected_unit_ids)
+}
+
+fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
+    option_vec_has_values(&req.selected_units)
+        || option_vec_has_values(&req.denied_units)
+        || option_vec_has_values(&req.selected_unit_ids)
+        || option_vec_has_values(&req.denied_unit_ids)
+}
+
+fn option_vec_has_values<T>(values: &Option<Vec<T>>) -> bool {
+    values.as_ref().is_some_and(|values| !values.is_empty())
 }
 
 #[derive(Clone)]

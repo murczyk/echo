@@ -10,12 +10,33 @@ import { minimalInboxMessage } from './inbox-message-mocks';
 import { MAX_MESSAGE_FEEDS } from './utils';
 import { beginDutyScrollDebugActivity, setDutyScrollDebugEnabled } from './duty-scroll-debug';
 
+const notificationApi = vi.hoisted(() => ({
+  getStored: vi.fn(() => ({ soundEnabled: false, browserEnabled: false })),
+  getBellState: vi.fn(() => 'off'),
+  setStored: vi.fn(() => ({ ok: true as const })),
+  requestPermission: vi.fn(async () => 'granted' as NotificationPermission),
+  resumeAudio: vi.fn(async () => 'ready'),
+}));
+
+const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
+
+vi.mock('./notifications', () => ({
+  DUTY_NOTIFICATION_STATUS_CHANGE_EVENT: 'duty-notification-status-change',
+  getStoredDutyNotificationSettingsForFeed: notificationApi.getStored,
+  getDutyNotificationBellState: notificationApi.getBellState,
+  setStoredDutyNotificationSettingsForFeed: notificationApi.setStored,
+  requestBrowserNotificationPermission: notificationApi.requestPermission,
+  resumeDutyNotificationAudioFromUserGesture: notificationApi.resumeAudio,
+}));
+
 vi.mock('./FeedFilterPanel', () => ({
   FeedFilterPanel: () => <div data-testid="feed-filter-panel" />,
 }));
 
 vi.mock('./FeedNotificationPanel', () => ({
-  FeedNotificationPanel: () => <div data-testid="feed-notification-panel" />,
+  FeedNotificationPanel: (props: { storageError: string | null }) => (
+    <div data-testid="feed-notification-panel">{props.storageError}</div>
+  ),
 }));
 
 vi.mock('./FeedKeywordsPanel', () => ({
@@ -208,6 +229,16 @@ describe('FeedColumn', () => {
   let root: Root;
 
   beforeEach(() => {
+    notificationApi.getStored.mockReset();
+    notificationApi.getStored.mockReturnValue({ soundEnabled: false, browserEnabled: false });
+    notificationApi.getBellState.mockReset();
+    notificationApi.getBellState.mockReturnValue('off');
+    notificationApi.setStored.mockReset();
+    notificationApi.setStored.mockReturnValue({ ok: true });
+    notificationApi.requestPermission.mockReset();
+    notificationApi.requestPermission.mockResolvedValue('granted');
+    notificationApi.resumeAudio.mockReset();
+    notificationApi.resumeAudio.mockResolvedValue('ready');
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -316,7 +347,9 @@ describe('FeedColumn', () => {
       root.render(<FeedColumn column={props.column} />);
     });
 
-    const bell = container.querySelector('button[aria-label="Сповіщення"]');
+    const bell = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Сповіщення — Увімкнути сповіщення для стрічки"]',
+    );
     expect(bell).not.toBeNull();
 
     await act(async () => {
@@ -348,6 +381,134 @@ describe('FeedColumn', () => {
       finishCounter('ok');
       finishMessages('ok');
     });
+  });
+
+  it('opens the panel and preserves Off when enabling notifications cannot be stored', async () => {
+    notificationApi.setStored.mockReturnValue({ ok: false, error: 'quota exceeded' });
+
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    const bell = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Увімкнути сповіщення для стрічки"]',
+    );
+    expect(bell).not.toBeNull();
+    await act(async () => {
+      bell?.click();
+    });
+
+    expect(notificationApi.setStored).toHaveBeenCalledWith('feed-1', {
+      soundEnabled: true,
+      browserEnabled: true,
+    });
+    expect(notificationApi.resumeAudio).toHaveBeenCalledTimes(1);
+    expect(notificationApi.requestPermission).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="feed-notification-panel"]')?.textContent).toBe(
+      'quota exceeded',
+    );
+    expect(bell?.getAttribute('aria-label')).toBe('Увімкнути сповіщення для стрічки');
+    expect(bell?.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('opens the panel and preserves Ready when disabling notifications cannot be stored', async () => {
+    notificationApi.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: true });
+    notificationApi.getBellState.mockReturnValue('ready');
+    notificationApi.setStored.mockReturnValue({ ok: false, error: 'storage blocked' });
+
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    const bell = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Вимкнути сповіщення для стрічки"]',
+    );
+    expect(bell).not.toBeNull();
+    await act(async () => {
+      bell?.click();
+    });
+
+    expect(notificationApi.setStored).toHaveBeenCalledWith('feed-1', {
+      soundEnabled: false,
+      browserEnabled: false,
+    });
+    expect(container.querySelector('[data-testid="feed-notification-panel"]')?.textContent).toBe(
+      'storage blocked',
+    );
+    expect(bell?.getAttribute('aria-label')).toBe('Вимкнути сповіщення для стрічки');
+    expect(bell?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('clears the storage error after a successful bell retry', async () => {
+    notificationApi.setStored
+      .mockReturnValueOnce({ ok: false, error: 'quota exceeded' })
+      .mockReturnValueOnce({ ok: true });
+
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    const bell = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Увімкнути сповіщення для стрічки"]',
+    );
+    expect(bell).not.toBeNull();
+    await act(async () => {
+      bell?.click();
+    });
+    expect(container.querySelector('[data-testid="feed-notification-panel"]')?.textContent).toBe(
+      'quota exceeded',
+    );
+
+    await act(async () => {
+      bell?.click();
+    });
+    expect(notificationApi.setStored).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[data-testid="feed-notification-panel"]')?.textContent).toBe(
+      '',
+    );
+  });
+
+  it('refreshes the mounted bell after a notification-status transition', async () => {
+    notificationApi.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: false });
+    notificationApi.getBellState.mockReturnValue('degraded');
+
+    await act(async () => {
+      root.render(<FeedColumn column={buildProps().column} />);
+    });
+
+    expect(
+      container.querySelector(
+        'button[aria-label="Сповіщення потребують налаштування або взаємодії"]',
+      ),
+    ).not.toBeNull();
+
+    notificationApi.getBellState.mockReturnValue('ready');
+    await act(async () => {
+      window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
+    });
+
+    expect(
+      container.querySelector('button[aria-label="Вимкнути сповіщення для стрічки"]'),
+    ).not.toBeNull();
+  });
+
+  it.each([
+    ['off', 'Сповіщення — Увімкнути сповіщення для стрічки'],
+    ['ready', 'Сповіщення — Вимкнути сповіщення для стрічки'],
+    ['degraded', 'Сповіщення — Сповіщення потребують налаштування або взаємодії'],
+    ['unsupported', 'Сповіщення — Запитані сповіщення не підтримуються'],
+  ] as const)('renders the exact narrow notification label for %s', async (state, label) => {
+    notificationApi.getBellState.mockReturnValue(state);
+    const props = buildProps();
+    props.column.view.feedCount = 4;
+
+    await act(async () => {
+      root.render(<FeedColumn column={props.column} />);
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
+    expect(toggle).not.toBeNull();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('closes the filters panel on outside click', async () => {

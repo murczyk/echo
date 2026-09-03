@@ -215,7 +215,8 @@ is_orphaned_server_log_tail() {
 stop_orphaned_server_log_tails() {
     local pid
 
-    for pid in $(pgrep -f 'tail -n +1 -f' 2>/dev/null || true); do
+    # `+` is an ERE operator in pgrep, so escape the literal `+1` argument.
+    for pid in $(pgrep -f 'tail -n \+1 -f' 2>/dev/null || true); do
         if is_orphaned_server_log_tail "$pid"; then
             kill "$pid" 2>/dev/null || true
         fi

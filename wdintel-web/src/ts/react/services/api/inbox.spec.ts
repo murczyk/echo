@@ -103,6 +103,16 @@ describe('inbox API normalization', () => {
     expect(body.tag_presence).toBeNull();
   });
 
+  it('serializes canonical unit IDs into the inbox request body', () => {
+    const body = inboxMsgtoSnakeBody({
+      selectedUnitIds: [11],
+      deniedUnitIds: [12],
+    } as unknown as InboxMessagesReq) as Record<string, unknown>;
+
+    expect(body.selected_unit_ids).toEqual([11]);
+    expect(body.denied_unit_ids).toEqual([12]);
+  });
+
   it('serializes without network and without coords flags as typed optional booleans', () => {
     for (const value of [true, false, null] as const) {
       const body = inboxMsgtoSnakeBody({

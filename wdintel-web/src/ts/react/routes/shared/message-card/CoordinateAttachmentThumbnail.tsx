@@ -229,6 +229,8 @@ export function CoordinateAttachmentThumbnail({
             }}
             sx={{
               position: 'relative',
+              isolation: 'isolate',
+              zIndex: 0,
               flex: flexStyle,
               width: fullWidth ? '100%' : 180,
               maxWidth: maxWidthStyle,

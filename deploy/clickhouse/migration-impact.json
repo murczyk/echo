@@ -1,5 +1,8 @@
 {
   "migrations": {
+    "echo:m20260902_131822_signal_message_group_access_index": {
+      "changes": []
+    },
     "echo:m20260901_130526_add_callsign_changelog_created_at_index": {
       "changes": []
     },
@@ -384,6 +387,16 @@
     "echo:m20260827_074530_create_report_download_history": {
       "changes": [
         { "table": "public.report_download_history", "strategy": "excluded" }
+      ]
+    },
+    "echo:m20260827_154846_normalize_failed_unit_labels": {
+      "changes": [
+        { "table": "public.failed_inbox_unit", "strategy": "excluded" },
+        { "table": "public.failed_unit_label", "strategy": "excluded" },
+        {
+          "table": "public.sigint_inbox_item_failed_unit_label",
+          "strategy": "excluded"
+        }
       ]
     }
   },

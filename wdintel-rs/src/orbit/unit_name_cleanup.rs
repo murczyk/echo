@@ -1,24 +1,37 @@
 use super::tui;
 use crate::config::{
-    ORBIT_UNIT_NAME_CLEANUP_ARMY_NAME_WORDS,
-    ORBIT_UNIT_NAME_CLEANUP_CORPS_NAME_WORDS,
+    ORBIT_UNIT_NAME_CLEANUP_ARMY_EXCLUDED_WORDS,
+    ORBIT_UNIT_NAME_CLEANUP_CORPS_EXCLUDED_WORDS,
     ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE,
 };
 use crate::entities::sigint_unit;
+use crate::orbit::EchoEchelon;
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
-    QueryOrder,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, EntityTrait,
+    FromQueryResult, QueryFilter, QueryOrder, Statement,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClearedEchelon {
+    attribute: &'static str,
+    current: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UnitNameChange {
     unit_id: i64,
     current_name: String,
     proposed_name: String,
-    removed_echelons: Vec<String>,
+    cleared_echelons: Vec<ClearedEchelon>,
+}
+
+#[derive(Debug, FromQueryResult)]
+struct LinkedOrbitHierarchy {
+    sigint_unit_id: i64,
+    echelon_keys: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -41,7 +54,7 @@ async fn run_with_database(
     db: &sea_orm::DatabaseConnection,
     cleanup_mode: tui::LinkMode,
 ) -> anyhow::Result<()> {
-    let changes = load_name_changes(db).await.c(h!())?;
+    let changes = load_name_changes(db, None).await.c(h!())?;
     let candidate_count = changes.len();
     let review = match cleanup_mode {
         tui::LinkMode::Automatic => ManualReview {
@@ -55,7 +68,7 @@ async fn run_with_database(
         .await
         .c(h!())?;
     println!(
-        "SIGINT-unit-name cleanup: {candidate_count} candidates, {selected} accepted, {} skipped, {} unreviewed; {} names changed.",
+        "SIGINT-unit hierarchy cleanup: {candidate_count} candidates, {selected} accepted, {} skipped, {} unreviewed; {} units changed.",
         review.skipped,
         review.unreviewed,
         actions.len(),
@@ -64,19 +77,25 @@ async fn run_with_database(
         println!("Changes:");
         for action in actions {
             println!(
-                "SIGINT unit {}: {:?} -> {:?}",
-                action.unit_id, action.current_name, action.proposed_name,
+                "SIGINT unit {}: {:?} -> {:?}; cleared {}",
+                action.unit_id,
+                action.current_name,
+                action.proposed_name,
+                display_cleared_echelons(&action).join(", "),
             );
         }
     }
     Ok(())
 }
 
-async fn load_name_changes<C>(db: &C) -> anyhow::Result<Vec<UnitNameChange>>
+async fn load_name_changes<C>(
+    db: &C,
+    unit_ids: Option<&[i64]>,
+) -> anyhow::Result<Vec<UnitNameChange>>
 where
     C: ConnectionTrait,
 {
-    Ok(sigint_unit::Entity::find()
+    let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .filter(
             Condition::any()
@@ -85,68 +104,208 @@ where
                 .add(sigint_unit::Column::MilitaryDistrict.ne(""))
                 .add(sigint_unit::Column::ArmyRegion.ne("")),
         )
-        .order_by_asc(sigint_unit::Column::Id)
+        .order_by_asc(sigint_unit::Column::Id);
+    if let Some(unit_ids) = unit_ids {
+        if unit_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        units = units
+            .filter(sigint_unit::Column::Id.is_in(unit_ids.iter().copied()));
+    }
+    let units = units
         .all(db)
         .await
         .c(h!())?
         .into_iter()
-        .filter_map(|unit| proposed_name_change(&unit))
+        .map(|unit| (unit.id, unit))
+        .collect::<BTreeMap<_, _>>();
+    if units.is_empty() {
+        return Ok(Vec::new());
+    }
+    let hierarchy_by_unit_id = load_linked_orbit_hierarchies(
+        db,
+        &units.keys().copied().collect::<Vec<_>>(),
+    )
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(|hierarchy| {
+        let echelons = hierarchy
+            .echelon_keys
+            .iter()
+            .filter_map(|key| super::echo_echelon(key))
+            .collect::<HashSet<_>>();
+        (hierarchy.sigint_unit_id, echelons)
+    })
+    .collect::<BTreeMap<_, _>>();
+    Ok(units
+        .into_iter()
+        .filter_map(|(unit_id, unit)| {
+            proposed_name_change(&unit, hierarchy_by_unit_id.get(&unit_id)?)
+        })
         .collect())
 }
 
-fn proposed_name_change(unit: &sigint_unit::Model) -> Option<UnitNameChange> {
-    let echelons = removable_name_echelons(unit);
-    let mut proposed_name = unit.name.clone();
-    let mut removed_echelons = Vec::new();
-    for echelon in echelons {
-        let (next_name, removed) = remove_phrase(&proposed_name, echelon);
-        if removed {
-            proposed_name = next_name;
-            removed_echelons.push(echelon.to_string());
-        }
+async fn load_linked_orbit_hierarchies<C>(
+    db: &C,
+    sigint_unit_ids: &[i64],
+) -> anyhow::Result<Vec<LinkedOrbitHierarchy>>
+where
+    C: ConnectionTrait,
+{
+    let sql = r#"
+        with recursive active_links as (
+            select
+                link.sigint_unit_id,
+                link.orbit_unit_id,
+                count(*) over (
+                    partition by link.sigint_unit_id
+                ) as orbit_link_count
+            from orbit_unit_sigint_unit link
+            inner join orbit_unit unit
+                on unit.unit_id = link.orbit_unit_id
+                and unit.deleted = false
+            where link.is_suppressed = false
+                and link.sigint_unit_id = any($1::bigint[])
+        ),
+        generative_hierarchy as (
+            select
+                link.sigint_unit_id,
+                unit.unit_id,
+                unit.generative_parent_unit_id,
+                unit.unit_echelon_id,
+                unit.unit_name_short,
+                unit.unit_name,
+                unit.unit_name_original,
+                unit.unit_number,
+                array[unit.unit_id] as visited
+            from active_links link
+            inner join orbit_unit unit
+                on unit.unit_id = link.orbit_unit_id
+            where link.orbit_link_count = 1
+
+            union all
+
+            select
+                hierarchy.sigint_unit_id,
+                parent.unit_id,
+                parent.generative_parent_unit_id,
+                parent.unit_echelon_id,
+                parent.unit_name_short,
+                parent.unit_name,
+                parent.unit_name_original,
+                parent.unit_number,
+                hierarchy.visited || parent.unit_id
+            from generative_hierarchy hierarchy
+            inner join orbit_unit parent
+                on parent.unit_id = hierarchy.generative_parent_unit_id
+                and parent.deleted = false
+                and not parent.unit_id = any(hierarchy.visited)
+        )
+        select
+            hierarchy.sigint_unit_id,
+            coalesce(
+                array_agg(distinct echelon.key) filter (
+                    where echelon.key is not null
+                        and coalesce(
+                            nullif(btrim(hierarchy.unit_name_short), ''),
+                            nullif(btrim(hierarchy.unit_name), ''),
+                            nullif(btrim(hierarchy.unit_name_original), ''),
+                            nullif(btrim(hierarchy.unit_number), '')
+                        ) is not null
+                ),
+                array[]::text[]
+            ) as echelon_keys
+        from generative_hierarchy hierarchy
+        left join orbit_unit_echelon echelon
+            on echelon.id = hierarchy.unit_echelon_id
+        group by hierarchy.sigint_unit_id
+        order by hierarchy.sigint_unit_id
+    "#;
+    LinkedOrbitHierarchy::find_by_statement(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        sql,
+        [sigint_unit_ids.to_vec().into()],
+    ))
+    .all(db)
+    .await
+    .c(h!())
+}
+
+fn proposed_name_change(
+    unit: &sigint_unit::Model,
+    orbit_echelons: &HashSet<EchoEchelon>,
+) -> Option<UnitNameChange> {
+    let cleared_echelons = cleanup_echelons(unit)
+        .into_iter()
+        .filter(|(echelon, _, value)| {
+            !value.trim().is_empty()
+                && !orbit_echelons.contains(echelon)
+                && !is_cleanup_exception(*echelon, value)
+        })
+        .map(|(_, attribute, value)| ClearedEchelon {
+            attribute,
+            current: value.to_string(),
+        })
+        .collect::<Vec<_>>();
+    if cleared_echelons.is_empty() {
+        return None;
     }
-    let proposed_name = proposed_name
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    (!proposed_name.is_empty()
-        && proposed_name != unit.name
-        && !removed_echelons.is_empty())
-    .then_some(UnitNameChange {
+    let proposed_name = proposed_name(unit, &cleared_echelons);
+    if proposed_name.is_empty() {
+        return None;
+    }
+    Some(UnitNameChange {
         unit_id: unit.id,
         current_name: unit.name.clone(),
         proposed_name,
-        removed_echelons,
+        cleared_echelons,
     })
 }
 
-fn removable_name_echelons(unit: &sigint_unit::Model) -> Vec<&str> {
-    [
-        (!contains_name_word(
-            &unit.corps,
-            ORBIT_UNIT_NAME_CLEANUP_CORPS_NAME_WORDS,
-        ))
-        .then_some(unit.corps.as_str()),
-        (!contains_name_word(
-            &unit.army,
-            ORBIT_UNIT_NAME_CLEANUP_ARMY_NAME_WORDS,
-        ))
-        .then_some(unit.army.as_str()),
-        Some(unit.military_district.as_str()),
-        Some(unit.army_region.as_str()),
-    ]
-    .into_iter()
-    .flatten()
-    .map(str::trim)
-    .filter(|echelon| !echelon.is_empty())
-    .collect()
-}
-
-fn contains_name_word(value: &str, expected_words: &[&str]) -> bool {
+fn is_cleanup_exception(echelon: EchoEchelon, value: &str) -> bool {
+    let excluded_words = match echelon {
+        EchoEchelon::Army => ORBIT_UNIT_NAME_CLEANUP_ARMY_EXCLUDED_WORDS,
+        EchoEchelon::Corps => ORBIT_UNIT_NAME_CLEANUP_CORPS_EXCLUDED_WORDS,
+        _ => return false,
+    };
     value
         .to_lowercase()
         .split(|character: char| !character.is_alphanumeric())
-        .any(|word| expected_words.contains(&word))
+        .any(|word| excluded_words.contains(&word))
+}
+
+fn cleanup_echelons(
+    unit: &sigint_unit::Model,
+) -> [(EchoEchelon, &'static str, &str); 4] {
+    [
+        (EchoEchelon::Corps, "corps", unit.corps.as_str()),
+        (EchoEchelon::Army, "army", unit.army.as_str()),
+        (
+            EchoEchelon::MilitaryDistrict,
+            "military_district",
+            unit.military_district.as_str(),
+        ),
+        (
+            EchoEchelon::ArmyRegion,
+            "army_region",
+            unit.army_region.as_str(),
+        ),
+    ]
+}
+
+fn proposed_name(
+    unit: &sigint_unit::Model,
+    cleared_echelons: &[ClearedEchelon],
+) -> String {
+    let mut proposed_name = unit.name.clone();
+    for echelon in cleared_echelons {
+        proposed_name = remove_phrase(&proposed_name, &echelon.current).0;
+    }
+    proposed_name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn remove_phrase(value: &str, phrase: &str) -> (String, bool) {
@@ -175,6 +334,14 @@ fn remove_phrase(value: &str, phrase: &str) -> (String, bool) {
     (kept_words.join(" "), removed)
 }
 
+fn display_cleared_echelons(change: &UnitNameChange) -> Vec<String> {
+    change
+        .cleared_echelons
+        .iter()
+        .map(|echelon| format!("{}: {}", echelon.attribute, echelon.current))
+        .collect()
+}
+
 fn review_manually(changes: &[UnitNameChange]) -> anyhow::Result<ManualReview> {
     if changes.is_empty() {
         return Ok(ManualReview::default());
@@ -196,7 +363,7 @@ fn review_manually_inner(
             change.unit_id,
             &change.current_name,
             &change.proposed_name,
-            &change.removed_echelons,
+            &display_cleared_echelons(change),
             index + 1,
             changes.len(),
         )
@@ -247,39 +414,65 @@ async fn persist_change_batch(
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let unit_ids = changes.iter().map(|change| change.unit_id);
-    let current_units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Id.is_in(unit_ids))
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .all(&transaction)
+    let unit_ids = changes
+        .iter()
+        .map(|change| change.unit_id)
+        .collect::<Vec<_>>();
+    let current_changes = load_name_changes(&transaction, Some(&unit_ids))
         .await
         .c(h!())?
         .into_iter()
-        .map(|unit| (unit.id, unit))
+        .map(|change| (change.unit_id, change))
         .collect::<BTreeMap<_, _>>();
     let mut actions = Vec::new();
     for reviewed in changes {
-        let Some(unit) = current_units.get(&reviewed.unit_id) else {
+        let Some(current) = current_changes.get(&reviewed.unit_id) else {
             continue;
         };
-        let Some(current) = proposed_name_change(unit) else {
-            continue;
-        };
-        if cleanup_mode == tui::LinkMode::Manual && current != *reviewed {
+        if cleanup_mode == tui::LinkMode::Manual && current != reviewed {
             continue;
         }
-        crate::sigint::unit::update_unit_name_in_transaction(
+        let outcome = crate::sigint::unit::orbit::reconcile_sigint_unit_orbit_with_reviewed_change(
             &transaction,
             &login,
-            unit,
-            &current.proposed_name,
+            &orbit_hierarchy_change(current),
         )
         .await
         .c(h!())?;
-        actions.push(current);
+        if outcome.hierarchy_updated {
+            actions.push(current.clone());
+        }
     }
     transaction.commit().await.c(h!())?;
     Ok(actions)
+}
+
+fn orbit_hierarchy_change(
+    change: &UnitNameChange,
+) -> crate::sigint::unit::orbit::OrbitUnitHierarchyChange {
+    let mut attributes = change
+        .cleared_echelons
+        .iter()
+        .map(
+            |echelon| crate::sigint::unit::orbit::OrbitUnitAttributeChange {
+                attribute: echelon.attribute,
+                current: echelon.current.clone(),
+                proposed: String::new(),
+            },
+        )
+        .collect::<Vec<_>>();
+    if change.current_name != change.proposed_name {
+        attributes.push(crate::sigint::unit::orbit::OrbitUnitAttributeChange {
+            attribute: "name",
+            current: change.current_name.clone(),
+            proposed: change.proposed_name.clone(),
+        });
+    }
+    crate::sigint::unit::orbit::OrbitUnitHierarchyChange {
+        sigint_unit_id: change.unit_id,
+        sigint_unit_name: change.current_name.clone(),
+        attributes,
+    }
 }
 
 #[cfg(test)]
@@ -287,65 +480,101 @@ mod tests {
     use super::*;
 
     #[test]
-    fn removes_echelons_above_army_from_name() {
-        let unit =
-            sigint_unit("4 мсб 752 мсп 20 ЗВА мво ЗС РФ", "МВО", "ЗС РФ");
-
-        assert_eq!(
-            proposed_name_change(&unit),
-            Some(UnitNameChange {
-                unit_id: 1,
-                current_name: unit.name,
-                proposed_name: "4 мсб 752 мсп 20 ЗВА".to_string(),
-                removed_echelons: vec!["МВО".to_string(), "ЗС РФ".to_string()],
-            })
-        );
-    }
-
-    #[test]
-    fn keeps_partial_word_matches_and_nonempty_names() {
-        let unit = sigint_unit("1 МВОк", "МВО", "");
-        assert_eq!(proposed_name_change(&unit), None);
-
-        let unit = sigint_unit("МВО ЗС РФ", "МВО", "ЗС РФ");
-        assert_eq!(proposed_name_change(&unit), None);
-    }
-
-    #[test]
-    fn removes_army_and_corps_values_that_do_not_name_those_echelons() {
+    fn clears_echelons_missing_from_the_orbit_generative_hierarchy() {
         let mut unit =
-            sigint_unit("9 мсп ТН \"Сумський\" УВ(с) \"Сєвєр\"", "", "");
-        unit.corps = "ТН \"Сумський\"".to_string();
-        unit.army = "УВ(с) \"Сєвєр\"".to_string();
+            sigint_unit("9 мсп 11 АК 20 ЗВА МВО ЗС РФ", "МВО", "ЗС РФ");
+        unit.corps = "11 АК".to_string();
+        unit.army = "20 ЗВА".to_string();
+        let orbit_echelons = HashSet::from([EchoEchelon::Army]);
 
         assert_eq!(
-            proposed_name_change(&unit),
+            proposed_name_change(&unit, &orbit_echelons),
             Some(UnitNameChange {
                 unit_id: 1,
                 current_name: unit.name,
-                proposed_name: "9 мсп".to_string(),
-                removed_echelons: vec![
-                    "ТН \"Сумський\"".to_string(),
-                    "УВ(с) \"Сєвєр\"".to_string(),
+                proposed_name: "9 мсп 20 ЗВА".to_string(),
+                cleared_echelons: vec![
+                    ClearedEchelon {
+                        attribute: "corps",
+                        current: "11 АК".to_string(),
+                    },
+                    ClearedEchelon {
+                        attribute: "military_district",
+                        current: "МВО".to_string(),
+                    },
+                    ClearedEchelon {
+                        attribute: "army_region",
+                        current: "ЗС РФ".to_string(),
+                    },
                 ],
             })
         );
     }
 
     #[test]
-    fn keeps_valid_army_and_corps_values() {
-        for (corps, army) in [
-            ("11 АК", "20 ЗВА"),
-            ("11 армійський корпус", "20 загальновійськова армія"),
-            ("11 ак", "1 та"),
-        ] {
-            let mut unit =
-                sigint_unit(&format!("9 мсп {corps} {army}"), "", "");
-            unit.corps = corps.to_string();
-            unit.army = army.to_string();
+    fn keeps_sigint_echelons_present_in_the_orbit_generative_hierarchy() {
+        let mut unit = sigint_unit("9 мсп 11 АК 20 ЗВА", "", "");
+        unit.corps = "11 АК".to_string();
+        unit.army = "20 ЗВА".to_string();
+        let orbit_echelons =
+            HashSet::from([EchoEchelon::Corps, EchoEchelon::Army]);
 
-            assert_eq!(proposed_name_change(&unit), None);
-        }
+        assert_eq!(proposed_name_change(&unit, &orbit_echelons), None);
+    }
+
+    #[test]
+    fn clears_invalid_echelon_when_its_value_is_absent_from_the_name() {
+        let mut unit = sigint_unit("custom unit name", "", "");
+        unit.corps = "11 АК".to_string();
+
+        assert_eq!(
+            proposed_name_change(&unit, &HashSet::new()),
+            Some(UnitNameChange {
+                unit_id: 1,
+                current_name: unit.name.clone(),
+                proposed_name: unit.name,
+                cleared_echelons: vec![ClearedEchelon {
+                    attribute: "corps",
+                    current: "11 АК".to_string(),
+                }],
+            })
+        );
+    }
+
+    #[test]
+    fn removes_complete_echelon_phrases_only() {
+        let unit = sigint_unit("1 МВОк", "МВО", "");
+
+        assert_eq!(
+            proposed_name_change(&unit, &HashSet::new()),
+            Some(UnitNameChange {
+                unit_id: 1,
+                current_name: unit.name.clone(),
+                proposed_name: unit.name,
+                cleared_echelons: vec![ClearedEchelon {
+                    attribute: "military_district",
+                    current: "МВО".to_string(),
+                }],
+            })
+        );
+    }
+
+    #[test]
+    fn keeps_name_when_clearing_echelons_would_empty_it() {
+        let unit = sigint_unit("МВО ЗС РФ", "МВО", "ЗС РФ");
+
+        assert_eq!(proposed_name_change(&unit, &HashSet::new()), None);
+    }
+
+    #[test]
+    fn keeps_pks_army_and_corps_case_insensitively() {
+        let mut army = sigint_unit("1 ртп ПКС", "", "");
+        army.army = "ПКС".to_string();
+        let mut corps = sigint_unit("1 ртп пКс", "", "");
+        corps.corps = "пКс".to_string();
+
+        assert_eq!(proposed_name_change(&army, &HashSet::new()), None);
+        assert_eq!(proposed_name_change(&corps, &HashSet::new()), None);
     }
 
     fn sigint_unit(
@@ -356,7 +585,7 @@ mod tests {
         sigint_unit::Model {
             id: 1,
             company: String::new(),
-            regiment: String::new(),
+            regiment: "9 мсп".to_string(),
             division: String::new(),
             army: String::new(),
             active: true,

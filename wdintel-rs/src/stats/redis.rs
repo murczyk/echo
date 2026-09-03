@@ -527,14 +527,22 @@ fn linked_unit_values(
     rows: &[super::StatsRow],
 ) -> impl Iterator<Item = (NaiveDateTime, i64, i64, String)> + '_ {
     rows.iter().flat_map(|row| {
-        row.linked_unit_ids.iter().copied().map(move |unit_id| {
-            (
-                bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
-                row.id,
-                unit_id,
-                row.group_master_key.clone(),
+        row.linked_unit_ids
+            .iter()
+            .copied()
+            .chain(
+                row.linked_unit_ids
+                    .is_empty()
+                    .then_some(ANALYSIS_STATS_UNDEFINED_UNIT_ID),
             )
-        })
+            .map(move |unit_id| {
+                (
+                    bucket_timestamp(row.datetime.unwrap_or(row.created_at)),
+                    row.id,
+                    unit_id,
+                    row.group_master_key.clone(),
+                )
+            })
     })
 }
 
@@ -1317,6 +1325,14 @@ impl GroupStatsRedis {
         dates: &[NaiveDate],
     ) -> anyhow::Result<Vec<GeneralDayBucket>> {
         self.read_required(dates.iter().copied().map(general_day_key).collect())
+            .await
+    }
+
+    pub async fn read_unit_days(
+        &self,
+        dates: &[NaiveDate],
+    ) -> anyhow::Result<Vec<UnitBucket>> {
+        self.read_required(dates.iter().copied().map(unit_day_key).collect())
             .await
     }
 

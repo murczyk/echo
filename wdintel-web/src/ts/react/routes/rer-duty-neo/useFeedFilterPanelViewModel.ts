@@ -1,6 +1,11 @@
 import { useTheme } from '@mui/material';
 import { useMemo } from 'react';
-import { buildUnitFilterOptions, getUnitFilterValue } from '../../utils/unit-search';
+import {
+  buildUnitFilterOptions,
+  getUnitFilterValue,
+  getUnitIdFilterValue,
+  isCanonicalUnitIdValue,
+} from '../../utils/unit-search';
 import type { FeedFilterPanelModel } from './FeedFilterPanel';
 import type { GroupCatalogError } from './useRerDutyFilterOptions';
 import {
@@ -57,6 +62,7 @@ export type FeedFilterPanelViewModel = {
   };
   posts: FeedFilterSelectionViewModel<string>;
   units: FeedFilterSelectionViewModel<string> & {
+    showExactMatchControl: boolean;
     unitsExactMatchOnly: boolean;
     onUnitsExactMatchOnlyChange: (value: boolean) => void;
   };
@@ -204,6 +210,11 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
     () => buildUnitFilterOptions(unitsList ?? []).map(getUnitFilterValue),
     [unitsCatalogKey],
   );
+  const unitLabelsById = useMemo(
+    () =>
+      new Map((unitsList ?? []).map((unit) => [getUnitIdFilterValue(unit.id), unit.name.trim()])),
+    [unitsCatalogKey],
+  );
   const unitBulkPasteOptions = useMemo(
     () => [...new Set([...unitOptions, ...persistentUnitFilterValues])],
     [persistentUnitFilterValues, unitOptions],
@@ -320,18 +331,25 @@ export function useFeedFilterPanelViewModel(panel: FeedFilterPanelModel): FeedFi
       onValueChange: unitSelectionState.setLocalValue,
       options: unitOptions,
       bulkPasteOptions: unitBulkPasteOptions,
-      getOptionLabel: (name: string) => name,
-      getOptionKey: (name: string) => name,
+      getOptionLabel: (value: string) => unitLabelsById.get(value) || value,
+      getOptionKey: (value: string) => value,
       rankedSearch: true,
       keepOpenAndPreserveInputOnSelect: true,
+      showExactMatchControl: unitSelectionState.localValue.some(
+        (value) => !isCanonicalUnitIdValue(value),
+      ),
       placeholder: unitSelectionState.localValue.length === 0 ? unitEmptyLabel : undefined,
       autocompleteClassName: 'min-w-0 w-full min-[1024px]:min-w-[160px] min-[1024px]:flex-1',
-      unitsExactMatchOnly: unitsExactMatchOnly ?? false,
+      unitsExactMatchOnly:
+        unitSelectionState.localValue.some((value) => !isCanonicalUnitIdValue(value)) &&
+        (unitsExactMatchOnly ?? false),
       onUnitsExactMatchOnlyChange: onUnitsExactMatchOnlyChange ?? (() => {}),
       bulkCopy: true,
       bulkCopyMenuLabel: 'Копіювати обрані підрозділи',
       onBulkCopy: copyUnits,
-      getBulkPasteToken: (name: string) => name,
+      getBulkPasteToken: (value: string) => value,
+      getBulkPasteAliases: (value: string) =>
+        unitLabelsById.has(value) ? [unitLabelsById.get(value)!] : [],
     },
     advanced: {
       highlightSignalsEnabled,

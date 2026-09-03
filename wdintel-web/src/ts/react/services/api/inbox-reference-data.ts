@@ -104,6 +104,7 @@ export async function getPostsList(options?: RequestOptions): Promise<string[]> 
     selectedPosts: null,
     selectedCallsigns: null,
     selectedUnits: null,
+    selectedUnitIds: null,
     selectedDeviceNames: null,
     selectedLocations: null,
     selectedAors: null,
