@@ -11,6 +11,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub sigint_inbox_item_id: i64,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
     pub tag_id: i64,
     #[sea_orm(column_type = "Text")]
     pub model: String,

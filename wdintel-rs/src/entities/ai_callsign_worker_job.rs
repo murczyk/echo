@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub sigint_inbox_item_id: i64,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
     pub attempts: i32,
     pub next_attempt_at: DateTime,
     #[sea_orm(column_type = "Text", nullable)]

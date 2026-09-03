@@ -104,6 +104,7 @@ pub mod group_stats_recalculation_task;
 pub mod intel_product;
 pub mod log_users_report_generation;
 pub mod login;
+pub mod login_totp;
 pub mod media_summary;
 pub mod media_summary_settings;
 pub mod modulation;

@@ -5,6 +5,8 @@ pg_user = "wd"
 pg_password = "fee_-_-_-FnoeKFBeebu87bf"
 pg_dbname = "wd"
 cookie_session_secret = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+# Generate with: wdintel-rs --mode=debug oneoff-generate-strongbox-key
+totp_strongbox_key = "glrKKgM80F5CeOxZmnvYYYiT6JSNV5icquh853ICxaI="
 storage_dir = "/var/tmp/echo-wdintel-debug-storage"
 signal_api_phone = ""
 signal_import_group_name = "Rer Import"

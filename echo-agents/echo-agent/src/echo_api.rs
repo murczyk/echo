@@ -26,13 +26,33 @@ impl EchoApiClient {
             http,
         };
 
-        client.post_json(
+        let rsp = client.post_json(
             "/api/user/login",
             &json!({
                 "user": config.echo_login,
                 "password": config.echo_password,
             }),
         )?;
+        // Api / ApiAgent logins receive Authenticated + session cookie.
+        // Interactive 2FA challenges are not supported for this client.
+        match &rsp {
+            Value::String(s) if s == "Authenticated" => {}
+            Value::Object(map)
+                if map.contains_key("Needs2fa")
+                    || map.contains_key("Needs2faSetup") =>
+            {
+                bail!(
+                    "echo login {} requires interactive 2FA; grant the Api or ApiAgent role for unattended agent auth",
+                    config.echo_login
+                );
+            }
+            other => {
+                bail!(
+                    "unexpected /api/user/login response for {}: {other}",
+                    config.echo_login
+                );
+            }
+        }
 
         Ok(client)
     }

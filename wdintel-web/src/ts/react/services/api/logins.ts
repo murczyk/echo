@@ -35,6 +35,7 @@ type UpdateLoginReqBody = {
   deactivation_reason: DeactivationReasonType | null;
   description: string | null;
   password_auth_enabled: boolean | null;
+  clear_totp: boolean | null;
 };
 
 type LoginLike = {
@@ -63,6 +64,8 @@ type LoginLike = {
   description?: string | null;
   passwordAuthEnabled?: boolean;
   password_auth_enabled?: boolean;
+  totpEnabled?: boolean;
+  totp_enabled?: boolean;
 };
 
 type ListLoginsRspLike = {
@@ -96,6 +99,7 @@ function toUpdateLoginReqBody(req: UpdateLoginReq): UpdateLoginReqBody {
     deactivation_reason: req.deactivationReason,
     description: req.description,
     password_auth_enabled: req.passwordAuthEnabled,
+    clear_totp: req.clearTotp,
   };
 }
 
@@ -135,6 +139,7 @@ function normalizeLogin(raw: LoginLike): Login {
     deactivationReason: raw.deactivationReason ?? raw.deactivation_reason ?? null,
     description: raw.description ?? null,
     passwordAuthEnabled: raw.passwordAuthEnabled ?? raw.password_auth_enabled ?? true,
+    totpEnabled: raw.totpEnabled ?? raw.totp_enabled ?? false,
   };
 }
 

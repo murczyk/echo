@@ -29,6 +29,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub(crate) struct WorkerConfig {
@@ -50,6 +51,7 @@ struct HighlightedCallsigns {
 pub async fn enqueue_if_enabled<C>(
     dbx: &C,
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<Uuid>,
 ) -> Result<(), AppError>
 where
     C: ConnectionTrait,
@@ -70,6 +72,7 @@ where
     ai_callsign_worker_job::Entity::insert(
         ai_callsign_worker_job::ActiveModel {
             sigint_inbox_item_id: Set(sigint_inbox_item_id),
+            sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
             attempts: NotSet,
             next_attempt_at: NotSet,
             last_error: NotSet,
@@ -379,6 +382,7 @@ async fn save_completed_job(
         || should_update_callsign_tokens
         || !state.suggested.is_empty();
     if changed {
+        let sigint_inbox_item_uuid = state.inbox_item.id_uuid;
         if should_update_callsign_tokens {
             let mut inbox_item = state.inbox_item.into_active_model();
             inbox_item.callsign_tokens = Set(Some(highlighted.callsign_tokens));
@@ -389,6 +393,7 @@ async fn save_completed_job(
         crate::inbox::callsigns::sync(
             transaction,
             sigint_inbox_item_id,
+            sigint_inbox_item_uuid,
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: highlighted.callsigns,
                 alg2: vec![],

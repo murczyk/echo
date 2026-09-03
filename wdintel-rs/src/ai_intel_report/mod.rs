@@ -1246,10 +1246,12 @@ mod tests {
             id: sea_orm::ActiveValue::NotSet,
             login_id: Set(login_id),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             comment: Set(report.to_string()),
             created_at: Set(created_at),
             sigint_post_id: Set(None),
             migrated_signal_message_id: Set(None),
+            migrated_signal_message_uuid: Set(None),
         }
         .insert(dbx)
         .await
@@ -1291,7 +1293,9 @@ mod tests {
         .unwrap();
         intel_product::ActiveModel {
             intel_message_id: Set(report.id),
+            intel_message_uuid: Set(report.id_uuid),
             source_message_id: Set(source.id),
+            source_message_uuid: Set(source.id_uuid),
             relation_kind: Set(intel_product::RELATION_KIND_REPORT),
             created_at: Set(product_created_at),
         }
@@ -1431,7 +1435,9 @@ mod tests {
         .unwrap();
         intel_product::ActiveModel {
             intel_message_id: Set(report.id),
+            intel_message_uuid: Set(report.id_uuid),
             source_message_id: Set(parent.id),
+            source_message_uuid: Set(parent.id_uuid),
             relation_kind: Set(intel_product::RELATION_KIND_REPORT),
             created_at: Set(now),
         }

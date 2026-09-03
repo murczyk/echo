@@ -426,6 +426,10 @@ async fn insert_calculated_sigint_inbox_item_networks<'a, 'async_trait, C>(
 where
     C: ConnectionTrait + 'async_trait,
 {
+    let item_uuids = sigint_inbox_items
+        .iter()
+        .map(|item| (item.id, item.id_uuid))
+        .collect::<HashMap<_, _>>();
     let items_to_process = sigint_inbox_items
         .into_iter()
         .map(|i| InboxItem {
@@ -447,6 +451,10 @@ where
             let active_model = sigint_inbox_item_network::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(item_id),
+                sigint_inbox_item_uuid: Set(item_uuids
+                    .get(&item_id)
+                    .copied()
+                    .flatten()),
                 sigint_network_id: Set(network_id),
                 created_at: NotSet,
             };
@@ -521,9 +529,14 @@ where
         )
         .await
         .c(h!())?;
-    for item_id in &non_rer_item_ids {
+    for item in sigint_inbox_items
+        .iter()
+        .filter(|item| non_rer_item_ids.contains(&item.id))
+    {
         crate::sigint::unit_tag::enqueue_unit_tag_recalculation_for_inbox_item(
-            dbx, *item_id,
+            dbx,
+            item.id,
+            item.id_uuid,
         )
         .await
         .c(h!())?;
@@ -760,6 +773,7 @@ mod tests {
         let link = || sigint_inbox_item_network::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_inbox_item_uuid: Set(inbox_item.id_uuid),
             sigint_network_id: Set(network.id),
             created_at: NotSet,
         };

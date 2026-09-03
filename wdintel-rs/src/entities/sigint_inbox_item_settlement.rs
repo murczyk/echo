@@ -15,6 +15,7 @@ pub struct Model {
         unique_key = "sigint_inbox_item_settlement_item_id_settlement_text_key"
     )]
     pub item_id: i64,
+    pub item_uuid: Option<Uuid>,
     #[sea_orm(
         column_type = "Text",
         unique_key = "sigint_inbox_item_settlement_item_id_settlement_text_key"

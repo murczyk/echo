@@ -292,6 +292,7 @@ mod tests {
         crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
             &env.dbx,
             inbox_item.id,
+            inbox_item.id_uuid,
             inbox_item.unit_v2.as_deref(),
             None,
         )

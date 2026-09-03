@@ -4179,6 +4179,36 @@ loginReqEncoder struct =
         ]
 
 
+type LoginRsp
+    = Authenticated
+    | Needs2faSetup { challengeId : String, qrBase64 : String, manualKey : String }
+    | Needs2fa { challengeId : String }
+
+
+loginRspEncoder : LoginRsp -> Json.Encode.Value
+loginRspEncoder enum =
+    case enum of
+        Authenticated ->
+            Json.Encode.string "Authenticated"
+        Needs2faSetup { challengeId, qrBase64, manualKey } ->
+            Json.Encode.object [ ( "Needs2faSetup", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ), ( "qr_base64", Json.Encode.string qrBase64 ), ( "manual_key", Json.Encode.string manualKey ) ] ) ]
+        Needs2fa { challengeId } ->
+            Json.Encode.object [ ( "Needs2fa", Json.Encode.object [ ( "challenge_id", Json.Encode.string challengeId ) ] ) ]
+
+type alias Confirm2faReq =
+    { challengeId : String
+    , token : String
+    }
+
+
+confirm2faReqEncoder : Confirm2faReq -> Json.Encode.Value
+confirm2faReqEncoder struct =
+    Json.Encode.object
+        [ ( "challenge_id", (Json.Encode.string) struct.challengeId )
+        , ( "token", (Json.Encode.string) struct.token )
+        ]
+
+
 type alias User =
     { id : String
     , name : String
@@ -4339,6 +4369,7 @@ type alias Login =
     , deactivationReason : Maybe (DeactivationReasonType)
     , description : Maybe (String)
     , passwordAuthEnabled : Bool
+    , totpEnabled : Bool
     }
 
 
@@ -4360,6 +4391,7 @@ loginEncoder struct =
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "password_auth_enabled", (Json.Encode.bool) struct.passwordAuthEnabled )
+        , ( "totp_enabled", (Json.Encode.bool) struct.totpEnabled )
         ]
 
 
@@ -4436,6 +4468,7 @@ type alias UpdateLoginReq =
     , deactivationReason : Maybe (DeactivationReasonType)
     , description : Maybe (String)
     , passwordAuthEnabled : Maybe (Bool)
+    , clearTotp : Maybe (Bool)
     }
 
 
@@ -4453,6 +4486,7 @@ updateLoginReqEncoder struct =
         , ( "deactivation_reason", (Maybe.withDefault Json.Encode.null << Maybe.map (deactivationReasonTypeEncoder)) struct.deactivationReason )
         , ( "description", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.string)) struct.description )
         , ( "password_auth_enabled", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.passwordAuthEnabled )
+        , ( "clear_totp", (Maybe.withDefault Json.Encode.null << Maybe.map (Json.Encode.bool)) struct.clearTotp )
         ]
 
 
@@ -16542,6 +16576,35 @@ loginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password" (Json.Decode.string)))
 
 
+loginRspDecoder : Json.Decode.Decoder LoginRsp
+loginRspDecoder =
+        let
+            elmRsConstructNeeds2faSetup challengeId qrBase64 manualKey =
+                        Needs2faSetup { challengeId = challengeId, qrBase64 = qrBase64, manualKey = manualKey }
+            elmRsConstructNeeds2fa challengeId =
+                        Needs2fa { challengeId = challengeId }
+        in
+    Json.Decode.oneOf
+        [ Json.Decode.string
+            |> Json.Decode.andThen
+                (\x ->
+                    case x of
+                        "Authenticated" ->
+                            Json.Decode.succeed Authenticated
+                        unexpected ->
+                            Json.Decode.fail <| "Unexpected variant " ++ unexpected
+                )
+        , Json.Decode.field "Needs2faSetup" (Json.Decode.succeed elmRsConstructNeeds2faSetup |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "qr_base64" (Json.Decode.string))) |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "manual_key" (Json.Decode.string))))
+        , Json.Decode.field "Needs2fa" (Json.Decode.succeed elmRsConstructNeeds2fa |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string))))
+        ]
+
+confirm2faReqDecoder : Json.Decode.Decoder Confirm2faReq
+confirm2faReqDecoder =
+    Json.Decode.succeed Confirm2faReq
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "challenge_id" (Json.Decode.string)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "token" (Json.Decode.string)))
+
+
 userDecoder : Json.Decode.Decoder User
 userDecoder =
     Json.Decode.succeed User
@@ -16632,6 +16695,7 @@ loginDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.bool)))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "totp_enabled" (Json.Decode.bool)))
 
 
 listLoginsSortByDecoder : Json.Decode.Decoder ListLoginsSortBy
@@ -16695,6 +16759,7 @@ updateLoginReqDecoder =
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "deactivation_reason" (Json.Decode.nullable (deactivationReasonTypeDecoder))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "description" (Json.Decode.nullable (Json.Decode.string))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "password_auth_enabled" (Json.Decode.nullable (Json.Decode.bool))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "clear_totp" (Json.Decode.nullable (Json.Decode.bool))))
 
 
 sigintGroupsReqDecoder : Json.Decode.Decoder SigintGroupsReq

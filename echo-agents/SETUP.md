@@ -72,6 +72,8 @@ cargo run -- freeform "What time is it?"
   - `echo_login`
   - `echo_password`
   - `echo_server`
+- the Echo login must include the `Api` or `ApiAgent` role so password login
+  skips interactive TOTP and returns an authenticated session cookie
 
 - try callsign extraction on a raw message:
 

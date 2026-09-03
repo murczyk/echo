@@ -2655,6 +2655,7 @@ mod tests {
         crate::inbox::callsigns::sync(
             dbx,
             inbox_item.id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: callsigns
                     .iter()
@@ -2683,6 +2684,7 @@ mod tests {
         sigint_inbox_item_network::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(inbox_item.id),
+            sigint_inbox_item_uuid: Set(inbox_item.id_uuid),
             sigint_network_id: Set(network_id),
             created_at: NotSet,
         }
