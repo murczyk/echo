@@ -5,6 +5,7 @@ import BarChartIcon from '@mui/icons-material/BarChart';
 import BookmarkIcon from '@mui/icons-material/Bookmark';
 import BookmarkBorderOutlinedIcon from '@mui/icons-material/BookmarkBorderOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
+import DownloadIcon from '@mui/icons-material/Download';
 import DevicesIcon from '@mui/icons-material/Devices';
 import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import ChatBubbleOutlineOutlinedIcon from '@mui/icons-material/ChatBubbleOutlineOutlined';
@@ -80,15 +81,39 @@ type ActionIconsRowProps = {
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
+  attachmentArchiveDownload?: MessageCardAttachmentArchiveDownloadAction;
   headerRowRef: RefObject<HTMLDivElement | null>;
   leftHeaderContentRef: RefObject<HTMLDivElement | null>;
   rightHeaderContentRef: RefObject<HTMLDivElement | null>;
   headerColumnGap: number;
 };
 
+export type MessageCardAttachmentArchiveDownloadAction = {
+  href: string;
+  download: string;
+  label: string;
+  disabled: boolean;
+  ariaBusy: boolean;
+  ariaLabel: string;
+  onClick: (event: MouseEvent<HTMLElement>) => void;
+};
+
 type MenuAnchorPosition = {
   top: number;
   left: number;
+};
+
+type OverflowMenuItem = {
+  key: string;
+  title: string;
+  icon: JSX.Element;
+  selected: boolean;
+  href?: string;
+  download?: string;
+  disabled?: boolean;
+  ariaBusy?: boolean;
+  ariaLabel?: string;
+  onClick: (event: MouseEvent<HTMLElement>) => void;
 };
 
 function ActionIconButton({
@@ -179,6 +204,7 @@ function ActionIconsRow({
   onDelete,
   onEditDetails,
   onExcludeMessageEntity,
+  attachmentArchiveDownload,
   headerRowRef,
   leftHeaderContentRef,
   rightHeaderContentRef,
@@ -209,26 +235,35 @@ function ActionIconsRow({
   const hasEtalonCopy = isPresent(onCopyEtalon);
   const canShowLocationCopy =
     etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
-  const overflowMenuItems = [
+  const overflowMenuItemCandidates: Array<OverflowMenuItem | null> = [
+    isPresent(attachmentArchiveDownload)
+      ? {
+          key: 'download-attachments-archive',
+          title: attachmentArchiveDownload.label,
+          icon: <DownloadIcon fontSize="small" />,
+          selected: false,
+          href: attachmentArchiveDownload.href,
+          download: attachmentArchiveDownload.download,
+          disabled: attachmentArchiveDownload.disabled,
+          ariaBusy: attachmentArchiveDownload.ariaBusy,
+          ariaLabel: attachmentArchiveDownload.ariaLabel,
+          onClick: attachmentArchiveDownload.onClick,
+        }
+      : null,
     isPresent(onDelete)
       ? {
           key: 'delete',
           title: 'Видалити',
           icon: <DeleteIcon fontSize="small" color="error" />,
           selected: false,
-          onClick: onDelete,
+          onClick: (_event: MouseEvent<HTMLElement>) => {
+            onDelete();
+          },
         }
       : null,
-  ].filter(
-    (
-      item,
-    ): item is {
-      key: string;
-      title: string;
-      icon: JSX.Element;
-      selected: boolean;
-      onClick: () => void;
-    } => item != null,
+  ];
+  const overflowMenuItems = overflowMenuItemCandidates.filter(
+    (item): item is OverflowMenuItem => item != null,
   );
   const canShowOverflowMenu = overflowMenuItems.length > 0;
 
@@ -292,9 +327,12 @@ function ActionIconsRow({
     closeCopyMenu();
   }
 
-  function handleOverflowMenuItemClick(action: () => void) {
+  function handleOverflowMenuItemClick(
+    event: MouseEvent<HTMLElement>,
+    action: (event: MouseEvent<HTMLElement>) => void,
+  ) {
     blurActiveElement();
-    action();
+    action(event);
     closeOverflowMenu();
   }
 
@@ -473,15 +511,36 @@ function ActionIconsRow({
         onClose={closeOverflowMenu}
         MenuListProps={{ 'aria-label': 'Додаткові дії повідомлення' }}
       >
-        {overflowMenuItems.map((item) => (
-          <MenuItem
-            key={item.key}
-            selected={item.selected}
-            onClick={() => handleOverflowMenuItemClick(item.onClick)}
-          >
-            <MenuRow icon={item.icon}>{item.title}</MenuRow>
-          </MenuItem>
-        ))}
+        {overflowMenuItems.map((item) =>
+          item.href != null ? (
+            <MenuItem
+              key={item.key}
+              component="a"
+              href={item.href}
+              download={item.download}
+              target="_blank"
+              rel="noopener noreferrer"
+              disabled={item.disabled}
+              aria-busy={item.ariaBusy}
+              aria-label={item.ariaLabel}
+              selected={item.selected}
+              onClick={(event) => handleOverflowMenuItemClick(event, item.onClick)}
+            >
+              <MenuRow icon={item.icon}>{item.title}</MenuRow>
+            </MenuItem>
+          ) : (
+            <MenuItem
+              key={item.key}
+              disabled={item.disabled}
+              aria-busy={item.ariaBusy}
+              aria-label={item.ariaLabel}
+              selected={item.selected}
+              onClick={(event) => handleOverflowMenuItemClick(event, item.onClick)}
+            >
+              <MenuRow icon={item.icon}>{item.title}</MenuRow>
+            </MenuItem>
+          ),
+        )}
       </Menu>
     ) : null;
 
@@ -783,6 +842,7 @@ export type MessageCardHeaderProps = {
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
+  attachmentArchiveDownload?: MessageCardAttachmentArchiveDownloadAction;
 };
 
 // Hot path: preserve native structural layout and conditional menu mounting.
@@ -816,6 +876,7 @@ function MessageCardHeaderComponent({
   onDelete,
   onEditDetails,
   onExcludeMessageEntity,
+  attachmentArchiveDownload,
 }: MessageCardHeaderProps) {
   const headerRowRef = useRef<HTMLDivElement | null>(null);
   const leftHeaderContentRef = useRef<HTMLDivElement | null>(null);
@@ -969,6 +1030,7 @@ function MessageCardHeaderComponent({
             onDelete={onDelete}
             onEditDetails={onEditDetails}
             onExcludeMessageEntity={onExcludeMessageEntity}
+            attachmentArchiveDownload={attachmentArchiveDownload}
             headerRowRef={headerRowRef}
             leftHeaderContentRef={leftHeaderContentRef}
             rightHeaderContentRef={rightHeaderContentRef}

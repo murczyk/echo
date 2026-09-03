@@ -6,7 +6,11 @@ import type { MessageMediaInfo } from '../../../../../Bindings';
 import {
   mediaAttachmentDisplayName,
   mediaAttachmentThumbnailUrl,
+  mediaDownloadAttr,
+  messageCardMediaDownloadKey,
+  MessageMediaThumbnailDownloadLink,
   resolveMediaAttachmentId,
+  type MessageCardDownloadGuardProps,
 } from './MessageCardMedia';
 import { handleUnauthorizedMediaResponse } from './message-card-media-fetch';
 
@@ -161,13 +165,17 @@ export function MessageCardVideoThumb({
   attachment,
   index,
   onOpen,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   attachment: MessageMediaInfo;
   index: number;
   onOpen: (index: number) => void;
-}) {
+} & MessageCardDownloadGuardProps) {
   const fullVideoHref = String(attachment.href ?? '');
   const displayName = mediaAttachmentDisplayName(attachment);
+  const downloadName = mediaDownloadAttr(displayName, `video-${index + 1}`);
+  const downloadKey = messageCardMediaDownloadKey(attachment.id ?? fullVideoHref);
   const mediaId = resolveMediaAttachmentId(attachment);
   const thumbnailSrc = mediaId === '' ? '' : mediaAttachmentThumbnailUrl(mediaId);
   const canOpen = fullVideoHref.trim() !== '';
@@ -176,134 +184,151 @@ export function MessageCardVideoThumb({
   const showThumbnail = thumbnail.state === 'loaded';
 
   return (
-    <ButtonBase
-      ref={thumbnailRequest.targetRef}
-      component="button"
-      type="button"
-      onClick={canOpen ? () => onOpen(index) : undefined}
-      disabled={!canOpen}
-      aria-label="Відкрити відео"
-      data-video-thumb-state={thumbnail.state}
+    <Box
       sx={{
         display: 'inline-flex',
+        position: 'relative',
         maxWidth: 150,
         height: 150,
         minWidth: 85,
         alignSelf: 'flex-start',
-        textAlign: 'left',
-        cursor: canOpen ? 'pointer' : 'default',
-        color: 'inherit',
-        borderRadius: 1.5,
-        overflow: 'hidden',
-        border: '1px solid',
-        borderColor: 'divider',
-        backgroundColor: 'action.hover',
-        '&:disabled': {
-          color: 'text.disabled',
-        },
-        '&:focus-visible': {
-          outline: '2px solid',
-          outlineColor: 'primary.main',
-          outlineOffset: '-2px',
-        },
       }}
     >
-      <Box
+      <ButtonBase
+        ref={thumbnailRequest.targetRef}
+        component="button"
+        type="button"
+        onClick={canOpen ? () => onOpen(index) : undefined}
+        disabled={!canOpen}
+        aria-label="Відкрити відео"
+        data-video-thumb-state={thumbnail.state}
         sx={{
-          position: 'relative',
-          display: 'flex',
+          display: 'inline-flex',
           width: '100%',
           height: '100%',
-          alignItems: 'center',
-          justifyContent: 'center',
+          textAlign: 'left',
+          cursor: canOpen ? 'pointer' : 'default',
+          color: 'inherit',
+          borderRadius: 1.5,
           overflow: 'hidden',
+          border: '1px solid',
+          borderColor: 'divider',
+          backgroundColor: 'action.hover',
+          '&:disabled': {
+            color: 'text.disabled',
+          },
+          '&:focus-visible': {
+            outline: '2px solid',
+            outlineColor: 'primary.main',
+            outlineOffset: '-2px',
+          },
         }}
       >
-        {thumbnail.state === 'loading' && thumbnailSrc !== '' ? (
-          <Skeleton
-            variant="rectangular"
-            animation="wave"
-            sx={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              zIndex: 0,
-            }}
-          />
-        ) : null}
-        {thumbnail.imageSrc !== null ? (
-          <Box
-            component="img"
-            src={thumbnail.imageSrc}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            fetchPriority="low"
-            onLoad={thumbnail.markLoaded}
-            onError={thumbnail.markFailed}
-            sx={{
-              display: 'block',
-              maxWidth: 150,
-              height: 150,
-              width: 'auto',
-              objectFit: 'cover',
-              opacity: showThumbnail ? 1 : 0,
-              transition: 'opacity 120ms ease-out',
-              pointerEvents: 'none',
-            }}
-          />
-        ) : null}
         <Box
           sx={{
-            backgroundColor: 'transparent',
-            position: 'absolute',
-            inset: 0,
-            zIndex: 1,
+            position: 'relative',
+            display: 'flex',
             width: '100%',
             height: '100%',
-            display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'background-color 120ms ease-out',
+            overflow: 'hidden',
           }}
         >
-          {showThumbnail ? (
-            <PlayArrowIcon
+          {thumbnail.state === 'loading' && thumbnailSrc !== '' ? (
+            <Skeleton
+              variant="rectangular"
+              animation="wave"
               sx={{
-                fontSize: 32,
-                color: '#fff',
-                filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))',
+                position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: 0,
               }}
             />
-          ) : (
-            <>
+          ) : null}
+          {thumbnail.imageSrc !== null ? (
+            <Box
+              component="img"
+              src={thumbnail.imageSrc}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              fetchPriority="low"
+              onLoad={thumbnail.markLoaded}
+              onError={thumbnail.markFailed}
+              sx={{
+                display: 'block',
+                maxWidth: 150,
+                height: 150,
+                width: 'auto',
+                objectFit: 'cover',
+                opacity: showThumbnail ? 1 : 0,
+                transition: 'opacity 120ms ease-out',
+                pointerEvents: 'none',
+              }}
+            />
+          ) : null}
+          <Box
+            sx={{
+              backgroundColor: 'transparent',
+              position: 'absolute',
+              inset: 0,
+              zIndex: 1,
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'background-color 120ms ease-out',
+            }}
+          >
+            {showThumbnail ? (
               <PlayArrowIcon
-                aria-hidden
                 sx={{
                   fontSize: 32,
-                  color: 'text.secondary',
+                  color: '#fff',
+                  filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))',
                 }}
               />
-              <Typography
-                variant="caption"
-                sx={{
-                  px: 1,
-                  width: '100%',
-                  textAlign: 'center',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: 'text.secondary',
-                }}
-              >
-                {displayName}
-              </Typography>
-            </>
-          )}
+            ) : (
+              <>
+                <PlayArrowIcon
+                  aria-hidden
+                  sx={{
+                    fontSize: 32,
+                    color: 'text.secondary',
+                  }}
+                />
+                <Typography
+                  variant="caption"
+                  sx={{
+                    px: 1,
+                    width: '100%',
+                    textAlign: 'center',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    color: 'text.secondary',
+                  }}
+                >
+                  {displayName}
+                </Typography>
+              </>
+            )}
+          </Box>
         </Box>
-      </Box>
-    </ButtonBase>
+      </ButtonBase>
+      <MessageMediaThumbnailDownloadLink
+        href={fullVideoHref}
+        displayName={displayName}
+        downloadName={downloadName}
+        downloadKey={downloadKey}
+        isDownloadStarting={isDownloadStarting}
+        onDownloadStart={onDownloadStart}
+      />
+    </Box>
   );
 }

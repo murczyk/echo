@@ -27,6 +27,7 @@ import {
   canDownloadAllMessageAttachments,
   isAudioMediaAttachment,
   isVideoMediaAttachment,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
   MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES,
   RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES,
@@ -762,6 +763,23 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${label}`);
   return button;
+}
+
+async function openOverflowMenu(container: HTMLElement): Promise<void> {
+  const overflowButton = container.querySelector('button[aria-label="Більше дій"]');
+  if (!(overflowButton instanceof HTMLButtonElement)) {
+    throw new Error('overflow button not found');
+  }
+  await click(overflowButton);
+}
+
+function queryArchiveDownloadLink(
+  container: HTMLElement,
+  messageId = 42,
+): HTMLAnchorElement | null {
+  return container.querySelector(
+    `a[href="/api/rer-importer/messages/${messageId}/attachments.zip"]`,
+  );
 }
 
 function getTagButtonLabels(container: HTMLElement): string[] {
@@ -2723,6 +2741,12 @@ describe('MessageCard', () => {
 
     expect(view.container.querySelector('custom-audio-player')).toBeNull();
     expect(view.container.querySelector('button')).not.toBeNull();
+    const thumbnailDownload = view.container.querySelector(
+      'a[aria-label="Завантажити вкладення: demo.mpeg"]',
+    );
+    expect(thumbnailDownload).not.toBeNull();
+    expect(thumbnailDownload?.getAttribute('href')).toBe('https://example.test/files/demo.mpeg');
+    expect(thumbnailDownload?.getAttribute('download')).toBe('demo.mpeg');
   });
 
   it('treats application/mp4 attachments as video', () => {
@@ -3216,7 +3240,10 @@ describe('MessageCard', () => {
       },
     });
     rendered.push(singleAttachment);
-    expect(singleAttachment.container.textContent).not.toContain('Завантажити все');
+    expect(singleAttachment.container.textContent).not.toContain(
+      MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+    );
+    expect(singleAttachment.container.querySelector('button[aria-label="Більше дій"]')).toBeNull();
 
     const multipleAttachments = await renderCard({
       msg: {
@@ -3241,22 +3268,17 @@ describe('MessageCard', () => {
     });
     rendered.push(multipleAttachments);
 
-    const archiveLink = multipleAttachments.container.querySelector(
-      'a[aria-label="Завантажити все"]',
-    );
+    expect(queryArchiveDownloadLink(multipleAttachments.container)).toBeNull();
+    await openOverflowMenu(multipleAttachments.container);
+    const archiveLink = queryArchiveDownloadLink(multipleAttachments.container);
     expect(archiveLink).not.toBeNull();
     expect(archiveLink?.tagName).toBe('A');
     expect(archiveLink?.getAttribute('href')).toBe('/api/rer-importer/messages/42/attachments.zip');
     expect(archiveLink?.getAttribute('download')).toBe('attachments.zip');
+    expect(archiveLink?.getAttribute('aria-label')).toBe(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
+    expect(archiveLink?.textContent).toContain(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
     expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
     expect(archiveLink?.querySelector('[data-testid="DownloadOutlinedIcon"]')).toBeNull();
-    expect(archiveLink?.getAttribute('data-mui-size')).toBe('small');
-    expect(archiveLink?.getAttribute('data-mui-variant')).toBe('outlined');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('text.primary');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('divider');
-    expect(archiveLink?.getAttribute('data-mui-sx')).toContain('action.hover');
-    expect(archiveLink?.parentElement?.parentElement?.className).toContain('mt-1');
-    expect(archiveLink?.parentElement?.parentElement?.className).toContain('items-start');
   });
 
   it('guards each download key independently for its own cooldown', async () => {
@@ -3286,9 +3308,11 @@ describe('MessageCard', () => {
       });
       rendered.push(firstCard);
 
-      const archive = firstCard.container.querySelector('a[aria-label="Завантажити все"]');
-      const downloadLinks = Array.from(firstCard.container.querySelectorAll('a[download]'));
-      const individualLinks = downloadLinks.filter((link) => link !== archive);
+      await openOverflowMenu(firstCard.container);
+      let archive = queryArchiveDownloadLink(firstCard.container);
+      const individualLinks = Array.from(
+        firstCard.container.querySelectorAll('a[download]'),
+      ).filter((link) => link !== archive);
       const firstIndividual = individualLinks[0];
       const secondIndividual = individualLinks[1];
       expect(archive).not.toBeNull();
@@ -3323,6 +3347,9 @@ describe('MessageCard', () => {
       });
       const archiveClick = await dispatchCancelableClick(archive as HTMLElement);
       expect(archiveClick.defaultPrevented).toBe(false);
+      expect(queryArchiveDownloadLink(firstCard.container)).toBeNull();
+      await openOverflowMenu(firstCard.container);
+      archive = queryArchiveDownloadLink(firstCard.container);
       expect(archive?.getAttribute('aria-label')).toBe('Завантаження…');
       expect(firstIndividual?.getAttribute('disabled')).not.toBeNull();
       expect(secondIndividual?.getAttribute('disabled')).not.toBeNull();
@@ -3343,7 +3370,7 @@ describe('MessageCard', () => {
       await act(async () => {
         vi.advanceTimersByTime(1_000);
       });
-      expect(archive?.getAttribute('aria-label')).toBe('Завантажити все');
+      expect(archive?.getAttribute('aria-label')).toBe(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
       expect(archive?.getAttribute('disabled')).toBeNull();
     } finally {
       fetchMock.mockRestore();
@@ -3371,7 +3398,10 @@ describe('MessageCard', () => {
       msg: { ...buildMessage(), media: attachments },
     });
     rendered.push(view);
-    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
+    if (expected) {
+      await openOverflowMenu(view.container);
+    }
+    expect(queryArchiveDownloadLink(view.container) !== null).toBe(expected);
   });
 
   it('keeps individual downloads visible when archive metadata is unavailable', async () => {
@@ -3396,7 +3426,7 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('a[aria-label="Завантажити все"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
     expect(view.container.querySelectorAll('a[download]')).toHaveLength(2);
   });
 
@@ -3414,7 +3444,10 @@ describe('MessageCard', () => {
     const view = await renderCard({ msg: { ...buildMessage(), media } });
     rendered.push(view);
 
-    expect(view.container.querySelector('a[aria-label="Завантажити все"]') !== null).toBe(expected);
+    if (expected) {
+      await openOverflowMenu(view.container);
+    }
+    expect(queryArchiveDownloadLink(view.container) !== null).toBe(expected);
     expect(view.container.querySelectorAll('a[download]')).toHaveLength(count + (expected ? 1 : 0));
   });
 
@@ -3423,39 +3456,40 @@ describe('MessageCard', () => {
     ['audio', 'audio/mpeg', 'audio.mp3'],
     ['video', 'video/mp4', 'video.mp4'],
     ['document', 'text/plain', 'document.txt'],
-  ])('places the archive action below the %s attachment area', async (_, contentType, fileName) => {
-    const view = await renderCard({
-      msg: {
-        ...buildMessage(),
-        media: [
-          {
-            id: `${fileName}-1`,
-            href: `/media/${fileName}-1`,
-            contentType,
-            fileName,
-            sizeBytes: 1,
-          },
-          {
-            id: `${fileName}-2`,
-            href: `/media/${fileName}-2`,
-            contentType,
-            fileName,
-            sizeBytes: 1,
-          },
-        ] as InboxMessage['media'],
-      },
-    });
-    rendered.push(view);
+  ])(
+    'places the archive action in the overflow menu for %s attachments',
+    async (_, contentType, fileName) => {
+      const view = await renderCard({
+        msg: {
+          ...buildMessage(),
+          media: [
+            {
+              id: `${fileName}-1`,
+              href: `/media/${fileName}-1`,
+              contentType,
+              fileName,
+              sizeBytes: 1,
+            },
+            {
+              id: `${fileName}-2`,
+              href: `/media/${fileName}-2`,
+              contentType,
+              fileName,
+              sizeBytes: 1,
+            },
+          ] as InboxMessage['media'],
+        },
+      });
+      rendered.push(view);
 
-    const archiveLink = view.container.querySelector('a[aria-label="Завантажити все"]');
-    expect(archiveLink).not.toBeNull();
-    const attachmentArea = archiveLink?.parentElement?.parentElement;
-    expect(attachmentArea?.tagName).toBe('DIV');
-    expect(attachmentArea?.className).toContain('mt-1');
-    expect(attachmentArea?.className).toContain('items-start');
-    expect(attachmentArea?.children).toHaveLength(1);
-    expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
-  });
+      expect(queryArchiveDownloadLink(view.container)).toBeNull();
+      await openOverflowMenu(view.container);
+      const archiveLink = queryArchiveDownloadLink(view.container);
+      expect(archiveLink).not.toBeNull();
+      expect(archiveLink?.getAttribute('aria-label')).toBe(MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL);
+      expect(archiveLink?.querySelector('[data-testid="DownloadIcon"]')).not.toBeNull();
+    },
+  );
 
   it('renders document attachments with preview and download affordances', async () => {
     const view = await renderCard({
@@ -3958,6 +3992,11 @@ describe('MessageCard', () => {
       expect(thumb?.getAttribute('data-picture-thumb-state')).toBe('loaded');
       expect(thumb?.getAttribute('data-picture-thumb-layout')).toBe('multi');
     });
+    const downloadLinks = view.container.querySelectorAll(
+      'a[aria-label^="Завантажити вкладення:"]',
+    );
+    expect(downloadLinks).toHaveLength(2);
+    expect(view.container.querySelector('a[download="attachment.jpg"]')).not.toBeNull();
   });
 
   it('keeps the image thumbnail footprint visible when the image fails to load', async () => {
