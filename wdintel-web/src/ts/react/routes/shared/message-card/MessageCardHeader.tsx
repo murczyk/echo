@@ -46,6 +46,7 @@ import {
   buildMessageCardNavigationMenuItems,
   type MessageCardEtalonDisplayModel,
   type MessageCardNavigationMenuItem,
+  type MessageCardRenderedNetwork,
 } from './message-card.utils';
 import { formatCoordinatePreviewPointCount } from './message-coordinate-preview';
 
@@ -671,13 +672,56 @@ function ActionIconsRow({
   );
 }
 
-function MetaLine({ icon, title, text }: { icon: JSX.Element; title: string; text: string }) {
+function MetaLine({
+  icon,
+  title,
+  text,
+  iconKind,
+}: {
+  icon: JSX.Element;
+  title: string;
+  text: string;
+  iconKind?: 'group';
+}) {
   return (
-    <div className="message-card-header-meta" title={text}>
-      <span className="message-card-header-meta__icon" title={title}>
+    <div className="message-card-header-meta" data-message-card-metadata-item="true" title={text}>
+      <span
+        className={`message-card-header-meta__icon${
+          iconKind ? ` message-card-header-meta__icon--${iconKind}` : ''
+        }`}
+        data-message-card-metadata-icon-kind={iconKind ?? 'standard'}
+        title={title}
+      >
         {icon}
       </span>
       <HeaderText nowrap>{text}</HeaderText>
+    </div>
+  );
+}
+
+function NetworkMetadataItem({ networkId, label, badge }: MessageCardRenderedNetwork) {
+  return (
+    <div
+      className="message-card-header-meta w-fit max-w-full"
+      data-message-card-metadata-item="true"
+      data-message-card-network-item="true"
+      data-network-id={networkId}
+    >
+      <span
+        className="message-card-header-meta__icon message-card-header-meta__icon--network"
+        data-message-card-metadata-icon-kind="network"
+        title="Еталонна прив'язка"
+      >
+        <PeopleOutlineOutlinedIcon />
+      </span>
+      <span className="inline-flex max-w-full items-center align-top [overflow-wrap:anywhere] break-words">
+        <strong>{label}</strong>
+        {badge ? (
+          <span className="badge badge-no-unit-sm relative -top-[0.06em] ml-[0.35em] align-middle">
+            в дорозвідці
+          </span>
+        ) : null}
+      </span>
     </div>
   );
 }
@@ -707,30 +751,11 @@ function NetworkEtalonSection({
       </span>
     ) : null;
 
-  const networkContent =
-    primaryKind === 'network' ? (
-      <div className="flex min-w-0 max-w-full flex-col items-start gap-0.5">
-        {renderedNetworks.map(({ networkId, label, badge }) => (
-          <div
-            key={networkId}
-            className="flex min-w-0 max-w-full flex-nowrap items-center gap-1 leading-tight"
-          >
-            <span className="inline-flex max-w-full items-center align-top [overflow-wrap:anywhere] break-words">
-              <strong>{label}</strong>
-              {badge ? (
-                <span className="badge badge-no-unit-sm relative -top-[0.06em] ml-[0.35em] align-middle">
-                  в дорозвідці
-                </span>
-              ) : null}
-            </span>
-          </div>
-        ))}
-      </div>
-    ) : (
-      <HeaderText wrap className="inline-flex items-center">
-        {displayValue}
-      </HeaderText>
-    );
+  if (primaryKind === 'network') {
+    return renderedNetworks.map((network) => (
+      <NetworkMetadataItem key={network.networkId} {...network} />
+    ));
+  }
 
   const primaryIcon =
     primaryKind === 'location' ? (
@@ -746,9 +771,19 @@ function NetworkEtalonSection({
     );
 
   return (
-    <div className="inline-flex w-fit min-w-0 max-w-full items-center gap-1.5">
-      {primaryIcon}
-      <div className="flex min-w-0 flex-col items-start gap-0.5">{networkContent}</div>
+    <div
+      className="message-card-header-meta w-fit max-w-full"
+      data-message-card-metadata-item="true"
+    >
+      <span
+        className="message-card-header-meta__icon"
+        data-message-card-metadata-icon-kind="standard"
+      >
+        {primaryIcon}
+      </span>
+      <HeaderText wrap className="inline-flex items-center">
+        {displayValue}
+      </HeaderText>
       {geoButton}
     </div>
   );
@@ -762,14 +797,11 @@ export type MessageCardHeaderProps = {
   id: number;
   msg: InboxMessage;
   copiedFeedbackId: string | null;
-  groupName: string | null;
-  senderName: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   mapHref?: string;
   analysisHref?: string;
   rightInsetPx?: number;
   topRight?: ReactNode;
-  metadataTrigger?: ReactNode;
   onBookmark?: () => void;
   onImportant?: () => void;
   onCreateReport?: () => void;
@@ -779,11 +811,104 @@ export type MessageCardHeaderProps = {
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
-  onAddFrequencyToFilter?: (freq: string) => void;
   onDelete?: () => void;
   onEditDetails?: () => void;
   onExcludeMessageEntity?: (entity: MessageEntityFilterKind, value: string) => void;
 };
+
+export function MessageCardMetadata({
+  msg,
+  groupName,
+  senderName,
+  etalonDisplayModel,
+  metadataTrigger,
+  onAddFrequencyToFilter,
+}: {
+  msg: InboxMessage;
+  groupName: string | null;
+  senderName: string | null;
+  etalonDisplayModel: MessageCardEtalonDisplayModel;
+  metadataTrigger?: ReactNode;
+  onAddFrequencyToFilter?: (freq: string) => void;
+}) {
+  const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
+  const showTopGridLocation =
+    etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
+  const persistedCoordinates = msg.coordsWithLocality ?? [];
+  const firstCoord = persistedCoordinates[0]?.coords;
+  const primaryWgs = firstCoord
+    ? `${Number(firstCoord.lat.toFixed(5))}, ${Number(firstCoord.lon.toFixed(5))}`
+    : null;
+  const coordsDisplayValue =
+    primaryWgs != null
+      ? persistedCoordinates.length > 1
+        ? `${primaryWgs} · ще ${persistedCoordinates.length - 1}`
+        : primaryWgs
+      : persistedCoordinates.length > 1
+        ? formatCoordinatePreviewPointCount(persistedCoordinates.length)
+        : isPresent(msg.coords) && msg.coords.trim() !== ''
+          ? msg.coords
+              .trim()
+              .replace(
+                /^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/,
+                (_, lat, lon) =>
+                  `${Number(parseFloat(lat).toFixed(5))}, ${Number(parseFloat(lon).toFixed(5))}`,
+              )
+          : null;
+  const hasFrequencyFilter =
+    isPresent(onAddFrequencyToFilter) && isPresent(msg.freq) && String(msg.freq).trim() !== '';
+  const deviceName = msg.deviceName?.trim();
+
+  return (
+    <div className="flex w-full items-start gap-2">
+      <div className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-0">
+        {isPresent(groupName) ? (
+          <MetaLine
+            icon={<GraphicEqOutlinedIcon />}
+            iconKind="group"
+            title="Група"
+            text={groupName}
+          />
+        ) : null}
+        {isPresent(senderName) ? (
+          <MetaLine icon={<AccountCircleOutlinedIcon />} title="Відправник" text={senderName} />
+        ) : null}
+        {isPresent(msg.freq) ? (
+          <div className="message-card-header-meta" data-message-card-metadata-item="true">
+            <span
+              className="message-card-header-meta__icon"
+              data-message-card-metadata-icon-kind="standard"
+            >
+              <SettingsInputAntennaOutlinedIcon titleAccess="Частота" />
+            </span>
+            <HeaderText className="whitespace-nowrap">{msg.freq}</HeaderText>
+            {hasFrequencyFilter ? (
+              <ActionIconButton
+                title="В фільтр"
+                icon={<FilterAltOutlinedIcon className="message-card-action-btn__icon" />}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onAddFrequencyToFilter?.(String(msg.freq ?? '').trim());
+                }}
+              />
+            ) : null}
+          </div>
+        ) : null}
+        {isPresent(deviceName) && deviceName !== '' ? (
+          <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} />
+        ) : null}
+        {coordsDisplayValue != null ? (
+          <MetaLine icon={<GpsFixedOutlinedIcon />} title="Координати" text={coordsDisplayValue} />
+        ) : null}
+        <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
+        {showTopGridLocation ? (
+          <MetaLine icon={<PlaceOutlinedIcon />} title="Локація" text={locationDisplayValue} />
+        ) : null}
+      </div>
+      {metadataTrigger ? <div className="flex shrink-0 items-center">{metadataTrigger}</div> : null}
+    </div>
+  );
+}
 
 // Hot path: preserve native structural layout and conditional menu mounting.
 // Leaf MUI components remain intentional; see ./AGENTS.md.
@@ -795,14 +920,11 @@ function MessageCardHeaderComponent({
   id,
   msg,
   copiedFeedbackId,
-  groupName,
-  senderName,
   etalonDisplayModel,
   mapHref,
   analysisHref,
   rightInsetPx = 0,
   topRight,
-  metadataTrigger,
   onBookmark,
   onImportant,
   onCreateReport,
@@ -812,7 +934,6 @@ function MessageCardHeaderComponent({
   onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
-  onAddFrequencyToFilter,
   onDelete,
   onEditDetails,
   onExcludeMessageEntity,
@@ -826,107 +947,17 @@ function MessageCardHeaderComponent({
     mapHref,
     analysisHref,
   );
-  const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
-  const showTopGridLocation =
-    etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
-  const persistedCoordinates = msg.coordsWithLocality ?? [];
-  const firstCoord = persistedCoordinates[0]?.coords;
-  const primaryWgs = firstCoord
-    ? `${Number(firstCoord.lat.toFixed(5))}, ${Number(firstCoord.lon.toFixed(5))}`
-    : null;
-
-  let coordsDisplayValue: string | null = null;
-  if (primaryWgs != null) {
-    coordsDisplayValue =
-      persistedCoordinates.length > 1
-        ? `${primaryWgs} · ще ${persistedCoordinates.length - 1}`
-        : primaryWgs;
-  } else if (persistedCoordinates.length > 1) {
-    coordsDisplayValue = formatCoordinatePreviewPointCount(persistedCoordinates.length);
-  } else if (isPresent(msg.coords) && msg.coords.trim() !== '') {
-    coordsDisplayValue = msg.coords.trim();
-    const match = coordsDisplayValue.match(/^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/);
-    if (match) {
-      coordsDisplayValue = `${Number(parseFloat(match[1]).toFixed(5))}, ${Number(parseFloat(match[2]).toFixed(5))}`;
-    }
-  }
   const dateTimeBlock = (
     <div className="inline-flex flex-wrap items-center gap-2">
-      <div className="inline-flex items-center gap-1.5">
+      <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
         <ScheduleOutlinedIcon className="message-card-header-icon" />
         <HeaderText>{formatTime(msg.time)}</HeaderText>
       </div>
       {isPresent(msg.date) ? (
-        <div className="inline-flex items-center gap-1.5">
+        <div className="message-card-timestamp-item" data-message-card-timestamp-item="true">
           <CalendarTodayOutlinedIcon className="message-card-header-icon" />
           <HeaderText>{formatDateNoYear(msg.date)}</HeaderText>
         </div>
-      ) : null}
-    </div>
-  );
-  const hasFrequencyFilter =
-    isPresent(onAddFrequencyToFilter) && isPresent(msg.freq) && String(msg.freq).trim() !== '';
-  function handleAddFrequencyToFilterClick(event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    onAddFrequencyToFilter?.(String(msg.freq ?? '').trim());
-  }
-
-  const freqRowItem = isPresent(msg.freq) ? (
-    <div className="inline-flex min-w-0 items-center gap-1.5">
-      <SettingsInputAntennaOutlinedIcon
-        className="message-card-header-icon"
-        titleAccess="Частота"
-      />
-      <HeaderText className="whitespace-nowrap">{msg.freq}</HeaderText>
-      {hasFrequencyFilter ? (
-        <ActionIconButton
-          title="В фільтр"
-          icon={<FilterAltOutlinedIcon className="message-card-action-btn__icon" />}
-          onClick={handleAddFrequencyToFilterClick}
-        />
-      ) : null}
-    </div>
-  ) : null;
-  const deviceName = msg.deviceName?.trim();
-
-  const metadataRow = (
-    <div className="flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-      {isPresent(groupName) ? (
-        <MetaLine
-          icon={<GraphicEqOutlinedIcon className="message-card-action-btn__icon" />}
-          title="Група"
-          text={groupName}
-        />
-      ) : null}
-      {isPresent(senderName) ? (
-        <MetaLine
-          icon={<AccountCircleOutlinedIcon className="message-card-action-btn__icon" />}
-          title="Відправник"
-          text={senderName}
-        />
-      ) : null}
-      {freqRowItem}
-      {isPresent(deviceName) && deviceName !== '' ? (
-        <MetaLine
-          icon={<DevicesIcon className="message-card-action-btn__icon" />}
-          title="Пристрій"
-          text={deviceName}
-        />
-      ) : null}
-      {coordsDisplayValue != null ? (
-        <MetaLine
-          icon={<GpsFixedOutlinedIcon className="message-card-action-btn__icon" />}
-          title="Координати"
-          text={coordsDisplayValue}
-        />
-      ) : null}
-      <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
-      {showTopGridLocation ? (
-        <MetaLine
-          icon={<PlaceOutlinedIcon className="message-card-action-btn__icon" />}
-          title="Локація"
-          text={locationDisplayValue}
-        />
       ) : null}
     </div>
   );
@@ -987,36 +1018,9 @@ function MessageCardHeaderComponent({
     </div>
   );
 
-  const row2 = (
-    <div className="flex w-full items-start gap-2">
-      <div className="flex min-w-0 flex-1 items-center">{metadataRow}</div>
-      {metadataTrigger ? (
-        <div
-          className="flex shrink-0 items-center justify-end"
-          style={{ paddingRight: `${rightInsetPx}px` }}
-        >
-          {metadataTrigger}
-        </div>
-      ) : null}
-    </div>
-  );
-
-  if (compact) {
-    return (
-      <div
-        data-message-header-grid="true"
-        className="flex w-full flex-col gap-2 border-b border-[var(--color-divider)] pb-2"
-      >
-        {row1}
-        {row2}
-      </div>
-    );
-  }
-
   return (
-    <div data-message-header-grid="true" className="flex w-full flex-col gap-1.5">
+    <div data-message-header-grid="true" className="flex w-full">
       {row1}
-      {row2}
     </div>
   );
 }

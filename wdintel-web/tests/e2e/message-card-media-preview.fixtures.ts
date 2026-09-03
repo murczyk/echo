@@ -17,6 +17,10 @@ export const MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES = {
 } as const;
 
 const MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX = '/test-assets/message-card-media-preview';
+const MESSAGE_CARD_POLISH_NETWORKS = [
+  { id: 301, name: 'E2E Альфа', unit_ids: [1], location: null },
+  { id: 302, name: 'E2E Браво', unit_ids: [], location: null },
+];
 
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
@@ -60,7 +64,11 @@ const MARKDOWN_PREVIEW_TEXT = [
   '[Safe link](https://example.test/safe-link)',
 ].join('\n');
 
-function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
+function buildMessageCardMediaPreviewMessage({
+  withPolishContent = false,
+}: {
+  withPolishContent?: boolean;
+} = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
   const video1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`;
@@ -115,7 +123,7 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
     time: '12:34',
     freq: '123.4',
     coords: null,
-    callsigns: [],
+    callsigns: withPolishContent ? ['E2E-ALPHA'] : [],
     callsignsAlg2: [],
     checked: false,
     important: false,
@@ -137,15 +145,35 @@ function buildMessageCardMediaPreviewMessage(): Record<string, unknown> {
     datasourceId: null,
     location: null,
     tags: null,
-    networkIds: null,
+    networkIds: withPolishContent ? [301, 302] : null,
     inboxTags: null,
     metadata: [],
+    intelligenceReports: withPolishContent
+      ? [
+          {
+            id: 202,
+            isAccessible: true,
+            isDeleted: false,
+            text: 'E2E intelligence report',
+            attachmentsCount: 0,
+            timestamp: 1_720_000_001_000,
+            date: '13.07.2026',
+            time: '12:35',
+            groupName: null,
+            groupMasterKey: 'e2e-group',
+          },
+        ]
+      : [],
   };
 }
 
-export function buildMessageCardMediaPreviewInboxResponse(): InboxMessagesRspRaw {
+export function buildMessageCardMediaPreviewInboxResponse({
+  withPolishContent = false,
+}: {
+  withPolishContent?: boolean;
+} = {}): InboxMessagesRspRaw {
   return {
-    inbox_items: [[101, buildMessageCardMediaPreviewMessage() as never]],
+    inbox_items: [[101, buildMessageCardMediaPreviewMessage({ withPolishContent }) as never]],
     callsigns: [],
     signal_profiles: {},
     signal_groups: [],
@@ -208,24 +236,30 @@ export async function installMessageCardMediaPreviewAssetRoutes(page: Page): Pro
 async function installMessageCardMediaPreviewHostFixture(
   page: Page,
   host: MessageCardMediaPreviewHost,
+  withPolishContent: boolean,
 ): Promise<void> {
-  const inboxResponse = buildMessageCardMediaPreviewInboxResponse();
+  const inboxResponse = buildMessageCardMediaPreviewInboxResponse({ withPolishContent });
+
+  const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
 
   if (host === 'analysis') {
-    await installAnalysisNeoApiMocks(page, { inboxResponse });
+    await installAnalysisNeoApiMocks(page, { inboxResponse, networkInfoResponse });
     return;
   }
 
-  await installRerDutyShortStateMocks(page, { inboxResponse });
+  await installRerDutyShortStateMocks(page, { inboxResponse, networkInfoResponse });
 }
 
 export async function openMessageCardPreviewHost(
   page: Page,
   host: MessageCardMediaPreviewHost,
-  { revealAudio = false }: { revealAudio?: boolean } = {},
+  {
+    revealAudio = false,
+    withPolishContent = false,
+  }: { revealAudio?: boolean; withPolishContent?: boolean } = {},
 ): Promise<void> {
   await installMessageCardMediaPreviewAssetRoutes(page);
-  await installMessageCardMediaPreviewHostFixture(page, host);
+  await installMessageCardMediaPreviewHostFixture(page, host, withPolishContent);
   await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
 
   if (host === 'duty') {

@@ -17,6 +17,7 @@ import { MessageCardWatermark } from './MessageCardWatermark';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import {
   MessageCardHeader,
+  MessageCardMetadata,
   type MessageCardDisplayMode,
   type MessageCardHeaderProps,
 } from './MessageCardHeader';
@@ -295,8 +296,6 @@ function MessageCardComponent({
     id,
     msg,
     copiedFeedbackId,
-    groupName,
-    senderName,
     etalonDisplayModel,
     mapHref,
     analysisHref,
@@ -311,11 +310,9 @@ function MessageCardComponent({
     onCopyTextWithNetworkAndNote,
     onCopyEtalon: onCopyEtalonAction,
     onCopyLocation: onCopyLocationAction,
-    onAddFrequencyToFilter,
     onDelete,
     onEditDetails,
     onExcludeMessageEntity,
-    metadataTrigger,
     excludeMenuOptions,
     readOnly,
   };
@@ -335,7 +332,16 @@ function MessageCardComponent({
         )}
         <MessageCardHeader {...headerProps} />
         <MessageCardContent
-          compact={compactLayout}
+          metadata={
+            <MessageCardMetadata
+              msg={msg}
+              groupName={groupName}
+              senderName={senderName}
+              etalonDisplayModel={etalonDisplayModel}
+              metadataTrigger={metadataTrigger}
+              onAddFrequencyToFilter={onAddFrequencyToFilter}
+            />
+          }
           messageId={id}
           msg={msg}
           tagsMap={tagsMap}

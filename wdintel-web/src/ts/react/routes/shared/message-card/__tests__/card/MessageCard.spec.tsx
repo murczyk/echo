@@ -22,7 +22,7 @@ import { inboxMessageWithMockImages } from '../../../../rer-duty-neo/inbox-messa
 import { emptyFilter } from '../../../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from '../../MessageCard';
 import { MessageCardContent } from '../../MessageCardContent';
-import { MessageCardHeader } from '../../MessageCardHeader';
+import { MessageCardHeader, MessageCardMetadata } from '../../MessageCardHeader';
 import {
   canDownloadAllMessageAttachments,
   isAudioMediaAttachment,
@@ -673,7 +673,6 @@ async function renderCard(
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
-    onAddFrequencyToFilter: vi.fn(),
     onCreateReport: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
     onToggleTag: vi.fn(),
@@ -701,10 +700,18 @@ async function renderHeader(
   document.body.appendChild(container);
   const root = createRoot(container);
   const msg = overrides.msg ?? buildMessage();
+  const metadataOverrides = overrides as Partial<{
+    groupName: string | null;
+    senderName: string | null;
+    onAddFrequencyToFilter: (freq: string) => void;
+  }>;
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
     featureStrictNetworks: false,
-    networkDisplayMap: { 7: 'р/м Alpha' },
-    networkMap: { 7: { id: 7, name: 'Alpha', unitIds: [], location: null } as Network },
+    networkDisplayMap: { 7: 'р/м Alpha', 8: 'р/м Bravo' },
+    networkMap: {
+      7: { id: 7, name: 'Alpha', unitIds: [1], location: null } as Network,
+      8: { id: 8, name: 'Bravo', unitIds: [], location: null } as Network,
+    },
     networks: undefined,
   });
   const props: ComponentProps<typeof MessageCardHeader> = {
@@ -736,7 +743,18 @@ async function renderHeader(
   };
 
   await act(async () => {
-    root.render(<MessageCardHeader {...props} />);
+    root.render(
+      <div data-message-header-grid="true">
+        <MessageCardHeader {...props} />
+        <MessageCardMetadata
+          msg={msg}
+          groupName={metadataOverrides.groupName ?? "Куп'янськ пеленг"}
+          senderName={metadataOverrides.senderName ?? 'Dow_Jones_2'}
+          etalonDisplayModel={props.etalonDisplayModel}
+          onAddFrequencyToFilter={metadataOverrides.onAddFrequencyToFilter ?? vi.fn()}
+        />
+      </div>,
+    );
   });
 
   return { container, root, headerProps: props };
@@ -779,12 +797,12 @@ function getTagButtonLabels(container: HTMLElement): string[] {
     .filter((label) => tagLabels.has(label));
 }
 
-function getHeaderBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
+function getMetadataBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
   const element = Array.from(container.querySelectorAll('[data-message-card-text="body2"]')).find(
     (node) => node.textContent?.trim() === text,
   );
   if (!(element instanceof HTMLElement)) {
-    throw new Error(`Header body2 element not found for text: ${text}`);
+    throw new Error(`Metadata body2 element not found for text: ${text}`);
   }
   return element;
 }
@@ -966,6 +984,58 @@ describe('MessageCard', () => {
     });
   });
 
+  it('ECHO-3324 renders resolved networks as independent metadata items without changing fallback metadata', async () => {
+    const networkView = await renderHeader({
+      msg: buildMessage({ networkIds: [7, 8], location: 'ЛИМАН' }),
+    });
+    rendered.push(networkView);
+
+    const networkItems = Array.from(
+      networkView.container.querySelectorAll<HTMLElement>(
+        '[data-message-card-network-item="true"]',
+      ),
+    );
+    expect(networkItems).toHaveLength(2);
+    expect(networkItems.map((item) => item.dataset.networkId)).toEqual(['7', '8']);
+    expect(networkItems.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('р/м Alpha'),
+      expect.stringContaining('р/м Bravo'),
+    ]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('[data-message-card-metadata-icon-kind="network"]').length,
+      ),
+    ).toEqual([1, 1]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('svg[data-testid="PeopleOutlineOutlinedIcon"]').length,
+      ),
+    ).toEqual([1, 1]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('svg[data-testid="GraphicEqOutlinedIcon"]').length,
+      ),
+    ).toEqual([0, 0]);
+    expect(
+      networkView.container.querySelector(
+        '[data-message-card-metadata-icon-kind="group"] svg[data-testid="GraphicEqOutlinedIcon"]',
+      ),
+    ).not.toBeNull();
+    expect(networkItems[0].textContent).not.toContain('в дорозвідці');
+    expect(networkItems[1].textContent).toContain('в дорозвідці');
+    expect(networkView.container.textContent).toContain('Лиман');
+
+    const fallbackView = await renderHeader({
+      msg: buildMessage({ networkIds: [], unit: '1-й танк', location: 'ЛИМАН' }),
+    });
+    rendered.push(fallbackView);
+    expect(
+      fallbackView.container.querySelectorAll('[data-message-card-network-item="true"]'),
+    ).toHaveLength(0);
+    expect(fallbackView.container.textContent).toContain('1-й танк');
+    expect(fallbackView.container.textContent).toContain('Лиман');
+  });
+
   it('renders compact divider layout content for narrow multi-feed columns', async () => {
     const view = await renderCard();
     rendered.push(view);
@@ -1093,10 +1163,10 @@ describe('MessageCard', () => {
       });
       rendered.push(view);
 
-      const headerText = view.container.querySelector(
+      const metadataText = view.container.querySelector(
         '[data-message-header-grid="true"]',
       )?.textContent;
-      if (headerText == null) throw new Error('header text not found');
+      if (metadataText == null) throw new Error('metadata text not found');
 
       const expectedValues = [
         '02:45',
@@ -1109,22 +1179,22 @@ describe('MessageCard', () => {
         'Харків',
       ] as const;
       for (const value of expectedValues) {
-        const textElement = getHeaderBody2ElementByText(view.container, value);
+        const textElement = getMetadataBody2ElementByText(view.container, value);
         expect(textElement.getAttribute('data-message-card-text')).toBe('body2');
-        expect(headerText).toContain(value);
+        expect(metadataText).toContain(value);
       }
       expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
 
-      expect(headerText.indexOf('Група A')).toBeLessThan(headerText.indexOf('Відправник B'));
-      expect(headerText.indexOf('Відправник B')).toBeLessThan(headerText.indexOf('153.6250'));
-      expect(headerText.indexOf('153.6250')).toBeLessThan(headerText.indexOf('Радіостанція'));
-      expect(headerText.indexOf('Радіостанція')).toBeLessThan(
-        headerText.indexOf('12.34568, -98.76543'),
+      expect(metadataText.indexOf('Група A')).toBeLessThan(metadataText.indexOf('Відправник B'));
+      expect(metadataText.indexOf('Відправник B')).toBeLessThan(metadataText.indexOf('153.6250'));
+      expect(metadataText.indexOf('153.6250')).toBeLessThan(metadataText.indexOf('Радіостанція'));
+      expect(metadataText.indexOf('Радіостанція')).toBeLessThan(
+        metadataText.indexOf('12.34568, -98.76543'),
       );
-      expect(headerText.indexOf('12.34568, -98.76543')).toBeLessThan(
-        headerText.indexOf('1-й танк'),
+      expect(metadataText.indexOf('12.34568, -98.76543')).toBeLessThan(
+        metadataText.indexOf('1-й танк'),
       );
-      expect(headerText.indexOf('1-й танк')).toBeLessThan(headerText.indexOf('Харків'));
+      expect(metadataText.indexOf('1-й танк')).toBeLessThan(metadataText.indexOf('Харків'));
     },
   );
 
@@ -1640,13 +1710,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).toContain('Харків');
+    expect(view.container.querySelector('.message-card-main')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(
-      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="GraphicEqOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
@@ -1661,13 +1727,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).toContain('Харків');
+    expect(view.container.querySelector('.message-card-main')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(
-      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="GraphicEqOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
 
@@ -1695,9 +1757,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).not.toContain('Не встановлена');
+    expect(view.container.querySelector('.message-card-main')?.textContent).not.toContain(
+      'Не встановлена',
+    );
     expect(view.container.textContent).toContain('—');
     expect(
       view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
@@ -1894,7 +1956,7 @@ describe('MessageCard', () => {
     expect(toolbar.getAttribute('role')).toBeNull();
   });
 
-  it('recalculates toolbar fit when the available action count changes', async () => {
+  it('ECHO-3324 recalculates toolbar stacking when the available action count changes', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -1936,9 +1998,35 @@ describe('MessageCard', () => {
     await act(async () => {
       view.root.render(<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />);
     });
-    expect(
-      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
-    ).toBe('group');
+    const updatedHeaderRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    const updatedLeft = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-left="true"]',
+    );
+    const updatedRight = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-right="true"]',
+    );
+    if (
+      !(updatedHeaderRow instanceof HTMLElement) ||
+      !(updatedLeft instanceof HTMLElement) ||
+      !(updatedRight instanceof HTMLElement)
+    ) {
+      throw new Error('updated toolbar measurements not found');
+    }
+    setClientWidth(updatedHeaderRow, 220);
+    setScrollWidth(updatedLeft, 0);
+    setScrollWidth(updatedRight, 0);
+    await act(async () => {
+      resizeObserverCallbacks.forEach((callback) => callback());
+    });
+    const updatedToolbar = view.container.querySelector<HTMLElement>(
+      '[aria-label="Дії повідомлення"]',
+    );
+    if (!(updatedToolbar instanceof HTMLElement)) throw new Error('updated toolbar not found');
+    expect(updatedToolbar.getAttribute('role')).toBe('group');
+    expect(updatedToolbar.classList).toContain('message-card-action-group--stacked');
+    expect(updatedToolbar.getAttribute('data-action-grid-columns')).toBe('4');
   });
 
   it.each([
@@ -2590,7 +2678,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('GHOST');
   });
 
-  it('shows human and bot contribution badges and renders the bot-error prompt', async () => {
+  it('ECHO-3324 renders mixed tag provenance without count badges and preserves contributor detail', async () => {
     const onToggleTag = vi.fn();
     const onMarkBotTagWrong = vi.fn();
     const onCancelBotTagAction = vi.fn();
@@ -2608,8 +2696,8 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
-    expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
+    expect(view.container.querySelector('.message-card-tag-provenance--mixed')).not.toBeNull();
+    expect(view.container.querySelector('[data-message-card-tag-id="3"] sup')).toBeNull();
     const tagButton = getButton(view.container, 'переміщення');
     const tipId = tagButton.getAttribute('aria-describedby');
     expect(tipId).toMatch(/^message-card-tag-3-tip-/);
@@ -2774,12 +2862,12 @@ describe('MessageCard', () => {
     ).toBe(true);
   });
 
-  it('uses the compact header border instead of a duplicate leading text divider', async () => {
+  it('ECHO-3324 keeps the metadata-to-message divider in compact and expanded cards', async () => {
     const compact = await renderCard({ feedCount: 3 });
     rendered.push(compact);
     expect(
       compact.container.querySelectorAll('.message-card-main .message-card-divider'),
-    ).toHaveLength(1);
+    ).toHaveLength(2);
 
     const expanded = await renderCard({ feedCount: 1 });
     rendered.push(expanded);
@@ -3672,7 +3760,7 @@ describe('MessageCard', () => {
     expect(latestDocumentDialogProps.at(-1)?.document?.kind).toBe('md');
   });
 
-  it('shows selected tags first and can reveal the rest on demand', async () => {
+  it('ECHO-3324 keeps compact tag order and moves collapse after the expanded tag flow', async () => {
     const rectSpy = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockImplementation(function (this: HTMLElement) {
@@ -3696,7 +3784,6 @@ describe('MessageCard', () => {
       const view = await renderCard({ tagsLayout: 'compact' });
       rendered.push(view);
 
-      // Compact layout: selected (inbox) tag first, then the rest; row packs until width + «розгорнути» reserve.
       expect(view.container.textContent).toContain('переміщення');
       expect(view.container.textContent).toContain('розгорнути');
       expect(view.container.textContent).not.toContain('іфо');
@@ -3711,6 +3798,13 @@ describe('MessageCard', () => {
       expect(view.container.textContent).toContain('палітра');
       expect(view.container.textContent).toContain('іфо');
       expect(view.container.textContent).toContain('розвідка');
+      const collapseButton = getButton(view.container, 'згорнути');
+      expect(collapseButton.parentElement?.lastElementChild).toBe(collapseButton);
+
+      await click(collapseButton);
+
+      expect(view.container.textContent).toContain('розгорнути');
+      expect(view.container.textContent).not.toContain('іфо');
     } finally {
       rectSpy.mockRestore();
     }
@@ -3881,7 +3975,7 @@ describe('MessageCard', () => {
     }
   });
 
-  it('repacks compact first row when tag metadata changes while expanded', async () => {
+  it('ECHO-3324 repacks the compact first row when tag metadata changes while expanded', async () => {
     const getCompactFirstRowLabels = (container: HTMLElement) => {
       const grid = container.querySelector('.grid');
       const row = grid?.firstElementChild;
@@ -3951,8 +4045,12 @@ describe('MessageCard', () => {
         );
       });
 
+      expect(view.container.textContent).toContain('широкий рух');
       expect(view.container.textContent).toContain('згорнути');
+      await click(getButton(view.container, 'згорнути'));
+      expect(view.container.textContent).toContain('розгорнути');
       expect(getCompactFirstRowLabels(view.container)).toEqual(['широкий рух']);
+      expect(view.container.textContent).not.toContain('іфо');
     } finally {
       rectSpy.mockRestore();
     }

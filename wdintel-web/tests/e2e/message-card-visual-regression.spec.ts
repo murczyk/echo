@@ -111,6 +111,28 @@ async function installVisualFixture(
   };
 }
 
+async function installTaggedVisualFixture(page: Page): Promise<void> {
+  const message = buildInboxMessage(41);
+  message.tags = [1, 2, 3, 4, 5];
+  message.inboxTags = [
+    { id: 1, tagId: 1, confidence: 1, login: 'operator', model: null, organismId: null },
+  ];
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
+    inboxResponseForRequest: () => ({
+      ...buildInboxResponse([]),
+      inbox_items: [[41, message as never]],
+    }),
+    tagsResponse: [
+      [1, { id: 1, label: 'Рух', is_palitra: false }],
+      [2, { id: 2, label: 'Зв’язок', is_palitra: false }],
+      [3, { id: 3, label: 'РЕБ', is_palitra: false }],
+      [4, { id: 4, label: 'Артилерія', is_palitra: false }],
+      [5, { id: 5, label: 'Розвідка', is_palitra: false }],
+    ],
+  });
+}
+
 test.describe('message card visual regression', () => {
   test('keeps native EchoChip tone opacity contracts in the compiled stylesheet', async ({
     page,
@@ -232,6 +254,106 @@ test.describe('message card visual regression', () => {
       );
     });
   }
+
+  test('ECHO-3324 aligns metadata with tags at XL width and keeps the tagged sidebar contained when narrow', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+    await installTaggedVisualFixture(page);
+    await page.goto('/rer-duty-neo?state-short=short-1');
+    const card = page.locator('.message-card-root').first();
+    const metadata = card.locator('.message-card-main > .message-card-main-section').first();
+    const tags = card.locator('[data-message-card-tags="true"]');
+    await expect(metadata).toBeVisible();
+    await expect(tags).toBeVisible();
+    const [metadataBox, tagsBox] = await Promise.all([metadata.boundingBox(), tags.boundingBox()]);
+    expect(Math.abs((metadataBox?.y ?? 0) - (tagsBox?.y ?? 0))).toBeLessThanOrEqual(1);
+
+    await card.evaluate((element) => {
+      const item = element.closest<HTMLElement>('.message-card-item');
+      if (item) item.style.width = '330px';
+    });
+    const metrics = await card.evaluate((element) => ({
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    }));
+    expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+  });
+
+  test('ECHO-3324 keeps shared card header, callsign, and report geometry within desktop and narrow bounds', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+
+    for (const host of ['duty', 'analysis'] as const) {
+      for (const cardWidth of [920, 330] as const) {
+        await openMessageCardPreviewHost(page, host, { withPolishContent: true });
+        const card = page.locator('.message-card-root').first();
+        await card.evaluate((element, width) => {
+          const item = element.closest<HTMLElement>('.message-card-item');
+          if (item) item.style.width = `${width}px`;
+        }, cardWidth);
+
+        await expect(card.locator('.message-card-action-btn__icon').first()).toHaveCSS(
+          'font-size',
+          '16px',
+        );
+        const timestamps = card.locator('[data-message-card-timestamp-item="true"]');
+        const metadataItems = card.locator('[data-message-card-metadata-item="true"]');
+        const networkItems = card.locator('[data-message-card-network-item="true"]');
+        await expect(timestamps).toHaveCount(2);
+        await expect(metadataItems.first()).toBeVisible();
+        await expect(networkItems).toHaveCount(2);
+        expect(
+          await timestamps.evaluateAll((items) => items.map((item) => item.clientHeight)),
+        ).toEqual([25, 25]);
+        const metadataItemCount = await metadataItems.count();
+        expect(
+          await metadataItems.evaluateAll((items) => items.map((item) => item.clientHeight)),
+        ).toEqual(Array(metadataItemCount).fill(25));
+        expect(
+          await networkItems.evaluateAll((items) => items.map((item) => item.clientHeight)),
+        ).toEqual([25, 25]);
+        expect(
+          await networkItems
+            .locator('[data-message-card-metadata-icon-kind="network"]')
+            .evaluateAll((items) =>
+              items.map((item) => {
+                const box = item.getBoundingClientRect();
+                const glyph = item.querySelector('svg')?.getBoundingClientRect();
+                return { width: box.width, height: box.height, glyphWidth: glyph?.width };
+              }),
+            ),
+        ).toEqual([
+          { width: 16, height: 16, glyphWidth: 18 },
+          { width: 16, height: 16, glyphWidth: 18 },
+        ]);
+        await expect(
+          card.locator('[data-message-card-metadata-icon-kind="standard"] svg').first(),
+        ).toHaveCSS('font-size', '16px');
+        await expect(
+          card.locator('[data-message-card-metadata-icon-kind="group"] svg').first(),
+        ).toHaveCSS('font-size', '18px');
+
+        const metrics = await card.evaluate((element) => ({
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        }));
+        expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+      }
+    }
+
+    const analysisCard = page.locator('.message-card-root').first();
+    const callsign = analysisCard.getByTitle('E2E-ALPHA');
+    await expect(callsign).toHaveCSS('height', '24px');
+    await expect(analysisCard.getByText('E2E-ALPHA', { exact: true })).toHaveCSS(
+      'font-size',
+      '10px',
+    );
+    await expect(
+      analysisCard.locator('[data-message-card-intelligence-report="true"]').first(),
+    ).toHaveCSS('border-left-width', '3px');
+  });
 
   for (const host of ['duty', 'analysis'] as const) {
     for (const cardWidth of [920, 330] as const) {

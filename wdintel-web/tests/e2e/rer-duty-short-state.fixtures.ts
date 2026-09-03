@@ -16,6 +16,8 @@ type ShortStateFixtureOptions = {
         first_element_ts: number | null;
       }>;
   signalGroups?: string[];
+  tagsResponse?: unknown[];
+  networkInfoResponse?: unknown[];
 };
 
 type ShortStateFixtureHandle = {
@@ -243,7 +245,12 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/tags/tags-list') {
-      await fulfillJson(route, emptyDutyTagsResponse());
+      await fulfillJson(route, options.tagsResponse ?? emptyDutyTagsResponse());
+      return;
+    }
+
+    if (pathname === '/api/sigint/network-info-batch-id') {
+      await fulfillJson(route, options.networkInfoResponse ?? []);
       return;
     }
 

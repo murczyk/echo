@@ -30,6 +30,7 @@ import PhotoOutlinedIcon from '@mui/icons-material/PhotoOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { isPresent } from '../../../utils/misc';
 import {
   getPointEtalonsFromMessage,
@@ -241,7 +242,7 @@ function PointBlacklistPaletteDialog({
 }
 
 export function MessageCardMessageBody({
-  compact = false,
+  metadata,
   messageId,
   msg,
   tagsMap,
@@ -270,7 +271,7 @@ export function MessageCardMessageBody({
   mediaSummaryEnabled = true,
   messageTextPreviewLines = 20,
 }: {
-  compact?: boolean;
+  metadata?: ReactNode;
   messageId: number;
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
@@ -615,7 +616,7 @@ export function MessageCardMessageBody({
   const messageTextSection =
     hasTextPrimary || hasMessageTextOverflow ? (
       <>
-        {!compact ? <div className="message-card-divider" /> : null}
+        {metadata ? <div className="message-card-divider" /> : null}
         <div className="message-card-main-section message-card-message-text">
           <div
             className={
@@ -733,6 +734,7 @@ export function MessageCardMessageBody({
         }
       >
         <div className="message-card-main">
+          {metadata ? <div className="message-card-main-section">{metadata}</div> : null}
           {messageTextSection}
           {attachmentCounters}
           {hasImageOrVideoAttachments ? (

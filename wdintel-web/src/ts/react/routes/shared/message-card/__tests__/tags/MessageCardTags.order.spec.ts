@@ -118,8 +118,5 @@ describe('estimateTagChipWidthPx', () => {
   it('does not cap long administrator labels at 240px', () => {
     const longLabel = 'Дуже-довга-адміністраторська-мітка-для-компактного-ряду';
     expect(estimateTagChipWidthPx(longLabel)).toBeGreaterThan(240);
-    expect(estimateTagChipWidthPx(longLabel, true)).toBeGreaterThan(
-      estimateTagChipWidthPx(longLabel),
-    );
   });
 });
