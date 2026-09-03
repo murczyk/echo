@@ -117,7 +117,10 @@ interrupted link phase when the snapshot MD5 is unchanged.
 
 Link persistence validates both units, imports missing ORBIT ancestors,
 reconciles SIGINT echelons and duplicate-candidate state, and updates parent
-activity. It never regenerates the current SIGINT unit name.
+activity. It never regenerates the current SIGINT unit name. After automatic
+matching, every remaining supported, non-deleted ORBIT unit is created as an
+inactive SIGINT unit and linked to its ORBIT source. Generative ancestors of
+active matched units remain active.
 
 ### Merge duplicate SIGINT units linked to one ORBIT unit
 
@@ -155,20 +158,27 @@ that changed during review remain untouched.
 
 ### Remove invalid army/corps and higher echelons from SIGINT unit names
 
-This workflow finds army, corps, military-district, and army-region values that
-are absent from the unit's single linked ORBIT generative hierarchy. Automatic
-mode applies every safe proposal; manual mode shows the current and proposed
-name diff one unit at a time. Accepted changes clear the invalid echelon fields
-and remove their complete phrases from the SIGINT name.
+This workflow finds blacklisted army and corps values, including `УВ(с)`, `ТН`,
+and `МВО`, as well as army, corps, military-district, and army-region values
+absent from the unit's single linked ORBIT generative hierarchy.
+Automatic mode applies every safe proposal; manual mode shows the current and
+proposed name diff one unit at a time. Accepted changes clear invalid echelon
+fields and remove their complete phrases from the SIGINT name. An `other` value
+is removed from the name without clearing its hierarchy field. Automatic mode
+can target active units, inactive units, or both.
 
 ### Review SIGINT unit names generated from echelons
 
-This manual workflow checks every non-deleted SIGINT unit in ID order. When the
-canonical name generated from its 14 echelon fields differs from the current
-name, the TUI shows a colored current/generated word diff and offers to apply,
-skip, or stop. Accepted changes update only the name. A concurrent change to
+This workflow checks every non-deleted SIGINT unit in ID order. Generated names
+exclude `other`, blacklisted army and corps values, military district, and army
+region. Automatic mode applies every current proposal; manual mode shows a
+colored current/generated word diff and offers to apply, skip, or stop.
+Automatic mode can target active units, inactive units, or both. Accepted
+changes update only the name. In manual mode, a concurrent change to
 the name or any echelon makes the reviewed proposal stale and leaves it
-untouched.
+untouched. An empty generated name is never proposed. A unit with no populated
+echelon below corps keeps its current name; a newly imported ORBIT unit in that
+case uses its full ORBIT name.
 
 ### Erase and reimport all ORBIT data
 
@@ -176,7 +186,8 @@ After the operator types `REIMPORT`, this workflow atomically truncates all
 seven `orbit_*` tables, including synchronization history and ORBIT-to-SIGINT
 links, then imports the latest snapshot. A failure rolls back the whole
 data reimport. Existing SIGINT units are not deleted. Automatic links are
-rebuilt after the data transaction commits.
+rebuilt after the data transaction commits, then unmatched ORBIT units are
+created as inactive SIGINT units.
 
 Common controls are:
 
@@ -260,8 +271,8 @@ Soft-deleted ORBIT units are neither marked nor rendered.
 - conflicting unit values or parents: inspect every occurrence of the reported
   UUID. A unit's own top-level object resolves conflicting embedded parent
   claims, but conflicting top-level objects are invalid.
-- unexpected matches: use manual linking mode to inspect candidate UUIDs and
-  full paths before accepting a link.
+- unexpected matches: inspect and correct the link from `/rer-units` or
+  `/rer-units/{id}`; automatic synchronization preserves manual links.
 
 The deployment-oriented checklist is in the
 [ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md).

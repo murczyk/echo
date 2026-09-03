@@ -31,12 +31,49 @@ struct PersistReview {
 }
 
 pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
+    let Some(review_mode) = tui::prompt_generated_unit_name_mode().c(h!())?
+    else {
+        return Ok(());
+    };
+    let activity_scope = if review_mode == tui::LinkMode::Automatic {
+        let Some(activity_scope) = tui::prompt_unit_activity_scope(
+            "Choose generated-name automatic scope (↑/↓, Enter, Esc: quit)",
+        )
+        .c(h!())?
+        else {
+            return Ok(());
+        };
+        activity_scope
+    } else {
+        tui::UnitActivityScope::Both
+    };
     let db = new_pg_pool_from_mode(mode).await.c(h!())?;
-    let changes = load_name_changes(&db, None, false).await.c(h!())?;
+    run_with_database(&db, review_mode, activity_scope)
+        .await
+        .c(h!())
+}
+
+async fn run_with_database(
+    db: &sea_orm::DatabaseConnection,
+    review_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
+) -> anyhow::Result<()> {
+    let changes = load_name_changes(db, None, false, activity_scope)
+        .await
+        .c(h!())?;
     let candidate_count = changes.len();
-    let review = review_manually(&changes).c(h!())?;
+    let review = match review_mode {
+        tui::LinkMode::Automatic => ManualReview {
+            selected: changes,
+            ..Default::default()
+        },
+        tui::LinkMode::Manual => review_manually(&changes).c(h!())?,
+    };
     let accepted = review.selected.len();
-    let persisted = persist_changes(&db, &review.selected).await.c(h!())?;
+    let persisted =
+        persist_changes(db, &review.selected, review_mode, activity_scope)
+            .await
+            .c(h!())?;
     println!(
         "Generated SIGINT-unit name review: {candidate_count} candidates, {accepted} accepted, {} skipped, {} stale, {} unreviewed; {} units changed.",
         review.skipped, persisted.stale, review.unreviewed, persisted.changed,
@@ -48,6 +85,7 @@ async fn load_name_changes<C>(
     db: &C,
     unit_ids: Option<&[i64]>,
     lock: bool,
+    activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<Vec<GeneratedNameChange>>
 where
     C: ConnectionTrait,
@@ -55,6 +93,9 @@ where
     let mut units = sigint_unit::Entity::find()
         .filter(sigint_unit::Column::Deleted.eq(false))
         .order_by_asc(sigint_unit::Column::Id);
+    if let Some(active) = activity_scope.active() {
+        units = units.filter(sigint_unit::Column::Active.eq(active));
+    }
     if let Some(unit_ids) = unit_ids {
         if unit_ids.is_empty() {
             return Ok(Vec::new());
@@ -78,7 +119,7 @@ fn proposed_name_change(
     unit: sigint_unit::Model,
 ) -> Option<GeneratedNameChange> {
     let generated_name = crate::sigint::unit::generated_unit_name(&unit);
-    if unit.name == generated_name {
+    if generated_name.is_empty() || unit.name == generated_name {
         return None;
     }
     let hierarchy =
@@ -142,12 +183,21 @@ fn review_manually_inner(
 async fn persist_changes(
     db: &sea_orm::DatabaseConnection,
     changes: &[GeneratedNameChange],
+    review_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<PersistReview> {
+    let batch_size = match review_mode {
+        tui::LinkMode::Automatic => 1,
+        tui::LinkMode::Manual => {
+            ORBIT_GENERATED_UNIT_NAME_MANUAL_PERSIST_BATCH_SIZE
+        }
+    };
     let mut review = PersistReview::default();
-    for changes in
-        changes.chunks(ORBIT_GENERATED_UNIT_NAME_MANUAL_PERSIST_BATCH_SIZE)
-    {
-        let batch = persist_change_batch(db, changes).await.c(h!())?;
+    for changes in changes.chunks(batch_size) {
+        let batch =
+            persist_change_batch(db, changes, review_mode, activity_scope)
+                .await
+                .c(h!())?;
         review.changed += batch.changed;
         review.stale += batch.stale;
     }
@@ -157,6 +207,8 @@ async fn persist_changes(
 async fn persist_change_batch(
     db: &sea_orm::DatabaseConnection,
     changes: &[GeneratedNameChange],
+    review_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<PersistReview> {
     if changes.is_empty() {
         return Ok(PersistReview::default());
@@ -168,7 +220,7 @@ async fn persist_change_batch(
         .map(|change| change.unit_id)
         .collect::<Vec<_>>();
     let current_changes =
-        load_name_changes(&transaction, Some(&unit_ids), true)
+        load_name_changes(&transaction, Some(&unit_ids), true, activity_scope)
             .await
             .c(h!())?
             .into_iter()
@@ -180,14 +232,16 @@ async fn persist_change_batch(
             review.stale += 1;
             continue;
         };
-        if current != reviewed {
+        if review_mode == tui::LinkMode::Manual && current != reviewed {
             review.stale += 1;
             continue;
         }
-        let outcome = crate::sigint::unit::orbit::reconcile_sigint_unit_orbit_with_reviewed_change(
+        let outcome = crate::sigint::unit::orbit::update_sigint_unit_name_with_reviewed_change(
             &transaction,
             &login,
-            &name_change(current),
+            current.unit_id,
+            &current.current_name,
+            &current.generated_name,
         )
         .await
         .c(h!())?;
@@ -195,21 +249,6 @@ async fn persist_change_batch(
     }
     transaction.commit().await.c(h!())?;
     Ok(review)
-}
-
-fn name_change(
-    change: &GeneratedNameChange,
-) -> crate::sigint::unit::orbit::OrbitUnitHierarchyChange {
-    crate::sigint::unit::orbit::OrbitUnitHierarchyChange {
-        sigint_unit_id: change.unit_id,
-        attributes: vec![
-            crate::sigint::unit::orbit::OrbitUnitAttributeChange {
-                attribute: "name",
-                current: change.current_name.clone(),
-                proposed: change.generated_name.clone(),
-            },
-        ],
-    }
 }
 
 #[cfg(test)]
@@ -221,52 +260,67 @@ mod tests {
     use serial_test::serial;
 
     #[test]
-    fn generates_names_in_canonical_echelon_order() {
+    fn generates_names_through_army_in_canonical_echelon_order() {
         let mut unit = sigint_unit("custom name");
         unit.company = "2 р".to_string();
         unit.battalion = "1 мсб".to_string();
         unit.brigade = "10 омсбр".to_string();
+        unit.army = "20 ЗВА".to_string();
+        unit.other = "ВМФ".to_string();
+        unit.military_district = "Західний ВО".to_string();
+        unit.army_region = "ЗС РФ".to_string();
 
         let change = proposed_name_change(unit).unwrap();
 
-        assert_eq!(change.generated_name, "2 р 1 мсб 10 омсбр");
+        assert_eq!(change.generated_name, "2 р 1 мсб 10 омсбр 20 ЗВА");
     }
 
     #[test]
-    fn includes_exact_name_differences_and_empty_generated_names() {
-        assert_eq!(
-            proposed_name_change(sigint_unit("current name"))
-                .unwrap()
-                .generated_name,
-            ""
-        );
+    fn skips_empty_generated_names() {
+        assert!(proposed_name_change(sigint_unit("current name")).is_none());
         assert!(proposed_name_change(sigint_unit("")).is_none());
+        let mut high_echelon_unit = sigint_unit("Західний ВО ЗС РФ");
+        high_echelon_unit.corps = "11 АК".to_string();
+        high_echelon_unit.army = "20 ЗВА".to_string();
+        high_echelon_unit.military_district = "Західний ВО".to_string();
+        high_echelon_unit.army_region = "ЗС РФ".to_string();
+        assert!(proposed_name_change(high_echelon_unit).is_none());
     }
 
     #[tokio::test]
     #[serial]
-    async fn persists_only_an_unchanged_reviewed_name() {
+    async fn persists_reviewed_names_according_to_mode() {
         let env = crate::functest::tests::cleanup().await.unwrap();
         let unit = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
                 company: Set("GeneratedToken".to_string()),
                 name: Set("Custom name".to_string()),
+                is_inconsistent: Set(true),
                 ..Default::default()
             },
         )
         .await
         .unwrap();
-        let reviewed = load_name_changes(&env.dbx, Some(&[unit.id]), false)
-            .await
-            .unwrap()
-            .pop()
-            .unwrap();
+        let reviewed = load_name_changes(
+            &env.dbx,
+            Some(&[unit.id]),
+            false,
+            tui::UnitActivityScope::Both,
+        )
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
 
-        let persisted =
-            persist_change_batch(&env.dbx, std::slice::from_ref(&reviewed))
-                .await
-                .unwrap();
+        let persisted = persist_change_batch(
+            &env.dbx,
+            std::slice::from_ref(&reviewed),
+            tui::LinkMode::Manual,
+            tui::UnitActivityScope::Both,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(persisted.changed, 1);
         assert_eq!(persisted.stale, 0);
@@ -277,6 +331,7 @@ mod tests {
             .unwrap();
         assert_eq!(unit.name, "GeneratedToken");
         assert_eq!(unit.company, "GeneratedToken");
+        assert!(unit.is_inconsistent);
         let search_matches = env
             .dbx
             .query_one_raw(sea_orm::Statement::from_sql_and_values(
@@ -300,20 +355,66 @@ mod tests {
         let mut unit = unit.into_active_model();
         unit.name = Set("Another custom name".to_string());
         let unit = unit.update(&env.dbx).await.unwrap();
-        let reviewed = load_name_changes(&env.dbx, Some(&[unit.id]), false)
-            .await
-            .unwrap()
-            .pop()
-            .unwrap();
+        let reviewed = load_name_changes(
+            &env.dbx,
+            Some(&[unit.id]),
+            false,
+            tui::UnitActivityScope::Both,
+        )
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+        let unit_id = unit.id;
         let mut unit = unit.into_active_model();
         unit.company = Set("ChangedToken".to_string());
+        unit.active = Set(false);
         unit.update(&env.dbx).await.unwrap();
 
-        let persisted =
-            persist_change_batch(&env.dbx, &[reviewed]).await.unwrap();
+        let persisted = persist_change_batch(
+            &env.dbx,
+            std::slice::from_ref(&reviewed),
+            tui::LinkMode::Manual,
+            tui::UnitActivityScope::Both,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(persisted.changed, 0);
         assert_eq!(persisted.stale, 1);
+
+        let persisted = persist_change_batch(
+            &env.dbx,
+            std::slice::from_ref(&reviewed),
+            tui::LinkMode::Automatic,
+            tui::UnitActivityScope::Active,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(persisted.changed, 0);
+        assert_eq!(persisted.stale, 1);
+
+        let persisted = persist_change_batch(
+            &env.dbx,
+            &[reviewed],
+            tui::LinkMode::Automatic,
+            tui::UnitActivityScope::Inactive,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(persisted.changed, 1);
+        assert_eq!(persisted.stale, 0);
+        assert_eq!(
+            sigint_unit::Entity::find_by_id(unit_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap()
+                .name,
+            "ChangedToken"
+        );
     }
 
     fn sigint_unit(name: &str) -> sigint_unit::Model {

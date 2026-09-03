@@ -2,12 +2,14 @@ use super::{matching, persistence, test_link, tui};
 use crate::config::{
     ORBIT_DRY_RUN_REPORT_TOP_LIMIT, ORBIT_DUPLICATE_UNITS_PERSIST_BATCH_SIZE,
 };
-use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
+use crate::entities::{
+    orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
+};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, JoinType, QueryFilter,
-    QuerySelect, RelationTrait,
+    QueryOrder, QuerySelect, RelationTrait,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -78,6 +80,7 @@ struct DuplicateReportRow {
 #[derive(Debug, Clone)]
 struct DuplicateSelection {
     orbit_unit_id: Uuid,
+    reviewed_orbit_sync: orbit_sync::Model,
     reviewed_units: BTreeMap<i64, sigint_unit::Model>,
     survivor_id: i64,
 }
@@ -107,16 +110,30 @@ pub async fn run(mode: Mode, dry_run: bool) -> anyhow::Result<()> {
 async fn run_with_database(
     db: &sea_orm::DatabaseConnection,
 ) -> anyhow::Result<()> {
-    let orbit_units = persistence::load_latest_synced_source_units(db)
-        .await
-        .c(h!())?;
+    let (orbit_sync, orbit_units) =
+        persistence::load_latest_synced_source_units_with_sync(db)
+            .await
+            .c(h!())?;
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let system_login_id = crate::users::system_login_id(db).await.c(h!())?;
-    let groups = load_duplicate_groups(db, &matcher, system_login_id, false)
+    let groups =
+        load_duplicate_groups(db, &matcher, system_login_id, false, None)
+            .await
+            .c(h!())?;
+    let orbit_unit_ids = groups
+        .iter()
+        .map(|group| group.orbit_unit_id)
+        .collect::<BTreeSet<_>>();
+    let orbit_hierarchies =
+        super::duplicate_candidate_review::load_orbit_hierarchies_for_unit_ids(
+            db,
+            &orbit_unit_ids,
+        )
         .await
         .c(h!())?;
     let candidate_count = groups.len();
-    let review = review_manually(&groups).c(h!())?;
+    let review =
+        review_manually(&groups, &orbit_hierarchies, &orbit_sync).c(h!())?;
     let accepted = review.selections.len();
     let persisted = persist_selections(db, &review.selections).await.c(h!())?;
     let merged = persisted.merged;
@@ -135,9 +152,10 @@ async fn print_dry_run_report(
         .c(h!())?;
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
     let system_login_id = crate::users::system_login_id(db).await.c(h!())?;
-    let rows = load_duplicate_report_rows(db, &matcher, system_login_id, false)
-        .await
-        .c(h!())?;
+    let rows =
+        load_duplicate_report_rows(db, &matcher, system_login_id, false, None)
+            .await
+            .c(h!())?;
     println!(
         "Duplicate-unit dry run: {} duplicate ORBIT groups.",
         rows.len()
@@ -218,18 +236,23 @@ async fn load_duplicate_groups<C>(
     matcher: &matching::TestLinkMatcher,
     system_login_id: Uuid,
     lock: bool,
+    orbit_unit_ids: Option<&BTreeSet<Uuid>>,
 ) -> anyhow::Result<Vec<DuplicateGroup>>
 where
     C: ConnectionTrait,
 {
-    Ok(
-        load_duplicate_report_rows(db, matcher, system_login_id, lock)
-            .await
-            .c(h!())?
-            .into_iter()
-            .filter_map(|row| row.group)
-            .collect(),
+    Ok(load_duplicate_report_rows(
+        db,
+        matcher,
+        system_login_id,
+        lock,
+        orbit_unit_ids,
     )
+    .await
+    .c(h!())?
+    .into_iter()
+    .filter_map(|row| row.group)
+    .collect())
 }
 
 async fn load_duplicate_report_rows<C>(
@@ -237,11 +260,14 @@ async fn load_duplicate_report_rows<C>(
     matcher: &matching::TestLinkMatcher,
     system_login_id: Uuid,
     lock: bool,
+    selected_orbit_unit_ids: Option<&BTreeSet<Uuid>>,
 ) -> anyhow::Result<Vec<DuplicateReportRow>>
 where
     C: ConnectionTrait,
 {
-    let links = active_links(db, lock).await.c(h!())?;
+    let links = load_duplicate_links(db, selected_orbit_unit_ids, lock)
+        .await
+        .c(h!())?;
     let mut orbit_unit_ids_by_sigint_unit =
         BTreeMap::<i64, BTreeSet<Uuid>>::new();
     let mut sigint_unit_ids_by_orbit_unit =
@@ -278,13 +304,56 @@ where
         .into_iter()
         .map(|unit| (unit.id, unit))
         .collect::<BTreeMap<_, _>>();
-    Ok(build_duplicate_report_rows(
+    let rows = build_duplicate_report_rows(
         sigint_unit_ids_by_orbit_unit,
         &orbit_unit_ids_by_sigint_unit,
         &units,
         matcher,
         system_login_id,
-    ))
+    );
+    Ok(match selected_orbit_unit_ids {
+        Some(orbit_unit_ids) => rows
+            .into_iter()
+            .filter(|row| orbit_unit_ids.contains(&row.orbit_unit_id))
+            .collect(),
+        None => rows,
+    })
+}
+
+async fn load_duplicate_links<C>(
+    db: &C,
+    selected_orbit_unit_ids: Option<&BTreeSet<Uuid>>,
+    lock: bool,
+) -> anyhow::Result<Vec<orbit_unit_sigint_unit::Model>>
+where
+    C: ConnectionTrait,
+{
+    Ok(match selected_orbit_unit_ids {
+        Some(orbit_unit_ids) => {
+            if orbit_unit_ids.is_empty() {
+                return Ok(Vec::new());
+            }
+            let sigint_unit_ids =
+                active_linked_sigint_unit_ids(db, orbit_unit_ids)
+                    .await
+                    .c(h!())?;
+            if lock {
+                lock_sigint_units(db, &sigint_unit_ids).await.c(h!())?;
+                lock_orbit_units(db, orbit_unit_ids).await.c(h!())?;
+                let locked_sigint_unit_ids =
+                    active_linked_sigint_unit_ids(db, orbit_unit_ids)
+                        .await
+                        .c(h!())?;
+                if locked_sigint_unit_ids != sigint_unit_ids {
+                    return Ok(Vec::new());
+                }
+            }
+            active_links(db, Some(&sigint_unit_ids), lock)
+                .await
+                .c(h!())?
+        }
+        None => active_links(db, None, lock).await.c(h!())?,
+    })
 }
 
 fn build_duplicate_report_rows(
@@ -400,6 +469,7 @@ fn has_only_shared_orbit_link(
 
 async fn active_links<C>(
     db: &C,
+    sigint_unit_ids: Option<&BTreeSet<i64>>,
     lock: bool,
 ) -> anyhow::Result<Vec<orbit_unit_sigint_unit::Model>>
 where
@@ -417,10 +487,91 @@ where
         .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
         .filter(orbit_unit::Column::Deleted.eq(false))
         .filter(sigint_unit::Column::Deleted.eq(false));
+    if let Some(sigint_unit_ids) = sigint_unit_ids {
+        if sigint_unit_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        links = links.filter(
+            orbit_unit_sigint_unit::Column::SigintUnitId
+                .is_in(sigint_unit_ids.iter().copied()),
+        );
+    }
     if lock {
         links = links.lock_exclusive();
     }
     links.all(db).await.c(h!())
+}
+
+async fn lock_orbit_units<C>(
+    db: &C,
+    orbit_unit_ids: &BTreeSet<Uuid>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    orbit_unit::Entity::find()
+        .filter(
+            orbit_unit::Column::UnitId.is_in(orbit_unit_ids.iter().copied()),
+        )
+        .order_by_asc(orbit_unit::Column::UnitId)
+        .lock_exclusive()
+        .all(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn lock_sigint_units<C>(
+    db: &C,
+    sigint_unit_ids: &BTreeSet<i64>,
+) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    if sigint_unit_ids.is_empty() {
+        return Ok(());
+    }
+    sigint_unit::Entity::find()
+        .filter(sigint_unit::Column::Id.is_in(sigint_unit_ids.iter().copied()))
+        .order_by_asc(sigint_unit::Column::Id)
+        .lock_exclusive()
+        .all(db)
+        .await
+        .c(h!())?;
+    Ok(())
+}
+
+async fn active_linked_sigint_unit_ids<C>(
+    db: &C,
+    orbit_unit_ids: &BTreeSet<Uuid>,
+) -> anyhow::Result<BTreeSet<i64>>
+where
+    C: ConnectionTrait,
+{
+    Ok(orbit_unit_sigint_unit::Entity::find()
+        .select_only()
+        .column(orbit_unit_sigint_unit::Column::SigintUnitId)
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::OrbitUnit.def(),
+        )
+        .join(
+            JoinType::InnerJoin,
+            orbit_unit_sigint_unit::Relation::SigintUnit.def(),
+        )
+        .filter(
+            orbit_unit_sigint_unit::Column::OrbitUnitId
+                .is_in(orbit_unit_ids.iter().copied()),
+        )
+        .filter(orbit_unit_sigint_unit::Column::IsSuppressed.eq(false))
+        .filter(orbit_unit::Column::Deleted.eq(false))
+        .filter(sigint_unit::Column::Deleted.eq(false))
+        .into_tuple::<i64>()
+        .all(db)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect())
 }
 
 fn sort_candidates(candidates: &mut [DuplicateCandidate]) {
@@ -636,18 +787,17 @@ fn option_is_preserved<T: Copy + PartialEq>(
 
 fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
     unit.name.trim().is_empty()
-        || unit.name
-            == matching::sigint_hierarchy(unit)
-                .into_iter()
-                .map(|(_, value)| value.trim())
-                .filter(|value| !value.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ")
+        || unit.name == crate::sigint::unit::generated_unit_name(unit)
 }
 
-fn selection(group: &DuplicateGroup, survivor_id: i64) -> DuplicateSelection {
+fn selection(
+    group: &DuplicateGroup,
+    survivor_id: i64,
+    orbit_sync: &orbit_sync::Model,
+) -> DuplicateSelection {
     DuplicateSelection {
         orbit_unit_id: group.orbit_unit_id,
+        reviewed_orbit_sync: orbit_sync.clone(),
         reviewed_units: group
             .candidates
             .iter()
@@ -657,12 +807,21 @@ fn selection(group: &DuplicateGroup, survivor_id: i64) -> DuplicateSelection {
     }
 }
 
-fn review_manually(groups: &[DuplicateGroup]) -> anyhow::Result<ManualReview> {
+fn review_manually(
+    groups: &[DuplicateGroup],
+    orbit_hierarchies: &BTreeMap<Uuid, [String; 14]>,
+    orbit_sync: &orbit_sync::Model,
+) -> anyhow::Result<ManualReview> {
     if groups.is_empty() {
         return Ok(ManualReview::default());
     }
     let mut terminal = tui::setup_terminal().c(h!())?;
-    let review_result = review_manually_inner(&mut terminal, groups);
+    let review_result = review_manually_inner(
+        &mut terminal,
+        groups,
+        orbit_hierarchies,
+        orbit_sync,
+    );
     tui::restore_terminal(&mut terminal).c(h!())?;
     review_result.c(h!())
 }
@@ -670,6 +829,8 @@ fn review_manually(groups: &[DuplicateGroup]) -> anyhow::Result<ManualReview> {
 fn review_manually_inner(
     terminal: &mut tui::OrbitTerminal,
     groups: &[DuplicateGroup],
+    orbit_hierarchies: &BTreeMap<Uuid, [String; 14]>,
+    orbit_sync: &orbit_sync::Model,
 ) -> anyhow::Result<ManualReview> {
     let mut review = ManualReview::default();
     for (group_index, group) in groups.iter().enumerate() {
@@ -687,11 +848,17 @@ fn review_manually_inner(
         .c(h!())?
         {
             tui::DuplicateReviewDecision::Select(candidate_index) => {
-                let selection =
-                    selection(group, group.candidates[candidate_index].unit.id);
-                let merge_review =
-                    duplicate_merge_review(group, selection.survivor_id)
-                        .c(h!())?;
+                let selection = selection(
+                    group,
+                    group.candidates[candidate_index].unit.id,
+                    orbit_sync,
+                );
+                let merge_review = duplicate_merge_review(
+                    group,
+                    selection.survivor_id,
+                    orbit_hierarchies.get(&group.orbit_unit_id),
+                )
+                .c(h!())?;
                 match tui::review_sigint_duplicate_merge(
                     terminal,
                     &merge_review,
@@ -723,6 +890,7 @@ fn review_manually_inner(
 fn duplicate_merge_review(
     group: &DuplicateGroup,
     survivor_id: i64,
+    orbit_hierarchy: Option<&[String; 14]>,
 ) -> anyhow::Result<tui::SigintDuplicateMergeReview> {
     let survivor = group
         .candidates
@@ -745,6 +913,12 @@ fn duplicate_merge_review(
                 &projected_survivor,
                 unit,
             );
+        if let Some(orbit_hierarchy) = orbit_hierarchy {
+            crate::sigint::unit::orbit::propagate_orbit_hierarchy(
+                &mut projected_survivor,
+                orbit_hierarchy,
+            );
+        }
     }
     Ok(tui::SigintDuplicateMergeReview {
         orbit_unit_id: group.orbit_unit_id,
@@ -842,20 +1016,40 @@ async fn persist_selection_batch(
     }
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
-    let orbit_units =
-        persistence::load_latest_synced_source_units(&transaction)
+    let (orbit_sync, orbit_units) =
+        persistence::load_latest_synced_source_units_with_sync(&transaction)
             .await
             .c(h!())?;
+    let current_selections = selections
+        .iter()
+        .filter(|selection| selection.reviewed_orbit_sync == orbit_sync)
+        .collect::<Vec<_>>();
+    let mut review = PersistReview {
+        stale: selections.len() - current_selections.len(),
+        ..Default::default()
+    };
+    if current_selections.is_empty() {
+        transaction.commit().await.c(h!())?;
+        return Ok(review);
+    }
     let matcher = matching::TestLinkMatcher::from_units(orbit_units);
-    let current_groups =
-        load_duplicate_groups(&transaction, &matcher, login, true)
-            .await
-            .c(h!())?
-            .into_iter()
-            .map(|group| (group.orbit_unit_id, group))
-            .collect::<BTreeMap<_, _>>();
-    let mut review = PersistReview::default();
-    for reviewed in selections {
+    let selected_orbit_unit_ids = current_selections
+        .iter()
+        .map(|selection| selection.orbit_unit_id)
+        .collect::<BTreeSet<_>>();
+    let current_groups = load_duplicate_groups(
+        &transaction,
+        &matcher,
+        login,
+        true,
+        Some(&selected_orbit_unit_ids),
+    )
+    .await
+    .c(h!())?
+    .into_iter()
+    .map(|group| (group.orbit_unit_id, group))
+    .collect::<BTreeMap<_, _>>();
+    for reviewed in current_selections {
         let Some(group) = current_groups.get(&reviewed.orbit_unit_id) else {
             review.stale += 1;
             continue;
@@ -896,10 +1090,7 @@ async fn persist_selection_batch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orbit::types::SourceUnit;
     use chrono::Utc;
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, TransactionTrait};
-    use serde_json::json;
     use serial_test::serial;
 
     #[test]
@@ -1028,8 +1219,12 @@ mod tests {
             orbit_unit_id: Uuid::new_v4(),
             candidates: vec![candidate(survivor), candidate(duplicate)],
         };
+        let mut orbit_hierarchy = std::array::from_fn(|_| String::new());
+        orbit_hierarchy[crate::orbit::EchoEchelon::Army.index()] =
+            "20 ЗВА".to_string();
 
-        let review = duplicate_merge_review(&group, 1).unwrap();
+        let review =
+            duplicate_merge_review(&group, 1, Some(&orbit_hierarchy)).unwrap();
 
         assert_eq!(review.projected_survivor.sigint_unit_name, "4 мсб");
         assert!(review.projected_survivor.hierarchy.iter().any(
@@ -1037,69 +1232,59 @@ mod tests {
                 echelon == "brigade" && value == "60 омсбр"
             }
         ));
+        assert!(review.projected_survivor.hierarchy.iter().any(
+            |(echelon, value)| { echelon == "army" && value == "20 ЗВА" }
+        ));
     }
 
     #[tokio::test]
     #[serial]
-    async fn locked_duplicate_group_reload_locks_reviewed_candidates() {
+    async fn duplicate_selection_is_stale_after_an_orbit_revision_change() {
         let env = crate::functest::tests::cleanup().await.unwrap();
-        let orbit_unit_id = Uuid::new_v4();
-        orbit_unit::ActiveModel {
-            unit_id: Set(orbit_unit_id),
-            unit_name_short: Set(Some("3 мсб".to_string())),
-            deleted: Set(false),
-            ..Default::default()
-        }
-        .insert(&env.dbx)
-        .await
-        .unwrap();
-        for name in ["First name", "Second name"] {
-            let unit = crate::functest::tests::mk_sigint_unit(
-                &env.dbx,
-                sigint_unit::ActiveModel {
-                    battalion: Set("3 мсб".to_string()),
-                    name: Set(name.to_string()),
-                    ..Default::default()
-                },
-            )
+        let synced_at = Utc::now().naive_utc();
+        let reviewed_synced_at = persistence::load_latest_sync(&env.dbx)
             .await
-            .unwrap();
-            orbit_unit_sigint_unit::ActiveModel {
-                orbit_unit_id: Set(orbit_unit_id),
-                sigint_unit_id: Set(unit.id),
-                is_manual: Set(true),
-                is_suppressed: Set(false),
-            }
-            .insert(&env.dbx)
-            .await
-            .unwrap();
-        }
-        let source_unit: SourceUnit = serde_json::from_value(json!({
-            "unit_id": orbit_unit_id,
-            "unit_name": "3 мсб",
-            "unit_name_short": "3 мсб",
-            "operational_unit_name_full": "3 мсб",
-            "generative_unit_name_full": "3 мсб",
-            "unit_echelon": { "key": "battalion", "name": "battalion" }
-        }))
-        .unwrap();
-        let matcher = matching::TestLinkMatcher::new(&[source_unit]);
-        let system_login_id =
-            crate::users::system_login_id(&env.dbx).await.unwrap();
-        let transaction = env.dbx.begin().await.unwrap();
-
-        let groups = load_duplicate_groups(
-            &transaction,
-            &matcher,
-            system_login_id,
-            true,
+            .unwrap()
+            .map(|orbit_sync| {
+                synced_at
+                    .max(orbit_sync.synced_at + chrono::Duration::seconds(1))
+            })
+            .unwrap_or(synced_at);
+        let reviewed_orbit_sync = persistence::record_sync(
+            &env.dbx,
+            "11111111111111111111111111111111",
+            reviewed_synced_at,
         )
         .await
         .unwrap();
-        transaction.rollback().await.unwrap();
+        let current_orbit_sync = persistence::record_sync(
+            &env.dbx,
+            "22222222222222222222222222222222",
+            reviewed_orbit_sync.synced_at + chrono::Duration::seconds(1),
+        )
+        .await
+        .unwrap();
+        let selection = DuplicateSelection {
+            orbit_unit_id: Uuid::new_v4(),
+            reviewed_orbit_sync: reviewed_orbit_sync.clone(),
+            reviewed_units: BTreeMap::new(),
+            survivor_id: 1,
+        };
 
-        assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].candidates.len(), 2);
+        let review = persist_selection_batch(&env.dbx, &[selection])
+            .await
+            .unwrap();
+        orbit_sync::Entity::delete_by_id(current_orbit_sync.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        orbit_sync::Entity::delete_by_id(reviewed_orbit_sync.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+
+        assert_eq!(review.merged, 0);
+        assert_eq!(review.stale, 1);
     }
 
     #[test]

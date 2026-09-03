@@ -466,7 +466,7 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
         sync_snapshot_units(&import_lock, &snapshot).await.c(h!())?;
     }
     import_lock.commit().await.c(h!())?;
-    test_link::run_automatic_with_database(&db).await.c(h!())
+    sync_sigint_units(&db).await.c(h!())
 }
 
 async fn run_reimport(mode: Mode) -> anyhow::Result<()> {
@@ -479,7 +479,26 @@ async fn run_reimport(mode: Mode) -> anyhow::Result<()> {
     erase_orbit_data(&transaction).await.c(h!())?;
     sync_snapshot_units(&transaction, &snapshot).await.c(h!())?;
     transaction.commit().await.c(h!())?;
-    test_link::run_automatic_with_database(&db).await.c(h!())
+    sync_sigint_units(&db).await.c(h!())
+}
+
+async fn sync_sigint_units(
+    db: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<()> {
+    test_link::run_automatic_with_database(db).await.c(h!())?;
+    let transaction = acquire_import_lock(db).await.c(h!())?;
+    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    let imported = crate::sigint::unit::orbit::import_unlinked_orbit_units(
+        &transaction,
+        &login,
+    )
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    println!(
+        "Imported {imported} unmatched ORBIT units as inactive SIGINT units."
+    );
+    Ok(())
 }
 
 async fn erase_orbit_data<C>(db: &C) -> anyhow::Result<()>
@@ -664,6 +683,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{orbit_sync, orbit_unit_echelon};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
 
@@ -751,5 +771,111 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn sync_links_exact_units_before_importing_unmatched_units() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let synced_at = Utc::now().naive_utc();
+        let echelon_id = Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(echelon_id),
+            key: Set("battalion".to_string()),
+            name: Set(format!("Battalion-{echelon_id}")),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let exact_orbit_unit_id = Uuid::new_v4();
+        let unmatched_orbit_unit_id = Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit_for_sync(
+                exact_orbit_unit_id,
+                echelon_id,
+                "3 мсб",
+                synced_at,
+            ),
+            orbit_unit_for_sync(
+                unmatched_orbit_unit_id,
+                echelon_id,
+                "4 мсб",
+                synced_at,
+            ),
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let sync = persistence::record_sync(
+            &env.dbx,
+            "0123456789abcdef0123456789abcdef",
+            synced_at,
+        )
+        .await
+        .unwrap();
+        let exact_sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                battalion: Set("3 мсб".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        sync_sigint_units(&env.dbx).await.unwrap();
+
+        let exact_link = orbit_unit_sigint_unit::Entity::find_by_id((
+            exact_orbit_unit_id,
+            exact_sigint_unit.id,
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(!exact_link.is_manual);
+        let unmatched_link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(unmatched_orbit_unit_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let unmatched_sigint_unit =
+            sigint_unit::Entity::find_by_id(unmatched_link.sigint_unit_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(unmatched_link.is_manual);
+        assert!(!unmatched_sigint_unit.active);
+        assert_eq!(unmatched_sigint_unit.battalion, "4 мсб");
+
+        orbit_sync::Entity::delete_by_id(sync.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    fn orbit_unit_for_sync(
+        unit_id: Uuid,
+        echelon_id: Uuid,
+        name: &str,
+        synced_at: chrono::NaiveDateTime,
+    ) -> orbit_unit::ActiveModel {
+        orbit_unit::ActiveModel {
+            unit_id: Set(unit_id),
+            unit_name_short: Set(Some(name.to_string())),
+            operational_unit_name_full: Set(Some(name.to_string())),
+            generative_unit_name_full: Set(Some(name.to_string())),
+            unit_echelon_id: Set(Some(echelon_id)),
+            updated_at: Set(synced_at),
+            is_snapshot_root: Set(true),
+            ..Default::default()
+        }
     }
 }

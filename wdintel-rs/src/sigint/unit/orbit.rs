@@ -14,9 +14,7 @@ use crate::config::{
 use crate::entities::*;
 use crate::error::AppError;
 use crate::h;
-#[cfg(test)]
-use crate::types::warn;
-use crate::types::{debug, Env, ShortContext};
+use crate::types::{debug, warn, Env, ShortContext};
 use crate::users::{
     ensure_admin, ensure_rer_role, has_role, login_id_from_identity,
 };
@@ -378,6 +376,7 @@ where
         sigint_unit_id,
         propagate_hierarchy,
         None,
+        true,
     )
     .await
 }
@@ -396,6 +395,36 @@ where
         change.sigint_unit_id,
         false,
         Some(change),
+        true,
+    )
+    .await
+}
+
+pub(crate) async fn update_sigint_unit_name_with_reviewed_change<C>(
+    dbx: &C,
+    login: &Uuid,
+    sigint_unit_id: i64,
+    current_name: &str,
+    proposed_name: &str,
+) -> Result<UnitOrbitReconcileOutcome, AppError>
+where
+    C: ConnectionTrait,
+{
+    let change = OrbitUnitHierarchyChange {
+        sigint_unit_id,
+        attributes: vec![OrbitUnitAttributeChange {
+            attribute: "name",
+            current: current_name.to_string(),
+            proposed: proposed_name.to_string(),
+        }],
+    };
+    reconcile_sigint_unit_orbit_inner(
+        dbx,
+        login,
+        sigint_unit_id,
+        false,
+        Some(&change),
+        false,
     )
     .await
 }
@@ -406,6 +435,7 @@ async fn reconcile_sigint_unit_orbit_inner<C>(
     sigint_unit_id: i64,
     propagate_hierarchy: bool,
     reviewed_change: Option<&OrbitUnitHierarchyChange>,
+    reconcile_inconsistency: bool,
 ) -> Result<UnitOrbitReconcileOutcome, AppError>
 where
     C: ConnectionTrait,
@@ -420,7 +450,11 @@ where
         .ok_or(AppError::NotFound)
         .c(h!())?;
     let previous_unit = unit.clone();
-    let orbit_units = linked_orbit_units(dbx, sigint_unit_id).await.c(h!())?;
+    let orbit_units = if propagate_hierarchy || reconcile_inconsistency {
+        linked_orbit_units(dbx, sigint_unit_id).await.c(h!())?
+    } else {
+        Vec::new()
+    };
     let hierarchy_updated = if let Some(change) = reviewed_change {
         apply_reviewed_orbit_hierarchy_change(&mut unit, change)
     } else {
@@ -429,11 +463,15 @@ where
                 .await
                 .c(h!())?
     };
-    let details =
-        unit_inconsistency_details_for_links(dbx, &unit, &orbit_units)
-            .await
-            .c(h!())?;
-    let is_inconsistent = !details.reasons.is_empty();
+    let is_inconsistent = if reconcile_inconsistency {
+        let details =
+            unit_inconsistency_details_for_links(dbx, &unit, &orbit_units)
+                .await
+                .c(h!())?;
+        !details.reasons.is_empty()
+    } else {
+        unit.is_inconsistent
+    };
     let inconsistency_updated = unit.is_inconsistent != is_inconsistent;
     if !hierarchy_updated && !inconsistency_updated {
         return Ok(UnitOrbitReconcileOutcome {
@@ -462,7 +500,9 @@ where
     )
     .await
     .c(h!())?;
-    if hierarchy_updated {
+    if hierarchy_updated
+        && super::unit_hierarchy(&previous_unit) != super::unit_hierarchy(&unit)
+    {
         super::reconcile_parent_unit_activity(
             dbx,
             login,
@@ -1766,7 +1806,6 @@ pub(crate) struct OrbitUnitHierarchyChange {
     pub attributes: Vec<OrbitUnitAttributeChange>,
 }
 
-#[cfg(test)]
 pub(crate) async fn import_unlinked_orbit_units<C>(
     dbx: &C,
     login: &Uuid,
@@ -1872,7 +1911,6 @@ where
     Ok(imported)
 }
 
-#[cfg(test)]
 fn orbit_unit_and_ancestor_ids(
     orbit_units: &[orbit_unit::Model],
     mut unit_ids: HashSet<Uuid>,
@@ -2019,7 +2057,7 @@ where
     }
     let [other, team_or_crew, section, squad, platoon, company, battalion, regiment, brigade, division, corps, army, military_district, army_region] =
         hierarchy;
-    Ok(CreateUnitReq {
+    let mut unit_req = CreateUnitReq {
         name: None,
         other,
         team_or_crew,
@@ -2040,7 +2078,11 @@ where
         comment: String::new(),
         orbit_note: None,
         duplicate_unit_ids: Vec::new(),
-    })
+    };
+    if super::generated_unit_name_req(&unit_req).is_empty() {
+        unit_req.name = preferred_orbit_full_unit_name(orbit_unit);
+    }
+    Ok(unit_req)
 }
 
 #[derive(Clone, Copy)]
@@ -2121,6 +2163,22 @@ fn preferred_orbit_unit_name(unit: &orbit_unit::Model) -> Option<String> {
         unit.unit_name_short.as_deref(),
         unit.unit_name.as_deref(),
         unit.unit_name_original.as_deref(),
+        unit.unit_number.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|name| !name.is_empty())
+    .map(ToString::to_string)
+}
+
+fn preferred_orbit_full_unit_name(unit: &orbit_unit::Model) -> Option<String> {
+    [
+        unit.generative_unit_name_full.as_deref(),
+        unit.operational_unit_name_full.as_deref(),
+        unit.unit_name.as_deref(),
+        unit.unit_name_original.as_deref(),
+        unit.unit_name_short.as_deref(),
         unit.unit_number.as_deref(),
     ]
     .into_iter()

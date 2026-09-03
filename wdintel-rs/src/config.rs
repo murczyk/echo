@@ -442,6 +442,14 @@ pub const SIGINT_NETWORK_FIND_LIVE_QUERY_LIMIT: u64 = 250;
 pub const SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME: &str = "💻";
 pub const SIGINT_UNIT_LIST_DEFAULT_LIMIT: u64 = 100_000;
 pub const SIGINT_UNIT_LIST_MAX_LIMIT: u64 = 100_000;
+pub const SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX: usize = 1;
+pub const SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX: usize = 10;
+pub const SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX: usize = 11;
+pub const SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS: &[&str] = &[
+    "ув(с)", "тн", "пдво", "лво", "схво", "мво", "цво", "пво", "зхво", "зво",
+];
+pub const SIGINT_UNIT_NAME_CORPS_BLACKLIST_TERMS: &[&str] =
+    SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS;
 pub const SIGINT_UNIT_CHANGELOG_LIMIT: u64 = 200;
 pub const SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE: &str =
     "sigint-unit-merge:";

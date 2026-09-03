@@ -221,6 +221,18 @@ where
         .iter()
         .map(|link| link.orbit_unit_id)
         .collect::<BTreeSet<_>>();
+    load_orbit_hierarchies_for_unit_ids(db, &orbit_unit_ids)
+        .await
+        .c(h!())
+}
+
+pub(super) async fn load_orbit_hierarchies_for_unit_ids<C>(
+    db: &C,
+    orbit_unit_ids: &BTreeSet<Uuid>,
+) -> anyhow::Result<BTreeMap<Uuid, [String; 14]>>
+where
+    C: ConnectionTrait,
+{
     if orbit_unit_ids.is_empty() {
         return Ok(BTreeMap::new());
     }
@@ -270,7 +282,7 @@ where
         .map(|unit| (unit.unit_id, unit))
         .collect::<BTreeMap<_, _>>();
     let mut orbit_hierarchies = BTreeMap::new();
-    for orbit_unit_id in orbit_unit_ids {
+    for orbit_unit_id in orbit_unit_ids.iter().copied() {
         if let Some(hierarchy) =
             orbit_hierarchy_for_propagation(orbit_unit_id, &hierarchy_units)
                 .c(h!())?

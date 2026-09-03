@@ -87,6 +87,23 @@ pub enum LinkMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnitActivityScope {
+    Both,
+    Active,
+    Inactive,
+}
+
+impl UnitActivityScope {
+    pub fn active(self) -> Option<bool> {
+        match self {
+            Self::Both => None,
+            Self::Active => Some(true),
+            Self::Inactive => Some(false),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
     Accept,
     Skip,
@@ -195,6 +212,40 @@ pub fn prompt_unit_name_cleanup_mode() -> Result<Option<LinkMode>, AppError> {
         [
             "Automatic: apply every proposed SIGINT unit name change",
             "Manual: review every proposed SIGINT unit name change",
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn prompt_generated_unit_name_mode() -> Result<Option<LinkMode>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_mode_menu(
+        &mut terminal,
+        "Choose generated-name review mode (↑/↓, Enter, Esc: quit)",
+        [
+            "Automatic: apply every proposed SIGINT unit name change",
+            "Manual: review every proposed SIGINT unit name change",
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn prompt_unit_activity_scope(
+    title: &str,
+) -> Result<Option<UnitActivityScope>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_option_menu(
+        &mut terminal,
+        title,
+        &[
+            (
+                "Both active and inactive SIGINT units",
+                UnitActivityScope::Both,
+            ),
+            ("Only active SIGINT units", UnitActivityScope::Active),
+            ("Only inactive SIGINT units", UnitActivityScope::Inactive),
         ],
     );
     restore_terminal(&mut terminal).c(h!())?;
@@ -635,12 +686,26 @@ fn run_mode_menu(
     title: &str,
     options: [&str; 2],
 ) -> Result<Option<LinkMode>, AppError> {
+    run_option_menu(
+        terminal,
+        title,
+        &[
+            (options[0], LinkMode::Automatic),
+            (options[1], LinkMode::Manual),
+        ],
+    )
+}
+
+fn run_option_menu<T: Copy>(
+    terminal: &mut OrbitTerminal,
+    title: &str,
+    options: &[(&str, T)],
+) -> Result<Option<T>, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
-    let modes = [LinkMode::Automatic, LinkMode::Manual];
     let mut selected = 0;
     loop {
         terminal
-            .draw(|frame| draw_mode_menu(frame, selected, title, options))
+            .draw(|frame| draw_option_menu(frame, selected, title, options))
             .c(h!())?;
         if !event::poll(poll).c(h!())? {
             continue;
@@ -659,13 +724,13 @@ fn run_mode_menu(
                 return Ok(None);
             }
             KeyCode::Enter if key.modifiers.is_empty() => {
-                return Ok(Some(modes[selected]));
+                return Ok(Some(options[selected].1));
             }
             KeyCode::Up if key.modifiers.is_empty() => {
                 selected = selected.saturating_sub(1)
             }
             KeyCode::Down if key.modifiers.is_empty() => {
-                selected = (selected + 1).min(modes.len() - 1)
+                selected = (selected + 1).min(options.len() - 1)
             }
             _ => {}
         }
@@ -1509,14 +1574,14 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-fn draw_mode_menu(
+fn draw_option_menu<T>(
     frame: &mut Frame<'_>,
     selected: usize,
     title: &str,
-    options: [&str; 2],
+    options: &[(&str, T)],
 ) {
-    let area = centered_area(frame, 70, 6);
-    let items = options.into_iter().map(ListItem::new);
+    let area = centered_area(frame, 70, options.len() as u16 + 4);
+    let items = options.iter().map(|(label, _)| ListItem::new(*label));
     let list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))
         .highlight_style(
@@ -1786,10 +1851,6 @@ mod tests {
             .iter()
             .map(line_text)
             .any(|line| { line == " ORBIT: 4 мсб (ат) / 752 мсп" }));
-        assert!(lines
-            .iter()
-            .map(line_text)
-            .any(|line| { line == "Would be automatically resolved: yes" }));
     }
 
     #[test]
