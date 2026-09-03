@@ -8,8 +8,8 @@ use crate::config::{
 use crate::entities::{
     orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
 };
-use crate::types::{warn, Mode, ShortContext};
-use crate::{h, new_pg_pool_from_mode};
+use crate::h;
+use crate::types::{warn, ShortContext};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, JoinType,
     QueryFilter, QueryOrder, QuerySelect, RelationTrait, Statement,
@@ -258,13 +258,12 @@ impl ReviewSession {
     }
 }
 
-pub async fn run(mode: Mode) -> anyhow::Result<()> {
-    let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
-        return Ok(());
-    };
-    let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    run_with_database(&dbx, link_mode).await.c(h!())?;
-    Ok(())
+pub(super) async fn run_automatic_with_database(
+    dbx: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<()> {
+    run_with_database(dbx, tui::LinkMode::Automatic)
+        .await
+        .c(h!())
 }
 
 pub(super) async fn run_with_database(
@@ -1159,6 +1158,7 @@ fn print_summary(summary: ReviewSummary, persist_summary: PersistSummary) {
 mod tests {
     use super::*;
     use crate::orbit::types::SourceUnit;
+    use crate::types::Mode;
     use sea_orm::{ActiveValue::Set, TransactionTrait};
     use serde_json::json;
 

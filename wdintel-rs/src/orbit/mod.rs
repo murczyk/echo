@@ -18,6 +18,7 @@ use uuid::Uuid;
 mod dictionary;
 mod duplicate_candidate_review;
 mod duplicate_units;
+mod generated_unit_names;
 mod hierarchy;
 mod matching;
 mod persistence;
@@ -264,10 +265,6 @@ pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
     Ok(run_selected_action(mode).await.c(h!())?)
 }
 
-pub async fn oneoff_test_link_units(mode: Mode) -> Result<(), AppError> {
-    Ok(test_link::run(mode).await.c(h!())?)
-}
-
 pub async fn tui_merge_unit_duplicates(
     mode: Mode,
     dry_run: bool,
@@ -418,7 +415,6 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
             run_prepare_import(mode).await.c(h!())
         }
         Some(tui::StartAction::Import) => run_import(mode).await.c(h!()),
-        Some(tui::StartAction::LinkUnits) => test_link::run(mode).await.c(h!()),
         Some(tui::StartAction::MergeUnitDuplicates) => {
             duplicate_units::run(mode, false).await.c(h!())
         }
@@ -431,125 +427,11 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         Some(tui::StartAction::FixUnitNames) => {
             unit_name_cleanup::run(mode).await.c(h!())
         }
-        Some(tui::StartAction::ReconcileSigintUnits) => {
-            run_sigint_unit_reconciliation(mode).await.c(h!())
+        Some(tui::StartAction::ReviewGeneratedUnitNames) => {
+            generated_unit_names::run(mode).await.c(h!())
         }
         Some(tui::StartAction::Reimport) => run_reimport(mode).await.c(h!()),
         None => Ok(()),
-    }
-}
-
-async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
-    if !tui::confirm_sigint_unit_reconciliation().c(h!())? {
-        return Ok(());
-    }
-    let db = connect_database(mode).await.c(h!())?;
-    let import_lock = acquire_import_lock(&db).await.c(h!())?;
-    let changes = crate::sigint::unit::orbit::proposed_orbit_hierarchy_changes(
-        &import_lock,
-    )
-    .await
-    .c(h!())?;
-    let Some(accepted_changes) =
-        review_sigint_unit_hierarchy_changes(&changes).c(h!())?
-    else {
-        return Ok(());
-    };
-    let login = crate::users::system_login_id(&db).await.c(h!())?;
-    let stats =
-        crate::sigint::unit::orbit::reconcile_selected_orbit_hierarchy_changes(
-            &db,
-            &login,
-            &accepted_changes,
-        )
-        .await
-        .c(h!())?;
-    import_lock.commit().await.c(h!())?;
-    println!(
-        "Reconciled {} linked SIGINT units: {} hierarchies updated, {} inconsistent, {} multiple-link hierarchies skipped, {} duplicates merged.",
-        stats.scanned,
-        stats.hierarchy_updated,
-        stats.inconsistent,
-        stats.multiple_links_skipped,
-        stats.merged,
-    );
-    Ok(())
-}
-
-fn review_sigint_unit_hierarchy_changes(
-    changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
-) -> Result<
-    Option<Vec<crate::sigint::unit::orbit::OrbitUnitHierarchyChange>>,
-    AppError,
-> {
-    if changes.is_empty() {
-        return Ok(Some(Vec::new()));
-    }
-    let mut terminal = tui::setup_terminal().c(h!())?;
-    let result =
-        review_sigint_unit_hierarchy_changes_inner(&mut terminal, changes);
-    tui::restore_terminal(&mut terminal).c(h!())?;
-    result
-}
-
-fn review_sigint_unit_hierarchy_changes_inner(
-    terminal: &mut tui::OrbitTerminal,
-    changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
-) -> Result<
-    Option<Vec<crate::sigint::unit::orbit::OrbitUnitHierarchyChange>>,
-    AppError,
-> {
-    let mut accepted_changes = Vec::new();
-    for (index, change) in changes.iter().enumerate() {
-        let lines = change
-            .attributes
-            .iter()
-            .flat_map(|attribute| {
-                [
-                    attribute.attribute.to_string(),
-                    format!(
-                        "  current:  {}",
-                        display_or_empty(&attribute.current)
-                    ),
-                    format!(
-                        "  proposed: {}",
-                        display_or_empty(&attribute.proposed)
-                    ),
-                ]
-            })
-            .collect::<Vec<_>>();
-        let decision = tui::review_sigint_unit_enrichment(
-            terminal,
-            &format!(
-                "Enrich SIGINT unit {}: {}?",
-                change.sigint_unit_id,
-                display_or_empty(&change.sigint_unit_name)
-            ),
-            &lines,
-            &format!("SIGINT unit {}/{}", index + 1, changes.len()),
-        )
-        .c(h!())?;
-        match decision {
-            tui::EnrichmentDecision::Confirm => {
-                accepted_changes.push(change.clone());
-            }
-            tui::EnrichmentDecision::Deny => {}
-            tui::EnrichmentDecision::ConfirmAll => {
-                accepted_changes.extend_from_slice(&changes[index..]);
-                break;
-            }
-            tui::EnrichmentDecision::DenyAll => break,
-            tui::EnrichmentDecision::Quit => return Ok(None),
-        }
-    }
-    Ok(Some(accepted_changes))
-}
-
-fn display_or_empty(value: &str) -> &str {
-    if value.is_empty() {
-        "<empty>"
-    } else {
-        value
     }
 }
 
@@ -567,7 +449,8 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     let snapshot = snapshot::load_latest_snapshot(mode).await.c(h!())?;
     let db = connect_database(mode).await.c(h!())?;
     let import_lock = acquire_import_lock(&db).await.c(h!())?;
-    let latest_sync = persistence::load_latest_sync(&db).await.c(h!())?;
+    let latest_sync =
+        persistence::load_latest_sync(&import_lock).await.c(h!())?;
     if let Some(sync) =
         latest_sync.filter(|sync| sync.archive_md5 == snapshot.archive_md5)
     {
@@ -580,23 +463,23 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
             return Ok(());
         }
     } else {
-        sync_snapshot_units(&db, &snapshot).await.c(h!())?;
+        sync_snapshot_units(&import_lock, &snapshot).await.c(h!())?;
     }
     import_lock.commit().await.c(h!())?;
-    Ok(())
+    test_link::run_automatic_with_database(&db).await.c(h!())
 }
 
 async fn run_reimport(mode: Mode) -> anyhow::Result<()> {
-    let snapshot = snapshot::load_latest_snapshot(mode).await?;
-    if !tui::confirm_reimport()? {
+    let snapshot = snapshot::load_latest_snapshot(mode).await.c(h!())?;
+    if !tui::confirm_reimport().c(h!())? {
         return Ok(());
     }
-    let db = connect_database(mode).await?;
+    let db = connect_database(mode).await.c(h!())?;
     let transaction = acquire_import_lock(&db).await.c(h!())?;
-    erase_orbit_data(&transaction).await?;
-    sync_snapshot_units(&transaction, &snapshot).await?;
+    erase_orbit_data(&transaction).await.c(h!())?;
+    sync_snapshot_units(&transaction, &snapshot).await.c(h!())?;
     transaction.commit().await.c(h!())?;
-    Ok(())
+    test_link::run_automatic_with_database(&db).await.c(h!())
 }
 
 async fn erase_orbit_data<C>(db: &C) -> anyhow::Result<()>

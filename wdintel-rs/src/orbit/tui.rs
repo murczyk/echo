@@ -72,12 +72,11 @@ impl Drop for OrbitTerminal {
 pub enum StartAction {
     PrepareImport,
     Import,
-    LinkUnits,
     MergeUnitDuplicates,
     ReviewSigintDuplicateCandidates,
     ResolveUnparsedUnits,
     FixUnitNames,
-    ReconcileSigintUnits,
+    ReviewGeneratedUnitNames,
     Reimport,
 }
 
@@ -126,20 +125,18 @@ pub(super) struct SigintDuplicateReviewPair {
     pub shared_orbit_unit_ids: Vec<uuid::Uuid>,
 }
 
+pub(super) struct SigintDuplicateMergeReview {
+    pub orbit_unit_id: uuid::Uuid,
+    pub survivor: SigintDuplicateReviewUnit,
+    pub projected_survivor: SigintDuplicateReviewUnit,
+    pub merged_units: Vec<SigintDuplicateReviewUnit>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SigintDuplicatePairReviewDecision {
     MergeLeftIntoRight,
     MergeRightIntoLeft,
     Skip,
-    Quit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnrichmentDecision {
-    Confirm,
-    Deny,
-    ConfirmAll,
-    DenyAll,
     Quit,
 }
 
@@ -238,60 +235,8 @@ pub fn confirm_reimport() -> Result<bool, AppError> {
     Ok(is_reimport_confirmed(result?.as_deref()))
 }
 
-pub fn confirm_sigint_unit_reconciliation() -> Result<bool, AppError> {
-    let mut terminal = setup_terminal().c(h!())?;
-    let result = run_text_prompt(
-        &mut terminal,
-        "Type RECONCILE to review hierarchy enrichments and merge exact duplicates (Esc: cancel)",
-    );
-    restore_terminal(&mut terminal).c(h!())?;
-    Ok(is_sigint_unit_reconciliation_confirmed(
-        result.c(h!())?.as_deref(),
-    ))
-}
-
-pub fn review_sigint_unit_enrichment(
-    terminal: &mut OrbitTerminal,
-    title: &str,
-    lines: &[String],
-    progress: &str,
-) -> Result<EnrichmentDecision, AppError> {
-    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
-    let mut scroll = 0_u16;
-    loop {
-        terminal
-            .draw(|frame| {
-                draw_sigint_unit_enrichment_review(
-                    frame, title, lines, progress, scroll,
-                )
-            })
-            .c(h!())?;
-        if !event::poll(poll).c(h!())? {
-            continue;
-        }
-        let Event::Key(key) = event::read().c(h!())? else {
-            continue;
-        };
-        if let Some(decision) = enrichment_decision_for_key(key) {
-            return Ok(decision);
-        }
-        match key.code {
-            KeyCode::Up => scroll = scroll.saturating_sub(1),
-            KeyCode::Down => scroll = scroll.saturating_add(1),
-            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
-            KeyCode::PageDown => scroll = scroll.saturating_add(10),
-            KeyCode::Home => scroll = 0,
-            _ => {}
-        }
-    }
-}
-
 fn is_reimport_confirmed(input: Option<&str>) -> bool {
     input == Some("REIMPORT")
-}
-
-fn is_sigint_unit_reconciliation_confirmed(input: Option<&str>) -> bool {
-    input == Some("RECONCILE")
 }
 
 pub fn setup_terminal() -> io::Result<OrbitTerminal> {
@@ -366,7 +311,6 @@ pub(super) fn run_test_link_review(
 pub(super) fn review_duplicate_unit_group(
     terminal: &mut OrbitTerminal,
     candidates: &[DuplicateReviewCandidate],
-    would_automatically_resolve: bool,
     group_index: usize,
     group_count: usize,
 ) -> Result<DuplicateReviewDecision, AppError> {
@@ -382,7 +326,6 @@ pub(super) fn review_duplicate_unit_group(
                 draw_duplicate_unit_group_review(
                     frame,
                     candidates,
-                    would_automatically_resolve,
                     group_index,
                     group_count,
                     page,
@@ -400,7 +343,12 @@ pub(super) fn review_duplicate_unit_group(
         if let Some(decision) =
             duplicate_review_decision_for_key(key, page, candidates.len())
         {
-            return Ok(decision);
+            if decision != DuplicateReviewDecision::Quit
+                || confirm_test_link_exit(terminal).c(h!())?
+            {
+                return Ok(decision);
+            }
+            continue;
         }
         if key.kind != KeyEventKind::Press || !key.modifiers.is_empty() {
             continue;
@@ -448,6 +396,47 @@ pub(super) fn review_sigint_duplicate_pair(
         };
         if let Some(decision) = sigint_duplicate_pair_decision_for_key(key) {
             return Ok(decision);
+        }
+        match key.code {
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn review_sigint_duplicate_merge(
+    terminal: &mut OrbitTerminal,
+    review: &SigintDuplicateMergeReview,
+    current: usize,
+    total: usize,
+) -> Result<UnitNameReviewDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_sigint_duplicate_merge_review(
+                    frame, review, current, total, scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) = unit_name_review_decision_for_key(key) {
+            if decision != UnitNameReviewDecision::Quit
+                || confirm_test_link_exit(terminal).c(h!())?
+            {
+                return Ok(decision);
+            }
+            continue;
         }
         match key.code {
             KeyCode::Up => scroll = scroll.saturating_sub(1),
@@ -599,12 +588,11 @@ fn run_start_menu(
     let actions = [
         StartAction::PrepareImport,
         StartAction::Import,
-        StartAction::LinkUnits,
         StartAction::MergeUnitDuplicates,
         StartAction::ReviewSigintDuplicateCandidates,
         StartAction::ResolveUnparsedUnits,
         StartAction::FixUnitNames,
-        StartAction::ReconcileSigintUnits,
+        StartAction::ReviewGeneratedUnitNames,
         StartAction::Reimport,
     ];
     let mut selected = 0;
@@ -891,7 +879,6 @@ fn draw_test_link_review(frame: &mut Frame<'_>, session: &ReviewSession) {
 fn draw_duplicate_unit_group_review(
     frame: &mut Frame<'_>,
     candidates: &[DuplicateReviewCandidate],
-    would_automatically_resolve: bool,
     group_index: usize,
     group_count: usize,
     page: usize,
@@ -915,7 +902,6 @@ fn draw_duplicate_unit_group_review(
     frame.render_widget(
         Paragraph::new(Text::from(duplicate_unit_group_review_lines(
             &candidates[start..end],
-            would_automatically_resolve,
         )))
         .block(
             Block::default()
@@ -936,22 +922,8 @@ fn draw_duplicate_unit_group_review(
 
 fn duplicate_unit_group_review_lines(
     candidates: &[DuplicateReviewCandidate],
-    would_automatically_resolve: bool,
 ) -> Vec<Line<'static>> {
-    let mut lines = vec![
-        Line::styled(
-            format!(
-                "Would be automatically resolved: {}",
-                if would_automatically_resolve {
-                    "yes"
-                } else {
-                    "no"
-                }
-            ),
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
-        Line::default(),
-    ];
+    let mut lines = Vec::new();
     for (option, candidate) in candidates.iter().enumerate() {
         let orbit_match = candidate
             .unit
@@ -1051,6 +1023,125 @@ fn draw_sigint_duplicate_pair_review(
         ),
         sections[2],
     );
+}
+
+fn draw_sigint_duplicate_merge_review(
+    frame: &mut Frame<'_>,
+    review: &SigintDuplicateMergeReview,
+    current: usize,
+    total: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    frame.render_widget(
+        Paragraph::new(format!("Duplicate group {current} / {total}")),
+        sections[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Text::from(sigint_duplicate_merge_review_lines(review)))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Review the proposed SIGINT unit merge"),
+            )
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "Enter/y: merge | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        ),
+        sections[2],
+    );
+}
+
+fn sigint_duplicate_merge_review_lines(
+    review: &SigintDuplicateMergeReview,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(format!("ORBIT UUID: {}", review.orbit_unit_id)),
+        Line::from(format!(
+            "Survivor SIGINT unit ID: {}",
+            review.survivor.sigint_unit_id
+        )),
+        Line::from(format!(
+            "SIGINT units to merge: {}",
+            review
+                .merged_units
+                .iter()
+                .map(|unit| format!(
+                    "{} ({})",
+                    unit.sigint_unit_id, unit.sigint_unit_name
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+        Line::default(),
+    ];
+    for (label, current, proposed) in sigint_duplicate_unit_field_pairs(
+        &review.survivor,
+        &review.projected_survivor,
+    ) {
+        lines.extend(sigint_duplicate_field_diff_lines(
+            &label, &current, &proposed,
+        ));
+    }
+    lines
+}
+
+fn sigint_duplicate_unit_field_pairs(
+    current: &SigintDuplicateReviewUnit,
+    proposed: &SigintDuplicateReviewUnit,
+) -> Vec<(String, String, String)> {
+    [
+        (
+            "name",
+            current.sigint_unit_name.clone(),
+            proposed.sigint_unit_name.clone(),
+        ),
+        (
+            "hierarchy",
+            sigint_duplicate_hierarchy(current),
+            sigint_duplicate_hierarchy(proposed),
+        ),
+        (
+            "active",
+            current.active.to_string(),
+            proposed.active.to_string(),
+        ),
+        ("comment", current.comment.clone(), proposed.comment.clone()),
+        (
+            "orbit_note",
+            current.orbit_note.clone().unwrap_or_default(),
+            proposed.orbit_note.clone().unwrap_or_default(),
+        ),
+        (
+            "sigint_origin_id",
+            current
+                .sigint_origin_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            proposed
+                .sigint_origin_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "original_id",
+            current
+                .original_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            proposed
+                .original_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+        ),
+    ]
+    .into_iter()
+    .map(|(label, current, proposed)| (label.to_string(), current, proposed))
+    .collect()
 }
 
 fn sigint_duplicate_pair_review_lines(
@@ -1392,12 +1483,11 @@ fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
-        "Link ORBIT units to SIGINT units",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Review all SIGINT duplicate candidates pair by pair",
         "Resolve unparsed unit labels through ORBIT links",
         "Remove invalid army/corps and higher echelons from SIGINT unit names",
-        "Reconcile linked SIGINT units and merge exact duplicates",
+        "Review SIGINT unit names generated from echelons",
         "Erase and reimport all ORBIT data",
     ];
     let items = options.into_iter().map(ListItem::new);
@@ -1446,7 +1536,7 @@ fn draw_unit_name_change_review(
     unit_id: i64,
     current_name: &str,
     proposed_name: &str,
-    cleared_echelons: &[String],
+    details: &[String],
     current: usize,
     total: usize,
     scroll: u16,
@@ -1460,10 +1550,7 @@ fn draw_unit_name_change_review(
         word_diff_lines("CURRENT: ", "PROPOSED: ", current_name, proposed_name);
     let lines = vec![
         Line::from(format!("SIGINT unit ID: {unit_id}")),
-        Line::from(format!(
-            "Cleared SIGINT echelons: {}",
-            cleared_echelons.join(" / ")
-        )),
+        Line::from(format!("Details: {}", details.join(" / "))),
         Line::default(),
         current_diff,
         proposed_diff,
@@ -1473,7 +1560,7 @@ fn draw_unit_name_change_review(
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title("SIGINT unit name cleanup"),
+                    .title("SIGINT unit name review"),
             )
             .scroll((scroll, 0))
             .wrap(Wrap { trim: false }),
@@ -1551,42 +1638,6 @@ fn draw_review(
     );
 }
 
-fn draw_sigint_unit_enrichment_review(
-    frame: &mut Frame<'_>,
-    title: &str,
-    lines: &[String],
-    progress: &str,
-    scroll: u16,
-) {
-    let root = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Min(1),
-            Constraint::Length(2),
-        ])
-        .split(frame.size());
-    frame
-        .render_widget(Paragraph::new(format!("{progress}\n{title}")), root[0]);
-    frame.render_widget(
-        Paragraph::new(lines.join("\n"))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Proposed changes"),
-            )
-            .scroll((scroll, 0))
-            .wrap(Wrap { trim: false }),
-        root[1],
-    );
-    frame.render_widget(
-        Paragraph::new(
-            "Enter/y: confirm | n: deny | a: confirm all | d: deny all | q/Esc: cancel",
-        ),
-        root[2],
-    );
-}
-
 fn decision_for_key(
     key: KeyEvent,
     action: Action,
@@ -1612,31 +1663,6 @@ fn decision_for_key(
         }
         KeyCode::Char('s') => Some(Decision::Skip),
         KeyCode::Char('a') if allow_skip_all => Some(Decision::SkipAll),
-        _ => None,
-    }
-}
-
-fn enrichment_decision_for_key(key: KeyEvent) -> Option<EnrichmentDecision> {
-    if key.kind != KeyEventKind::Press {
-        return None;
-    }
-    if key.code == KeyCode::Esc
-        || key.code == KeyCode::Char('c')
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-    {
-        return Some(EnrichmentDecision::Quit);
-    }
-    if !key.modifiers.is_empty() {
-        return None;
-    }
-    match key.code {
-        KeyCode::Enter | KeyCode::Char('y') => {
-            Some(EnrichmentDecision::Confirm)
-        }
-        KeyCode::Char('n') => Some(EnrichmentDecision::Deny),
-        KeyCode::Char('a') => Some(EnrichmentDecision::ConfirmAll),
-        KeyCode::Char('d') => Some(EnrichmentDecision::DenyAll),
-        KeyCode::Char('q') => Some(EnrichmentDecision::Quit),
         _ => None,
     }
 }
@@ -1742,7 +1768,7 @@ mod tests {
             active: true,
         }];
 
-        let lines = duplicate_unit_group_review_lines(&candidates, true);
+        let lines = duplicate_unit_group_review_lines(&candidates);
 
         assert!(lines.iter().any(|line| line
             .spans

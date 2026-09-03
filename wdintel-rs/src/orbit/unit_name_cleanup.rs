@@ -10,7 +10,7 @@ use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
     ColumnTrait, Condition, ConnectionTrait, DatabaseBackend, EntityTrait,
-    FromQueryResult, QueryFilter, QueryOrder, Statement,
+    FromQueryResult, QueryFilter, QueryOrder, QuerySelect, Statement,
 };
 use std::collections::{BTreeMap, HashSet};
 
@@ -54,7 +54,7 @@ async fn run_with_database(
     db: &sea_orm::DatabaseConnection,
     cleanup_mode: tui::LinkMode,
 ) -> anyhow::Result<()> {
-    let changes = load_name_changes(db, None).await.c(h!())?;
+    let changes = load_name_changes(db, None, false).await.c(h!())?;
     let candidate_count = changes.len();
     let review = match cleanup_mode {
         tui::LinkMode::Automatic => ManualReview {
@@ -91,6 +91,7 @@ async fn run_with_database(
 async fn load_name_changes<C>(
     db: &C,
     unit_ids: Option<&[i64]>,
+    lock: bool,
 ) -> anyhow::Result<Vec<UnitNameChange>>
 where
     C: ConnectionTrait,
@@ -111,6 +112,9 @@ where
         }
         units = units
             .filter(sigint_unit::Column::Id.is_in(unit_ids.iter().copied()));
+    }
+    if lock {
+        units = units.lock_exclusive();
     }
     let units = units
         .all(db)
@@ -418,12 +422,13 @@ async fn persist_change_batch(
         .iter()
         .map(|change| change.unit_id)
         .collect::<Vec<_>>();
-    let current_changes = load_name_changes(&transaction, Some(&unit_ids))
-        .await
-        .c(h!())?
-        .into_iter()
-        .map(|change| (change.unit_id, change))
-        .collect::<BTreeMap<_, _>>();
+    let current_changes =
+        load_name_changes(&transaction, Some(&unit_ids), true)
+            .await
+            .c(h!())?
+            .into_iter()
+            .map(|change| (change.unit_id, change))
+            .collect::<BTreeMap<_, _>>();
     let mut actions = Vec::new();
     for reviewed in changes {
         let Some(current) = current_changes.get(&reviewed.unit_id) else {
@@ -470,7 +475,6 @@ fn orbit_hierarchy_change(
     }
     crate::sigint::unit::orbit::OrbitUnitHierarchyChange {
         sigint_unit_id: change.unit_id,
-        sigint_unit_name: change.current_name.clone(),
         attributes,
     }
 }
@@ -478,6 +482,11 @@ fn orbit_hierarchy_change(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{
+        orbit_unit, orbit_unit_sigint_unit, sigint_unit_changelog,
+    };
+    use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+    use serial_test::serial;
 
     #[test]
     fn clears_echelons_missing_from_the_orbit_generative_hierarchy() {
@@ -575,6 +584,80 @@ mod tests {
 
         assert_eq!(proposed_name_change(&army, &HashSet::new()), None);
         assert_eq!(proposed_name_change(&corps, &HashSet::new()), None);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_persists_the_reviewed_name_and_refreshes_search() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                regiment: Set("RegimentToken".to_string()),
+                corps: Set("CorpsToken".to_string()),
+                name: Set("RegimentToken CorpsToken".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            unit_name_short: Set(Some("RegimentToken".to_string())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        orbit_unit_sigint_unit::ActiveModel {
+            orbit_unit_id: Set(orbit_unit_id),
+            sigint_unit_id: Set(unit.id),
+            is_manual: Set(true),
+            is_suppressed: Set(false),
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let reviewed = load_name_changes(&env.dbx, Some(&[unit.id]), false)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+
+        let actions =
+            persist_change_batch(&env.dbx, &[reviewed], tui::LinkMode::Manual)
+                .await
+                .unwrap();
+
+        assert_eq!(actions.len(), 1);
+        let unit = sigint_unit::Entity::find_by_id(unit.id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unit.name, "RegimentToken");
+        assert_eq!(unit.regiment, "RegimentToken");
+        assert_eq!(unit.corps, "");
+        let search_matches = env
+            .dbx
+            .query_one_raw(Statement::from_sql_and_values(
+                DatabaseBackend::Postgres,
+                "select search_tsv @@ plainto_tsquery('russian', $1) as matches from sigint_unit where id = $2",
+                ["RegimentToken".into(), unit.id.into()],
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<bool>("", "matches")
+            .unwrap();
+        assert!(search_matches);
+        let changelog = sigint_unit_changelog::Entity::find()
+            .filter(sigint_unit_changelog::Column::SigintUnitId.eq(unit.id))
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(changelog.len(), 1);
     }
 
     fn sigint_unit(

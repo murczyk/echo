@@ -1008,9 +1008,7 @@ enum Cmd {
     NetworkInvalidationTui,
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
-    /// Link database SIGINT units to synchronized ORBIT units.
-    OneoffTestLinkUnits,
-    /// Merge safe ORBIT-backed unit duplicates in automatic or manual mode.
+    /// Merge ORBIT-backed unit duplicates in manual mode.
     TuiMergeOrbitUnitDuplicates(OrbitReviewWorkflowPs),
     /// Resolve unparsed unit labels in automatic or manual mode.
     TuiResolveOrbitUnparsedUnits(OrbitReviewWorkflowPs),
@@ -1941,7 +1939,6 @@ async fn async_main(
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
-        Cmd::OneoffTestLinkUnits => orbit::oneoff_test_link_units(mode).await,
         Cmd::TuiMergeOrbitUnitDuplicates(ps) => {
             orbit::tui_merge_unit_duplicates(mode, ps.dry_run).await
         }

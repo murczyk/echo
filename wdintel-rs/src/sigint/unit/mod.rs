@@ -46,8 +46,11 @@ pub fn unit_name(unit: &Unit) -> String {
 }
 
 fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
-    unit.name.trim().is_empty()
-        || unit.name == unit_name_from_hierarchy(unit_hierarchy(unit))
+    unit.name.trim().is_empty() || unit.name == generated_unit_name(unit)
+}
+
+pub(crate) fn generated_unit_name(unit: &sigint_unit::Model) -> String {
+    unit_name_from_hierarchy(unit_hierarchy(unit))
 }
 
 pub fn unit_name_req(req: &CreateUnitReq) -> String {
@@ -1524,7 +1527,7 @@ fn is_parent_unit(
         })
 }
 
-fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 14] {
+pub(crate) fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 14] {
     [
         unit.other.as_str(),
         unit.team_or_crew.as_str(),
@@ -1716,6 +1719,51 @@ pub(crate) async fn merge_units_in_transaction<C>(
 where
     C: ConnectionTrait,
 {
+    merge_units_in_transaction_with_name_policy(
+        login,
+        dbx,
+        unit_to_delete_id,
+        original_id,
+        MergeUnitNamePolicy::RegenerateDerived,
+    )
+    .await
+}
+
+pub(crate) async fn merge_units_in_transaction_preserving_name<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    merge_units_in_transaction_with_name_policy(
+        login,
+        dbx,
+        unit_to_delete_id,
+        original_id,
+        MergeUnitNamePolicy::PreserveOriginal,
+    )
+    .await
+}
+
+#[derive(Clone, Copy)]
+enum MergeUnitNamePolicy {
+    RegenerateDerived,
+    PreserveOriginal,
+}
+
+async fn merge_units_in_transaction_with_name_policy<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+    name_policy: MergeUnitNamePolicy,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
     if unit_to_delete_id == original_id {
         return Err(AppError::BL {
             msg: "unit cannot be merged into itself".to_string(),
@@ -1733,6 +1781,7 @@ where
         dbx,
         unit_to_delete_id,
         original_id,
+        name_policy,
     )
     .await
     .context(h!())?;
@@ -1744,6 +1793,7 @@ async fn complete_unit_merge_in_transaction<C>(
     dbx: &C,
     unit_to_delete_id: i64,
     original_id: i64,
+    name_policy: MergeUnitNamePolicy,
 ) -> Result<sigint_unit::Model, AppError>
 where
     C: ConnectionTrait,
@@ -1755,7 +1805,7 @@ where
             .context(h!())?;
     let previous_unit_original = unit_original.clone();
     let unit_original =
-        update_original_unit(unit_original, &unit_to_delete, dbx)
+        update_original_unit(unit_original, &unit_to_delete, dbx, name_policy)
             .await
             .context(h!())?;
 
@@ -2219,11 +2269,16 @@ async fn update_original_unit<C>(
     unit_original: sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
     dbx: &C,
+    name_policy: MergeUnitNamePolicy,
 ) -> anyhow::Result<sigint_unit::Model>
 where
     C: ConnectionTrait,
 {
-    let projected = project_merged_unit(&unit_original, unit_to_merge);
+    let projected = project_merged_unit_with_name_policy(
+        &unit_original,
+        unit_to_merge,
+        name_policy,
+    );
     let mut unit = unit_original.into_active_model();
     unit.name.set_if_not_equals(projected.name);
     unit.other.set_if_not_equals(projected.other);
@@ -2250,12 +2305,26 @@ where
     Ok(unit)
 }
 
-pub(crate) fn project_merged_unit(
+pub(crate) fn project_merged_unit_preserving_name(
     unit_original: &sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
 ) -> sigint_unit::Model {
+    project_merged_unit_with_name_policy(
+        unit_original,
+        unit_to_merge,
+        MergeUnitNamePolicy::PreserveOriginal,
+    )
+}
+
+fn project_merged_unit_with_name_policy(
+    unit_original: &sigint_unit::Model,
+    unit_to_merge: &sigint_unit::Model,
+    name_policy: MergeUnitNamePolicy,
+) -> sigint_unit::Model {
     let mut unit = unit_original.clone();
-    if unit_name_is_derived(unit_original) {
+    if matches!(name_policy, MergeUnitNamePolicy::RegenerateDerived)
+        && unit_name_is_derived(unit_original)
+    {
         unit.name = merged_unit_name(unit_original, unit_to_merge);
     }
 
@@ -4833,6 +4902,48 @@ mod tests {
             .try_get::<bool>("", "matches")
             .unwrap();
         assert!(search_matches);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_merge_policy_preserves_a_derived_survivor_name() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let surviving = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                company: Set("CompanyToken".to_string()),
+                name: Set("CompanyToken".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                brigade: Set("BrigadeToken".to_string()),
+                name: Set("BrigadeToken".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let transaction = env.dbx.begin().await.unwrap();
+
+        let merged = merge_units_in_transaction_preserving_name(
+            login_id,
+            &transaction,
+            duplicate.id,
+            surviving.id,
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+
+        assert_eq!(merged.name, "CompanyToken");
+        assert_eq!(merged.company, "CompanyToken");
+        assert_eq!(merged.brigade, "BrigadeToken");
     }
 
     #[tokio::test]
