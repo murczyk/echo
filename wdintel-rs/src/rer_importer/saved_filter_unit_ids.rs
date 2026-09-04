@@ -1,4 +1,5 @@
 use crate::entities::{sigint_saved_filter, sigint_unit};
+use crate::rer_importer::analysis::expand_unit_filter_values;
 use crate::types::{AppError, Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use anyhow::Context;
@@ -205,7 +206,9 @@ fn migrate_field(
             parse_unit_id_value(value_str).map(|unit_id| vec![unit_id]);
         let matched_ids = match matched_ids {
             Some(matched_ids) => Some(matched_ids),
-            None if migrate_labels => units_by_name.get(value_str).cloned(),
+            None if migrate_labels => {
+                Some(unit_ids_for_label(value_str, units_by_name))
+            }
             None => {
                 preserved.push((legacy_field, value_str.to_string()));
                 retained.push(value);
@@ -245,6 +248,21 @@ fn migrate_field(
         },
     );
     append_unit_ids(req, id_field, new_unit_ids);
+}
+
+fn unit_ids_for_label(
+    label: &str,
+    units_by_name: &BTreeMap<String, Vec<i64>>,
+) -> Vec<i64> {
+    expand_unit_filter_values(&Some(vec![label.to_string()]))
+        .ordinary_names
+        .into_iter()
+        .filter_map(|name| units_by_name.get(&name))
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn append_unit_ids(
@@ -367,14 +385,18 @@ mod tests {
     fn unit_names() -> BTreeMap<String, Vec<i64>> {
         BTreeMap::from([
             ("Alpha".to_string(), vec![10, 12]),
+            ("alpha".to_string(), vec![14]),
             ("Bravo".to_string(), vec![20]),
+            ("58 А".to_string(), vec![30]),
+            ("58 за".to_string(), vec![31]),
+            ("58 ЗВА".to_string(), vec![32]),
         ])
     }
 
     #[test]
     fn migrates_exact_match_labels_and_tagged_ids() {
         let req = json!({
-            "selected_units": ["Alpha", "unit-id:20", "Missing", "Не визначено"],
+            "selected_units": ["Alpha", "unit-id:20", "58 А", "Missing", "Не визначено"],
             "selected_unit_ids": [5],
             "units_exact_match_only": true
         });
@@ -385,8 +407,8 @@ mod tests {
         assert_eq!(
             plan.after,
             json!({
-                "selected_units": ["unit-id:10", "unit-id:12", "unit-id:20", "Missing", "Не визначено"],
-                "selected_unit_ids": [5, 10, 12, 20],
+                "selected_units": ["unit-id:10", "unit-id:12", "unit-id:14", "unit-id:20", "unit-id:30", "unit-id:31", "unit-id:32", "Missing", "Не визначено"],
+                "selected_unit_ids": [5, 10, 12, 14, 20, 30, 31, 32],
                 "units_exact_match_only": true
             })
         );
