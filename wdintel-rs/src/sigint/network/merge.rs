@@ -1,7 +1,12 @@
 use super::sea_orm_active_enums::*;
+use crate::config::{
+    SIGINT_NETWORK_ACTIVITY_REASON_MERGE_FREQUENCY_CLOSED,
+    SIGINT_NETWORK_ACTIVITY_REASON_MERGE_NETWORK_UPDATED,
+};
 use crate::entities::prelude::{AreaOfResponsibility, SigintPost};
 use crate::entities::*;
 use crate::error::AppError;
+use crate::sigint::network::activity_decision::*;
 use crate::sigint::network::bl::*;
 use crate::types::*;
 use chrono::*;
@@ -19,11 +24,24 @@ pub async fn merge_two_networks(
     network_id_from: i64,
     network_id_to: i64,
 ) -> anyhow::Result<(), AppError> {
-    // Fetch both networks
-    let network_from =
-        find_network(txn, network_id_from).await.context(h!())?;
-
-    let network_to = find_network(txn, network_id_to).await.context(h!())?;
+    let networks = sigint_network::Entity::find()
+        .filter(
+            sigint_network::Column::Id.is_in([network_id_from, network_id_to]),
+        )
+        .order_by_asc(sigint_network::Column::Id)
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let network_from = networks
+        .iter()
+        .find(|network| network.id == network_id_from)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let network_to = networks
+        .into_iter()
+        .find(|network| network.id == network_id_to)
+        .ok_or(AppError::NotFound)?;
 
     if !merge_inactive
         && (is_inactive_network(&network_from)
@@ -115,6 +133,7 @@ pub async fn merge_two_networks(
         network_active_from
     );
 
+    let old_network_to = network_to.clone();
     let mut network_to_model: sigint_network::ActiveModel = network_to.into();
     network_to_model.location = Set(new_location.unwrap_or_default());
     network_to_model.radio_station = Set(new_radio_station);
@@ -122,7 +141,20 @@ pub async fn merge_two_networks(
     network_to_model.updated_by_login_id = Set(Some(*login));
     network_to_model.active_from = Set(network_active_from);
     network_to_model.active_to = Set(network_active_to);
-    network_to_model.update(txn).await.context(h!())?;
+    let network_to = network_to_model.update(txn).await.context(h!())?;
+    record_activity_decision_if_changed(
+        txn,
+        ActivityDecisionTarget::Network {
+            network_id: network_id_to,
+        },
+        ActivityDecisionActor::merge(Some(*login)),
+        SIGINT_NETWORK_ACTIVITY_REASON_MERGE_NETWORK_UPDATED,
+        ActivityState::network(&old_network_to),
+        ActivityState::network(&network_to),
+        ActivityDecisionEvidence::default(),
+    )
+    .await
+    .context(h!())?;
 
     // Mark network_from as deleted, set merget_to field
     let mut network_from_model: sigint_network::ActiveModel =
@@ -157,10 +189,26 @@ pub async fn merge_two_network_freqs(
         .await
         .context(h!())?
         .ok_or(AppError::NotFound)?;
-    let freq_to = sigint_network_freq::Entity::find_by_id(freq_id_to)
-        .one(txn)
+    let _network = lock_network_activity_target(txn, freq_from.network_id)
         .await
-        .context(h!())?
+        .context(h!())?;
+    let frequencies = sigint_network_freq::Entity::find()
+        .filter(
+            sigint_network_freq::Column::Id.is_in([freq_id_from, freq_id_to]),
+        )
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let freq_from = frequencies
+        .iter()
+        .find(|network_freq| network_freq.id == freq_id_from)
+        .cloned()
+        .ok_or(AppError::NotFound)?;
+    let freq_to = frequencies
+        .into_iter()
+        .find(|network_freq| network_freq.id == freq_id_to)
         .ok_or(AppError::NotFound)?;
 
     if freq_from.network_id != freq_to.network_id
@@ -217,11 +265,27 @@ pub async fn merge_two_network_freqs(
     if !freq_from.deleted {
         let cutoff = std::cmp::max(freq_to.active_from, freq_from.active_from);
         let final_active_to = freq_from.active_to.unwrap_or(cutoff);
+        let old_freq_from = freq_from.clone();
         let mut freq_from_record: sigint_network_freq::ActiveModel =
             freq_from.into();
         freq_from_record.deleted = Set(true);
         freq_from_record.active_to = Set(Some(final_active_to));
-        freq_from_record.update(txn).await.context(h!())?;
+        let freq_from = freq_from_record.update(txn).await.context(h!())?;
+        record_activity_decision_if_changed(
+            txn,
+            ActivityDecisionTarget::Frequency {
+                network_id: freq_from.network_id,
+                network_freq_id: freq_from.id,
+                freq: &freq_from.freq,
+            },
+            ActivityDecisionActor::merge(None),
+            SIGINT_NETWORK_ACTIVITY_REASON_MERGE_FREQUENCY_CLOSED,
+            ActivityState::frequency(&old_freq_from),
+            ActivityState::frequency(&freq_from),
+            ActivityDecisionEvidence::default(),
+        )
+        .await
+        .context(h!())?;
     }
 
     info!("✅ Merged network freq {freq_id_from} into {freq_id_to}");
@@ -318,7 +382,12 @@ async fn reassign_freqs(
             .filter(sigint_network_freq::Column::Deleted.eq(false))
             .filter(sigint_network_freq::Column::ActiveTo.is_null());
     }
-    let freqs_from = freqs_from.all(txn).await.context(h!())?;
+    let freqs_from = freqs_from
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .context(h!())?;
 
     for freq in freqs_from {
         let id = freq.id;
@@ -370,32 +439,43 @@ async fn reassign_freqs(
         freqs_to_delete = freqs_to_delete
             .filter(sigint_network_freq::Column::Deleted.eq(false));
     }
-    let freq_vals: Vec<String> = freqs_to_delete
-        .clone()
+    let freqs_to_delete = freqs_to_delete
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
         .all(txn)
         .await
-        .context(h!())?
-        .into_iter()
-        .map(|f| f.freq)
-        .collect();
-    let mut update_remaining_freqs = sigint_network_freq::Entity::update_many()
-        .filter(sigint_network_freq::Column::NetworkId.eq(network_id_from));
-    if !merge_inactive {
-        update_remaining_freqs = update_remaining_freqs
-            .filter(sigint_network_freq::Column::Deleted.eq(false));
-    }
-    let update_res = update_remaining_freqs
-        .col_expr(sigint_network_freq::Column::Deleted, Expr::value(true))
-        .col_expr(
-            sigint_network_freq::Column::ActiveTo,
-            Expr::cust("COALESCE(sigint_network_freq.active_to, NOW())"),
+        .context(h!())?;
+    let freq_vals = freqs_to_delete
+        .iter()
+        .map(|network_freq| network_freq.freq.clone())
+        .collect::<Vec<_>>();
+    let rows_affected = freqs_to_delete.len();
+    let now = Utc::now().naive_utc();
+    for network_freq in freqs_to_delete {
+        let old_network_freq = network_freq.clone();
+        let mut network_freq = network_freq.into_active_model();
+        network_freq.deleted = Set(true);
+        network_freq.active_to = Set(old_network_freq.active_to.or(Some(now)));
+        let network_freq = network_freq.update(txn).await.context(h!())?;
+        record_activity_decision_if_changed(
+            txn,
+            ActivityDecisionTarget::Frequency {
+                network_id: network_id_from,
+                network_freq_id: network_freq.id,
+                freq: &network_freq.freq,
+            },
+            ActivityDecisionActor::merge(Some(*login)),
+            SIGINT_NETWORK_ACTIVITY_REASON_MERGE_FREQUENCY_CLOSED,
+            ActivityState::frequency(&old_network_freq),
+            ActivityState::frequency(&network_freq),
+            ActivityDecisionEvidence::default(),
         )
-        .exec(txn)
         .await
         .context(h!())?;
+    }
     info!(
         "Marked as deleted {} remaining freqs: {:?}",
-        update_res.rows_affected, freq_vals
+        rows_affected, freq_vals
     );
 
     Ok(())

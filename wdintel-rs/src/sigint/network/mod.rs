@@ -351,7 +351,9 @@ pub async fn restore_network(
     let user_id = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.context(h!())?;
     let network_id = req.into_inner().network_id;
-    let mut network = find_network(&txn, network_id).await.context(h!())?;
+    let mut network = lock_network_activity_target(&txn, network_id)
+        .await
+        .context(h!())?;
     if network.deleted && network.active_to.is_some() {
         let old_network = network.clone();
         network = bl_restore_network(&txn, network).await.context(h!())?;
@@ -415,18 +417,23 @@ fn apply_network_status(
     }
 }
 
-async fn reactivate_network_freqs_for_do_not_archive<'a, 'async_trait, C>(
-    dbx: &'a C,
+async fn reactivate_network_freqs_for_do_not_archive(
+    txn: &DatabaseTransaction,
     network_id: i64,
     actor: ActivityDecisionActor,
-) -> Result<(), AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+) -> Result<(), AppError> {
+    let _network = sigint_network::Entity::find_by_id(network_id)
+        .lock_exclusive()
+        .one(txn)
+        .await
+        .context(h!())?
+        .ok_or(AppError::NotFound)?;
     let network_freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
-        .all(dbx)
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
+        .all(txn)
         .await
         .context(h!())?;
     let mut active_freqs = network_freqs
@@ -453,9 +460,9 @@ where
         let mut network_freq = network_freq.into_active_model();
         network_freq.active_from = Set(Utc::now().naive_utc());
         network_freq.active_to = Set(None);
-        let network_freq = network_freq.update(dbx).await.context(h!())?;
+        let network_freq = network_freq.update(txn).await.context(h!())?;
         record_activity_decision_if_changed(
-            dbx,
+            txn,
             ActivityDecisionTarget::Frequency {
                 network_id,
                 network_freq_id: network_freq.id,
@@ -1232,6 +1239,7 @@ pub async fn update_network(
 
     let network = sigint_network::Entity::find_by_id(req.id)
         .filter(sigint_network::Column::Deleted.eq(is_restore_network))
+        .lock_exclusive()
         .one(&txn)
         .await
         .context(h!())?
@@ -2385,12 +2393,15 @@ pub async fn add_network_freq(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let network = lock_network_activity_target(&txn, req.network_id)
+        .await
+        .context(h!())?;
 
     let previous_network_freq = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
         .order_by_desc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
         .one(&txn)
         .await
         .context(h!())?;
@@ -2401,6 +2412,7 @@ pub async fn add_network_freq(
         .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .lock_exclusive()
         .one(&txn)
         .await
         .context(h!())?;
@@ -2562,12 +2574,15 @@ pub async fn add_network_freq_v2(
     let req = req.into_inner();
     let txn = env.dbx.begin().await.context(h!())?;
 
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let network = lock_network_activity_target(&txn, req.network_id)
+        .await
+        .context(h!())?;
 
     let previous_network_freq = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
         .order_by_desc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
         .one(&txn)
         .await
         .context(h!())?;
@@ -2577,6 +2592,7 @@ pub async fn add_network_freq_v2(
         .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .lock_exclusive()
         .one(&txn)
         .await
         .context(h!())?;
@@ -2729,15 +2745,19 @@ pub async fn reactivate_network_freq(
     let req = req.into_inner();
     let txn = env.dbx.begin().await.context(h!())?;
 
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
-    let network_freq =
-        sigint_network_freq::Entity::find_by_id(req.network_freq_id)
-            .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
-            .filter(sigint_network_freq::Column::Deleted.eq(false))
-            .one(&txn)
-            .await
-            .context(h!())?
-            .ok_or(AppError::NotFound)?;
+    let network = lock_network_activity_target(&txn, req.network_id)
+        .await
+        .context(h!())?;
+    let network_freq = lock_network_frequency_activity_target(
+        &txn,
+        req.network_id,
+        req.network_freq_id,
+    )
+    .await
+    .context(h!())?;
+    if network_freq.deleted {
+        return Err(AppError::NotFound);
+    }
 
     if network_freq.active_to.is_none() {
         return Err(AppError::BL {
@@ -2755,6 +2775,7 @@ pub async fn reactivate_network_freq(
         .filter(sigint_network_freq::Column::Id.ne(req.network_freq_id))
         .filter(sigint_network_freq::Column::ActiveTo.is_null())
         .filter(sigint_network_freq::Column::Deleted.eq(false))
+        .lock_exclusive()
         .one(&txn)
         .await
         .context(h!())?;
@@ -2916,7 +2937,9 @@ pub async fn update_network_freq(
     let txn = env.dbx.begin().await.context(h!())?;
 
     // Check if network exists
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let network = lock_network_activity_target(&txn, req.network_id)
+        .await
+        .context(h!())?;
     let updated_freq_active_from =
         update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
@@ -2934,6 +2957,7 @@ pub async fn update_network_freq(
     let network_freq_model =
         sigint_network_freq::Entity::find_by_id(req.network_freq_id)
             .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+            .lock_exclusive()
             .one(&txn)
             .await
             .context(h!())?;
@@ -3065,7 +3089,9 @@ pub async fn update_network_freq_v2(
     let req = req.into_inner();
     let txn = env.dbx.begin().await.context(h!())?;
 
-    let network = find_network(&txn, req.network_id).await.context(h!())?;
+    let network = lock_network_activity_target(&txn, req.network_id)
+        .await
+        .context(h!())?;
     let updated_freq_active_from =
         update_network_freq_active_from(req.active_from)?;
     let updated_freq_active_to =
@@ -3082,6 +3108,7 @@ pub async fn update_network_freq_v2(
     let network_freq_model =
         sigint_network_freq::Entity::find_by_id(req.network_freq_id)
             .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
+            .lock_exclusive()
             .one(&txn)
             .await
             .context(h!())?;
@@ -3304,55 +3331,13 @@ pub async fn delete_network_freq(
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
-
-    let freq_records = match req.id {
-        Some(id) => {
-            let freq_record = sigint_network_freq::Entity::find_by_id(id)
-                .one(&txn)
-                .await
-                .context(h!())?;
-            match freq_record {
-                Some(freq_record) => {
-                    if let Some(network_id) = req.network_id {
-                        if network_id != freq_record.network_id {
-                            return Err(AppError::BL {
-                                msg: format!(
-                                    "Frequency id {} belongs to network {}, not {}",
-                                    id, freq_record.network_id, network_id
-                                ),
-                            });
-                        }
-                    }
-                    if let Some(freq) = req.freq.as_ref() {
-                        if freq != &freq_record.freq {
-                            return Err(AppError::BL {
-                                msg: format!(
-                                    "Frequency id {} belongs to frequency {}, not {}",
-                                    id, freq_record.freq, freq
-                                ),
-                            });
-                        }
-                    }
-                    vec![freq_record]
-                }
-                None => vec![],
-            }
-        }
+    let locked_records =
+        lock_network_frequencies_for_deletion(&txn, &req).await?;
+    let (network, freq_records) = match locked_records {
+        Some(locked_records) => locked_records,
         None => {
-            let network_id = req.network_id.ok_or_else(|| AppError::BL {
-                msg: "network_id is required when deleting by frequency"
-                    .to_string(),
-            })?;
-            let freq = req.freq.clone().ok_or_else(|| AppError::BL {
-                msg: "freq is required when deleting by frequency".to_string(),
-            })?;
-            sigint_network_freq::Entity::find()
-                .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
-                .filter(sigint_network_freq::Column::Freq.eq(freq))
-                .filter(sigint_network_freq::Column::Deleted.eq(false))
-                .all(&txn)
-                .await
-                .context(h!())?
+            txn.commit().await.context(h!())?;
+            return Err(AppError::NotFound);
         }
     };
     let mut network_detail = None;
@@ -3395,7 +3380,6 @@ pub async fn delete_network_freq(
         }
 
         if let Some(network_id) = freq_records.first().map(|x| x.network_id) {
-            let network = find_network(&txn, network_id).await.context(h!())?;
             let old_network = network.clone();
             let (network_active_from, network_active_to) =
                 get_network_activity_range(&txn, network_id)
@@ -3596,13 +3580,11 @@ async fn cleanup_networks_worker_1(
         .collect();
 
     for (network, network_freqs) in networks {
-        let is_recent_network = recent_network_ids.contains(&network.id);
         cleanup_candidate_network_activity(
             dbx,
             network,
             network_freqs,
             &network_freqs_to_remove_by_id,
-            is_recent_network,
             CleanupActivityWindow {
                 delta,
                 lookback_since: cleanup_time.naive_utc(),
@@ -3680,39 +3662,18 @@ async fn cleanup_networks_worker_1(
         let should_apply_deactivation = should_deactivate && !is_recent_network;
         let should_apply_delete = should_delete && !is_recent_network;
         if should_apply_delete || should_apply_deactivation {
-            let txn = dbx.begin().await.context(h!())?;
-            let old_network = network.clone();
-            let deleted = network.deleted;
-            let no_active_to = network.active_to.is_none();
-            let network_id = network.id;
-            let mut network = network.into_active_model();
-            network.deleted = Set(should_apply_delete);
-            if should_apply_deactivation && !deleted && no_active_to {
-                let synthetic_active_to =
-                    calc_network_synthetic_active_to(&txn, network_id, delta)
-                        .await
-                        .context(h!())?;
-                network.active_to = Set(synthetic_active_to);
-            }
-            let network = network.update(&txn).await.context(h!())?;
-            record_activity_decision_if_changed(
-                &txn,
-                ActivityDecisionTarget::Network { network_id },
-                ActivityDecisionActor::worker(
-                    SIGINT_NETWORK_ACTIVITY_DECISION_WORKER_CLEANUP,
-                ),
-                SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_NO_ACTIVE_FREQUENCIES,
-                ActivityState::network(&old_network),
-                ActivityState::network(&network),
-                ActivityDecisionEvidence {
-                    lookback_since: Some(cleanup_time.naive_utc()),
-                    lookback_till: Some(start_time.naive_utc()),
-                    ..Default::default()
+            cleanup_other_network_activity(
+                dbx,
+                network.id,
+                recent_network_cutoff,
+                CleanupActivityWindow {
+                    delta,
+                    lookback_since: cleanup_time.naive_utc(),
+                    lookback_till: start_time.naive_utc(),
                 },
             )
             .await
             .context(h!())?;
-            txn.commit().await.context(h!())?;
         }
     }
     debug!("cleanup_networks_worker completed");
@@ -3724,13 +3685,34 @@ async fn cleanup_candidate_network_activity(
     network: sigint_network::Model,
     network_freqs: Vec<sigint_network_freq::Model>,
     cleanup_candidates: &HashMap<i64, CleanupNetworkFreqDesc>,
-    is_recent_network: bool,
     activity_window: CleanupActivityWindow,
 ) -> Result<(), AppError> {
     let txn = dbx.begin().await.context(h!())?;
+    let network = lock_network_activity_target(&txn, network.id)
+        .await
+        .context(h!())?;
+    let network_freq_ids = network_freqs
+        .into_iter()
+        .filter(|network_freq| {
+            cleanup_candidates.contains_key(&network_freq.id)
+        })
+        .map(|network_freq| network_freq.id)
+        .collect::<Vec<_>>();
+    let network_freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::Id.is_in(network_freq_ids))
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
+        .all(&txn)
+        .await
+        .context(h!())?;
+    let is_recent_network = network.created_at > activity_window.lookback_since;
     let mut invalidation_freqs = Vec::new();
     for network_freq in network_freqs {
-        if is_recent_network || network.do_not_archive {
+        if is_recent_network
+            || network.do_not_archive
+            || network_freq.deleted
+            || network_freq.active_to.is_some()
+        {
             continue;
         }
         let Some(cleanup_candidate) = cleanup_candidates.get(&network_freq.id)
@@ -3806,6 +3788,70 @@ async fn cleanup_candidate_network_activity(
         invalidation_freqs,
     )
     .await;
+    Ok(())
+}
+
+async fn cleanup_other_network_activity(
+    dbx: &DatabaseConnection,
+    network_id: i64,
+    recent_network_cutoff: NaiveDateTime,
+    activity_window: CleanupActivityWindow,
+) -> Result<(), AppError> {
+    let txn = dbx.begin().await.context(h!())?;
+    let network = lock_network_activity_target(&txn, network_id)
+        .await
+        .context(h!())?;
+    if network.deleted
+        || network.do_not_archive
+        || network.created_at > recent_network_cutoff
+    {
+        return Ok(());
+    }
+    let network_freqs = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .all(&txn)
+        .await
+        .context(h!())?;
+    let should_delete = network_freqs.is_empty();
+    let should_deactivate = network_freqs
+        .iter()
+        .all(|network_freq| network_freq.active_to.is_some());
+    if !should_delete && !should_deactivate {
+        return Ok(());
+    }
+
+    let old_network = network.clone();
+    let mut network = network.into_active_model();
+    network.deleted = Set(should_delete);
+    if should_deactivate && old_network.active_to.is_none() {
+        let synthetic_active_to = calc_network_synthetic_active_to(
+            &txn,
+            network_id,
+            activity_window.delta,
+        )
+        .await
+        .context(h!())?;
+        network.active_to = Set(synthetic_active_to);
+    }
+    let network = network.update(&txn).await.context(h!())?;
+    record_activity_decision_if_changed(
+        &txn,
+        ActivityDecisionTarget::Network { network_id },
+        ActivityDecisionActor::worker(
+            SIGINT_NETWORK_ACTIVITY_DECISION_WORKER_CLEANUP,
+        ),
+        SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_NO_ACTIVE_FREQUENCIES,
+        ActivityState::network(&old_network),
+        ActivityState::network(&network),
+        ActivityDecisionEvidence {
+            lookback_since: Some(activity_window.lookback_since),
+            lookback_till: Some(activity_window.lookback_till),
+            ..Default::default()
+        },
+    )
+    .await
+    .context(h!())?;
+    txn.commit().await.context(h!())?;
     Ok(())
 }
 
@@ -4625,6 +4671,87 @@ pub async fn update_network_posts(
     }
 
     Ok(Json(network_detail[0].clone()))
+}
+
+async fn lock_network_frequencies_for_deletion(
+    txn: &DatabaseTransaction,
+    req: &DeleteNetworkFreqReq,
+) -> Result<
+    Option<(sigint_network::Model, Vec<sigint_network_freq::Model>)>,
+    AppError,
+> {
+    let network_id = match req.id {
+        Some(id) => sigint_network_freq::Entity::find_by_id(id)
+            .select_only()
+            .column(sigint_network_freq::Column::NetworkId)
+            .into_tuple::<i64>()
+            .one(txn)
+            .await
+            .context(h!())?,
+        None => Some(req.network_id.ok_or_else(|| AppError::BL {
+            msg:
+                "network_id is required when deleting by frequency".to_string(),
+        })?),
+    };
+    let Some(network_id) = network_id else {
+        return Ok(None);
+    };
+    let network = lock_network_activity_target(txn, network_id)
+        .await
+        .context(h!())?;
+    let freq_records = match req.id {
+        Some(id) => {
+            let freq_record = sigint_network_freq::Entity::find_by_id(id)
+                .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+                .lock_exclusive()
+                .one(txn)
+                .await
+                .context(h!())?;
+            match freq_record {
+                Some(freq_record) => {
+                    if let Some(expected_network_id) = req.network_id {
+                        if expected_network_id != freq_record.network_id {
+                            return Err(AppError::BL {
+                                msg: format!(
+                                    "Frequency id {} belongs to network {}, not {}",
+                                    id,
+                                    freq_record.network_id,
+                                    expected_network_id
+                                ),
+                            });
+                        }
+                    }
+                    if let Some(freq) = req.freq.as_ref() {
+                        if freq != &freq_record.freq {
+                            return Err(AppError::BL {
+                                msg: format!(
+                                    "Frequency id {} belongs to frequency {}, not {}",
+                                    id, freq_record.freq, freq
+                                ),
+                            });
+                        }
+                    }
+                    vec![freq_record]
+                }
+                None => vec![],
+            }
+        }
+        None => {
+            let freq = req.freq.clone().ok_or_else(|| AppError::BL {
+                msg: "freq is required when deleting by frequency".to_string(),
+            })?;
+            sigint_network_freq::Entity::find()
+                .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+                .filter(sigint_network_freq::Column::Freq.eq(freq))
+                .filter(sigint_network_freq::Column::Deleted.eq(false))
+                .order_by_asc(sigint_network_freq::Column::Id)
+                .lock_exclusive()
+                .all(txn)
+                .await
+                .context(h!())?
+        }
+    };
+    Ok(Some((network, freq_records)))
 }
 
 /// Редагування списку підрозділів, які належать до мережі
@@ -6222,6 +6349,97 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn concurrent_cleanup_records_each_transition_once() {
+        let env = cleanup().await.unwrap();
+        let old_dt = cleanup_old_dt();
+        let network = mk_sigint_network(
+            &env.dbx,
+            sigint_network::ActiveModel {
+                name: Set("Concurrent cleanup activity log".to_string()),
+                created_at: Set(old_dt),
+                updated_at: Set(old_dt),
+                active_from: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let network_freq = mk_sigint_network_freq(
+            &env.dbx,
+            sigint_network_freq::ActiveModel {
+                network_id: Set(network.id),
+                freq: Set("146.4750".to_string()),
+                active_from: Set(old_dt),
+                last_seen_dt: Set(Some(old_dt)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let cleanup_candidates = HashMap::from([(
+            network_freq.id,
+            CleanupNetworkFreqDesc {
+                id: network_freq.id,
+                network_id: network.id,
+                freq: network_freq.freq.clone(),
+                last_seen_dt: network_freq.last_seen_dt,
+                location: network.location.clone(),
+                name: network.name.clone(),
+            },
+        )]);
+        let activity_window = CleanupActivityWindow {
+            delta: Duration::days(CLEANUP_NETWORKS_CUTOFF_TIME_DAYS),
+            lookback_since: Utc::now().naive_utc()
+                - Duration::days(CLEANUP_NETWORKS_CUTOFF_TIME_DAYS),
+            lookback_till: Utc::now().naive_utc(),
+        };
+
+        let (first, second) = tokio::join!(
+            cleanup_candidate_network_activity(
+                &env.dbx,
+                network.clone(),
+                vec![network_freq.clone()],
+                &cleanup_candidates,
+                activity_window,
+            ),
+            cleanup_candidate_network_activity(
+                &env.dbx,
+                network.clone(),
+                vec![network_freq],
+                &cleanup_candidates,
+                activity_window,
+            ),
+        );
+        first.unwrap();
+        second.unwrap();
+
+        let decisions = sigint_activity_decision_changelog::Entity::find()
+            .filter(
+                sigint_activity_decision_changelog::Column::NetworkId
+                    .eq(network.id),
+            )
+            .all(&env.dbx)
+            .await
+            .unwrap();
+        assert_eq!(decisions.len(), 2);
+        assert_eq!(
+            decisions
+                .iter()
+                .filter(|decision| decision.target_kind == "network")
+                .count(),
+            1
+        );
+        assert_eq!(
+            decisions
+                .iter()
+                .filter(|decision| decision.target_kind == "frequency")
+                .count(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn cleanup_labels_synthetic_network_deactivation_separately() {
         let env = cleanup().await.unwrap();
         let old_dt = cleanup_old_dt();
@@ -6379,8 +6597,9 @@ mod tests {
         .await
         .unwrap();
 
+        let txn = env.dbx.begin().await.unwrap();
         reactivate_network_freqs_for_do_not_archive(
-            &env.dbx,
+            &txn,
             network.id,
             ActivityDecisionActor::worker(
                 SIGINT_NETWORK_ACTIVITY_DECISION_WORKER_CLEANUP,
@@ -6388,6 +6607,7 @@ mod tests {
         )
         .await
         .unwrap();
+        txn.commit().await.unwrap();
         let (_, network_active_to) =
             get_network_activity_range(&env.dbx, network.id)
                 .await

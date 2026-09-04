@@ -498,6 +498,14 @@ pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_REACTIVATED: &str =
     "manual_frequency_reactivated";
 pub const SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_DELETED: &str =
     "manual_frequency_deleted";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_NETWORK_UPDATED: &str =
+    "import_network_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_FREQUENCY_UPDATED: &str =
+    "import_frequency_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MERGE_NETWORK_UPDATED: &str =
+    "merge_network_updated";
+pub const SIGINT_NETWORK_ACTIVITY_REASON_MERGE_FREQUENCY_CLOSED: &str =
+    "merge_frequency_closed";
 pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_FREQUENCY_NO_RECENT_INTERCEPTIONS: &str =
     "cleanup_frequency_no_recent_interceptions";
 pub const SIGINT_NETWORK_ACTIVITY_REASON_CLEANUP_NETWORK_NO_ACTIVE_FREQUENCIES: &str =

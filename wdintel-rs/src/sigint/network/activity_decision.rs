@@ -1,5 +1,7 @@
 use crate::config::SIGINT_NETWORK_ACTIVITY_DECISION_LIST_LIMIT;
-use crate::entities::{sigint_activity_decision_changelog, sigint_network};
+use crate::entities::{
+    sigint_activity_decision_changelog, sigint_network, sigint_network_freq,
+};
 use crate::error::AppError;
 use crate::types::*;
 use crate::users::{has_any_role, login_id_from_identity};
@@ -9,7 +11,7 @@ use chrono::NaiveDateTime;
 use sea_orm::*;
 
 #[derive(Clone, Copy)]
-pub(super) struct ActivityDecisionActor {
+pub(crate) struct ActivityDecisionActor {
     kind: &'static str,
     login_id: Option<Uuid>,
     worker_name: Option<&'static str>,
@@ -31,9 +33,25 @@ impl ActivityDecisionActor {
             worker_name: Some(worker_name),
         }
     }
+
+    pub(crate) fn import() -> Self {
+        Self {
+            kind: "import",
+            login_id: None,
+            worker_name: None,
+        }
+    }
+
+    pub(crate) fn merge(login_id: Option<Uuid>) -> Self {
+        Self {
+            kind: "merge",
+            login_id,
+            worker_name: None,
+        }
+    }
 }
 
-pub(super) enum ActivityDecisionTarget<'a> {
+pub(crate) enum ActivityDecisionTarget<'a> {
     Network {
         network_id: i64,
     },
@@ -45,20 +63,20 @@ pub(super) enum ActivityDecisionTarget<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct ActivityState {
+pub(crate) struct ActivityState {
     active_from: Option<NaiveDateTime>,
     active_to: Option<NaiveDateTime>,
 }
 
 impl ActivityState {
-    pub(super) fn network(network: &sigint_network::Model) -> Self {
+    pub(crate) fn network(network: &sigint_network::Model) -> Self {
         Self {
             active_from: network.active_from,
             active_to: network.active_to,
         }
     }
 
-    pub(super) fn frequency(
+    pub(crate) fn frequency(
         network_freq: &crate::entities::sigint_network_freq::Model,
     ) -> Self {
         Self {
@@ -69,7 +87,7 @@ impl ActivityState {
 }
 
 #[derive(Default)]
-pub(super) struct ActivityDecisionEvidence {
+pub(crate) struct ActivityDecisionEvidence {
     pub(super) lookback_since: Option<NaiveDateTime>,
     pub(super) lookback_till: Option<NaiveDateTime>,
     pub(super) interception_count: Option<i64>,
@@ -78,18 +96,41 @@ pub(super) struct ActivityDecisionEvidence {
     pub(super) metadata: Option<serde_json::Value>,
 }
 
-pub(super) async fn record_activity_decision_if_changed<'a, 'async_trait, C>(
-    dbx: &'a C,
+pub(crate) async fn lock_network_activity_target(
+    txn: &DatabaseTransaction,
+    network_id: i64,
+) -> Result<sigint_network::Model, AppError> {
+    sigint_network::Entity::find_by_id(network_id)
+        .lock_exclusive()
+        .one(txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+pub(crate) async fn lock_network_frequency_activity_target(
+    txn: &DatabaseTransaction,
+    network_id: i64,
+    network_freq_id: i64,
+) -> Result<sigint_network_freq::Model, AppError> {
+    sigint_network_freq::Entity::find_by_id(network_freq_id)
+        .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
+        .lock_exclusive()
+        .one(txn)
+        .await
+        .c(h!())?
+        .ok_or(AppError::NotFound)
+}
+
+pub(crate) async fn record_activity_decision_if_changed(
+    txn: &DatabaseTransaction,
     target: ActivityDecisionTarget<'_>,
     actor: ActivityDecisionActor,
     reason: &str,
     old_state: ActivityState,
     new_state: ActivityState,
     evidence: ActivityDecisionEvidence,
-) -> Result<bool, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+) -> Result<bool, AppError> {
     if old_state.active_to.is_none() == new_state.active_to.is_none() {
         return Ok(false);
     }
@@ -138,7 +179,7 @@ where
         metadata: Set(evidence.metadata),
         created_at: NotSet,
     }
-    .insert(dbx)
+    .insert(txn)
     .await
     .c(h!())?;
 
