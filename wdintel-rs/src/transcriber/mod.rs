@@ -926,6 +926,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(message.id),
+            signal_message_uuid: Set(message.id_uuid),
             content_type: Set("audio/ogg".to_string()),
             file_ext: Set(Some("ogg".to_string())),
             file_name: Set(file_name.map(str::to_string)),

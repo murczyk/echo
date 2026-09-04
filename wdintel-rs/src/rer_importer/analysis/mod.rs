@@ -5505,6 +5505,7 @@ pub async fn edit_freq_unit_name(
             crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
                 &txn,
                 row.id,
+                row.id_uuid,
                 row.unit_v2.as_deref(),
                 row.unit.as_deref(),
             )

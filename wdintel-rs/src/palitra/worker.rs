@@ -176,7 +176,8 @@ where
         .select_only()
         .column(signal_message::Column::Id)
         .column(signal_message::Column::Body)
-        .into_tuple::<(i64, Option<String>)>()
+        .column(sigint_inbox_item::Column::IdUuid)
+        .into_tuple::<(i64, Option<String>, Option<Uuid>)>()
         .all(txn)
         .await
         .c(h!())?;
@@ -209,7 +210,7 @@ where
 
     let mut changed_message_ids = Vec::new();
     let mut total = 0;
-    for (message_id, message_body) in messages {
+    for (message_id, message_body, message_uuid) in messages {
         let Some(body) = message_body else {
             continue;
         };
@@ -255,6 +256,7 @@ where
                     palitra_id: Set(*palitra_id),
                     point_tokens: Set(point_tokens),
                     sigint_inbox_item_id: Set(message_id),
+                    sigint_inbox_item_uuid: Set(message_uuid),
                     ..Default::default()
                 }
             })

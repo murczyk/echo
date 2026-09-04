@@ -7,6 +7,7 @@ use chrono::NaiveDateTime;
 use milgeo_rs::coordinates::Coords;
 use sea_orm::{prelude::Expr, sea_query::SimpleExpr, *};
 use std::collections::BTreeMap;
+use uuid::Uuid;
 
 pub async fn delete_inbox_pelengs<'a, 'async_trait, C>(
     inbox_item_id: i64,
@@ -84,6 +85,7 @@ where
 pub async fn insert_pelengs<'a, 'async_trait, C>(
     coords: Vec<Coords>,
     inbox_item_id: i64,
+    source_inbox_item_uuid: Option<Uuid>,
     ts: NaiveDateTime,
     pelengation_object: Option<String>,
     txn: &'a C,
@@ -101,6 +103,7 @@ where
         let peleng = sigint_peleng::ActiveModel {
             id: NotSet,
             source_inbox_item_id: Set(inbox_item_id),
+            source_inbox_item_uuid: Set(source_inbox_item_uuid),
             lat: Set(coord.lat),
             lng: Set(coord.lng),
             settlement: NotSet,

@@ -12,6 +12,7 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique_key = "sigint_inbox_item_tag_unique_actor")]
     pub sigint_inbox_item_id: i64,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
     #[sea_orm(unique_key = "sigint_inbox_item_tag_unique_actor")]
     pub tag_id: i64,
     #[sea_orm(column_type = "Double")]

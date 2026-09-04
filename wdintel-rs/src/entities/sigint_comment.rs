@@ -12,11 +12,13 @@ pub struct Model {
     pub id: i64,
     pub login_id: Uuid,
     pub signal_message_id: i64,
+    pub signal_message_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text")]
     pub comment: String,
     pub created_at: DateTime,
     pub sigint_post_id: Option<i64>,
     pub migrated_signal_message_id: Option<i64>,
+    pub migrated_signal_message_uuid: Option<Uuid>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

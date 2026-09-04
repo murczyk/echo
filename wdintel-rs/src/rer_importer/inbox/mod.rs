@@ -427,6 +427,40 @@ async fn messages_by_id(
     Ok(Json(MessageIdsRsp { messages }))
 }
 
+#[post("/api/rer-importer/messages-by-uuid")]
+async fn messages_by_uuid(
+    user: Identity,
+    env: actix_web::web::Data<Env>,
+    req: Json<MessageUuidsReq>,
+) -> Result<Json<MessageIdsRsp>, AppError> {
+    let req = req.into_inner();
+    let login = login_id_from_identity(&user).c(h!())?;
+    has_any_role(&env.dbx, &login, vec!["Rer", "ApiAgent"])
+        .await
+        .c(h!())?;
+    let message_ids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .filter(signal_message::Column::IdUuid.eq_any(req.message_uuids))
+        .into_tuple::<i64>()
+        .all(&env.dbx)
+        .await
+        .c(h!())?;
+    let logins = crate::users::get_organism_login_ids(&env.dbx, user)
+        .await
+        .context(h!())?;
+    let default_req = InboxMessagesReq {
+        highlight_points: Some(true),
+        ..Default::default()
+    };
+    let inbox_req = req.inbox_req.as_ref().unwrap_or(&default_req);
+    let messages =
+        messages_by_id_bl(&login, &logins, &env, &message_ids, inbox_req)
+            .await
+            .c(h!())?;
+    Ok(Json(MessageIdsRsp { messages }))
+}
+
 pub(crate) async fn messages_by_id_bl(
     login: &uuid::Uuid,
     logins: &Vec<uuid::Uuid>,
@@ -1757,6 +1791,7 @@ fn submit_item_callsigns(item: &InboxSubmitItem) -> Vec<String> {
 async fn add_submit_tags(
     txn: &DatabaseTransaction,
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     login: &uuid::Uuid,
     tag_ids: Option<Vec<i64>>,
 ) -> Result<(), AppError> {
@@ -1781,6 +1816,7 @@ async fn add_submit_tags(
 
         sigint_inbox_item_tag::ActiveModel {
             sigint_inbox_item_id: Set(inbox_id),
+            sigint_inbox_item_uuid: Set(inbox_item_uuid),
             tag_id: Set(tag_id),
             confidence: Set(1.0),
             login_id: Set(Some(*login)),
@@ -1797,6 +1833,7 @@ async fn add_submit_tags(
 async fn replace_submit_tags(
     txn: &DatabaseTransaction,
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     login: &uuid::Uuid,
     tag_ids: Option<Vec<i64>>,
 ) -> Result<(), AppError> {
@@ -1810,7 +1847,7 @@ async fn replace_submit_tags(
         .exec(txn)
         .await
         .c(h!())?;
-    add_submit_tags(txn, inbox_id, login, Some(tag_ids)).await
+    add_submit_tags(txn, inbox_id, inbox_item_uuid, login, Some(tag_ids)).await
 }
 
 fn format_geo_coordinates(coords: &[GeoCoordinates]) -> Option<String> {
@@ -2013,6 +2050,7 @@ async fn upsert_submit_signal_message(
     timestamp: Option<NaiveDateTime>,
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
+    signal_message_uuid: Option<Uuid>,
 ) -> Result<signal_message::Model, AppError> {
     upsert_submit_signal_message_inner(
         txn,
@@ -2025,6 +2063,7 @@ async fn upsert_submit_signal_message(
         operator_tags,
         groups,
         false,
+        signal_message_uuid,
     )
     .await
 }
@@ -2078,6 +2117,7 @@ async fn upsert_submit_signal_message_inner(
     operator_tags: Option<serde_json::Value>,
     groups: &[(String, i64)],
     create_missing_uid: bool,
+    signal_message_uuid: Option<Uuid>,
 ) -> Result<signal_message::Model, AppError> {
     let datasource_group_id = groups.first().map(|(_, id)| *id);
     let group_master_keys = groups
@@ -2125,6 +2165,11 @@ async fn upsert_submit_signal_message_inner(
                 }
                 None if create_missing_uid => signal_message::ActiveModel {
                     id: NotSet,
+                    id_uuid: Set(Some(signal_message_uuid.unwrap_or_else(|| {
+                        crate::sigint::message_id::signal_message_uuid_for_insert(
+                            timestamp,
+                        )
+                    }))),
                     body: Set(Some(message.text.clone())),
                     datasource_group_id: Set(datasource_group_id),
                     created_at: NotSet,
@@ -2147,6 +2192,11 @@ async fn upsert_submit_signal_message_inner(
         }
         None => signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(signal_message_uuid.unwrap_or_else(|| {
+                crate::sigint::message_id::signal_message_uuid_for_insert(
+                    timestamp,
+                )
+            }))),
             body: Set(Some(message.text.clone())),
             datasource_group_id: Set(datasource_group_id),
             created_at: NotSet,
@@ -2206,6 +2256,7 @@ async fn ensure_submit_signal_message_groups(
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(signal_message.id),
+            signal_message_uuid: Set(signal_message.id_uuid),
             group_master_key: Set(Some(group_master_key.clone())),
             sender: Set(signal_message.sender.clone()),
             login_id: Set(signal_message.login_id),
@@ -2251,6 +2302,7 @@ fn prepare_submit_body_for_coordinate_extraction(
 
 async fn save_submit_dmr_metadata(
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     network: Option<&SubmitNetwork>,
     dmr: Vec<SubmitDmrMetadata>,
     txn: &DatabaseTransaction,
@@ -2258,7 +2310,9 @@ async fn save_submit_dmr_metadata(
     let (dmr, warnings) = normalize_submit_dmr_metadata(network, dmr)?;
     let mut entries = dmr
         .iter()
-        .map(|metadata| submit_dmr_metadata_model(inbox_id, metadata))
+        .map(|metadata| {
+            submit_dmr_metadata_model(inbox_id, inbox_item_uuid, metadata)
+        })
         .collect::<Vec<_>>();
 
     if entries.is_empty() {
@@ -2266,6 +2320,7 @@ async fn save_submit_dmr_metadata(
             entries.push(sigint_inbox_item_metadata::ActiveModel {
                 id: NotSet,
                 sigint_inbox_item_id: Set(inbox_id),
+                sigint_inbox_item_uuid: Set(inbox_item_uuid),
                 color_code: Set(Some(cc.to_string())),
                 created_at: NotSet,
                 ..Default::default()
@@ -2588,11 +2643,13 @@ fn matches_optional_value<T: PartialEq>(
 
 fn submit_dmr_metadata_model(
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     metadata: &SubmitDmrMetadata,
 ) -> sigint_inbox_item_metadata::ActiveModel {
     sigint_inbox_item_metadata::ActiveModel {
         id: NotSet,
         sigint_inbox_item_id: Set(inbox_id),
+        sigint_inbox_item_uuid: Set(inbox_item_uuid),
         color_code: Set(metadata.cc.map(|cc| cc.to_string())),
         call_group_id: Set(metadata.call_group_id.map(|id| id.to_string())),
         call_group_name: Set(metadata.call_group_name.clone()),
@@ -4313,7 +4370,7 @@ mod tests {
     fn submit_dmr_metadata_model_stringifies_numeric_ids_for_storage() {
         let metadata = submit_dmr_metadata(Some(5));
 
-        let metadata = submit_dmr_metadata_model(42, &metadata);
+        let metadata = submit_dmr_metadata_model(42, None, &metadata);
 
         assert_eq!(
             active_optional_string(&metadata.color_code).as_deref(),
@@ -4969,6 +5026,7 @@ mod tests {
         upsert_editable_sigint_comment(
             &env.dbx,
             message.id,
+            message.id_uuid,
             &login.id,
             &logins,
             "merged comment",
@@ -5342,9 +5400,15 @@ mod tests {
         metadata.hash_id = Some("ABCDEF01".to_string());
         let txn = env.dbx.begin().await.unwrap();
 
-        save_submit_dmr_metadata(inbox_item.id, None, vec![metadata], &txn)
-            .await
-            .unwrap();
+        save_submit_dmr_metadata(
+            inbox_item.id,
+            inbox_item.id_uuid,
+            None,
+            vec![metadata],
+            &txn,
+        )
+        .await
+        .unwrap();
 
         txn.commit().await.unwrap();
         let metadata = sigint_inbox_item_metadata::Entity::find()
@@ -5492,6 +5556,7 @@ mod tests {
             Some(now),
             None,
             &groups,
+            None,
         )
         .await
         .unwrap_err();
@@ -5565,6 +5630,7 @@ mod tests {
             crate::inbox::callsigns::sync(
                 &env.dbx,
                 inbox_item.id,
+                inbox_item.id_uuid,
                 crate::inbox::callsigns::InboxItemCallsigns {
                     primary: vec!["Alpha".to_string()],
                     alg2: Vec::new(),
@@ -5650,6 +5716,7 @@ mod tests {
             signal_message_media::ActiveModel {
                 id: Set(Uuid::new_v4()),
                 signal_message_id: Set(message.id),
+                signal_message_uuid: Set(message.id_uuid),
                 content_type: Set(content_type.to_string()),
                 file_ext: Set(None),
                 file_name: Set(None),

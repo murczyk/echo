@@ -312,6 +312,8 @@ pub const URL_NEED_VISIT_NOTIFICATION_MINS: i64 = 5;
 pub const IDENTITY_DURATION_HOURS: u64 = 12;
 pub const IDENTITY_SALT: &str = "IUBwdub783736#";
 pub const ROLE_ADMIN: &str = "Admin";
+pub const ROLE_API: &str = "Api";
+pub const ROLE_NO2FA: &str = "No2FA";
 pub const DEVICE_SETTINGS_ID: i16 = 1;
 pub const DEVICE_MATTERMOST_TIMEOUT_SEC: u64 = 5;
 pub const DEVICE_CUSTOM_FIELDS_MAX_COUNT: usize = 50;
@@ -675,6 +677,18 @@ pub const REDIS_CONNECTION_MANAGER_PIPELINE_BUFFER_SIZE: usize = 256;
 pub const REDIS_CONNECTION_MANAGER_RESPONSE_TIMEOUT_SECS: u64 = 5;
 pub const REDIS_MAXLEN: usize = 1000;
 pub const REDIS_SESSIONS_KEY: &str = "echo-sessions";
+pub const TOTP_2FA_CHALLENGE_REDIS_PREFIX: &str = "2fa:challenge:";
+pub const TOTP_2FA_LOGIN_REDIS_PREFIX: &str = "2fa:login:";
+pub const TOTP_2FA_CHALLENGE_TTL_SEC: u64 = 300;
+pub const TOTP_2FA_MAX_ATTEMPTS: u32 = 5;
+pub const TOTP_2FA_ISSUER: &str = "Echo";
+pub const TOTP_2FA_DIGITS: usize = 6;
+pub const TOTP_2FA_SKEW: u8 = 1;
+pub const TOTP_2FA_STEP_SEC: u64 = 30;
+/// How long to remember the last accepted TOTP counter per login.
+/// Covers the skew window plus one extra step so replays cannot slip through.
+pub const TOTP_2FA_USED_STEP_TTL_SEC: u64 =
+    TOTP_2FA_STEP_SEC * (2 * TOTP_2FA_SKEW as u64 + 2);
 pub const DEPLOYMENT_MAINTENANCE_REDIS_KEY: &str =
     "echo:deployment:maintenance";
 pub const DEPLOYMENT_MAINTENANCE_PROTOCOL_VERSION: u8 = 1;
@@ -1095,6 +1109,10 @@ pub struct Config {
     pub pg_dbname: Option<String>,
     pub file_registry: Option<FileRegistryConfig>,
     pub cookie_session_secret: String,
+    /// Base64 32-byte StrongBox key for encrypting TOTP seeds in Redis and
+    /// `login_totp`. Generate with `oneoff-generate-strongbox-key`.
+    #[serde(default)]
+    pub totp_strongbox_key: Option<String>,
     pub storage_dir: String,
     pub signal_api_phone: String,
     pub signal_import_group_name: String,

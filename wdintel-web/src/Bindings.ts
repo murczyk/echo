@@ -1587,6 +1587,17 @@ export type LoginReq = {
   password: string;
 };
 
+export type LoginRsp =
+  | 'Authenticated'
+  | { Needs2faSetup: { challengeId: string; qrBase64: string; manualKey: string } }
+  | { Needs2fa: { challengeId: string } }
+;
+
+export type Confirm2faReq = {
+  challengeId: string;
+  token: string;
+};
+
 export type User = {
   id: string;
   name: string;
@@ -1659,6 +1670,7 @@ export type Login = {
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
   passwordAuthEnabled: boolean;
+  totpEnabled: boolean;
 };
 
 export type ListLoginsSortBy = 'LoginCreatedAtDesc' | 'LoginCreatedAtAsc';
@@ -1693,6 +1705,7 @@ export type UpdateLoginReq = {
   deactivationReason: DeactivationReasonType | null;
   description: string | null;
   passwordAuthEnabled: boolean | null;
+  clearTotp: boolean | null;
 };
 
 export type SigintGroupsReq = {

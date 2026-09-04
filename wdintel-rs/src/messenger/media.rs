@@ -524,6 +524,7 @@ async fn upload_prepared_attachment(
 pub async fn store_media_attachments(
     attachments: &[MediaUploadInput],
     signal_message_id: i64,
+    signal_message_uuid: Option<Uuid>,
     config: &Config,
     s3: &Option<Operator>,
     txn: &impl ConnectionTrait,
@@ -533,14 +534,20 @@ pub async fn store_media_attachments(
         stage_media_attachments(attachments, config, s3, deletion, None)
             .await
             .c(h!())?;
-    let media =
-        match persist_staged_media(&staged, signal_message_id, txn).await {
-            Ok(media) => media,
-            Err(err) => {
-                staged.cleanup_after_rollback(config, s3).await;
-                return Err(err);
-            }
-        };
+    let media = match persist_staged_media(
+        &staged,
+        signal_message_id,
+        signal_message_uuid,
+        txn,
+    )
+    .await
+    {
+        Ok(media) => media,
+        Err(err) => {
+            staged.cleanup_after_rollback(config, s3).await;
+            return Err(err);
+        }
+    };
     let uploaded_files_ready_for_deletion =
         staged.uploaded_files_ready_for_deletion();
     if deletion == UploadedAttachmentDeletion::DeleteAfterStore {
@@ -703,6 +710,7 @@ async fn stage_media_attachment(
 pub async fn persist_staged_media(
     staged: &StagedMediaAttachments,
     signal_message_id: i64,
+    signal_message_uuid: Option<Uuid>,
     txn: &impl ConnectionTrait,
 ) -> Result<Vec<signal_message_media::Model>, AppError> {
     let mut media = Vec::with_capacity(staged.attachments.len());
@@ -711,6 +719,7 @@ pub async fn persist_staged_media(
             signal_message_media::ActiveModel {
                 id: Set(attachment.id),
                 signal_message_id: Set(signal_message_id),
+                signal_message_uuid: Set(signal_message_uuid),
                 content_type: Set(attachment.content_type.clone()),
                 file_ext: Set(attachment.file_ext.clone()),
                 file_name: Set(attachment.file_name.clone()),
@@ -1522,6 +1531,7 @@ mod tests {
         signal_message_media::Model {
             id: Uuid::nil(),
             signal_message_id: 1,
+            signal_message_uuid: Some(Uuid::now_v7()),
             content_type: content_type.to_string(),
             file_ext: file_ext.map(str::to_string),
             file_name: file_name.map(str::to_string),

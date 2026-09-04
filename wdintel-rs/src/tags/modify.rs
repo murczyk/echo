@@ -11,6 +11,7 @@ use std::collections::BTreeSet;
 pub async fn upsert_tags(
     login: &uuid::Uuid,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
     inbox_message: &InboxMessage,
     txn: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
@@ -35,9 +36,15 @@ pub async fn upsert_tags(
             inbox_tags.iter().sorted_by_key(|x| x.tag_id),
             |a, b| a.tag_id.cmp(&b.tag_id),
         ) {
-            upsert_tag_by_item(login, inbox_item_id, entry, txn)
-                .await
-                .c(h!())?;
+            upsert_tag_by_item(
+                login,
+                inbox_item_id,
+                inbox_item_uuid,
+                entry,
+                txn,
+            )
+            .await
+            .c(h!())?;
         }
     } else {
         let tag_ids: BTreeSet<i64> = inbox_message
@@ -48,7 +55,7 @@ pub async fn upsert_tags(
         for entry in
             itertools::merge_join_by(tags, tag_ids, |a, b| a.tag_id.cmp(b))
         {
-            upsert_tag_by_id(login, inbox_item_id, entry, txn)
+            upsert_tag_by_id(login, inbox_item_id, inbox_item_uuid, entry, txn)
                 .await
                 .c(h!())?;
         }
@@ -60,6 +67,7 @@ pub async fn upsert_tags(
 async fn upsert_tag_by_item(
     login: &uuid::Uuid,
     message_id: i64,
+    message_uuid: Option<uuid::Uuid>,
     entry: EitherOrBoth<sigint_inbox_item_tag::Model, &InboxMessageTag>,
     txn: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
@@ -74,6 +82,7 @@ async fn upsert_tag_by_item(
             let mut new_tag = sigint_inbox_item_tag::ActiveModel {
                 tag_id: Set(tag_to_add.tag_id),
                 sigint_inbox_item_id: Set(message_id),
+                sigint_inbox_item_uuid: Set(message_uuid),
                 login_id: Set(Some(login.to_owned())),
                 ..Default::default()
             };
@@ -104,6 +113,7 @@ async fn upsert_tag_by_item(
 async fn upsert_tag_by_id(
     login: &uuid::Uuid,
     message_id: i64,
+    message_uuid: Option<uuid::Uuid>,
     entry: EitherOrBoth<sigint_inbox_item_tag::Model, i64>,
     txn: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
@@ -117,6 +127,7 @@ async fn upsert_tag_by_id(
             let new_tag = sigint_inbox_item_tag::ActiveModel {
                 tag_id: Set(tag_to_add),
                 sigint_inbox_item_id: Set(message_id),
+                sigint_inbox_item_uuid: Set(message_uuid),
                 login_id: Set(Some(login.to_owned())),
                 ..Default::default()
             };

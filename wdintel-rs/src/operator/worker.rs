@@ -9,6 +9,7 @@ use echo_migration::JoinType;
 use sea_orm::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use uuid::Uuid;
 
 const RECEIVE_INTERVAL_SECONDS: u32 = 3;
 
@@ -214,6 +215,7 @@ async fn import_sigint_inbox_message_metadata(
             "signal_message_metadata_id",
         )
         .column_as(sigint_inbox_item::Column::Id, "sigint_inbox_item_id")
+        .column_as(sigint_inbox_item::Column::IdUuid, "sigint_inbox_item_uuid")
         .column_as(
             sigint_inbox_item_metadata::Column::Id,
             "sigint_inbox_item_metadata_id",
@@ -273,6 +275,7 @@ async fn import_sigint_inbox_message_metadata(
         } else {
             let new_model = sigint_inbox_item_metadata::ActiveModel {
                 sigint_inbox_item_id: Set(row.sigint_inbox_item_id),
+                sigint_inbox_item_uuid: Set(row.sigint_inbox_item_uuid),
                 sender_id: Set(row.dmr_sender_id),
                 call_group_id: Set(row.dmr_call_group_id),
                 color_code: Set(row.dmr_color_code),
@@ -342,6 +345,7 @@ fn merge_metadata(
 struct MetadataMessageRow {
     pub signal_message_metadata_id: i64,
     pub sigint_inbox_item_id: i64,
+    pub sigint_inbox_item_uuid: Option<Uuid>,
     pub sigint_inbox_item_metadata_id: Option<i64>,
 
     pub dmr_sender_id: Option<String>,

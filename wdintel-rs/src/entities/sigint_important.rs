@@ -12,6 +12,7 @@ pub struct Model {
     pub id: i64,
     pub login_id: Option<Uuid>,
     pub signal_message_id: i64,
+    pub signal_message_uuid: Option<Uuid>,
     pub created_at: DateTime,
     pub deleted: bool,
 }

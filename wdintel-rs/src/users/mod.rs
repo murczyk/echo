@@ -17,6 +17,10 @@ use sea_query::Expr;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
+pub mod login_totp;
+pub mod totp;
+pub mod totp_challenge;
+pub mod totp_crypto;
 pub mod types;
 
 pub fn login_id_from_identity(user: &Identity) -> Result<Uuid, AppError> {
@@ -28,6 +32,7 @@ pub(crate) async fn start_user_session(
     env: &actix_web::web::Data<Env>,
     http_req: &HttpRequest,
     login_id: Uuid,
+    db: &impl ConnectionTrait,
 ) -> Result<(), AppError> {
     let session_id = Uuid::now_v7();
     crate::session::add_session(&mut env.redis.clone(), session_id, &login_id)
@@ -40,7 +45,7 @@ pub(crate) async fn start_user_session(
     .await
     .c(h!())?;
 
-    update_last_active_at(&env.dbx, &login_id).await?;
+    update_last_active_at(db, &login_id).await?;
     record_new_session(&login_id, session_id, env)
         .await
         .c(h!())?;
@@ -111,6 +116,14 @@ fn normalize_login_description(description: Option<String>) -> Option<String> {
     description
         .map(|description| description.trim().to_string())
         .filter(|description| !description.is_empty())
+}
+
+fn login_skips_totp(login_obj: &login::Model) -> Result<bool, AppError> {
+    let roles: Vec<String> =
+        serde_json::from_value(login_obj.roles.clone()).c(h!())?;
+    Ok(roles.iter().any(|role| {
+        role == ROLE_API || role == AI_AGENT_ROLE_API || role == ROLE_NO2FA
+    }))
 }
 
 fn has_update_login_description(req: &serde_json::Value) -> bool {
@@ -200,8 +213,8 @@ pub(crate) fn role_matches(
 ) -> Result<bool, AppError> {
     Ok(match role {
         "Admin" => roles.contains(&"Admin".to_string()),
-        "Api" => roles.contains(&"Api".to_string()),
-        "ApiAgent" => roles.contains(&"ApiAgent".to_string()),
+        "Api" => roles.contains(&ROLE_API.to_string()),
+        "ApiAgent" => roles.contains(&AI_AGENT_ROLE_API.to_string()),
         "Full" => {
             roles.contains(&"Admin".to_string())
                 || roles.contains(&"Full".to_string())
@@ -253,6 +266,7 @@ pub(crate) fn role_matches(
                 || roles.contains(&"AdvancedReports".to_string())
         }
         "NoAutoLogout" => roles.contains(&"NoAutoLogout".to_string()),
+        "No2FA" => roles.contains(&ROLE_NO2FA.to_string()),
         role => {
             return Err(AppError::BL {
                 msg: format!("impossible! unknown role {role}"),
@@ -379,6 +393,27 @@ pub async fn update_login(
     if let Some(password_auth_enabled) = req.password_auth_enabled {
         login_obj.password_auth_enabled = Set(password_auth_enabled);
     }
+    let clear_totp = req.clear_totp == Some(true);
+    let password_changed = req.password.is_some();
+    let password_auth_disabled = req.password_auth_enabled == Some(false);
+    let invalidate_totp_challenges =
+        clear_totp || password_changed || password_auth_disabled;
+    if invalidate_totp_challenges {
+        if clear_totp {
+            let admin_login_id = login_id_from_identity(&user)?;
+            info!(
+                "Admin {admin_login_id} cleared TOTP for login {login_id} ({login_name})"
+            );
+        }
+        // SQL-side increment under the login row lock; avoid lost updates when
+        // two invalidating admin updates overlap.
+        login_totp::bump_epoch(&txn, login_id).await.c(h!())?;
+        // Keep ActiveModel from writing a stale totp_epoch over the bump.
+        login_obj.totp_epoch = NotSet;
+    }
+    if clear_totp {
+        login_totp::clear_secret(&txn, login_id).await.c(h!())?;
+    }
     let res = login_obj.update(&txn).await.c(h!())?;
     if let Some(delta_id) = delta_id {
         unlink_deleted_logins_from_shared_delta_login(&txn, delta_id)
@@ -389,6 +424,14 @@ pub async fn update_login(
         .await
         .c(h!())?;
     txn.commit().await.c(h!())?;
+    if invalidate_totp_challenges {
+        totp_challenge::invalidate_login_challenges(
+            &mut env.redis.clone(),
+            login_id,
+        )
+        .await
+        .c(h!())?;
+    }
     let (organism_name, organism_enabled) = match organism::Entity::find()
         .filter(organism::Column::DeletedPermanently.eq(false))
         .filter(organism::Column::Id.eq(res.organism_id))
@@ -424,6 +467,7 @@ pub async fn update_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        totp_enabled: login_totp::is_enabled(&env.dbx, res.id).await.c(h!())?,
     }))
 }
 
@@ -491,6 +535,7 @@ pub async fn create_login(
                 req.description.clone(),
             )),
             password_auth_enabled: Set(true),
+            totp_epoch: Set(None),
         },
     )
     .await
@@ -532,6 +577,7 @@ pub async fn create_login(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        totp_enabled: false,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -593,12 +639,14 @@ pub async fn list_logins(
         delta_login: Option<String>,
         description: Option<String>,
         password_auth_enabled: bool,
+        totp_enabled: bool,
     }
 
     let users_iter = login::Entity::find()
         .join(JoinType::LeftJoin, login::Relation::SigintZone.def())
         .join(JoinType::LeftJoin, login::Relation::Organism.def())
         .join(JoinType::LeftJoin, login::Relation::DeltaLogin.def())
+        .join(JoinType::LeftJoin, login::Relation::LoginTotp.def())
         .filter(
             Condition::any()
                 .add(organism::Column::DeletedPermanently.eq(false))
@@ -624,6 +672,10 @@ pub async fn list_logins(
         .column_as(organism::Column::Name, "organism_name")
         .column_as(organism::Column::Enabled, "organism_enabled")
         .column_as(delta_login::Column::Login, "delta_login")
+        .column_as(
+            Expr::cust("login_totp.login_id is not null"),
+            "totp_enabled",
+        )
         .order_by(
             login::Column::CreatedAt,
             if let Some(sort_by) = &req.sort_by {
@@ -675,6 +727,7 @@ pub async fn list_logins(
                 .map(DeactivationReasonType::from),
             description: login.description,
             password_auth_enabled: login.password_auth_enabled,
+            totp_enabled: login.totp_enabled,
         };
         users.push(user);
     }
@@ -911,7 +964,7 @@ pub async fn user_login(
     env: actix_web::web::Data<Env>,
     http_req: HttpRequest,
     req: Json<LoginReq>,
-) -> Result<Json<()>, AppError> {
+) -> Result<Json<LoginRsp>, AppError> {
     let user_id = req.user.clone();
     let login_obj = match validate_login(&env.dbx, &user_id).await {
         Ok(obj) => obj,
@@ -971,10 +1024,305 @@ pub async fn user_login(
         return Err(AppError::Form(errors));
     };
 
-    start_user_session(&env, &http_req, login_obj.id)
+    let rsp = begin_totp_login_challenge(&env, &http_req, &login_obj)
+        .await
+        .context(h!())?;
+    Ok(Json(rsp))
+}
+
+async fn begin_totp_login_challenge(
+    env: &actix_web::web::Data<Env>,
+    http_req: &HttpRequest,
+    login_obj: &login::Model,
+) -> Result<LoginRsp, AppError> {
+    // Unattended API clients (echo-agent / Api*) skip interactive TOTP.
+    if login_skips_totp(login_obj).context(h!())? {
+        start_user_session(env, http_req, login_obj.id, &env.dbx)
+            .await
+            .context(h!())?;
+        return Ok(LoginRsp::Authenticated);
+    }
+
+    let totp_key = totp_crypto::require_totp_strongbox_key(
+        env.config.totp_strongbox_key.as_deref(),
+    )
+    .c(h!())?;
+    let mut redis = env.redis.clone();
+    if login_totp::is_enabled(&env.dbx, login_obj.id)
+        .await
+        .c(h!())?
+    {
+        match totp_challenge::create_verify_challenge(
+            &mut redis,
+            login_obj.id,
+            login_totp::epoch_of(login_obj),
+        )
+        .await
+        .c(h!())?
+        {
+            totp_challenge::CreateChallengeOutcome::LockedOut => {
+                Err(totp_login_form_error(
+                    "Забагато невдалих спроб. Спробуйте пізніше",
+                ))
+            }
+            totp_challenge::CreateChallengeOutcome::Created(challenge_id) => {
+                Ok(LoginRsp::Needs2fa {
+                    challenge_id: challenge_id.to_string(),
+                })
+            }
+        }
+    } else {
+        let enrollment = totp::generate_enrollment(&login_obj.login).c(h!())?;
+        let pending_secret = totp_crypto::encrypt_secret(
+            totp_key,
+            login_obj.id,
+            &enrollment.secret_base32,
+        )
+        .c(h!())?;
+        match totp_challenge::create_enroll_challenge(
+            &mut redis,
+            login_obj.id,
+            &pending_secret,
+            login_totp::epoch_of(login_obj),
+        )
+        .await
+        .c(h!())?
+        {
+            totp_challenge::CreateChallengeOutcome::LockedOut => {
+                Err(totp_login_form_error(
+                    "Забагато невдалих спроб. Спробуйте пізніше",
+                ))
+            }
+            totp_challenge::CreateChallengeOutcome::Created(challenge_id) => {
+                Ok(LoginRsp::Needs2faSetup {
+                    challenge_id: challenge_id.to_string(),
+                    qr_base64: enrollment.qr_base64,
+                    manual_key: enrollment.manual_key,
+                })
+            }
+        }
+    }
+}
+
+fn totp_form_error(field: &str, msg: &str) -> AppError {
+    AppError::Form(BTreeMap::from_iter([(field.to_string(), msg.to_string())]))
+}
+
+/// Lockout / pre-OTP errors for `/api/user/login`
+fn totp_login_form_error(msg: &str) -> AppError {
+    totp_form_error("login", msg)
+}
+
+/// OTP-step errors for `/api/user/confirm-2fa`
+fn totp_challenge_form_error(msg: &str) -> AppError {
+    totp_form_error("token", msg)
+}
+
+#[post("/api/user/confirm-2fa")]
+pub async fn user_confirm_2fa(
+    env: actix_web::web::Data<Env>,
+    http_req: HttpRequest,
+    req: Json<Confirm2faReq>,
+) -> Result<Json<()>, AppError> {
+    let challenge_id =
+        Uuid::parse_str(req.challenge_id.trim()).map_err(|_| {
+            totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            )
+        })?;
+    let mut redis = env.redis.clone();
+    let Some(challenge) =
+        totp_challenge::get_challenge(&mut redis, challenge_id)
+            .await
+            .c(h!())?
+    else {
+        return Err(totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        ));
+    };
+
+    let login_id = challenge.login_id();
+    let login_obj = match validate_login_id(&env.dbx, &login_id).await {
+        Ok(obj) => obj,
+        Err(_) => {
+            let _ = totp_challenge::delete_challenge(
+                &mut redis,
+                login_id,
+                challenge_id,
+            )
+            .await;
+            return Err(totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            ));
+        }
+    };
+    if let Some(err) = login_obj.validation_error {
+        let _ = totp_challenge::delete_challenge(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await;
+        return Err(err);
+    }
+    let login_obj = login_obj.login_model.c(h!())?;
+    if !login_obj.password_auth_enabled
+        || login_totp::epoch_of(&login_obj) != challenge.epoch()
+    {
+        let _ = totp_challenge::delete_challenge(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await;
+        return Err(totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        ));
+    }
+
+    // Stale enroll: another challenge already configured TOTP.
+    if matches!(&challenge, totp_challenge::TotpChallenge::Enroll { .. })
+        && login_totp::is_enabled(&env.dbx, login_id).await.c(h!())?
+    {
+        let _ = totp_challenge::delete_challenge(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await;
+        return Err(totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        ));
+    }
+
+    let totp_key = totp_crypto::require_totp_strongbox_key(
+        env.config.totp_strongbox_key.as_deref(),
+    )
+    .map_err(|_| {
+        totp_challenge_form_error("Невірний або прострочений код підтвердження")
+    })?;
+    let secret = match &challenge {
+        totp_challenge::TotpChallenge::Enroll { pending_secret, .. } => {
+            totp_crypto::decrypt_secret(totp_key, login_id, pending_secret)
+                .map_err(|_| {
+                    totp_challenge_form_error(
+                        "Невірний або прострочений код підтвердження",
+                    )
+                })?
+        }
+        totp_challenge::TotpChallenge::Verify { .. } => {
+            login_totp::find_secret(&env.dbx, login_id, totp_key)
+                .await
+                .map_err(|_| {
+                    totp_challenge_form_error(
+                        "Невірний або прострочений код підтвердження",
+                    )
+                })?
+                .ok_or_else(|| {
+                    totp_challenge_form_error(
+                        "Невірний або прострочений код підтвердження",
+                    )
+                })?
+        }
+    };
+
+    let matched_step =
+        totp::verify_token(&secret, req.token.trim()).map_err(|_| {
+            totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            )
+        })?;
+    let Some(matched_step) = matched_step else {
+        match totp_challenge::record_failed_attempt(
+            &mut redis,
+            login_id,
+            challenge_id,
+        )
+        .await
+        .c(h!())?
+        {
+            totp_challenge::FailedAttemptResult::StillOpen => {
+                return Err(totp_challenge_form_error("Невірний код"));
+            }
+            totp_challenge::FailedAttemptResult::LockedOut
+            | totp_challenge::FailedAttemptResult::Missing => {
+                return Err(totp_challenge_form_error(
+                    "Невірний або прострочений код підтвердження",
+                ));
+            }
+        }
+    };
+
+    // Claim + record the accepted step atomically: a failed claim must not
+    // burn the code, and a step replay must leave the challenge for the next code.
+    let claimed = match totp_challenge::claim_challenge_with_step(
+        &mut redis,
+        login_id,
+        challenge_id,
+        matched_step,
+    )
+    .await
+    .c(h!())?
+    {
+        totp_challenge::ClaimChallengeOutcome::Claimed(claimed) => claimed,
+        totp_challenge::ClaimChallengeOutcome::StepReplayed => {
+            return Err(totp_challenge_form_error("Невірний код"));
+        }
+        totp_challenge::ClaimChallengeOutcome::Missing => {
+            return Err(totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            ));
+        }
+    };
+
+    // Hold the login row lock through enroll + session issuance so an admin
+    // epoch bump / password-auth disable cannot slip in after the recheck.
+    let txn = env.dbx.begin().await.c(h!())?;
+    let login_guard = login_totp::lock_for_session_guard(&txn, login_id)
+        .await
+        .c(h!())?
+        .ok_or_else(|| {
+            totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            )
+        })?;
+    if !login_guard.password_auth_enabled
+        || login_totp::epoch_of(&login_guard) != claimed.epoch()
+    {
+        txn.rollback().await.c(h!())?;
+        return Err(totp_challenge_form_error(
+            "Невірний або прострочений код підтвердження",
+        ));
+    }
+
+    if let totp_challenge::TotpChallenge::Enroll {
+        pending_secret,
+        epoch,
+        ..
+    } = &claimed
+    {
+        // Only the first successful enroll wins; later challenges stay rejected.
+        // Epoch must still match so admin clear cannot be undone by a claimed challenge.
+        if !login_totp::insert_secret_if_absent(
+            &txn,
+            login_id,
+            pending_secret,
+            *epoch,
+        )
+        .await
+        .c(h!())?
+        {
+            txn.rollback().await.c(h!())?;
+            return Err(totp_challenge_form_error(
+                "Невірний або прострочений код підтвердження",
+            ));
+        }
+    }
+
+    start_user_session(&env, &http_req, login_id, &txn)
         .await
         .c(h!())?;
-
+    txn.commit().await.c(h!())?;
     Ok(Json(()))
 }
 
@@ -1027,6 +1375,7 @@ pub async fn register_user(
         last_release_seen: NotSet,
         description: NotSet,
         password_auth_enabled: Set(true),
+        totp_epoch: Set(None),
     }
     .insert(&txn)
     .await
@@ -1486,6 +1835,7 @@ async fn register_delta_user(
             last_release_seen: NotSet,
             description: Set(normalize_login_description(description)),
             password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
         },
     )
     .await
@@ -1548,6 +1898,7 @@ async fn register_delta_user(
             .map(DeactivationReasonType::from),
         description: res.description,
         password_auth_enabled: res.password_auth_enabled,
+        totp_enabled: login_totp::is_enabled(&txn, res.id).await.c(h!())?,
     };
     crate::sigint::zone::bl::refresh_secret_group_memberships(&txn)
         .await
@@ -1838,19 +2189,19 @@ async fn inactive_users_worker_1(
 }
 
 pub async fn update_last_active_at(
-    dbx: &DatabaseConnection,
+    db: &impl ConnectionTrait,
     user_id: &Uuid,
 ) -> Result<(), AppError> {
     let mut user: login::ActiveModel = login::Entity::find_by_id(*user_id)
         .filter(login::Column::DeletedPermanently.eq(false))
-        .one(dbx)
+        .one(db)
         .await
         .c(h!())?
         .ok_or(AppError::Unauthenticated)?
         .into_active_model();
 
     user.last_active_at = Set(Some(Utc::now().naive_utc()));
-    user.update(dbx).await.c(h!())?;
+    user.update(db).await.c(h!())?;
 
     Ok(())
 }
@@ -2031,7 +2382,9 @@ mod tests {
         req: HttpRequest,
     ) -> Result<HttpResponse, AppError> {
         let login = find_test_login(&env.dbx).await.c(h!())?;
-        start_user_session(&env, &req, login.id).await.c(h!())?;
+        start_user_session(&env, &req, login.id, &env.dbx)
+            .await
+            .c(h!())?;
         Ok(HttpResponse::Ok().finish())
     }
 
@@ -2170,6 +2523,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
             },
         )
         .await
@@ -2244,6 +2598,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
+                    totp_epoch: Set(None),
                 },
             )
             .await
@@ -2316,6 +2671,7 @@ mod tests {
                     last_release_seen: Default::default(),
                     description: Default::default(),
                     password_auth_enabled: Set(false),
+                    totp_epoch: Set(None),
                 },
             )
             .await
@@ -2340,6 +2696,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
             },
         )
         .await
@@ -2393,6 +2750,7 @@ mod tests {
             last_release_seen: Default::default(),
             description: Default::default(),
             password_auth_enabled: Set(false),
+            totp_epoch: Set(None),
         }
         .insert(&env.dbx)
         .await
@@ -2416,6 +2774,7 @@ mod tests {
                 last_release_seen: Default::default(),
                 description: Default::default(),
                 password_auth_enabled: Set(false),
+                totp_epoch: Set(None),
             },
         )
         .await
@@ -2542,5 +2901,12 @@ mod tests {
         assert!(!role_matches(&roles(&["Full"]), "Cyber").unwrap());
         assert!(!role_matches(&roles(&["Api"]), "DeviceSource").unwrap());
         assert!(!role_matches(&roles(&["Full"]), "DeviceSource").unwrap());
+    }
+
+    #[test]
+    fn no2fa_role_is_exact_match_only() {
+        assert!(role_matches(&roles(&[ROLE_NO2FA]), ROLE_NO2FA).unwrap());
+        assert!(!role_matches(&roles(&[ROLE_ADMIN]), ROLE_NO2FA).unwrap());
+        assert!(!role_matches(&roles(&[ROLE_API]), ROLE_NO2FA).unwrap());
     }
 }
