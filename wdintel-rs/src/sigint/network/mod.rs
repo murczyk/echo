@@ -427,7 +427,8 @@ async fn reactivate_network_freqs_for_do_not_archive(
         .one(txn)
         .await
         .context(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let network_freqs = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
         .filter(sigint_network_freq::Column::Deleted.eq(false))
@@ -3331,8 +3332,9 @@ pub async fn delete_network_freq(
     );
 
     let txn = env.dbx.begin().await.context(h!())?;
-    let locked_records =
-        lock_network_frequencies_for_deletion(&txn, &req).await?;
+    let locked_records = lock_network_frequencies_for_deletion(&txn, &req)
+        .await
+        .context(h!())?;
     let (network, freq_records) = match locked_records {
         Some(locked_records) => locked_records,
         None => {
@@ -4697,10 +4699,14 @@ async fn lock_network_frequencies_for_deletion(
             .one(txn)
             .await
             .context(h!())?,
-        None => Some(req.network_id.ok_or_else(|| AppError::BL {
-            msg:
-                "network_id is required when deleting by frequency".to_string(),
-        })?),
+        None => Some(
+            req.network_id
+                .ok_or_else(|| AppError::BL {
+                    msg: "network_id is required when deleting by frequency"
+                        .to_string(),
+                })
+                .context(h!())?,
+        ),
     };
     let Some(network_id) = network_id else {
         return Ok(None);
@@ -4746,9 +4752,14 @@ async fn lock_network_frequencies_for_deletion(
             }
         }
         None => {
-            let freq = req.freq.clone().ok_or_else(|| AppError::BL {
-                msg: "freq is required when deleting by frequency".to_string(),
-            })?;
+            let freq = req
+                .freq
+                .clone()
+                .ok_or_else(|| AppError::BL {
+                    msg: "freq is required when deleting by frequency"
+                        .to_string(),
+                })
+                .context(h!())?;
             sigint_network_freq::Entity::find()
                 .filter(sigint_network_freq::Column::NetworkId.eq(network_id))
                 .filter(sigint_network_freq::Column::Freq.eq(freq))

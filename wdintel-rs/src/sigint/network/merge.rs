@@ -190,7 +190,8 @@ pub async fn merge_two_network_freqs(
         .one(txn)
         .await
         .context(h!())?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let _network = lock_network_activity_target(txn, freq_from.network_id)
         .await
         .context(h!())?;
@@ -207,11 +208,13 @@ pub async fn merge_two_network_freqs(
         .iter()
         .find(|network_freq| network_freq.id == freq_id_from)
         .cloned()
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let freq_to = frequencies
         .into_iter()
         .find(|network_freq| network_freq.id == freq_id_to)
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
 
     if freq_from.network_id != freq_to.network_id
         || freq_from.freq.trim() != freq_to.freq.trim()
