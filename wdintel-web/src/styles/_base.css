@@ -94,10 +94,22 @@ a {
 }
 
 .audio-transcription {
-  color: var(--color-text-muted);
-  background-color: var(--color-bg-muted);
-  border-left: 3px solid var(--color-border-muted);
-  border-radius: 0 0.25rem 0.25rem 0;
+  color: var(--color-text);
+}
+
+.audio-transcription:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: 2px;
+}
+
+.audio-transcription-icon,
+.audio-transcription-arrow {
+  flex: 0 0 auto;
+  font-size: 18px !important;
+}
+
+.audio-transcription-icon {
+  color: var(--color-text);
 }
 
 .audio-transcription-control {
@@ -165,15 +177,6 @@ a {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
   line-clamp: 3;
-}
-
-.audio-transcription-show-more {
-  display: block;
-  margin-top: 0.3rem;
-  color: var(--action-color);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.2;
 }
 
 .message-card-root {
@@ -793,9 +796,9 @@ html[data-bs-theme='dark'] .message-card-root {
 }
 
 .message-card-tag--with-divider {
-  margin-left: 8px;
+  margin-left: 0;
   padding-left: 8px;
-  border-left: 1px solid #5e5e64;
+  border-left: 1px solid var(--color-divider);
 }
 
 .message-card-root .message-card-tag-chip {

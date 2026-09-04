@@ -2854,7 +2854,7 @@ describe('MessageCard', () => {
     expect(audioHost?.getAttribute('data-audio-player-z-index')).toBe('0');
   });
 
-  it('renders ordered, data-derived attachment summaries without reducing coordinates to a boolean', async () => {
+  it('renders combined attachments without controls when previews are not collapsed', async () => {
     const view = await renderCard({
       msg: buildMessage({
         images: ['https://example.test/files/image.png'],
@@ -2878,19 +2878,10 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    const summaries = Array.from(
-      view.container.querySelectorAll<HTMLElement>('.message-card-attachment-counter'),
-    );
-    expect(summaries.map((summary) => summary.dataset.attachmentKind)).toEqual([
-      'media',
-      'coordinates',
-      'audio',
-    ]);
-    expect(summaries.map((summary) => summary.textContent?.replace(/\s+/g, ''))).toEqual([
-      'МЕДІА2',
-      'КООРДИНАТИ2',
-      'АУДІО1',
-    ]);
+    expect(view.container.querySelector('.message-card-attachment-counters')).toBeNull();
+    expect(
+      view.container.querySelectorAll('[data-picture-thumb-layout], [data-video-thumb-state]'),
+    ).toHaveLength(2);
   });
 
   it('omits attachment summaries and text dividers when the message has no body or attachments', async () => {
@@ -3099,7 +3090,7 @@ describe('MessageCard', () => {
     expect(downloadLink?.textContent).toBe('');
     const audioRow = player?.closest('.audio-player-row');
     expect(audioRow?.classList).toContain('items-stretch');
-    expect(downloadLink?.closest('.audio-player-row')).toBeNull();
+    expect(downloadLink?.closest('.audio-player-row')).toBe(audioRow);
     expect(downloadLink?.parentElement?.classList).toContain('items-center');
   });
 
@@ -3183,20 +3174,24 @@ describe('MessageCard', () => {
     const layout = view.container.querySelector('.audio-transcription-layout');
     expect(layout).not.toBeNull();
     expect(view.container.querySelector('.audio-transcription-beside-player')).toBeNull();
-    expect(layout?.children).toHaveLength(3);
+    expect(layout?.children).toHaveLength(2);
     const audioRow = layout?.children[0];
     expect(audioRow?.classList).toContain('audio-player-row');
     expect(audioRow?.querySelector('[data-audio-player-host]')).not.toBeNull();
     expect(
-      layout?.children[1]?.querySelector('a[aria-label="Завантажити аудіо: transcribed.mp3"]'),
+      audioRow?.querySelector('a[aria-label="Завантажити аудіо: transcribed.mp3"]'),
     ).not.toBeNull();
-    expect(layout?.children[2]?.hasAttribute('data-audio-transcription-control')).toBe(true);
+    expect(layout?.children[1]?.hasAttribute('data-audio-transcription-control')).toBe(true);
 
     const transcriptions = view.container.querySelectorAll('[data-audio-transcription]');
     expect(transcriptions).toHaveLength(1);
     expect(transcriptions[0]?.tagName).toBe('BLOCKQUOTE');
     expect(transcriptions[0]?.classList).toContain('audio-transcription');
     expect(transcriptions[0]?.textContent).toBe('Перший рядок.\nДругий рядок.');
+    expect(
+      transcriptions[0]?.querySelector('[data-audio-transcription-icon="robot"]'),
+    ).not.toBeNull();
+    expect(transcriptions[0]?.querySelector('[data-audio-transcription-arrow]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Транскрибувати аудіо"]')).toBeNull();
   });
 
@@ -3288,19 +3283,40 @@ describe('MessageCard', () => {
 
     const transcription = view.container.querySelector('[data-audio-transcription]') as HTMLElement;
     expect(transcription.classList).toContain('audio-transcription--clamped');
-    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.querySelector('[data-audio-transcription-icon="robot"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).toBeNull();
+    expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('false');
+
+    await act(async () => {
+      transcription.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    expect(transcription.getAttribute('aria-expanded')).toBe('true');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).not.toBeNull();
+
+    await act(async () => {
+      transcription.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    });
+
+    expect(transcription.getAttribute('aria-expanded')).toBe('false');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
 
     await click(transcription);
 
     expect(transcription.classList).not.toContain('audio-transcription--clamped');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).not.toBeNull();
     expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('true');
 
     await click(transcription);
 
     expect(transcription.classList).toContain('audio-transcription--clamped');
-    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).toBeNull();
+    expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('false');
   });
 

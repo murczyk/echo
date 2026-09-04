@@ -262,14 +262,12 @@ export function MessageMediaAudioPlayer({
       <div className="audio-player-row message-card-audio-row flex w-full min-w-0 items-stretch gap-2">
         <div
           ref={hostRef}
-          className="message-card-audio-host relative z-0 flex w-full min-w-0 items-stretch overflow-hidden"
+          className="message-card-audio-host relative z-0 flex min-w-0 flex-1 items-stretch overflow-hidden"
           data-audio-player-host
           data-audio-player-min-height-px={AUDIO_PLAYER_MIN_HEIGHT_PX}
           data-audio-player-top-padding-px={AUDIO_PLAYER_TOP_PADDING_PX}
           data-audio-player-z-index={AUDIO_PLAYER_Z_INDEX}
         />
-      </div>
-      <div className="mt-1 flex w-full items-center">
         <Tooltip title={downloadLabel} enterDelay={400}>
           <MessageCardDisabledControlCursorWrapper className="items-center" disabled={downloading}>
             <Button

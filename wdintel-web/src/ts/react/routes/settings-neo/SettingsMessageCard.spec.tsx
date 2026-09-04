@@ -70,7 +70,7 @@ describe('SettingsMessageCard', () => {
       'Без скорочення',
       'Згортати перегляд довгих повідомлень:',
       'Визначає, коли з’являється кнопка «Показати більше».',
-      'Стислий опис файлів у картках',
+      'Стислий опис файлів',
       'Відображати блок стислого опису для зображень та документів у картках повідомлень стрічки.',
       'Спільні налаштування для Оперативного та Аналізу.',
     ]) {
@@ -146,7 +146,7 @@ describe('SettingsMessageCard', () => {
   it.each([true, false])('ECHO-3324 reflects collapsed-media preference %s', (value) => {
     const { container } = renderCard(20, true, value);
     const label = Array.from(container.querySelectorAll('label')).find((item) =>
-      item.textContent?.includes('Згортати медіа в картках'),
+      item.textContent?.includes('Згортати вкладення'),
     );
     expect(label?.querySelector('input[type="checkbox"]')).toHaveProperty('checked', value);
   });
@@ -154,7 +154,7 @@ describe('SettingsMessageCard', () => {
   it('ECHO-3324 changes collapsed-media preference', () => {
     const { container, onCollapseMediaPreviewsChange } = renderCard(20, true, true);
     const label = Array.from(container.querySelectorAll('label')).find((item) =>
-      item.textContent?.includes('Згортати медіа в картках'),
+      item.textContent?.includes('Згортати вкладення'),
     );
     const input = label?.querySelector('input[type="checkbox"]');
     act(() => input?.dispatchEvent(new MouseEvent('click', { bubbles: true })));

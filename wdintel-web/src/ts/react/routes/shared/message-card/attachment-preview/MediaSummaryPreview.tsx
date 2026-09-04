@@ -1,10 +1,10 @@
 import ArrowLeftIcon from '@mui/icons-material/ArrowLeft';
 import ArrowRightIcon from '@mui/icons-material/ArrowRight';
-import DescriptionIcon from '@mui/icons-material/Description';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import {
   Button,
   CircularProgress,
@@ -715,7 +715,10 @@ export function MessageCardMediaSummary({
       data-media-summary-inline="true"
       className={`min-w-0 w-[min(580px,100%)] p-1 rounded bg-black/5 dark:bg-white/5 border-l-[3px] ${borderColorClass} flex flex-row items-start gap-1`}
     >
-      <DescriptionIcon className={`text-[20px]! shrink-0 mt-0.5 ${iconColorClass}`} />
+      <SmartToyOutlinedIcon
+        data-media-summary-icon="robot"
+        className={`text-[18px]! shrink-0 mt-0.5 ${iconColorClass}`}
+      />
 
       <div
         key={mediaId ?? 'summary-text'}

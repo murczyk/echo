@@ -230,7 +230,7 @@ export function SettingsMessageCard({
           label={
             <Stack spacing={0.5} sx={{ pt: 0.25 }}>
               <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                Стислий опис файлів у картках
+                Стислий опис файлів
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
                 Відображати блок стислого опису для зображень та документів у картках повідомлень
@@ -257,11 +257,11 @@ export function SettingsMessageCard({
           label={
             <Stack spacing={0.5} sx={{ pt: 0.25 }}>
               <Typography variant="body1" sx={{ fontWeight: 600, lineHeight: 1.35 }}>
-                Згортати медіа в картках
+                Згортати вкладення
               </Typography>
               <Typography variant="body2" sx={{ color: 'text.secondary', lineHeight: 1.6 }}>
-                Фото, відео, інші медіа, координати та аудіо спочатку згорнуті; кожен розділ можна
-                розгорнути окремо.
+                Зображення, відео, документи, координати та аудіо спочатку згорнуті; одночасно можна
+                розгорнути один тип вкладень.
               </Typography>
             </Stack>
           }

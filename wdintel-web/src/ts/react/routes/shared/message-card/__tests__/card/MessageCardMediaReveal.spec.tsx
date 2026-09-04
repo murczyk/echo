@@ -72,7 +72,7 @@ describe('MessageCardContent media collapse', () => {
         },
       ],
     ],
-  ])('ECHO-3324 exposes document and download-only media while collapsed', async (media) => {
+  ])('ECHO-3324 exposes documents and downloads through their shared section', async (media) => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -88,14 +88,16 @@ describe('MessageCardContent media collapse', () => {
       );
     });
 
-    const button = container.querySelector('[data-attachment-kind="media"]') as HTMLButtonElement;
+    const button = container.querySelector(
+      '[data-attachment-kind="documents"]',
+    ) as HTMLButtonElement;
     expect(button.getAttribute('aria-expanded')).toBe('false');
     expect(button.textContent).toContain('1');
     await act(async () => button.click());
     expect(button.getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('ECHO-3324 counts each media attachment once and keeps audio state independent', async () => {
+  it('ECHO-3324 classifies media, documents, and audio into exclusive sections', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -146,8 +148,12 @@ describe('MessageCardContent media collapse', () => {
     });
 
     const media = container.querySelector('[data-attachment-kind="media"]') as HTMLButtonElement;
+    const documents = container.querySelector(
+      '[data-attachment-kind="documents"]',
+    ) as HTMLButtonElement;
     const audio = container.querySelector('[data-attachment-kind="audio"]') as HTMLButtonElement;
-    expect(media.textContent).toContain('4');
+    expect(media.textContent).toContain('2');
+    expect(documents.textContent).toContain('2');
     expect(media.getAttribute('aria-expanded')).toBe('false');
     expect(audio.getAttribute('aria-expanded')).toBe('false');
 
@@ -155,13 +161,13 @@ describe('MessageCardContent media collapse', () => {
     expect(audio.getAttribute('aria-expanded')).toBe('true');
     await act(async () => media.click());
     expect(media.getAttribute('aria-expanded')).toBe('true');
-    expect(audio.getAttribute('aria-expanded')).toBe('true');
+    expect(audio.getAttribute('aria-expanded')).toBe('false');
     await act(async () => media.click());
     expect(media.getAttribute('aria-expanded')).toBe('false');
-    expect(audio.getAttribute('aria-expanded')).toBe('true');
+    expect(audio.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('ECHO-3324 initializes available media sections expanded when collapsing is disabled', async () => {
+  it('ECHO-3324 renders all attachment categories without controls when collapsing is disabled', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -186,8 +192,7 @@ describe('MessageCardContent media collapse', () => {
       );
     });
 
-    expect(
-      container.querySelector('[data-attachment-kind="media"]')?.getAttribute('aria-expanded'),
-    ).toBe('true');
+    expect(container.querySelector('.message-card-attachment-counters')).toBeNull();
+    expect(container.querySelector('a[download="a.bin"]')).not.toBeNull();
   });
 });

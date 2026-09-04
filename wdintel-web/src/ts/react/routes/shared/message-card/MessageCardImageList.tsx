@@ -1,4 +1,5 @@
 import type { MessageMediaInfo } from '../../../../../Bindings';
+import type { ReactNode } from 'react';
 import type { MessageCardImage } from './message-card-image-utils';
 import { MessageCardImageThumb } from './MessageCardImageThumb';
 import { MessageCardVideoThumb } from './MessageCardVideoThumb';
@@ -8,6 +9,7 @@ export function MessageCardImageList({
   videos = [],
   selectedImageIndex = null,
   selectedVideoIndex = null,
+  trailingContent,
   onOpen,
   onOpenVideo,
 }: {
@@ -15,13 +17,14 @@ export function MessageCardImageList({
   videos?: MessageMediaInfo[];
   selectedImageIndex?: number | null;
   selectedVideoIndex?: number | null;
+  trailingContent?: ReactNode;
   onOpen: (index: number) => void;
   onOpenVideo?: (index: number) => void;
 }) {
   const imageCount = images.length;
   const videoCount = videos.length;
 
-  if (imageCount === 0 && videoCount === 0) return null;
+  if (imageCount === 0 && videoCount === 0 && trailingContent == null) return null;
 
   return (
     <div className="message-card-gallery">
@@ -44,6 +47,7 @@ export function MessageCardImageList({
           onOpen={onOpenVideo ?? (() => {})}
         />
       ))}
+      {trailingContent}
     </div>
   );
 }

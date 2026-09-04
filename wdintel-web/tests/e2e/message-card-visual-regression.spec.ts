@@ -451,7 +451,7 @@ test.describe('message card visual regression', () => {
         expect(
           await card
             .locator('a[aria-label^="Завантажити аудіо"]')
-            .evaluate((element) => element.closest('.message-card-audio-row') === null),
+            .evaluate((element) => element.closest('.message-card-audio-row') !== null),
         ).toBe(true);
       });
     }

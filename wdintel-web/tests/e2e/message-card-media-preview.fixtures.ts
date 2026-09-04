@@ -371,12 +371,8 @@ export async function openMessageCardPreviewHost(
     await ensureAttachmentExpanded(/^Розгорнути координати:|^Згорнути координати:/);
   }
 
-  await expect(
-    page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown }),
-  ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Відкрити зображення' })).toHaveCount(2);
-  await expect(page.getByRole('button', { name: 'Відкрити відео' })).toHaveCount(2);
+  if (!revealAudio && !revealCoordinates) {
+    await expect(page.getByRole('button', { name: 'Відкрити зображення' })).toHaveCount(2);
+    await expect(page.getByRole('button', { name: 'Відкрити відео' })).toHaveCount(2);
+  }
 }

@@ -320,7 +320,7 @@ function MessageCardComponent({
   return (
     <li
       ref={messageRootRef as React.RefObject<HTMLLIElement>}
-      className="message-card-item list-none flex flex-col px-0 pb-3 mb-0"
+      className="message-card-item list-none flex flex-col px-0 pb-[12px] mb-0"
       style={displayMode === 'analysis' ? ANALYSIS_MESSAGE_CARD_VISIBILITY_STYLE : undefined}
     >
       <MessageCardRoot className="message-card-root relative flex w-full flex-col overflow-hidden">

@@ -20,6 +20,8 @@ async function openVideoPreview(page: Page) {
 }
 
 async function openTextPreview(page: Page) {
+  const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+  if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
   await page
     .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text })
     .click();
@@ -27,6 +29,8 @@ async function openTextPreview(page: Page) {
 }
 
 async function openMarkdownPreview(page: Page) {
+  const documents = page.getByRole('button', { name: /^(Розгорнути|Згорнути) документи:/ });
+  if ((await documents.getAttribute('aria-expanded')) !== 'true') await documents.click();
   await page
     .getByRole('button', { name: MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.markdown })
     .click();
@@ -124,11 +128,8 @@ test.describe('@smoke', () => {
 });
 
 test.describe('message card media preview contract', () => {
-  test('ECHO-3324 keeps Media, Coordinates, and Audio controls independent', async ({ page }) => {
-    await openMessageCardPreviewHost(page, 'duty', {
-      revealAudio: true,
-      revealCoordinates: true,
-    });
+  test('ECHO-3324 keeps exactly one collapsed attachment section open', async ({ page }) => {
+    await openMessageCardPreviewHost(page, 'duty');
 
     const media = page.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
     const coordinates = page.getByRole('button', {
@@ -136,16 +137,21 @@ test.describe('message card media preview contract', () => {
     });
     const audio = page.getByRole('button', { name: /^(Розгорнути|Згорнути) аудіо:/ });
     await expect(media).toHaveAttribute('aria-expanded', 'true');
-    await expect(coordinates).toHaveAttribute('aria-expanded', 'true');
-    await expect(audio).toHaveAttribute('aria-expanded', 'true');
+    await expect(coordinates).toHaveAttribute('aria-expanded', 'false');
+    await expect(audio).toHaveAttribute('aria-expanded', 'false');
 
-    await media.click();
+    await audio.click();
     await expect(media).toHaveAttribute('aria-expanded', 'false');
-    await expect(coordinates).toHaveAttribute('aria-expanded', 'true');
     await expect(audio).toHaveAttribute('aria-expanded', 'true');
+    await expect(coordinates).toHaveAttribute('aria-expanded', 'false');
 
-    await media.click();
-    await expect(media).toHaveAttribute('aria-expanded', 'true');
+    await coordinates.click();
+    await expect(media).toHaveAttribute('aria-expanded', 'false');
+    await expect(audio).toHaveAttribute('aria-expanded', 'false');
+    await expect(coordinates).toHaveAttribute('aria-expanded', 'true');
+
+    await coordinates.click();
+    await expect(coordinates).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths', async ({
@@ -156,6 +162,10 @@ test.describe('message card media preview contract', () => {
       withPartialCoordinateError: true,
     });
     const card = page.locator('.message-card-root').first();
+    const mediaControl = card.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+    const coordinateControl = card.getByRole('button', {
+      name: /^(Розгорнути|Згорнути) координати:/,
+    });
 
     for (const cardWidth of [920, 330]) {
       await card.evaluate((element, width) => {
@@ -163,29 +173,37 @@ test.describe('message card media preview contract', () => {
         if (item) item.style.width = `${width}px`;
       }, cardWidth);
 
+      await mediaControl.click();
+      await expect(mediaControl).toHaveAttribute('aria-expanded', 'true');
+      const imageTile = card.locator('[data-picture-thumb-layout]').first();
+      const videoTile = card.locator('[data-video-thumb-state]').first();
+      const [imageBox, videoBox] = await Promise.all([
+        imageTile.boundingBox(),
+        videoTile.boundingBox(),
+      ]);
+      expect(imageBox?.width).toBe(72);
+      expect(imageBox?.height).toBe(72);
+      expect(videoBox?.width).toBe(72);
+      expect(videoBox?.height).toBe(72);
+
+      await coordinateControl.click();
+      await expect(coordinateControl).toHaveAttribute('aria-expanded', 'true');
+
       const coordinateHost = card.locator('[data-coordinate-preview-root]');
       const coordinateTile = card.locator('[data-coordinate-preview-tile]');
       const retryOverlay = card.locator('[data-coordinate-preview-retry-overlay]');
-      const imageTile = card.locator('[data-picture-thumb-layout]').first();
-      const videoTile = card.locator('[data-video-thumb-state]').first();
       await expect(coordinateHost).toBeVisible();
       await expect(coordinateTile).toBeVisible();
       await expect(retryOverlay).toBeVisible();
-      const [hostBox, coordinateBox, imageBox, videoBox] = await Promise.all([
+      const [hostBox, coordinateBox] = await Promise.all([
         coordinateHost.boundingBox(),
         coordinateTile.boundingBox(),
-        imageTile.boundingBox(),
-        videoTile.boundingBox(),
       ]);
       expect(hostBox?.width).toBe(hostBox?.height);
       expect(hostBox?.width).toBe(72);
       expect(coordinateBox?.width).toBe(coordinateBox?.height);
       expect(coordinateBox?.width).toBe(hostBox?.width);
       expect(coordinateBox?.width).toBe(imageBox?.width);
-      expect(imageBox?.width).toBe(72);
-      expect(imageBox?.height).toBe(72);
-      expect(videoBox?.width).toBe(72);
-      expect(videoBox?.height).toBe(72);
       const [overlayBox, hostOverflow] = await Promise.all([
         retryOverlay.boundingBox(),
         coordinateHost.evaluate((element) => getComputedStyle(element).overflow),
