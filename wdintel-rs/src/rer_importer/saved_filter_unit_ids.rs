@@ -32,6 +32,7 @@ struct MigrationPlan {
     before: Value,
     after: Value,
     converted: Vec<ConvertedValue>,
+    preserved: Vec<(&'static str, String)>,
     unresolved: Vec<(&'static str, String)>,
 }
 
@@ -141,8 +142,13 @@ fn build_migration_plan(
     let mut after = req.clone();
     let req = after.as_object_mut()?;
     let mut converted = Vec::new();
+    let mut preserved = Vec::new();
     let mut unresolved = Vec::new();
     let mut has_legacy_value = false;
+    let migrate_labels = req
+        .get("units_exact_match_only")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     for (legacy_field, id_field) in UNIT_FILTER_FIELDS {
         migrate_field(
@@ -150,7 +156,9 @@ fn build_migration_plan(
             legacy_field,
             id_field,
             units_by_name,
+            migrate_labels,
             &mut converted,
+            &mut preserved,
             &mut unresolved,
             &mut has_legacy_value,
         );
@@ -160,6 +168,7 @@ fn build_migration_plan(
         before,
         after,
         converted,
+        preserved,
         unresolved,
     })
 }
@@ -169,7 +178,9 @@ fn migrate_field(
     legacy_field: &'static str,
     id_field: &'static str,
     units_by_name: &BTreeMap<String, Vec<i64>>,
+    migrate_labels: bool,
     converted: &mut Vec<ConvertedValue>,
+    preserved: &mut Vec<(&'static str, String)>,
     unresolved: &mut Vec<(&'static str, String)>,
     has_legacy_value: &mut bool,
 ) {
@@ -190,9 +201,17 @@ fn migrate_field(
             continue;
         }
         *has_legacy_value = true;
-        let matched_ids = parse_unit_id_value(value_str)
-            .map(|unit_id| vec![unit_id])
-            .or_else(|| units_by_name.get(value_str).cloned());
+        let matched_ids =
+            parse_unit_id_value(value_str).map(|unit_id| vec![unit_id]);
+        let matched_ids = match matched_ids {
+            Some(matched_ids) => Some(matched_ids),
+            None if migrate_labels => units_by_name.get(value_str).cloned(),
+            None => {
+                preserved.push((legacy_field, value_str.to_string()));
+                retained.push(value);
+                continue;
+            }
+        };
         let Some(matched_ids) = matched_ids.filter(|ids| !ids.is_empty())
         else {
             unresolved.push((legacy_field, value_str.to_string()));
@@ -270,6 +289,11 @@ fn print_plan(
             conversion.field, conversion.value, conversion.unit_ids
         );
     }
+    for (field, value) in &plan.preserved {
+        println!(
+            "  preserved {field}: {value:?} (legacy non-exact matching semantics)"
+        );
+    }
     for (field, value) in &plan.unresolved {
         println!("  unresolved {field}: {value:?}");
     }
@@ -341,10 +365,11 @@ mod tests {
     }
 
     #[test]
-    fn migrates_analysis_labels_and_tagged_ids() {
+    fn migrates_exact_match_labels_and_tagged_ids() {
         let req = json!({
             "selected_units": ["Alpha", "unit-id:20", "Missing", "Не визначено"],
-            "selected_unit_ids": [5]
+            "selected_unit_ids": [5],
+            "units_exact_match_only": true
         });
 
         let plan = build_migration_plan(&req, &unit_names()).unwrap();
@@ -354,7 +379,8 @@ mod tests {
             plan.after,
             json!({
                 "selected_units": ["Missing", "Не визначено"],
-                "selected_unit_ids": [5, 10, 12, 20]
+                "selected_unit_ids": [5, 10, 12, 20],
+                "units_exact_match_only": true
             })
         );
         assert_eq!(
@@ -364,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_duty_included_and_denied_units() {
+    fn preserves_labels_when_exact_match_is_absent() {
         let req = json!({
             "units_selected": ["unit-id:10", "Bravo"],
             "units_denied": ["Alpha"]
@@ -375,11 +401,33 @@ mod tests {
         assert_eq!(
             plan.after,
             json!({
-                "units_selected": null,
-                "units_denied": null,
-                "selected_unit_ids": [10, 20],
-                "denied_unit_ids": [10, 12]
+                "units_selected": ["Bravo"],
+                "units_denied": ["Alpha"],
+                "selected_unit_ids": [10]
             })
+        );
+        assert_eq!(
+            plan.preserved,
+            vec![
+                ("units_selected", "Bravo".to_string()),
+                ("units_denied", "Alpha".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn preserves_labels_when_exact_match_is_false() {
+        let req = json!({
+            "selected_units": ["Alpha"],
+            "units_exact_match_only": false
+        });
+
+        let plan = build_migration_plan(&req, &unit_names()).unwrap();
+
+        assert_eq!(plan.after, req);
+        assert_eq!(
+            plan.preserved,
+            vec![("selected_units", "Alpha".to_string())]
         );
     }
 
