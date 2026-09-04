@@ -37,11 +37,13 @@ pub async fn merge_two_networks(
         .iter()
         .find(|network| network.id == network_id_from)
         .cloned()
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
     let network_to = networks
         .into_iter()
         .find(|network| network.id == network_id_to)
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound)
+        .context(h!())?;
 
     if !merge_inactive
         && (is_inactive_network(&network_from)

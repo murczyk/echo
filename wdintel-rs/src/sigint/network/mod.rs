@@ -3341,6 +3341,7 @@ pub async fn delete_network_freq(
         }
     };
     let mut network_detail = None;
+    let mut network_invalidation = None;
     if freq_records.is_empty() {
         let debug_network_id = req.network_id.unwrap_or_default();
         debug!(
@@ -3412,20 +3413,28 @@ pub async fn delete_network_freq(
                     .context(h!())?,
             );
 
-            if let Err(e) = etalon_calc::invalidate_network_inbox(
+            network_invalidation = Some((
                 network,
                 vec![freq_records[0].freq.clone()],
-                &env.dbx,
                 format!("deleted network {}", network_id),
-            )
-            .await
-            {
-                error!("invalidate_network_inbox failed: {:#?}", e);
-            }
+            ));
         }
     }
 
     txn.commit().await.context(h!())?;
+
+    if let Some((network, frequencies, context_msg)) = network_invalidation {
+        if let Err(e) = etalon_calc::invalidate_network_inbox(
+            network,
+            frequencies,
+            &env.dbx,
+            context_msg,
+        )
+        .await
+        {
+            error!("invalidate_network_inbox failed: {:#?}", e);
+        }
+    }
 
     let network_details = network_detail.clone().context(h!())?;
     let first_network_detail = network_details.first().context(h!())?;
