@@ -1,17 +1,15 @@
-use crate::entities::{sigint_saved_filter, sigint_unit};
-use crate::rer_importer::analysis::expand_unit_filter_values;
+use crate::entities::sigint_saved_filter;
 use crate::types::{AppError, Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use anyhow::Context;
 use dialoguer::{theme::ColorfulTheme, Select};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Set,
-    TransactionTrait,
+    ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel,
+    QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 use serde_json::{Map, Value};
 use similar::TextDiff;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 const UNIT_ID_PREFIX: &str = "unit-id:";
 const UNIT_FILTER_FIELDS: [(&str, &str); 4] = [
@@ -34,7 +32,6 @@ struct MigrationPlan {
     after: Value,
     converted: Vec<ConvertedValue>,
     preserved: Vec<(&'static str, String)>,
-    unresolved: Vec<(&'static str, String)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +53,6 @@ pub async fn run(mode: Mode) -> Result<(), AppError> {
 
 async fn run_inner(mode: Mode) -> anyhow::Result<()> {
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    let units_by_name = load_units_by_name(&dbx).await.context(h!())?;
     let saved_filters = sigint_saved_filter::Entity::find()
         .order_by_asc(sigint_saved_filter::Column::Id)
         .all(&dbx)
@@ -67,17 +63,15 @@ async fn run_inner(mode: Mode) -> anyhow::Result<()> {
     let mut applied = 0;
     let mut skipped = 0;
     let mut stale = 0;
-    let mut unresolved_only = 0;
+    let mut unchanged = 0;
 
     for saved_filter in saved_filters {
-        let Some(plan) =
-            build_migration_plan(&saved_filter.req, &units_by_name)
-        else {
+        let Some(plan) = build_migration_plan(&saved_filter.req) else {
             continue;
         };
         print_plan(&saved_filter, &plan).context(h!())?;
         if plan.before == plan.after {
-            unresolved_only += 1;
+            unchanged += 1;
             println!("No automatic change is available; leaving this filter unchanged.\n");
             continue;
         }
@@ -113,54 +107,26 @@ async fn run_inner(mode: Mode) -> anyhow::Result<()> {
     }
 
     println!(
-        "done! reviewed={reviewed} applied={applied} skipped={skipped} stale={stale} unresolved_only={unresolved_only}"
+        "done! reviewed={reviewed} applied={applied} skipped={skipped} stale={stale} unchanged={unchanged}"
     );
     Ok(())
 }
 
-async fn load_units_by_name(
-    dbx: &DatabaseConnection,
-) -> anyhow::Result<BTreeMap<String, Vec<i64>>> {
-    let units = sigint_unit::Entity::find()
-        .filter(sigint_unit::Column::Deleted.eq(false))
-        .order_by_asc(sigint_unit::Column::Name)
-        .order_by_asc(sigint_unit::Column::Id)
-        .all(dbx)
-        .await
-        .context(h!())?;
-    let mut units_by_name = BTreeMap::<String, Vec<i64>>::new();
-    for unit in units {
-        units_by_name.entry(unit.name).or_default().push(unit.id);
-    }
-    Ok(units_by_name)
-}
-
-fn build_migration_plan(
-    req: &Value,
-    units_by_name: &BTreeMap<String, Vec<i64>>,
-) -> Option<MigrationPlan> {
+fn build_migration_plan(req: &Value) -> Option<MigrationPlan> {
     let before = req.clone();
     let mut after = req.clone();
     let req = after.as_object_mut()?;
     let mut converted = Vec::new();
     let mut preserved = Vec::new();
-    let mut unresolved = Vec::new();
     let mut has_legacy_value = false;
-    let migrate_labels = req
-        .get("units_exact_match_only")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
 
     for (legacy_field, id_field) in UNIT_FILTER_FIELDS {
         migrate_field(
             req,
             legacy_field,
             id_field,
-            units_by_name,
-            migrate_labels,
             &mut converted,
             &mut preserved,
-            &mut unresolved,
             &mut has_legacy_value,
         );
     }
@@ -170,7 +136,6 @@ fn build_migration_plan(
         after,
         converted,
         preserved,
-        unresolved,
     })
 }
 
@@ -178,11 +143,8 @@ fn migrate_field(
     req: &mut Map<String, Value>,
     legacy_field: &'static str,
     id_field: &'static str,
-    units_by_name: &BTreeMap<String, Vec<i64>>,
-    migrate_labels: bool,
     converted: &mut Vec<ConvertedValue>,
     preserved: &mut Vec<(&'static str, String)>,
-    unresolved: &mut Vec<(&'static str, String)>,
     has_legacy_value: &mut bool,
 ) {
     let Some(values) = req.get(legacy_field).and_then(Value::as_array).cloned()
@@ -202,22 +164,10 @@ fn migrate_field(
             continue;
         }
         *has_legacy_value = true;
-        let matched_ids =
-            parse_unit_id_value(value_str).map(|unit_id| vec![unit_id]);
-        let matched_ids = match matched_ids {
-            Some(matched_ids) => Some(matched_ids),
-            None if migrate_labels => {
-                Some(unit_ids_for_label(value_str, units_by_name))
-            }
-            None => {
-                preserved.push((legacy_field, value_str.to_string()));
-                retained.push(value);
-                continue;
-            }
-        };
-        let Some(matched_ids) = matched_ids.filter(|ids| !ids.is_empty())
+        let Some(matched_ids) =
+            parse_unit_id_value(value_str).map(|unit_id| vec![unit_id])
         else {
-            unresolved.push((legacy_field, value_str.to_string()));
+            preserved.push((legacy_field, value_str.to_string()));
             retained.push(value);
             continue;
         };
@@ -248,21 +198,6 @@ fn migrate_field(
         },
     );
     append_unit_ids(req, id_field, new_unit_ids);
-}
-
-fn unit_ids_for_label(
-    label: &str,
-    units_by_name: &BTreeMap<String, Vec<i64>>,
-) -> Vec<i64> {
-    expand_unit_filter_values(&Some(vec![label.to_string()]))
-        .ordinary_names
-        .into_iter()
-        .filter_map(|name| units_by_name.get(&name))
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
 }
 
 fn append_unit_ids(
@@ -316,11 +251,8 @@ fn print_plan(
     }
     for (field, value) in &plan.preserved {
         println!(
-            "  preserved {field}: {value:?} (legacy non-exact matching semantics)"
+            "  preserved {field}: {value:?} (legacy label matching semantics)"
         );
-    }
-    for (field, value) in &plan.unresolved {
-        println!("  unresolved {field}: {value:?}");
     }
     if plan.before != plan.after {
         let before =
@@ -382,39 +314,32 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn unit_names() -> BTreeMap<String, Vec<i64>> {
-        BTreeMap::from([
-            ("Alpha".to_string(), vec![10, 12]),
-            ("alpha".to_string(), vec![14]),
-            ("Bravo".to_string(), vec![20]),
-            ("58 А".to_string(), vec![30]),
-            ("58 за".to_string(), vec![31]),
-            ("58 ЗВА".to_string(), vec![32]),
-        ])
-    }
-
     #[test]
-    fn migrates_exact_match_labels_and_tagged_ids() {
+    fn preserves_exact_match_labels_and_migrates_tagged_ids() {
         let req = json!({
             "selected_units": ["Alpha", "unit-id:20", "58 А", "Missing", "Не визначено"],
             "selected_unit_ids": [5],
             "units_exact_match_only": true
         });
 
-        let plan = build_migration_plan(&req, &unit_names()).unwrap();
+        let plan = build_migration_plan(&req).unwrap();
 
         assert_eq!(plan.before, req);
         assert_eq!(
             plan.after,
             json!({
-                "selected_units": ["unit-id:10", "unit-id:12", "unit-id:14", "unit-id:20", "unit-id:30", "unit-id:31", "unit-id:32", "Missing", "Не визначено"],
-                "selected_unit_ids": [5, 10, 12, 14, 20, 30, 31, 32],
+                "selected_units": ["Alpha", "unit-id:20", "58 А", "Missing", "Не визначено"],
+                "selected_unit_ids": [5, 20],
                 "units_exact_match_only": true
             })
         );
         assert_eq!(
-            plan.unresolved,
-            vec![("selected_units", "Missing".to_string())]
+            plan.preserved,
+            vec![
+                ("selected_units", "Alpha".to_string()),
+                ("selected_units", "58 А".to_string()),
+                ("selected_units", "Missing".to_string())
+            ]
         );
     }
 
@@ -425,7 +350,7 @@ mod tests {
             "units_denied": ["Alpha"]
         });
 
-        let plan = build_migration_plan(&req, &unit_names()).unwrap();
+        let plan = build_migration_plan(&req).unwrap();
 
         assert_eq!(
             plan.after,
@@ -451,7 +376,7 @@ mod tests {
             "units_exact_match_only": false
         });
 
-        let plan = build_migration_plan(&req, &unit_names()).unwrap();
+        let plan = build_migration_plan(&req).unwrap();
 
         assert_eq!(plan.after, req);
         assert_eq!(
@@ -467,6 +392,6 @@ mod tests {
             "selected_unit_ids": [10]
         });
 
-        assert!(build_migration_plan(&req, &unit_names()).is_none());
+        assert!(build_migration_plan(&req).is_none());
     }
 }
