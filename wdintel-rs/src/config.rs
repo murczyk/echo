@@ -24,6 +24,9 @@ pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
 pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
+/// DUTY_FEED_COUNT_DEADLINE_SYNC: keep the frontend
+/// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
+/// `dutyFeedRequestDeadline.ts` above this default to allow response delivery.
 pub const POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT: u64 =
     60_000;
