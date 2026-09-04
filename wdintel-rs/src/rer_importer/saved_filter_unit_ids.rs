@@ -218,6 +218,13 @@ fn migrate_field(
             retained.push(value);
             continue;
         };
+        for unit_id in &matched_ids {
+            let canonical_value =
+                Value::String(format!("{UNIT_ID_PREFIX}{unit_id}"));
+            if !retained.contains(&canonical_value) {
+                retained.push(canonical_value);
+            }
+        }
         new_unit_ids.extend(matched_ids.iter().copied());
         converted.push(ConvertedValue {
             field: legacy_field,
@@ -378,7 +385,7 @@ mod tests {
         assert_eq!(
             plan.after,
             json!({
-                "selected_units": ["Missing", "Не визначено"],
+                "selected_units": ["unit-id:10", "unit-id:12", "unit-id:20", "Missing", "Не визначено"],
                 "selected_unit_ids": [5, 10, 12, 20],
                 "units_exact_match_only": true
             })
@@ -401,7 +408,7 @@ mod tests {
         assert_eq!(
             plan.after,
             json!({
-                "units_selected": ["Bravo"],
+                "units_selected": ["unit-id:10", "Bravo"],
                 "units_denied": ["Alpha"],
                 "selected_unit_ids": [10]
             })

@@ -19,9 +19,9 @@ function partitionUnitValues(
   const legacyValues: string[] = [];
   const unitIds = new Set(storedUnitIds ?? []);
   for (const value of values ?? []) {
+    legacyValues.push(value);
     const unitId = getCanonicalUnitIdValue(value);
-    if (unitId === null) legacyValues.push(value);
-    else unitIds.add(unitId);
+    if (unitId !== null) unitIds.add(unitId);
   }
   return {
     legacyValues: legacyValues.length > 0 ? legacyValues : null,
