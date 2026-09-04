@@ -72,6 +72,9 @@ impl Drop for OrbitTerminal {
 pub enum StartAction {
     PrepareImport,
     Import,
+    LinkSigintUnitsToOrbit,
+    LinkOrbitUnitsToSigint,
+    FixLinkedUnitEchelonNumbers,
     MergeUnitDuplicates,
     ReviewSigintDuplicateCandidates,
     ResolveUnparsedUnits,
@@ -91,6 +94,12 @@ pub enum UnitActivityScope {
     Both,
     Active,
     Inactive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MissingSigintUnitAction {
+    CreateInactive,
+    Skip,
 }
 
 impl UnitActivityScope {
@@ -164,6 +173,36 @@ pub(super) enum UnitNameReviewDecision {
     Quit,
 }
 
+pub(super) struct OrbitSigintLinkCandidate {
+    pub sigint_unit_id: i64,
+    pub sigint_unit_name: String,
+    pub active: bool,
+    pub echelons: Vec<String>,
+    pub rating: u8,
+    pub distance: usize,
+    pub orbit_name: String,
+}
+
+pub(super) struct OrbitSigintLinkReview {
+    pub orbit_unit_id: uuid::Uuid,
+    pub orbit_name: String,
+    pub candidates: Vec<OrbitSigintLinkCandidate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum OrbitSigintLinkDecision {
+    Link(i64),
+    CreateInactive,
+    Skip,
+    Quit,
+}
+
+pub(super) struct EchelonNumberDiff {
+    pub attribute: &'static str,
+    pub current: String,
+    pub proposed: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Delete,
@@ -232,6 +271,20 @@ pub fn prompt_generated_unit_name_mode() -> Result<Option<LinkMode>, AppError> {
     result
 }
 
+pub fn prompt_echelon_number_fix_mode() -> Result<Option<LinkMode>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_mode_menu(
+        &mut terminal,
+        "Choose echelon-number fix mode (↑/↓, Enter, Esc: quit)",
+        [
+            "Automatic: replace every mismatched linked SIGINT echelon",
+            "Manual: review every mismatched linked SIGINT echelon",
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
 pub fn prompt_unit_activity_scope(
     title: &str,
 ) -> Result<Option<UnitActivityScope>, AppError> {
@@ -246,6 +299,27 @@ pub fn prompt_unit_activity_scope(
             ),
             ("Only active SIGINT units", UnitActivityScope::Active),
             ("Only inactive SIGINT units", UnitActivityScope::Inactive),
+        ],
+    );
+    restore_terminal(&mut terminal).c(h!())?;
+    result
+}
+
+pub fn prompt_missing_sigint_unit_action(
+) -> Result<Option<MissingSigintUnitAction>, AppError> {
+    let mut terminal = setup_terminal().c(h!())?;
+    let result = run_option_menu(
+        &mut terminal,
+        "When no SIGINT match exists (↑/↓, Enter, Esc: quit)",
+        &[
+            (
+                "Create and link a new inactive SIGINT unit",
+                MissingSigintUnitAction::CreateInactive,
+            ),
+            (
+                "Leave the ORBIT unit unlinked",
+                MissingSigintUnitAction::Skip,
+            ),
         ],
     );
     restore_terminal(&mut terminal).c(h!())?;
@@ -551,6 +625,104 @@ pub(super) fn review_unit_name_change(
     }
 }
 
+pub(super) fn review_orbit_sigint_link(
+    terminal: &mut OrbitTerminal,
+    review: &OrbitSigintLinkReview,
+    current: usize,
+    total: usize,
+) -> Result<OrbitSigintLinkDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let page_count = review
+        .candidates
+        .len()
+        .div_ceil(ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE)
+        .max(1);
+    let mut page = 0;
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_orbit_sigint_link_review(
+                    frame, review, current, total, page, page_count, scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) =
+            orbit_sigint_link_decision_for_key(key, review, page)
+        {
+            return Ok(decision);
+        }
+        if key.kind != KeyEventKind::Press || !key.modifiers.is_empty() {
+            continue;
+        }
+        match key.code {
+            KeyCode::Char('f') if page + 1 < page_count => {
+                page += 1;
+                scroll = 0;
+            }
+            KeyCode::Char('b') if page > 0 => {
+                page -= 1;
+                scroll = 0;
+            }
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
+pub(super) fn review_echelon_number_changes(
+    terminal: &mut OrbitTerminal,
+    unit_id: i64,
+    unit_name: &str,
+    changes: &[EchelonNumberDiff],
+    current: usize,
+    total: usize,
+) -> Result<UnitNameReviewDecision, AppError> {
+    let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
+    let mut scroll = 0_u16;
+    loop {
+        terminal
+            .draw(|frame| {
+                draw_echelon_number_changes(
+                    frame, unit_id, unit_name, changes, current, total, scroll,
+                )
+            })
+            .c(h!())?;
+        if !event::poll(poll).c(h!())? {
+            continue;
+        }
+        let Event::Key(key) = event::read().c(h!())? else {
+            continue;
+        };
+        if let Some(decision) = unit_name_review_decision_for_key(key) {
+            if decision != UnitNameReviewDecision::Quit
+                || confirm_test_link_exit(terminal).c(h!())?
+            {
+                return Ok(decision);
+            }
+            continue;
+        }
+        match key.code {
+            KeyCode::Up => scroll = scroll.saturating_sub(1),
+            KeyCode::Down => scroll = scroll.saturating_add(1),
+            KeyCode::PageUp => scroll = scroll.saturating_sub(10),
+            KeyCode::PageDown => scroll = scroll.saturating_add(10),
+            KeyCode::Home => scroll = 0,
+            _ => {}
+        }
+    }
+}
+
 fn restore_stdout_state() -> io::Result<()> {
     let mut first_error = None;
     record_cleanup_error(&mut first_error, disable_raw_mode());
@@ -639,6 +811,9 @@ fn run_start_menu(
     let actions = [
         StartAction::PrepareImport,
         StartAction::Import,
+        StartAction::LinkSigintUnitsToOrbit,
+        StartAction::LinkOrbitUnitsToSigint,
+        StartAction::FixLinkedUnitEchelonNumbers,
         StartAction::MergeUnitDuplicates,
         StartAction::ReviewSigintDuplicateCandidates,
         StartAction::ResolveUnparsedUnits,
@@ -851,7 +1026,7 @@ fn test_link_input_for_key(key: KeyEvent) -> Option<ReviewInput> {
     }
 }
 
-fn confirm_test_link_exit(
+pub(super) fn confirm_test_link_exit(
     terminal: &mut OrbitTerminal,
 ) -> Result<bool, AppError> {
     let poll = Duration::from_millis(ORBIT_TUI_EVENT_POLL_MS);
@@ -1543,11 +1718,153 @@ fn test_link_maximum_scroll(area: Rect, session: &ReviewSession) -> usize {
     line_count.saturating_sub(test_link_page_size(area))
 }
 
+fn draw_orbit_sigint_link_review(
+    frame: &mut Frame<'_>,
+    review: &OrbitSigintLinkReview,
+    current: usize,
+    total: usize,
+    page: usize,
+    page_count: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    frame.render_widget(
+        Paragraph::new(format!("Progress: {current} / {total}")),
+        sections[0],
+    );
+    frame.render_widget(
+        Paragraph::new(Text::from(orbit_sigint_link_review_lines(
+            review, page, page_count,
+        )))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("ORBIT–SIGINT match review"),
+        )
+        .scroll((scroll, 0))
+        .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    let controls = if review.candidates.is_empty() {
+        "c: create and link inactive SIGINT unit | 0/n: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop"
+    } else {
+        "1–5: link selected SIGINT unit | f/b: next/previous 5 | 0/n: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop"
+    };
+    frame.render_widget(Paragraph::new(controls), sections[2]);
+}
+
+fn orbit_sigint_link_review_lines(
+    review: &OrbitSigintLinkReview,
+    page: usize,
+    page_count: usize,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(format!("ORBIT UUID: {}", review.orbit_unit_id)),
+        Line::from(format!("ORBIT name: {}", review.orbit_name)),
+        Line::styled(
+            format!("Potential SIGINT matches: {}", review.candidates.len()),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+    ];
+    if review.candidates.is_empty() {
+        lines.extend([
+            Line::default(),
+            Line::styled(
+                "No SIGINT matches found. A new unit will be inactive.",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        return lines;
+    }
+    let start = page * ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE;
+    let end = (start + ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE)
+        .min(review.candidates.len());
+    lines.extend([
+        Line::from(format!("Candidate page {}/{}", page + 1, page_count)),
+        Line::default(),
+    ]);
+    for (option, candidate) in review.candidates[start..end].iter().enumerate()
+    {
+        lines.extend(orbit_sigint_link_candidate_lines(option + 1, candidate));
+        lines.push(Line::default());
+    }
+    lines
+}
+
+fn orbit_sigint_link_candidate_lines(
+    option: usize,
+    candidate: &OrbitSigintLinkCandidate,
+) -> Vec<Line<'static>> {
+    let sigint_name = candidate.echelons.join(" / ");
+    let [sigint_diff, orbit_diff] =
+        test_link_name_diff_lines(&sigint_name, &candidate.orbit_name);
+    vec![
+        Line::styled(
+            format!(
+                "[{option}] SIGINT ID: {} | active: {} | rating: {} | distance: {}",
+                candidate.sigint_unit_id,
+                candidate.active,
+                candidate.rating,
+                candidate.distance,
+            ),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::from(format!("SIGINT name: {}", candidate.sigint_unit_name)),
+        sigint_diff,
+        orbit_diff,
+    ]
+}
+
+fn orbit_sigint_link_decision_for_key(
+    key: KeyEvent,
+    review: &OrbitSigintLinkReview,
+    page: usize,
+) -> Option<OrbitSigintLinkDecision> {
+    if key.kind != KeyEventKind::Press {
+        return None;
+    }
+    if key.code == KeyCode::Esc
+        || key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+    {
+        return Some(OrbitSigintLinkDecision::Quit);
+    }
+    if !key.modifiers.is_empty() {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('q') => Some(OrbitSigintLinkDecision::Quit),
+        KeyCode::Char('0') | KeyCode::Char('n') => {
+            Some(OrbitSigintLinkDecision::Skip)
+        }
+        KeyCode::Char('c') if review.candidates.is_empty() => {
+            Some(OrbitSigintLinkDecision::CreateInactive)
+        }
+        KeyCode::Char(option @ '1'..='5') => {
+            let index = page * ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE
+                + option.to_digit(10).expect("digit key must be numeric")
+                    as usize
+                - 1;
+            review.candidates.get(index).map(|candidate| {
+                OrbitSigintLinkDecision::Link(candidate.sigint_unit_id)
+            })
+        }
+        _ => None,
+    }
+}
+
 fn draw_start_menu(frame: &mut Frame<'_>, selected: usize) {
-    let area = centered_area(frame, 86, 11);
+    let area = centered_area(frame, 86, 14);
     let options = [
         "IMPORT NEW ORBIT DATA REVISION",
         "Sync ORBIT units",
+        "Link unlinked SIGINT units to ORBIT units",
+        "Link unlinked ORBIT units to SIGINT units",
+        "Replace linked SIGINT echelon values with mismatched ORBIT numbers",
         "Merge duplicate SIGINT units linked to one ORBIT unit",
         "Review all SIGINT duplicate candidates pair by pair",
         "Resolve unparsed unit labels through ORBIT links",
@@ -1634,6 +1951,61 @@ fn draw_unit_name_change_review(
     frame.render_widget(
         Paragraph::new(
             "Enter/y: apply | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
+        ),
+        sections[2],
+    );
+}
+
+fn draw_echelon_number_changes(
+    frame: &mut Frame<'_>,
+    unit_id: i64,
+    unit_name: &str,
+    changes: &[EchelonNumberDiff],
+    current: usize,
+    total: usize,
+    scroll: u16,
+) {
+    let sections = test_link_sections(frame.size());
+    frame.render_widget(
+        Paragraph::new(format!("Progress: {current} / {total}")),
+        sections[0],
+    );
+    let mut lines = vec![
+        Line::from(format!("SIGINT unit ID: {unit_id}")),
+        Line::from(format!("SIGINT unit name: {unit_name}")),
+        Line::default(),
+    ];
+    for change in changes {
+        let [current_diff, proposed_diff] = word_diff_lines(
+            "  SIGINT: ",
+            "   ORBIT: ",
+            &change.current,
+            &change.proposed,
+        );
+        lines.extend([
+            Line::styled(
+                change.attribute,
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            current_diff,
+            proposed_diff,
+            Line::default(),
+        ]);
+    }
+    frame.render_widget(
+        Paragraph::new(Text::from(lines))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Linked ORBIT echelon number mismatches"),
+            )
+            .scroll((scroll, 0))
+            .wrap(Wrap { trim: false }),
+        sections[1],
+    );
+    frame.render_widget(
+        Paragraph::new(
+            "Enter/y: replace mismatched echelons | n/0: skip\n↑/↓/PgUp/PgDn: scroll | q/Esc/Ctrl-C: stop",
         ),
         sections[2],
     );

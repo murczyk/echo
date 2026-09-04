@@ -1,4 +1,6 @@
-use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
+use crate::entities::{
+    orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
+};
 use crate::error::AppError;
 use crate::orbit::dictionary::DictionaryMaps;
 use crate::orbit::persistence::{ExistingUnit, ImportState, ImportUnit};
@@ -18,6 +20,7 @@ use uuid::Uuid;
 mod dictionary;
 mod duplicate_candidate_review;
 mod duplicate_units;
+mod echelon_number_fix;
 mod generated_unit_names;
 mod hierarchy;
 mod matching;
@@ -27,12 +30,23 @@ mod test_link;
 mod tui;
 mod types;
 mod unit_name_cleanup;
+mod unlinked_orbit_units;
 mod unparsed_units;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinkProvenance {
     Manual,
     Automatic,
+}
+
+#[derive(Default)]
+pub struct OrbitMatcherCache {
+    cached: Option<CachedOrbitMatcher>,
+}
+
+struct CachedOrbitMatcher {
+    orbit_sync: orbit_sync::Model,
+    matcher: matching::TestLinkMatcher,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -285,12 +299,48 @@ pub async fn tui_fix_unit_names(mode: Mode) -> Result<(), AppError> {
 
 pub async fn closest_orbit_matches_for_sigint_unit(
     db: &sea_orm::DatabaseConnection,
+    cache_lock: &tokio::sync::RwLock<OrbitMatcherCache>,
     sigint_unit: &sigint_unit::Model,
 ) -> anyhow::Result<Vec<OrbitMatchCandidate>> {
-    let units = persistence::load_latest_synced_source_units(db)
+    let orbit_sync = persistence::load_latest_sync(db)
         .await
-        .c("failed to load synchronized ORBIT units for search")?;
-    Ok(matching::closest_orbit_matches(&units, sigint_unit)
+        .c(h!())?
+        .ok_or_else(|| anyhow::anyhow!("ORBIT data has not been synchronized"))
+        .c(h!())?;
+    let cache = cache_lock.read().await;
+    if let Some(cached) = cache
+        .cached
+        .as_ref()
+        .filter(|cached| cached.orbit_sync == orbit_sync)
+    {
+        return Ok(cached
+            .matcher
+            .closest_matches(sigint_unit)
+            .into_iter()
+            .map(OrbitMatchCandidate::from)
+            .collect());
+    }
+    drop(cache);
+    let mut cache = cache_lock.write().await;
+    if cache
+        .cached
+        .as_ref()
+        .is_none_or(|cached| cached.orbit_sync != orbit_sync)
+    {
+        let units = persistence::load_synced_source_units(db, &orbit_sync)
+            .await
+            .c(h!())?;
+        cache.cached = Some(CachedOrbitMatcher {
+            orbit_sync,
+            matcher: matching::TestLinkMatcher::from_units(units),
+        });
+    }
+    Ok(cache
+        .cached
+        .as_ref()
+        .expect("ORBIT matcher cache must be populated")
+        .matcher
+        .closest_matches(sigint_unit)
         .into_iter()
         .map(OrbitMatchCandidate::from)
         .collect())
@@ -415,6 +465,15 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
             run_prepare_import(mode).await.c(h!())
         }
         Some(tui::StartAction::Import) => run_import(mode).await.c(h!()),
+        Some(tui::StartAction::LinkSigintUnitsToOrbit) => {
+            test_link::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::LinkOrbitUnitsToSigint) => {
+            unlinked_orbit_units::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::FixLinkedUnitEchelonNumbers) => {
+            echelon_number_fix::run(mode).await.c(h!())
+        }
         Some(tui::StartAction::MergeUnitDuplicates) => {
             duplicate_units::run(mode, false).await.c(h!())
         }

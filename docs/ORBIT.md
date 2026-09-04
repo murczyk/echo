@@ -87,7 +87,20 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers eight workflows.
+PostgreSQL advisory lock. The first screen offers eleven workflows.
+
+### TUI workflow conventions
+
+ORBIT maintenance workflows that compare or merge data use a field-by-field or
+word-level diff in manual mode. Matching text is green and differing text is
+red; the operator must explicitly accept the proposed link, edit, or merge.
+Before persistence, accepted work is reloaded under the ORBIT advisory lock and
+is skipped when the compared data or match is stale.
+
+When such a workflow has an automatic mode that changes SIGINT units, it must
+offer separate scopes for all active units, all inactive units, or both. Manual
+mode reviews both active and inactive units and always shows the comparison
+diff.
 
 ### IMPORT NEW ORBIT DATA REVISION
 
@@ -121,6 +134,50 @@ activity. It never regenerates the current SIGINT unit name. After automatic
 matching, every remaining supported, non-deleted ORBIT unit is created as an
 inactive SIGINT unit and linked to its ORBIT source. Generative ancestors of
 active matched units remain active.
+
+### Link unlinked SIGINT units to ORBIT units
+
+This workflow wraps the normal ORBIT matcher for non-deleted SIGINT units that
+do not have an active ORBIT link. Automatic mode links only a unique closest
+rating-100 candidate with Levenshtein distance at most 10 and can target active
+units, inactive units, or both. Manual mode shows the SIGINT and ORBIT hierarchy
+names as a colored word diff and permits any structurally valid candidate,
+without the automatic distance cutoff. Accepted candidates are revalidated
+before a manual or automatic link is written.
+
+The former standalone `oneoff-test-link-units` command is not available; use
+this workflow from `tui-import-orbit-units`.
+
+### Link unlinked ORBIT units to SIGINT units
+
+This workflow starts from every matchable root in the latest synchronized ORBIT
+revision that has no non-suppressed link to a non-deleted SIGINT unit. It
+presents matching, currently unlinked SIGINT units in the reverse direction.
+Manual mode shows a colored hierarchy diff for each candidate. If no candidate
+matches, the operator can create and link a new inactive SIGINT unit.
+
+Automatic mode can search active SIGINT units, inactive SIGINT units, or both.
+It links an ORBIT unit only when exactly one SIGINT unit independently passes
+the normal automatic matching rules. Before it starts, the operator chooses
+whether ORBIT units with no structural match should be created as inactive
+SIGINT units or left unlinked. Ambiguous and unsafe matches are skipped, not
+created, and every action is revalidated under the ORBIT advisory lock.
+
+### Replace linked SIGINT echelon values with mismatched ORBIT numbers
+
+This workflow compares every non-empty SIGINT echelon with the same echelon in
+its single linked ORBIT generative hierarchy. A mismatch is proposed only when
+both values contain words and numbers and their numeric parts differ; wording
+differences with the same numbers are left unchanged. For example, SIGINT army
+`36 А` and ORBIT army `35 А` produce a proposal to replace `36 А` with `35 А`.
+
+Manual mode shows every mismatched echelon as a colored SIGINT/ORBIT word diff
+and applies all displayed replacements only after explicit acceptance.
+Automatic mode applies every current proposal and can target active SIGINT
+units, inactive SIGINT units, or both. Units with zero or multiple active ORBIT
+links are skipped. Before update, the link, activity scope, current SIGINT
+values, and current ORBIT hierarchy are reloaded under the advisory lock; stale
+manual proposals are not applied.
 
 ### Merge duplicate SIGINT units linked to one ORBIT unit
 
@@ -194,6 +251,8 @@ Common controls are:
 - Up/Down, Home/End: select an item;
 - Enter: accept;
 - `s`: skip;
+- `c`: create a new inactive SIGINT unit when an unlinked ORBIT unit has no
+  match;
 - `a`: skip all remaining stale deletions when offered;
 - Page Up/Page Down: scroll details;
 - `q`, Escape, or Ctrl-C: quit.

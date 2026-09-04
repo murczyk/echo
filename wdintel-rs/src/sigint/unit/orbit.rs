@@ -1095,7 +1095,7 @@ pub async fn orbit_link_candidates(
     let unit = find_available_sigint_unit(&env.dbx, req.unit_id).await?;
     let units = match req.search.as_deref() {
         Some(search) => manual_orbit_link_candidates(&env.dbx, search).await?,
-        None => automatic_orbit_link_candidates(&env.dbx, &unit).await?,
+        None => automatic_orbit_link_candidates(&env, &unit).await?,
     };
     Ok(Json(OrbitUnitLinkCandidatesRsp { units }))
 }
@@ -1503,6 +1503,53 @@ pub(crate) async fn import_unlinked_orbit_unit_in_transaction<C>(
 where
     C: ConnectionTrait,
 {
+    Ok(import_unlinked_orbit_unit_in_transaction_inner(
+        dbx,
+        login,
+        orbit_unit_id,
+        crate::orbit::LinkProvenance::Manual,
+        true,
+        false,
+    )
+    .await
+    .c(h!())?
+    .expect("unsupported ORBIT units must return an error"))
+}
+
+pub(crate) async fn import_unlinked_orbit_unit_with_deferred_deduplicate_reconciliation<
+    C,
+>(
+    dbx: &C,
+    login: &Uuid,
+    orbit_unit_id: Uuid,
+    provenance: crate::orbit::LinkProvenance,
+) -> Result<Option<sigint_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
+    Ok(import_unlinked_orbit_unit_in_transaction_inner(
+        dbx,
+        login,
+        orbit_unit_id,
+        provenance,
+        false,
+        true,
+    )
+    .await
+    .c(h!())?)
+}
+
+async fn import_unlinked_orbit_unit_in_transaction_inner<C>(
+    dbx: &C,
+    login: &Uuid,
+    orbit_unit_id: Uuid,
+    provenance: crate::orbit::LinkProvenance,
+    reconcile_deduplicate_candidates: bool,
+    skip_unsupported: bool,
+) -> Result<Option<sigint_unit::Model>, AppError>
+where
+    C: ConnectionTrait,
+{
     let orbit_unit = find_available_orbit_unit(dbx, orbit_unit_id)
         .await
         .c(h!())?;
@@ -1514,20 +1561,33 @@ where
             msg: "ORBIT unit is already linked to a SIGINT unit".to_string(),
         });
     }
-    let unit_req = create_unit_req_from_orbit(dbx, &orbit_unit, false)
+    let unit_req = match create_unit_req_from_orbit(dbx, &orbit_unit, false)
         .await
-        .c(h!())?;
+    {
+        Ok(unit_req) => unit_req,
+        Err(AppError::BL { .. } | AppError::NotFound) if skip_unsupported => {
+            return Ok(None);
+        }
+        Err(err) => return Err(err).c(h!())?,
+    };
     let sigint_unit = super::insert_unit_with_changelog(dbx, login, &unit_req)
         .await
         .c(h!())?;
-    Ok(link_orbit_unit_in_transaction(
+    let sigint_unit = link_orbit_unit_in_transaction_inner(
         dbx,
         login,
         sigint_unit.id,
         orbit_unit_id,
+        provenance,
+        reconcile_deduplicate_candidates,
     )
     .await
-    .c(h!())?)
+    .c(h!())?
+    .ok_or_else(|| AppError::BL {
+        msg: "SIGINT unit already has a linked ORBIT unit".to_string(),
+    })
+    .c(h!())?;
+    Ok(Some(sigint_unit))
 }
 
 async fn import_missing_orbit_ancestors<C>(
@@ -2200,13 +2260,16 @@ pub async fn has_any_orbit_unit(
 }
 
 async fn automatic_orbit_link_candidates(
-    dbx: &DatabaseConnection,
+    env: &Env,
     sigint_unit: &sigint_unit::Model,
 ) -> Result<Vec<OrbitUnitLinkCandidate>, AppError> {
-    let candidates =
-        crate::orbit::closest_orbit_matches_for_sigint_unit(dbx, sigint_unit)
-            .await
-            .c(h!())?;
+    let candidates = crate::orbit::closest_orbit_matches_for_sigint_unit(
+        &env.dbx,
+        &env.orbit_matcher_cache,
+        sigint_unit,
+    )
+    .await
+    .c(h!())?;
     Ok(candidates.into_iter().map(render_match_candidate).collect())
 }
 
