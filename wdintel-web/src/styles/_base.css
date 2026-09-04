@@ -316,7 +316,7 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-root {
   --message-card-attachment-tile-size: 72px;
-  --message-card-coordinate-tile-size: 112px;
+  --message-card-coordinate-tile-size: var(--message-card-attachment-tile-size);
 }
 
 .message-card-gallery [data-picture-thumb-layout],

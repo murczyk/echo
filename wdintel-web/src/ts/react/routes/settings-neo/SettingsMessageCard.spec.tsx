@@ -78,21 +78,37 @@ describe('SettingsMessageCard', () => {
     }
   });
 
-  it('ECHO-3324 places the preview directly after the tag layout control', () => {
+  it('keeps the shared message-card settings in their semantic order', () => {
     const { container } = renderCard(20);
     const preview = container.querySelector('[data-message-card-mock="true"]');
-    const longMessageLabel = Array.from(container.querySelectorAll('p')).find((item) =>
-      item.textContent?.includes('Згортати перегляд довгих повідомлень:'),
-    );
-
     expect(preview).not.toBeNull();
-    expect(longMessageLabel).not.toBeUndefined();
-    expect(
-      Boolean(
-        preview?.compareDocumentPosition(longMessageLabel ?? document.body) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      ),
-    ).toBe(true);
+    const orderedItems = [
+      'Відображення тегів:',
+      'Стислий опис файлів',
+      'Згортати вкладення',
+      'Згортати перегляд довгих повідомлень:',
+      'Спільні налаштування для Оперативного та Аналізу.',
+    ].map((text) =>
+      Array.from(container.querySelectorAll('*')).find((item) => item.textContent === text),
+    );
+    const nodes = [
+      orderedItems[0],
+      orderedItems[1],
+      orderedItems[2],
+      preview,
+      orderedItems[3],
+      orderedItems[4],
+    ];
+
+    for (let index = 0; index < nodes.length - 1; index += 1) {
+      expect(nodes[index]).toBeDefined();
+      expect(
+        Boolean(
+          nodes[index]?.compareDocumentPosition(nodes[index + 1] ?? document.body) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        ),
+      ).toBe(true);
+    }
   });
 
   it.each([
@@ -143,7 +159,7 @@ describe('SettingsMessageCard', () => {
     expect(onMediaSummaryEnabledChange).toHaveBeenCalledWith(false);
   });
 
-  it.each([true, false])('ECHO-3324 reflects collapsed-media preference %s', (value) => {
+  it.each([true, false])('reflects the collapsed-attachment preference %s', (value) => {
     const { container } = renderCard(20, true, value);
     const label = Array.from(container.querySelectorAll('label')).find((item) =>
       item.textContent?.includes('Згортати вкладення'),
@@ -151,7 +167,7 @@ describe('SettingsMessageCard', () => {
     expect(label?.querySelector('input[type="checkbox"]')).toHaveProperty('checked', value);
   });
 
-  it('ECHO-3324 changes collapsed-media preference', () => {
+  it('changes the collapsed-attachment preference', () => {
     const { container, onCollapseMediaPreviewsChange } = renderCard(20, true, true);
     const label = Array.from(container.querySelectorAll('label')).find((item) =>
       item.textContent?.includes('Згортати вкладення'),

@@ -28,9 +28,11 @@ const cardSx = {
 function MessageCardPreviewMock({
   tagsLayout,
   mediaSummaryEnabled,
+  collapseMediaPreviews,
 }: {
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled: boolean;
+  collapseMediaPreviews: boolean;
 }) {
   return (
     <div
@@ -52,12 +54,14 @@ function MessageCardPreviewMock({
       </div>
 
       {/* Attachment skeleton */}
-      <div className="flex items-center gap-2">
-        <div className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded bg-echo-primary text-echo-on-primary">
-          <ImageIcon sx={{ fontSize: 14 }} />
+      <Collapse in={!collapseMediaPreviews} timeout={250} unmountOnExit>
+        <div className="flex items-center gap-2">
+          <div className="flex h-5.5 w-5.5 shrink-0 items-center justify-center rounded bg-echo-primary text-echo-on-primary">
+            <ImageIcon sx={{ fontSize: 14 }} />
+          </div>
+          <div className="h-2.25 w-30 rounded-sm bg-echo-text-muted/35" />
         </div>
-        <div className="h-2.25 w-30 rounded-sm bg-echo-text-muted/35" />
-      </div>
+      </Collapse>
 
       {/* Animated AI Summary skeleton */}
       <Collapse in={mediaSummaryEnabled} timeout={250} unmountOnExit>
@@ -173,46 +177,6 @@ export function SettingsMessageCard({
           </Box>
         </Stack>
 
-        <MessageCardPreviewMock tagsLayout={tagsLayout} mediaSummaryEnabled={mediaSummaryEnabled} />
-
-        <Stack spacing={1}>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Згортати перегляд довгих повідомлень:
-          </Typography>
-          <Box>
-            <ToggleButtonGroup
-              value={messageTextPreviewLines === null ? 'off' : String(messageTextPreviewLines)}
-              exclusive
-              color="primary"
-              onChange={(_, value: '20' | '40' | 'off' | null) => {
-                if (value === null) return;
-                onMessageTextPreviewLinesChange(
-                  value === 'off' ? null : (Number(value) as 20 | 40),
-                );
-              }}
-              size="small"
-              disabled={loadInProgress}
-              sx={{
-                flexWrap: 'wrap',
-                '& .MuiToggleButton-root': {
-                  textTransform: 'none',
-                  fontSize: 14,
-                  px: 2,
-                  py: 1,
-                  whiteSpace: 'nowrap',
-                },
-              }}
-            >
-              <ToggleButton value="20">20 рядків</ToggleButton>
-              <ToggleButton value="40">40 рядків</ToggleButton>
-              <ToggleButton value="off">Без скорочення</ToggleButton>
-            </ToggleButtonGroup>
-          </Box>
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            Визначає, коли з’являється кнопка «Показати більше».
-          </Typography>
-        </Stack>
-
         <FormControlLabel
           sx={{
             alignItems: 'flex-start',
@@ -266,6 +230,50 @@ export function SettingsMessageCard({
             </Stack>
           }
         />
+
+        <MessageCardPreviewMock
+          tagsLayout={tagsLayout}
+          mediaSummaryEnabled={mediaSummaryEnabled}
+          collapseMediaPreviews={collapseMediaPreviews}
+        />
+
+        <Stack spacing={1}>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Згортати перегляд довгих повідомлень:
+          </Typography>
+          <Box>
+            <ToggleButtonGroup
+              value={messageTextPreviewLines === null ? 'off' : String(messageTextPreviewLines)}
+              exclusive
+              color="primary"
+              onChange={(_, value: '20' | '40' | 'off' | null) => {
+                if (value === null) return;
+                onMessageTextPreviewLinesChange(
+                  value === 'off' ? null : (Number(value) as 20 | 40),
+                );
+              }}
+              size="small"
+              disabled={loadInProgress}
+              sx={{
+                flexWrap: 'wrap',
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  fontSize: 14,
+                  px: 2,
+                  py: 1,
+                  whiteSpace: 'nowrap',
+                },
+              }}
+            >
+              <ToggleButton value="20">20 рядків</ToggleButton>
+              <ToggleButton value="40">40 рядків</ToggleButton>
+              <ToggleButton value="off">Без скорочення</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+            Визначає, коли з’являється кнопка «Показати більше».
+          </Typography>
+        </Stack>
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />

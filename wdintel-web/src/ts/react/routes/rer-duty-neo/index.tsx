@@ -16,8 +16,10 @@ import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { InboxMessage } from '../../../../Bindings';
 import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawer';
+import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
 import { fetchMessagesByIds } from '../../services/api/inbox-messages';
+import { isAbortError } from '../../services/api/client';
 import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
@@ -41,6 +43,15 @@ export function RerDutyNeoPage({
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
   const [editAsReport, setEditAsReport] = useState(false);
+  const [editTargetLoadState, setEditTargetLoadState] = useState<ReportEditLoadState>({
+    status: 'idle',
+  });
+  const reportLoadControllerRef = useRef<AbortController | null>(null);
+  const cancelReportEditLoad = useCallback(() => {
+    reportLoadControllerRef.current?.abort();
+    reportLoadControllerRef.current = null;
+    setEditTargetLoadState({ status: 'idle' });
+  }, []);
   const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
@@ -56,36 +67,57 @@ export function RerDutyNeoPage({
     messageTextPreviewLines,
   } = useRerDutyPageSettings();
   const openReportEditor = useCallback(
-    async (reportId: number) => {
-      try {
-        const [report] = await fetchMessagesByIds([reportId]);
-        if (!report) throw new Error('Розвіддонесення не знайдено.');
-        setCreateMessageOpen(false);
-        setReportSource(null);
-        setEditAsReport(true);
-        setEditTarget({ id: report[0], message: report[1] });
-      } catch (loadError) {
-        notify({
-          message:
-            loadError instanceof Error ? loadError.message : 'Не вдалося відкрити розвіддонесення.',
-          severity: 'error',
+    (reportId: number) => {
+      cancelReportEditLoad();
+      const controller = new AbortController();
+      reportLoadControllerRef.current = controller;
+      setCreateMessageOpen(false);
+      setReportSource(null);
+      setEditTarget(null);
+      setEditAsReport(true);
+      setEditTargetLoadState({ status: 'loading', reportId });
+      void fetchMessagesByIds([reportId], null, { signal: controller.signal })
+        .then(([report]) => {
+          if (controller.signal.aborted || reportLoadControllerRef.current !== controller) return;
+          if (!report) throw new Error('Розвіддонесення не знайдено.');
+          reportLoadControllerRef.current = null;
+          setEditTargetLoadState({ status: 'idle' });
+          setEditTarget({ id: report[0], message: report[1] });
+        })
+        .catch((error) => {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          if (reportLoadControllerRef.current !== controller) return;
+          reportLoadControllerRef.current = null;
+          setEditTargetLoadState({
+            status: 'error',
+            reportId,
+            message:
+              error instanceof Error ? error.message : 'Не вдалося відкрити розвіддонесення.',
+          });
         });
-      }
     },
-    [notify],
+    [cancelReportEditLoad],
   );
-  const openMessageEditor = useCallback((target: { id: number; message: InboxMessage }) => {
-    setCreateMessageOpen(false);
-    setReportSource(null);
-    setEditAsReport(isIntelligenceReport(target.message));
-    setEditTarget(target);
-  }, []);
-  const openReportComposer = useCallback((source: { id: number; message: InboxMessage }) => {
-    setCreateMessageOpen(false);
-    setEditAsReport(false);
-    setEditTarget(null);
-    setReportSource(source);
-  }, []);
+  const openMessageEditor = useCallback(
+    (target: { id: number; message: InboxMessage }) => {
+      cancelReportEditLoad();
+      setCreateMessageOpen(false);
+      setReportSource(null);
+      setEditAsReport(isIntelligenceReport(target.message));
+      setEditTarget(target);
+    },
+    [cancelReportEditLoad],
+  );
+  const openReportComposer = useCallback(
+    (source: { id: number; message: InboxMessage }) => {
+      cancelReportEditLoad();
+      setCreateMessageOpen(false);
+      setEditAsReport(false);
+      setEditTarget(null);
+      setReportSource(source);
+    },
+    [cancelReportEditLoad],
+  );
   const previousFeedCountRef = useRef(0);
   const feeds = useRerDutyFeeds(authUserName, currentUser?.organismId ?? null);
   const {
@@ -136,17 +168,21 @@ export function RerDutyNeoPage({
   }, [activeFeedIdSafe, flushPendingNewerMessages]);
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
+    cancelReportEditLoad();
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
     setCreateMessageOpen(true);
-  }, []);
+  }, [cancelReportEditLoad]);
   const closeMessageEditor = useCallback(() => {
+    cancelReportEditLoad();
     setCreateMessageOpen(false);
     setEditTarget(null);
     setEditAsReport(false);
     setReportSource(null);
-  }, []);
+  }, [cancelReportEditLoad]);
+
+  useEffect(() => () => cancelReportEditLoad(), [cancelReportEditLoad]);
   const handleCreatedMessage = useCallback(() => {
     setCreateMessageOpen(false);
     // Do not reloadFeeds(): that re-pins the scroller to the bottom.
@@ -262,11 +298,20 @@ export function RerDutyNeoPage({
       </PointBlacklistPaletteNamesCacheProvider>
 
       <ManageMessageDrawer
-        open={createMessageOpen || isPresent(editTarget) || isPresent(reportSource)}
+        open={
+          createMessageOpen ||
+          isPresent(editTarget) ||
+          isPresent(reportSource) ||
+          editTargetLoadState.status !== 'idle'
+        }
         cyberEchoEnabled={cyberEchoEnabled}
         currentUser={currentUser}
         editTarget={editTarget}
         editAsReport={editAsReport}
+        editTargetLoadState={editTargetLoadState}
+        onRetryEditTargetLoad={() => {
+          if (editTargetLoadState.status !== 'idle') openReportEditor(editTargetLoadState.reportId);
+        }}
         reportSource={reportSource}
         onClose={closeMessageEditor}
         onSubmitEdit={
