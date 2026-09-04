@@ -22,9 +22,13 @@ const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_INT_ROW: &str =
 const RER_DUTY_TEST_SINCE_MS_DECODER_FROM_FLOAT: &str = r#"Json.Decode.field "rer_duty_test_since_ms" (Json.Decode.map round Json.Decode.float)"#;
 const RER_DUTY_WF_UNITS_SELECTED_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))"#;
 const RER_DUTY_WF_UNITS_SELECTED_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_selected" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))"#;
-const RER_DUTY_WF_UNITS_DENIED_AND_EXACT_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+const RER_DUTY_WF_UNIT_FILTERS_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int)))))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool))))"#;
-const RER_DUTY_WF_UNITS_DENIED_AND_EXACT_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
+const RER_DUTY_WF_UNIT_FILTERS_COMPAT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_denied" (Json.Decode.nullable (Json.Decode.list (Json.Decode.string))), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "selected_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
+        |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "denied_unit_ids" (Json.Decode.nullable (Json.Decode.list (Json.Decode.int))), Json.Decode.succeed Nothing]))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.oneOf [Json.Decode.field "units_exact_match_only" (Json.Decode.nullable (Json.Decode.bool)), Json.Decode.succeed Nothing]))"#;
 const EVENT_MSG_ORIGIN_STRICT_DECODER: &str = r#"|> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "event_type" (eventTypeDecoder)))
         |> Json.Decode.andThen (\x -> Json.Decode.map x (Json.Decode.field "created_at" (Json.Decode.int)))
@@ -1631,8 +1635,8 @@ fn patch_backward_compatible_decoders(output: String) -> String {
             RER_DUTY_WF_UNITS_SELECTED_COMPAT_DECODER,
         )
         .replace(
-            RER_DUTY_WF_UNITS_DENIED_AND_EXACT_STRICT_DECODER,
-            RER_DUTY_WF_UNITS_DENIED_AND_EXACT_COMPAT_DECODER,
+            RER_DUTY_WF_UNIT_FILTERS_STRICT_DECODER,
+            RER_DUTY_WF_UNIT_FILTERS_COMPAT_DECODER,
         )
         .replace(
             EVENT_MSG_INTELLIGENCE_REPORT_STRICT_DECODER,

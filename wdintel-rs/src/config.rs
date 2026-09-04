@@ -818,6 +818,7 @@ pub const TAG_MAXIMUM_CONFIDENCE: f64 = 1.0;
 pub const SYSTEM_LOGIN_NAME: &str = "system";
 #[cfg(test)]
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
+LOCK TABLE signal_message IN SHARE MODE;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,
