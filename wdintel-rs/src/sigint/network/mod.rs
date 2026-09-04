@@ -2398,15 +2398,6 @@ pub async fn add_network_freq(
         .await
         .context(h!())?;
 
-    let previous_network_freq = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
-        .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
-        .order_by_desc(sigint_network_freq::Column::Id)
-        .lock_exclusive()
-        .one(&txn)
-        .await
-        .context(h!())?;
-
     // Check if frequency link already exists
     let existing_freq = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
@@ -2417,8 +2408,6 @@ pub async fn add_network_freq(
         .one(&txn)
         .await
         .context(h!())?;
-    let created_network_freq = existing_freq.is_none();
-
     let network_freq = if existing_freq.is_none() {
         // The frequency link doesn't exist, create it
         info!(
@@ -2467,26 +2456,6 @@ pub async fn add_network_freq(
         );
         existing_freq.context(h!())?
     };
-
-    if created_network_freq {
-        if let Some(previous_network_freq) = previous_network_freq {
-            record_activity_decision_if_changed(
-                &txn,
-                ActivityDecisionTarget::Frequency {
-                    network_id: req.network_id,
-                    network_freq_id: network_freq.id,
-                    freq: &network_freq.freq,
-                },
-                ActivityDecisionActor::user(user_id),
-                SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_ADDED,
-                ActivityState::frequency(&previous_network_freq),
-                ActivityState::frequency(&network_freq),
-                ActivityDecisionEvidence::default(),
-            )
-            .await
-            .context(h!())?;
-        }
-    }
 
     if let Some(description) = req.freq_rec.clone().description {
         map_add_network_frequency_description(
@@ -2579,15 +2548,6 @@ pub async fn add_network_freq_v2(
         .await
         .context(h!())?;
 
-    let previous_network_freq = sigint_network_freq::Entity::find()
-        .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
-        .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
-        .order_by_desc(sigint_network_freq::Column::Id)
-        .lock_exclusive()
-        .one(&txn)
-        .await
-        .context(h!())?;
-
     let existing_freq = sigint_network_freq::Entity::find()
         .filter(sigint_network_freq::Column::NetworkId.eq(req.network_id))
         .filter(sigint_network_freq::Column::Freq.eq(req.freq_rec.freq.clone()))
@@ -2597,7 +2557,6 @@ pub async fn add_network_freq_v2(
         .one(&txn)
         .await
         .context(h!())?;
-    let created_network_freq = existing_freq.is_none();
     let kind = kind_from_modulation(&req.freq_rec.modulation);
     let network_freq = if existing_freq.is_none() {
         let active_from = req
@@ -2638,26 +2597,6 @@ pub async fn add_network_freq_v2(
     } else {
         existing_freq.context(h!())?
     };
-
-    if created_network_freq {
-        if let Some(previous_network_freq) = previous_network_freq {
-            record_activity_decision_if_changed(
-                &txn,
-                ActivityDecisionTarget::Frequency {
-                    network_id: req.network_id,
-                    network_freq_id: network_freq.id,
-                    freq: &network_freq.freq,
-                },
-                ActivityDecisionActor::user(user_id),
-                SIGINT_NETWORK_ACTIVITY_REASON_MANUAL_FREQUENCY_ADDED,
-                ActivityState::frequency(&previous_network_freq),
-                ActivityState::frequency(&network_freq),
-                ActivityDecisionEvidence::default(),
-            )
-            .await
-            .context(h!())?;
-        }
-    }
 
     if let Some(description) = req.freq_rec.clone().description {
         map_add_network_frequency_description(
