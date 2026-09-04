@@ -2386,7 +2386,7 @@ where
         .ok_or(AppError::NotFound)
 }
 
-async fn orbit_unit_has_active_sigint_link<C>(
+pub(crate) async fn orbit_unit_has_active_sigint_link<C>(
     dbx: &C,
     orbit_unit_id: Uuid,
 ) -> Result<bool, AppError>

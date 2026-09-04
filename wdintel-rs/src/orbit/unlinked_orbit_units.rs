@@ -1,5 +1,5 @@
 use super::{matching, persistence, test_link, tui, LinkProvenance};
-use crate::entities::{orbit_unit_sigint_unit, sigint_unit};
+use crate::entities::{orbit_sync, orbit_unit_sigint_unit, sigint_unit};
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
@@ -35,7 +35,17 @@ struct PersistSummary {
     stale: usize,
 }
 
+impl PersistSummary {
+    fn add(&mut self, other: Self) {
+        self.linked += other.linked;
+        self.created += other.created;
+        self.stale += other.stale;
+    }
+}
+
 struct ReviewData {
+    orbit_sync: orbit_sync::Model,
+    matcher: matching::TestLinkMatcher,
     reviews: Vec<tui::OrbitSigintLinkReview>,
     automatic_sigint_ids_by_orbit: BTreeMap<Uuid, BTreeSet<i64>>,
 }
@@ -110,9 +120,10 @@ async fn load_review_data<C>(
 where
     C: ConnectionTrait,
 {
-    let orbit_units = persistence::load_latest_synced_source_units(db)
-        .await
-        .c(h!())?;
+    let (orbit_sync, orbit_units) =
+        persistence::load_latest_synced_source_units_with_sync(db)
+            .await
+            .c(h!())?;
     let linked_orbit_unit_ids = load_linked_orbit_unit_ids(db).await.c(h!())?;
     let orbit_units = orbit_units
         .into_iter()
@@ -137,12 +148,12 @@ where
         tui::LinkMode::Automatic,
         &suppressed_links,
     );
+    let reviews =
+        orbit_sigint_link_reviews(&matcher, &sigint_units, &manual_matches);
     Ok(ReviewData {
-        reviews: orbit_sigint_link_reviews(
-            &matcher,
-            &sigint_units,
-            &manual_matches,
-        ),
+        orbit_sync,
+        matcher,
+        reviews,
         automatic_sigint_ids_by_orbit: automatic_sigint_ids_by_orbit(
             automatic_matches,
         ),
@@ -338,6 +349,69 @@ async fn persist_actions(
     if actions.is_empty() {
         return Ok(PersistSummary::default());
     }
+    if link_mode == tui::LinkMode::Automatic {
+        return persist_automatic_actions(db, actions, activity_scope)
+            .await
+            .c(h!());
+    }
+    persist_action_batch(db, actions, link_mode, activity_scope)
+        .await
+        .c(h!())
+}
+
+async fn persist_automatic_actions(
+    db: &sea_orm::DatabaseConnection,
+    actions: &[LinkAction],
+    activity_scope: tui::UnitActivityScope,
+) -> anyhow::Result<PersistSummary> {
+    let transaction = super::acquire_import_lock(db).await.c(h!())?;
+    let current = load_review_data(&transaction, activity_scope)
+        .await
+        .c(h!())?;
+    let reviews = current
+        .reviews
+        .iter()
+        .map(|review| (review.orbit_unit_id, review))
+        .collect::<BTreeMap<_, _>>();
+    let reviewed_action_count = actions.len();
+    let actions = actions
+        .iter()
+        .filter(|action| {
+            action_is_current(
+                action,
+                tui::LinkMode::Automatic,
+                &current,
+                &reviews,
+            )
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut summary = PersistSummary {
+        stale: reviewed_action_count - actions.len(),
+        ..Default::default()
+    };
+    transaction.commit().await.c(h!())?;
+    for action in &actions {
+        summary.add(
+            persist_revalidated_automatic_action(
+                db,
+                action,
+                activity_scope,
+                &current,
+            )
+            .await
+            .c(h!())?,
+        );
+    }
+    Ok(summary)
+}
+
+async fn persist_action_batch(
+    db: &sea_orm::DatabaseConnection,
+    actions: &[LinkAction],
+    link_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
+) -> anyhow::Result<PersistSummary> {
     let transaction = super::acquire_import_lock(db).await.c(h!())?;
     let login = crate::users::system_login_id(&transaction).await.c(h!())?;
     let current = load_review_data(&transaction, activity_scope)
@@ -350,33 +424,15 @@ async fn persist_actions(
         .collect::<BTreeMap<_, _>>();
     let mut summary = PersistSummary::default();
     for action in actions {
+        if !action_is_current(action, link_mode, &current, &reviews) {
+            summary.stale += 1;
+            continue;
+        }
         match action {
             LinkAction::Link {
                 orbit_unit_id,
                 sigint_unit_id,
             } => {
-                let Some(review) = reviews.get(orbit_unit_id) else {
-                    summary.stale += 1;
-                    continue;
-                };
-                let matches = match link_mode {
-                    tui::LinkMode::Manual => {
-                        review.candidates.iter().any(|candidate| {
-                            candidate.sigint_unit_id == *sigint_unit_id
-                        })
-                    }
-                    tui::LinkMode::Automatic => current
-                        .automatic_sigint_ids_by_orbit
-                        .get(orbit_unit_id)
-                        .is_some_and(|matches| {
-                            matches.len() == 1
-                                && matches.contains(sigint_unit_id)
-                        }),
-                };
-                if !matches {
-                    summary.stale += 1;
-                    continue;
-                }
                 let provenance = match link_mode {
                     tui::LinkMode::Automatic => LinkProvenance::Automatic,
                     tui::LinkMode::Manual => LinkProvenance::Manual,
@@ -398,13 +454,6 @@ async fn persist_actions(
                 }
             }
             LinkAction::CreateInactive { orbit_unit_id } => {
-                let can_create = reviews
-                    .get(orbit_unit_id)
-                    .is_some_and(|review| review.candidates.is_empty());
-                if !can_create {
-                    summary.stale += 1;
-                    continue;
-                }
                 let provenance = match link_mode {
                     tui::LinkMode::Automatic => LinkProvenance::Automatic,
                     tui::LinkMode::Manual => LinkProvenance::Manual,
@@ -430,6 +479,140 @@ async fn persist_actions(
     }
     transaction.commit().await.c(h!())?;
     Ok(summary)
+}
+
+async fn persist_revalidated_automatic_action(
+    db: &sea_orm::DatabaseConnection,
+    action: &LinkAction,
+    activity_scope: tui::UnitActivityScope,
+    review_data: &ReviewData,
+) -> anyhow::Result<PersistSummary> {
+    let transaction = super::acquire_import_lock(db).await.c(h!())?;
+    let mut summary = PersistSummary::default();
+    let latest_sync =
+        persistence::load_latest_sync(&transaction).await.c(h!())?;
+    if latest_sync.as_ref() != Some(&review_data.orbit_sync) {
+        summary.stale += 1;
+    } else {
+        let login =
+            crate::users::system_login_id(&transaction).await.c(h!())?;
+        match action {
+            LinkAction::Link {
+                orbit_unit_id,
+                sigint_unit_id,
+            } => {
+                let mut sigint_unit = sigint_unit::Entity::find_by_id(
+                    *sigint_unit_id,
+                )
+                .filter(sigint_unit::Column::Deleted.eq(false));
+                if let Some(active) = activity_scope.active() {
+                    sigint_unit =
+                        sigint_unit.filter(sigint_unit::Column::Active.eq(active));
+                }
+                let sigint_unit = sigint_unit
+                    .lock_exclusive()
+                    .one(&transaction)
+                    .await
+                    .c(h!())?;
+                let suppressed = orbit_unit_sigint_unit::Entity::find_by_id((
+                    *orbit_unit_id,
+                    *sigint_unit_id,
+                ))
+                .one(&transaction)
+                .await
+                .c(h!())?
+                .is_some_and(|link| link.is_suppressed);
+                let orbit_linked = crate::sigint::unit::orbit::orbit_unit_has_active_sigint_link(
+                    &transaction,
+                    *orbit_unit_id,
+                )
+                .await
+                .c(h!())?;
+                let matches = sigint_unit.as_ref().is_some_and(|sigint_unit| {
+                    test_link::review_match_for_orbit(
+                        sigint_unit,
+                        &review_data.matcher,
+                        tui::LinkMode::Automatic,
+                        *orbit_unit_id,
+                    )
+                    .is_some()
+                });
+                if suppressed || orbit_linked || !matches {
+                    summary.stale += 1;
+                } else {
+                    let linked = crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+                        &transaction,
+                        &login,
+                        *sigint_unit_id,
+                        *orbit_unit_id,
+                        LinkProvenance::Automatic,
+                    )
+                    .await
+                    .c(h!())?
+                    .is_some();
+                    if linked {
+                        summary.linked += 1;
+                    } else {
+                        summary.stale += 1;
+                    }
+                }
+            }
+            LinkAction::CreateInactive { orbit_unit_id } => {
+                match crate::sigint::unit::orbit::import_unlinked_orbit_unit_with_deferred_deduplicate_reconciliation(
+                    &transaction,
+                    &login,
+                    *orbit_unit_id,
+                    LinkProvenance::Automatic,
+                )
+                .await {
+                    Ok(Some(_)) => summary.created += 1,
+                    Ok(None) => summary.stale += 1,
+                    Err(err) => return Err(err).c(h!())?,
+                }
+            }
+        }
+    }
+    if summary.linked > 0 || summary.created > 0 {
+        super::reconcile_sigint_unit_deduplicate_candidates(&transaction)
+            .await
+            .c(h!())?;
+    }
+    transaction.commit().await.c(h!())?;
+    Ok(summary)
+}
+
+fn action_is_current(
+    action: &LinkAction,
+    link_mode: tui::LinkMode,
+    current: &ReviewData,
+    reviews: &BTreeMap<Uuid, &tui::OrbitSigintLinkReview>,
+) -> bool {
+    match action {
+        LinkAction::Link {
+            orbit_unit_id,
+            sigint_unit_id,
+        } => {
+            let Some(review) = reviews.get(orbit_unit_id) else {
+                return false;
+            };
+            match link_mode {
+                tui::LinkMode::Manual => {
+                    review.candidates.iter().any(|candidate| {
+                        candidate.sigint_unit_id == *sigint_unit_id
+                    })
+                }
+                tui::LinkMode::Automatic => current
+                    .automatic_sigint_ids_by_orbit
+                    .get(orbit_unit_id)
+                    .is_some_and(|matches| {
+                        matches.len() == 1 && matches.contains(sigint_unit_id)
+                    }),
+            }
+        }
+        LinkAction::CreateInactive { orbit_unit_id } => reviews
+            .get(orbit_unit_id)
+            .is_some_and(|review| review.candidates.is_empty()),
+    }
 }
 
 #[cfg(test)]
@@ -459,6 +642,12 @@ mod tests {
                     .collect(),
             };
         let review_data = ReviewData {
+            orbit_sync: orbit_sync::Model {
+                id: 1,
+                synced_at: chrono::Utc::now().naive_utc(),
+                archive_md5: "archive".to_string(),
+            },
+            matcher: matching::TestLinkMatcher::from_units(Vec::new()),
             reviews: vec![
                 candidate(linked_orbit_unit_id, 1),
                 candidate(ambiguous_orbit_unit_id, 2),

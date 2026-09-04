@@ -1,5 +1,6 @@
 use super::tui;
 use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_UNIT_NAME_CLEANUP_ARMY_EXCLUDED_WORDS,
     ORBIT_UNIT_NAME_CLEANUP_CORPS_EXCLUDED_WORDS,
     ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE,
@@ -445,7 +446,7 @@ async fn persist_changes(
     activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<Vec<UnitNameChange>> {
     let batch_size = match cleanup_mode {
-        tui::LinkMode::Automatic => 1,
+        tui::LinkMode::Automatic => ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
         tui::LinkMode::Manual => {
             ORBIT_UNIT_NAME_CLEANUP_MANUAL_PERSIST_BATCH_SIZE
         }

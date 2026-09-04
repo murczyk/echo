@@ -1,7 +1,7 @@
 use super::{matching, persistence, tui};
 use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE,
-    ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
 };
@@ -556,8 +556,8 @@ async fn persist_automatic_link_batches(
     matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let mut summary = PersistSummary::default();
-    for sigint_unit_ids in reviewed_sigint_unit_ids
-        .chunks(ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE)
+    for sigint_unit_ids in
+        reviewed_sigint_unit_ids.chunks(ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE)
     {
         summary.add(
             persist_automatic_link_batch(

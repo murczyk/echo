@@ -1,5 +1,8 @@
 use super::tui;
-use crate::config::ORBIT_GENERATED_UNIT_NAME_MANUAL_PERSIST_BATCH_SIZE;
+use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
+    ORBIT_GENERATED_UNIT_NAME_MANUAL_PERSIST_BATCH_SIZE,
+};
 use crate::entities::sigint_unit;
 use crate::types::{Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
@@ -187,7 +190,7 @@ async fn persist_changes(
     activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<PersistReview> {
     let batch_size = match review_mode {
-        tui::LinkMode::Automatic => 1,
+        tui::LinkMode::Automatic => ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
         tui::LinkMode::Manual => {
             ORBIT_GENERATED_UNIT_NAME_MANUAL_PERSIST_BATCH_SIZE
         }

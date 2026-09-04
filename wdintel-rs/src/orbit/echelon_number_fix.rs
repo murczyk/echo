@@ -1,5 +1,8 @@
 use super::{persistence, tui};
-use crate::config::ORBIT_ECHELON_NUMBER_FIX_PERSIST_BATCH_SIZE;
+use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
+    ORBIT_ECHELON_NUMBER_FIX_MANUAL_PERSIST_BATCH_SIZE,
+};
 use crate::entities::{
     orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
 };
@@ -390,8 +393,14 @@ async fn persist_changes(
     activity_scope: tui::UnitActivityScope,
     source_cache: &mut Option<SourceHierarchyCache>,
 ) -> anyhow::Result<PersistSummary> {
+    let batch_size = match fix_mode {
+        tui::LinkMode::Automatic => ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
+        tui::LinkMode::Manual => {
+            ORBIT_ECHELON_NUMBER_FIX_MANUAL_PERSIST_BATCH_SIZE
+        }
+    };
     let mut summary = PersistSummary::default();
-    for changes in changes.chunks(ORBIT_ECHELON_NUMBER_FIX_PERSIST_BATCH_SIZE) {
+    for changes in changes.chunks(batch_size) {
         let persisted = persist_change_batch(
             db,
             changes,

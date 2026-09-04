@@ -100,7 +100,9 @@ is skipped when the compared data or match is stale.
 When such a workflow has an automatic mode that changes SIGINT units, it must
 offer separate scopes for all active units, all inactive units, or both. Manual
 mode reviews both active and inactive units and always shows the comparison
-diff.
+diff. Automatic mode reloads, applies, and commits each item in its own
+transaction before continuing to the next item, so a later failure does not
+roll back earlier completed work.
 
 ### IMPORT NEW ORBIT DATA REVISION
 
