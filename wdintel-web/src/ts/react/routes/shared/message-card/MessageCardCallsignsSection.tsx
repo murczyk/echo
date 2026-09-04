@@ -82,10 +82,10 @@ export function MessageCardCallsignsSection({
                 fontSize: 10,
                 '& .MuiChip-label': { py: 0 },
                 '& .MuiChip-deleteIcon': {
-                  width: 24,
-                  height: 24,
+                  width: 18,
+                  height: 18,
                   fontSize: 18,
-                  m: 0,
+                  mx: '3px',
                 },
               }}
             />

@@ -313,7 +313,6 @@ export type AnalysisPageActions = {
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   setSavedFilterName: (name: string) => void;
-  addFrequencyToFilter: (freq: string) => void;
   showFreqOnMap: (freq: string) => void;
   toggleUnitFromMap: (unitName: string | null) => void;
   updateReport: (patch: Partial<AnalysisReportState>) => void;

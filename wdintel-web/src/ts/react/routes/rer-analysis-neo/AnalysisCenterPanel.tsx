@@ -252,7 +252,6 @@ export function AnalysisCenterPanel({
             onToggleMessageBookmark={page.onToggleMessageBookmark}
             onToggleMessageImportant={page.onToggleMessageImportant}
             onToggleMessageTag={page.onToggleMessageTag}
-            onAddFrequencyToFilter={page.addFrequencyToFilter}
             profiles={page.profiles}
             tagsMap={page.tagsMap}
             tagsOrder={page.tagsOrder}

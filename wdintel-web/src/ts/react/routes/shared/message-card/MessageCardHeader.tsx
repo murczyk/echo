@@ -13,12 +13,10 @@ import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import EditIcon from '@mui/icons-material/Edit';
 import DeskIcon from '@mui/icons-material/Desk';
 import DeskOutlinedIcon from '@mui/icons-material/DeskOutlined';
-import GpsFixedOutlinedIcon from '@mui/icons-material/GpsFixedOutlined';
 import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import GraphicEqOutlinedIcon from '@mui/icons-material/GraphicEqOutlined';
 import FlagIcon from '@mui/icons-material/Flag';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
-import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import LaunchIcon from '@mui/icons-material/Launch';
 import MapIcon from '@mui/icons-material/Map';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
@@ -48,7 +46,6 @@ import {
   type MessageCardNavigationMenuItem,
   type MessageCardRenderedNetwork,
 } from './message-card.utils';
-import { formatCoordinatePreviewPointCount } from './message-coordinate-preview';
 
 const COPY_TITLE = `Копіювати${ELLIPSIS}`;
 const NAVIGATE_TITLE = `Перейти${ELLIPSIS}`;
@@ -211,6 +208,15 @@ function ActionIconsRow({
   const canShowLocationCopy =
     etalonDisplayModel.copyLocationValue != null && isPresent(onCopyLocation);
   const overflowMenuItems = [
+    isPresent(onEditDetails)
+      ? {
+          key: 'edit',
+          title: 'Редагувати',
+          icon: <EditIcon fontSize="small" />,
+          selected: false,
+          onClick: onEditDetails,
+        }
+      : null,
     isPresent(onDelete)
       ? {
           key: 'delete',
@@ -295,8 +301,8 @@ function ActionIconsRow({
 
   function handleOverflowMenuItemClick(action: () => void) {
     blurActiveElement();
-    action();
-    closeOverflowMenu();
+    setOverflowMenuAnchorPosition(null);
+    setTimeout(action, 0);
   }
 
   if (!onBookmark || !onImportant || !onCopyText || !onCopyFreq) {
@@ -349,14 +355,6 @@ function ActionIconsRow({
         'aria-expanded': copyMenuAnchorPosition ? 'true' : undefined,
       }}
     />,
-    isPresent(onEditDetails) ? (
-      <ActionIconButton
-        key="edit"
-        title="Редагувати"
-        icon={<EditIcon className="message-card-action-btn__icon" />}
-        onClick={onEditDetails}
-      />
-    ) : null,
     canShowNavigationMenu ? (
       <ActionIconButton
         key="navigate"
@@ -822,41 +820,16 @@ export function MessageCardMetadata({
   senderName,
   etalonDisplayModel,
   metadataTrigger,
-  onAddFrequencyToFilter,
 }: {
   msg: InboxMessage;
   groupName: string | null;
   senderName: string | null;
   etalonDisplayModel: MessageCardEtalonDisplayModel;
   metadataTrigger?: ReactNode;
-  onAddFrequencyToFilter?: (freq: string) => void;
 }) {
   const locationDisplayValue = etalonDisplayModel.locationDisplayValue;
   const showTopGridLocation =
     etalonDisplayModel.primaryKind !== 'location' && locationDisplayValue != null;
-  const persistedCoordinates = msg.coordsWithLocality ?? [];
-  const firstCoord = persistedCoordinates[0]?.coords;
-  const primaryWgs = firstCoord
-    ? `${Number(firstCoord.lat.toFixed(5))}, ${Number(firstCoord.lon.toFixed(5))}`
-    : null;
-  const coordsDisplayValue =
-    primaryWgs != null
-      ? persistedCoordinates.length > 1
-        ? `${primaryWgs} · ще ${persistedCoordinates.length - 1}`
-        : primaryWgs
-      : persistedCoordinates.length > 1
-        ? formatCoordinatePreviewPointCount(persistedCoordinates.length)
-        : isPresent(msg.coords) && msg.coords.trim() !== ''
-          ? msg.coords
-              .trim()
-              .replace(
-                /^([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)$/,
-                (_, lat, lon) =>
-                  `${Number(parseFloat(lat).toFixed(5))}, ${Number(parseFloat(lon).toFixed(5))}`,
-              )
-          : null;
-  const hasFrequencyFilter =
-    isPresent(onAddFrequencyToFilter) && isPresent(msg.freq) && String(msg.freq).trim() !== '';
   const deviceName = msg.deviceName?.trim();
 
   return (
@@ -882,23 +855,10 @@ export function MessageCardMetadata({
               <SettingsInputAntennaOutlinedIcon titleAccess="Частота" />
             </span>
             <HeaderText className="whitespace-nowrap">{msg.freq}</HeaderText>
-            {hasFrequencyFilter ? (
-              <ActionIconButton
-                title="В фільтр"
-                icon={<FilterAltOutlinedIcon className="message-card-action-btn__icon" />}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onAddFrequencyToFilter?.(String(msg.freq ?? '').trim());
-                }}
-              />
-            ) : null}
           </div>
         ) : null}
         {isPresent(deviceName) && deviceName !== '' ? (
           <MetaLine icon={<DevicesIcon />} title="Пристрій" text={deviceName} />
-        ) : null}
-        {coordsDisplayValue != null ? (
-          <MetaLine icon={<GpsFixedOutlinedIcon />} title="Координати" text={coordsDisplayValue} />
         ) : null}
         <NetworkEtalonSection etalonDisplayModel={etalonDisplayModel} />
         {showTopGridLocation ? (

@@ -133,7 +133,67 @@ async function installTaggedVisualFixture(page: Page): Promise<void> {
   });
 }
 
+async function installMixedTagVisualFixture(
+  page: Page,
+): Promise<{ modelErrorRequests: () => number }> {
+  const message = buildInboxMessage(41);
+  message.tags = [1];
+  message.inboxTags = [
+    { id: 1, tagId: 1, confidence: 1, login: 'operator', model: null, organismId: null },
+    { id: 2, tagId: 1, confidence: 0.92, login: null, model: 'bot', organismId: null },
+  ];
+  let modelErrorRequestCount = 0;
+  await installRerDutyShortStateMocks(page, {
+    inboxCountResponseForRequest: () => ({ quantity: 0, first_element_ts: null }),
+    inboxResponseForRequest: () => ({
+      ...buildInboxResponse([]),
+      inbox_items: [[41, message as never]],
+    }),
+    tagsResponse: [[1, { id: 1, label: 'Рух', is_palitra: false }]],
+  });
+  await page.route('**/api/tags/tags-rm', (route) => route.fulfill({ status: 200, body: '' }));
+  await page.route('**/api/tags/tags-add', (route) => route.fulfill({ status: 200, body: '' }));
+  await page.route('**/api/tags/tag-model-error', (route) => {
+    modelErrorRequestCount += 1;
+    return route.fulfill({ status: 200, body: '' });
+  });
+  return { modelErrorRequests: () => modelErrorRequestCount };
+}
+
 test.describe('message card visual regression', () => {
+  test('ECHO-3324 anchors and resolves the mixed bot tag Popover without focus warnings', async ({
+    page,
+  }) => {
+    const fixture = await installMixedTagVisualFixture(page);
+    const consoleWarnings: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'warning' || message.type() === 'error') {
+        consoleWarnings.push(message.text());
+      }
+    });
+    await page.goto('/rer-duty-neo?state-short=short-1');
+
+    const tag = page.locator('button').filter({ hasText: 'Рух' });
+    await tag.click();
+    const popover = page.getByRole('dialog', { name: 'Дії для тегу Рух' });
+    await expect(popover).toBeVisible();
+    await expect(popover.getByRole('button')).toHaveText(['СКАСУВАТИ', 'БОТ ПОМИЛИВСЯ']);
+    const [tagBox, popoverBox] = await Promise.all([tag.boundingBox(), popover.boundingBox()]);
+    expect(Math.abs((popoverBox?.x ?? 0) - (tagBox?.x ?? 0))).toBeLessThanOrEqual(8);
+
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
+    await expect(tag).toBeFocused();
+
+    await tag.click();
+    await tag.click();
+    await expect(popover).toBeVisible();
+    await popover.getByRole('button', { name: 'БОТ ПОМИЛИВСЯ' }).click();
+    await expect(popover).toBeHidden();
+    expect(fixture.modelErrorRequests()).toBe(1);
+    expect(consoleWarnings.join('\n')).not.toContain('Blocked aria-hidden');
+  });
+
   test('keeps native EchoChip tone opacity contracts in the compiled stylesheet', async ({
     page,
   }) => {
@@ -200,7 +260,8 @@ test.describe('message card visual regression', () => {
 
       expect(await rowCount()).toBe(1);
       await page.setViewportSize({ width: 360, height: 900 });
-      await expect.poll(rowCount).toBeGreaterThan(1);
+      if (host === 'duty') await expect.poll(rowCount).toBeGreaterThan(1);
+      else await expect.poll(rowCount).toBe(1);
       const narrowCard = await buildMetrics(card);
       expect(narrowCard.scrollWidth).toBeLessThanOrEqual(narrowCard.clientWidth + 1);
       await page.setViewportSize({ width: 1280, height: 900 });
@@ -346,6 +407,14 @@ test.describe('message card visual regression', () => {
     const analysisCard = page.locator('.message-card-root').first();
     const callsign = analysisCard.getByTitle('E2E-ALPHA');
     await expect(callsign).toHaveCSS('height', '24px');
+    const callsignDeleteIcon = callsign.locator('svg');
+    const [callsignBox, callsignDeleteBox] = await Promise.all([
+      callsign.boundingBox(),
+      callsignDeleteIcon.boundingBox(),
+    ]);
+    expect(callsignDeleteBox?.width).toBe(18);
+    expect(callsignDeleteBox?.height).toBe(18);
+    expect((callsignBox?.width ?? 0) - (callsignDeleteBox?.width ?? 0)).toBeGreaterThanOrEqual(24);
     await expect(analysisCard.getByText('E2E-ALPHA', { exact: true })).toHaveCSS(
       'font-size',
       '10px',

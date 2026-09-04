@@ -1,4 +1,13 @@
-import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
@@ -7,6 +16,8 @@ import { EchoChip } from '../../../components/EchoChip';
 import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import { buildMessageCardTagRows } from './MessageCardTags.helpers';
 import type { MessageCardTagProvenance, MessageCardTagRow } from './MessageCardTags.helpers';
+import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
+import type { MessageCardBotTagAction } from './message-card.types';
 
 const TAG_CHIP_GAP_PX = 8;
 const COMPACT_EXPAND_BUTTON_FALLBACK_WIDTH_PX = 80;
@@ -41,11 +52,13 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
   showGroupDivider,
   interactive,
   onToggleTag,
+  chipRef,
 }: {
   row: MessageCardTagRow;
   showGroupDivider: boolean;
   interactive: boolean;
   onToggleTag?: (tagId: number) => void;
+  chipRef?: (element: HTMLElement | null) => void;
 }) {
   const tipInstanceId = useId();
   const canToggle = interactive && onToggleTag != null;
@@ -82,6 +95,7 @@ const MessageCardTagChip = memo(function MessageCardTagChip({
           tone="tag"
           selected={row.isSet}
           className="message-card-tag-chip"
+          ref={chipRef}
           onClick={canToggle ? () => onToggleTag(Number(row.tagId)) : undefined}
           {...tipProps}
         />
@@ -103,6 +117,9 @@ function MessageCardTagsComponent({
   onToggleTag,
   tagsLayout,
   interactive = true,
+  botTagAction,
+  onCancelBotTagAction,
+  onMarkBotTagWrong,
 }: {
   msg: InboxMessage;
   tagsMap: Record<number, Tag>;
@@ -111,7 +128,28 @@ function MessageCardTagsComponent({
   onToggleTag?: (tagId: number) => void;
   tagsLayout: TagsLayoutVariant;
   interactive?: boolean;
+  botTagAction?: MessageCardBotTagAction | null;
+  onCancelBotTagAction?: () => void;
+  onMarkBotTagWrong?: (messageId: number, tagId: number) => void | Promise<void>;
 }) {
+  const [botAnchor, setBotAnchor] = useState<HTMLElement | null>(null);
+  const chipRefs = useRef<Map<number, HTMLElement>>(new Map());
+  const chipRefCallbacks = useRef<Map<number, (element: HTMLElement | null) => void>>(new Map());
+  const activeBotTagIdRef = useRef<number | null>(botTagAction?.tagId ?? null);
+  activeBotTagIdRef.current = botTagAction?.tagId ?? null;
+  const getChipRef = useCallback((tagId: number) => {
+    const cached = chipRefCallbacks.current.get(tagId);
+    if (cached != null) return cached;
+    const callback = (element: HTMLElement | null) => {
+      const previous = chipRefs.current.get(tagId) ?? null;
+      if (element == null) chipRefs.current.delete(tagId);
+      else chipRefs.current.set(tagId, element);
+      if (activeBotTagIdRef.current !== tagId || previous === element) return;
+      setBotAnchor((current) => (current === element ? current : element));
+    };
+    chipRefCallbacks.current.set(tagId, callback);
+    return callback;
+  }, []);
   const [showCompactRest, setShowCompactRest] = useState(false);
   const compactMeasureRef = useRef<HTMLDivElement | null>(null);
   /** Natural chip widths from a full (unpacked) render; never update from the overflow-hidden row. */
@@ -121,6 +159,8 @@ function MessageCardTagsComponent({
     [msg, tagsMap, tagsOrder, tagContributionsOrganismId],
   );
   const rowsById = useMemo(() => new Map(rows.map((row) => [row.tagId, row] as const)), [rows]);
+  const activeBotTagId = botTagAction?.tagId ?? null;
+  const activeBotTagExists = activeBotTagId != null && rowsById.has(activeBotTagId);
   const rowIdKey = useMemo(
     () =>
       rows
@@ -139,6 +179,14 @@ function MessageCardTagsComponent({
     setOrderedTagIds(buildSelectedFirstTagOrder(rows));
     setShowCompactRest(false);
   }, [messageResetKey, rowIdKey]);
+
+  useLayoutEffect(() => {
+    const nextAnchor =
+      activeBotTagExists && activeBotTagId != null
+        ? (chipRefs.current.get(activeBotTagId) ?? null)
+        : null;
+    if (botAnchor !== nextAnchor) setBotAnchor(nextAnchor);
+  }, [activeBotTagExists, activeBotTagId, botAnchor]);
 
   const compactOrderedRows = useMemo(
     () =>
@@ -255,6 +303,19 @@ function MessageCardTagsComponent({
     [compactOrderedRows, row1IdSet],
   );
   const hasRest = restRows.length > 0;
+  const botPrompt =
+    botTagAction != null &&
+    onCancelBotTagAction != null &&
+    onMarkBotTagWrong != null &&
+    botAnchor != null ? (
+      <MessageCardBotTagPrompt
+        anchorEl={botAnchor}
+        botTagAction={botTagAction}
+        tagLabel={rowsById.get(botTagAction.tagId)?.label ?? ''}
+        onCancelBotTagAction={onCancelBotTagAction}
+        onMarkBotTagWrong={onMarkBotTagWrong}
+      />
+    ) : null;
 
   if (tagsLayout === 'full') {
     return (
@@ -269,8 +330,10 @@ function MessageCardTagsComponent({
             showGroupDivider={row.tagId === fullFirstGlobalTagId}
             interactive={interactive}
             onToggleTag={onToggleTag}
+            chipRef={getChipRef(Number(row.tagId))}
           />
         ))}
+        {botPrompt}
       </div>
     );
   }
@@ -306,8 +369,10 @@ function MessageCardTagsComponent({
             showGroupDivider={row.tagId === compactFirstGlobalTagId}
             interactive={interactive}
             onToggleTag={onToggleTag}
+            chipRef={getChipRef(Number(row.tagId))}
           />
         ))}
+        {botPrompt}
       </div>
     );
   }
@@ -326,9 +391,11 @@ function MessageCardTagsComponent({
             showGroupDivider={row.tagId === compactFirstGlobalTagId}
             interactive={interactive}
             onToggleTag={onToggleTag}
+            chipRef={getChipRef(Number(row.tagId))}
           />
         ))}
         {expandToggleButton}
+        {botPrompt}
       </div>
     );
   }
@@ -348,11 +415,13 @@ function MessageCardTagsComponent({
               showGroupDivider={row.tagId === compactFirstGlobalTagId}
               interactive={interactive}
               onToggleTag={onToggleTag}
+              chipRef={getChipRef(Number(row.tagId))}
             />
           ))}
         </div>
         <div className="shrink-0 justify-self-end">{expandToggleButton}</div>
       </div>
+      {botPrompt}
     </div>
   );
 }

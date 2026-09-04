@@ -167,18 +167,25 @@ test.describe('message card media preview contract', () => {
       const coordinateTile = card.locator('[data-coordinate-preview-tile]');
       const retryOverlay = card.locator('[data-coordinate-preview-retry-overlay]');
       const imageTile = card.locator('[data-picture-thumb-layout]').first();
+      const videoTile = card.locator('[data-video-thumb-state]').first();
       await expect(coordinateHost).toBeVisible();
       await expect(coordinateTile).toBeVisible();
       await expect(retryOverlay).toBeVisible();
-      const [hostBox, coordinateBox, imageBox] = await Promise.all([
+      const [hostBox, coordinateBox, imageBox, videoBox] = await Promise.all([
         coordinateHost.boundingBox(),
         coordinateTile.boundingBox(),
         imageTile.boundingBox(),
+        videoTile.boundingBox(),
       ]);
       expect(hostBox?.width).toBe(hostBox?.height);
+      expect(hostBox?.width).toBe(72);
       expect(coordinateBox?.width).toBe(coordinateBox?.height);
       expect(coordinateBox?.width).toBe(hostBox?.width);
       expect(coordinateBox?.width).toBe(imageBox?.width);
+      expect(imageBox?.width).toBe(72);
+      expect(imageBox?.height).toBe(72);
+      expect(videoBox?.width).toBe(72);
+      expect(videoBox?.height).toBe(72);
       const [overlayBox, hostOverflow] = await Promise.all([
         retryOverlay.boundingBox(),
         coordinateHost.evaluate((element) => getComputedStyle(element).overflow),

@@ -81,7 +81,6 @@ export type FeedColumnModel = {
     onRemoveColumn: () => void;
     onMessageBookmark: (msgId: number, currentlyBookmarked: boolean) => void;
     onMessageImportant: (msgId: number, currentlyImportant: boolean) => void;
-    onMessageAddFrequencyToFilter: (feedId: string, freq: string) => void;
     onMessageCopy: (text: string, feedbackId: string) => void;
     onMessageCreateReport: (msgId: number, message: InboxMessage) => void;
     onMessageEditReport: (reportId: number) => void;

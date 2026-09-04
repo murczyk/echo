@@ -39,7 +39,6 @@ import {
 } from '../../rer-duty-neo/utils';
 import { renderMarkedText } from './MarkedText';
 import { renderLinkifiedText } from './message-card-linkify';
-import { MessageCardBotTagPrompt } from './MessageCardBotTagPrompt';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
 import { MessageCardCoordinateAttachment } from './MessageCardCoordinateAttachment';
@@ -587,6 +586,8 @@ export function MessageCardMessageBody({
   const coordinateAttachmentCount =
     coordinatePreviewPoints.length > 0 ? coordinatePreviewPoints.length : coordinateSummaryCount;
   const hasTags = tagsLayout !== 'hidden' && Object.keys(tagsMap).length > 0;
+  const visibleBotTagAction =
+    !readOnly && botTagAction?.messageId === messageId ? botTagAction : null;
   const reports = getIntelligenceReports(msg);
   const parents = getParentMessages(msg);
   const hasCallsignControls = !readOnly && isPresent(analysisCallsignActions);
@@ -725,6 +726,9 @@ export function MessageCardMessageBody({
       onToggleTag={onToggleTag}
       tagsLayout={tagsLayout}
       interactive={!readOnly && onToggleTag != null}
+      botTagAction={visibleBotTagAction}
+      onCancelBotTagAction={visibleBotTagAction != null ? onCancelBotTagAction : undefined}
+      onMarkBotTagWrong={visibleBotTagAction != null ? onMarkBotTagWrong : undefined}
     />
   ) : null;
 
@@ -914,16 +918,6 @@ export function MessageCardMessageBody({
         <MessageCardComments
           messageComments={messageComments}
           signalMessageSenderLabel={signalMessageSenderLabel}
-        />
-      ) : null}
-      {!readOnly &&
-      botTagAction != null &&
-      onMarkBotTagWrong != null &&
-      onCancelBotTagAction != null ? (
-        <MessageCardBotTagPrompt
-          botTagAction={botTagAction}
-          onCancelBotTagAction={onCancelBotTagAction}
-          onMarkBotTagWrong={onMarkBotTagWrong}
         />
       ) : null}
     </div>

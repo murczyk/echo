@@ -298,7 +298,6 @@ function buildFeedsState() {
     reloadEditedFeeds: vi.fn(),
     loadFeedOlderMessages: vi.fn(),
     applyFilter: vi.fn(),
-    addFrequencyToFilter: vi.fn(),
     toggleGroup: vi.fn(),
     selectAllGroups: vi.fn(),
     handleSaveFilter: vi.fn(),

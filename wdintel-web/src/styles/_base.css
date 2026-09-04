@@ -312,7 +312,7 @@ html[data-bs-theme='dark'] .message-card-root {
 }
 
 .message-card-root {
-  --message-card-attachment-tile-size: 70px;
+  --message-card-attachment-tile-size: 72px;
 }
 
 .message-card-gallery [data-picture-thumb-layout],
@@ -431,27 +431,11 @@ html[data-bs-theme='dark'] .message-card-root {
   }
 }
 
-@container (max-width: 700px) {
-  .message-card-root {
-    --message-card-attachment-tile-size: 72px;
-  }
-}
-
 @container (max-width: 360px) {
   [data-message-card-header-left='true'] > div {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
-  }
-}
-
-@container (max-width: 360px) {
-  .message-card-gallery [data-picture-thumb-layout],
-  .message-card-gallery [data-video-thumb-state] {
-    width: 72px !important;
-    min-width: 72px !important;
-    max-width: 72px !important;
-    height: 72px !important;
   }
 }
 
@@ -616,12 +600,6 @@ html[data-bs-theme='dark'] .message-card-root {
 .message-card-header-meta__icon--group svg,
 .message-card-header-meta__icon--network svg {
   font-size: 18px;
-}
-
-.message-card-header-meta > .message-card-action-btn {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
 }
 
 .message-card-header-menu-row {

@@ -78,6 +78,23 @@ describe('SettingsMessageCard', () => {
     }
   });
 
+  it('ECHO-3324 places the preview directly after the tag layout control', () => {
+    const { container } = renderCard(20);
+    const preview = container.querySelector('[data-message-card-mock="true"]');
+    const longMessageLabel = Array.from(container.querySelectorAll('p')).find((item) =>
+      item.textContent?.includes('Згортати перегляд довгих повідомлень:'),
+    );
+
+    expect(preview).not.toBeNull();
+    expect(longMessageLabel).not.toBeUndefined();
+    expect(
+      Boolean(
+        preview?.compareDocumentPosition(longMessageLabel ?? document.body) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+  });
+
   it.each([
     [20, '20 рядків'],
     [40, '40 рядків'],

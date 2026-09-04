@@ -155,7 +155,6 @@ type Props = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
-  onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
   tagsOrder: number[];
@@ -197,7 +196,6 @@ type AnalysisMessageCardItemProps = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
-  onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   referenceTimeMs: number | null;
   tagsMap: Record<number, Tag>;
@@ -237,7 +235,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
-  onAddFrequencyToFilter,
   profiles,
   referenceTimeMs,
   tagsMap,
@@ -352,7 +349,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
               });
             }
       }
-      onAddFrequencyToFilter={onAddFrequencyToFilter}
       onCreateReport={() => onCreateReport(id)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
@@ -412,7 +408,6 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
-  onAddFrequencyToFilter,
   profiles,
   tagsMap,
   tagsOrder,
@@ -575,7 +570,6 @@ function AnalysisMessagesPaneComponent({
               onToggleMessageBookmark={onToggleMessageBookmark}
               onToggleMessageImportant={onToggleMessageImportant}
               onToggleMessageTag={onToggleMessageTag}
-              onAddFrequencyToFilter={onAddFrequencyToFilter}
               profiles={profiles}
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}

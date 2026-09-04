@@ -399,7 +399,6 @@ function buildPage() {
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
     onUpdateLocalMessage: vi.fn(),
-    addFrequencyToFilter: vi.fn(),
     closeReport: vi.fn(),
     downloadGeojson: vi.fn(),
     downloadKmz: vi.fn(),

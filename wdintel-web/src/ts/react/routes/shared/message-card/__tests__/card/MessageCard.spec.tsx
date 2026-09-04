@@ -47,6 +47,12 @@ const latestMenuProps: Array<{
   open?: boolean;
   id?: string;
 }> = [];
+const latestPopoverProps: Array<{
+  anchorEl?: HTMLElement | null;
+  anchorOrigin?: unknown;
+  transformOrigin?: unknown;
+  onClose?: () => void;
+}> = [];
 const latestDocumentDialogProps: Array<{
   currentIndex?: number;
   open?: boolean;
@@ -368,8 +374,16 @@ vi.mock('@mui/material', () => ({
     children,
     open,
     ...props
-  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
-    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
+  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) => {
+    if (!open) return null;
+    latestPopoverProps.push({
+      anchorEl: (props.anchorEl as HTMLElement | null | undefined) ?? null,
+      anchorOrigin: props.anchorOrigin,
+      transformOrigin: props.transformOrigin,
+      onClose: props.onClose as (() => void) | undefined,
+    });
+    return <div {...omitMuiLayoutProps(props)}>{children}</div>;
+  },
   Menu: ({
     children,
     open,
@@ -703,7 +717,6 @@ async function renderHeader(
   const metadataOverrides = overrides as Partial<{
     groupName: string | null;
     senderName: string | null;
-    onAddFrequencyToFilter: (freq: string) => void;
   }>;
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
     featureStrictNetworks: false,
@@ -735,7 +748,6 @@ async function renderHeader(
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
-    onAddFrequencyToFilter: vi.fn(),
     onDelete: vi.fn(),
     onEditDetails: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
@@ -751,7 +763,6 @@ async function renderHeader(
           groupName={metadataOverrides.groupName ?? "Куп'янськ пеленг"}
           senderName={metadataOverrides.senderName ?? 'Dow_Jones_2'}
           etalonDisplayModel={props.etalonDisplayModel}
-          onAddFrequencyToFilter={metadataOverrides.onAddFrequencyToFilter ?? vi.fn()}
         />
       </div>,
     );
@@ -866,6 +877,7 @@ describe('MessageCard', () => {
     resizeObserverCallbacks.splice(0);
     resizeObserverTargets.clear();
     latestMenuProps.splice(0);
+    latestPopoverProps.splice(0);
     latestDocumentDialogProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
       window.localStorage.clear();
@@ -1174,7 +1186,6 @@ describe('MessageCard', () => {
         '153.6250',
         'Група A',
         'Відправник B',
-        '12.34568, -98.76543',
         'Радіостанція',
         'Харків',
       ] as const;
@@ -1188,17 +1199,12 @@ describe('MessageCard', () => {
       expect(metadataText.indexOf('Група A')).toBeLessThan(metadataText.indexOf('Відправник B'));
       expect(metadataText.indexOf('Відправник B')).toBeLessThan(metadataText.indexOf('153.6250'));
       expect(metadataText.indexOf('153.6250')).toBeLessThan(metadataText.indexOf('Радіостанція'));
-      expect(metadataText.indexOf('Радіостанція')).toBeLessThan(
-        metadataText.indexOf('12.34568, -98.76543'),
-      );
-      expect(metadataText.indexOf('12.34568, -98.76543')).toBeLessThan(
-        metadataText.indexOf('1-й танк'),
-      );
+      expect(metadataText.indexOf('Радіостанція')).toBeLessThan(metadataText.indexOf('1-й танк'));
       expect(metadataText.indexOf('1-й танк')).toBeLessThan(metadataText.indexOf('Харків'));
     },
   );
 
-  it('shows the WGS coordinates in the header without locality', async () => {
+  it('keeps coordinates out of the header metadata', async () => {
     const view = await renderHeader({
       displayMode: 'duty',
       msg: buildMessage({
@@ -1221,7 +1227,7 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const text = view.container.querySelector('[data-message-header-grid="true"]')?.textContent;
-    expect(text).toContain('49.1, 37.2');
+    expect(text).not.toContain('49.1, 37.2');
     expect(text).not.toContain('Степногірськ');
   });
 
@@ -1845,9 +1851,9 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
-      'Редагувати',
       NAVIGATE_TITLE,
       EXCLUDE_TITLE,
+      'Більше дій',
     ]);
   });
 
@@ -1870,7 +1876,6 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
-      'Редагувати',
       NAVIGATE_TITLE,
       'Більше дій',
     ]);
@@ -2024,9 +2029,8 @@ describe('MessageCard', () => {
       '[aria-label="Дії повідомлення"]',
     );
     if (!(updatedToolbar instanceof HTMLElement)) throw new Error('updated toolbar not found');
-    expect(updatedToolbar.getAttribute('role')).toBe('group');
-    expect(updatedToolbar.classList).toContain('message-card-action-group--stacked');
-    expect(updatedToolbar.getAttribute('data-action-grid-columns')).toBe('4');
+    expect(updatedToolbar.getAttribute('role')).toBeNull();
+    expect(updatedToolbar.classList).not.toContain('message-card-action-group--stacked');
   });
 
   it.each([
@@ -2213,7 +2217,7 @@ describe('MessageCard', () => {
     expect(document.activeElement).not.toBe(reportButton);
   });
 
-  it('shows the edit action in the toolbar and only delete in the overflow menu', async () => {
+  it('shows Edit then Delete in the overflow menu', async () => {
     const view = await renderCard({
       displayMode: 'analysis',
       onEditDetails: vi.fn(),
@@ -2221,7 +2225,7 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('button[aria-label="Редагувати"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
     if (!(overflowButton instanceof HTMLButtonElement))
@@ -2233,7 +2237,10 @@ describe('MessageCard', () => {
     expect(view.container.querySelector(`[id="${overflowMenuId}"]`)).not.toBeNull();
 
     expect(view.container.textContent).not.toContain('Редагувати додаткові поля та позивні');
-    expect(view.container.textContent).toContain('Видалити');
+    const menuItems = Array.from(
+      view.container.querySelectorAll(`[id="${overflowMenuId}"] button`),
+    );
+    expect(menuItems.map((item) => item.textContent?.trim())).toEqual(['Редагувати', 'Видалити']);
   });
 
   it('anchors the overflow menu by position instead of a button element', async () => {
@@ -2290,31 +2297,6 @@ describe('MessageCard', () => {
     expect(activeView.container.querySelector('svg[data-testid="BookmarkIcon"]')).not.toBeNull();
   });
 
-  it('renders the frequency filter button when frequency is present and calls the handler', async () => {
-    const onAddFrequencyToFilter = vi.fn();
-    const view = await renderCard({
-      onAddFrequencyToFilter,
-    });
-    rendered.push(view);
-
-    const filterButton = view.container.querySelector('button[aria-label="В фільтр"]');
-    if (!(filterButton instanceof HTMLButtonElement))
-      throw new Error('frequency filter button not found');
-    await click(filterButton);
-
-    expect(onAddFrequencyToFilter).toHaveBeenCalledWith('153.6250');
-  });
-
-  it('hides the frequency filter button when frequency is missing or blank', async () => {
-    const view = await renderCard({
-      msg: buildMessage({ freq: '   ' }),
-      onAddFrequencyToFilter: vi.fn(),
-    });
-    rendered.push(view);
-
-    expect(view.container.querySelector('button[aria-label="В фільтр"]')).toBeNull();
-  });
-
   it('uses the selected important and bookmark labels in the toolbar', async () => {
     const view = await renderCard({
       msg: buildMessage({ important: true, bookmarked: true }),
@@ -2359,14 +2341,30 @@ describe('MessageCard', () => {
     await click(bookmarkButton);
     expect(onBookmark).toHaveBeenCalledTimes(1);
 
-    const editButton = view.container.querySelector('button[aria-label="Редагувати"]');
-    if (!(editButton instanceof HTMLButtonElement)) throw new Error('edit button not found');
-    await click(editButton);
-    expect(onEditDetails).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    try {
+      await click(overflowButton);
+      await click(getButton(view.container, 'Редагувати'));
+      expect(view.container.querySelector('[aria-label="Додаткові дії повідомлення"]')).toBeNull();
+      expect(onEditDetails).not.toHaveBeenCalled();
+      await act(async () => vi.runAllTimers());
+      expect(onEditDetails).toHaveBeenCalledTimes(1);
 
-    await click(overflowButton);
-    await click(getButton(view.container, 'Видалити'));
-    expect(onDelete).toHaveBeenCalledTimes(1);
+      await click(overflowButton);
+      await click(getButton(view.container, 'Видалити'));
+      expect(onDelete).not.toHaveBeenCalled();
+      await act(async () => vi.runAllTimers());
+      expect(onDelete).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders overflow for an edit-only card', async () => {
+    const view = await renderCard({ onEditDetails: vi.fn(), onDelete: undefined });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).not.toBeNull();
   });
 
   it('omits edit and delete from the overflow menu when handlers are absent', async () => {
@@ -2678,7 +2676,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('GHOST');
   });
 
-  it('ECHO-3324 renders mixed tag provenance without count badges and preserves contributor detail', async () => {
+  it('ECHO-3324 cancels the Popover anchored to the matching mixed-provenance tag', async () => {
     const onToggleTag = vi.fn();
     const onMarkBotTagWrong = vi.fn();
     const onCancelBotTagAction = vi.fn();
@@ -2707,15 +2705,81 @@ describe('MessageCard', () => {
     expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
       'Боти: bot (92%)',
     );
-    expect(view.container.textContent).toContain('бот помилився');
-    expect(view.container.textContent).toContain('закрити');
+    const popover = latestPopoverProps.at(-1);
+    expect(popover?.anchorEl).toBe(tagButton);
+    expect(popover?.anchorOrigin).toEqual({ vertical: 'bottom', horizontal: 'left' });
+    expect(popover?.transformOrigin).toEqual({ vertical: 'top', horizontal: 'left' });
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
 
-    await click(getButton(view.container, 'бот помилився'));
-    await click(getButton(view.container, 'закрити'));
+    await click(getButton(view.container, 'СКАСУВАТИ'));
 
-    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
     expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).not.toHaveBeenCalled();
     expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
+  it('ECHO-3324 confirms the matching bot action exactly once', async () => {
+    const onMarkBotTagWrong = vi.fn();
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onMarkBotTagWrong,
+      onCancelBotTagAction,
+    });
+    rendered.push(view);
+
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
+    await click(getButton(view.container, 'БОТ ПОМИЛИВСЯ'));
+    expect(onMarkBotTagWrong).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  it('ECHO-3324 retains the active tag anchor through unrelated card rerenders', async () => {
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction,
+      onMarkBotTagWrong: vi.fn(),
+    });
+    rendered.push(view);
+    const initialAnchor = latestPopoverProps.at(-1)?.anchorEl;
+
+    await act(async () => {
+      view.root.render(
+        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+          <MessageCard {...view.props} messageTextPreviewLines={40} />
+        </AudioTranscriptionPreferencesProvider>,
+      );
+    });
+
+    expect(latestPopoverProps.at(-1)?.anchorEl).toBe(initialAnchor);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['read-only card', { readOnly: true }],
+    ['different message', { botTagAction: { messageId: 43, tagId: 3 } }],
+    ['missing tag', { botTagAction: { messageId: 42, tagId: 99 } }],
+  ] as const)('ECHO-3324 does not show a bot Popover for a %s', async (_, overrides) => {
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction: vi.fn(),
+      onMarkBotTagWrong: vi.fn(),
+      ...overrides,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(latestPopoverProps).toHaveLength(0);
   });
 
   it('keeps contribution description ids unique across mounted cards with the same tag', async () => {

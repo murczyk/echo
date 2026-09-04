@@ -173,6 +173,8 @@ export function SettingsMessageCard({
           </Box>
         </Stack>
 
+        <MessageCardPreviewMock tagsLayout={tagsLayout} mediaSummaryEnabled={mediaSummaryEnabled} />
+
         <Stack spacing={1}>
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             Згортати перегляд довгих повідомлень:
@@ -264,8 +266,6 @@ export function SettingsMessageCard({
             </Stack>
           }
         />
-
-        <MessageCardPreviewMock tagsLayout={tagsLayout} mediaSummaryEnabled={mediaSummaryEnabled} />
 
         <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.5 }}>
           <InfoOutlinedIcon sx={{ fontSize: 18, color: 'info.main' }} />

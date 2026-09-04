@@ -122,7 +122,6 @@ export type MessageCardProps = {
   onCopyTextWithNetworkAndNote?: () => void;
   onCopyEtalon?: () => void;
   onCopyLocation?: () => void;
-  onAddFrequencyToFilter?: (freq: string) => void;
   onCreateReport?: () => void;
   onEditReport?: (reportId: number) => void;
   onDelete?: () => void;
@@ -183,7 +182,6 @@ function MessageCardComponent({
   onCopyTextWithNetworkAndNote,
   onCopyEtalon,
   onCopyLocation,
-  onAddFrequencyToFilter,
   onCreateReport,
   onEditReport,
   onDelete,
@@ -340,7 +338,6 @@ function MessageCardComponent({
               senderName={senderName}
               etalonDisplayModel={etalonDisplayModel}
               metadataTrigger={metadataTrigger}
-              onAddFrequencyToFilter={onAddFrequencyToFilter}
             />
           }
           messageId={id}
