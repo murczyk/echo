@@ -316,6 +316,7 @@ html[data-bs-theme='dark'] .message-card-root {
 
 .message-card-root {
   --message-card-attachment-tile-size: 72px;
+  --message-card-coordinate-tile-size: 112px;
 }
 
 .message-card-gallery [data-picture-thumb-layout],
@@ -334,19 +335,22 @@ html[data-bs-theme='dark'] .message-card-root {
 }
 
 [data-coordinate-preview-tile][data-message-card-tile='true'] {
-  width: var(--message-card-attachment-tile-size) !important;
-  min-width: var(--message-card-attachment-tile-size) !important;
-  max-width: var(--message-card-attachment-tile-size) !important;
-  height: var(--message-card-attachment-tile-size) !important;
+  width: var(--message-card-coordinate-tile-size) !important;
+  min-width: var(--message-card-coordinate-tile-size) !important;
+  max-width: var(--message-card-coordinate-tile-size) !important;
+  height: var(--message-card-coordinate-tile-size) !important;
+  min-height: var(--message-card-coordinate-tile-size) !important;
+  max-height: var(--message-card-coordinate-tile-size) !important;
 }
 
 .message-card-coordinate-preview {
-  width: var(--message-card-attachment-tile-size);
-  min-width: var(--message-card-attachment-tile-size);
-  max-width: var(--message-card-attachment-tile-size);
-  height: var(--message-card-attachment-tile-size);
-  min-height: var(--message-card-attachment-tile-size);
-  max-height: var(--message-card-attachment-tile-size);
+  width: var(--message-card-coordinate-tile-size);
+  min-width: var(--message-card-coordinate-tile-size);
+  max-width: var(--message-card-coordinate-tile-size);
+  height: var(--message-card-coordinate-tile-size);
+  min-height: var(--message-card-coordinate-tile-size);
+  max-height: var(--message-card-coordinate-tile-size);
+  aspect-ratio: 1 / 1;
   position: relative;
   align-self: flex-start;
   overflow: hidden;

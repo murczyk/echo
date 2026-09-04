@@ -157,66 +157,69 @@ test.describe('message card media preview contract', () => {
   test('ECHO-3324 aligns coordinate tiles with media tiles at wide and narrow card widths', async ({
     page,
   }) => {
-    await openMessageCardPreviewHost(page, 'duty', {
-      revealCoordinates: true,
-      withPartialCoordinateError: true,
-    });
-    const card = page.locator('.message-card-root').first();
-    const mediaControl = card.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
-    const coordinateControl = card.getByRole('button', {
-      name: /^(Розгорнути|Згорнути) координати:/,
-    });
+    for (const host of ['duty', 'analysis'] as const) {
+      await openMessageCardPreviewHost(page, host, {
+        revealCoordinates: true,
+        withPartialCoordinateError: true,
+      });
+      const card = page.locator('.message-card-root').first();
+      const mediaControl = card.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+      const coordinateControl = card.getByRole('button', {
+        name: /^(Розгорнути|Згорнути) координати:/,
+      });
 
-    for (const cardWidth of [920, 330]) {
-      await card.evaluate((element, width) => {
-        const item = element.closest<HTMLElement>('.message-card-item');
-        if (item) item.style.width = `${width}px`;
-      }, cardWidth);
+      for (const cardWidth of [920, 768, 480, 360, 330]) {
+        await card.evaluate((element, width) => {
+          const item = element.closest<HTMLElement>('.message-card-item');
+          if (item) item.style.width = `${width}px`;
+        }, cardWidth);
 
-      await mediaControl.click();
-      await expect(mediaControl).toHaveAttribute('aria-expanded', 'true');
-      const imageTile = card.locator('[data-picture-thumb-layout]').first();
-      const videoTile = card.locator('[data-video-thumb-state]').first();
-      const [imageBox, videoBox] = await Promise.all([
-        imageTile.boundingBox(),
-        videoTile.boundingBox(),
-      ]);
-      expect(imageBox?.width).toBe(72);
-      expect(imageBox?.height).toBe(72);
-      expect(videoBox?.width).toBe(72);
-      expect(videoBox?.height).toBe(72);
+        await mediaControl.click();
+        await expect(mediaControl).toHaveAttribute('aria-expanded', 'true');
+        const imageTile = card.locator('[data-picture-thumb-layout]').first();
+        const videoTile = card.locator('[data-video-thumb-state]').first();
+        const [imageBox, videoBox] = await Promise.all([
+          imageTile.boundingBox(),
+          videoTile.boundingBox(),
+        ]);
+        expect(imageBox?.width).toBe(72);
+        expect(imageBox?.height).toBe(72);
+        expect(videoBox?.width).toBe(72);
+        expect(videoBox?.height).toBe(72);
 
-      await coordinateControl.click();
-      await expect(coordinateControl).toHaveAttribute('aria-expanded', 'true');
+        await coordinateControl.click();
+        await expect(coordinateControl).toHaveAttribute('aria-expanded', 'true');
 
-      const coordinateHost = card.locator('[data-coordinate-preview-root]');
-      const coordinateTile = card.locator('[data-coordinate-preview-tile]');
-      const retryOverlay = card.locator('[data-coordinate-preview-retry-overlay]');
-      await expect(coordinateHost).toBeVisible();
-      await expect(coordinateTile).toBeVisible();
-      await expect(retryOverlay).toBeVisible();
-      const [hostBox, coordinateBox] = await Promise.all([
-        coordinateHost.boundingBox(),
-        coordinateTile.boundingBox(),
-      ]);
-      expect(hostBox?.width).toBe(hostBox?.height);
-      expect(hostBox?.width).toBe(72);
-      expect(coordinateBox?.width).toBe(coordinateBox?.height);
-      expect(coordinateBox?.width).toBe(hostBox?.width);
-      expect(coordinateBox?.width).toBe(imageBox?.width);
-      const [overlayBox, hostOverflow] = await Promise.all([
-        retryOverlay.boundingBox(),
-        coordinateHost.evaluate((element) => getComputedStyle(element).overflow),
-      ]);
-      expect(hostOverflow).toBe('hidden');
-      expect(overlayBox?.x).toBeGreaterThanOrEqual(hostBox?.x ?? 0);
-      expect((overlayBox?.x ?? 0) + (overlayBox?.width ?? 0)).toBeLessThanOrEqual(
-        (hostBox?.x ?? 0) + (hostBox?.width ?? 0),
-      );
-      expect(overlayBox?.y).toBeGreaterThanOrEqual(hostBox?.y ?? 0);
-      expect((overlayBox?.y ?? 0) + (overlayBox?.height ?? 0)).toBeLessThanOrEqual(
-        (hostBox?.y ?? 0) + (hostBox?.height ?? 0),
-      );
+        const coordinateHost = card.locator('[data-coordinate-preview-root]');
+        const coordinateTile = card.locator('[data-coordinate-preview-tile]');
+        const retryOverlay = card.locator('[data-coordinate-preview-retry-overlay]');
+        await expect(coordinateHost).toBeVisible();
+        await expect(coordinateTile).toBeVisible();
+        await expect(retryOverlay).toBeVisible();
+        const [hostBox, coordinateBox] = await Promise.all([
+          coordinateHost.boundingBox(),
+          coordinateTile.boundingBox(),
+        ]);
+        expect(hostBox?.width).toBe(hostBox?.height);
+        expect(hostBox?.width).toBe(112);
+        expect(coordinateBox?.width).toBe(coordinateBox?.height);
+        expect(coordinateBox?.width).toBe(hostBox?.width);
+        expect(coordinateBox?.width).toBe(112);
+        expect(coordinateBox?.width).toBeGreaterThan(imageBox?.width ?? 0);
+        const [overlayBox, hostOverflow] = await Promise.all([
+          retryOverlay.boundingBox(),
+          coordinateHost.evaluate((element) => getComputedStyle(element).overflow),
+        ]);
+        expect(hostOverflow).toBe('hidden');
+        expect(overlayBox?.x).toBeGreaterThanOrEqual(hostBox?.x ?? 0);
+        expect((overlayBox?.x ?? 0) + (overlayBox?.width ?? 0)).toBeLessThanOrEqual(
+          (hostBox?.x ?? 0) + (hostBox?.width ?? 0),
+        );
+        expect(overlayBox?.y).toBeGreaterThanOrEqual(hostBox?.y ?? 0);
+        expect((overlayBox?.y ?? 0) + (overlayBox?.height ?? 0)).toBeLessThanOrEqual(
+          (hostBox?.y ?? 0) + (hostBox?.height ?? 0),
+        );
+      }
     }
   });
 
@@ -246,6 +249,7 @@ test.describe('message card media preview contract', () => {
         host.evaluate((element) => getComputedStyle(element).overflow),
       ]);
       expect(hostBox?.width).toBe(hostBox?.height);
+      expect(hostBox?.width).toBe(112);
       expect(tileBox?.width).toBe(hostBox?.width);
       expect(tileBox?.height).toBe(hostBox?.height);
       expect(hostOverflow).toBe('hidden');
@@ -265,6 +269,79 @@ test.describe('message card media preview contract', () => {
     await expect(retry).toBeDisabled();
     await expect(card.locator('[data-coordinate-preview-tile]')).toBeVisible();
     await expect(failureTile).toHaveCount(0);
+  });
+
+  test('ECHO-3324 wraps long coordinate labels inside shared Duty and Analysis tiles', async ({
+    page,
+  }) => {
+    const coordinateLabel = '50.45044, 30.52355 — сектор Північний';
+
+    for (const host of ['duty', 'analysis'] as const) {
+      await openMessageCardPreviewHost(page, host, { revealCoordinates: true, coordinateLabel });
+      const card = page.locator('.message-card-root').first();
+      const coordinateTile = card.locator('[data-coordinate-preview-tile]');
+      const coordinateButton = card.getByRole('button', {
+        name: `Open ${coordinateLabel} on map`,
+      });
+      const badge = coordinateTile.getByText(coordinateLabel, { exact: true });
+      const mediaControl = card.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
+      const coordinateControl = card.getByRole('button', {
+        name: /^(Розгорнути|Згорнути) координати:/,
+      });
+
+      for (const cardWidth of [920, 330]) {
+        await card.evaluate((element, width) => {
+          const item = element.closest<HTMLElement>('.message-card-item');
+          if (item) item.style.width = `${width}px`;
+        }, cardWidth);
+
+        await mediaControl.click();
+        const [imageBox, videoBox] = await Promise.all([
+          card.locator('[data-picture-thumb-layout]').first().boundingBox(),
+          card.locator('[data-video-thumb-state]').first().boundingBox(),
+        ]);
+        await coordinateControl.click();
+        await expect(coordinateTile).toBeVisible();
+        await expect(badge).toHaveText(coordinateLabel);
+        const [tileBox, badgeBox, badgeMetrics] = await Promise.all([
+          coordinateTile.boundingBox(),
+          badge.boundingBox(),
+          badge.evaluate((element) => {
+            const styles = getComputedStyle(element);
+            return {
+              whiteSpace: styles.whiteSpace,
+              textOverflow: styles.textOverflow,
+              scrollWidth: element.scrollWidth,
+              clientWidth: element.clientWidth,
+              scrollHeight: element.scrollHeight,
+              lineHeight: Number.parseFloat(styles.lineHeight),
+            };
+          }),
+        ]);
+        expect(tileBox?.width).toBe(112);
+        expect(tileBox?.height).toBe(112);
+        expect(imageBox?.width).toBe(72);
+        expect(imageBox?.height).toBe(72);
+        expect(videoBox?.width).toBe(72);
+        expect(videoBox?.height).toBe(72);
+        expect(badgeMetrics.whiteSpace).toBe('pre-wrap');
+        expect(badgeMetrics.textOverflow).not.toBe('ellipsis');
+        expect(badgeMetrics.scrollWidth).toBeLessThanOrEqual(badgeMetrics.clientWidth + 1);
+        expect(badgeMetrics.scrollHeight).toBeGreaterThan(badgeMetrics.lineHeight + 1);
+        expect(badgeBox?.x).toBeGreaterThanOrEqual(tileBox?.x ?? 0);
+        expect((badgeBox?.x ?? 0) + (badgeBox?.width ?? 0)).toBeLessThanOrEqual(
+          (tileBox?.x ?? 0) + (tileBox?.width ?? 0),
+        );
+        expect((badgeBox?.y ?? 0) + (badgeBox?.height ?? 0)).toBeLessThanOrEqual(
+          (tileBox?.y ?? 0) + (tileBox?.height ?? 0),
+        );
+      }
+
+      await coordinateButton.click();
+      const dialog = page.getByRole('dialog', { name: 'Перегляд координат' });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Закрити' }).click();
+    }
   });
 
   test('image previews preserve carousel order, info, and download', async ({ page }) => {

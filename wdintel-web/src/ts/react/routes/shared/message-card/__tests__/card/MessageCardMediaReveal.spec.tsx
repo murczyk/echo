@@ -3,9 +3,19 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageCardContent } from '../../MessageCardContent';
-import { minimalInboxMessage } from '../../../../rer-duty-neo/inbox-message-mocks';
+import {
+  minimalInboxMessage,
+  mockImageMediaEntry,
+} from '../../../../rer-duty-neo/inbox-message-mocks';
+
+const { getMediaSummary } = vi.hoisted(() => ({ getMediaSummary: vi.fn() }));
+
+vi.mock('../../../../../services/api/media-summary', () => ({
+  getMediaSummary,
+  retryMediaSummary: vi.fn(),
+}));
 
 describe('MessageCardContent media collapse', () => {
   let container: HTMLElement;
@@ -16,6 +26,124 @@ describe('MessageCardContent media collapse', () => {
       root?.unmount();
       container?.remove();
     });
+  });
+
+  beforeEach(() => {
+    getMediaSummary.mockResolvedValue({
+      state: 'completed',
+      summary: 'Наявний опис вкладення',
+      coordinates: [],
+      lastError: null,
+    });
+  });
+
+  it('ECHO-3324 renders supplied image summaries and suppresses selection when disabled', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const msg = minimalInboxMessage({
+      media: [
+        mockImageMediaEntry({
+          id: 'summarized-image',
+          summary: { state: 'completed', lastError: null, hasCoordinates: false },
+        }),
+      ],
+    });
+
+    await act(async () => {
+      root.render(<MessageCardContent messageId={1} msg={msg} tagsMap={{}} mediaSummaryEnabled />);
+      await Promise.resolve();
+    });
+
+    expect(container.querySelector('[data-media-summary-carousel="true"]')).not.toBeNull();
+    expect(container.textContent).toContain('Наявний опис вкладення');
+    expect(container.querySelector('[data-summary-selected="true"]')).not.toBeNull();
+
+    await act(async () => {
+      root.render(
+        <MessageCardContent messageId={1} msg={msg} tagsMap={{}} mediaSummaryEnabled={false} />,
+      );
+    });
+
+    expect(container.querySelector('[data-media-summary-carousel="true"]')).toBeNull();
+    expect(container.querySelector('[data-summary-selected="true"]')).toBeNull();
+    expect(container.querySelector('[aria-current="true"]')).toBeNull();
+  });
+
+  it('ECHO-3324 scopes supplied video, previewable-document, and download summaries', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const completed = { state: 'completed' as const, lastError: null, hasCoordinates: false };
+    const msg = minimalInboxMessage({
+      media: [
+        {
+          id: 'summary-video',
+          href: 'https://example.test/summary.mp4',
+          contentType: 'video/mp4',
+          fileName: 'summary.mp4',
+          sizeBytes: 10,
+          summary: completed,
+        },
+        {
+          id: 'summary-pdf',
+          href: 'https://example.test/summary.pdf',
+          contentType: 'application/pdf',
+          fileName: 'summary.pdf',
+          sizeBytes: 10,
+          summary: completed,
+        },
+        {
+          id: 'summary-download',
+          href: 'https://example.test/summary.bin',
+          contentType: 'application/octet-stream',
+          fileName: 'summary.bin',
+          sizeBytes: 10,
+          summary: completed,
+        },
+      ],
+    });
+
+    await act(async () => {
+      root.render(
+        <MessageCardContent
+          messageId={1}
+          msg={msg}
+          tagsMap={{}}
+          collapseMediaPreviews
+          mediaSummaryEnabled
+        />,
+      );
+      await Promise.resolve();
+    });
+
+    const media = container.querySelector('[data-attachment-kind="media"]') as HTMLButtonElement;
+    const documents = container.querySelector(
+      '[data-attachment-kind="documents"]',
+    ) as HTMLButtonElement;
+    await act(async () => media.click());
+    expect(container.querySelector('[data-media-summary-carousel="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-media-summary-navigation]')).toBeNull();
+
+    await act(async () => documents.click());
+    expect(container.querySelector('[data-media-summary-navigation]')?.textContent).toContain(
+      '1/2',
+    );
+
+    await act(async () => {
+      root.render(
+        <MessageCardContent
+          messageId={1}
+          msg={msg}
+          tagsMap={{}}
+          collapseMediaPreviews={false}
+          mediaSummaryEnabled
+        />,
+      );
+    });
+    expect(container.querySelector('[data-media-summary-navigation]')?.textContent).toContain(
+      '2/3',
+    );
   });
 
   it('ECHO-3324 hides audio players until its independent attachment control is expanded', async () => {

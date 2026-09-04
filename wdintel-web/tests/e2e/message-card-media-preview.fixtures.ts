@@ -69,10 +69,12 @@ function buildMessageCardMediaPreviewMessage({
   withPolishContent = false,
   withPartialCoordinateError = false,
   withCompleteCoordinateError = false,
+  coordinateLabel,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
   withCompleteCoordinateError?: boolean;
+  coordinateLabel?: string;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
@@ -129,7 +131,7 @@ function buildMessageCardMediaPreviewMessage({
         size_bytes: 256,
         href: download,
       },
-      ...(withPartialCoordinateError || withCompleteCoordinateError
+      ...(withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null
         ? [
             {
               id: 'e2e-coordinate-error',
@@ -147,7 +149,7 @@ function buildMessageCardMediaPreviewMessage({
     date: '13.07.2026',
     time: '12:34',
     freq: '123.4',
-    coords: withCompleteCoordinateError ? null : '50.45044, 30.52355',
+    coords: withCompleteCoordinateError || coordinateLabel != null ? null : '50.45044, 30.52355',
     callsigns: withPolishContent ? ['E2E-ALPHA'] : [],
     callsignsAlg2: [],
     checked: false,
@@ -196,10 +198,12 @@ export function buildMessageCardMediaPreviewInboxResponse({
   withPolishContent = false,
   withPartialCoordinateError = false,
   withCompleteCoordinateError = false,
+  coordinateLabel,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
   withCompleteCoordinateError?: boolean;
+  coordinateLabel?: string;
 } = {}): InboxMessagesRspRaw {
   return {
     inbox_items: [
@@ -209,6 +213,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           withPolishContent,
           withPartialCoordinateError,
           withCompleteCoordinateError,
+          coordinateLabel,
         }) as never,
       ],
     ],
@@ -282,11 +287,13 @@ async function installMessageCardMediaPreviewHostFixture(
   withPolishContent: boolean,
   withPartialCoordinateError: boolean,
   withCompleteCoordinateError: boolean,
+  coordinateLabel: string | undefined,
 ): Promise<void> {
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
     withPolishContent,
     withPartialCoordinateError,
     withCompleteCoordinateError,
+    coordinateLabel,
   });
 
   const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
@@ -297,13 +304,13 @@ async function installMessageCardMediaPreviewHostFixture(
     await installRerDutyShortStateMocks(page, { inboxResponse, networkInfoResponse });
   }
 
-  if (withPartialCoordinateError || withCompleteCoordinateError) {
+  if (withPartialCoordinateError || withCompleteCoordinateError || coordinateLabel != null) {
     let requestCount = 0;
     await page.route(
       '**/api/messenger/media/e2e-coordinate-error/summary/coordinates',
       async (route) => {
         requestCount += 1;
-        if (withPartialCoordinateError || requestCount === 1) {
+        if (withPartialCoordinateError || (withCompleteCoordinateError && requestCount === 1)) {
           await route.fulfill({ status: 500, body: 'coordinate lookup failed' });
           return;
         }
@@ -313,7 +320,7 @@ async function installMessageCardMediaPreviewHostFixture(
           body: JSON.stringify({
             coordinates: [
               {
-                title: 'E2E coordinate',
+                title: coordinateLabel ?? 'E2E coordinate',
                 description: 'Recovered coordinate',
                 plannedMeans: null,
                 coordinateSystem: 'wgs84',
@@ -336,12 +343,14 @@ export async function openMessageCardPreviewHost(
     withPolishContent = false,
     withPartialCoordinateError = false,
     withCompleteCoordinateError = false,
+    coordinateLabel,
   }: {
     revealAudio?: boolean;
     revealCoordinates?: boolean;
     withPolishContent?: boolean;
     withPartialCoordinateError?: boolean;
     withCompleteCoordinateError?: boolean;
+    coordinateLabel?: string;
   } = {},
 ): Promise<void> {
   await installMessageCardMediaPreviewAssetRoutes(page);
@@ -351,6 +360,7 @@ export async function openMessageCardPreviewHost(
     withPolishContent,
     withPartialCoordinateError,
     withCompleteCoordinateError,
+    coordinateLabel,
   );
   await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
 

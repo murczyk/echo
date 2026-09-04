@@ -329,9 +329,10 @@ export function MessageMediaAudioPlayer({
 
 export function MessageMediaDownloadLink({
   attachment,
+  selected = false,
   isDownloadStarting,
   onDownloadStart,
-}: { attachment: MessageMediaInfo } & MessageCardDownloadGuardProps) {
+}: { attachment: MessageMediaInfo; selected?: boolean } & MessageCardDownloadGuardProps) {
   const displayName = mediaAttachmentDisplayName(attachment);
   const downloadKey = messageCardMediaDownloadKey(String(attachment.id));
   const downloading = isDownloadStarting(downloadKey);
@@ -351,6 +352,8 @@ export function MessageMediaDownloadLink({
           disabled={downloading}
           aria-busy={downloading}
           aria-label={downloading ? 'Завантаження…' : undefined}
+          aria-current={selected ? 'true' : undefined}
+          data-summary-selected={selected ? 'true' : undefined}
           onClick={(event) =>
             guardMessageCardDownloadClick(event, downloadKey, {
               isDownloadStarting,
@@ -371,9 +374,12 @@ export function MessageMediaDownloadLink({
             fontWeight: 500,
             color: 'text.primary',
             borderColor: 'divider',
+            ...(selected
+              ? { borderColor: 'primary.main', boxShadow: 1, backgroundColor: 'action.selected' }
+              : {}),
             '&:hover': {
-              backgroundColor: 'action.hover',
-              borderColor: 'text.primary',
+              backgroundColor: selected ? 'action.selected' : 'action.hover',
+              borderColor: selected ? 'primary.main' : 'text.primary',
             },
             alignSelf: 'flex-start',
             overflow: 'hidden',

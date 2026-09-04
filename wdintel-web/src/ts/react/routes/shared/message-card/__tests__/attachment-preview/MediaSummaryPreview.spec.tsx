@@ -335,16 +335,20 @@ describe('MessageCardMediaSummary', () => {
     await act(async () => {
       root?.render(
         <MessageCardMediaSummaryCarousel
-          media={[
+          items={[
             {
-              id: 'media-10',
+              identity: 'media-10',
+              mediaId: 'media-10',
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
             },
             {
-              id: 'media-11',
+              identity: 'media-11',
+              mediaId: 'media-11',
               summary: { state: 'completed', lastError: null, hasCoordinates: false },
             },
           ]}
+          selectedIdentity="media-10"
+          onSelectedIdentityChange={vi.fn()}
         />,
       );
     });

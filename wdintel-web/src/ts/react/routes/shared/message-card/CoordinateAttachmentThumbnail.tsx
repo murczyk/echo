@@ -306,9 +306,9 @@ export function CoordinateAttachmentThumbnail({
                     lineHeight: 1.2,
                     backdropFilter: 'blur(6px)',
                     maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
                   }}
                 >
                   {point.label}
@@ -326,6 +326,10 @@ export function CoordinateAttachmentThumbnail({
                     fontWeight: 700,
                     lineHeight: 1.2,
                     backdropFilter: 'blur(6px)',
+                    maxWidth: '100%',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    wordBreak: 'break-word',
                   }}
                 >
                   {formatCoordinatePreviewPointCount(points.length)}

@@ -2,6 +2,7 @@ import type {
   CallsignInfoRes,
   ContentNode,
   InboxMessage,
+  MediaSummaryStatus,
   MessageComment,
   Network,
   PalitraName,
@@ -118,6 +119,13 @@ type PointBlacklistDialogState = {
 };
 
 type ActiveAttachmentSection = 'media' | 'coordinates' | 'documents' | 'audio' | null;
+
+type CardSummaryItem = {
+  identity: string;
+  mediaId: string | null;
+  kind: 'media' | 'document';
+  summary: MediaSummaryStatus | null;
+};
 
 function normalizeAttachmentHref(href: unknown): string {
   return String(href ?? '').trim();
@@ -546,31 +554,67 @@ export function MessageCardMessageBody({
   const isDocumentVisible = !collapseMediaPreviews || activeAttachmentSection === 'documents';
   const isCoordinateVisible = !collapseMediaPreviews || activeAttachmentSection === 'coordinates';
   const isAudioVisible = !collapseMediaPreviews || activeAttachmentSection === 'audio';
-  const summaryMedia = !collapseMediaPreviews
-    ? [...images, ...videoAttachments, ...documents]
-    : activeAttachmentSection === 'media'
-      ? [...images, ...videoAttachments]
-      : activeAttachmentSection === 'documents'
-        ? documents
-        : [];
-  const [selectedSummaryMediaId, setSelectedSummaryMediaId] = useState<string | null>(null);
-  const selectedSummaryMediaIndex = Math.max(
-    0,
-    selectedSummaryMediaId == null
-      ? summaryMedia.findIndex((media) => media.id != null && media.summary != null)
-      : summaryMedia.findIndex(
-          (media) => summaryAttachmentIdentity(media) === selectedSummaryMediaId,
-        ),
+  const cardSummaryItems = useMemo<CardSummaryItem[]>(
+    () => [
+      ...images.map((image) => ({
+        identity: summaryAttachmentIdentity(image),
+        mediaId: image.id ?? null,
+        kind: 'media' as const,
+        summary: image.summary ?? null,
+      })),
+      ...videoAttachments.map((attachment) => ({
+        identity: summaryAttachmentIdentity(attachment),
+        mediaId: attachment.id ?? null,
+        kind: 'media' as const,
+        summary: attachment.summary ?? null,
+      })),
+      ...documents.map((document) => ({
+        identity: summaryAttachmentIdentity(document),
+        mediaId: document.id ?? null,
+        kind: 'document' as const,
+        summary: document.summary ?? null,
+      })),
+      ...downloadAttachments.map((attachment) => ({
+        identity: summaryAttachmentIdentity(attachment),
+        mediaId: attachment.id ?? null,
+        kind: 'document' as const,
+        summary: attachment.summary ?? null,
+      })),
+    ],
+    [documents, downloadAttachments, images, videoAttachments],
   );
-  const highlightSummaryMediaSelection = summaryMedia.some(
-    (media) => media.id != null && media.summary != null,
+  const summaryScope = useMemo(
+    () =>
+      cardSummaryItems.filter((item) => {
+        if (!collapseMediaPreviews) return true;
+        return activeAttachmentSection === (item.kind === 'document' ? 'documents' : item.kind);
+      }),
+    [activeAttachmentSection, cardSummaryItems, collapseMediaPreviews],
   );
-  const selectedSummaryMedia = highlightSummaryMediaSelection
-    ? summaryMedia[selectedSummaryMediaIndex]
-    : null;
-  const selectedSummaryMediaIdentity = selectedSummaryMedia
-    ? summaryAttachmentIdentity(selectedSummaryMedia)
-    : null;
+  const summaryScopeIdentity = summaryScope
+    .map((item) => `${item.identity}:${item.summary?.state ?? ''}`)
+    .join('\0');
+  const showSummaryCarousel =
+    mediaSummaryEnabled && summaryScope.some((item) => item.summary != null);
+  const [selectedSummaryIdentity, setSelectedSummaryIdentity] = useState<string | null>(null);
+  useEffect(() => {
+    if (!showSummaryCarousel) {
+      setSelectedSummaryIdentity(null);
+      return;
+    }
+    setSelectedSummaryIdentity((current) => {
+      if (current != null && summaryScope.some((item) => item.identity === current)) return current;
+      return summaryScope.find((item) => item.summary != null)?.identity ?? null;
+    });
+  }, [showSummaryCarousel, summaryScopeIdentity]);
+  const selectedSummaryMediaIdentity =
+    showSummaryCarousel &&
+    selectedSummaryIdentity != null &&
+    summaryScope.some((item) => item.identity === selectedSummaryIdentity)
+      ? selectedSummaryIdentity
+      : showSummaryCarousel
+        ? (summaryScope.find((item) => item.summary != null)?.identity ?? null)
+        : null;
   const selectedSummaryImageIndex = selectedSummaryMediaIdentity
     ? images.findIndex((image) => summaryAttachmentIdentity(image) === selectedSummaryMediaIdentity)
     : -1;
@@ -896,6 +940,10 @@ export function MessageCardMessageBody({
                 <MessageMediaDownloadLink
                   key={attachment.id}
                   attachment={attachment}
+                  selected={
+                    selectedSummaryMediaIdentity != null &&
+                    summaryAttachmentIdentity(attachment) === selectedSummaryMediaIdentity
+                  }
                   isDownloadStarting={isDownloadStarting}
                   onDownloadStart={onDownloadStart}
                 />
@@ -913,13 +961,11 @@ export function MessageCardMessageBody({
               />
             </div>
           ) : null}
-          {mediaSummaryEnabled && summaryMedia.length > 0 ? (
+          {showSummaryCarousel && selectedSummaryMediaIdentity != null ? (
             <MessageCardMediaSummaryCarousel
-              media={summaryMedia}
-              onIndexChange={(index) => {
-                const selected = summaryMedia[index];
-                setSelectedSummaryMediaId(selected ? summaryAttachmentIdentity(selected) : null);
-              }}
+              items={summaryScope}
+              selectedIdentity={selectedSummaryMediaIdentity}
+              onSelectedIdentityChange={setSelectedSummaryIdentity}
             />
           ) : null}
           {collapseMediaPreviews ? coordinateAttachment : null}
