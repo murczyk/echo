@@ -1,13 +1,11 @@
 # Working with ORBIT data
 
-ORBIT unit ingestion has two separate stages:
+ORBIT unit ingestion has two stages:
 
 1. Normalize an ORBIT JSON export through the TUI into a timestamped ZIP of
    Apache Parquet files.
-2. Synchronize the latest normalized snapshot into PostgreSQL.
-
-Linking is a separate TUI action that reads both ORBIT and SIGINT units from
-PostgreSQL.
+2. Synchronize the latest normalized snapshot into PostgreSQL and reconcile
+   automatic ORBIT-to-SIGINT links.
 
 The preparation action reads a JSON export. Synchronization actions always read
 the latest normalized snapshot from configured storage.
@@ -89,7 +87,22 @@ sudo wdintel-rs --mode=live tui-import-orbit-units
 The synchronization actions download and unpack the newest timestamped
 snapshot and fail if no snapshot exists. Database-mutating import sessions are
 serialized, so a second importer waits until the active import releases its
-PostgreSQL advisory lock. The first screen offers seven workflows.
+PostgreSQL advisory lock. The first screen offers eleven workflows.
+
+### TUI workflow conventions
+
+ORBIT maintenance workflows that compare or merge data use a field-by-field or
+word-level diff in manual mode. Matching text is green and differing text is
+red; the operator must explicitly accept the proposed link, edit, or merge.
+Before persistence, accepted work is reloaded under the ORBIT advisory lock and
+is skipped when the compared data or match is stale.
+
+When such a workflow has an automatic mode that changes SIGINT units, it must
+offer separate scopes for all active units, all inactive units, or both. Manual
+mode reviews both active and inactive units and always shows the comparison
+diff. Automatic mode reloads, applies, and commits each item in its own
+transaction before continuing to the next item, so a later failure does not
+roll back earlier completed work.
 
 ### IMPORT NEW ORBIT DATA REVISION
 
@@ -107,47 +120,81 @@ deletion.
 Each completed data phase writes the archive MD5 and its synchronization time
 to `orbit_sync`. When the latest archive MD5 is already recorded, the TUI warns
 the operator and asks whether to proceed. Proceeding skips all Parquet-to-table
-work; cancelling leaves the database unchanged. This workflow does not create
-or replace SIGINT links.
+work; cancelling leaves the database unchanged.
 
-### Link ORBIT units to SIGINT units
+After the data transaction commits, synchronization reads non-deleted SIGINT
+units and roots from the latest synchronized ORBIT revision. It revalidates
+existing automatic links while preserving authoritative manual links and
+suppressed link decisions. A unit is linked only when one rating-100 candidate
+is uniquely closest by Levenshtein distance and that distance is at most 10.
+Rerunning synchronization is therefore also the supported way to retry an
+interrupted link phase when the snapshot MD5 is unchanged.
 
-This workflow reads non-deleted
-SIGINT units and roots from the latest synchronized ORBIT revision from
-PostgreSQL. Manual mode reviews only unlinked units. Automatic mode also
-revalidates existing automatic links while preserving authoritative manual
-links. Choose a mode when the workflow starts:
+Link persistence validates both units, imports missing ORBIT ancestors,
+reconciles SIGINT echelons and duplicate-candidate state, and updates parent
+activity. It never regenerates the current SIGINT unit name. After automatic
+matching, every remaining supported, non-deleted ORBIT unit is created as an
+inactive SIGINT unit and linked to its ORBIT source. Generative ancestors of
+active matched units remain active.
 
-- automatic links a unit only when one rating-100 candidate is uniquely closest
-  by Levenshtein distance and that distance is at most 10;
-- manual opens the interactive review for every structurally valid candidate,
-  without a Levenshtein-distance cutoff.
+### Link unlinked SIGINT units to ORBIT units
 
-Accepted links use the same transactional implementation as manual linking in
-`/rer-units` and `/rer-units/{id}`. That implementation validates both units,
-creates the link, imports missing ORBIT ancestors, reconciles the SIGINT
-hierarchy and duplicate-candidate state, and updates parent activity.
+This workflow wraps the normal ORBIT matcher for non-deleted SIGINT units that
+do not have an active ORBIT link. Automatic mode links only a unique closest
+rating-100 candidate with Levenshtein distance at most 10 and can target active
+units, inactive units, or both. Manual mode shows the SIGINT and ORBIT hierarchy
+names as a colored word diff and permits any structurally valid candidate,
+without the automatic distance cutoff. Accepted candidates are revalidated
+before a manual or automatic link is written.
+
+The former standalone `oneoff-test-link-units` command is not available; use
+this workflow from `tui-import-orbit-units`.
+
+### Link unlinked ORBIT units to SIGINT units
+
+This workflow starts from every matchable root in the latest synchronized ORBIT
+revision that has no non-suppressed link to a non-deleted SIGINT unit. It
+presents matching, currently unlinked SIGINT units in the reverse direction.
+Manual mode shows a colored hierarchy diff for each candidate. If no candidate
+matches, the operator can create and link a new inactive SIGINT unit.
+
+Automatic mode can search active SIGINT units, inactive SIGINT units, or both.
+It links an ORBIT unit only when exactly one SIGINT unit independently passes
+the normal automatic matching rules. Before it starts, the operator chooses
+whether ORBIT units with no structural match should be created as inactive
+SIGINT units or left unlinked. Ambiguous and unsafe matches are skipped, not
+created, and every action is revalidated under the ORBIT advisory lock.
+
+### Replace linked SIGINT echelon values with mismatched ORBIT numbers
+
+This workflow compares every non-empty SIGINT echelon with the same echelon in
+its single linked ORBIT generative hierarchy. A mismatch is proposed only when
+both values contain words and numbers and their numeric parts differ; wording
+differences with the same numbers are left unchanged. For example, SIGINT army
+`36 А` and ORBIT army `35 А` produce a proposal to replace `36 А` with `35 А`.
+
+Manual mode shows every mismatched echelon as a colored SIGINT/ORBIT word diff
+and applies all displayed replacements only after explicit acceptance.
+Automatic mode applies every current proposal and can target active SIGINT
+units, inactive SIGINT units, or both. Units with zero or multiple active ORBIT
+links are skipped. Before update, the link, activity scope, current SIGINT
+values, and current ORBIT hierarchy are reloaded under the advisory lock; stale
+manual proposals are not applied.
 
 ### Merge duplicate SIGINT units linked to one ORBIT unit
 
 This workflow processes the same active ORBIT-to-SIGINT duplicate groups shown
-under `/admin/units?tab=duplicates`. It considers a group safe only when every
-SIGINT unit has that one active ORBIT link and the normal linking matcher still
-matches every unit to that ORBIT unit. Automatic mode additionally applies the
-same rating-100, uniquely closest, distance-at-most-10 approval rule used by
-linking and merges only exact-name groups, normalized-equivalent hierarchies
-without populated-field conflicts, or a compatible active/system-created
-inactive pair. It prefers an active survivor, then the unit with more populated
-user-maintained fields, then the lower ID. Manual mode asks which matching
-SIGINT unit to keep and remains available for reviewable groups rejected by the
-automatic tiers.
-It presents each candidate together on a numbered, paginated screen using the
-same green/red word-level SIGINT-to-ORBIT diff as the link review.
+under `/admin/units?tab=duplicates`. It considers a group reviewable only when
+every SIGINT unit has that one active ORBIT link and the normal linking matcher
+still matches every unit to that ORBIT unit. The workflow is always manual: it
+first asks which SIGINT unit to keep, then shows the projected survivor and a
+field-by-field before/after diff for explicit confirmation. The selected
+survivor's current name is preserved.
 
 Before merging, each complete group and every match is loaded again under the
-ORBIT advisory lock. Changed membership, links, source revision, or matching
-results cause the group to be skipped. Multi-ORBIT and matcher-rejected groups
-are always left for explicit administration.
+ORBIT advisory lock. Changed membership, links, source revision, matching
+results, or unit contents cause the group to be skipped as stale. Multi-ORBIT
+and matcher-rejected groups are always left for explicit administration.
 
 ### Resolve unparsed unit labels through ORBIT links
 
@@ -168,40 +215,51 @@ path. In automatic mode, guarded radio-network and location-only labels that do
 not contain a valid parsed hierarchy are archived. Archived labels and labels
 that changed during review remain untouched.
 
-### Reconcile linked SIGINT units and merge exact duplicates
+### Remove invalid army/corps and higher echelons from SIGINT unit names
 
-This workflow reviews proposed hierarchy enrichments for linked SIGINT units.
-Accepted attributes are applied, inconsistency flags are recalculated for all
-linked units, and exact-name duplicate candidates sharing an ORBIT unit are
-merged. The ORBIT advisory lock is held for the full run while individual unit
-and duplicate-component transactions are committed separately, so an
-interrupted run can be restarted safely.
+This workflow finds blacklisted army and corps values `УВ(с)`, `УВ`, and `ТН`,
+as well as army, corps, military-district, and army-region values
+absent from the unit's single linked ORBIT generative hierarchy.
+Automatic mode applies every safe proposal; manual mode shows the current and
+proposed name diff one unit at a time. Accepted changes clear invalid echelon
+fields and remove their complete phrases from the SIGINT name. An `other` value
+is removed from the name without clearing its hierarchy field. Automatic mode
+can target active units, inactive units, or both.
+
+### Review SIGINT unit names generated from echelons
+
+This workflow checks every non-deleted SIGINT unit in ID order. Generated names
+exclude `other`, blacklisted army and corps values, military district, and army
+region. Automatic mode applies every current proposal; manual mode shows a
+colored current/generated word diff and offers to apply, skip, or stop.
+Automatic mode can target active units, inactive units, or both. Accepted
+changes update only the name. In manual mode, a concurrent change to
+the name or any echelon makes the reviewed proposal stale and leaves it
+untouched. An empty generated name is never proposed. A unit with no populated
+echelon below corps keeps its current name; a newly imported ORBIT unit in that
+case uses its full ORBIT name.
 
 ### Erase and reimport all ORBIT data
 
 After the operator types `REIMPORT`, this workflow atomically truncates all
 seven `orbit_*` tables, including synchronization history and ORBIT-to-SIGINT
 links, then imports the latest snapshot. A failure rolls back the whole
-reimport. Existing SIGINT units are not deleted; run the linking workflow
-afterward.
+data reimport. Existing SIGINT units are not deleted. Automatic links are
+rebuilt after the data transaction commits, then unmatched ORBIT units are
+created as inactive SIGINT units.
 
 Common controls are:
 
 - Up/Down, Home/End: select an item;
 - Enter: accept;
 - `s`: skip;
+- `c`: create a new inactive SIGINT unit when an unlinked ORBIT unit has no
+  match;
 - `a`: skip all remaining stale deletions when offered;
 - Page Up/Page Down: scroll details;
 - `q`, Escape, or Ctrl-C: quit.
 
-## Link from the standalone command
-
-The same database-backed linking workflow remains available as a standalone
-one-off:
-
-```sh
-sudo wdintel-rs --mode=live oneoff-test-link-units
-```
+## Direct review commands
 
 The duplicate and unparsed workflows also have direct TUI commands:
 
@@ -218,29 +276,9 @@ sudo wdintel-rs --mode=live tui-merge-orbit-unit-duplicates --dry-run
 sudo wdintel-rs --mode=live tui-resolve-orbit-unparsed-units --dry-run
 ```
 
-The command first asks for automatic or manual mode. Manual mode evaluates each
-unlinked database SIGINT unit against the latest synchronized ORBIT revision
-before opening one interactive review session. It shows each
-unit's non-empty echelons from smaller to larger. Every structurally valid
-candidate is shown regardless of its rating or Levenshtein distance; units
-without a match are skipped automatically. Each candidate shows the full
-SIGINT and ORBIT names as red and green word-level highlights for mismatched
-and matched text, along with
-their Levenshtein distance. The ORBIT UUID is shown to distinguish records
-sharing a generative hierarchy. Units with multiple
-matches are reviewed before units with a single match; each group and its
-candidates are ordered by distance from shortest to longest.
-
-At most five candidates are shown at once. Use Enter, `y`, or `1` to accept the
-first visible candidate, or `2` through `5` to accept another visible candidate.
-Use `f` and `b` to show the next or previous five candidates, `n` to deny all
-candidates (`0` does the same), and Up/Down or Page Up/Page Down to scroll. Use
-`q`, Escape, or Ctrl-C and confirm to stop early. The terminal is restored
-before the command prints the accepted, denied, and unreviewed counts.
-
-Accepted choices are written after the terminal is restored. Denied and
-unreviewed units remain unlinked. If an accepted unit became linked during the
-review, persistence skips it, reports it as already linked, and continues.
+The duplicate command is always manual. The unparsed-unit command asks for
+automatic or manual mode; manual mode shows every structurally valid candidate
+without a Levenshtein-distance cutoff.
 
 ## PostgreSQL data model
 
@@ -294,8 +332,8 @@ Soft-deleted ORBIT units are neither marked nor rendered.
 - conflicting unit values or parents: inspect every occurrence of the reported
   UUID. A unit's own top-level object resolves conflicting embedded parent
   claims, but conflicting top-level objects are invalid.
-- unexpected matches: use manual linking mode to inspect candidate UUIDs and
-  full paths before accepting a link.
+- unexpected matches: inspect and correct the link from `/rer-units` or
+  `/rer-units/{id}`; automatic synchronization preserves manual links.
 
 The deployment-oriented checklist is in the
 [ORBIT import runbook](../deploy/2026-07-29-orbit-dictionaries/README.md).

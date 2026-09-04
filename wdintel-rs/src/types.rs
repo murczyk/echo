@@ -126,6 +126,8 @@ pub struct Env {
     pub replicas: Vec<ReplicaPool>,
     pub analytics: Option<AnalyticsPool>,
     pub tag_keyword_regex_cache: Arc<RwLock<TagKeywordRegexCache>>,
+    pub orbit_matcher_cache:
+        Arc<tokio::sync::RwLock<crate::orbit::OrbitMatcherCache>>,
     pub session_activity_tx:
         Option<tokio::sync::mpsc::Sender<SessionActivityEvent>>,
     pub session_activity_rx: Arc<

@@ -3,6 +3,10 @@ use crate::config::{
     SIGINT_UNIT_AUTO_CYBER_NETWORK_NAME, SIGINT_UNIT_LIST_DEFAULT_LIMIT,
     SIGINT_UNIT_LIST_MAX_LIMIT, SIGINT_UNIT_MERGE_ADVISORY_LOCK_NAMESPACE,
     SIGINT_UNIT_MERGE_ADVISORY_LOCK_POLL_MS,
+    SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS, SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX,
+    SIGINT_UNIT_NAME_CORPS_BLACKLIST_TERMS,
+    SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX,
+    SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX,
 };
 use crate::entities::sea_orm_active_enums::ChangelogActionEnum;
 use crate::entities::*;
@@ -27,7 +31,7 @@ pub mod orbit;
 pub mod types;
 
 pub fn unit_name(unit: &Unit) -> String {
-    unit_name_from_hierarchy([
+    let unit_name = unit_name_from_hierarchy([
         &unit.other,
         &unit.team_or_crew,
         &unit.section,
@@ -42,12 +46,20 @@ pub fn unit_name(unit: &Unit) -> String {
         &unit.army,
         &unit.military_district,
         &unit.army_region,
-    ])
+    ]);
+    if unit_name.is_empty() {
+        unit.name.trim().to_string()
+    } else {
+        unit_name
+    }
 }
 
 fn unit_name_is_derived(unit: &sigint_unit::Model) -> bool {
-    unit.name.trim().is_empty()
-        || unit.name == unit_name_from_hierarchy(unit_hierarchy(unit))
+    unit.name.trim().is_empty() || unit.name == generated_unit_name(unit)
+}
+
+pub(crate) fn generated_unit_name(unit: &sigint_unit::Model) -> String {
+    unit_name_from_hierarchy(unit_hierarchy(unit))
 }
 
 pub fn unit_name_req(req: &CreateUnitReq) -> String {
@@ -59,7 +71,15 @@ pub fn unit_name_req(req: &CreateUnitReq) -> String {
     {
         return name.to_string();
     }
-    unit_name_from_hierarchy([
+    required_unit_name_from_hierarchy(unit_req_hierarchy(req))
+}
+
+pub(crate) fn generated_unit_name_req(req: &CreateUnitReq) -> String {
+    unit_name_from_hierarchy(unit_req_hierarchy(req))
+}
+
+fn unit_req_hierarchy(req: &CreateUnitReq) -> [&str; 14] {
+    [
         &req.other,
         &req.team_or_crew,
         &req.section,
@@ -74,15 +94,89 @@ pub fn unit_name_req(req: &CreateUnitReq) -> String {
         &req.army,
         &req.military_district,
         &req.army_region,
-    ])
+    ]
 }
 
 fn unit_name_from_hierarchy(hierarchy: [&str; 14]) -> String {
+    if !hierarchy_has_name_echelon_below_corps(&hierarchy) {
+        return String::new();
+    }
     hierarchy
         .into_iter()
-        .filter(|part| !part.is_empty())
+        .enumerate()
+        .skip(SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX)
+        .take(
+            SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX
+                - SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX
+                + 1,
+        )
+        .filter(|(echelon, part)| {
+            !part.is_empty()
+                && !unit_name_echelon_is_blacklisted(*echelon, part)
+        })
+        .map(|(_, part)| part)
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn hierarchy_has_name_echelon_below_corps(hierarchy: &[&str; 14]) -> bool {
+    hierarchy[SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX
+        ..SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX]
+        .iter()
+        .any(|part| !part.is_empty())
+}
+
+pub(crate) fn unit_has_name_echelon_below_corps(
+    unit: &sigint_unit::Model,
+) -> bool {
+    hierarchy_has_name_echelon_below_corps(&unit_hierarchy(unit))
+}
+
+fn required_unit_name_from_hierarchy(hierarchy: [&str; 14]) -> String {
+    let generated_name = unit_name_from_hierarchy(hierarchy);
+    if !generated_name.is_empty() {
+        return generated_name;
+    }
+    hierarchy
+        .into_iter()
+        .enumerate()
+        .skip(SIGINT_UNIT_NAME_FIRST_INCLUDED_ECHELON_INDEX)
+        .filter(|(echelon, part)| {
+            !part.is_empty()
+                && !unit_name_echelon_is_blacklisted(*echelon, part)
+        })
+        .map(|(_, part)| part)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+pub(crate) fn unit_name_echelon_is_blacklisted(
+    echelon: usize,
+    value: &str,
+) -> bool {
+    let blacklist_terms = match echelon {
+        SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX => {
+            SIGINT_UNIT_NAME_CORPS_BLACKLIST_TERMS
+        }
+        SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX => {
+            SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS
+        }
+        _ => return false,
+    };
+    let value = value.to_lowercase();
+    let value_words = value
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    blacklist_terms.iter().any(|blacklisted| {
+        let blacklisted_words = blacklisted
+            .split(|character: char| !character.is_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .collect::<Vec<_>>();
+        value_words
+            .windows(blacklisted_words.len())
+            .any(|words| words == blacklisted_words)
+    })
 }
 
 #[post("/api/sigint/units")]
@@ -1314,7 +1408,7 @@ async fn update_unit_for_login(
     unit.active = Set(req.active);
     unit.updated_at = Set(chrono::Utc::now().naive_utc());
     unit.name = Set(if req.name.trim().is_empty() {
-        unit_name_from_hierarchy([
+        let generated_name = unit_name_from_hierarchy([
             &other,
             &team_or_crew,
             &section,
@@ -1329,7 +1423,12 @@ async fn update_unit_for_login(
             &req.army,
             &military_district,
             &army_region,
-        ])
+        ]);
+        if generated_name.is_empty() {
+            previous_unit.name.clone()
+        } else {
+            generated_name
+        }
     } else {
         req.name.trim().to_string()
     });
@@ -1524,7 +1623,7 @@ fn is_parent_unit(
         })
 }
 
-fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 14] {
+pub(crate) fn unit_hierarchy(unit: &sigint_unit::Model) -> [&str; 14] {
     [
         unit.other.as_str(),
         unit.team_or_crew.as_str(),
@@ -1716,6 +1815,51 @@ pub(crate) async fn merge_units_in_transaction<C>(
 where
     C: ConnectionTrait,
 {
+    merge_units_in_transaction_with_name_policy(
+        login,
+        dbx,
+        unit_to_delete_id,
+        original_id,
+        MergeUnitNamePolicy::RegenerateDerived,
+    )
+    .await
+}
+
+pub(crate) async fn merge_units_in_transaction_preserving_name<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
+    merge_units_in_transaction_with_name_policy(
+        login,
+        dbx,
+        unit_to_delete_id,
+        original_id,
+        MergeUnitNamePolicy::PreserveOriginal,
+    )
+    .await
+}
+
+#[derive(Clone, Copy)]
+enum MergeUnitNamePolicy {
+    RegenerateDerived,
+    PreserveOriginal,
+}
+
+async fn merge_units_in_transaction_with_name_policy<C>(
+    login: uuid::Uuid,
+    dbx: &C,
+    unit_to_delete_id: i64,
+    original_id: i64,
+    name_policy: MergeUnitNamePolicy,
+) -> Result<sigint_unit::Model, AppError>
+where
+    C: ConnectionTrait,
+{
     if unit_to_delete_id == original_id {
         return Err(AppError::BL {
             msg: "unit cannot be merged into itself".to_string(),
@@ -1733,6 +1877,7 @@ where
         dbx,
         unit_to_delete_id,
         original_id,
+        name_policy,
     )
     .await
     .context(h!())?;
@@ -1744,6 +1889,7 @@ async fn complete_unit_merge_in_transaction<C>(
     dbx: &C,
     unit_to_delete_id: i64,
     original_id: i64,
+    name_policy: MergeUnitNamePolicy,
 ) -> Result<sigint_unit::Model, AppError>
 where
     C: ConnectionTrait,
@@ -1755,7 +1901,7 @@ where
             .context(h!())?;
     let previous_unit_original = unit_original.clone();
     let unit_original =
-        update_original_unit(unit_original, &unit_to_delete, dbx)
+        update_original_unit(unit_original, &unit_to_delete, dbx, name_policy)
             .await
             .context(h!())?;
 
@@ -2219,11 +2365,16 @@ async fn update_original_unit<C>(
     unit_original: sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
     dbx: &C,
+    name_policy: MergeUnitNamePolicy,
 ) -> anyhow::Result<sigint_unit::Model>
 where
     C: ConnectionTrait,
 {
-    let projected = project_merged_unit(&unit_original, unit_to_merge);
+    let projected = project_merged_unit_with_name_policy(
+        &unit_original,
+        unit_to_merge,
+        name_policy,
+    );
     let mut unit = unit_original.into_active_model();
     unit.name.set_if_not_equals(projected.name);
     unit.other.set_if_not_equals(projected.other);
@@ -2250,13 +2401,30 @@ where
     Ok(unit)
 }
 
-pub(crate) fn project_merged_unit(
+pub(crate) fn project_merged_unit_preserving_name(
     unit_original: &sigint_unit::Model,
     unit_to_merge: &sigint_unit::Model,
 ) -> sigint_unit::Model {
+    project_merged_unit_with_name_policy(
+        unit_original,
+        unit_to_merge,
+        MergeUnitNamePolicy::PreserveOriginal,
+    )
+}
+
+fn project_merged_unit_with_name_policy(
+    unit_original: &sigint_unit::Model,
+    unit_to_merge: &sigint_unit::Model,
+    name_policy: MergeUnitNamePolicy,
+) -> sigint_unit::Model {
     let mut unit = unit_original.clone();
-    if unit_name_is_derived(unit_original) {
-        unit.name = merged_unit_name(unit_original, unit_to_merge);
+    if matches!(name_policy, MergeUnitNamePolicy::RegenerateDerived)
+        && unit_name_is_derived(unit_original)
+    {
+        let merged_name = merged_unit_name(unit_original, unit_to_merge);
+        if !merged_name.is_empty() {
+            unit.name = merged_name;
+        }
     }
 
     unit.other =
@@ -2480,6 +2648,83 @@ mod tests {
     use std::collections::BTreeSet;
 
     const TEST_LOGIN: &str = "Tester";
+
+    #[test]
+    fn generated_unit_names_do_not_append_echelons_above_army() {
+        let mut hierarchy = [""; 14];
+        hierarchy[0] = "ВМФ";
+        hierarchy[6] = "2 бат";
+        hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX] = "20 ЗВА";
+        hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX + 1] = "Західний ВО";
+        hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX + 2] = "ЗС РФ";
+
+        assert_eq!(unit_name_from_hierarchy(hierarchy), "2 бат 20 ЗВА");
+    }
+
+    #[test]
+    fn generated_unit_names_exclude_blacklisted_army_and_corps_values() {
+        for echelon in [
+            SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX,
+            SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX,
+        ] {
+            for value in ["УВ(с)", "УВ", "ТН"] {
+                let mut hierarchy = [""; 14];
+                hierarchy[6] = "2 бат";
+                hierarchy[echelon] = value;
+
+                assert_eq!(unit_name_from_hierarchy(hierarchy), "2 бат");
+            }
+        }
+    }
+
+    #[test]
+    fn generated_unit_names_include_military_district_abbreviations_in_army_or_corps(
+    ) {
+        for echelon in [
+            SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX,
+            SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX,
+        ] {
+            for value in
+                ["ПдВО", "ЛВО", "СхВО", "МВО", "ЦВО", "ПВО", "ЗхВО", "ЗВО"]
+            {
+                let mut hierarchy = [""; 14];
+                hierarchy[6] = "2 бат";
+                hierarchy[echelon] = value;
+
+                assert_eq!(
+                    unit_name_from_hierarchy(hierarchy),
+                    format!("2 бат {value}")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generated_unit_names_require_an_echelon_below_corps() {
+        let mut hierarchy = [""; 14];
+        hierarchy[SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX] = "11 АК";
+        hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX] = "20 ЗВА";
+        hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX + 1] = "Західний ВО";
+
+        assert_eq!(unit_name_from_hierarchy(hierarchy), "");
+        assert_eq!(
+            required_unit_name_from_hierarchy(hierarchy),
+            "11 АК 20 ЗВА Західний ВО"
+        );
+    }
+
+    #[test]
+    fn required_unit_names_fall_back_to_the_full_high_echelon_hierarchy() {
+        let mut hierarchy = [""; 14];
+        hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX + 1] = "Західний ВО";
+        hierarchy[SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX + 2] = "ЗС РФ";
+
+        assert_eq!(unit_name_from_hierarchy(hierarchy), "");
+        assert_eq!(
+            required_unit_name_from_hierarchy(hierarchy),
+            "Західний ВО ЗС РФ"
+        );
+    }
 
     async fn test_login_id(env: &Env) -> uuid::Uuid {
         crate::users::login_id_by_name(&env.dbx, TEST_LOGIN)
@@ -3869,6 +4114,7 @@ mod tests {
         assert_eq!(rsp.unit.military_district, "Західний ВО");
         assert_eq!(rsp.unit.army_region, "ЗС РФ");
         assert_eq!(rsp.unit.other, "ВМФ");
+        assert_eq!(rsp.unit.name, "1 рота 2 бат 55 мбр 45 див 20 ЗВА");
         assert!(rsp.unit.active);
         assert!(orbit::unit_has_orbit(&env.dbx, rsp.unit.id).await.unwrap());
         let link = orbit_unit_sigint_unit::Entity::find_by_id((
@@ -4035,6 +4281,14 @@ mod tests {
         assert!(imported_units
             .iter()
             .all(|unit| unit.is_deduplicate_candidate == Some(false)));
+        assert!(imported_units.iter().all(|unit| !unit.name.is_empty()));
+        let military_district = imported_units
+            .iter()
+            .find(|unit| {
+                unit.army.is_empty() && !unit.military_district.is_empty()
+            })
+            .unwrap();
+        assert_eq!(military_district.name, "Повна назва Західний ВО");
         assert_eq!(network_count(&env.dbx).await, 0);
         assert_eq!(
             orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
@@ -4054,6 +4308,62 @@ mod tests {
             .exec(&env.dbx)
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn imports_corps_only_orbit_unit_with_its_full_name() {
+        let env = cleanup().await.unwrap();
+        orbit_unit::Entity::delete_many()
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let login_id = test_login_id(&env).await;
+        let echelon_id = uuid::Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(echelon_id),
+            key: Set("corps".to_string()),
+            name: Set(format!("Корпус-{}", uuid::Uuid::new_v4())),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let orbit_unit_id = uuid::Uuid::new_v4();
+        orbit_unit::ActiveModel {
+            unit_id: Set(orbit_unit_id),
+            unit_name: Set(Some("Повна назва армійського корпусу".to_string())),
+            unit_name_short: Set(Some("11 АК".to_string())),
+            unit_echelon_id: Set(Some(echelon_id)),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            orbit::import_unlinked_orbit_units(&env.dbx, &login_id)
+                .await
+                .unwrap(),
+            1
+        );
+
+        let link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId.eq(orbit_unit_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let unit = sigint_unit::Entity::find_by_id(link.sigint_unit_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unit.corps, "11 АК");
+        assert_eq!(unit.name, "Повна назва армійського корпусу");
+        assert!(!unit.active);
     }
 
     #[tokio::test]
@@ -4789,7 +5099,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn merge_units_updates_name_and_search_for_extended_hierarchy() {
+    async fn merge_units_keeps_higher_echelons_out_of_generated_name() {
         let env = cleanup().await.unwrap();
         let login_id = test_login_id(&env).await;
         let surviving = crate::functest::tests::mk_sigint_unit(
@@ -4819,13 +5129,15 @@ mod tests {
                 .await
                 .unwrap();
 
-        assert_eq!(merged.name, "CompanyToken DistrictToken RegionToken");
+        assert_eq!(merged.name, "CompanyToken");
+        assert_eq!(merged.military_district, "DistrictToken");
+        assert_eq!(merged.army_region, "RegionToken");
         let search_matches = env
             .dbx
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 "SELECT search_tsv @@ plainto_tsquery('russian', $1) AS matches FROM sigint_unit WHERE id = $2",
-                ["DistrictToken".into(), merged.id.into()],
+                ["CompanyToken".into(), merged.id.into()],
             ))
             .await
             .unwrap()
@@ -4833,6 +5145,48 @@ mod tests {
             .try_get::<bool>("", "matches")
             .unwrap();
         assert!(search_matches);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orbit_merge_policy_preserves_a_derived_survivor_name() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let surviving = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                company: Set("CompanyToken".to_string()),
+                name: Set("CompanyToken".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let duplicate = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                brigade: Set("BrigadeToken".to_string()),
+                name: Set("BrigadeToken".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let transaction = env.dbx.begin().await.unwrap();
+
+        let merged = merge_units_in_transaction_preserving_name(
+            login_id,
+            &transaction,
+            duplicate.id,
+            surviving.id,
+        )
+        .await
+        .unwrap();
+        transaction.commit().await.unwrap();
+
+        assert_eq!(merged.name, "CompanyToken");
+        assert_eq!(merged.company, "CompanyToken");
+        assert_eq!(merged.brigade, "BrigadeToken");
     }
 
     #[tokio::test]
@@ -4949,6 +5303,36 @@ mod tests {
         assert_eq!(unit.army_region, "ЗС РФ");
         assert_eq!(unit.orbit_note.as_deref(), Some("Orbit note"));
         assert_eq!(unit.comment, "updated");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn blank_generated_name_preserves_the_existing_unit_name() {
+        let env = cleanup().await.unwrap();
+        let login_id = test_login_id(&env).await;
+        let unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                other: Set("ВМФ".to_string()),
+                corps: Set("11 АК".to_string()),
+                military_district: Set("Західний ВО".to_string()),
+                army_region: Set("ЗС РФ".to_string()),
+                name: Set("Повна назва підрозділу".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let rendered = render_unit(&unit).unwrap();
+        assert_eq!(unit_name(&rendered), "Повна назва підрозділу");
+        let mut req = UpdateUnitReq::from(rendered);
+        req.name.clear();
+
+        let unit = update_unit_for_login(&env.dbx, &login_id, &req, true)
+            .await
+            .unwrap();
+
+        assert_eq!(unit.name, "Повна назва підрозділу");
     }
 
     #[test]
