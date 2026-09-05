@@ -569,11 +569,20 @@ export function MessageMediaThumbnailDownloadLink({
               opacity: 0.95,
               backgroundColor: 'rgba(15, 23, 42, 0.64)',
             },
+            '&[aria-busy="true"]': {
+              color: 'rgba(255, 255, 255, 0.92)',
+              backgroundColor: 'rgba(15, 23, 42, 0.42)',
+              opacity: { xs: 0.78, sm: 0.62 },
+            },
             '& svg': { fontSize: 15 },
           }}
         >
           {downloading ? (
-            <CircularProgress size={12} aria-label="Завантаження…" />
+            <CircularProgress
+              size={12}
+              aria-label="Завантаження…"
+              sx={{ color: 'rgba(255, 255, 255, 0.86)' }}
+            />
           ) : (
             <DownloadIcon aria-hidden />
           )}
