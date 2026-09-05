@@ -50,6 +50,7 @@ pub mod points;
 pub mod post;
 pub mod report_chunking;
 pub mod reports;
+pub mod saved_filter_unit_ids;
 pub mod search;
 pub mod signals;
 pub mod types;
@@ -1051,7 +1052,7 @@ pub async fn signal_group_info_batch(
         req.groups.iter().map(|b| b.master_key.clone()).collect();
     let data = crate::messenger::group::collect_groups(
         keys,
-        &env.dbx,
+        &env,
         is_admin,
         crate::messenger::group::CollectGroupsOpts {
             skip_group_stats: req.skip_group_stats.unwrap_or(false),
@@ -1088,7 +1089,7 @@ pub async fn signal_groups(
         .c(h!())?;
     let data = crate::messenger::group::collect_groups(
         keys,
-        &env.dbx,
+        &env,
         is_admin,
         crate::messenger::group::CollectGroupsOpts {
             skip_group_stats: false,

@@ -1,7 +1,7 @@
 use super::{matching, persistence, tui};
 use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE,
-    ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
 };
@@ -258,20 +258,54 @@ impl ReviewSession {
     }
 }
 
-pub async fn run(mode: Mode) -> anyhow::Result<()> {
+pub(super) async fn run_automatic_with_database(
+    dbx: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<()> {
+    run_with_database(
+        dbx,
+        tui::LinkMode::Automatic,
+        tui::UnitActivityScope::Both,
+        true,
+    )
+    .await
+    .c(h!())
+}
+
+pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
     let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
         return Ok(());
     };
+    let activity_scope = if link_mode == tui::LinkMode::Automatic {
+        let Some(activity_scope) = tui::prompt_unit_activity_scope(
+            "Choose automatic SIGINT-to-ORBIT linking scope (↑/↓, Enter, Esc: quit)",
+        )
+        .c(h!())?
+        else {
+            return Ok(());
+        };
+        activity_scope
+    } else {
+        tui::UnitActivityScope::Both
+    };
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    run_with_database(&dbx, link_mode).await.c(h!())?;
-    Ok(())
+    run_with_database(&dbx, link_mode, activity_scope, false)
+        .await
+        .c(h!())
 }
 
 pub(super) async fn run_with_database(
     dbx: &sea_orm::DatabaseConnection,
     link_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
+    revalidate_existing_automatic_links: bool,
 ) -> anyhow::Result<()> {
-    let units = load_linkable_sigint_units(dbx, link_mode).await.c(h!())?;
+    let units = load_linkable_sigint_units(
+        dbx,
+        revalidate_existing_automatic_links,
+        activity_scope,
+    )
+    .await
+    .c(h!())?;
     let (orbit_sync, orbit_units) =
         persistence::load_latest_synced_source_units_with_sync(dbx)
             .await
@@ -295,6 +329,7 @@ pub(super) async fn run_with_database(
         &links,
         &reviewed_sigint_unit_ids,
         link_mode,
+        activity_scope,
         &suppressed_links,
         &mut matcher_cache,
     )
@@ -304,7 +339,7 @@ pub(super) async fn run_with_database(
     Ok(())
 }
 
-async fn load_suppressed_links<C>(
+pub(super) async fn load_suppressed_links<C>(
     dbx: &C,
 ) -> anyhow::Result<BTreeSet<(i64, uuid::Uuid)>>
 where
@@ -320,9 +355,10 @@ where
         .collect())
 }
 
-async fn load_linkable_sigint_units<C>(
+pub(super) async fn load_linkable_sigint_units<C>(
     dbx: &C,
-    link_mode: tui::LinkMode,
+    revalidate_existing_automatic_links: bool,
+    activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<Vec<sigint_unit::Model>>
 where
     C: ConnectionTrait,
@@ -333,6 +369,7 @@ where
 select sigint_unit.*
 from sigint_unit
 where sigint_unit.deleted = false
+    and ($2::boolean is null or sigint_unit.active = $2)
     and not exists (
         select 1
         from orbit_unit_sigint_unit link
@@ -357,7 +394,10 @@ where sigint_unit.deleted = false
     )
 order by sigint_unit.id
 "#,
-        [matches!(link_mode, tui::LinkMode::Automatic).into()],
+        [
+            revalidate_existing_automatic_links.into(),
+            activity_scope.active().into(),
+        ],
     ))
     .all(dbx)
     .await
@@ -423,6 +463,7 @@ async fn persist_links(
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
     link_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
     review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
     matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
@@ -439,6 +480,7 @@ async fn persist_links(
             dbx,
             links,
             reviewed_sigint_unit_ids,
+            activity_scope,
             matcher_cache,
         )
         .await
@@ -510,17 +552,19 @@ async fn persist_automatic_link_batches(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    activity_scope: tui::UnitActivityScope,
     matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let mut summary = PersistSummary::default();
-    for sigint_unit_ids in reviewed_sigint_unit_ids
-        .chunks(ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE)
+    for sigint_unit_ids in
+        reviewed_sigint_unit_ids.chunks(ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE)
     {
         summary.add(
             persist_automatic_link_batch(
                 dbx,
                 links,
                 sigint_unit_ids,
+                activity_scope,
                 matcher_cache,
             )
             .await
@@ -534,6 +578,7 @@ async fn persist_automatic_link_batch(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    activity_scope: tui::UnitActivityScope,
     matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
@@ -547,6 +592,7 @@ async fn persist_automatic_link_batch(
         &login,
         links,
         reviewed_sigint_unit_ids,
+        activity_scope,
         &matcher_cache.matcher,
         &suppressed_links,
     )
@@ -629,7 +675,8 @@ where
             summary.no_longer_matching += 1;
             continue;
         };
-        if !sigint_unit_is_reviewable(sigint_unit) {
+        if !sigint_unit_is_reviewable(sigint_unit, tui::UnitActivityScope::Both)
+        {
             summary.no_longer_matching += 1;
             continue;
         }
@@ -666,6 +713,7 @@ async fn revalidate_automatic_links<C>(
     login: &uuid::Uuid,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    activity_scope: tui::UnitActivityScope,
     matcher: &matching::TestLinkMatcher,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> anyhow::Result<(PersistSummary, bool)>
@@ -688,7 +736,7 @@ where
             continue;
         };
         let current_link_state = current_links.get(sigint_unit_id);
-        if !sigint_unit_is_reviewable(sigint_unit) {
+        if !sigint_unit_is_reviewable(sigint_unit, activity_scope) {
             summary.no_longer_matching += 1;
             if current_link_state
                 .is_some_and(|links| !links.automatic_orbit_unit_ids.is_empty())
@@ -942,8 +990,14 @@ fn suppressions_to_preserve(
     current
 }
 
-fn sigint_unit_is_reviewable(sigint_unit: &sigint_unit::Model) -> bool {
+fn sigint_unit_is_reviewable(
+    sigint_unit: &sigint_unit::Model,
+    activity_scope: tui::UnitActivityScope,
+) -> bool {
     !sigint_unit.deleted
+        && activity_scope
+            .active()
+            .is_none_or(|active| sigint_unit.active == active)
 }
 
 fn accepted_link_is_current_match(
@@ -986,7 +1040,7 @@ fn current_automatic_link(
     .map(|(_, orbit_unit_id)| orbit_unit_id)
 }
 
-fn prepare_review_units(
+pub(super) fn prepare_review_units(
     units: &[sigint_unit::Model],
     matcher: &matching::TestLinkMatcher,
     link_mode: tui::LinkMode,
@@ -1159,6 +1213,7 @@ fn print_summary(summary: ReviewSummary, persist_summary: PersistSummary) {
 mod tests {
     use super::*;
     use crate::orbit::types::SourceUnit;
+    use crate::types::Mode;
     use sea_orm::{ActiveValue::Set, TransactionTrait};
     use serde_json::json;
 
@@ -1531,18 +1586,22 @@ mod tests {
         }
 
         let automatic_ids =
-            load_linkable_sigint_units(&db, tui::LinkMode::Automatic)
+            load_linkable_sigint_units(&db, true, tui::UnitActivityScope::Both)
                 .await
                 .unwrap()
                 .into_iter()
                 .map(|unit| unit.id)
                 .collect::<BTreeSet<_>>();
-        let manual_ids = load_linkable_sigint_units(&db, tui::LinkMode::Manual)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|unit| unit.id)
-            .collect::<BTreeSet<_>>();
+        let manual_ids = load_linkable_sigint_units(
+            &db,
+            false,
+            tui::UnitActivityScope::Both,
+        )
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|unit| unit.id)
+        .collect::<BTreeSet<_>>();
         assert!(automatic_ids.contains(&automatic_unit.id));
         assert!(!automatic_ids.contains(&manual_unit.id));
         assert!(automatic_ids.contains(&mixed_unit.id));
@@ -1570,6 +1629,7 @@ mod tests {
                 newly_matchable_unit.id,
                 inactive_matchable_unit.id,
             ],
+            tui::UnitActivityScope::Both,
             &matcher,
             &BTreeSet::new(),
         )

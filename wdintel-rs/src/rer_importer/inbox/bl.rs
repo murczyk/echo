@@ -1811,7 +1811,7 @@ pub async fn load_inbox_signal_profiles(
 
 pub async fn load_inbox_signal_groups(
     inbox_items: &Vec<(i64, InboxMessage)>,
-    txn: &DatabaseConnection,
+    env: &Env,
     is_admin: bool,
     skip_group_stats: bool,
 ) -> Result<Vec<SignalGroupEntry>, AppError> {
@@ -1823,7 +1823,7 @@ pub async fn load_inbox_signal_groups(
         .collect_vec();
     let data = collect_groups(
         callsigns,
-        txn,
+        env,
         is_admin,
         CollectGroupsOpts { skip_group_stats },
     )

@@ -1,5 +1,6 @@
 use super::{matching, persistence, test_link, tui, EchoEchelon};
 use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE, ORBIT_DRY_RUN_REPORT_TOP_LIMIT,
     ORBIT_TEST_LINK_UNITS_MAX_RATING, ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE,
 };
@@ -495,7 +496,7 @@ async fn persist_selections(
 ) -> anyhow::Result<Vec<LabelLinkAction>> {
     let mut actions = Vec::new();
     let batch_size = match link_mode {
-        tui::LinkMode::Automatic => 1,
+        tui::LinkMode::Automatic => ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
         tui::LinkMode::Manual => ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE,
     };
     for selections in selections.chunks(batch_size) {

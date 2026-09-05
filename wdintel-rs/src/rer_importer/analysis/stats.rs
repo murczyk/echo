@@ -2286,20 +2286,29 @@ pub async fn fetch_freqs_for_login(
                     &env.dbx,
                     master_keys,
                     None,
+                    None,
                 )
             },
         )
         .await;
     }
 
-    fetch_freqs_for_login_with_db(req, login_str, &env.dbx, master_keys, None)
-        .await
+    fetch_freqs_for_login_with_db(
+        req,
+        login_str,
+        &env.dbx,
+        master_keys,
+        None,
+        None,
+    )
+    .await
 }
 
 pub(super) async fn fetch_freqs_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     freshness_max_age_ms: u64,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
@@ -2310,12 +2319,21 @@ pub(super) async fn fetch_freqs_raw_with_db(
     if scopes.current.is_empty() {
         return Ok(Vec::new());
     }
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        Some(&scopes.current),
+    )
+    .await
+    .context(h!())?;
     fetch_freqs_for_login_with_db(
         &req.0,
         &login_value,
         db,
         master_keys,
         Some(&scopes),
+        units.as_ref(),
     )
     .await
 }
@@ -2326,6 +2344,7 @@ async fn fetch_freqs_for_login_with_db(
     db: &DatabaseConnection,
     master_keys: Vec<String>,
     analytics_scopes: Option<&AnalyticsFrequencyScopes>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Vec<AnalysisStatsFreq>, AppError> {
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
@@ -2337,13 +2356,14 @@ async fn fetch_freqs_for_login_with_db(
         freq: String,
         count: i64,
     }
-    let freqs_res = build_freqs_query(
+    let freqs_res = build_freqs_query_with_units(
         req,
         login_str,
         dt_since,
         dt_till,
         master_keys,
         analytics_scopes.map(|scopes| &scopes.current),
+        units,
     )?;
     // debug!(
     //     "> freqs_res: {}",
@@ -2532,6 +2552,7 @@ pub(super) async fn count_freqs_with_db(
     .await
 }
 
+#[cfg(test)]
 pub(super) fn build_freqs_query(
     req: &AnalysisStatsReq,
     login_str: &uuid::Uuid,
@@ -2540,7 +2561,7 @@ pub(super) fn build_freqs_query(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
-    Ok(build_freqs_filtered_query(
+    build_freqs_query_with_units(
         req,
         login_str,
         dt_since,
@@ -2548,6 +2569,26 @@ pub(super) fn build_freqs_query(
         master_keys,
         scope,
         None,
+    )
+}
+
+fn build_freqs_query_with_units(
+    req: &AnalysisStatsReq,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    Ok(build_freqs_filtered_query(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        units,
     )?
     .select_only()
     .column_as(
@@ -2721,6 +2762,7 @@ pub(super) async fn fetch_callsigns_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: &AnalyticsMessageIdScope,
 ) -> Result<Vec<AnalysisStatsCallsign>, AppError> {
@@ -2731,6 +2773,14 @@ pub(super) async fn fetch_callsigns_raw_with_db(
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        Some(scope),
+    )
+    .await
+    .context(h!())?;
     let callsigns_res = build_callsigns_filtered_query(
         &req.0,
         &login_value,
@@ -2738,7 +2788,7 @@ pub(super) async fn fetch_callsigns_raw_with_db(
         dt_till,
         master_keys,
         Some(scope),
-        None,
+        units.as_ref(),
     )?;
     let (mut callsigns_res, callsign_alias) =
         join_analytics_callsign_relation(callsigns_res, Some(scope));
@@ -2913,6 +2963,7 @@ pub(super) async fn fetch_metadata_stats_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     scope: &AnalyticsMessageIdScope,
 ) -> Result<MetadataStatsRsp, AppError> {
@@ -2920,8 +2971,23 @@ pub(super) async fn fetch_metadata_stats_raw_with_db(
         return Ok(empty_metadata_stats());
     }
     let login = login_id_from_identity(user)?;
-    fetch_metadata_stats_with_db(&req.0, &login, db, master_keys, Some(scope))
-        .await
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
+        Some(scope),
+    )
+    .await
+    .context(h!())?;
+    fetch_metadata_stats_with_units(
+        &req.0,
+        &login,
+        db,
+        master_keys,
+        Some(scope),
+        units.as_ref(),
+    )
+    .await
 }
 
 fn empty_metadata_stats() -> MetadataStatsRsp {
@@ -2940,17 +3006,32 @@ pub(super) async fn fetch_metadata_stats_with_db(
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
 ) -> Result<MetadataStatsRsp, AppError> {
+    fetch_metadata_stats_with_units(req, login, db, master_keys, scope, None)
+        .await
+        .context(h!())
+        .map_err(AppError::from)
+}
+
+async fn fetch_metadata_stats_with_units(
+    req: &AnalysisStatsReq,
+    login: &uuid::Uuid,
+    db: &DatabaseConnection,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
+) -> Result<MetadataStatsRsp, AppError> {
     let req = Json(req.clone());
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
-    let messages_q = build_metadata_messages_query(
+    let messages_q = build_metadata_messages_query_with_units(
         &req,
         login,
         dt_since,
         dt_till,
         master_keys,
         scope,
+        units,
     )
     .context(h!())?;
 
@@ -3001,6 +3082,7 @@ pub(super) async fn fetch_metadata_stats_with_db(
     })
 }
 
+#[cfg(test)]
 fn build_metadata_messages_query(
     req: &Json<AnalysisStatsReq>,
     login_str: &uuid::Uuid,
@@ -3008,6 +3090,26 @@ fn build_metadata_messages_query(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    build_metadata_messages_query_with_units(
+        req,
+        login_str,
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        None,
+    )
+}
+
+fn build_metadata_messages_query_with_units(
+    req: &Json<AnalysisStatsReq>,
+    login_str: &uuid::Uuid,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+    master_keys: Vec<String>,
+    scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
     let messages_q = build_join_for_sigint_inbox_item()
         .filter(signal_message::Column::Deleted.eq(false))
@@ -3022,7 +3124,7 @@ fn build_metadata_messages_query(
         login_str,
         master_keys,
         scope,
-        None,
+        units,
         false,
     )
 }
@@ -3516,6 +3618,7 @@ pub(super) async fn fetch_tags_raw_with_db(
     req: &Json<AnalysisStatsReq>,
     user: &Identity,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
     scope: &AnalyticsMessageIdScope,
@@ -3523,16 +3626,60 @@ pub(super) async fn fetch_tags_raw_with_db(
     if scope.is_empty() {
         return Ok(Vec::new());
     }
-    let login_value = login_id_from_identity(user)?;
-    fetch_tags_for_login_with_db(
-        &req.0,
-        &login_value,
-        db,
-        master_keys,
-        Some(tag_access),
+    let login = login_id_from_identity(user).context(h!())?;
+    let units = resolve_analysis_unit_filters_for_analytics(
+        source_db,
+        &req.selected_units,
+        req.units_exact_match_only,
         Some(scope),
     )
     .await
+    .context(h!())?;
+    let since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
+    let till = dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let mut without_units = req.0.clone();
+    without_units.selected_units = None;
+    without_units.selected_unit_ids = None;
+    let query = build_tags_analytics_filtered_query_with_scope(
+        &without_units,
+        &login,
+        &tag_access.accessible_tag_ids,
+        &tag_access.unit_login_ids,
+        since,
+        till,
+        master_keys,
+        Some(scope),
+    )
+    .context(h!())?;
+    let rows = apply_analysis_unit_filters(
+        query,
+        &req.selected_units,
+        &req.selected_unit_ids,
+        &req.units_exact_match_only,
+        since,
+        till,
+        Some(scope),
+        units.as_ref(),
+    )
+    .context(h!())?
+    .select_only()
+    .column(sigint_inbox_item_tag::Column::TagId)
+    .column_as(
+        Expr::cust(r#"COUNT(DISTINCT "signal_message"."id")"#),
+        "count",
+    )
+    .group_by(sigint_inbox_item_tag::Column::TagId)
+    .into_model::<TagsRes>()
+    .all(db)
+    .await
+    .context(h!())?;
+    Ok(rows
+        .into_iter()
+        .map(|row| AnalysisStatsTag {
+            tag_id: row.tag_id,
+            count: row.count,
+        })
+        .collect())
 }
 
 pub async fn count_tags(
