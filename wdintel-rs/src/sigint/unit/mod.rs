@@ -2681,6 +2681,24 @@ mod tests {
     }
 
     #[test]
+    fn generated_unit_names_keep_echelon_value_matching_other() {
+        let mut hierarchy = [""; 14];
+        hierarchy[crate::orbit::EchoEchelon::Other.index()] = "1 р";
+        hierarchy[crate::orbit::EchoEchelon::Company.index()] = "1 р";
+
+        assert_eq!(unit_name_from_hierarchy(hierarchy), "1 р");
+    }
+
+    #[test]
+    fn generated_unit_names_keep_echelon_containing_other_value() {
+        let mut hierarchy = [""; 14];
+        hierarchy[crate::orbit::EchoEchelon::Other.index()] = "1";
+        hierarchy[crate::orbit::EchoEchelon::Company.index()] = "1 р";
+
+        assert_eq!(unit_name_from_hierarchy(hierarchy), "1 р");
+    }
+
+    #[test]
     fn generated_unit_names_exclude_blacklisted_army_and_corps_values() {
         for echelon in [
             SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX,

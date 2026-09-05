@@ -279,6 +279,28 @@ mod tests {
     }
 
     #[test]
+    fn keeps_company_value_matching_other_in_generated_name() {
+        let mut unit = sigint_unit("custom name");
+        unit.other = "1 р".to_string();
+        unit.company = "1 р".to_string();
+
+        let change = proposed_name_change(unit).unwrap();
+
+        assert_eq!(change.generated_name, "1 р");
+    }
+
+    #[test]
+    fn keeps_company_when_other_is_part_of_its_value() {
+        let mut unit = sigint_unit("custom name");
+        unit.other = "1".to_string();
+        unit.company = "1 р".to_string();
+
+        let change = proposed_name_change(unit).unwrap();
+
+        assert_eq!(change.generated_name, "1 р");
+    }
+
+    #[test]
     fn filters_higher_echelon_labels_stored_in_legacy_lower_fields() {
         let mut unit = sigint_unit("custom name");
         unit.battalion = "1 мсб".to_string();
@@ -310,7 +332,8 @@ mod tests {
         let unit = crate::functest::tests::mk_sigint_unit(
             &env.dbx,
             sigint_unit::ActiveModel {
-                company: Set("GeneratedToken".to_string()),
+                other: Set("Generated".to_string()),
+                company: Set("Generated Token".to_string()),
                 name: Set("Custom name".to_string()),
                 is_inconsistent: Set(true),
                 ..Default::default()
@@ -345,15 +368,16 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(unit.name, "GeneratedToken");
-        assert_eq!(unit.company, "GeneratedToken");
+        assert_eq!(unit.name, "Generated Token");
+        assert_eq!(unit.other, "Generated");
+        assert_eq!(unit.company, "Generated Token");
         assert!(unit.is_inconsistent);
         let search_matches = env
             .dbx
             .query_one_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DatabaseBackend::Postgres,
                 "select search_tsv @@ plainto_tsquery('russian', $1) as matches from sigint_unit where id = $2",
-                ["GeneratedToken".into(), unit.id.into()],
+                ["Generated Token".into(), unit.id.into()],
             ))
             .await
             .unwrap()
@@ -383,7 +407,8 @@ mod tests {
         .unwrap();
         let unit_id = unit.id;
         let mut unit = unit.into_active_model();
-        unit.company = Set("ChangedToken".to_string());
+        unit.other = Set("Changed".to_string());
+        unit.company = Set("Changed Token".to_string());
         unit.active = Set(false);
         unit.update(&env.dbx).await.unwrap();
 
@@ -422,15 +447,14 @@ mod tests {
 
         assert_eq!(persisted.changed, 1);
         assert_eq!(persisted.stale, 0);
-        assert_eq!(
-            sigint_unit::Entity::find_by_id(unit_id)
-                .one(&env.dbx)
-                .await
-                .unwrap()
-                .unwrap()
-                .name,
-            "ChangedToken"
-        );
+        let unit = sigint_unit::Entity::find_by_id(unit_id)
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(unit.name, "Changed Token");
+        assert_eq!(unit.other, "Changed");
+        assert_eq!(unit.company, "Changed Token");
     }
 
     fn sigint_unit(name: &str) -> sigint_unit::Model {
