@@ -49,6 +49,30 @@ struct CachedOrbitMatcher {
     matcher: matching::TestLinkMatcher,
 }
 
+pub(crate) struct UnitTextSigintResolver {
+    inner: unparsed_units::UnitTextSigintResolver,
+}
+
+impl UnitTextSigintResolver {
+    pub(crate) async fn load<C>(db: &C) -> anyhow::Result<Self>
+    where
+        C: ConnectionTrait,
+    {
+        Ok(Self {
+            inner: unparsed_units::UnitTextSigintResolver::load(db)
+                .await
+                .c(h!())?,
+        })
+    }
+
+    pub(crate) fn resolve(
+        &self,
+        unit_txt: &str,
+    ) -> anyhow::Result<Option<i64>> {
+        self.inner.resolve(unit_txt).c(h!())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum EchoEchelon {
     Other,

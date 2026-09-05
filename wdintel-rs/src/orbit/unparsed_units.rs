@@ -17,6 +17,56 @@ use uuid::Uuid;
 
 type LinkInventory = BTreeMap<Uuid, BTreeSet<i64>>;
 
+pub(super) struct UnitTextSigintResolver {
+    matcher: matching::TestLinkMatcher,
+    link_inventory: LinkInventory,
+}
+
+impl UnitTextSigintResolver {
+    pub(super) async fn load<C>(db: &C) -> anyhow::Result<Self>
+    where
+        C: ConnectionTrait,
+    {
+        let orbit_units = persistence::load_latest_synced_source_units(db)
+            .await
+            .c(h!())?;
+        Ok(Self {
+            matcher: matching::TestLinkMatcher::from_units(orbit_units),
+            link_inventory: load_link_inventory(db).await.c(h!())?,
+        })
+    }
+
+    pub(super) fn resolve(
+        &self,
+        unit_txt: &str,
+    ) -> anyhow::Result<Option<i64>> {
+        let Some(review_unit) = prepare_review_unit(
+            1,
+            unit_txt,
+            &self.matcher,
+            &self.link_inventory,
+            tui::LinkMode::Automatic,
+        )
+        .c(h!())?
+        else {
+            return Ok(None);
+        };
+        let Some((_, orbit_unit_id)) =
+            test_link::automatically_approved_link(&review_unit)
+        else {
+            return Ok(None);
+        };
+        let Some(sigint_unit_ids) = self.link_inventory.get(&orbit_unit_id)
+        else {
+            return Ok(None);
+        };
+        Ok(sigint_unit_ids
+            .first()
+            .copied()
+            .filter(|_| sigint_unit_ids.len() == 1))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum UnparsedBlocker {
     ParserRejected,
