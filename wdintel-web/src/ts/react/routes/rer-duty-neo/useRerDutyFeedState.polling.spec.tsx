@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
 import { DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS } from './dutyFeedRequestDeadline';
+import { HttpRequestError } from '../../services/api/client';
+import { AUTH_UNAUTHORIZED_EVENT } from '../../auth-redirect';
 import {
   createDutyFeedStateFixture,
   getDutyApiMocks,
@@ -37,6 +39,42 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
   });
 
   afterEach(fixture.cleanup);
+
+  it('stops timer and recovery polls after the session is rejected', async () => {
+    await mountLoadedFeed();
+    hoisted.fetchInboxCount.mockRejectedValue(new HttpRequestError(401, 'Unauthenticated'));
+    await startPoll();
+    const countCalls = hoisted.fetchInboxCount.mock.calls.length;
+    expect(countCalls).toBeGreaterThan(0);
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+      window.dispatchEvent(new Event('online'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(countCalls);
+  });
+
+  it('ignores late poll responses after another request rejects the session', async () => {
+    const { apiRef } = await mountLoadedFeed();
+    const pendingCount = deferred<{ quantity: number; firstElementTs: null }>();
+    hoisted.fetchInboxCount.mockReturnValueOnce(pendingCount.promise);
+    await startPoll();
+    const unreadCount = apiRef.current!.messageFeeds[0].unreadCount;
+    const countCalls = hoisted.fetchInboxCount.mock.calls.length;
+
+    await act(async () => {
+      window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+      pendingCount.resolve({ quantity: 99, firstElementTs: null });
+      await flushMicrotasks();
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(unreadCount);
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledTimes(countCalls);
+  });
 
   // Regression: https://github.com/echoua/echo/pull/3331
   it('keeps a captured preview current after auto-follow advances the unread cursor', async () => {
