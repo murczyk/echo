@@ -232,9 +232,7 @@ async fn ensure_group(
 ) -> anyhow::Result<String> {
     let echo_id = mk_echo_id(group.id);
 
-    let group_master_key = group
-        .source_signal_group_id
-        .or(group.source_whatsapp_group_jid);
+    let group_master_key = source_group_key(&group);
 
     let keys = if let Some(master_key) = &group_master_key {
         vec![echo_id.clone(), master_key.clone()]
@@ -308,6 +306,18 @@ async fn ensure_group(
         )
         .await
         .c(h!())?
+    } else if let (Some(group_master_key), Some(datasource_group_by_echo_id)) =
+        (&group_master_key, datasource_group_by_echo_id)
+    {
+        move_datasource_group_to_source_group(
+            txn,
+            datasource_group_by_echo_id,
+            group_master_key,
+            signal_group_by_master_key,
+            &group.name,
+        )
+        .await
+        .c(h!())?
     } else if let Some(datasource_group_by_echo_id) =
         datasource_group_by_echo_id
     {
@@ -351,6 +361,74 @@ async fn ensure_group(
     };
 
     Ok(result.group_master_key)
+}
+
+fn source_group_key(group: &types::Group) -> Option<String> {
+    group
+        .source_signal_group_id
+        .as_deref()
+        .and_then(non_empty_source_key)
+        .or_else(|| {
+            group
+                .source_whatsapp_group_jid
+                .as_deref()
+                .and_then(non_empty_source_key)
+        })
+        .map(str::to_owned)
+}
+
+fn non_empty_source_key(key: &str) -> Option<&str> {
+    let key = key.trim();
+    (!key.is_empty()).then_some(key)
+}
+
+async fn move_datasource_group_to_source_group(
+    txn: &DatabaseTransaction,
+    model: &datasource_group::Model,
+    group_master_key: &str,
+    signal_group: Option<&signal_group::Model>,
+    group_name: &str,
+) -> anyhow::Result<datasource_group::Model> {
+    let signal_group = ensure_source_signal_group(
+        txn,
+        model.datasource_id,
+        group_master_key,
+        signal_group,
+        group_name,
+    )
+    .await
+    .c(h!())?;
+
+    let mut model = model.clone().into_active_model();
+    model.group_master_key = Set(signal_group.master_key);
+    model.deleted = Set(false);
+    model.name = Set(group_name.to_string());
+    model.last_sync_at = Set(Utc::now().naive_utc());
+    model.update(txn).await.c(h!())
+}
+
+async fn ensure_source_signal_group(
+    txn: &DatabaseTransaction,
+    datasource_id: i64,
+    group_master_key: &str,
+    signal_group: Option<&signal_group::Model>,
+    group_name: &str,
+) -> anyhow::Result<signal_group::Model> {
+    if let Some(signal_group) = signal_group {
+        return sync_signal_group(txn, datasource_id, signal_group, group_name)
+            .await
+            .c(h!());
+    }
+
+    signal_group::ActiveModel {
+        master_key: Set(group_master_key.to_string()),
+        name: Set(Some(group_name.to_string())),
+        datasource_id: Set(Some(datasource_id)),
+        ..Default::default()
+    }
+    .insert(txn)
+    .await
+    .c(h!())
 }
 
 async fn sync_datasource_group(
@@ -445,4 +523,125 @@ async fn insert_datasource_group(
 
 fn mk_echo_id(id: String) -> String {
     format!("echo.{id}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::functest::tests::{
+        cleanup, mk_datasource, mk_datasource_group, mk_signal_group,
+    };
+    use serial_test::serial;
+
+    #[test]
+    fn source_group_key_ignores_blank_values() {
+        let group = types::Group {
+            id: "operator-group".to_string(),
+            name: "BBC NEWS".to_string(),
+            source_signal_group_id: Some(" ".to_string()),
+            source_whatsapp_group_jid: Some(
+                "120363419907122319@g.us".to_string(),
+            ),
+        };
+
+        assert_eq!(
+            source_group_key(&group).as_deref(),
+            Some("120363419907122319@g.us")
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ensure_group_moves_existing_echo_mapping_to_source_group() {
+        let env = cleanup().await.unwrap();
+        let txn = env.dbx.begin().await.unwrap();
+        let group_name = "BBC NEWS";
+        let source_group_key = "120363419907122319@g.us";
+        let operator_group_id = "019ebab3-d6e8-7ff6-b662-004ee7394520";
+        let echo_group_key = mk_echo_id(operator_group_id.to_string());
+        let messenger_datasource = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                kind: Set("whatsapp".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let operator_datasource = mk_datasource(
+            &txn,
+            datasource::ActiveModel {
+                kind: Set("echo_operator".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let source_signal_group = mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(source_group_key.to_string()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(messenger_datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        mk_signal_group(
+            &txn,
+            signal_group::ActiveModel {
+                master_key: Set(echo_group_key.clone()),
+                name: Set(Some(group_name.to_string())),
+                datasource_id: Set(Some(operator_datasource.id)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let fallback_datasource_group = mk_datasource_group(
+            &txn,
+            datasource_group::ActiveModel {
+                datasource_id: Set(operator_datasource.id),
+                group_master_key: Set(echo_group_key.clone()),
+                name: Set(group_name.to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let resolved_group_key = ensure_group(
+            operator_datasource.id,
+            &txn,
+            types::Group {
+                id: operator_group_id.to_string(),
+                name: group_name.to_string(),
+                source_signal_group_id: Some("".to_string()),
+                source_whatsapp_group_jid: Some(source_group_key.to_string()),
+            },
+        )
+        .await
+        .unwrap();
+        let datasource_group =
+            datasource_group::Entity::find_by_id(fallback_datasource_group.id)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+        let source_signal_group =
+            signal_group::Entity::find_by_id(source_signal_group.master_key)
+                .one(&txn)
+                .await
+                .unwrap()
+                .unwrap();
+
+        assert_eq!(resolved_group_key, source_group_key);
+        assert_eq!(datasource_group.group_master_key, source_group_key);
+        assert_eq!(datasource_group.datasource_id, operator_datasource.id);
+        assert_eq!(
+            source_signal_group.datasource_id,
+            Some(messenger_datasource.id)
+        );
+    }
 }
