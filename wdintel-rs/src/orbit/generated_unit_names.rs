@@ -279,6 +279,19 @@ mod tests {
     }
 
     #[test]
+    fn filters_higher_echelon_labels_stored_in_legacy_lower_fields() {
+        let mut unit = sigint_unit("custom name");
+        unit.battalion = "1 мсб".to_string();
+        unit.regiment = "ТН \"Шебекино\"".to_string();
+        unit.division = "УВ \"Бєлгород\"".to_string();
+        unit.army = "УВ \"Север\"".to_string();
+
+        let change = proposed_name_change(unit).unwrap();
+
+        assert_eq!(change.generated_name, "1 мсб");
+    }
+
+    #[test]
     fn skips_empty_generated_names() {
         assert!(proposed_name_change(sigint_unit("current name")).is_none());
         assert!(proposed_name_change(sigint_unit("")).is_none());

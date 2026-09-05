@@ -111,8 +111,7 @@ fn unit_name_from_hierarchy(hierarchy: [&str; 14]) -> String {
                 + 1,
         )
         .filter(|(echelon, part)| {
-            !part.is_empty()
-                && !unit_name_echelon_is_blacklisted(*echelon, part)
+            !part.is_empty() && !unit_name_part_is_blacklisted(*echelon, part)
         })
         .map(|(_, part)| part)
         .collect::<Vec<_>>()
@@ -163,6 +162,26 @@ pub(crate) fn unit_name_echelon_is_blacklisted(
         }
         _ => return false,
     };
+    unit_name_value_is_blacklisted(value, blacklist_terms)
+}
+
+fn unit_name_part_is_blacklisted(echelon: usize, value: &str) -> bool {
+    unit_name_echelon_is_blacklisted(echelon, value)
+        || echelon != SIGINT_UNIT_NAME_CORPS_ECHELON_INDEX
+            && echelon != SIGINT_UNIT_NAME_ARMY_ECHELON_INDEX
+            && (unit_name_value_is_blacklisted(
+                value,
+                SIGINT_UNIT_NAME_CORPS_BLACKLIST_TERMS,
+            ) || unit_name_value_is_blacklisted(
+                value,
+                SIGINT_UNIT_NAME_ARMY_BLACKLIST_TERMS,
+            ))
+}
+
+fn unit_name_value_is_blacklisted(
+    value: &str,
+    blacklist_terms: &[&str],
+) -> bool {
     let value = value.to_lowercase();
     let value_words = value
         .split(|character: char| !character.is_alphanumeric())
