@@ -1074,20 +1074,34 @@ async fn fetch_analytics_tag_count_for_req(
         &tag_access.unit_login_ids,
         crate::utils::dt_from_millis(req.since_date_inclusive_ms)?,
         crate::utils::dt_from_millis(req.till_date_noninclusive_ms)?,
-        master_keys,
+        master_keys.clone(),
     )?;
     let statement = query.build(DbBackend::Postgres);
     assert!(statement.sql.find("COUNT(DISTINCT").is_some());
     assert!(statement.sql.find("owner_organism_id").is_none());
     assert!(statement.sql.find("FROM \"login\"").is_none());
     assert!(statement.sql.find("JOIN \"login\"").is_none());
-    Ok(query
+    let expected = query
         .into_model::<AnalyticsCountQueryResult>()
         .one(&env.dbx)
         .await
         .context(h!())?
         .map(|result| result.count)
-        .unwrap_or(0))
+        .unwrap_or(0);
+    let actual = stats::count_tags_analytics_with_db(
+        &Json(req.clone()),
+        &login_id,
+        &env.dbx,
+        &env.dbx,
+        master_keys,
+        &tag_access,
+        Some(&AnalyticsMessageIdScope::From(0)),
+        None,
+    )
+    .await
+    .context(h!())?;
+    assert_eq!(actual, expected);
+    Ok(actual)
 }
 
 async fn fetch_network_counts_for_req(
@@ -4395,6 +4409,11 @@ async fn rer_analysis_metadata_stats_use_ids_and_text_names() {
 async fn rer_analysis_units_exact_and_undefined_filters_work() {
     let fixture = mk_aor_filter_fixture().await.unwrap();
     let db = &fixture.env.dbx;
+    db.execute_unprepared(
+        "CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived; \
+         CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS \
+         SELECT sigint_inbox_item_id, sigint_network_id FROM sigint_inbox_item_network",
+    ).await.unwrap();
     let etalon_unit = mk_sigint_unit(
         db,
         sigint_unit::ActiveModel {
@@ -4512,6 +4531,12 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         BTreeMap::from([(unit_tag.id, 1)])
     );
 
+    assert_eq!(
+        fetch_analytics_tag_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
     req.units_exact_match_only = Some(true);
     assert_eq!(
         fetch_selected_count_for_req(&fixture.env, &req)
@@ -4528,6 +4553,12 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         .unwrap()
         .is_empty());
 
+    assert_eq!(
+        fetch_analytics_tag_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        0
+    );
     let mut req = analysis_stats_req_for_aor_fixture(&fixture);
     req.selected_units = Some(vec!["Etalon Unit".to_string()]);
     req.units_exact_match_only = Some(true);
@@ -4584,6 +4615,12 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
         BTreeMap::from([("944.1".to_string(), 1), ("944.3".to_string(), 1),])
     );
 
+    assert_eq!(
+        fetch_analytics_tag_count_for_req(&fixture.env, &req)
+            .await
+            .unwrap(),
+        1
+    );
     let identity = mk_test_identity().await.unwrap();
     let login_id = test_identity_login_id(&fixture.env, &identity).await;
     let inbox_req = InboxMessagesReq {
@@ -4615,11 +4652,6 @@ async fn rer_analysis_units_exact_and_undefined_filters_work() {
     assert!(item_ids.contains(&msg_unknown.id));
     assert!(!item_ids.contains(&msg_header_only.id));
 
-    db.execute_unprepared(
-        "CREATE SCHEMA IF NOT EXISTS echo_clickhouse_derived; \
-         CREATE OR REPLACE VIEW echo_clickhouse_derived.message_network_link AS \
-         SELECT sigint_inbox_item_id, sigint_network_id FROM sigint_inbox_item_network",
-    ).await.unwrap();
     for (selected, denied, ids, exact) in [
         (Some("Header Unit"), None, None, false),
         (Some("Header Unit"), None, None, true),

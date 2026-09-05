@@ -8986,11 +8986,13 @@ async fn query_count_stats_catalog_dimensions(
     .context(h!())?;
     let tags = stats::count_tags_analytics_with_db(
         req,
-        user,
+        &login_id_from_identity(user).context(h!())?,
         db,
+        &env.dbx,
         master_keys.clone(),
         analytics_tag_access,
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -9400,10 +9402,10 @@ async fn tag_stats_count(
             .c(h!())?;
     let analytics_tag_access =
         resolve_analytics_tag_access_if_enabled(&env, &req, &login).await?;
+    let analytics_source_db = env.dbx.clone();
     let analytics_master_keys = master_keys.clone();
     let analytics_req = &req;
     let postgres_req = &req;
-    let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
     let analytics_freshness_max_age_ms = env
@@ -9425,11 +9427,13 @@ async fn tag_stats_count(
             .await?;
             stats::count_tags_analytics_with_db(
                 analytics_req,
-                analytics_user,
+                &login,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },

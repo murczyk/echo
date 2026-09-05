@@ -6,6 +6,7 @@ import type { Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxMessage, InboxMessagesRsp } from '../../../../Bindings';
 import { minimalInboxMessage } from './inbox-message-mocks';
+import { DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS } from './dutyFeedRequestDeadline';
 import {
   createDutyFeedStateFixture,
   getDutyApiMocks,
@@ -446,7 +447,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(8999);
+      await vi.advanceTimersByTimeAsync(DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS - 1_001);
       await flushMicrotasks();
     });
     expect(tailSignal?.aborted).toBe(false);
@@ -790,7 +791,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     ).toHaveLength(1);
   });
 
-  it('lets healthy feeds continue while a stalled count request keeps its hard deadline', async () => {
+  it('lets healthy feeds continue while a stalled count request keeps its configured hard deadline', async () => {
     window.history.replaceState(
       {},
       '',
@@ -887,7 +888,21 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     );
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(9000);
+      await vi.advanceTimersByTimeAsync(9_000);
+      await flushMicrotasks();
+    });
+
+    expect(stalledSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS - 10_000 - 1);
+      await flushMicrotasks();
+    });
+
+    expect(stalledSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
       await flushMicrotasks();
     });
 
