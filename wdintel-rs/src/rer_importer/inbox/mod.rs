@@ -5834,6 +5834,18 @@ mod tests {
             nolimit: Some(true),
             ..Default::default()
         };
+        let tail_query = build_postgres_fresh_tail_inbox_digest_query(
+            &login.id,
+            &env,
+            &req,
+            now - Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+        let tail_digest = query_inbox_digest(env.dbx.clone(), tail_query)
+            .await
+            .unwrap();
+        assert_eq!(tail_digest, (2, first.timestamp));
         let tail = load_postgres_fresh_tail_inbox_candidates(
             &env.dbx,
             &login.id,
@@ -5869,6 +5881,101 @@ mod tests {
             &vec![login.id],
             &env,
             &req,
+            &candidates,
+            &mut InboxReadDiagnostics::new(None),
+        )
+        .await
+        .unwrap()
+        .is_none());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn hybrid_inbox_preserves_messages_without_inbox_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let first = seed_message_with_media(&env, &group, None, "with-inbox")
+            .await
+            .unwrap();
+        let second =
+            seed_message_with_media(&env, &group, None, "without-inbox")
+                .await
+                .unwrap();
+        sigint_inbox_item::Entity::delete_by_id(second.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Timestamp,
+                Expr::value(first.timestamp),
+            )
+            .filter(signal_message::Column::Id.eq(second.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let candidates = vec![second.id, first.id];
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSTimestamp,
+        ] {
+            for load_latest in [false, true] {
+                if sort_by == InboxMessagesSortBy::IMSDatetime && !load_latest {
+                    continue;
+                }
+                let req = InboxMessagesReq {
+                    sort_by: Some(sort_by),
+                    load_latest: Some(load_latest),
+                    since_date_inclusive_ms: (sort_by
+                        == InboxMessagesSortBy::IMSTimestamp)
+                        .then_some(
+                            first
+                                .timestamp
+                                .unwrap()
+                                .and_utc()
+                                .timestamp_millis()
+                                - 1000,
+                        ),
+                    nolimit: Some(true),
+                    ..Default::default()
+                };
+                let primary =
+                    get_inbox_messages(&login.id, &vec![login.id], &env, &req)
+                        .await
+                        .unwrap();
+                assert_eq!(primary.len(), 2);
+                let hybrid = hydrate_hybrid_inbox_candidates(
+                    &login.id,
+                    &vec![login.id],
+                    &env,
+                    &req,
+                    &candidates,
+                    &mut InboxReadDiagnostics::new(None),
+                )
+                .await
+                .unwrap()
+                .expect("authorized messages without inbox rows must survive ordering");
+                assert_eq!(
+                    serde_json::to_value(hybrid).unwrap(),
+                    serde_json::to_value(primary).unwrap()
+                );
+            }
+        }
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(second.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        assert!(hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &InboxMessagesReq {
+                load_latest: Some(true),
+                ..Default::default()
+            },
             &candidates,
             &mut InboxReadDiagnostics::new(None),
         )

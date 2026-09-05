@@ -58,6 +58,13 @@ pub(crate) async fn run(
         route,
         reason
     );
+    let digest = tokio::time::timeout(
+        core::time::Duration::from_millis(ANALYTICS_VERIFY_TIMEOUT_MS),
+        verify_digest(&login, env, &req),
+    )
+    .await
+    .c(h!())?
+    .c(h!())?;
     println!(
         "{}",
         serde_json::json!({
@@ -67,9 +74,35 @@ pub(crate) async fn run(
             "rows": result.as_array().map(Vec::len),
             "request_sha256": sha256::digest(payload),
             "result_sha256": sha256::digest(result.to_string()),
+            "digest_matched": true,
+            "digest_count": digest.0,
         })
     );
     Ok(())
+}
+
+async fn verify_digest(
+    login: &Uuid,
+    env: Arc<Env>,
+    req: &InboxMessagesReq,
+) -> anyhow::Result<InboxDigest> {
+    let query = build_inbox_digest_query(login, &env, req).await.c(h!())?;
+    let before = query_inbox_digest(env.dbx.clone(), query.clone())
+        .await
+        .c(h!())?;
+    let result = query_inbox_digest_with_analytics(
+        *login,
+        Data::from(env.clone()),
+        req.clone(),
+        false,
+        query.clone(),
+    )
+    .await
+    .c(h!())?;
+    let after = query_inbox_digest(env.dbx.clone(), query).await.c(h!())?;
+    anyhow::ensure!(before == after, "primary digest changed during replay");
+    anyhow::ensure!(result == before, "primary/gateway digest mismatch");
+    Ok(result)
 }
 
 async fn primary_result(

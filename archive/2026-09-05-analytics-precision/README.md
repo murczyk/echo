@@ -21,8 +21,11 @@ upstream update or the `codex/string-json-path-pushdown` branch.
 
 HTTP schemas, primary authorization, hydration/revalidation, complete PostgreSQL
 fallback, and the already-shipped application routing remain intact. Imported
-foreign-table schemas are unchanged. The suspected missing-inbox-row ordering
-issue remains untouched. No new upstream PR was submitted.
+foreign-table schemas are unchanged. A restored-database fixture demonstrated
+that the ordering inner join dropped authorized, nondeleted messages without an
+inbox row. Ordering now uses the same left join as primary hydration. The fresh-tail
+count query also projects `created_at` through its indexed lateral query, fixing
+the missing-column failure. No new upstream PR was submitted.
 
 ## Verification before promotion
 
@@ -41,7 +44,8 @@ neighbors, ID tie-breaking, both cursor directions, inclusive bounds, initial/la
 reads, pages, casts, and inserts. Timestamp/timestamptz session-zone conversions
 remain local where PostgreSQL semantics require them.
 
-Application functional fixtures pass: inbox 134, analysis 108, and group statistics
+Application fixture suites pass after the forward correction: inbox 135, analysis
+148, and group statistics
 52 (two existing ignored cases). These cover multiplicity, exclusions, deletion,
 CDC lag, backdated arrivals, exports and complete fallback. The operational log
 parser has three regressions protecting final-success and all-fallback counting.
@@ -50,6 +54,10 @@ frontend formatting, and the frontend build pass. The read-only verifier passes
 on the restored test database and rejects missing read-only settings and a
 required hybrid result on an unconfigured host. Existing startup configuration
 seeding is bypassed only for verification; normal startup is unchanged.
+The verifier additionally compares complete message digests against stable
+primary reads. Missing-inbox-row fixtures cover NULL ordering, timestamp ties,
+ascending/latest requests, complete hydration parity, and deleted-candidate
+revalidation. The fresh-tail fixture excludes historical arrivals from its count.
 
 The archived Pivnich dev sample was reused with exactly the original ID boundary
 28,980,000–28,982,000 and SHA256
