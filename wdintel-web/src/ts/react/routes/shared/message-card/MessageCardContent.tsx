@@ -44,9 +44,11 @@ import { renderLinkifiedText } from './message-card-linkify';
 import { MessageCardComments } from './MessageCardComments';
 import { MessageCardCallsignsSection } from './MessageCardCallsignsSection';
 import { MessageCardCoordinateAttachment } from './MessageCardCoordinateAttachment';
+import { MessageCardRawCoordinates } from './MessageCardRawCoordinates';
 import {
   hasCoordinatePreviewCandidate,
   resolveMessageCoordinatePreviewSummaryCount,
+  resolveUnpreviewableRawMessageCoordinates,
   type CoordinatePreviewPoint,
 } from './message-coordinate-preview';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
@@ -627,7 +629,8 @@ export function MessageCardMessageBody({
     images.length + videoPreviewSources.length + previewableDocuments.length;
 
   const showPointLinks = messageHasPalitraTag(msg, tagsMap);
-  const hasCoordinatePreview = hasCoordinatePreviewCandidate(msg, tagsMap);
+  const hasCoordinateMapPreview = hasCoordinatePreviewCandidate(msg, tagsMap);
+  const unpreviewableRawCoordinates = resolveUnpreviewableRawMessageCoordinates(msg);
   const coordinateSummaryCount = resolveMessageCoordinatePreviewSummaryCount(msg, tagsMap);
   const coordinateAttachmentCount =
     coordinatePreviewPoints.length > 0 ? coordinatePreviewPoints.length : coordinateSummaryCount;
@@ -804,8 +807,8 @@ export function MessageCardMessageBody({
     />
   ) : null;
 
-  const coordinateAttachment =
-    hasCoordinatePreview && isCoordinateVisible ? (
+  const coordinateMapAttachment =
+    hasCoordinateMapPreview && isCoordinateVisible ? (
       <MessageCardCoordinateAttachment
         msg={msg}
         tagsMap={tagsMap}
@@ -850,12 +853,15 @@ export function MessageCardMessageBody({
         <div className="message-card-main">
           {metadata ? <div className="message-card-main-section">{metadata}</div> : null}
           {messageTextSection}
+          {unpreviewableRawCoordinates != null ? (
+            <MessageCardRawCoordinates coordinates={unpreviewableRawCoordinates} />
+          ) : null}
           {attachmentCounters}
-          {isMediaVisible || (!collapseMediaPreviews && coordinateAttachment != null) ? (
+          {isMediaVisible || (!collapseMediaPreviews && coordinateMapAttachment != null) ? (
             <MessageCardImageList
               images={isMediaVisible ? images : []}
               videos={isMediaVisible ? videoAttachments : []}
-              trailingContent={!collapseMediaPreviews ? coordinateAttachment : null}
+              trailingContent={!collapseMediaPreviews ? coordinateMapAttachment : null}
               selectedImageIndex={selectedSummaryImageIndex >= 0 ? selectedSummaryImageIndex : null}
               selectedVideoIndex={selectedSummaryVideoIndex >= 0 ? selectedSummaryVideoIndex : null}
               onOpen={(index) => {
@@ -927,7 +933,7 @@ export function MessageCardMessageBody({
               onSelectedIdentityChange={setSelectedSummaryIdentity}
             />
           ) : null}
-          {collapseMediaPreviews ? coordinateAttachment : null}
+          {collapseMediaPreviews ? coordinateMapAttachment : null}
           {audioAttachments.length > 0 && isAudioVisible ? (
             <div className="mt-1 flex flex-col items-start w-full">
               {audioAttachments.map((attachment) => (

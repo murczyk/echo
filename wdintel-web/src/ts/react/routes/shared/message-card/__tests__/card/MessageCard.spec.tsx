@@ -2936,6 +2936,59 @@ describe('MessageCard', () => {
     expect(view.container.querySelector('.message-card-main .message-card-divider')).toBeNull();
   });
 
+  it.each([
+    { displayMode: 'duty' as const, collapseMediaPreviews: true, attachmentState: 'collapsed' },
+    { displayMode: 'duty' as const, collapseMediaPreviews: false, attachmentState: 'expanded' },
+    { displayMode: 'analysis' as const, collapseMediaPreviews: true, attachmentState: 'collapsed' },
+    {
+      displayMode: 'analysis' as const,
+      collapseMediaPreviews: false,
+      attachmentState: 'expanded',
+    },
+  ])(
+    'ECHO-3324 preserves raw coordinate fallback in $displayMode with $attachmentState attachments',
+    async ({ displayMode, collapseMediaPreviews }) => {
+      const rawCoordinates = '  somewhere near the ridge\nwith no map point  ';
+      const trimmedCoordinates = 'somewhere near the ridge\nwith no map point';
+      const fallback = await renderCard({
+        displayMode,
+        collapseMediaPreviews,
+        msg: buildMessage({ coords: rawCoordinates }),
+      });
+      rendered.push(fallback);
+
+      const fallbackRow = fallback.container.querySelector('[data-message-card-raw-coordinates]');
+      expect(fallbackRow?.textContent).toContain('Координати:');
+      expect(fallbackRow?.textContent).toContain(trimmedCoordinates);
+      expect(
+        fallback.container.querySelector('[data-message-card-header-row="true"]')?.textContent,
+      ).not.toContain(trimmedCoordinates);
+      expect(fallback.container.querySelector('[data-attachment-kind="coordinates"]')).toBeNull();
+      expect(fallback.container.querySelector('[data-coordinate-preview-root]')).toBeNull();
+
+      const preview = await renderCard({
+        displayMode,
+        collapseMediaPreviews,
+        msg: buildMessage({ coords: '49.1, 37.2' }),
+      });
+      rendered.push(preview);
+
+      expect(preview.container.querySelector('[data-message-card-raw-coordinates]')).toBeNull();
+      if (collapseMediaPreviews) {
+        const coordinateControl = preview.container.querySelector(
+          '[data-attachment-kind="coordinates"]',
+        );
+        if (!(coordinateControl instanceof HTMLButtonElement)) {
+          throw new Error('coordinate control not found');
+        }
+        await click(coordinateControl);
+      } else {
+        expect(preview.container.querySelector('.message-card-attachment-counters')).toBeNull();
+      }
+      expect(preview.container.querySelector('[data-coordinate-preview-root]')).not.toBeNull();
+    },
+  );
+
   it('only reserves a wide sidebar when tags or reports are visible', async () => {
     const withoutSidebar = await renderCard({
       tagsMap: {},

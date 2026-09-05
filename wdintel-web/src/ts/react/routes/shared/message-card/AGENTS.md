@@ -36,3 +36,7 @@ Rules:
 - Keep leaf MUI components when they provide the required theme, accessibility, or interaction behavior.
 - Use filled MUI icons for actionable controls by default; use outlined variants only where an established visual or semantic convention specifically requires them.
 - MUI buttons rendered as anchors within `.rer-duty` must locally override generic link-inheritance styles with higher-specificity `sx` when using a semantic contained color.
+
+Coordinate values do not belong in the MessageCard header metadata ribbon. Previewable coordinates belong to the attachment area; nonempty raw `msg.coords` values that cannot be previewed are rendered only as textual fallback in the main card content.
+
+Attachment category controls intentionally use the Figma-specified outlined media, document, coordinate, and speaker icons. This is an established exception to the default filled-action-icon rule; do not replace them with filled variants solely because the controls are actionable.

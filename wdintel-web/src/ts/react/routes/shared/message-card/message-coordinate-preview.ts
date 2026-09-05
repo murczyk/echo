@@ -420,6 +420,15 @@ export function resolveMessageCoordinatePreviewSummaryCount(
   return collectCoordinatePreviewEtalons(message, tagsMap).length;
 }
 
+export function resolveUnpreviewableRawMessageCoordinates(message: InboxMessage): string | null {
+  const rawCoordinates = message.coords?.trim() ?? '';
+  return rawCoordinates !== '' &&
+    resolveDirectCoordinatesFromCoordinateText(rawCoordinates).length === 0
+    ? rawCoordinates
+    : null;
+}
+
+/** True only when a message can mount a map preview, not when it has arbitrary coordinate metadata. */
 export function hasCoordinatePreviewCandidate(
   message: InboxMessage,
   tagsMap: Record<number, Tag> = {},
