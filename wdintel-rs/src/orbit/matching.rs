@@ -218,6 +218,13 @@ impl TestLinkMatcher {
         }
     }
 
+    pub fn matchable_units(&self) -> impl Iterator<Item = &SourceUnit> {
+        self.candidates
+            .iter()
+            .filter(|candidate| candidate.path.root_echelon.is_some())
+            .map(|candidate| &candidate.orbit_unit)
+    }
+
     pub fn best_matches(
         &self,
         sigint_hierarchy: &[(EchoEchelon, &str)],
@@ -272,6 +279,29 @@ impl TestLinkMatcher {
             })
             .map(|(candidate, rating)| (&candidate.orbit_unit, rating))
             .collect()
+    }
+
+    pub fn closest_matches<'a>(
+        &'a self,
+        sigint_unit: &sigint_unit::Model,
+    ) -> Vec<&'a SourceUnit> {
+        let Some((sigint_echelon, _)) = sigint_unit_identity(sigint_unit)
+        else {
+            return Vec::new();
+        };
+        let mut candidates = self
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                search_score_for_path(
+                    &candidate.path,
+                    sigint_unit,
+                    sigint_echelon,
+                )
+                .map(|score| (&candidate.orbit_unit, score))
+            })
+            .collect::<Vec<_>>();
+        closest_search_candidates(&mut candidates)
     }
 }
 
@@ -365,6 +395,7 @@ fn leading_number(value: &str) -> Option<&str> {
         .filter(|part| part.chars().all(|character| character.is_ascii_digit()))
 }
 
+#[cfg(test)]
 pub fn closest_orbit_matches<'a>(
     orbit_units: &'a [SourceUnit],
     sigint_unit: &sigint_unit::Model,
@@ -379,6 +410,12 @@ pub fn closest_orbit_matches<'a>(
                 .map(|score| (orbit_unit, score))
         })
         .collect::<Vec<_>>();
+    closest_search_candidates(&mut candidates)
+}
+
+fn closest_search_candidates<'a>(
+    candidates: &mut Vec<(&'a SourceUnit, MatchScore)>,
+) -> Vec<&'a SourceUnit> {
     candidates.sort_by_key(|(orbit_unit, score)| {
         (
             std::cmp::Reverse(score.matched_names),
@@ -391,7 +428,7 @@ pub fn closest_orbit_matches<'a>(
     };
     let best_quality = (best_score.matched_names, best_score.echelon_distance);
     candidates
-        .into_iter()
+        .drain(..)
         .take_while(|(_, score)| {
             (score.matched_names, score.echelon_distance) == best_quality
         })
@@ -399,12 +436,21 @@ pub fn closest_orbit_matches<'a>(
         .collect()
 }
 
+#[cfg(test)]
 fn search_score(
     orbit_unit: &SourceUnit,
     sigint_unit: &sigint_unit::Model,
     sigint_echelon: EchoEchelon,
 ) -> Option<MatchScore> {
     let path = comparable_path(orbit_unit).ok()?;
+    search_score_for_path(&path, sigint_unit, sigint_echelon)
+}
+
+fn search_score_for_path(
+    path: &ComparablePath,
+    sigint_unit: &sigint_unit::Model,
+    sigint_echelon: EchoEchelon,
+) -> Option<MatchScore> {
     let matched_names = sigint_hierarchy(sigint_unit)
         .into_iter()
         .filter(|(echelon, name)| {
@@ -1513,15 +1559,22 @@ mod tests {
             ],
         );
         let sigint_unit = echo_unit("", "1 мсб", "4 омсбр", "", "3 А");
+        let units = [second.clone(), weaker, first.clone()];
+        let expected = vec![first.unit_id, second.unit_id];
         assert_eq!(
-            closest_orbit_matches(
-                &[second.clone(), weaker, first.clone()],
-                &sigint_unit
-            )
-            .into_iter()
-            .map(|unit| unit.unit_id)
-            .collect::<Vec<_>>(),
-            vec![first.unit_id, second.unit_id]
+            closest_orbit_matches(&units, &sigint_unit)
+                .into_iter()
+                .map(|unit| unit.unit_id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            TestLinkMatcher::new(&units)
+                .closest_matches(&sigint_unit)
+                .into_iter()
+                .map(|unit| unit.unit_id)
+                .collect::<Vec<_>>(),
+            expected
         );
     }
 
