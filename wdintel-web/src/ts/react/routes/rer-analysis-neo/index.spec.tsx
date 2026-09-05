@@ -259,6 +259,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onEditSuccess?: (result: unknown) => Promise<void> | void;
     onDeleteSuccess?: (messageId: number) => Promise<void> | void;
     editTarget?: unknown;
+    editAsReport?: boolean;
     reportSource?: unknown;
   }) => {
     manageMessageDrawerPropsHistory.push(props);
@@ -297,6 +298,7 @@ function buildPage() {
     countsLoading: true,
     error: null,
     editorMessage: null,
+    editorEditAsReport: false,
     reportSource: null,
     editorSaveInFlight: false,
     filtersLoading: false,
@@ -959,6 +961,7 @@ describe('RerAnalysisNeoPage', () => {
         parentMessages: [{ id: 42, isAccessible: true, isDeleted: false }],
       } as never,
     };
+    page.editorEditAsReport = true;
     useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
 
     await act(async () => {
@@ -966,6 +969,7 @@ describe('RerAnalysisNeoPage', () => {
     });
 
     const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.editAsReport).toBe(true);
     expect(drawer?.onSubmitEdit).toBeUndefined();
     await act(async () => {
       await drawer?.onEditSuccess?.({ signal_message_id: 91 });
@@ -982,6 +986,40 @@ describe('RerAnalysisNeoPage', () => {
       message: 'Розвіддонесення успішно видалено.',
       severity: 'success',
     });
+
+    await act(async () => root.unmount());
+  });
+
+  it('routes a linked message with an accessible parent through regular message editing by default', async () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    const page = buildPage();
+    page.editorMessage = {
+      id: 91,
+      message: {
+        messageUid: 'linked-message-91',
+        parentMessages: [{ id: 42, isAccessible: true, isDeleted: false }],
+      } as never,
+    };
+    useRerAnalysisNeoPageMock.mockReturnValueOnce(page);
+
+    await act(async () => {
+      root.render(<RerAnalysisNeoPage />);
+    });
+
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.editAsReport).toBe(false);
+    expect(drawer?.onSubmitEdit).toBeTypeOf('function');
+    await act(async () => {
+      await drawer?.onSubmitEdit?.(91, { messageUid: 'linked-message-91-updated' });
+    });
+
+    expect(page.saveEditor).toHaveBeenCalledWith({
+      messageUid: 'linked-message-91-updated',
+    });
+    expect(page.reload).not.toHaveBeenCalled();
 
     await act(async () => root.unmount());
   });

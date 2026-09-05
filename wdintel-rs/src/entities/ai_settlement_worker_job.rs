@@ -6,27 +6,22 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize,
 )]
-#[sea_orm(table_name = "failed_inbox_unit")]
+#[sea_orm(table_name = "ai_settlement_worker_job")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i64,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub sigint_inbox_item_id: i64,
+    pub attempts: i32,
+    pub next_attempt_at: DateTime,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub last_error: Option<String>,
     pub created_at: DateTime,
-    pub deleted: bool,
-    pub is_bad_data: bool,
-    pub inbox_item_id: i64,
-    pub inbox_item_uuid: Option<Uuid>,
-    #[sea_orm(column_type = "Text")]
-    pub unit_txt: String,
-    pub deleted_at: Option<DateTime>,
-    #[sea_orm(column_type = "Text")]
-    pub note: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
         belongs_to = "super::sigint_inbox_item::Entity",
-        from = "Column::InboxItemId",
+        from = "Column::SigintInboxItemId",
         to = "super::sigint_inbox_item::Column::Id",
         on_update = "NoAction",
         on_delete = "Cascade"

@@ -1,14 +1,14 @@
 use super::{matching, persistence, tui};
 use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE,
-    ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MANUAL_PERSIST_BATCH_SIZE,
     ORBIT_TEST_LINK_UNITS_MATCH_PAGE_SIZE, ORBIT_TEST_LINK_UNITS_MAX_RATING,
 };
 use crate::entities::{
     orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
 };
-use crate::types::{Mode, ShortContext};
+use crate::types::{warn, Mode, ShortContext};
 use crate::{h, new_pg_pool_from_mode};
 use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, FromQueryResult, JoinType,
@@ -36,7 +36,7 @@ struct PersistenceMatcherCache {
     matcher: matching::TestLinkMatcher,
 }
 
-#[derive(FromQueryResult)]
+#[derive(Debug, FromQueryResult)]
 struct CurrentOrbitLink {
     sigint_unit_id: i64,
     orbit_unit_id: uuid::Uuid,
@@ -44,11 +44,12 @@ struct CurrentOrbitLink {
     orbit_unit_deleted: bool,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct CurrentOrbitLinkState {
     has_active_link: bool,
     has_active_manual_link: bool,
     automatic_orbit_unit_ids: BTreeSet<uuid::Uuid>,
+    links: Vec<CurrentOrbitLink>,
 }
 
 impl PersistSummary {
@@ -63,8 +64,25 @@ impl PersistSummary {
 pub(super) struct ReviewUnit {
     pub sigint_unit_id: i64,
     pub sigint_unit_name: String,
+    pub subject_kind: ReviewSubjectKind,
     pub echelons: Vec<String>,
     pub matches: Vec<ReviewMatch>,
+    pub would_automatically_resolve: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReviewSubjectKind {
+    SigintUnit,
+    UnparsedUnit,
+}
+
+impl ReviewSubjectKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::SigintUnit => "SIGINT unit",
+            Self::UnparsedUnit => "Unparsed unit",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +123,7 @@ pub(super) struct ReviewSession {
 }
 
 impl ReviewSession {
-    fn new(units: Vec<ReviewUnit>) -> Self {
+    pub(super) fn new(units: Vec<ReviewUnit>) -> Self {
         Self {
             units,
             current: 0,
@@ -240,20 +258,54 @@ impl ReviewSession {
     }
 }
 
-pub async fn run(mode: Mode) -> anyhow::Result<()> {
+pub(super) async fn run_automatic_with_database(
+    dbx: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<()> {
+    run_with_database(
+        dbx,
+        tui::LinkMode::Automatic,
+        tui::UnitActivityScope::Both,
+        true,
+    )
+    .await
+    .c(h!())
+}
+
+pub(super) async fn run(mode: Mode) -> anyhow::Result<()> {
     let Some(link_mode) = tui::prompt_link_mode().c(h!())? else {
         return Ok(());
     };
+    let activity_scope = if link_mode == tui::LinkMode::Automatic {
+        let Some(activity_scope) = tui::prompt_unit_activity_scope(
+            "Choose automatic SIGINT-to-ORBIT linking scope (↑/↓, Enter, Esc: quit)",
+        )
+        .c(h!())?
+        else {
+            return Ok(());
+        };
+        activity_scope
+    } else {
+        tui::UnitActivityScope::Both
+    };
     let dbx = new_pg_pool_from_mode(mode).await.c(h!())?;
-    run_with_database(&dbx, link_mode).await.c(h!())?;
-    Ok(())
+    run_with_database(&dbx, link_mode, activity_scope, false)
+        .await
+        .c(h!())
 }
 
 pub(super) async fn run_with_database(
     dbx: &sea_orm::DatabaseConnection,
     link_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
+    revalidate_existing_automatic_links: bool,
 ) -> anyhow::Result<()> {
-    let units = load_linkable_sigint_units(dbx, link_mode).await.c(h!())?;
+    let units = load_linkable_sigint_units(
+        dbx,
+        revalidate_existing_automatic_links,
+        activity_scope,
+    )
+    .await
+    .c(h!())?;
     let (orbit_sync, orbit_units) =
         persistence::load_latest_synced_source_units_with_sync(dbx)
             .await
@@ -277,6 +329,7 @@ pub(super) async fn run_with_database(
         &links,
         &reviewed_sigint_unit_ids,
         link_mode,
+        activity_scope,
         &suppressed_links,
         &mut matcher_cache,
     )
@@ -286,7 +339,7 @@ pub(super) async fn run_with_database(
     Ok(())
 }
 
-async fn load_suppressed_links<C>(
+pub(super) async fn load_suppressed_links<C>(
     dbx: &C,
 ) -> anyhow::Result<BTreeSet<(i64, uuid::Uuid)>>
 where
@@ -302,9 +355,10 @@ where
         .collect())
 }
 
-async fn load_linkable_sigint_units<C>(
+pub(super) async fn load_linkable_sigint_units<C>(
     dbx: &C,
-    link_mode: tui::LinkMode,
+    revalidate_existing_automatic_links: bool,
+    activity_scope: tui::UnitActivityScope,
 ) -> anyhow::Result<Vec<sigint_unit::Model>>
 where
     C: ConnectionTrait,
@@ -314,8 +368,8 @@ where
         r#"
 select sigint_unit.*
 from sigint_unit
-where sigint_unit.active = true
-    and sigint_unit.deleted = false
+where sigint_unit.deleted = false
+    and ($2::boolean is null or sigint_unit.active = $2)
     and not exists (
         select 1
         from orbit_unit_sigint_unit link
@@ -340,14 +394,17 @@ where sigint_unit.active = true
     )
 order by sigint_unit.id
 "#,
-        [matches!(link_mode, tui::LinkMode::Automatic).into()],
+        [
+            revalidate_existing_automatic_links.into(),
+            activity_scope.active().into(),
+        ],
     ))
     .all(dbx)
     .await
     .c(h!())
 }
 
-fn review_manually(
+pub(super) fn review_manually(
     review_units: Vec<ReviewUnit>,
 ) -> anyhow::Result<(ReviewSummary, Vec<(i64, uuid::Uuid)>)> {
     let mut session = ReviewSession::new(review_units);
@@ -358,7 +415,7 @@ fn review_manually(
     Ok((summary, session.accepted_links().to_vec()))
 }
 
-fn approve_automatic(
+pub(super) fn approve_automatic(
     review_units: Vec<ReviewUnit>,
 ) -> (ReviewSummary, Vec<(i64, uuid::Uuid)>) {
     let total = review_units.len();
@@ -377,7 +434,9 @@ fn approve_automatic(
     )
 }
 
-fn automatically_approved_link(unit: &ReviewUnit) -> Option<(i64, uuid::Uuid)> {
+pub(super) fn automatically_approved_link(
+    unit: &ReviewUnit,
+) -> Option<(i64, uuid::Uuid)> {
     let minimum_distance = unit
         .matches
         .iter()
@@ -404,6 +463,7 @@ async fn persist_links(
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
     link_mode: tui::LinkMode,
+    activity_scope: tui::UnitActivityScope,
     review_suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
     matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
@@ -420,6 +480,7 @@ async fn persist_links(
             dbx,
             links,
             reviewed_sigint_unit_ids,
+            activity_scope,
             matcher_cache,
         )
         .await
@@ -491,17 +552,19 @@ async fn persist_automatic_link_batches(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    activity_scope: tui::UnitActivityScope,
     matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let mut summary = PersistSummary::default();
-    for sigint_unit_ids in reviewed_sigint_unit_ids
-        .chunks(ORBIT_TEST_LINK_UNITS_AUTOMATIC_PERSIST_BATCH_SIZE)
+    for sigint_unit_ids in
+        reviewed_sigint_unit_ids.chunks(ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE)
     {
         summary.add(
             persist_automatic_link_batch(
                 dbx,
                 links,
                 sigint_unit_ids,
+                activity_scope,
                 matcher_cache,
             )
             .await
@@ -515,6 +578,7 @@ async fn persist_automatic_link_batch(
     dbx: &sea_orm::DatabaseConnection,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    activity_scope: tui::UnitActivityScope,
     matcher_cache: &mut PersistenceMatcherCache,
 ) -> anyhow::Result<PersistSummary> {
     let transaction = super::acquire_import_lock(dbx).await.c(h!())?;
@@ -528,6 +592,7 @@ async fn persist_automatic_link_batch(
         &login,
         links,
         reviewed_sigint_unit_ids,
+        activity_scope,
         &matcher_cache.matcher,
         &suppressed_links,
     )
@@ -610,7 +675,8 @@ where
             summary.no_longer_matching += 1;
             continue;
         };
-        if !sigint_unit_is_reviewable(sigint_unit) {
+        if !sigint_unit_is_reviewable(sigint_unit, tui::UnitActivityScope::Both)
+        {
             summary.no_longer_matching += 1;
             continue;
         }
@@ -624,15 +690,19 @@ where
             summary.no_longer_matching += 1;
             continue;
         }
-        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        if !persist_orbit_link(
             dbx,
             login,
-            *sigint_unit_id,
+            sigint_unit,
             *orbit_unit_id,
             super::LinkProvenance::Manual,
         )
         .await
-        .c(h!())?;
+        .c(h!())?
+        {
+            summary.already_linked += 1;
+            continue;
+        }
         links_changed = true;
     }
     Ok((summary, links_changed))
@@ -643,6 +713,7 @@ async fn revalidate_automatic_links<C>(
     login: &uuid::Uuid,
     links: &[(i64, uuid::Uuid)],
     reviewed_sigint_unit_ids: &[i64],
+    activity_scope: tui::UnitActivityScope,
     matcher: &matching::TestLinkMatcher,
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> anyhow::Result<(PersistSummary, bool)>
@@ -665,7 +736,7 @@ where
             continue;
         };
         let current_link_state = current_links.get(sigint_unit_id);
-        if !sigint_unit_is_reviewable(sigint_unit) {
+        if !sigint_unit_is_reviewable(sigint_unit, activity_scope) {
             summary.no_longer_matching += 1;
             if current_link_state
                 .is_some_and(|links| !links.automatic_orbit_unit_ids.is_empty())
@@ -746,18 +817,61 @@ where
             }
             continue;
         };
-        crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        if !persist_orbit_link(
             dbx,
             login,
-            *sigint_unit_id,
+            sigint_unit,
             orbit_unit_id,
             super::LinkProvenance::Automatic,
         )
         .await
-        .c(h!())?;
+        .c(h!())?
+        {
+            summary.already_linked += 1;
+            continue;
+        }
         links_changed = true;
     }
     Ok((summary, links_changed))
+}
+
+async fn persist_orbit_link<C>(
+    dbx: &C,
+    login: &uuid::Uuid,
+    sigint_unit: &sigint_unit::Model,
+    orbit_unit_id: uuid::Uuid,
+    provenance: super::LinkProvenance,
+) -> anyhow::Result<bool>
+where
+    C: ConnectionTrait,
+{
+    let linked = crate::sigint::unit::orbit::link_orbit_unit_with_deferred_deduplicate_reconciliation(
+        dbx,
+        login,
+        sigint_unit.id,
+        orbit_unit_id,
+        provenance,
+    )
+    .await
+    .c(h!())?
+    .is_some();
+    if linked {
+        return Ok(true);
+    }
+    let current_link_state = load_current_orbit_link_states(
+        dbx,
+        std::slice::from_ref(&sigint_unit.id),
+    )
+    .await
+    .c(h!())?;
+    let current_links = current_link_state
+        .values()
+        .flat_map(|state| &state.links)
+        .collect::<Vec<_>>();
+    warn!(
+        "Skipping conflicting ORBIT link candidate: sigint_unit={sigint_unit:#?}, requested_orbit_unit_id={orbit_unit_id}, provenance={provenance:#?}, current_links={current_links:#?}"
+    );
+    Ok(false)
 }
 
 async fn remove_unreviewable_automatic_links<C>(
@@ -842,6 +956,7 @@ where
         } else {
             state.automatic_orbit_unit_ids.insert(link.orbit_unit_id);
         }
+        state.links.push(link);
     }
     Ok(states)
 }
@@ -875,8 +990,14 @@ fn suppressions_to_preserve(
     current
 }
 
-fn sigint_unit_is_reviewable(sigint_unit: &sigint_unit::Model) -> bool {
-    sigint_unit.active && !sigint_unit.deleted
+fn sigint_unit_is_reviewable(
+    sigint_unit: &sigint_unit::Model,
+    activity_scope: tui::UnitActivityScope,
+) -> bool {
+    !sigint_unit.deleted
+        && activity_scope
+            .active()
+            .is_none_or(|active| sigint_unit.active == active)
 }
 
 fn accepted_link_is_current_match(
@@ -919,7 +1040,7 @@ fn current_automatic_link(
     .map(|(_, orbit_unit_id)| orbit_unit_id)
 }
 
-fn prepare_review_units(
+pub(super) fn prepare_review_units(
     units: &[sigint_unit::Model],
     matcher: &matching::TestLinkMatcher,
     link_mode: tui::LinkMode,
@@ -953,6 +1074,26 @@ fn prepare_review_unit(
     suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
 ) -> Option<ReviewUnit> {
     let hierarchy = matching::sigint_hierarchy(unit);
+    prepare_review_hierarchy(
+        unit.id,
+        &unit.name,
+        ReviewSubjectKind::SigintUnit,
+        &hierarchy,
+        matcher,
+        link_mode,
+        suppressed_links,
+    )
+}
+
+pub(super) fn prepare_review_hierarchy(
+    subject_id: i64,
+    subject_name: &str,
+    subject_kind: ReviewSubjectKind,
+    hierarchy: &[(super::EchoEchelon, &str)],
+    matcher: &matching::TestLinkMatcher,
+    link_mode: tui::LinkMode,
+    suppressed_links: &BTreeSet<(i64, uuid::Uuid)>,
+) -> Option<ReviewUnit> {
     let echelons = hierarchy
         .iter()
         .map(|(_, name)| name.trim())
@@ -968,12 +1109,12 @@ fn prepare_review_unit(
         .collect::<Vec<_>>()
         .join(" ");
     let candidates = match link_mode {
-        tui::LinkMode::Manual => matcher.potential_matches(&hierarchy),
+        tui::LinkMode::Manual => matcher.potential_matches(hierarchy),
         tui::LinkMode::Automatic => matcher
-            .best_matches(&hierarchy)
+            .best_matches(hierarchy)
             .into_iter()
             .filter(|(orbit_unit, _)| {
-                !suppressed_links.contains(&(unit.id, orbit_unit.unit_id))
+                !suppressed_links.contains(&(subject_id, orbit_unit.unit_id))
             })
             .collect(),
     };
@@ -992,11 +1133,38 @@ fn prepare_review_unit(
         .collect::<Vec<_>>();
     sort_review_matches(&mut matches);
     (!matches.is_empty()).then(|| ReviewUnit {
-        sigint_unit_id: unit.id,
-        sigint_unit_name: unit.name.clone(),
+        sigint_unit_id: subject_id,
+        sigint_unit_name: subject_name.to_string(),
+        subject_kind,
         echelons,
         matches,
+        would_automatically_resolve: None,
     })
+}
+
+pub(super) fn review_match_for_orbit(
+    unit: &sigint_unit::Model,
+    matcher: &matching::TestLinkMatcher,
+    link_mode: tui::LinkMode,
+    orbit_unit_id: uuid::Uuid,
+) -> Option<ReviewMatch> {
+    let review_unit =
+        prepare_review_unit(unit, matcher, link_mode, &BTreeSet::new())?;
+    match link_mode {
+        tui::LinkMode::Manual => review_unit
+            .matches
+            .into_iter()
+            .find(|candidate| candidate.unit_id == orbit_unit_id),
+        tui::LinkMode::Automatic => (automatically_approved_link(&review_unit)
+            == Some((unit.id, orbit_unit_id)))
+        .then(|| {
+            review_unit
+                .matches
+                .into_iter()
+                .find(|candidate| candidate.unit_id == orbit_unit_id)
+                .expect("approved ORBIT match must be present")
+        }),
+    }
 }
 
 fn closest_orbit_name(
@@ -1045,9 +1213,8 @@ fn print_summary(summary: ReviewSummary, persist_summary: PersistSummary) {
 mod tests {
     use super::*;
     use crate::orbit::types::SourceUnit;
-    use sea_orm::{
-        ActiveModelTrait, ActiveValue::Set, IntoActiveModel, TransactionTrait,
-    };
+    use crate::types::Mode;
+    use sea_orm::{ActiveValue::Set, TransactionTrait};
     use serde_json::json;
 
     #[test]
@@ -1076,6 +1243,7 @@ mod tests {
         ReviewUnit {
             sigint_unit_id: 1,
             sigint_unit_name: "unit".to_string(),
+            subject_kind: ReviewSubjectKind::SigintUnit,
             echelons: vec!["3 мсб".to_string()],
             matches: (0..match_count)
                 .map(|index| ReviewMatch {
@@ -1085,6 +1253,7 @@ mod tests {
                     orbit_name: format!("match {index}"),
                 })
                 .collect(),
+            would_automatically_resolve: None,
         }
     }
 
@@ -1386,10 +1555,12 @@ mod tests {
         )
         .await
         .unwrap();
-        let inactive_automatic_unit = crate::functest::tests::mk_sigint_unit(
+        let inactive_matchable_unit = crate::functest::tests::mk_sigint_unit(
             &db,
             sigint_unit::ActiveModel {
                 created_by_login_id: Set(login),
+                battalion: Set("3 мсб".to_string()),
+                active: Set(false),
                 ..Default::default()
             },
         )
@@ -1400,7 +1571,6 @@ mod tests {
             (manual_unit.id, orbit_unit.unit_id, true),
             (mixed_unit.id, orbit_unit.unit_id, true),
             (mixed_unit.id, stale_orbit_unit.unit_id, false),
-            (inactive_automatic_unit.id, orbit_unit.unit_id, false),
         ] {
             orbit_unit_sigint_unit::Entity::insert(
                 orbit_unit_sigint_unit::ActiveModel {
@@ -1416,31 +1586,30 @@ mod tests {
         }
 
         let automatic_ids =
-            load_linkable_sigint_units(&db, tui::LinkMode::Automatic)
+            load_linkable_sigint_units(&db, true, tui::UnitActivityScope::Both)
                 .await
                 .unwrap()
                 .into_iter()
                 .map(|unit| unit.id)
                 .collect::<BTreeSet<_>>();
-        let manual_ids = load_linkable_sigint_units(&db, tui::LinkMode::Manual)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|unit| unit.id)
-            .collect::<BTreeSet<_>>();
+        let manual_ids = load_linkable_sigint_units(
+            &db,
+            false,
+            tui::UnitActivityScope::Both,
+        )
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|unit| unit.id)
+        .collect::<BTreeSet<_>>();
         assert!(automatic_ids.contains(&automatic_unit.id));
         assert!(!automatic_ids.contains(&manual_unit.id));
         assert!(automatic_ids.contains(&mixed_unit.id));
-        assert!(automatic_ids.contains(&inactive_automatic_unit.id));
+        assert!(automatic_ids.contains(&inactive_matchable_unit.id));
         assert!(!manual_ids.contains(&automatic_unit.id));
         assert!(!manual_ids.contains(&manual_unit.id));
         assert!(!manual_ids.contains(&mixed_unit.id));
-
-        let mut inactive_automatic_unit =
-            inactive_automatic_unit.into_active_model();
-        inactive_automatic_unit.active = Set(false);
-        let inactive_automatic_unit =
-            inactive_automatic_unit.update(&db).await.unwrap();
+        assert!(manual_ids.contains(&inactive_matchable_unit.id));
 
         let current_orbit_units = [orbit_hierarchy_unit(
             orbit_unit.unit_id,
@@ -1458,8 +1627,9 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
-                inactive_automatic_unit.id,
+                inactive_matchable_unit.id,
             ],
+            tui::UnitActivityScope::Both,
             &matcher,
             &BTreeSet::new(),
         )
@@ -1469,7 +1639,7 @@ mod tests {
 
         assert!(links_changed);
         assert_eq!(summary.already_linked, 2);
-        assert_eq!(summary.no_longer_matching, 1);
+        assert_eq!(summary.no_longer_matching, 0);
         assert!(orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
@@ -1509,15 +1679,17 @@ mod tests {
             .unwrap();
         assert_eq!(newly_created_link.orbit_unit_id, orbit_unit.unit_id);
         assert!(!newly_created_link.is_manual);
-        assert!(orbit_unit_sigint_unit::Entity::find()
+        let inactive_link = orbit_unit_sigint_unit::Entity::find()
             .filter(
                 orbit_unit_sigint_unit::Column::SigintUnitId
-                    .eq(inactive_automatic_unit.id),
+                    .eq(inactive_matchable_unit.id),
             )
             .one(&db)
             .await
             .unwrap()
-            .is_none());
+            .unwrap();
+        assert_eq!(inactive_link.orbit_unit_id, orbit_unit.unit_id);
+        assert!(!inactive_link.is_manual);
 
         orbit_unit_sigint_unit::Entity::delete_many()
             .filter(orbit_unit_sigint_unit::Column::SigintUnitId.is_in([
@@ -1525,7 +1697,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
-                inactive_automatic_unit.id,
+                inactive_matchable_unit.id,
             ]))
             .exec(&db)
             .await
@@ -1536,7 +1708,7 @@ mod tests {
                 manual_unit.id,
                 mixed_unit.id,
                 newly_matchable_unit.id,
-                inactive_automatic_unit.id,
+                inactive_matchable_unit.id,
             ]))
             .exec(&db)
             .await

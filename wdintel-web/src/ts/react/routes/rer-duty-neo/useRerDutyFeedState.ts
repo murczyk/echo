@@ -17,7 +17,16 @@ import {
 } from './utils';
 import type { MessageCursor, MessageFeedState } from './utils';
 import { useRerDutyFeedCrud } from './useRerDutyFeedCrud';
-import { notifyDutyNewMessages } from './notifications';
+import {
+  beginDutyNotificationPollCycle,
+  cancelDutyNotificationPollCycle,
+  endDutyNotificationPollCycle,
+  notifyDutyNewMessages,
+  registerDutyNotificationPreview,
+  recordLastSuccessfulDutyCountCheck,
+  removeLastSuccessfulDutyCountCheck,
+} from './notifications';
+import type { DutyNotificationPollCycle } from './notifications';
 import { useRerDutyCallsignInfo } from './useRerDutyCallsignInfo';
 import { useRerDutyReferenceData } from './useRerDutyReferenceData';
 import { useRerDutyDirectionalLoads } from './useRerDutyDirectionalLoads';
@@ -25,9 +34,14 @@ import { useRerDutyShortState } from './useRerDutyShortState';
 import { createEmptyFeedState, useRerDutyInitialLoad } from './useRerDutyInitialLoad';
 import { buildFeedCountSignature } from './rerDutyFeedCount';
 import { compareMessageTuple } from './utils';
+import { loadDutyNotificationPreview } from './dutyNotificationPreview';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 import { getDutyFollowScrollBehavior } from './duty-follow-scroll';
+import {
+  DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+  withDutyFeedRequestDeadline,
+} from './dutyFeedRequestDeadline';
 
 export type FeedStateDeps = {
   freqs: string[];
@@ -45,6 +59,10 @@ type ServerCountBaseline = {
   requestSignature: string;
 };
 type ConfirmedTailPreview = { tailId: number; count: number; generation: number };
+
+function getDutyPollIntervalMs(pollIntervalSec: number): number {
+  return Math.max(1, Math.floor(pollIntervalSec) || 1) * 1000;
+}
 
 export function useRerDutyFeedState(deps: FeedStateDeps) {
   const { freqs, setProfiles, setGroupInfos } = deps;
@@ -70,6 +88,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, []);
   const messageFeedsRef = useRef(messageFeeds);
   const loadNewerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeCountPollPromiseRef = useRef<Promise<void> | null>(null);
+  const countPollRerunRequestedRef = useRef(false);
+  const pollLifecycleMountedRef = useRef(true);
+  const pollLifecycleGenerationRef = useRef(0);
+  const pollNotificationCyclesRef = useRef<Set<DutyNotificationPollCycle>>(new Set());
+  const pollCountThenLoadNewerIfNeededRef = useRef<(() => Promise<void>) | null>(null);
+  const activePollTailWorkPromiseByFeedIdRef = useRef<Partial<Record<string, Promise<void>>>>({});
   const invalidateFeedLoadsRef = useRef<(feedId: string) => void>(() => {});
   const countRequestPromiseByFeedIdRef = useRef<
     Record<
@@ -84,6 +109,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     >
   >({});
   const tailCountRequestPromiseByFeedIdRef = useRef<Record<string, Promise<number | null>>>({});
+  const pollIntervalMs = getDutyPollIntervalMs(deps.pollIntervalSec);
   const tailPreviewPromiseByFeedIdRef = useRef<
     Record<string, Promise<ConfirmedTailPreview | null>>
   >({});
@@ -203,10 +229,6 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         ...loadGenerationByFeedIdRef.current,
         [feedId]: (loadGenerationByFeedIdRef.current[feedId] ?? 0) + 1,
       };
-      if (!preserveUnread) {
-        delete unreadCursorByFeedIdRef.current[feedId];
-        delete lastServerCountByFeedIdRef.current[feedId];
-      }
       resetTailState(feedId);
       followTailByFeedIdRef.current[feedId] = false;
       followGenerationByFeedIdRef.current[feedId] =
@@ -264,6 +286,35 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   const setFeedUnreadCursor = useCallback((feedId: string, cursor: MessageCursor | null) => {
     unreadCursorByFeedIdRef.current[feedId] = cursor;
   }, []);
+  const installFeedUnreadCursorAndBaseline = useCallback(
+    (feed: MessageFeedState, cursor: MessageCursor | null) => {
+      unreadCursorByFeedIdRef.current[feed.id] = cursor;
+      lastServerCountByFeedIdRef.current[feed.id] = {
+        cursorId: cursor?.id ?? null,
+        quantity: 0,
+        requestSignature: buildFeedCountSignature(feed, freqs),
+      };
+    },
+    [freqs],
+  );
+  const recoverFeedUnreadBaselineAfterFailedLoad = useCallback(
+    (feed: MessageFeedState, fallbackCursor: MessageCursor | null) => {
+      const cursor = unreadCursorByFeedIdRef.current[feed.id] ?? null;
+      const baseline = lastServerCountByFeedIdRef.current[feed.id];
+      const requestSignature = buildFeedCountSignature(feed, freqs);
+      const canPreserveBaseline =
+        baseline?.cursorId === (cursor?.id ?? null) &&
+        baseline.requestSignature === requestSignature;
+
+      if (!canPreserveBaseline) {
+        delete unreadCursorByFeedIdRef.current[feed.id];
+        delete lastServerCountByFeedIdRef.current[feed.id];
+        if (fallbackCursor) installFeedUnreadCursorAndBaseline(feed, fallbackCursor);
+      }
+      completeFeedReload(feed.id);
+    },
+    [completeFeedReload, freqs, installFeedUnreadCursorAndBaseline],
+  );
   const advanceFeedReadCursor = useCallback(
     (
       feedId: string,
@@ -468,8 +519,13 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         try {
-          ({ quantity } = await fetchInboxCount(
-            buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
+          ({ quantity } = await withDutyFeedRequestDeadline(
+            DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+            (signal) =>
+              fetchInboxCount(
+                buildReqForFeed(feed, { sinceIdNoninclusive: cursorId, nolimit: true }),
+                { signal },
+              ),
           ));
           finishDebugActivity(`ok; quantity=${quantity}`);
         } catch (error) {
@@ -537,8 +593,15 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         );
         let quantity: number;
         try {
-          ({ quantity } = await fetchInboxCount(
-            buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
+          ({ quantity } = await withDutyFeedRequestDeadline(
+            DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS,
+            (signal) =>
+              fetchInboxCount(
+                buildReqForFeed(feed, { sinceIdNoninclusive: tailId, nolimit: true }),
+                {
+                  signal,
+                },
+              ),
           ));
           finishDebugActivity(`ok; quantity=${quantity}; tail=${tailId}`);
         } catch (error) {
@@ -652,6 +715,8 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     completeFeedReload,
     setFeedUnreadCursor,
     feedInitialTargetByFeedIdRef,
+    installFeedUnreadCursorAndBaseline,
+    recoverFeedUnreadBaselineAfterFailedLoad,
   });
 
   const {
@@ -760,21 +825,79 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [messageFeeds, retainFeedIds]);
 
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
-    if (!messageFeedsRef.current.length) return;
-    await Promise.all(
-      messageFeedsRef.current.map(async (feed) => {
+    if (activeCountPollPromiseRef.current) {
+      countPollRerunRequestedRef.current = true;
+      return activeCountPollPromiseRef.current;
+    }
+    const lifecycleGeneration = pollLifecycleGenerationRef.current;
+    const isLifecycleCurrent = () =>
+      pollLifecycleMountedRef.current && pollLifecycleGenerationRef.current === lifecycleGeneration;
+    const run = async () => {
+      if (!isLifecycleCurrent()) return;
+      const participatingFeeds = [...messageFeedsRef.current];
+      const eligibleFeeds = participatingFeeds.filter(
+        (feed) =>
+          !feed.loading &&
+          !pendingReloadFeedIdsRef.current.has(feed.id) &&
+          !countRequestPromiseByFeedIdRef.current[feed.id],
+      );
+      if (!eligibleFeeds.length) return;
+      const cycle = beginDutyNotificationPollCycle();
+      pollNotificationCyclesRef.current.add(cycle);
+      const countTasks = eligibleFeeds.map(async (feed) => {
         let entry: Awaited<ReturnType<typeof requestValidatedInboxCount>>;
+        let feedId: string | null = null;
+        let currentFeed: (typeof messageFeedsRef.current)[number] | undefined;
         try {
           entry = await requestValidatedInboxCount(feed.id);
+          if (!isLifecycleCurrent()) return;
           clearPollingFailure();
         } catch (error) {
+          if (!isLifecycleCurrent()) return;
           reportPollingFailure(error);
           return;
         }
+        if (!isLifecycleCurrent()) return;
         if (!entry || isNullOrUndefined(entry.quantity)) return;
-        const { feedId } = entry;
-        const currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
+        feedId = entry.feedId;
+        if (!isLifecycleCurrent()) return;
+        recordLastSuccessfulDutyCountCheck(feedId);
+        currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
         if (!currentFeed || currentFeed.loading) return;
+        const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
+        const canCompareBaseline =
+          prevServerCount?.cursorId === entry.cursorId &&
+          prevServerCount?.requestSignature === entry.requestSignature;
+        if (canCompareBaseline && entry.quantity > prevServerCount.quantity) {
+          const totalNew = entry.quantity - prevServerCount.quantity;
+          const previewCursorId = unreadCursorByFeedIdRef.current[feedId]?.id ?? null;
+          const previewGeneration = loadGenerationByFeedIdRef.current[feedId] ?? 0;
+          const previewRequest = buildReqForFeed(currentFeed, {
+            sinceIdNoninclusive: previewCursorId,
+            loadLatest: true,
+          });
+          if (typeof registerDutyNotificationPreview === 'function') {
+            registerDutyNotificationPreview(cycle, feedId, () =>
+              loadDutyNotificationPreview(previewRequest, () => {
+                const live = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+                return (
+                  isLifecycleCurrent() &&
+                  live != null &&
+                  (loadGenerationByFeedIdRef.current[feedId] ?? 0) === previewGeneration &&
+                  buildFeedCountSignature(live, freqs) === entry.requestSignature
+                );
+              }),
+            );
+          }
+          notifyDutyNewMessages(feedId, totalNew, cycle);
+        }
+        // Every successful comparable generation establishes a silent baseline. A failed
+        // request never reaches here, so recovery compares against the last known count.
+        lastServerCountByFeedIdRef.current[feedId] = {
+          cursorId: entry.cursorId,
+          quantity: entry.quantity,
+          requestSignature: entry.requestSignature,
+        };
         if (currentFeed.items.length === 0) {
           if (entry.quantity > 0) {
             markFeedReloadRequested(feedId);
@@ -784,179 +907,219 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
           }
           return;
         }
-        const quantity = entry.quantity ?? 0;
-        const loadedTailId = currentFeed.items.at(-1)?.[0] ?? null;
-        const exhaustedAtTail =
-          loadedTailId != null && newestExhaustedCursorByFeedIdRef.current[feedId] === loadedTailId;
-        const nearBottom = nearBottomByFeedIdRef.current[feedId] === true;
-        // Inbox count is assist-only near the tail: never write the badge from it while
-        // near-bottom. Scrolled-up polls may still seed beyond-tail pending.
-        if (!nearBottom) {
-          const nextUnread = Math.max(currentFeed.unreadCount, quantity);
-          if (nextUnread !== currentFeed.unreadCount) {
-            setMessageFeeds((prev) =>
-              prev.map((f) => (f.id === feedId ? { ...f, unreadCount: nextUnread } : f)),
-            );
-          }
-        }
-        if (entry.quantity <= 0) {
-          invalidateTailPreview(feedId);
-          setTailAvailability(feedId, currentFeed.items.length > 0 ? 'exhausted' : 'unknown');
-          lastServerCountByFeedIdRef.current[feedId] = {
-            cursorId: entry.cursorId,
-            quantity: 0,
-            requestSignature: entry.requestSignature,
-          };
-          if (loadedTailId != null) {
-            newestExhaustedCursorByFeedIdRef.current[feedId] = loadedTailId;
-          }
-          setMessageFeeds((prev) =>
-            prev.map((f) => {
-              if (f.id !== feedId) return f;
-              let localUnread = 0;
-              for (const [id] of f.items) {
-                if (!f.readIds.has(id)) localUnread += 1;
-              }
-              localUnread += f.windowedUnreadItems?.size ?? 0;
-              return localUnread === f.unreadCount ? f : { ...f, unreadCount: localUnread };
-            }),
-          );
-          return;
-        }
-        const prevServerCount = lastServerCountByFeedIdRef.current[feedId];
-        const nextCount = entry.quantity;
-        const canCompareBaseline =
-          prevServerCount?.cursorId === entry.cursorId &&
-          prevServerCount?.requestSignature === entry.requestSignature;
-        const startsFreshBaseline = !prevServerCount && entry.hasItems;
-        const signatureChanged = Boolean(prevServerCount) && !canCompareBaseline && entry.hasItems;
-        if (entry.hasItems && !(exhaustedAtTail && nearBottom)) {
-          const prevQuantity = prevServerCount?.quantity ?? 0;
-          if (canCompareBaseline || startsFreshBaseline) {
-            const newCount = Math.max(0, nextCount - prevQuantity);
-            if (newCount > 0) {
-              notifyDutyNewMessages(feedId, newCount);
-            }
-          } else if (signatureChanged) {
-            notifyDutyNewMessages(feedId, nextCount);
-          }
-        }
-        if (!(exhaustedAtTail && nearBottom)) {
-          lastServerCountByFeedIdRef.current[feedId] = {
-            cursorId: entry.cursorId,
-            quantity: nextCount,
-            requestSignature: entry.requestSignature,
-          };
-        }
-        let confirmedTailAvailable = tailAvailabilityByFeedIdRef.current[feedId] === 'available';
-        if (!nearBottom) {
-          let preview: ConfirmedTailPreview | null;
-          try {
-            preview = await requestValidatedTailPreview(feedId);
-          } catch (error) {
-            reportPollingFailure(error);
+        if (!entry || !currentFeed || feedId === null) return;
+        const runTailWork = async () => {
+          const currentFeed = messageFeedsRef.current.find((feed) => feed.id === feedId);
+          if (
+            !currentFeed ||
+            currentFeed.loading ||
+            pendingReloadFeedIdsRef.current.has(feedId) ||
+            buildFeedCountSignature(currentFeed, freqs) !== entry.requestSignature
+          ) {
             return;
           }
-          if (!preview || tailPreviewGenerationByFeedIdRef.current[feedId] !== preview.generation)
+          const currentBaseline = lastServerCountByFeedIdRef.current[feedId];
+          if (
+            (unreadCursorByFeedIdRef.current[feedId]?.id ?? null) !== entry.cursorId ||
+            currentBaseline?.cursorId !== entry.cursorId ||
+            currentBaseline.requestSignature !== entry.requestSignature ||
+            currentBaseline.quantity !== entry.quantity
+          ) {
             return;
-          setConfirmedTailPreview(feedId, preview);
-          setTailAvailability(feedId, preview.count > 0 ? 'available' : 'exhausted');
-          return;
-        }
-        // Near bottom: keep beyond-tail preview fresh for the badge (cursor-aligned
-        // inbox quantity matches tailCount when last-seen == loadedTail).
-        if (loadedTailId != null && entry.cursorId === loadedTailId) {
-          const generation = tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
-          setConfirmedTailPreview(feedId, {
-            tailId: loadedTailId,
-            count: quantity,
-            generation,
-          });
-          setTailAvailability(feedId, quantity > 0 ? 'available' : 'exhausted');
-          confirmedTailAvailable = quantity > 0;
-        }
-        if (nearBottom) {
-          const exhaustedTail =
+          }
+          const quantity = entry.quantity ?? 0;
+          const loadedTailId = currentFeed.items.at(-1)?.[0] ?? null;
+          const exhaustedAtTail =
             loadedTailId != null &&
             newestExhaustedCursorByFeedIdRef.current[feedId] === loadedTailId;
-          if (exhaustedTail) {
-            const previousAvailability = tailAvailabilityByFeedIdRef.current[feedId] ?? 'exhausted';
-            setTailAvailability(feedId, 'checking');
-            let tailQuantity: number | null;
+          const nearBottom = nearBottomByFeedIdRef.current[feedId] === true;
+          // Inbox count is assist-only near the tail: never write the badge from it while
+          // near-bottom. Scrolled-up polls may still seed beyond-tail pending.
+          if (!nearBottom) {
+            setMessageFeeds((prev) =>
+              prev.map((f) => {
+                if (f.id !== feedId) return f;
+                const baseline = lastServerCountByFeedIdRef.current[feedId];
+                if (
+                  (unreadCursorByFeedIdRef.current[feedId]?.id ?? null) !== entry.cursorId ||
+                  baseline?.cursorId !== entry.cursorId ||
+                  baseline.requestSignature !== entry.requestSignature ||
+                  baseline.quantity !== entry.quantity
+                ) {
+                  return f;
+                }
+                const nextUnread = Math.max(f.unreadCount, entry.quantity);
+                return nextUnread === f.unreadCount ? f : { ...f, unreadCount: nextUnread };
+              }),
+            );
+          }
+          if (entry.quantity <= 0) {
+            invalidateTailPreview(feedId);
+            setTailAvailability(feedId, currentFeed.items.length > 0 ? 'exhausted' : 'unknown');
+            if (loadedTailId != null) {
+              newestExhaustedCursorByFeedIdRef.current[feedId] = loadedTailId;
+            }
+            setMessageFeeds((prev) =>
+              prev.map((f) => {
+                if (f.id !== feedId) return f;
+                let localUnread = 0;
+                for (const [id] of f.items) {
+                  if (!f.readIds.has(id)) localUnread += 1;
+                }
+                localUnread += f.windowedUnreadItems?.size ?? 0;
+                return localUnread === f.unreadCount ? f : { ...f, unreadCount: localUnread };
+              }),
+            );
+            return;
+          }
+          let confirmedTailAvailable = tailAvailabilityByFeedIdRef.current[feedId] === 'available';
+          if (!nearBottom) {
+            let preview: ConfirmedTailPreview | null;
             try {
-              tailQuantity = await requestValidatedTailCount(feedId, loadedTailId!);
+              preview = await requestValidatedTailPreview(feedId);
             } catch (error) {
               reportPollingFailure(error);
-              setTailAvailability(
-                feedId,
-                previousAvailability === 'loading' ? 'available' : previousAvailability,
-              );
               return;
             }
-            if (tailQuantity === null) {
-              setTailAvailability(feedId, previousAvailability);
+            if (!preview || tailPreviewGenerationByFeedIdRef.current[feedId] !== preview.generation)
               return;
-            }
-            if (tailQuantity <= 0) {
-              setTailAvailability(feedId, 'exhausted');
-              invalidateTailPreview(feedId);
-              return;
-            }
-            confirmedTailAvailable = true;
+            setConfirmedTailPreview(feedId, preview);
+            setTailAvailability(feedId, preview.count > 0 ? 'available' : 'exhausted');
+            return;
+          }
+          // Near bottom: keep beyond-tail preview fresh for the badge (cursor-aligned
+          // inbox quantity matches tailCount when last-seen == loadedTail).
+          if (loadedTailId != null && entry.cursorId === loadedTailId) {
             const generation = tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
             setConfirmedTailPreview(feedId, {
-              tailId: loadedTailId!,
-              count: tailQuantity,
+              tailId: loadedTailId,
+              count: quantity,
               generation,
             });
-            if (nearBottomByFeedIdRef.current[feedId] !== true) {
+            setTailAvailability(feedId, quantity > 0 ? 'available' : 'exhausted');
+            confirmedTailAvailable = quantity > 0;
+          }
+          if (nearBottom) {
+            const exhaustedTail =
+              loadedTailId != null &&
+              newestExhaustedCursorByFeedIdRef.current[feedId] === loadedTailId;
+            if (exhaustedTail) {
+              const previousAvailability =
+                tailAvailabilityByFeedIdRef.current[feedId] ?? 'exhausted';
+              setTailAvailability(feedId, 'checking');
+              let tailQuantity: number | null;
+              try {
+                tailQuantity = await requestValidatedTailCount(feedId, loadedTailId!);
+              } catch (error) {
+                reportPollingFailure(error);
+                setTailAvailability(
+                  feedId,
+                  previousAvailability === 'loading' ? 'available' : previousAvailability,
+                );
+                return;
+              }
+              if (tailQuantity === null) {
+                setTailAvailability(feedId, previousAvailability);
+                return;
+              }
+              if (tailQuantity <= 0) {
+                setTailAvailability(feedId, 'exhausted');
+                invalidateTailPreview(feedId);
+                return;
+              }
+              confirmedTailAvailable = true;
+              const generation = tailPreviewGenerationByFeedIdRef.current[feedId] ?? 0;
+              setConfirmedTailPreview(feedId, {
+                tailId: loadedTailId!,
+                count: tailQuantity,
+                generation,
+              });
+              if (nearBottomByFeedIdRef.current[feedId] !== true) {
+                delete newestExhaustedCursorByFeedIdRef.current[feedId];
+                setTailAvailability(feedId, 'available');
+                return;
+              }
               delete newestExhaustedCursorByFeedIdRef.current[feedId];
-              setTailAvailability(feedId, 'available');
-              return;
             }
-            delete newestExhaustedCursorByFeedIdRef.current[feedId];
-          }
-          if (nearBottomByFeedIdRef.current[feedId] !== true) return;
-          const maxCatchUpPages = 20;
-          let unreadRunway =
-            feedLoadedUnreadCount(currentFeed) + feedPendingNewerUnreadCount(currentFeed);
-          for (let page = 0; page < maxCatchUpPages; page++) {
-            if (nearBottomByFeedIdRef.current[feedId] !== true) break;
-            if (tailAvailabilityByFeedIdRef.current[feedId] === 'exhausted') break;
-            const pageFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
-            if (pageFeed) {
-              // Prefer committed state when present; never let a stale ref shrink the runway.
-              unreadRunway = Math.max(
-                unreadRunway,
-                feedLoadedUnreadCount(pageFeed) + feedPendingNewerUnreadCount(pageFeed),
-              );
+            if (nearBottomByFeedIdRef.current[feedId] !== true) return;
+            const maxCatchUpPages = 20;
+            let unreadRunway =
+              feedLoadedUnreadCount(currentFeed) + feedPendingNewerUnreadCount(currentFeed);
+            for (let page = 0; page < maxCatchUpPages; page++) {
+              if (nearBottomByFeedIdRef.current[feedId] !== true) break;
+              if (tailAvailabilityByFeedIdRef.current[feedId] === 'exhausted') break;
+              const pageFeed = messageFeedsRef.current.find((candidate) => candidate.id === feedId);
+              if (pageFeed) {
+                // Prefer committed state when present; never let a stale ref shrink the runway.
+                unreadRunway = Math.max(
+                  unreadRunway,
+                  feedLoadedUnreadCount(pageFeed) + feedPendingNewerUnreadCount(pageFeed),
+                );
+              }
+              // Prefer a loaded unread runway after last-seen over draining the whole backlog.
+              if (unreadRunway >= DUTY_FEED_UNREAD_PREFETCH_MIN) break;
+              const preview = confirmedTailPreviewByFeedIdRef.current[feedId];
+              if (preview != null && preview.count <= 0) break;
+              const pageSinceId = pageFeed != null ? feedNewerSinceId(pageFeed) : null;
+              if (pageSinceId == null) break;
+              if (newestExhaustedCursorByFeedIdRef.current[feedId] === pageSinceId) break;
+              const capturedFollowGeneration = followGenerationByFeedIdRef.current[feedId] ?? -1;
+              const shouldFollow =
+                !deps.disableAutoScroll &&
+                physicallyAtBottomByFeedIdRef.current[feedId] === true &&
+                isFollowTailValid(feedId, capturedFollowGeneration);
+              const newerResult = await loadFeedNewerMessages(feedId, {
+                scrollToEndAfterLoad: shouldFollow,
+                skipIfNewestExhausted: true,
+                showLoading: false,
+                followGeneration: capturedFollowGeneration,
+                confirmedTailAvailable: page === 0 ? confirmedTailAvailable : true,
+              });
+              if (!newerResult.ok || newerResult.addedCount === 0) break;
+              // Ref may still be awaiting React commit; approximate runway for this poll tick.
+              unreadRunway = shouldFollow ? 0 : unreadRunway + newerResult.addedCount;
             }
-            // Prefer a loaded unread runway after last-seen over draining the whole backlog.
-            if (unreadRunway >= DUTY_FEED_UNREAD_PREFETCH_MIN) break;
-            const preview = confirmedTailPreviewByFeedIdRef.current[feedId];
-            if (preview != null && preview.count <= 0) break;
-            const pageSinceId = pageFeed != null ? feedNewerSinceId(pageFeed) : null;
-            if (pageSinceId == null) break;
-            if (newestExhaustedCursorByFeedIdRef.current[feedId] === pageSinceId) break;
-            const capturedFollowGeneration = followGenerationByFeedIdRef.current[feedId] ?? -1;
-            const shouldFollow =
-              !deps.disableAutoScroll &&
-              physicallyAtBottomByFeedIdRef.current[feedId] === true &&
-              isFollowTailValid(feedId, capturedFollowGeneration);
-            const newerResult = await loadFeedNewerMessages(feedId, {
-              scrollToEndAfterLoad: shouldFollow,
-              skipIfNewestExhausted: true,
-              showLoading: false,
-              followGeneration: capturedFollowGeneration,
-              confirmedTailAvailable: page === 0 ? confirmedTailAvailable : true,
-            });
-            if (!newerResult.ok || newerResult.addedCount === 0) break;
-            // Ref may still be awaiting React commit; approximate runway for this poll tick.
-            unreadRunway = shouldFollow ? 0 : unreadRunway + newerResult.addedCount;
           }
-        }
-      }),
-    );
+        };
+        if (!isLifecycleCurrent() || activePollTailWorkPromiseByFeedIdRef.current[feedId]) return;
+        const tailWork = runTailWork();
+        activePollTailWorkPromiseByFeedIdRef.current[feedId] = tailWork;
+        void tailWork
+          .catch((error) => {
+            if (isLifecycleCurrent()) reportPollingFailure(error);
+          })
+          .finally(() => {
+            if (activePollTailWorkPromiseByFeedIdRef.current[feedId] === tailWork) {
+              delete activePollTailWorkPromiseByFeedIdRef.current[feedId];
+            }
+          });
+      });
+      let softDeadlineTimeout: ReturnType<typeof setTimeout> | null = null;
+      const allCountTasksSettled = Promise.allSettled(countTasks);
+      const softDeadline = new Promise<void>((resolve) => {
+        softDeadlineTimeout = setTimeout(resolve, pollIntervalMs);
+      });
+      try {
+        await Promise.race([allCountTasksSettled, softDeadline]);
+      } finally {
+        if (softDeadlineTimeout) clearTimeout(softDeadlineTimeout);
+        if (isLifecycleCurrent()) endDutyNotificationPollCycle(cycle);
+        else cancelDutyNotificationPollCycle(cycle);
+      }
+      void allCountTasksSettled.finally(() => {
+        pollNotificationCyclesRef.current.delete(cycle);
+      });
+    };
+    const promise = run().finally(() => {
+      if (activeCountPollPromiseRef.current === promise) activeCountPollPromiseRef.current = null;
+      const rerunRequested = countPollRerunRequestedRef.current;
+      countPollRerunRequestedRef.current = false;
+      if (isLifecycleCurrent() && rerunRequested && messageFeedsRef.current.length > 0) {
+        void pollCountThenLoadNewerIfNeededRef.current?.();
+      }
+    });
+    activeCountPollPromiseRef.current = promise;
+    return promise;
   }, [
     loadFeedNewerMessages,
     deps.disableAutoScroll,
@@ -967,9 +1130,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
     setConfirmedTailPreview,
     invalidateTailPreview,
     markFeedReloadRequested,
+    pollIntervalMs,
     reportPollingFailure,
     clearPollingFailure,
+    buildReqForFeed,
   ]);
+  pollCountThenLoadNewerIfNeededRef.current = pollCountThenLoadNewerIfNeeded;
 
   const feedIds = useMemo(() => messageFeeds.map((w) => w.id).join(','), [messageFeeds]);
   const feedsNeedingLoadKey = useMemo(
@@ -1020,14 +1186,38 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useEffect(() => {
     if (shortStateIdRef.current && !shortStateReady) return;
-    const intervalMs = Math.max(1, Math.floor(deps.pollIntervalSec) || 1) * 1000;
     loadNewerRef.current = setInterval(() => {
       pollCountThenLoadNewerIfNeeded();
-    }, intervalMs);
+    }, pollIntervalMs);
     return () => {
       if (loadNewerRef.current) clearInterval(loadNewerRef.current);
     };
-  }, [deps.pollIntervalSec, pollCountThenLoadNewerIfNeeded, shortStateReady]);
+  }, [pollCountThenLoadNewerIfNeeded, pollIntervalMs, shortStateReady]);
+
+  useEffect(() => {
+    pollLifecycleMountedRef.current = true;
+    return () => {
+      pollLifecycleMountedRef.current = false;
+      pollLifecycleGenerationRef.current += 1;
+      pollNotificationCyclesRef.current.forEach(cancelDutyNotificationPollCycle);
+      pollNotificationCyclesRef.current.clear();
+      countPollRerunRequestedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const recover = () => {
+      if (document.visibilityState !== 'hidden') void pollCountThenLoadNewerIfNeeded();
+    };
+    window.addEventListener('focus', recover);
+    window.addEventListener('online', recover);
+    document.addEventListener('visibilitychange', recover);
+    return () => {
+      window.removeEventListener('focus', recover);
+      window.removeEventListener('online', recover);
+      document.removeEventListener('visibilitychange', recover);
+    };
+  }, [pollCountThenLoadNewerIfNeeded]);
 
   useEffect(() => {
     const pendingEntries = Object.entries(pendingScrollToEndRef.current).filter(
@@ -1084,6 +1274,7 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
         return next;
       });
       deps.onFeedRemoved?.(feedId);
+      removeLastSuccessfulDutyCountCheck(feedId);
     },
   );
 

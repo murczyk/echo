@@ -773,6 +773,7 @@ fn build_analysis_stats_req(
         selected_posts: None,
         selected_callsigns: None,
         selected_units: None,
+        selected_unit_ids: None,
         selected_locations: None,
         selected_device_names: None,
         selected_aors,

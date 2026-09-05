@@ -13,7 +13,6 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
   HTMLDivElement,
   {
     kind: 'image' | 'video' | 'document';
-    isFullscreen: boolean;
     children: ReactNode;
     cursor?: 'default' | 'grab';
     onPointerDown?: PointerEventHandler<HTMLDivElement>;
@@ -22,16 +21,7 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
     onDoubleClick?: MouseEventHandler<HTMLDivElement>;
   }
 >(function MessageCardAttachmentPreviewStage(
-  {
-    kind,
-    isFullscreen,
-    children,
-    cursor = 'default',
-    onPointerDown,
-    onPointerUp,
-    onPointerLeave,
-    onDoubleClick,
-  },
+  { kind, children, cursor = 'default', onPointerDown, onPointerUp, onPointerLeave, onDoubleClick },
   ref,
 ) {
   const theme = useTheme();
@@ -57,7 +47,7 @@ export const MessageCardAttachmentPreviewStage = forwardRef<
         minHeight: 0,
         overflow: 'hidden',
         borderRadius: 0,
-        ...getAttachmentPreviewStageSx(theme, isFullscreen),
+        ...getAttachmentPreviewStageSx(),
         color: isDocument ? theme.palette.text.primary : undefined,
         cursor,
         userSelect: kind === 'image' ? 'none' : undefined,

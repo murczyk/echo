@@ -257,6 +257,7 @@ fn resolved_analysis_unit_filters(
 pub(in crate::rer_importer) fn apply_analysis_unit_filters<E>(
     query: Select<E>,
     selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
     units_exact_match_only: &Option<bool>,
     dt_since: chrono::NaiveDateTime,
     dt_till: chrono::NaiveDateTime,
@@ -268,29 +269,45 @@ where
 {
     if let Some(scope) = scope {
         if selected_units.as_ref().is_none_or(Vec::is_empty) {
-            return Ok(query);
+            return Ok(query.apply_if(
+                selected_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
+                |query, ids| {
+                    query.filter(super::message_has_linked_unit_ids_with_scope(
+                        ids,
+                        false,
+                        Some(scope),
+                    ))
+                },
+            ));
+        } else {
+            let resolved = resolved
+                .ok_or_else(|| {
+                    anyhow::anyhow!("analytics unit filters were not resolved")
+                })
+                .context(h!())?;
+            return Ok(apply_resolved_analytics_unit_filters_with_ids(
+                query,
+                resolved,
+                scope,
+                units_exact_match_only.unwrap_or(false),
+                selected_unit_ids,
+            ));
         }
-        let resolved = resolved.ok_or_else(|| {
-            anyhow::anyhow!("analytics unit filters were not resolved")
-        })?;
-        return Ok(apply_resolved_analytics_unit_filters(
-            query,
-            resolved,
-            scope,
-            units_exact_match_only.unwrap_or(false),
-        ));
     }
-    super::filter_selected_units_for_period(
+    Ok(super::filter_selected_units_or_ids_for_period(
         query,
         selected_units,
+        selected_unit_ids,
         units_exact_match_only,
         dt_since,
         dt_till,
     )
+    .context(h!())?)
 }
 
+#[cfg(test)]
 pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters<E>(
-    mut query: Select<E>,
+    query: Select<E>,
     resolved: &ResolvedAnalyticsUnitFilters,
     scope: &AnalyticsMessageIdScope,
     exact_match_only: bool,
@@ -298,14 +315,33 @@ pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters<E>(
 where
     E: EntityTrait,
 {
-    let selected_link = join_analytics_unit_link_if_needed(
-        &mut query,
+    apply_resolved_analytics_unit_filters_with_ids(
+        query,
+        resolved,
+        scope,
+        exact_match_only,
+        &None,
+    )
+}
+
+pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters_with_ids<
+    E,
+>(
+    mut query: Select<E>,
+    resolved: &ResolvedAnalyticsUnitFilters,
+    scope: &AnalyticsMessageIdScope,
+    exact_match_only: bool,
+    selected_unit_ids: &Option<Vec<i64>>,
+) -> Select<E>
+where
+    E: EntityTrait,
+{
+    let selected_link = analytics_unit_link_match(
         "analytics_selected_unit",
         &resolved.selected.linked_network_ids,
         scope,
     );
-    let denied_link = join_analytics_unit_link_if_needed(
-        &mut query,
+    let denied_link = analytics_unit_link_match(
         "analytics_denied_unit",
         &resolved.denied.linked_network_ids,
         scope,
@@ -313,8 +349,7 @@ where
     let any_link = if resolved.selected.includes_undefined
         || resolved.denied.includes_undefined
     {
-        join_analytics_unit_link_if_needed(
-            &mut query,
+        analytics_unit_link_match(
             "analytics_any_unit",
             &resolved.all_unit_network_ids,
             scope,
@@ -323,13 +358,32 @@ where
         None
     };
 
-    if resolved.selected.present {
-        query = query.filter(analytics_unit_filter_match(
+    let selected_units = resolved.selected.present.then(|| {
+        analytics_unit_filter_match(
             &resolved.selected,
             selected_link.as_ref(),
             any_link.as_ref(),
             exact_match_only,
-        ));
+        )
+    });
+    let selected_unit_ids = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+        .map(|unit_ids| {
+            super::message_has_linked_unit_ids_with_scope(
+                unit_ids,
+                false,
+                Some(scope),
+            )
+        });
+    match (selected_units, selected_unit_ids) {
+        (None, None) => {}
+        (None, Some(condition)) | (Some(condition), None) => {
+            query = query.filter(condition);
+        }
+        (Some(units), Some(unit_ids)) => {
+            query = query.filter(units.or(unit_ids));
+        }
     }
     if resolved.denied.present {
         query = query.filter(
@@ -347,14 +401,11 @@ where
 
 fn analytics_unit_filter_match(
     unit_filter: &ResolvedAnalyticsUnitFilter,
-    linked_frequency_alias: Option<&Alias>,
-    any_frequency_alias: Option<&Alias>,
+    linked_frequency_match: Option<&SimpleExpr>,
+    any_frequency_match: Option<&SimpleExpr>,
     exact_match_only: bool,
 ) -> SimpleExpr {
-    let linked_match = linked_frequency_alias.map(|alias| {
-        Expr::col((alias.clone(), sigint_network_freq::Column::Id))
-            .is_not_null()
-    });
+    let linked_match = linked_frequency_match.cloned();
     let ordinary_match = (!unit_filter.ordinary_names.is_empty()).then(|| {
         let linked_match = linked_match.unwrap_or_else(|| Expr::value(false));
         if exact_match_only {
@@ -366,11 +417,9 @@ fn analytics_unit_filter_match(
     });
     let undefined_match = unit_filter.includes_undefined.then(|| {
         analytics_header_unit_is_undefined().and(
-            any_frequency_alias
-                .map(|alias| {
-                    Expr::col((alias.clone(), sigint_network_freq::Column::Id))
-                        .is_null()
-                })
+            any_frequency_match
+                .cloned()
+                .map(SimpleExpr::not)
                 .unwrap_or_else(|| Expr::value(true)),
         )
     });
@@ -397,15 +446,11 @@ fn analytics_header_unit_is_undefined() -> SimpleExpr {
     header.clone().is_null().or(header.eq(""))
 }
 
-fn join_analytics_unit_link_if_needed<E>(
-    query: &mut Select<E>,
+fn analytics_unit_link_match(
     prefix: &str,
     network_ids: &[i64],
     scope: &AnalyticsMessageIdScope,
-) -> Option<Alias>
-where
-    E: EntityTrait,
-{
+) -> Option<SimpleExpr> {
     if network_ids.is_empty() {
         return None;
     }
@@ -413,41 +458,35 @@ where
     let network_alias = Alias::new(format!("{prefix}_network"));
     let frequency_alias = Alias::new(format!("{prefix}_frequency"));
     let message_datetime = Expr::col(sigint_inbox_item::Column::Datetime);
-    QueryTrait::query(query)
-        .join_as(
-            JoinType::LeftJoin,
+    let mut query = sea_query::Query::select();
+    // Deployed pg_clickhouse requires flat FROM lists for correlated pushdown.
+    query
+        .expr(Expr::value(1))
+        .from_as(
             (
                 Alias::new("echo_clickhouse_derived"),
                 Alias::new("message_network_link"),
             ),
             link_alias.clone(),
-            analytics_unit_link_join_condition(
-                link_alias.clone(),
-                network_ids,
-                scope,
-            ),
         )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network::Entity,
+        .from_as(sigint_network::Entity, network_alias.clone())
+        .from_as(sigint_network_freq::Entity, frequency_alias.clone())
+        .cond_where(analytics_unit_network_join_condition(
             network_alias.clone(),
-            analytics_unit_network_join_condition(
-                network_alias.clone(),
-                link_alias,
-                message_datetime.clone(),
-            ),
-        )
-        .join_as(
-            JoinType::LeftJoin,
-            sigint_network_freq::Entity,
-            frequency_alias.clone(),
-            analytics_unit_frequency_join_condition(
-                frequency_alias.clone(),
-                network_alias,
-                message_datetime,
-            ),
-        );
-    Some(frequency_alias)
+            link_alias.clone(),
+            message_datetime.clone(),
+        ))
+        .cond_where(analytics_unit_frequency_join_condition(
+            frequency_alias,
+            network_alias,
+            message_datetime,
+        ))
+        .cond_where(analytics_unit_link_join_condition(
+            link_alias,
+            network_ids,
+            scope,
+        ));
+    Some(Expr::exists(query))
 }
 
 fn analytics_unit_link_join_condition(

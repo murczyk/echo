@@ -22,6 +22,10 @@ import type { MessageCursor, MessageFeedState, MessageItem } from './utils';
 import type { TailAvailability } from './types';
 import { beginDutyScrollDebugActivity, recordDutyScrollDebugEvent } from './duty-scroll-debug';
 import { commitFeedWindowUpdate, commitFeedWindowUpdateUrgent } from './feedWindowCommit';
+import {
+  DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS,
+  withDutyFeedRequestDeadline,
+} from './dutyFeedRequestDeadline';
 
 type NewerLoadOptions = {
   nolimit?: boolean;
@@ -222,8 +226,12 @@ export function useRerDutyDirectionalLoads(params: Params) {
           `before=${beforeIdNoninclusive}; generation=${requestGeneration}`,
         );
         try {
-          const response = await fetchInboxMessages(
-            runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive }),
+          const response = await withDutyFeedRequestDeadline(
+            DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS,
+            (signal) =>
+              fetchInboxMessages(runParams.buildReqForFeed(currentFeed, { beforeIdNoninclusive }), {
+                signal,
+              }),
           );
           finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const latestFeed = runParams.messageFeedsRef.current.find(
@@ -385,11 +393,16 @@ export function useRerDutyDirectionalLoads(params: Params) {
           `since=${requestedSinceId}; loadedTail=${loadedTailId}; generation=${requestGeneration}; followRequested=${operation.newerOptions.scrollToEndAfterLoad}; followGeneration=${operation.newerOptions.followGeneration}; confirmed=${operation.newerOptions.confirmedTailAvailable}`,
         );
         try {
-          const response = await fetchInboxMessages(
-            runParams.buildReqForFeed(currentFeed, {
-              sinceIdNoninclusive: requestedSinceId,
-              nolimit: operation.newerOptions.nolimit || undefined,
-            }),
+          const response = await withDutyFeedRequestDeadline(
+            DUTY_FEED_PAGINATION_REQUEST_DEADLINE_MS,
+            (signal) =>
+              fetchInboxMessages(
+                runParams.buildReqForFeed(currentFeed, {
+                  sinceIdNoninclusive: requestedSinceId,
+                  nolimit: operation.newerOptions.nolimit || undefined,
+                }),
+                { signal },
+              ),
           );
           finishDebugActivity(`ok; received=${response.inboxItems.length}`);
           const capturedFollowGeneration = operation.newerOptions.followGeneration;

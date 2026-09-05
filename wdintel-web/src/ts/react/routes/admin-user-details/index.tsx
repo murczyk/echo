@@ -87,6 +87,8 @@ function UserDetailsTab({ login }: { login: Login }) {
           value={login.passwordAuthEnabled ? 'Так' : 'Ні'}
         />
         <Divider />
+        <DetailRow label="2FA" value={login.totpEnabled ? 'Увімкнено' : 'Вимкнено'} />
+        <Divider />
         <DetailRow label="Стан" value={login.deleted ? 'Вимкнено' : 'Активний'} />
       </CardContent>
     </Card>

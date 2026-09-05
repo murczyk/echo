@@ -51,6 +51,7 @@ export type Props = {
   onDeleteSuccess?: (messageId: number) => void | Promise<void>;
   editTarget?: { id: number; message: InboxMessage } | null;
   reportSource?: { id: number; message: InboxMessage } | null;
+  editAsReport?: boolean;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
@@ -443,6 +444,7 @@ export function ManageMessageDrawer(props: Props) {
                       busy={busy}
                       existingMedia={existingMedia}
                       errorMsg={drawerState.attachmentErrorMsg}
+                      reportTextPreviewEnabled={isReportMode}
                     />
                   </Stack>
                 </Box>

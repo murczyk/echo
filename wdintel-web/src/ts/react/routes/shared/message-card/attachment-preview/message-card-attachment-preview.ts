@@ -1,9 +1,6 @@
-import { createTheme, type SxProps, type Theme } from '@mui/material/styles';
+import type { SxProps, Theme } from '@mui/material/styles';
 
-const darkPaletteBackgroundDefault = createTheme({ palette: { mode: 'dark' } }).palette.background
-  .default;
-
-export function getAttachmentPreviewStageBg(theme: Theme, _isMediaLayout?: boolean): string {
+export function getAttachmentPreviewStageBg(theme: Theme): string {
   return theme.palette.mode === 'dark' ? theme.palette.background.default : theme.palette.grey[100];
 }
 
@@ -15,14 +12,14 @@ export function blurActiveAttachmentPreviewElement(): void {
   activeElement.blur();
 }
 
-export function getAttachmentPreviewDialogPaperSx(isFullscreen: boolean): SxProps<Theme> {
+export function getAttachmentPreviewDialogPaperSx(): SxProps<Theme> {
   return {
     overflow: 'hidden',
-    borderRadius: isFullscreen ? 0 : 2,
+    borderRadius: 0,
   };
 }
 
-export function getAttachmentPreviewStageSx(theme: Theme, isFullscreen: boolean): SxProps<Theme> {
+export function getAttachmentPreviewStageSx(): SxProps<Theme> {
   return {
     backgroundColor: 'transparent',
   };

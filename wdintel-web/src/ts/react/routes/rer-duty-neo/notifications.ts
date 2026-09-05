@@ -5,6 +5,26 @@ export type DutyNotificationSettings = {
   browserEnabled: boolean;
 };
 
+export enum DutySoundStatus {
+  Ready = 'ready',
+  InteractionRequired = 'interaction-required',
+  Blocked = 'blocked',
+  Unsupported = 'unsupported',
+}
+
+export enum DutyBrowserNotificationStatus {
+  NotRequested = 'not-requested',
+  Granted = 'granted',
+  Denied = 'denied',
+  Unsupported = 'unsupported',
+  RuntimeFailure = 'runtime-failure',
+}
+
+export type DutyStorageResult = { ok: true } | { ok: false; error: string };
+export type DutyNotificationBellState = 'off' | 'ready' | 'degraded' | 'unsupported';
+
+export const DUTY_NOTIFICATION_STATUS_CHANGE_EVENT = 'duty-notification-status-change';
+
 const DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY = 'rer-duty-neo-notifications';
 
 function isLegacyGlobalNotificationShape(parsed: unknown): boolean {
@@ -55,14 +75,38 @@ export function getStoredDutyNotificationSettingsForFeed(feedId: string): DutyNo
 export function setStoredDutyNotificationSettingsForFeed(
   feedId: string,
   value: DutyNotificationSettings,
-): void {
-  if (typeof window === 'undefined') return;
+): DutyStorageResult {
+  if (typeof window === 'undefined') return { ok: true };
   try {
     const next = { ...readDutyNotificationSettingsByFeed(), [feedId]: value };
     window.localStorage.setItem(DUTY_NOTIFICATION_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+    return { ok: true };
   } catch (error) {
     console.warn('Failed to save per-feed notification settings', error);
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+let browserNotificationRuntimeFailure: string | null = null;
+const lastSuccessfulDutyCountCheckByFeedId = new Map<string, Date>();
+
+export function recordLastSuccessfulDutyCountCheck(feedId: string): Date {
+  const at = new Date();
+  lastSuccessfulDutyCountCheckByFeedId.set(feedId, at);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('duty-notification-poll-success', { detail: { feedId, at } }),
+    );
+  }
+  return at;
+}
+
+export function getLastSuccessfulDutyCountCheck(feedId: string): Date | null {
+  return lastSuccessfulDutyCountCheckByFeedId.get(feedId) ?? null;
+}
+
+export function removeLastSuccessfulDutyCountCheck(feedId: string): void {
+  lastSuccessfulDutyCountCheckByFeedId.delete(feedId);
 }
 
 export function getBrowserNotificationPermission(): NotificationPermission | 'unsupported' {
@@ -71,25 +115,83 @@ export function getBrowserNotificationPermission(): NotificationPermission | 'un
   return Notification.permission;
 }
 
+export function getBrowserNotificationStatus(): DutyBrowserNotificationStatus {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return DutyBrowserNotificationStatus.Unsupported;
+  }
+  if (Notification.permission === 'denied') return DutyBrowserNotificationStatus.Denied;
+  if (browserNotificationRuntimeFailure !== null)
+    return DutyBrowserNotificationStatus.RuntimeFailure;
+  if (Notification.permission === 'default') return DutyBrowserNotificationStatus.NotRequested;
+  return DutyBrowserNotificationStatus.Granted;
+}
+
+function publishBrowserNotificationStatusTransition(
+  previousStatus: DutyBrowserNotificationStatus,
+): void {
+  if (typeof window === 'undefined') return;
+  if (previousStatus !== getBrowserNotificationStatus()) {
+    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
+  }
+}
+
+export function getDutyNotificationBellState(
+  settings: DutyNotificationSettings,
+): DutyNotificationBellState {
+  if (!settings.soundEnabled && !settings.browserEnabled) return 'off';
+  const sound = settings.soundEnabled ? getDutySoundStatus() : null;
+  const browser = settings.browserEnabled ? getBrowserNotificationStatus() : null;
+  const supported = [
+    sound !== DutySoundStatus.Unsupported,
+    browser !== DutyBrowserNotificationStatus.Unsupported,
+  ].filter((value, index) => [settings.soundEnabled, settings.browserEnabled][index]);
+  if (!supported.some(Boolean)) return 'unsupported';
+  const ready =
+    (!settings.soundEnabled || sound === DutySoundStatus.Ready) &&
+    (!settings.browserEnabled || browser === DutyBrowserNotificationStatus.Granted);
+  return ready ? 'ready' : 'degraded';
+}
+
 export async function requestBrowserNotificationPermission(): Promise<
   NotificationPermission | 'unsupported'
 > {
   if (typeof window === 'undefined') return 'unsupported';
   if (!('Notification' in window)) return 'unsupported';
-  if (Notification.permission !== 'default') return Notification.permission;
-  return Notification.requestPermission();
+  const permission = Notification.permission;
+  if (permission !== 'default') {
+    if (permission === 'granted' && browserNotificationRuntimeFailure !== null) {
+      const previousStatus = getBrowserNotificationStatus();
+      browserNotificationRuntimeFailure = null;
+      publishBrowserNotificationStatusTransition(previousStatus);
+    }
+    return permission;
+  }
+  const previousStatus = getBrowserNotificationStatus();
+  try {
+    const permission = await Notification.requestPermission();
+    browserNotificationRuntimeFailure = null;
+    publishBrowserNotificationStatusTransition(previousStatus);
+    return permission;
+  } catch (error) {
+    browserNotificationRuntimeFailure = error instanceof Error ? error.message : String(error);
+    publishBrowserNotificationStatusTransition(previousStatus);
+    return 'denied';
+  }
 }
 
 export function showBrowserNotification(title: string, options?: NotificationOptions): void {
   if (typeof window === 'undefined') return;
   if (!('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
+  const previousStatus = getBrowserNotificationStatus();
   try {
     const notification = new Notification(title, options);
     notification.addEventListener('click', () => window.focus());
-  } catch {
-    // ignore
+    browserNotificationRuntimeFailure = null;
+  } catch (error) {
+    browserNotificationRuntimeFailure = error instanceof Error ? error.message : String(error);
   }
+  publishBrowserNotificationStatusTransition(previousStatus);
 }
 
 /**
@@ -107,6 +209,8 @@ const DUTY_NOTIF_CHIME_PEAK_FIRST = 0.22;
 const DUTY_NOTIF_CHIME_PEAK_SECOND = 0.17;
 
 let dutyNotificationAudioContext: AudioContext | null = null;
+let dutySoundStatus = DutySoundStatus.InteractionRequired;
+let dutyPlaybackFailed = false;
 
 function getDutyAudioContextConstructor(): typeof AudioContext | null {
   if (typeof window === 'undefined') return null;
@@ -119,37 +223,69 @@ function getDutyAudioContextConstructor(): typeof AudioContext | null {
 
 function getOrCreateDutyNotificationAudioContext(): AudioContext | null {
   const Ctor = getDutyAudioContextConstructor();
-  if (!Ctor) return null;
+  if (!Ctor) {
+    dutySoundStatus = DutySoundStatus.Unsupported;
+    return null;
+  }
   if (!dutyNotificationAudioContext || dutyNotificationAudioContext.state === 'closed') {
     dutyNotificationAudioContext = new Ctor();
   }
   return dutyNotificationAudioContext;
 }
 
+export function getDutySoundStatus(): DutySoundStatus {
+  if (!getDutyAudioContextConstructor()) return DutySoundStatus.Unsupported;
+  if (dutyPlaybackFailed) return DutySoundStatus.Blocked;
+
+  const contextState = dutyNotificationAudioContext?.state;
+  if (contextState === 'running') return DutySoundStatus.Ready;
+
+  if (contextState && dutySoundStatus === DutySoundStatus.Ready) {
+    return DutySoundStatus.InteractionRequired;
+  }
+
+  return dutySoundStatus;
+}
+
 /**
  * Browsers start AudioContext suspended without a user gesture; polling cannot unlock it.
  * Call from a click/key handler (e.g. toggling sound on in settings) so later timer-driven beeps work.
  */
-export function resumeDutyNotificationAudioFromUserGesture(): void {
+export async function resumeDutyNotificationAudioFromUserGesture(): Promise<DutySoundStatus> {
+  const previousStatus = getDutySoundStatus();
   const ctx = getOrCreateDutyNotificationAudioContext();
-  if (ctx?.state === 'suspended') {
-    void ctx.resume();
+  if (!ctx) return DutySoundStatus.Unsupported;
+  try {
+    if (ctx.state !== 'running' && ctx.state !== 'closed') await ctx.resume();
+    dutySoundStatus =
+      ctx.state === 'running' ? DutySoundStatus.Ready : DutySoundStatus.InteractionRequired;
+  } catch {
+    dutySoundStatus = DutySoundStatus.Blocked;
   }
+  if (previousStatus !== getDutySoundStatus() && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
+  }
+  return getDutySoundStatus();
 }
 
 /** Attach listeners until the user interacts once; cleanup on unmount. */
 export function attachDutyNotificationAudioPrimingListeners(): () => void {
   if (typeof window === 'undefined') return () => {};
   const onGesture = () => {
-    resumeDutyNotificationAudioFromUserGesture();
-    window.removeEventListener('pointerdown', onGesture);
-    window.removeEventListener('keydown', onGesture);
+    void resumeDutyNotificationAudioFromUserGesture();
   };
   window.addEventListener('pointerdown', onGesture);
   window.addEventListener('keydown', onGesture);
+  const onReturn = () => {
+    if (document.visibilityState === 'visible') void resumeDutyNotificationAudioFromUserGesture();
+  };
+  window.addEventListener('focus', onReturn);
+  document.addEventListener('visibilitychange', onReturn);
   return () => {
     window.removeEventListener('pointerdown', onGesture);
     window.removeEventListener('keydown', onGesture);
+    window.removeEventListener('focus', onReturn);
+    document.removeEventListener('visibilitychange', onReturn);
   };
 }
 
@@ -194,27 +330,198 @@ function playDutyNotificationChimeOnContext(ctx: AudioContext): void {
   );
 }
 
-export function playNotificationSound(): void {
-  if (typeof window === 'undefined') return;
+export async function playNotificationSound(): Promise<DutySoundStatus> {
+  if (typeof window === 'undefined') return DutySoundStatus.Unsupported;
+  let playbackStatusBaseline = getDutySoundStatus();
   try {
     const ctx = getOrCreateDutyNotificationAudioContext();
-    if (!ctx) return;
+    if (!ctx) return DutySoundStatus.Unsupported;
     const run = () => {
       if (ctx.state !== 'running') return;
       try {
         playDutyNotificationChimeOnContext(ctx);
+        dutyPlaybackFailed = false;
+        dutySoundStatus = DutySoundStatus.Ready;
       } catch {
-        // ignore
+        dutyPlaybackFailed = true;
+        dutySoundStatus = DutySoundStatus.Blocked;
       }
     };
     if (ctx.state === 'running') {
       run();
     } else {
-      void ctx.resume().then(run);
+      await resumeDutyNotificationAudioFromUserGesture();
+      playbackStatusBaseline = getDutySoundStatus();
+      run();
     }
   } catch {
-    // ignore
+    dutyPlaybackFailed = true;
+    dutySoundStatus = DutySoundStatus.Blocked;
   }
+  const finalStatus = getDutySoundStatus();
+  if (playbackStatusBaseline !== finalStatus) {
+    window.dispatchEvent(new Event(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT));
+  }
+  return finalStatus;
+}
+
+export function testBrowserNotification(): DutyBrowserNotificationStatus {
+  if (typeof window === 'undefined' || !('Notification' in window))
+    return DutyBrowserNotificationStatus.Unsupported;
+  if (Notification.permission === 'denied') return DutyBrowserNotificationStatus.Denied;
+  if (Notification.permission !== 'granted') return DutyBrowserNotificationStatus.NotRequested;
+  const previousStatus = getBrowserNotificationStatus();
+  try {
+    new Notification('Перевірка сповіщення', {
+      body: 'Браузер прийняв запит. Доставку визначає система.',
+      silent: true,
+    });
+    browserNotificationRuntimeFailure = null;
+    publishBrowserNotificationStatusTransition(previousStatus);
+    return getBrowserNotificationStatus();
+  } catch (error) {
+    browserNotificationRuntimeFailure = error instanceof Error ? error.message : String(error);
+    publishBrowserNotificationStatusTransition(previousStatus);
+    return getBrowserNotificationStatus();
+  }
+}
+
+export type DutyNotificationPreview = {
+  messageId: number;
+  timestamp: number | null;
+  title: string;
+  body: string;
+};
+export enum DutyNotificationPreviewResultKind {
+  Ready = 'ready',
+  Unavailable = 'unavailable',
+  Stale = 'stale',
+}
+export type DutyNotificationPreviewResult =
+  | { kind: DutyNotificationPreviewResultKind.Ready; preview: DutyNotificationPreview }
+  | { kind: DutyNotificationPreviewResultKind.Unavailable }
+  | { kind: DutyNotificationPreviewResultKind.Stale };
+type PendingDutyAlert = {
+  feedId: string;
+  totalNew: number;
+  loadPreview?: () => Promise<DutyNotificationPreviewResult>;
+};
+declare const dutyNotificationPollCycleBrand: unique symbol;
+export type DutyNotificationPollCycle = { readonly [dutyNotificationPollCycleBrand]: true };
+type DutyNotificationPollCycleState = {
+  alerts: PendingDutyAlert[];
+  status: 'active' | 'ended' | 'cancelled';
+};
+const dutyNotificationPollCycleStates = new WeakMap<
+  DutyNotificationPollCycle,
+  DutyNotificationPollCycleState
+>();
+const dutyNotificationPreviewLoaders = new WeakMap<
+  DutyNotificationPollCycle,
+  Map<string, () => Promise<DutyNotificationPreviewResult>>
+>();
+
+export function registerDutyNotificationPreview(
+  cycle: DutyNotificationPollCycle,
+  feedId: string,
+  loadPreview: () => Promise<DutyNotificationPreviewResult>,
+): void {
+  const loaders = dutyNotificationPreviewLoaders.get(cycle) ?? new Map();
+  loaders.set(feedId, loadPreview);
+  dutyNotificationPreviewLoaders.set(cycle, loaders);
+}
+
+function deliverDutyAlerts(alerts: PendingDutyAlert[], cycle?: DutyNotificationPollCycle): void {
+  const enabled = alerts.filter(({ feedId }) => {
+    const settings = getStoredDutyNotificationSettingsForFeed(feedId);
+    return settings.soundEnabled || settings.browserEnabled;
+  });
+  if (enabled.some(({ feedId }) => getStoredDutyNotificationSettingsForFeed(feedId).soundEnabled)) {
+    void playNotificationSound();
+  }
+  const browserEnabled = enabled.filter(
+    ({ feedId }) => getStoredDutyNotificationSettingsForFeed(feedId).browserEnabled,
+  );
+  if (browserEnabled.length === 0) return;
+  if (!cycle || !browserEnabled.some((alert) => alert.loadPreview)) {
+    showBrowserNotification('Нове повідомлення', {
+      body: 'Відкрийте «Оперативний», щоб переглянути.',
+      silent: true,
+      tag: `duty-cycle-${Date.now()}`,
+    });
+    return;
+  }
+  void Promise.all(
+    browserEnabled.map(
+      (alert) =>
+        alert
+          .loadPreview?.()
+          .catch(() => ({ kind: DutyNotificationPreviewResultKind.Unavailable })) ??
+        Promise.resolve({ kind: DutyNotificationPreviewResultKind.Unavailable }),
+    ),
+  ).then((results) => {
+    const state = dutyNotificationPollCycleStates.get(cycle);
+    if (!state || state.status === 'cancelled') return;
+    const eligible = results.filter(
+      (result, index) =>
+        getStoredDutyNotificationSettingsForFeed(browserEnabled[index]!.feedId).browserEnabled &&
+        result.kind !== DutyNotificationPreviewResultKind.Stale,
+    );
+    if (eligible.length === 0) return;
+    const unique = new Map<number, DutyNotificationPreview>();
+    eligible
+      .filter(
+        (
+          result,
+        ): result is Extract<
+          DutyNotificationPreviewResult,
+          { kind: DutyNotificationPreviewResultKind.Ready }
+        > => result.kind === DutyNotificationPreviewResultKind.Ready,
+      )
+      .forEach(({ preview }) => {
+        unique.set(preview.messageId, preview);
+      });
+    const newest = [...unique.values()].sort(
+      (a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || b.messageId - a.messageId,
+    )[0];
+    if (
+      !newest &&
+      !eligible.some((result) => result.kind === DutyNotificationPreviewResultKind.Unavailable)
+    )
+      return;
+    showBrowserNotification(newest?.title ?? 'Нове повідомлення', {
+      body: newest?.body ?? 'Відкрийте «Оперативний», щоб переглянути.',
+      silent: true,
+      tag: newest ? `duty-message-${newest.messageId}` : `duty-cycle-${Date.now()}`,
+    });
+  });
+}
+
+/** One explicit poll owns aggregation; overlapping triggers retain independent handles. */
+export function beginDutyNotificationPollCycle(): DutyNotificationPollCycle {
+  const cycle = {} as DutyNotificationPollCycle;
+  dutyNotificationPollCycleStates.set(cycle, { alerts: [], status: 'active' });
+  return cycle;
+}
+
+export function endDutyNotificationPollCycle(cycle: DutyNotificationPollCycle): void {
+  const state = dutyNotificationPollCycleStates.get(cycle);
+  if (!state || state.status !== 'active') return;
+  state.status = 'ended';
+  deliverDutyAlerts(state.alerts, cycle);
+  state.alerts = [];
+}
+
+export function cancelDutyNotificationPollCycle(cycle: DutyNotificationPollCycle): void {
+  const state = dutyNotificationPollCycleStates.get(cycle);
+  if (!state || state.status === 'cancelled') return;
+  state.status = 'cancelled';
+  state.alerts = [];
+}
+
+export function publishDutyNotificationPollSuccess(feedId: string): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('duty-notification-poll-success', { detail: { feedId } }));
 }
 
 /** Strip a leading `(N)` / legacy `(+N)` count prefix from the tab title. */
@@ -264,16 +571,23 @@ export function setDutyNeoDocumentTitleUnreadCount(totalUnread: number): void {
   applyDutyNeoDocumentTitle();
 }
 
-export function notifyDutyNewMessages(feedId: string, totalNew: number): void {
+export function notifyDutyNewMessages(
+  feedId: string,
+  totalNew: number,
+  cycle?: DutyNotificationPollCycle,
+): void {
   if (totalNew <= 0) return;
-  const settings = getStoredDutyNotificationSettingsForFeed(feedId);
-  if (settings.soundEnabled) {
-    playNotificationSound();
+  const alert = {
+    feedId,
+    totalNew,
+    loadPreview: cycle ? dutyNotificationPreviewLoaders.get(cycle)?.get(feedId) : undefined,
+  };
+  if (!cycle) return deliverDutyAlerts([alert]);
+  const state = dutyNotificationPollCycleStates.get(cycle);
+  if (!state || state.status === 'cancelled') return;
+  if (state.status === 'active') {
+    state.alerts.push(alert);
+    return;
   }
-  if (settings.browserEnabled) {
-    showBrowserNotification('Нові повідомлення в оперативному', {
-      body: `Нових повідомлень: ${totalNew}`,
-      silent: true,
-    });
-  }
+  deliverDutyAlerts([alert]);
 }

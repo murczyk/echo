@@ -1155,6 +1155,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base32"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "022dfe9eb35f19ebbcb51e0b40a5ab759f46ad60cadf7297e0bd085afb50e076"
+
+[[package]]
 name = "base64"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2872,7 +2878,7 @@ version = "0.1.1"
 
 [[package]]
 name = "echo-docs"
-version = "0.1.1-rc.202608282130"
+version = "0.1.1-rc.202609051117"
 
 [[package]]
 name = "echo-gpu-client"
@@ -2912,43 +2918,16 @@ version = "1.0.0"
 
 [[package]]
 name = "echo-im"
-version = "0.1.1-rc.202608151343"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160#61af3aaaa15fea493cda880a6cb087b94ac75160"
+version = "0.1.1-rc.202608311347"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa3d0c318d0ec48513c16b1f37105ef33c"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.22.1",
  "chrono",
- "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160)",
- "echo-im-signal 0.1.1-rc.202608151343 (git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160)",
- "echo-im-whatsapp 0.1.1-rc.202608151343 (git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160)",
- "lazy_static",
- "libc",
- "log",
- "qrcode",
- "regex",
- "reqwest 0.12.28",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "uuid",
- "xshell",
-]
-
-[[package]]
-name = "echo-im"
-version = "0.1.1-rc.202608151343"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75#f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "echo-im-migration 0.1.0 (git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75)",
- "echo-im-signal 0.1.1-rc.202608151343 (git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75)",
- "echo-im-whatsapp 0.1.1-rc.202608151343 (git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75)",
+ "echo-im-migration",
+ "echo-im-signal",
+ "echo-im-whatsapp",
  "lazy_static",
  "libc",
  "log",
@@ -2967,19 +2946,7 @@ dependencies = [
 [[package]]
 name = "echo-im-migration"
 version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160#61af3aaaa15fea493cda880a6cb087b94ac75160"
-dependencies = [
- "async-std",
- "clap",
- "sea-orm",
- "sea-orm-migration",
- "tokio",
-]
-
-[[package]]
-name = "echo-im-migration"
-version = "0.1.0"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75#f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa3d0c318d0ec48513c16b1f37105ef33c"
 dependencies = [
  "async-std",
  "clap",
@@ -2990,27 +2957,17 @@ dependencies = [
 
 [[package]]
 name = "echo-im-signal"
-version = "0.1.1-rc.202608151343"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160#61af3aaaa15fea493cda880a6cb087b94ac75160"
-
-[[package]]
-name = "echo-im-signal"
-version = "0.1.1-rc.202608151343"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75#f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75"
+version = "0.1.1-rc.202608311347"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa3d0c318d0ec48513c16b1f37105ef33c"
 
 [[package]]
 name = "echo-im-whatsapp"
-version = "0.1.1-rc.202608151343"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160#61af3aaaa15fea493cda880a6cb087b94ac75160"
-
-[[package]]
-name = "echo-im-whatsapp"
-version = "0.1.1-rc.202608151343"
-source = "git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75#f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75"
+version = "0.1.1-rc.202608311347"
+source = "git+ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa3d0c318d0ec48513c16b1f37105ef33c"
 
 [[package]]
 name = "echo-install"
-version = "0.1.1-rc.202608282130"
+version = "0.1.1-rc.202609051117"
 dependencies = [
  "anyhow",
  "echo-install-utils",
@@ -3054,18 +3011,19 @@ dependencies = [
 
 [[package]]
 name = "echo-messengers"
-version = "0.1.1-rc.202608282130"
+version = "0.1.1-rc.202609051117"
 dependencies = [
  "actix-web",
  "anyhow",
  "base64 0.22.1",
  "chrono",
- "echo-im 0.1.1-rc.202608151343 (git+ssh://git@github.com/echoua/echo-im.git?rev=f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75)",
+ "echo-im",
  "echo-install-utils",
  "env_logger 0.11.9",
  "image 0.25.10",
  "log",
  "milgeo-rs",
+ "redis 1.0.5",
  "regex",
  "reqwest 0.12.28",
  "sea-orm",
@@ -3798,7 +3756,7 @@ dependencies = [
 
 [[package]]
 name = "goi-echo-worker"
-version = "0.1.1-rc.202608282130"
+version = "0.1.1-rc.202609051117"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -6592,6 +6550,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "qrcodegen"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4339fc7a1021c9c1621d87f5e3505f2805c8c105420ba2f2a4df86814590c142"
+
+[[package]]
+name = "qrcodegen-image"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e3dd60f5b603f72c307455fc52deec52ada1ba53c7580918bb2a8e3247d4fe7"
+dependencies = [
+ "base64 0.22.1",
+ "image 0.25.10",
+ "qrcodegen",
+]
+
+[[package]]
 name = "quick-error"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9306,6 +9281,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "totp-rs"
+version = "5.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50e69a15e21b2ff22c415446983978bded3244195f17d59cb113551c1e806f91"
+dependencies = [
+ "base32",
+ "constant_time_eq 0.3.1",
+ "hmac 0.12.1",
+ "qrcodegen-image",
+ "rand 0.9.2",
+ "sha1 0.10.6",
+ "sha2 0.10.9",
+ "url",
+ "urlencoding",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9898,7 +9890,7 @@ dependencies = [
 
 [[package]]
 name = "wdintel-rs"
-version = "0.1.1-rc.202608282130"
+version = "0.1.1-rc.202609051117"
 dependencies = [
  "actix-files",
  "actix-identity",
@@ -9929,7 +9921,7 @@ dependencies = [
  "dirs",
  "docx-rs",
  "echo-gpu-client",
- "echo-im 0.1.1-rc.202608151343 (git+ssh://git@github.com/echoua/echo-im.git?rev=61af3aaaa15fea493cda880a6cb087b94ac75160)",
+ "echo-im",
  "echo-install-utils",
  "echo-migration",
  "elm_rs",
@@ -10001,6 +9993,7 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "toml",
+ "totp-rs",
  "tracing-subscriber",
  "unicode-normalization",
  "unicode-segmentation",

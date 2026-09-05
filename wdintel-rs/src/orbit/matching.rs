@@ -1,10 +1,13 @@
 use crate::config::{
+    ORBIT_MATCHING_NON_IDENTITY_QUALIFIER_PATTERNS,
     ORBIT_MATCHING_SIGINT_NAME_BLACKLIST, ORBIT_TEST_LINK_UNITS_MAX_RATING,
     ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY,
 };
 use crate::entities::sigint_unit;
 use crate::orbit::types::SourceUnit;
 use crate::orbit::{echo_echelon, EchoEchelon};
+use lazy_static::lazy_static;
+use regex::RegexBuilder;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +218,13 @@ impl TestLinkMatcher {
         }
     }
 
+    pub fn matchable_units(&self) -> impl Iterator<Item = &SourceUnit> {
+        self.candidates
+            .iter()
+            .filter(|candidate| candidate.path.root_echelon.is_some())
+            .map(|candidate| &candidate.orbit_unit)
+    }
+
     pub fn best_matches(
         &self,
         sigint_hierarchy: &[(EchoEchelon, &str)],
@@ -269,6 +279,29 @@ impl TestLinkMatcher {
             })
             .map(|(candidate, rating)| (&candidate.orbit_unit, rating))
             .collect()
+    }
+
+    pub fn closest_matches<'a>(
+        &'a self,
+        sigint_unit: &sigint_unit::Model,
+    ) -> Vec<&'a SourceUnit> {
+        let Some((sigint_echelon, _)) = sigint_unit_identity(sigint_unit)
+        else {
+            return Vec::new();
+        };
+        let mut candidates = self
+            .candidates
+            .iter()
+            .filter_map(|candidate| {
+                search_score_for_path(
+                    &candidate.path,
+                    sigint_unit,
+                    sigint_echelon,
+                )
+                .map(|score| (&candidate.orbit_unit, score))
+            })
+            .collect::<Vec<_>>();
+        closest_search_candidates(&mut candidates)
     }
 }
 
@@ -362,6 +395,7 @@ fn leading_number(value: &str) -> Option<&str> {
         .filter(|part| part.chars().all(|character| character.is_ascii_digit()))
 }
 
+#[cfg(test)]
 pub fn closest_orbit_matches<'a>(
     orbit_units: &'a [SourceUnit],
     sigint_unit: &sigint_unit::Model,
@@ -376,6 +410,12 @@ pub fn closest_orbit_matches<'a>(
                 .map(|score| (orbit_unit, score))
         })
         .collect::<Vec<_>>();
+    closest_search_candidates(&mut candidates)
+}
+
+fn closest_search_candidates<'a>(
+    candidates: &mut Vec<(&'a SourceUnit, MatchScore)>,
+) -> Vec<&'a SourceUnit> {
     candidates.sort_by_key(|(orbit_unit, score)| {
         (
             std::cmp::Reverse(score.matched_names),
@@ -388,7 +428,7 @@ pub fn closest_orbit_matches<'a>(
     };
     let best_quality = (best_score.matched_names, best_score.echelon_distance);
     candidates
-        .into_iter()
+        .drain(..)
         .take_while(|(_, score)| {
             (score.matched_names, score.echelon_distance) == best_quality
         })
@@ -396,12 +436,21 @@ pub fn closest_orbit_matches<'a>(
         .collect()
 }
 
+#[cfg(test)]
 fn search_score(
     orbit_unit: &SourceUnit,
     sigint_unit: &sigint_unit::Model,
     sigint_echelon: EchoEchelon,
 ) -> Option<MatchScore> {
     let path = comparable_path(orbit_unit).ok()?;
+    search_score_for_path(&path, sigint_unit, sigint_echelon)
+}
+
+fn search_score_for_path(
+    path: &ComparablePath,
+    sigint_unit: &sigint_unit::Model,
+    sigint_echelon: EchoEchelon,
+) -> Option<MatchScore> {
     let matched_names = sigint_hierarchy(sigint_unit)
         .into_iter()
         .filter(|(echelon, name)| {
@@ -848,7 +897,31 @@ fn is_subsequence(shorter: &[String], longer: &[String]) -> bool {
 }
 
 pub(super) fn normalize_name(value: &str) -> String {
-    crate::unit::normalize_unit_formation_name(value)
+    lazy_static! {
+        static ref NON_IDENTITY_QUALIFIERS: Vec<regex::Regex> =
+            ORBIT_MATCHING_NON_IDENTITY_QUALIFIER_PATTERNS
+                .iter()
+                .map(|pattern| {
+                    RegexBuilder::new(pattern)
+                        .case_insensitive(true)
+                        .build()
+                        .expect("invalid ORBIT non-identity qualifier regex")
+                })
+                .collect();
+    }
+    let original = crate::unit::normalize_unit_formation_name(value);
+    let without_qualifiers = NON_IDENTITY_QUALIFIERS
+        .iter()
+        .fold(value.to_string(), |value, regex| {
+            regex.replace_all(&value, " ").into_owned()
+        });
+    let without_qualifiers =
+        crate::unit::normalize_unit_formation_name(&without_qualifiers);
+    if without_qualifiers.is_empty() {
+        original
+    } else {
+        without_qualifiers
+    }
 }
 
 pub(super) fn normalize_orbit_hierarchy_name(
@@ -1088,6 +1161,37 @@ mod tests {
                 .best_matches(&hierarchy),
             vec![(&orbit_unit, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
         );
+    }
+
+    #[test]
+    fn test_link_matches_non_identity_qualifiers_at_full_rating() {
+        let orbit_unit = source_unit(
+            "4 мсб (на БМП) / 60 омсбр ТрВ / 5 ЗВА",
+            vec![
+                ("battalion", "4 мсб (на БМП)", 0),
+                ("brigade", "60 омсбр ТрВ", 1),
+                ("fieldArmy", "5 ЗВА", 2),
+            ],
+        );
+        let hierarchy = [
+            (EchoEchelon::Battalion, "4 мсб"),
+            (EchoEchelon::Brigade, "60 омсбр"),
+            (EchoEchelon::Army, "5 ЗА"),
+        ];
+
+        assert_eq!(
+            TestLinkMatcher::new(std::slice::from_ref(&orbit_unit))
+                .best_matches(&hierarchy),
+            vec![(&orbit_unit, ORBIT_TEST_LINK_UNITS_MAX_RATING)]
+        );
+        for qualified in [
+            "60 омсбр (кт)",
+            "60 омсбр (ш)",
+            "60 омсбр УВ(с)",
+            "60 омсбр ОУВ Харків",
+        ] {
+            assert_eq!(normalize_name(qualified), "60 омсбр", "{qualified}");
+        }
     }
 
     #[test]
@@ -1455,15 +1559,22 @@ mod tests {
             ],
         );
         let sigint_unit = echo_unit("", "1 мсб", "4 омсбр", "", "3 А");
+        let units = [second.clone(), weaker, first.clone()];
+        let expected = vec![first.unit_id, second.unit_id];
         assert_eq!(
-            closest_orbit_matches(
-                &[second.clone(), weaker, first.clone()],
-                &sigint_unit
-            )
-            .into_iter()
-            .map(|unit| unit.unit_id)
-            .collect::<Vec<_>>(),
-            vec![first.unit_id, second.unit_id]
+            closest_orbit_matches(&units, &sigint_unit)
+                .into_iter()
+                .map(|unit| unit.unit_id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            TestLinkMatcher::new(&units)
+                .closest_matches(&sigint_unit)
+                .into_iter()
+                .map(|unit| unit.unit_id)
+                .collect::<Vec<_>>(),
+            expected
         );
     }
 

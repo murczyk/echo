@@ -1,0 +1,161 @@
+{
+  "commands": {
+    "cargo check": {
+      "log": "/tmp/echo-analytics-verification/cargo-check.log",
+      "sha256": "0edb5abfcc424b28de4712ca10b28740b5788e2e67bf68296afb82d7f129d1b9",
+      "tail": [
+        "    Checking echo-im-signal v0.1.1-rc.202608311347 (ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa)",
+        "    Checking echo-im-whatsapp v0.1.1-rc.202608311347 (ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa)",
+        "   Compiling wdintel-rs v0.1.1-rc.202609031828 (/home/ubuntu/workspace/echo-main/wdintel-rs)",
+        "    Checking echo-im v0.1.1-rc.202608311347 (ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa)",
+        "    Checking echo-messengers v0.1.1-rc.202609031828 (/home/ubuntu/workspace/echo-main/echo-messengers)",
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 27.71s",
+        "warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1",
+        "note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`"
+      ]
+    },
+    "cargo clippy --all-targets --all-features -- -D warnings": {
+      "log": "/tmp/echo-analytics-verification/clippy.log",
+      "sha256": "09a1056ae2cd9e495e37a48298943712cc8200b79ef4c3e6a5ebf3471c176bae",
+      "tail": [
+        "   Compiling echo-im-whatsapp v0.1.1-rc.202608311347 (ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa)",
+        "   Compiling echo-im-signal v0.1.1-rc.202608311347 (ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa)",
+        "   Compiling wdintel-rs v0.1.1-rc.202609031828 (/home/ubuntu/workspace/echo-main/wdintel-rs)",
+        "    Checking echo-im v0.1.1-rc.202608311347 (ssh://git@github.com/echoua/echo-im.git?rev=9e3154fa3d0c318d0ec48513c16b1f37105ef33c#9e3154fa)",
+        "    Checking echo-messengers v0.1.1-rc.202609031828 (/home/ubuntu/workspace/echo-main/echo-messengers)",
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 54.20s",
+        "warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1",
+        "note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`"
+      ]
+    },
+    "cargo fmt --all -- --check": {
+      "log": "/tmp/echo-analytics-verification/format-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "tail": []
+    },
+    "just build-front": {
+      "log": "/tmp/echo-analytics-verification/build-front.log",
+      "sha256": "918209175e3f4b5dbee993a949a9c16d512e85cc6c84a056f38e8d779931bc6f",
+      "tail": [
+        "> wdintel-web@1.0.0 build",
+        "> rm -rf dist && elm-land build",
+        "",
+        "",
+        "\ud83c\udf08  Elm Land \u001b[2m(v0.20.1)\u001b[0m is compiling \u001b[36msrc/interop.ts\u001b[0m...",
+        "\u001b[36m    \u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u001b[0m",
+        "",
+        "\ud83c\udf08  Elm Land \u001b[2m(v0.20.1)\u001b[0m build was successful.",
+        "\u001b[32m    \u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u23ba\u001b[0m"
+      ]
+    },
+    "cargo test -p wdintel-rs rer_importer::analysis::tests": {
+      "log": "/tmp/echo-analytics-verification/analysis-tests.log",
+      "sha256": "8f28523169f70d3d804ea5425190c5d7b3fb7574bddf73ccfd7bdd755c3789b6",
+      "tail": [
+        "2026-09-05T06:09:27.360001Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "2026-09-05T06:09:27.454253Z  INFO wdintel_rs::server: version file: /home/ubuntu/workspace/echo-main/wdintel-rs/version.txt at wdintel-rs/src/server/mod.rs::171",
+        "2026-09-05T06:09:27.577117Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "ok",
+        "test rer_importer::analysis::tests::summary_table_xlsx_chunks_merge_without_coordinate_data ... ok",
+        "test rer_importer::analysis::tests::summary_table_xlsx_list_cells_summarize_omitted_values ... ok",
+        "",
+        "test result: ok. 108 passed; 0 failed; 0 ignored; 0 measured; 2331 filtered out; finished in 32.74s",
+        ""
+      ]
+    },
+    "cargo test -p wdintel-rs rer_importer::inbox::": {
+      "log": "/tmp/echo-analytics-verification/inbox-tests.log",
+      "sha256": "a99302e16819c95f53901e16158663a72d5e1c89c0a057bf2243c9023528ecf2",
+      "tail": [
+        "2026-09-05T06:05:21.922925Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "2026-09-05T06:05:22.015701Z  INFO wdintel_rs::server: version file: /home/ubuntu/workspace/echo-main/wdintel-rs/version.txt at wdintel-rs/src/server/mod.rs::171",
+        "2026-09-05T06:05:22.139018Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "ok",
+        "test rer_importer::inbox::tests::validate_generic_submit_item_rejects_missing_message_text ... ok",
+        "test rer_importer::inbox::tests::validate_generic_submit_item_requires_group_names ... ok",
+        "",
+        "test result: ok. 133 passed; 0 failed; 0 ignored; 0 measured; 2305 filtered out; finished in 13.43s",
+        ""
+      ]
+    },
+    "cargo test -p wdintel-rs stats::": {
+      "log": "/tmp/echo-analytics-verification/stats-tests.log",
+      "sha256": "b42804a11bf3463a107b6c8346be76718e04ff9abfcc67185719f3b1c9758260",
+      "tail": [
+        "test stats::tests::test_should_read_stats_aggregated_false_for_only_with_metadata ... ok",
+        "test stats::tests::test_should_read_stats_aggregated_false_for_selected_device_names ... ok",
+        "test stats::tests::test_start_of_day ... ok",
+        "test stats::tests::test_start_of_day_dst ... ok",
+        "test stats::tests::test_stats_aggregated_range_rounds_up_and_caps_at_current_bucket ... ok",
+        "test stats::tests::test_stats_aggregated_time_range_rounds_production_timestamp ... ok",
+        "",
+        "test result: ok. 52 passed; 0 failed; 2 ignored; 0 measured; 2385 filtered out; finished in 7.37s",
+        ""
+      ]
+    },
+    "cargo test -p wdintel-rs hybrid_inbox_revalidates_backdated_arrivals_and_lagged_deletions": {
+      "log": "/tmp/echo-analytics-verification/hybrid-test.log",
+      "sha256": "87ce72b03465085b5211c519de70fe7c5fab2557bf552df5494e72c7605ad75b",
+      "tail": [
+        "Running migration: done",
+        "2026-09-05T06:08:52.805744Z ERROR wdintel_rs::server: missing S3 config! at wdintel-rs/src/server/mod.rs::74",
+        "2026-09-05T06:08:53.098010Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "2026-09-05T06:08:53.670153Z  INFO wdintel_rs::server: version file: /home/ubuntu/workspace/echo-main/wdintel-rs/version.txt at wdintel-rs/src/server/mod.rs::171",
+        "2026-09-05T06:08:53.898939Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "test rer_importer::inbox::tests::hybrid_inbox_revalidates_backdated_arrivals_and_lagged_deletions ... ok",
+        "",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2438 filtered out; finished in 2.06s",
+        ""
+      ]
+    },
+    "cargo test -p wdintel-rs group_stats_raw_timeline_matches_message_activity": {
+      "log": "/tmp/echo-analytics-verification/group-timeline-test.log",
+      "sha256": "0c521a1e3147db93b12ed46fad4b551a38b58194169395341386221c95694acb",
+      "tail": [
+        "2026-09-05T06:13:51.328388Z ERROR wdintel_rs::server: missing S3 config! at wdintel-rs/src/server/mod.rs::74",
+        "2026-09-05T06:13:51.510496Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "2026-09-05T06:13:51.873001Z  INFO wdintel_rs::server: version file: /home/ubuntu/workspace/echo-main/wdintel-rs/version.txt at wdintel-rs/src/server/mod.rs::171",
+        "2026-09-05T06:13:51.990588Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "2026-09-05T06:13:52.192612Z  INFO analytics_route: operation=\"group timeline raw miss\" route=postgres reason=unconfigured outcome=success elapsed_ms=0 at wdintel-rs/src/rer_importer/analysis/mod.rs::8457",
+        "test rer_importer::analysis::tests::group_stats_raw_timeline_matches_message_activity ... ok",
+        "",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2438 filtered out; finished in 1.30s",
+        ""
+      ]
+    },
+    "make installcheck (PG18, C.UTF-8)": {
+      "log": "/tmp/echo-analytics-verification/revised-regression.log",
+      "sha256": "5dd995993a1998ffea622f00b00c08c451342a8bfd822cbc50ae04935e37bec3",
+      "tail": [
+        "not ok 35    + union_pushdown                            441 ms",
+        "ok 36        + where_sub                                  35 ms",
+        "ok 37        + window_functions                          136 ms",
+        "1..37",
+        "# 2 of 37 tests failed.",
+        "# The differences that caused some tests to fail can be viewed in the file \"/home/ubuntu/workspace/pg_clickhouse-analytics/regression.diffs\".",
+        "# A copy of the test summary that you see above is saved in the file \"/home/ubuntu/workspace/pg_clickhouse-analytics/regression.out\".",
+        "make: *** [/usr/lib/postgresql/18/lib/pgxs/src/makefiles/pgxs.mk:433: installcheck] Error 1",
+        "make: Leaving directory '/home/ubuntu/workspace/pg_clickhouse-analytics'"
+      ]
+    },
+    "cargo test group_stats_raw_timeline_matches_message_activity": {
+      "log": "/tmp/echo-analytics-verification/group-timeline-test.log",
+      "sha256": "0c521a1e3147db93b12ed46fad4b551a38b58194169395341386221c95694acb",
+      "tail": [
+        "2026-09-05T06:13:51.510496Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "2026-09-05T06:13:51.873001Z  INFO wdintel_rs::server: version file: /home/ubuntu/workspace/echo-main/wdintel-rs/version.txt at wdintel-rs/src/server/mod.rs::171",
+        "2026-09-05T06:13:51.990588Z  INFO echo_gpu_client::client: reloaded 0 active Echo GPU instances",
+        "2026-09-05T06:13:52.192612Z  INFO analytics_route: operation=\"group timeline raw miss\" route=postgres reason=unconfigured outcome=success elapsed_ms=0 at wdintel-rs/src/rer_importer/analysis/mod.rs::8457",
+        "test rer_importer::analysis::tests::group_stats_raw_timeline_matches_message_activity ... ok",
+        "",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2438 filtered out; finished in 1.30s",
+        ""
+      ]
+    }
+  },
+  "extension_builds": {
+    "baseline": "1a8b230599d928903c93136de9c0168564b948144d7b89ad9b6ced39ab1b8f52",
+    "revised": "a5928f3fe671993d2009b26ae29513c419ef875ac18dc91bcdcb71d2921218ea"
+  },
+  "deployment_evidence": "deployment-verification.json"
+}

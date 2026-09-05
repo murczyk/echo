@@ -251,6 +251,7 @@ function buildReport() {
 function buildEditor() {
   return {
     editorMessage: null,
+    editorEditAsReport: false,
     editorSaveInFlight: false,
     closeEditor: vi.fn(),
     openEditor: vi.fn(),

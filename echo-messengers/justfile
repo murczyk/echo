@@ -186,7 +186,9 @@ deploy server builder=default_builder branch=default_branch:
     export DEBIAN_FRONTEND=noninteractive
 
     sudo apt-get update
-    sudo apt-get install -y openjdk-25-jre-headless
+    sudo apt-get install -y openjdk-25-jre-headless redis-server
+    sudo systemctl enable --now redis-server
+    redis-cli ping | grep -qx PONG
     cd /var/tmp
     sudo apt-get install -y --reinstall --allow-downgrades "./${SIGNAL_DEB_NAME}" "./${WHATSAPP_DEB_NAME}"
     sudo apt-get install -y --reinstall --allow-downgrades "./${DEB_NAME}"
@@ -202,6 +204,7 @@ deploy server builder=default_builder branch=default_branch:
       sudo chmod 0600 /etc/echo-messengers/config.toml
     fi
 
+    sudo /usr/bin/echo-messengers migrate
     sudo systemctl daemon-reload
     sudo systemctl enable --now echo-messengers
     sudo systemctl restart echo-messengers

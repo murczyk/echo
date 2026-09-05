@@ -3,6 +3,7 @@ import type { InboxMessage, Tag } from '../../../../../Bindings';
 export type MessageCardTagRow = {
   tagId: number;
   label: string;
+  isOrganismTag: boolean;
   isSet: boolean;
   tip: string | null;
   showBadge: boolean;
@@ -100,6 +101,7 @@ export function buildMessageCardTagRows(
     return {
       tagId: numericTagId,
       label,
+      isOrganismTag: tag?.ownerOrganismId != null,
       isSet,
       tip,
       showBadge: isSet && (humanContribs.length > 0 || botContribs.length > 0),

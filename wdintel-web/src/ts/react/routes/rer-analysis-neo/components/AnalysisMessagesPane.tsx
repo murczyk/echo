@@ -30,6 +30,7 @@ import type { TagsLayoutVariant } from '../../rer-duty-neo/utils';
 import type { AddPointHighlightBlacklistRequest } from '../../shared/message-card/point-highlight-blacklist';
 import type { AnalysisDirectMessageNavigation } from '../types';
 import { ANALYSIS_MESSAGES_PAGE_SIZE, getFirstLoadedMessagesPageIndex } from '../helpers';
+import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 
 type BotTagAction = {
   messageId: number;
@@ -320,7 +321,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsOrder,
   tagsLoading,
   tagsLayout,
-  mediaSummaryEnabled = true,
+  mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
@@ -500,7 +501,7 @@ function AnalysisMessagesPaneComponent({
   tagsOrder,
   tagsLoading,
   tagsLayout,
-  mediaSummaryEnabled = true,
+  mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines,
   showCallsignAddForm,
   searchText,

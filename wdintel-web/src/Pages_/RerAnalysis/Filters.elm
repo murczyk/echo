@@ -726,18 +726,33 @@ view isDark _ model =
 
         tabFiltersUnits =
             let
+                isLegacyUnitValue value =
+                    not (Pages_.RerAnalysis.Query.isCanonicalUnitIdValue value)
+
+                unitLabel value =
+                    case ( Pages_.RerAnalysis.Query.canonicalUnitIdFromValue value, model.units ) of
+                        ( Just unitId, RD.Success units ) ->
+                            units
+                                |> List.filter (\unit -> unit.unitId == unitId)
+                                |> List.head
+                                |> Maybe.map .name
+                                |> Maybe.withDefault value
+
+                        _ ->
+                            getLabelOrDefault value
+
                 items =
                     List.map
                         (\unit ->
                             Select.customMenuItem
                                 { item = unit
-                                , label = getLabelOrDefault unit
+                                , label = unitLabel unit
                                 , view =
                                     Html.Styled.fromUnstyled <|
                                         div []
-                                            [ text (getLabelOrDefault unit)
+                                            [ text (unitLabel unit)
                                             , span [ class "badge rounded-pill text-bg-light" ]
-                                                [ text <| getLabelOrDefault unit ]
+                                                [ text <| unitLabel unit ]
                                             ]
                                 }
                         )
@@ -756,7 +771,10 @@ view isDark _ model =
                             "всі"
                             { options | loading = isRefreshing model.units }
                     )
-                , if List.isEmpty model.unitsSelected then
+                , if
+                    List.isEmpty model.unitsSelected
+                        || not (List.any isLegacyUnitValue model.unitsSelected)
+                  then
                     text ""
 
                   else

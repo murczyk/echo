@@ -27,11 +27,23 @@ import Utils.Utils exposing (..)
 import View exposing (View)
 
 
+type Pending2fa
+    = Setup
+        { challengeId : String
+        , qrBase64 : String
+        , manualKey : String
+        }
+    | Verify { challengeId : String }
+
+
 type alias Model =
     { formErrors : Dict String String
     , toasts : Shared.Components.Toast.Model
     , loginInp : String
     , passwordInp : String
+    , totpTokenInp : String
+    , pending2fa : Maybe Pending2fa
+    , authInFlight : Bool
     , redirect : Maybe String
     , serverInfo : Maybe B.ServerInfo
     , showCredsLogin : Bool
@@ -67,6 +79,9 @@ init route shared _ =
       , toasts = Shared.Components.Toast.init
       , loginInp = ""
       , passwordInp = ""
+      , totpTokenInp = ""
+      , pending2fa = Nothing
+      , authInFlight = False
       , redirect = Dict.get "redirect" route.query
       , serverInfo = shared.serverInfo
       , showCredsLogin = False
@@ -97,9 +112,13 @@ type Msg
     | SharedToastMsg Shared.Components.Toast.Msg
     | SetLoginInp String
     | SetPasswordInp String
+    | SetTotpTokenInp String
     | ToggleCredsLogin
     | Login
-    | LoginDone (Result ApiError ())
+    | LoginDone (Result ApiError B.LoginRsp)
+    | Confirm2fa
+    | Confirm2faDone (Result ApiError ())
+    | Cancel2fa
     | GotLocation LocationRes
     | GetDeltaRedirectUrl
     | GotDeltaRedirectUrl (Result ApiError B.DeltaLoginUrl)
@@ -118,6 +137,85 @@ isFeatureDeltaEnabled maybeServerInfo =
 focusLoginInput : Cmd Msg
 focusLoginInput =
     Task.attempt (\_ -> NoOp) (Browser.Dom.focus "login")
+
+
+focusTotpInput : Cmd Msg
+focusTotpInput =
+    Task.attempt (\_ -> NoOp) (Browser.Dom.focus "totp-token")
+
+
+pendingFromLoginRsp : B.LoginRsp -> Maybe Pending2fa
+pendingFromLoginRsp rsp =
+    case rsp of
+        B.Authenticated ->
+            Nothing
+
+        B.Needs2faSetup payload ->
+            Just (Setup payload)
+
+        B.Needs2fa payload ->
+            Just (Verify payload)
+
+
+challengeIdFromPending : Pending2fa -> String
+challengeIdFromPending pending =
+    case pending of
+        Setup { challengeId } ->
+            challengeId
+
+        Verify { challengeId } ->
+            challengeId
+
+
+{-| OTP panel only renders `token` errors. Account/organism failures from confirm
+arrive as `login` (or other) form keys / 401→login; surface them on `token`.
+-}
+remapConfirm2faFormErrors : Dict String String -> Dict String String
+remapConfirm2faFormErrors errors =
+    case Dict.get "token" errors of
+        Just _ ->
+            errors
+
+        Nothing ->
+            case Dict.get "login" errors of
+                Just msg ->
+                    Dict.insert "token" msg errors
+
+                Nothing ->
+                    case Dict.toList errors of
+                        ( _, msg ) :: _ ->
+                            Dict.insert "token" msg errors
+
+                        [] ->
+                            errors
+
+
+navigateAfterLogin : Shared.Model -> Model -> Effect Msg
+navigateAfterLogin shared model =
+    case shared.location of
+        Nothing ->
+            E.none
+
+        Just loc ->
+            E.sendCmd <|
+                Browser.Navigation.load
+                    (model.redirect
+                        |> mmap
+                            (\x ->
+                                if
+                                    String.contains "localhost" x
+                                        || String.contains "127.0.0.1" x
+                                then
+                                    x
+
+                                else
+                                    String.replace "http://" "https://" x
+                            )
+                        |> def
+                            (loc.origin
+                                ++ Url.Builder.absolute [] []
+                            )
+                    )
 
 
 page : Shared.Model -> Route () -> Page Model Msg
@@ -154,6 +252,9 @@ update shared msg model =
         SetPasswordInp s ->
             ( { model | passwordInp = s }, E.none )
 
+        SetTotpTokenInp s ->
+            ( { model | totpTokenInp = s }, E.none )
+
         ToggleCredsLogin ->
             let
                 showCredsLogin =
@@ -172,11 +273,14 @@ update shared msg model =
             )
 
         Login ->
-            if isFeatureDeltaEnabled shared.serverInfo && not model.showCredsLogin then
+            if model.authInFlight then
+                ( model, E.none )
+
+            else if isFeatureDeltaEnabled shared.serverInfo && not model.showCredsLogin then
                 ( model, E.none )
 
             else
-                ( model
+                ( { model | formErrors = Dict.empty, authInFlight = True }
                 , E.sendCmd <|
                     Api.users_login LoginDone
                         { user = model.loginInp
@@ -185,35 +289,73 @@ update shared msg model =
                 )
 
         LoginDone (Err e) ->
-            Api.handleLoginHttpError ToastMsg e model
+            Api.handleLoginHttpError ToastMsg e { model | authInFlight = False }
 
-        LoginDone (Ok ()) ->
-            case shared.location of
+        LoginDone (Ok rsp) ->
+            case pendingFromLoginRsp rsp of
                 Nothing ->
+                    ( { model | authInFlight = False }
+                    , navigateAfterLogin shared model
+                    )
+
+                Just pending ->
+                    ( { model
+                        | pending2fa = Just pending
+                        , totpTokenInp = ""
+                        , formErrors = Dict.empty
+                        , authInFlight = False
+                      }
+                    , E.sendCmd focusTotpInput
+                    )
+
+        Confirm2fa ->
+            case ( model.authInFlight, model.pending2fa ) of
+                ( True, _ ) ->
                     ( model, E.none )
 
-                Just loc ->
-                    ( model
-                    , E.sendCmd <|
-                        Browser.Navigation.load
-                            (model.redirect
-                                |> mmap
-                                    (\x ->
-                                        if
-                                            String.contains "localhost" x
-                                                || String.contains "127.0.0.1" x
-                                        then
-                                            x
+                ( False, Nothing ) ->
+                    ( model, E.none )
 
-                                        else
-                                            String.replace "http://" "https://" x
-                                    )
-                                |> def
-                                    (loc.origin
-                                        ++ Url.Builder.absolute [] []
-                                    )
-                            )
+                ( False, Just pending ) ->
+                    ( { model | formErrors = Dict.empty, authInFlight = True }
+                    , E.sendCmd <|
+                        Api.users_confirm_2fa Confirm2faDone
+                            { challengeId = challengeIdFromPending pending
+                            , token = model.totpTokenInp
+                            }
                     )
+
+        Confirm2faDone (Err e) ->
+            case model.pending2fa of
+                Nothing ->
+                    ( { model | authInFlight = False }, E.none )
+
+                Just _ ->
+                    let
+                        ( modelWithError, effect ) =
+                            Api.handleLoginHttpError ToastMsg e { model | authInFlight = False }
+                    in
+                    ( { modelWithError
+                        | formErrors =
+                            remapConfirm2faFormErrors modelWithError.formErrors
+                      }
+                    , effect
+                    )
+
+        Confirm2faDone (Ok ()) ->
+            ( { model | authInFlight = False }
+            , navigateAfterLogin shared model
+            )
+
+        Cancel2fa ->
+            ( { model
+                | pending2fa = Nothing
+                , totpTokenInp = ""
+                , formErrors = Dict.empty
+                , authInFlight = False
+              }
+            , E.sendCmd focusLoginInput
+            )
 
         GotLocation loc ->
             let
@@ -288,11 +430,84 @@ subscriptions _ =
     Sub.none
 
 
+totpPanel : Model -> Pending2fa -> List (Html Msg)
+totpPanel model pending =
+    let
+        setupBits =
+            case pending of
+                Setup { qrBase64, manualKey } ->
+                    [ div [ class "mb-3 w-100 text-center" ]
+                        [ img
+                            [ src ("data:image/png;base64," ++ qrBase64)
+                            , alt "QR код для 2FA"
+                            , style "width" "180px"
+                            , style "height" "180px"
+                            , style "background" "#fff"
+                            , style "margin" "auto"
+                            ]
+                            []
+                        ]
+                    , div [ class "mb-2 w-100 text-center small" ]
+                        [ text "Відскануйте QR у застосунку автентифікатора або введіть ключ вручну:" ]
+                    , div
+                        [ class "mb-3 w-100 text-center text-info small font-monospace"
+                        , style "word-break" "break-all"
+                        ]
+                        [ text manualKey ]
+                    ]
+
+                Verify _ ->
+                    [ div [ class "mb-3 w-100 text-center small  " ]
+                        [ text "Введіть код з застосунку автентифікатора" ]
+                    ]
+    in
+    setupBits
+        ++ [ div [ class "mb-2 w-100" ] <|
+                input
+                    [ type_ "text"
+                    , class "form-control"
+                    , id "totp-token"
+                    , placeholder "код з автентифікатора"
+                    , value model.totpTokenInp
+                    , onInput SetTotpTokenInp
+                    , disabled model.authInFlight
+                    , attribute "autocomplete" "one-time-code"
+                    , attribute "inputmode" "numeric"
+                    , isInvalidCls "token" model.formErrors
+                    ]
+                    []
+                    :: fieldError "token" model.formErrors
+           , div [ class "mb-2 w-100 d-flex justify-content-center" ]
+                [ button
+                    [ type_ "submit"
+                    , class "btn btn-primary btn-dark w-100"
+                    , disabled model.authInFlight
+                    ]
+                    [ text "підтвердити" ]
+                ]
+           , div [ class "w-100 text-center" ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn-link btn-sm text-decoration-none p-0"
+                    , style "color" "var(--bs-secondary-color)"
+                    , onClick Cancel2fa
+                    , disabled model.authInFlight
+                    ]
+                    [ text "назад" ]
+                ]
+           ]
+
+
 body : Bool -> Bool -> Shared.Components.Toast.Model -> Model -> List (Html Msg)
 body _ deltaLoginFlag sharedToasts model =
     let
         formWidth =
-            style "width" "280px"
+            case model.pending2fa of
+                Just (Setup _) ->
+                    style "width" "320px"
+
+                _ ->
+                    style "width" "280px"
 
         logoBlock =
             div [ class "mb-4 pt-2" ]
@@ -347,6 +562,10 @@ body _ deltaLoginFlag sharedToasts model =
                 ]
 
         credsFields interactive =
+            let
+                fieldsEnabled =
+                    interactive && not model.authInFlight
+            in
             [ div [ class "mb-2 w-100" ] <|
                 input
                     [ type_ "text"
@@ -355,7 +574,7 @@ body _ deltaLoginFlag sharedToasts model =
                     , placeholder "логін"
                     , value model.loginInp
                     , onInput SetLoginInp
-                    , disabled (not interactive)
+                    , disabled (not fieldsEnabled)
                     , isInvalidCls "login" model.formErrors
                     ]
                     []
@@ -367,7 +586,7 @@ body _ deltaLoginFlag sharedToasts model =
                     , placeholder "пароль"
                     , value model.passwordInp
                     , onInput SetPasswordInp
-                    , disabled (not interactive)
+                    , disabled (not fieldsEnabled)
                     , isInvalidCls "password" model.formErrors
                     ]
                     []
@@ -378,7 +597,7 @@ body _ deltaLoginFlag sharedToasts model =
                 [ button
                     [ type_ "submit"
                     , class "btn btn-primary btn-dark w-100"
-                    , disabled (not interactive)
+                    , disabled (not fieldsEnabled)
                     ]
                     [ text "увійти" ]
                 ]
@@ -441,11 +660,24 @@ body _ deltaLoginFlag sharedToasts model =
             ]
 
         formChildren =
-            if deltaLoginFlag then
-                logoBlock :: deltaFormChildren
+            case model.pending2fa of
+                Just pending ->
+                    logoBlock :: totpPanel model pending
 
-            else
-                logoBlock :: credsFields True
+                Nothing ->
+                    if deltaLoginFlag then
+                        logoBlock :: deltaFormChildren
+
+                    else
+                        logoBlock :: credsFields True
+
+        formSubmitMsg =
+            case model.pending2fa of
+                Just _ ->
+                    Confirm2fa
+
+                Nothing ->
+                    Login
     in
     [ Shared.Components.Toast.overlay SharedToastMsg sharedToasts
     , Shared.Components.Toast.view ToastMsg model.toasts <|
@@ -459,7 +691,7 @@ body _ deltaLoginFlag sharedToasts model =
                 , class "border shadow-lg p-4"
                 , formWidth
                 , style "background-image" "linear-gradient(to bottom, rgba(var(--bs-body-bg-rgb), .7), rgba(var(--bs-body-bg-rgb), .9))"
-                , onSubmit Login
+                , onSubmit formSubmitMsg
                 ]
                 formChildren
             ]

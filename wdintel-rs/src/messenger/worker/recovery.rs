@@ -2596,6 +2596,7 @@ mod tests {
     ) -> (echo_account::Model, datasource::Model) {
         let account = mk_echo_account(dbx, is_linked).await;
         let client = echo_client::ActiveModel {
+            show_chats_admin_panel: NotSet,
             id: NotSet,
             name: Set(format!("test-client-{}", Uuid::new_v4())),
             created_at: Set(Utc::now().naive_utc()),

@@ -2,8 +2,9 @@
 
 Echo is a SIGINT analytical web application deployed as one application
 container per installation. PostgreSQL 18 is the system of record, Redis owns
-sessions and transient coordination, and separate API, background-worker, and
-report-worker processes isolate interactive traffic from long-running work.
+sessions, TOTP login challenges, and other transient coordination, and
+separate API, background-worker, and report-worker processes isolate
+interactive traffic from long-running work.
 
 Quick intelligence-report suggestions are a synchronous, optional API path
 that makes exactly one structured vLLM request. It reads only the selected
@@ -60,6 +61,12 @@ operations refuse to cross a release mismatch. A dedicated serialized
 analytics reconciler owns schema repair, while the frequent health service is
 read-only apart from its replication heartbeat and only reports drift.
 
+Gateway extension hotfixes use a checksummed extension-only artifact. The
+installer holds the reconciliation lock, saves the previous library and
+configuration hashes, and stops gateway PostgreSQL before replacing its
+library. Inbox diagnostics record the final operation outcome and duration,
+including complete PostgreSQL fallback after candidate revalidation.
+
 ## Messenger processing
 
 `echo-messengers` is an independently deployable workspace package and systemd
@@ -67,6 +74,14 @@ service. Its source, package metadata, and build/deploy commands live beside
 `goi/` rather than under it. GOI deployments delegate to the messenger
 justfile and retire the legacy `echo-swapp` service before starting the renamed
 service.
+
+`echo-messengers` also owns the chat-administration HTTP/UI surface, Redis
+unread-state worker, durable webhook dispatcher, and outbound chat attachment
+storage at `/var/lib/echo-messengers/chat-attachments`. PostgreSQL remains the
+source of truth; Redis failure degrades unread operations without taking chat
+history or messenger management offline. Per-client 30-day retention is
+applied through Echo IM and restarts only that client's worker. Chat ingestion
+and webhook delivery run in independent worker loops.
 
 Messenger receipt and processing are separate. Receipt persists snapshots in
 PostgreSQL even while NLP is unavailable. The queue processor waits for
@@ -83,6 +98,12 @@ apply only to newly queued data, while AOR changes retain their existing
 behavior of requeueing affected links. Attempted misses remain available for
 administrator review.
 
+`wdintel-rs-bgworker` also owns `ai_settlement_worker`. When enabled by an
+administrator, new or reparsed inbox messages are queued for header-based AI
+location extraction. The worker preserves every existing `location_v2` value,
+appends only missing settlements, and reconciles the settlement-link queue in
+the same transaction. It is disabled by default.
+
 ## Statistics storage
 
 `wdintel-rs-bgworker` derives recent and daily group statistics from
@@ -91,6 +112,34 @@ PostgreSQL into Redis. Legacy location facets remain text values split from
 canonical IDs from `sigint_inbox_item_settlement.settlement_id`. The
 `oneoff-calculate-historic-stats` command can rebuild only settlement buckets
 with `--only settlement`.
+
+## Credentials authentication storage
+
+Password login 2FA is owned by the `wdintel-rs` API process. Durable TOTP
+seeds live in PostgreSQL table `login_totp` (`login_id` → `login`,
+StrongBox-encrypted `totp_secret` ciphertext). Encryption uses top-level
+`totp_strongbox_key` in `config.toml` (dedicated key; do not reuse S3
+`s3_config.strongbox_key`). That table is PeerDB-excluded and must not appear
+in the analytics replica: second-factor seeds are an operational credential
+boundary, not analytical data. The replicated `login` row never stores the
+seed; APIs expose only `totp_enabled`. Admin clear, password change, and
+disabling password auth bump `login.totp_epoch` and invalidate Redis
+challenges so in-flight OTP prompts cannot continue. Confirm locks the
+`login` row (`FOR UPDATE`) through enroll (if any) and session issuance,
+rechecking `password_auth_enabled` and the epoch under that lock so an
+admin invalidation cannot race a claimed challenge into a new session.
+
+Pending enroll/verify state is Redis-only on the same Redis service as
+sessions (not the group-stats logical database): challenge payloads under
+`2fa:challenge:*` (enroll `pending_secret` is also StrongBox ciphertext), a
+per-login active pointer, and a per-login failed-attempt counter with TTL. A
+session cookie is issued only after a successful confirm (or immediately for
+unattended `Api` / `ApiAgent` password logins, or logins with the `No2FA`
+role). Admin clear deletes the `login_totp` row and invalidates Redis
+challenges.
+
+Implementation detail:
+[archive/2026-08-30-totp-2fa/README.md](../archive/2026-08-30-totp-2fa/README.md).
 
 ### Initial Battle Line import from Delta KML
 

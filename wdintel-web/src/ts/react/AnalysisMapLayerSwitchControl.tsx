@@ -4,15 +4,14 @@ import { Badge, Box, Checkbox, IconButton, Radio, ThemeProvider, Typography } fr
 import { useCallback, useEffect, useState } from 'react';
 
 import type { FeatureToggleState } from '../maps/control-modules';
+import { BaseLayerId } from '../maps/base-layers';
 import { useNeoMuiTheme } from './mui-theme';
 
-type BaseLayerName = 'openStreetMap' | 'googleHybrid';
-
 type AnalysisMapLayerSwitchControlProps = {
-  currentLayer: BaseLayerName;
+  currentLayer: BaseLayerId;
   features: FeatureToggleState;
   forceCollapsed?: boolean;
-  onLayerChange: (layer: BaseLayerName) => void;
+  onLayerChange: (layer: BaseLayerId) => void;
   onFeatureToggle: (feature: keyof FeatureToggleState, enabled: boolean) => void;
 };
 
@@ -117,15 +116,21 @@ function AnalysisMapLayerSwitchControlInner(props: AnalysisMapLayerSwitchControl
           />
           <Typography className="layer-switch-subheader">Основа</Typography>
           <LayerRow
-            checked={props.currentLayer === 'googleHybrid'}
-            label="Супутник"
-            onClick={() => props.onLayerChange('googleHybrid')}
+            checked={props.currentLayer === BaseLayerId.Delta}
+            label="Delta"
+            onClick={() => props.onLayerChange(BaseLayerId.Delta)}
             type="radio"
           />
           <LayerRow
-            checked={props.currentLayer === 'openStreetMap'}
+            checked={props.currentLayer === BaseLayerId.Google}
+            label="Google"
+            onClick={() => props.onLayerChange(BaseLayerId.Google)}
+            type="radio"
+          />
+          <LayerRow
+            checked={props.currentLayer === BaseLayerId.OpenStreetMap}
             label="OpenStreetMap"
-            onClick={() => props.onLayerChange('openStreetMap')}
+            onClick={() => props.onLayerChange(BaseLayerId.OpenStreetMap)}
             type="radio"
           />
         </Box>

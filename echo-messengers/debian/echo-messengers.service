@@ -1,7 +1,7 @@
 [Unit]
 Description=Echo messengers
-After=network-online.target
-Wants=network-online.target
+After=network-online.target redis-server.service
+Wants=network-online.target redis-server.service
 
 [Service]
 ExecStart=/usr/bin/echo-messengers
@@ -10,6 +10,8 @@ User=root
 Group=root
 RestartSec=5s
 WorkingDirectory=/etc/echo-messengers
+StateDirectory=echo-messengers
+StateDirectoryMode=0750
 Environment=RUST_LOG=info,echo_messengers=debug
 
 [Install]

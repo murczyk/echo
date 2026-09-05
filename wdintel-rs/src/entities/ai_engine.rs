@@ -49,6 +49,10 @@ pub enum Relation {
     AiIntelReportAttempt,
     #[sea_orm(has_many = "super::ai_intel_report_settings::Entity")]
     AiIntelReportSettings,
+    #[sea_orm(has_many = "super::ai_settlement_parse_result::Entity")]
+    AiSettlementParseResult,
+    #[sea_orm(has_many = "super::ai_settlement_settings::Entity")]
+    AiSettlementSettings,
     #[sea_orm(has_many = "super::media_summary::Entity")]
     MediaSummary,
     #[sea_orm(has_many = "super::media_summary_settings::Entity")]
@@ -121,6 +125,18 @@ impl Related<super::ai_intel_report_settings::Entity> for Entity {
     }
 }
 
+impl Related<super::ai_settlement_parse_result::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiSettlementParseResult.def()
+    }
+}
+
+impl Related<super::ai_settlement_settings::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::AiSettlementSettings.def()
+    }
+}
+
 impl Related<super::media_summary::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::MediaSummary.def()
@@ -152,6 +168,20 @@ impl Related<super::ai_callsign_test_message::Entity> for Entity {
     fn via() -> Option<RelationDef> {
         Some(
             super::ai_callsign_parse_result::Relation::AiEngine
+                .def()
+                .rev(),
+        )
+    }
+}
+
+impl Related<super::ai_settlement_test_message::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::ai_settlement_parse_result::Relation::AiSettlementTestMessage
+            .def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(
+            super::ai_settlement_parse_result::Relation::AiEngine
                 .def()
                 .rev(),
         )

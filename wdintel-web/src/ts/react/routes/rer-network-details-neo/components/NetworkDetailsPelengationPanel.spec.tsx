@@ -53,7 +53,7 @@ function renderPanel(pelengPoints: NetworkPoint[] = []) {
         pelengSearch=""
         pelengEnabledFreqs={[]}
         pelengShowLabels={true}
-        pelengSatelliteEnabled={true}
+        pelengBaseLayerId="esriWorldImagery"
         pelengHeatmapEnabled={false}
         onReloadPelengPoints={vi.fn()}
         onPelengSinceChange={vi.fn()}
@@ -61,7 +61,7 @@ function renderPanel(pelengPoints: NetworkPoint[] = []) {
         onPelengSearchChange={vi.fn()}
         onPelengEnabledFreqsChange={vi.fn()}
         onPelengShowLabelsChange={vi.fn()}
-        onPelengSatelliteEnabledChange={vi.fn()}
+        onPelengBaseLayerIdChange={vi.fn()}
         onPelengHeatmapEnabledChange={vi.fn()}
       />,
     );
@@ -87,7 +87,7 @@ function renderLoadingPanel() {
         pelengSearch=""
         pelengEnabledFreqs={[]}
         pelengShowLabels={true}
-        pelengSatelliteEnabled={true}
+        pelengBaseLayerId="esriWorldImagery"
         pelengHeatmapEnabled={false}
         onReloadPelengPoints={vi.fn()}
         onPelengSinceChange={vi.fn()}
@@ -95,7 +95,7 @@ function renderLoadingPanel() {
         onPelengSearchChange={vi.fn()}
         onPelengEnabledFreqsChange={vi.fn()}
         onPelengShowLabelsChange={vi.fn()}
-        onPelengSatelliteEnabledChange={vi.fn()}
+        onPelengBaseLayerIdChange={vi.fn()}
         onPelengHeatmapEnabledChange={vi.fn()}
       />,
     );
@@ -150,7 +150,9 @@ describe('NetworkDetailsPelengationPanel', () => {
     expect(view.container.textContent).toContain('Частоти');
     expect(view.container.textContent).not.toContain('Усі');
     expect(view.container.textContent).not.toContain('Нічого');
-    expect(view.container.textContent).toContain('Супутник');
+    expect(view.container.textContent).toContain('Delta');
+    expect(view.container.textContent).toContain('Google');
+    expect(view.container.textContent).toContain('OpenStreetMap');
     expect(view.container.textContent).toContain('Теплова карта');
   });
 });

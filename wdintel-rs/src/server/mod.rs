@@ -50,6 +50,17 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 }
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+    Ok(new_env_with_initialization(mode, true).await.c(h!())?)
+}
+
+pub(crate) async fn new_readonly_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+    Ok(new_env_with_initialization(mode, false).await.c(h!())?)
+}
+
+async fn new_env_with_initialization(
+    mode: Mode,
+    initialize: bool,
+) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
     let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
@@ -76,12 +87,14 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
-    crate::ai_agent::dispatcher::import_legacy_config(
-        &dbx,
-        config.ai_agent_dispatcher.as_ref(),
-    )
-    .await
-    .c(h!())?;
+    if initialize {
+        crate::ai_agent::dispatcher::import_legacy_config(
+            &dbx,
+            config.ai_agent_dispatcher.as_ref(),
+        )
+        .await
+        .c(h!())?;
+    }
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -199,6 +212,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         replicas,
         analytics,
         tag_keyword_regex_cache: Arc::new(RwLock::new(Default::default())),
+        orbit_matcher_cache: Arc::new(tokio::sync::RwLock::new(
+            Default::default(),
+        )),
         session_activity_tx,
         session_activity_rx: Arc::new(tokio::sync::Mutex::new(
             session_activity_rx,
@@ -211,12 +227,21 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         )),
         palitra_worker_context: Arc::new(Default::default()),
     };
-    crate::location::aor_config::init_aor_location_config(
-        &dbx,
-        settlements.clone(),
-    )
-    .await
-    .c(h!())?;
+    if initialize {
+        crate::location::aor_config::init_aor_location_config(
+            &dbx,
+            settlements.clone(),
+        )
+        .await
+        .c(h!())?;
+    } else {
+        crate::location::aor_config::refresh_settlements_aor_map(
+            &dbx,
+            settlements.clone(),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(Arc::new(env))
 }
 
@@ -673,6 +698,16 @@ fn spawn_background_workers(
         .await;
     });
 
+    let ai_settlement_env = env.clone();
+    let ai_settlement_cancellation_token = cancel_token.clone();
+    spawn_named_worker("ai_settlement_worker", bg_set, async move {
+        crate::ai_settlement::worker::run_nofail(
+            ai_settlement_env,
+            ai_settlement_cancellation_token,
+        )
+        .await;
+    });
+
     let ocr_env = env.clone();
     let ocr_cancellation_token = cancel_token.clone();
     spawn_named_worker("ocr_worker", bg_set, async move {
@@ -965,6 +1000,15 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::ai_callsign::save_ai_callsign_parsing)
             .service(crate::ai_callsign::recalculate_ai_callsign_parsing)
             .service(crate::ai_callsign::save_ai_callsign_worker_settings)
+            .service(crate::ai_settlement::get_ai_settlement_page)
+            .service(crate::ai_settlement::reset_ai_settlement_prompt)
+            .service(crate::ai_settlement::create_ai_settlement_test_message)
+            .service(crate::ai_settlement::update_ai_settlement_test_message)
+            .service(crate::ai_settlement::delete_ai_settlement_test_message)
+            .service(crate::ai_settlement::test_ai_settlement_parsing)
+            .service(crate::ai_settlement::save_ai_settlement_parsing)
+            .service(crate::ai_settlement::recalculate_ai_settlement_parsing)
+            .service(crate::ai_settlement::save_ai_settlement_worker_settings)
             .service(crate::ocr::get_ocr_page)
             .service(crate::ocr::save_ocr_settings)
             .service(crate::ocr::reprocess_media_ocr)
@@ -990,6 +1034,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::messenger::restapi_errors::signal_restapi_error_latest)
             .service(crate::messenger::restapi_errors::signal_restapi_error_counts)
             .service(crate::users::user_login)
+            .service(crate::users::user_confirm_2fa)
             .service(crate::users::user_test_api_login)
             .service(crate::users::api_user)
             .service(crate::users::api_user_info)
@@ -1005,6 +1050,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
             .service(crate::sigint::direct_submit::parse_direct_submit)
             .service(crate::sigint::file_upload::tus_base)
             .service(crate::sigint::file_upload::tus_file)
+            .service(crate::sigint::file_upload::fallback_upload)
             .service(crate::sigint::device_name::device_name_create)
             .service(crate::sigint::device_name::device_name_search)
             .service(crate::users::list_logins)

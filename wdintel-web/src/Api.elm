@@ -499,13 +499,25 @@ rer_analysis_latest_senders toMsg =
 
 
 users_login :
-    (Result ApiError () -> msg)
+    (Result ApiError LoginRsp -> msg)
     -> LoginReq
     -> Cmd msg
 users_login toMsg req =
     Http.post
         { url = "/api/user/login"
         , body = Http.jsonBody (loginReqEncoder req)
+        , expect = leExpectJson toMsg loginRspDecoder
+        }
+
+
+users_confirm_2fa :
+    (Result ApiError () -> msg)
+    -> Confirm2faReq
+    -> Cmd msg
+users_confirm_2fa toMsg req =
+    Http.post
+        { url = "/api/user/confirm-2fa"
+        , body = Http.jsonBody (confirm2faReqEncoder req)
         , expect = leExpectJson toMsg (Decode.succeed ())
         }
 

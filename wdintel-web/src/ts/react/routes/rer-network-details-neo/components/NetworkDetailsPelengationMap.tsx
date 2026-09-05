@@ -3,12 +3,13 @@ import { alpha, type Theme } from '@mui/material/styles';
 import { createPortal } from 'react-dom';
 
 import type { NetworkPoint } from '../../../../../Bindings';
+import type { BaseLayerId } from '../../../../maps/base-layers';
 import { useNetworkDetailsPelengationMap } from './useNetworkDetailsPelengationMap';
 
 type Props = {
   pelengPoints: NetworkPoint[];
   showLabels: boolean;
-  satelliteEnabled: boolean;
+  baseLayerId: BaseLayerId;
   heatmapEnabled: boolean;
 };
 
@@ -87,13 +88,13 @@ function getMapControlSx(theme: Theme) {
 export function NetworkDetailsPelengationMap({
   pelengPoints,
   showLabels,
-  satelliteEnabled,
+  baseLayerId,
   heatmapEnabled,
 }: Props) {
   const { mapContainerRef, isFullscreen, toggleFullscreen } = useNetworkDetailsPelengationMap(
     pelengPoints,
     showLabels,
-    satelliteEnabled,
+    baseLayerId,
     heatmapEnabled,
   );
 

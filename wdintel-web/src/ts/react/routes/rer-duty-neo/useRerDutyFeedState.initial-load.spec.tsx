@@ -52,6 +52,39 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(apiRef.current?.messageFeeds[0]?.loading).toBe(false);
   });
 
+  it('notifies once when the first count after a successful load finds new mail', async () => {
+    hoisted.fetchInboxMessages.mockResolvedValueOnce(
+      inboxRsp([[7, minimalInboxMessage({ timestamp: 700 })]], 7),
+    );
+    hoisted.fetchInboxCount.mockResolvedValue({ quantity: 1, firstElementTs: null });
+    const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+      current: null,
+    };
+
+    await act(async () => {
+      root.render(<TestHarness apiRef={apiRef} />);
+      await flushMicrotasks();
+    });
+
+    await startPoll();
+
+    expect(hoisted.fetchInboxCount).toHaveBeenCalledWith(
+      expect.objectContaining({ sinceIdNoninclusive: 7 }),
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith(
+      'mf-0',
+      1,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
+
+    hoisted.notifyDutyNewMessages.mockClear();
+    await startPoll();
+
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
+  });
+
   it('never turns the own-unit tag display into an inbox filter', async () => {
     const { apiRef } = await mountLoadedFeed();
     await act(async () => {
@@ -373,6 +406,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
 
     expect(hoisted.fetchInboxCount).toHaveBeenCalledWith(
       expect.objectContaining({ sinceIdNoninclusive: 1 }),
+      expect.objectContaining({ signal: expect.anything() }),
     );
   });
 

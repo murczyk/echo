@@ -524,7 +524,7 @@ view user model shared route =
                         [ ( "bg-white border-gray-200 hover:border-gray-300", not (isDarkMode shared.themeMode) )
                         , ( "bg-gray-800 border-gray-700 hover:border-gray-600", isDarkMode shared.themeMode )
                         ]
-                    , Route.href { path = Route.Path.RerNetworks, hash = Nothing, query = Dict.empty }
+                    , Route.href { path = Route.Path.RerNetworksNeo, hash = Nothing, query = Dict.empty }
                     , target "_blank"
                     ]
                     [ div []

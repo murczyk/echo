@@ -11,7 +11,9 @@ import {
 } from 'react';
 import type { MouseEvent } from 'react';
 import {
+  DUTY_NOTIFICATION_STATUS_CHANGE_EVENT,
   getStoredDutyNotificationSettingsForFeed,
+  getDutyNotificationBellState,
   requestBrowserNotificationPermission,
   resumeDutyNotificationAudioFromUserGesture,
   setStoredDutyNotificationSettingsForFeed,
@@ -55,6 +57,11 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
   const notificationPanelRef = useRef<HTMLDivElement | null>(null);
   const keywordsPanelRef = useRef<HTMLDivElement | null>(null);
   const [notificationStorageSyncKey, setNotificationStorageSyncKey] = useState(0);
+  const [notificationStatusVersion, setNotificationStatusVersion] = useState(0);
+  const [notificationStorageError, setNotificationStorageError] = useState<string | null>(null);
+  const refreshNotificationStatus = useCallback(() => {
+    setNotificationStatusVersion((version) => version + 1);
+  }, []);
   const bumpNotificationStorageSync = useCallback(() => {
     setNotificationStorageSyncKey((k) => k + 1);
   }, []);
@@ -62,8 +69,21 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
     () => getStoredDutyNotificationSettingsForFeed(feed.id),
     [feed.id, notificationStorageSyncKey],
   );
-  const dutyNotificationsOn =
-    dutyNotificationSummary.soundEnabled || dutyNotificationSummary.browserEnabled;
+  const dutyNotificationBellState = useMemo(
+    () => getDutyNotificationBellState(dutyNotificationSummary),
+    [dutyNotificationSummary, notificationStatusVersion],
+  );
+  useEffect(() => {
+    const refresh = () => setNotificationStatusVersion((version) => version + 1);
+    window.addEventListener('focus', refresh);
+    window.addEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener(DUTY_NOTIFICATION_STATUS_CHANGE_EVENT, refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, []);
   const handleBellToggleDutyNotifications = useCallback(
     async (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
@@ -71,18 +91,33 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
       registerDutyScrollDebugBellPress();
       const cur = getStoredDutyNotificationSettingsForFeed(feed.id);
       if (cur.soundEnabled || cur.browserEnabled) {
-        setStoredDutyNotificationSettingsForFeed(feed.id, {
+        const result = setStoredDutyNotificationSettingsForFeed(feed.id, {
           soundEnabled: false,
           browserEnabled: false,
         });
-        bumpNotificationStorageSync();
+        if (result.ok) {
+          setNotificationStorageError(null);
+          bumpNotificationStorageSync();
+        } else {
+          setNotificationStorageError(result.error);
+          setShowNotificationPanel(true);
+        }
         return;
       }
       resumeDutyNotificationAudioFromUserGesture();
       const permission = await requestBrowserNotificationPermission();
       const browserEnabled = permission === 'granted';
-      setStoredDutyNotificationSettingsForFeed(feed.id, { soundEnabled: true, browserEnabled });
-      bumpNotificationStorageSync();
+      const result = setStoredDutyNotificationSettingsForFeed(feed.id, {
+        soundEnabled: true,
+        browserEnabled,
+      });
+      if (result.ok) {
+        setNotificationStorageError(null);
+        bumpNotificationStorageSync();
+      } else {
+        setNotificationStorageError(result.error);
+        setShowNotificationPanel(true);
+      }
     },
     [feed.id, bumpNotificationStorageSync],
   );
@@ -213,7 +248,7 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         showFilters={showFilters}
         showNotificationPanel={showNotificationPanel}
         showKeywordsPanel={showKeywordsPanel}
-        dutyNotificationsOn={dutyNotificationsOn}
+        dutyNotificationBellState={dutyNotificationBellState}
         onCreateFeed={onCreateFeed}
         onToggleFilters={onToggleFilters}
         onToggleNotificationPanel={onToggleNotificationPanel}
@@ -230,6 +265,9 @@ export const FeedColumn = forwardRef<FeedColumnHandle, FeedColumnProps>(function
         keywordsPanel={keywordsPanel}
         notificationStorageSyncKey={notificationStorageSyncKey}
         onNotificationPersisted={bumpNotificationStorageSync}
+        notificationStorageError={notificationStorageError}
+        onNotificationStorageErrorChange={setNotificationStorageError}
+        onNotificationStatusChanged={refreshNotificationStatus}
       />
       <FeedColumnContent ref={contentRef} column={column} />
       <DutyScrollDebugPanel feed={feed} view={view} />

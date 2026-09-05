@@ -15,6 +15,7 @@ import { writeRerAnalysisQueryStateToSearchParams } from '../../../rer-analysis-
 import { toLegacyRerAnalysisQueryState } from '../../../rer-analysis-query-state-legacy';
 import { emptyArrToNull, isNullOrUndefined, isPresent } from '../../utils/misc';
 import { normalizeCallsignLookupValue } from '../../utils/callsign-normalization';
+import { getCanonicalUnitIdValue, isCanonicalUnitIdValue } from '../../utils/unit-search';
 import { normalizeRerDutyQueryStateWf } from '../../../rer-duty-filter-normalizer';
 
 export type RerDutyState = {
@@ -182,6 +183,8 @@ export function emptyFilter(): RerDutyFeedFilterState {
     postsDenied: null,
     unitsSelected: null,
     unitsDenied: null,
+    selectedUnitIds: null,
+    deniedUnitIds: null,
     unitsExactMatchOnly: false,
     lastViewedMessageId: null,
     highlightKeywordsEnabled: null,
@@ -266,6 +269,18 @@ export function buildInboxReq(opts: {
   reportTagsOnlyThisUnit?: boolean | null;
 }): InboxMessagesReq {
   const f = opts.filter;
+  const selectedUnitIds = (f.unitsSelected ?? []).flatMap((value) => {
+    const unitId = getCanonicalUnitIdValue(value);
+    return unitId === null ? [] : [unitId];
+  });
+  const deniedUnitIds = (f.unitsDenied ?? []).flatMap((value) => {
+    const unitId = getCanonicalUnitIdValue(value);
+    return unitId === null ? [] : [unitId];
+  });
+  const selectedLegacyUnits = (f.unitsSelected ?? []).filter(
+    (value) => !isCanonicalUnitIdValue(value),
+  );
+  const deniedLegacyUnits = (f.unitsDenied ?? []).filter((value) => !isCanonicalUnitIdValue(value));
   // send empty arrays as null (backend treats null/undefined vs [] differently)
   return {
     sinceIdNoninclusive: opts.sinceIdNoninclusive ?? null,
@@ -284,9 +299,11 @@ export function buildInboxReq(opts: {
     deniedPosts: emptyArrToNull(f.postsDenied),
     deniedFreqs: emptyArrToNull(opts.expandedFreqsDenied ?? f.freqsDenied ?? null),
     selectedCallsigns: null,
-    selectedUnits: emptyArrToNull(f.unitsSelected ?? null),
+    selectedUnits: emptyArrToNull(selectedLegacyUnits),
+    selectedUnitIds: emptyArrToNull(selectedUnitIds),
     selectedDeviceNames: null,
-    deniedUnits: emptyArrToNull(f.unitsDenied ?? null),
+    deniedUnits: emptyArrToNull(deniedLegacyUnits),
+    deniedUnitIds: emptyArrToNull(deniedUnitIds),
     selectedLocations: null,
     nolimit: opts.nolimit ?? null,
     orWithExtendedForm: null,
@@ -320,7 +337,10 @@ export function buildInboxReq(opts: {
     reportTagsOnlyThisUnit: opts.reportTagsOnlyThisUnit ?? null,
     ignoreImportedCoords: true,
     includePelengLocations: null,
-    unitsExactMatchOnly: f.unitsExactMatchOnly ?? null,
+    unitsExactMatchOnly:
+      selectedLegacyUnits.length + deniedLegacyUnits.length > 0
+        ? (f.unitsExactMatchOnly ?? null)
+        : null,
     calculateFreqPelengsSummary: null,
     skipGroupStats: true,
     filterTagsOption: null,

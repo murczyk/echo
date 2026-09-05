@@ -18,7 +18,6 @@ import { ManageMessageDrawer } from '../shared/manage-message/ManageMessageDrawe
 import { getAnalysisCenterTabs } from './types';
 import { useRerAnalysisNeoPage } from './use-rer-analysis-neo-page';
 import { AudioTranscriptionPreferencesProvider } from '../shared/message-card/MessageCardAudioTranscription';
-import { isIntelligenceReport } from '../shared/intelligence-reports';
 import { PointBlacklistPaletteNamesCacheProvider } from '../shared/message-card/PointBlacklistPaletteNamesCache';
 
 export type RerAnalysisNeoPageProps = {
@@ -238,6 +237,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
         cyberEchoEnabled={page.cyberEchoEnabled}
         currentUser={page.currentUser}
         editTarget={page.editorMessage}
+        editAsReport={page.editorEditAsReport}
         reportSource={page.reportSource}
         editSaveInFlight={page.editorSaveInFlight}
         onClose={() => {
@@ -248,7 +248,7 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
           }
         }}
         onSubmitEdit={
-          page.editorMessage && !isIntelligenceReport(page.editorMessage.message)
+          page.editorMessage && !page.editorEditAsReport
             ? async (_id, message) => {
                 await Promise.resolve(page.saveEditor(message));
               }

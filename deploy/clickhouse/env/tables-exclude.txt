@@ -14,9 +14,15 @@ public.signal_message_queue_attachment
 public.echo_gpu_transcription_queue
 public.gpu_config
 public.seaql_echo_gpu_migrations
+public.echo_client
+public.echo_client_config
 public.echo_whatsapp_queue
 public.echo_whatsapp_queue_attachment
 public.echo_automation_send_log
+public.echo_client_settings
+public.echo_chat_filter
+public.echo_chat_ingestion_state
+public.echo_chat_webhook_delivery
 public.palitra_goi_sync_job
 public.palitra_conversion_job
 public.goi_palitra_sync
@@ -25,6 +31,8 @@ public.palitra_highlight_blacklist
 # PostgreSQL-only parsing configuration.
 public.sigint_comment_blacklist
 public.failed_inbox_unit
+public.failed_unit_label
+public.sigint_inbox_item_failed_unit_label
 public.sigint_unit_label
 public.sigint_unit_change
 public.battle_line_version
@@ -48,6 +56,10 @@ public.ai_callsign_settings
 public.ai_callsign_test_message
 public.ai_callsign_parse_result
 public.ai_callsign_worker_job
+public.ai_settlement_settings
+public.ai_settlement_test_message
+public.ai_settlement_parse_result
+public.ai_settlement_worker_job
 public.ai_intel_report_settings
 public.ai_intel_report_attempt
 public.report_download_history
@@ -74,3 +86,6 @@ public.ai_agent_chat_mattermost_notification
 
 # Device integration secrets.
 public.device_settings
+
+# Login TOTP seeds (plaintext second-factor credentials).
+public.login_totp

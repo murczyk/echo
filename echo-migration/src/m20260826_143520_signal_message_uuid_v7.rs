@@ -13,6 +13,10 @@ impl MigrationTrait for Migration {
 alter table signal_message
     add column id_uuid uuid;
 
+create index signal_message_id_uuid_idx
+    on signal_message (id_uuid)
+    where id_uuid is not null;
+
 alter table sigint_inbox_item
     add column id_uuid uuid;
 
@@ -41,9 +45,6 @@ alter table intel_product
 
 alter table ai_callsign_worker_job
     add column sigint_inbox_item_uuid uuid;
-
-alter table failed_inbox_unit
-    add column inbox_item_uuid uuid;
 
 alter table sigint_inbox_item_callsign
     add column sigint_inbox_item_uuid uuid;
@@ -115,9 +116,6 @@ alter table sigint_inbox_item_metadata
 alter table sigint_inbox_item_callsign
     drop column if exists sigint_inbox_item_uuid;
 
-alter table failed_inbox_unit
-    drop column if exists inbox_item_uuid;
-
 alter table ai_callsign_worker_job
     drop column if exists sigint_inbox_item_uuid;
 
@@ -146,6 +144,8 @@ alter table sigint_search
 
 alter table sigint_inbox_item
     drop column if exists id_uuid;
+
+drop index if exists signal_message_id_uuid_idx;
 
 alter table signal_message
     drop column if exists id_uuid;

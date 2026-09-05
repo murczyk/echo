@@ -9,8 +9,16 @@ cd "$REPO_ROOT"
 base=${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}
 base=${base:-HEAD^}
 base_revision=$(git merge-base "$base" HEAD)
-if ! git diff --name-only --diff-filter=AM "$base...HEAD" \
-  | grep -Eq '^(echo-migration/src/m[0-9a-z_]+\.rs|wdintel-rs/Cargo\.toml)$'
+changed_paths=$(
+  {
+    git diff --name-only --diff-filter=AM "$base...HEAD"
+    git diff --name-only --diff-filter=AM
+    git diff --cached --name-only --diff-filter=AM
+    git ls-files --others --exclude-standard
+  } | sort -u
+)
+if ! grep -Eq '^(echo-migration/src/m[0-9a-z_]+\.rs|wdintel-rs/Cargo\.toml)$' \
+  <<<"$changed_paths"
 then
   echo "No migration or migration dependency changes; skipping catalog comparison"
   exit 0

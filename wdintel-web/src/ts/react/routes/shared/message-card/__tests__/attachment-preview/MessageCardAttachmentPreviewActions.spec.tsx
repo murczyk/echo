@@ -156,8 +156,6 @@ describe('MessageCardAttachmentPreviewActions', () => {
           openHref="/media"
           navigation={{ index: 0, count: 1, onPrevious: vi.fn(), onNext: vi.fn() }}
           overflowAction={<button data-testid="overflow-action">⋮</button>}
-          canFullscreen
-          onToggleFullscreen={vi.fn()}
           onClose={vi.fn()}
         />,
       );

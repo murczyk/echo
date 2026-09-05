@@ -1,7 +1,7 @@
 use super::types::*;
 use crate::entities::*;
 use crate::messenger::group::{
-    collect_group_admin_data, collect_group_stats, set_signal_group_archived,
+    collect_group_admin_data, set_signal_group_archived,
 };
 use crate::sigint::aor::bl::collect_group_aors;
 use crate::types::*;
@@ -12,8 +12,8 @@ use chrono::{Duration, Utc};
 use echo_migration::JoinType;
 use itertools::Itertools;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QuerySelect,
-    RelationTrait, TransactionTrait,
+    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, RelationTrait,
+    TransactionTrait,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -33,7 +33,7 @@ pub async fn orphan_signal_groups(
         .context(h!())?;
 
     Ok(Json(
-        collect_orphan_signal_groups(&env.dbx, false)
+        collect_orphan_signal_groups(&env, false)
             .await
             .context(h!())?,
     ))
@@ -49,19 +49,17 @@ pub async fn archived_signal_groups(
         .context(h!())?;
 
     Ok(Json(
-        collect_orphan_signal_groups(&env.dbx, true)
+        collect_orphan_signal_groups(&env, true)
             .await
             .context(h!())?,
     ))
 }
 
-async fn collect_orphan_signal_groups<'a, 'async_trait, C>(
-    dbx: &'a C,
+async fn collect_orphan_signal_groups(
+    env: &Env,
     is_archived: bool,
-) -> Result<Vec<OrphanSignalGroupEntry>, AppError>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+) -> Result<Vec<OrphanSignalGroupEntry>, AppError> {
+    let dbx = &env.dbx;
     // Отримати всі master_key, які вже прив'язані
     let assigned_keys = sigint_zone_datasource::Entity::find()
         .select_only()
@@ -104,7 +102,10 @@ where
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let stats = collect_group_stats(keys.clone(), dbx).await.context(h!())?;
+    let stats =
+        crate::rer_importer::analysis::read_group_activity(env, keys.clone())
+            .await
+            .context(h!())?;
     let group_aors =
         collect_group_aors(keys.clone(), dbx).await.context(h!())?;
     let group_admin_data =
@@ -197,33 +198,14 @@ pub async fn group_stats_timeline(
     let dt_till = Utc::now().naive_utc();
     let dt_since = dt_till - Duration::hours(period_hours);
 
-    let analytics_master_keys = master_keys.clone();
-    let postgres_master_keys = master_keys.clone();
-    let postgres_env = env.clone();
-    let mut data = crate::rer_importer::analysis::with_analytics_read_fallback(
-        env.get_ref(),
-        "group stats timeline",
-        true,
-        |db| async move {
-            Ok(crate::stats::read_group_stats_timeline_raw(
-                &db,
-                analytics_master_keys,
-                dt_since,
-                dt_till,
-            )
-            .await?)
-        },
-        |_db| async move {
-            Ok(crate::stats::read_group_stats_timeline_cached(
-                &postgres_env,
-                postgres_master_keys,
-                dt_since,
-                dt_till,
-            )
-            .await?)
-        },
+    let mut data = crate::stats::read_group_stats_timeline_cached(
+        &env,
+        master_keys.clone(),
+        dt_since,
+        dt_till,
     )
-    .await?;
+    .await
+    .context(h!())?;
 
     let mut data_by_key = data
         .drain(..)

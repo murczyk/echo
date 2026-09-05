@@ -1,7 +1,10 @@
 import type { DutyTagsLayout, UserDutySettingsDto } from '../../../../Bindings';
 
 import { getJson, putJson } from './client';
-import { DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS } from '../../hooks/duty-settings-defaults';
+import {
+  DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
+  DEFAULT_MEDIA_SUMMARY_ENABLED,
+} from '../../hooks/duty-settings-defaults';
 import type { TagsLayoutVariant } from '../../routes/rer-duty-neo/utils';
 
 export const USER_SETTINGS_UPDATED_EVENT = 'user-settings-updated';
@@ -113,7 +116,7 @@ function normalizeUserDutySettings(raw: UserDutySettingsWire): UserDutySettings 
     showClassicAnalysis: raw.showClassicAnalysis ?? false,
     dutyCollapseMediaPreviews:
       raw.dutyCollapseMediaPreviews ?? DEFAULT_DUTY_COLLAPSE_MEDIA_PREVIEWS,
-    mediaSummaryEnabled: raw.mediaSummaryEnabled ?? true,
+    mediaSummaryEnabled: raw.mediaSummaryEnabled ?? DEFAULT_MEDIA_SUMMARY_ENABLED,
   };
 }
 

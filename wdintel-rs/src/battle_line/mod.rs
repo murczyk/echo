@@ -1133,6 +1133,20 @@ where
     Ok(())
 }
 
+pub async fn lock_updates_shared<C>(dbx: &C) -> anyhow::Result<()>
+where
+    C: ConnectionTrait,
+{
+    dbx.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Postgres,
+        "select pg_advisory_xact_lock_shared($1)",
+        [BATTLE_LINE_UPLOAD_ADVISORY_LOCK_KEY.into()],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
 pub async fn refresh_aor_geometry<C>(dbx: &C, aor_id: i64) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -2261,6 +2275,32 @@ fn point_from_geojson(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn shared_update_locks_allow_concurrent_message_ingestion() {
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let first = env.dbx.begin().await.unwrap();
+        lock_updates_shared(&first).await.unwrap();
+
+        let second = env.dbx.begin().await.unwrap();
+        second
+            .execute_unprepared("set local lock_timeout = '50ms'")
+            .await
+            .unwrap();
+        lock_updates_shared(&second).await.unwrap();
+
+        let exclusive = env.dbx.begin().await.unwrap();
+        exclusive
+            .execute_unprepared("set local lock_timeout = '50ms'")
+            .await
+            .unwrap();
+        assert!(lock_updates(&exclusive).await.is_err());
+
+        exclusive.rollback().await.unwrap();
+        second.rollback().await.unwrap();
+        first.rollback().await.unwrap();
+    }
 
     async fn insert_test_settlement(
         txn: &DatabaseTransaction,

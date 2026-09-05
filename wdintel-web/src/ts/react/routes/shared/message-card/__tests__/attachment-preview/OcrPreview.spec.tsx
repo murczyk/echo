@@ -35,6 +35,37 @@ vi.mock('@mui/material', () => ({
   Skeleton: () => <span data-skeleton />,
   Stack: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   SvgIcon: ({ children }: { children?: ReactNode }) => <svg>{children}</svg>,
+  TextField: ({
+    label,
+    value,
+    onChange,
+    fullWidth: _fullWidth,
+    multiline: _multiline,
+    minRows: _minRows,
+    maxRows: _maxRows,
+    autoFocus: _autoFocus,
+    size: _size,
+    sx: _sx,
+    ...props
+  }: {
+    label?: string;
+    value?: string;
+    onChange?: (event: { target: { value: string } }) => void;
+    fullWidth?: boolean;
+    multiline?: boolean;
+    minRows?: number;
+    maxRows?: number;
+    autoFocus?: boolean;
+    size?: string;
+    sx?: unknown;
+  } & Record<string, unknown>) => (
+    <textarea
+      aria-label={label}
+      value={value ?? ''}
+      onChange={(event) => onChange?.({ target: { value: event.currentTarget.value } })}
+      {...props}
+    />
+  ),
   Tooltip: ({ children, title }: { children?: ReactNode; title?: ReactNode }) => (
     <span>
       {children}
@@ -55,7 +86,7 @@ vi.mock('@mui/icons-material/Fullscreen', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/FullscreenExit', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Refresh', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Visibility', () => ({ default: () => <span /> }));
-vi.mock('@mui/icons-material/Close', () => ({ default: () => <span /> }));
+vi.mock('@mui/icons-material/Article', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/Description', () => ({ default: () => <span /> }));
 vi.mock('@mui/icons-material/InfoOutlined', () => ({ default: () => <span /> }));
 

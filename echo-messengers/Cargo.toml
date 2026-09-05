@@ -18,20 +18,21 @@ log = { workspace = true }
 milgeo-rs = { git = "ssh://git@github.com/echoua/milgeo-rs.git", rev = "a94bda974c1af3f31362c10965dda066c602cf30" }
 regex = "1.12.3"
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
+redis = { version = "1.0.5", features = ["tokio-comp", "connection-manager"] }
 sea-orm = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "0.9.12"
 
 [dependencies.echo-im]
 git = "ssh://git@github.com/echoua/echo-im.git"
-rev = "f2a5090cdb7b6ac072ddc98b32eeb1d4ed7f8c75"
+rev = "9e3154fa3d0c318d0ec48513c16b1f37105ef33c"
 
 [package.metadata.deb]
 maintainer-scripts = "debian/"
 systemd-units = [{ unit-name = "echo-messengers" }]
-depends = ""
+depends = "redis-server"
 conflicts = "echo-swapp"
 replaces = "echo-swapp"
 assets = [

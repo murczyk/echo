@@ -41,6 +41,7 @@ const LOGIN = {
   deactivationReason: null,
   description: null,
   passwordAuthEnabled: true,
+  totpEnabled: false,
 };
 
 const STATUS = {

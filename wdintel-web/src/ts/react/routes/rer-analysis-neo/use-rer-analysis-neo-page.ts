@@ -822,6 +822,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     counts: data.counts,
     countsLoading: data.countsLoading,
     editorMessage: editor.editorMessage,
+    editorEditAsReport: editor.editorEditAsReport,
     reportSource: editor.reportSource,
     editorSaveInFlight: editor.editorSaveInFlight,
     error,

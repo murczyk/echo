@@ -70,6 +70,9 @@ hasRole role user =
         "NoAutoLogout" ->
             List.member "NoAutoLogout" user.roles
 
+        "No2FA" ->
+            List.member "No2FA" user.roles
+
         _ ->
             -- impossible! unknown role
             False

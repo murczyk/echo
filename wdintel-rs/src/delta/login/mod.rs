@@ -132,7 +132,7 @@ async fn perform_login(
         return Err(err);
     }
     if let Some(login) = login_validation.login_model {
-        crate::users::start_user_session(env, req, login.id)
+        crate::users::start_user_session(env, req, login.id, &env.dbx)
             .await
             .context(h!())?;
         return Ok(None);

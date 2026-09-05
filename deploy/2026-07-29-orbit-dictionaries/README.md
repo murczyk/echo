@@ -33,9 +33,13 @@ cargo run -p wdintel-rs -- --mode=debug tui-import-orbit-units
 The first TUI screen offers:
 
 - prepare a new ORBIT data revision from a JSON path;
-- synchronize ORBIT units;
-- link ORBIT units to SIGINT units in automatic or manual mode;
-- reconcile linked SIGINT hierarchies and merge exact duplicates;
+- synchronize ORBIT units and reconcile automatic SIGINT links;
+- merge duplicate SIGINT units through manual survivor review;
+- review all SIGINT duplicate candidates pair by pair and merge confirmed
+  pairs;
+- resolve non-archived unparsed unit labels in automatic or manual mode;
+- remove invalid army, corps, military-district, and army-region values;
+- review SIGINT names generated from their echelon fields;
 - erase and reimport all ORBIT data.
 
 The synchronization action uses the latest timestamped ZIP and never asks for
@@ -46,7 +50,13 @@ REVISION`.
 It creates, updates, reactivates, or touches every root and embedded ancestor.
 `orbit_sync` records the archive MD5 and synchronization timestamp. When the
 latest archive has the same MD5, the TUI warns the operator and asks whether to
-proceed with database-only synchronization.
+proceed with database-only synchronization. After the data transaction commits,
+the action automatically revalidates automatic links while preserving manual
+links and suppressed decisions. It imports missing ORBIT ancestors, reconciles
+SIGINT echelons without regenerating names, and refreshes duplicate-candidate
+state and parent activity when a link changes. It then creates and links an
+inactive SIGINT unit for every remaining supported, non-deleted ORBIT unit;
+generative ancestors of active matched units remain active.
 
 The normalizer discovers dictionary values in both root units and embedded
 parents. It retains prior dictionary entries, reuses IDs by `(key, name)`, and
@@ -56,25 +66,39 @@ dictionary rows before resolving units; existing PostgreSQL rows with the same
 Every value in a unit's `grouping_of_forces` array is retained through the
 `orbit_unit_grouping_of_forces` many-to-many relation.
 
-The linking action loads active SIGINT units and top-level ORBIT roots
-exclusively from PostgreSQL. Manual mode reviews unlinked units. Automatic mode
-also revalidates existing automatic links but preserves authoritative manual
-links. It retains candidates matching every populated SIGINT echelon, gives
+Automatic linking loads non-deleted SIGINT units and top-level ORBIT roots
+exclusively from PostgreSQL. It retains candidates matching every populated
+SIGINT echelon, gives
 exact corresponding-echelon matches the maximum rating, and deducts one point
-for each same-number/different-text match. Automatic mode considers only
+for each same-number/different-text match. It considers only
 candidates tied at the maximum rating and accepts a candidate only when it has
 rating 100, is uniquely closest by Levenshtein distance, and that distance is
-at most 10. Manual mode presents every structurally valid candidate for review
-without a distance cutoff. The
-standalone `oneoff-test-link-units` command runs the same workflow. Manual
-links from `/rer-units` and `/rer-units/{id}` use the same transactional link
-implementation.
+at most 10. Manual links remain available from `/rer-units` and
+`/rer-units/{id}` through the same transactional link implementation.
 
-The reconciliation action reviews proposed hierarchy enrichments, recalculates
-linked-unit inconsistency flags, and merges exact-name duplicate candidates
-sharing an ORBIT unit. It keeps the ORBIT advisory lock for the full run and
-commits each unit or duplicate component separately, so it is safe to restart
-after interruption.
+The duplicate and unparsed workflows reuse that matcher directly. Duplicate
+merges require every member to have one shared ORBIT link and to remain a
+current match. They are always manual: the operator selects a survivor and
+confirms its projected field values before persistence. Unparsed labels can
+resolve only through an ORBIT unit with one non-deleted SIGINT link; automatic
+mode retains the rating-100, unique-distance, distance-at-most-10 gate. Both
+workflows re-read their candidate data and the latest ORBIT revision under the
+advisory lock before writing, and skip stale or ambiguous work.
+The all-candidate duplicate review walks SIGINT duplicate-candidate pairs once,
+rewrites later comparisons through any survivor selected during review, and
+persists confirmed merges in bounded batches after rechecking live links.
+
+The hierarchy-cleanup action can automatically or manually clear blacklisted
+army and corps values `УВ(с)`, `УВ`, and `ТН`, as well as army, corps,
+military-district, and army-region values absent from the unit's single
+linked ORBIT generative hierarchy. It also removes `other` values from names
+without clearing their hierarchy fields. The generated-name action offers
+automatic application or manual review of every non-deleted SIGINT unit whose
+current name differs from its echelon-generated name. The shared naming rule
+excludes `other`, blacklisted army and corps values, military district, and army
+region. Automatic mode in both actions can target active units, inactive units,
+or both. A unit with no populated echelon below corps keeps its current name; a
+newly imported ORBIT unit in that case uses its full ORBIT name.
 When a unit also appears inside another unit's path with a different parent,
 the unit's own top-level parent chain is authoritative. Conflicting
 embedded-only paths still fail when the ambiguous unit is selected.

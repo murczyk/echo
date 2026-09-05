@@ -63,6 +63,14 @@ type Params = {
   feedInitialTargetByFeedIdRef?: MutableRefObject<
     Record<string, { beforeIdNoninclusive: number; messageIds: number[] } | undefined>
   >;
+  installFeedUnreadCursorAndBaseline: (
+    feed: MessageFeedState,
+    cursor: MessageCursor | null,
+  ) => void;
+  recoverFeedUnreadBaselineAfterFailedLoad: (
+    feed: MessageFeedState,
+    fallbackCursor: MessageCursor | null,
+  ) => void;
 };
 
 function preserveUnreadState(
@@ -189,10 +197,16 @@ export function useRerDutyInitialLoad(params: Params) {
         } else {
           current.clearFeedUnreadBaselines(feedId);
           const tail = items.at(-1);
-          current.setFeedUnreadCursor(
-            feedId,
-            tail ? { id: tail[0], timestamp: tail[1].timestamp } : pollCursor,
-          );
+          if (tail) {
+            current.installFeedUnreadCursorAndBaseline(effectiveFeed, {
+              id: tail[0],
+              timestamp: tail[1].timestamp,
+            });
+          } else if (pollCursor) {
+            current.installFeedUnreadCursorAndBaseline(effectiveFeed, pollCursor);
+          } else {
+            current.setFeedUnreadCursor(feedId, null);
+          }
         }
         current.setMessageFeeds((previous) =>
           previous.map((candidate) =>
@@ -230,13 +244,16 @@ export function useRerDutyInitialLoad(params: Params) {
         const currentFeed = current.messageFeedsRef.current.find(
           (candidate) => candidate.id === feedId,
         );
-        const tail = currentFeed?.items.at(-1);
-        const tailCursor = tail ? { id: tail[0], timestamp: tail[1].timestamp } : null;
+        const effectiveTail = currentFeed?.pendingNewerItems?.at(-1) ?? currentFeed?.items.at(-1);
+        const fallbackCursor = effectiveTail
+          ? { id: effectiveTail[0], timestamp: effectiveTail[1].timestamp }
+          : null;
         if (preserveUnread) {
           current.completeFeedReload(feedId);
+        } else if (currentFeed) {
+          current.recoverFeedUnreadBaselineAfterFailedLoad(currentFeed, fallbackCursor);
         } else {
           current.clearFeedUnreadBaselines(feedId);
-          current.setFeedUnreadCursor(feedId, tailCursor);
         }
         current.setError(error instanceof Error ? error.message : String(error));
         current.setMessageFeeds((previous) =>

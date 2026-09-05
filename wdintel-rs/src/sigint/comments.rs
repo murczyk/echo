@@ -243,6 +243,10 @@ pub async fn create_linked_message_comment_with_context(
 ) -> Result<i64, AppError> {
     let comment_created_at = created_at.unwrap_or_else(Utc::now);
     let comment_created_at = comment_created_at.naive_utc();
+    let comment_uuid = crate::sigint::message_id::signal_message_uuid(
+        Some(comment_created_at),
+        comment_created_at,
+    );
     let sender =
         crate::sigint::direct_submit::query::ensure_current_user_sender(
             txn, login,
@@ -269,6 +273,7 @@ pub async fn create_linked_message_comment_with_context(
         true,
         true,
         crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
+        Some(comment_uuid),
     )
     .await
     .c(h!())?;

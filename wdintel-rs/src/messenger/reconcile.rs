@@ -5803,6 +5803,7 @@ mod tests {
         .await
         .unwrap();
         let client = echo_client::ActiveModel {
+            show_chats_admin_panel: NotSet,
             id: NotSet,
             name: Set(format!("test-client-{}", Uuid::new_v4())),
             created_at: Set(now),

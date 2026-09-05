@@ -101,6 +101,14 @@ export function createNeoMuiTheme(mode: 'light' | 'dark') {
       htmlFontSize: Number.parseInt(designTokens.typography.fontSize.base, 10),
     },
     components: {
+      MuiDialog: {
+        styleOverrides: {
+          paper: {
+            backgroundColor: designTokens.color[mode].dialogSurface,
+            backgroundImage: 'none',
+          },
+        },
+      },
       // Native controls can safely restore pointer events while disabled.
       // Non-native controls and anchors must remain non-interactive; wrap
       // them in a ref-forwarding cursor wrapper when a forbidden cursor is needed.

@@ -37,6 +37,88 @@ describe('useRerDutyFeedState — directional loading and races', () => {
 
   afterEach(fixture.cleanup);
   describe('poll autoscroll (scrollToEndAfterLoad)', () => {
+    it('releases a stalled newer lane after the pagination request deadline', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      const stalled = deferred<InboxMessagesRsp>('stalled newer');
+      let signal: AbortSignal | undefined;
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(1, 1));
+      hoisted.fetchInboxMessages.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+        signal = options?.signal;
+        signal?.addEventListener('abort', () => {
+          stalled.reject(new DOMException('aborted', 'AbortError'));
+        });
+        return stalled.promise;
+      });
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      const stalledLoad = apiRef.current!.loadFeedNewerMessages('mf-0');
+      await act(async () => flushMicrotasks());
+      expect(signal?.aborted).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+        await flushMicrotasks();
+      });
+
+      expect(signal?.aborted).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(24_999);
+        await flushMicrotasks();
+      });
+
+      expect(signal?.aborted).toBe(false);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+        await flushMicrotasks();
+      });
+
+      expect(signal?.aborted).toBe(true);
+      await expect(stalledLoad).resolves.toEqual({ ok: false, addedCount: 0 });
+
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(2, 2));
+      let retryResult: { ok: boolean; addedCount: number } | undefined;
+      await act(async () => {
+        retryResult = await apiRef.current!.loadFeedNewerMessages('mf-0');
+        await flushMicrotasks();
+      });
+      expect(retryResult).toEqual({ ok: true, addedCount: 1 });
+      expect(apiRef.current!.messageFeeds[0].items.at(-1)?.[0]).toBe(2);
+    });
+
+    it('allows an older page request to finish after ten seconds', async () => {
+      const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
+        current: null,
+      };
+      const older = deferred<InboxMessagesRsp>('older pagination');
+      let signal: AbortSignal | undefined;
+      hoisted.fetchInboxMessages.mockResolvedValueOnce(rangeRsp(21, 40));
+      hoisted.fetchInboxMessages.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+        signal = options?.signal;
+        return older.promise;
+      });
+      await act(async () => root.render(<TestHarness apiRef={apiRef} />));
+      await act(async () => flushMicrotasks());
+
+      const olderLoad = apiRef.current!.loadFeedOlderMessages('mf-0');
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_001);
+        await flushMicrotasks();
+      });
+
+      expect(signal?.aborted).toBe(false);
+      older.resolve(rangeRsp(1, 20));
+      await act(async () => {
+        await olderLoad;
+        await flushMicrotasks();
+      });
+      expect(apiRef.current!.messageFeeds[0].items[0]?.[0]).toBe(1);
+    });
+
     it('ignores an older-load failure after a filter reload invalidates the request', async () => {
       const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
         current: null,

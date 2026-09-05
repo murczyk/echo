@@ -454,6 +454,10 @@ pub struct InboxMessagesReq {
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
     pub denied_units: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_unit_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub denied_unit_ids: Option<Vec<i64>>,
     pub selected_locations: Option<Vec<String>>,
     #[serde(default)]
     pub selected_device_names: Option<Vec<String>>,
@@ -906,6 +910,8 @@ pub struct AnalysisStatsReq {
     pub selected_posts: Option<Vec<String>>,
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_unit_ids: Option<Vec<i64>>,
     pub selected_locations: Option<Vec<String>>,
     #[serde(default)]
     pub selected_device_names: Option<Vec<String>>,
@@ -971,6 +977,8 @@ pub struct CallsignsGraphReq {
     pub selected_posts: Option<Vec<String>>,
     pub selected_callsigns: Option<Vec<String>>,
     pub selected_units: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_unit_ids: Option<Vec<i64>>,
     pub selected_locations: Option<Vec<String>>,
     #[serde(default)]
     pub selected_device_names: Option<Vec<String>>,
@@ -1067,7 +1075,8 @@ pub struct AnalysisStatsCallsign {
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
 )]
 pub struct AnalysisStatsUnit {
-    pub unit: String,
+    pub unit_id: i64,
+    pub name: String,
     pub count: i64,
 }
 
@@ -1495,6 +1504,10 @@ pub struct RerDutyQueryStateWf {
     pub posts_denied: Option<Vec<String>>,
     pub units_selected: Option<Vec<String>>,
     pub units_denied: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_unit_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub denied_unit_ids: Option<Vec<i64>>,
     pub units_exact_match_only: Option<bool>,
     pub last_viewed_message_id: Option<i64>,
     pub highlight_keywords_enabled: Option<bool>,

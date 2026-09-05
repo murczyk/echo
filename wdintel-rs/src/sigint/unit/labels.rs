@@ -339,18 +339,18 @@ mod tests {
             .await
             .unwrap()
             .is_some());
-        assert!(crate::entities::failed_inbox_unit::Entity::find()
+        assert!(crate::entities::sigint_inbox_item_failed_unit_label::Entity::find()
             .filter(
-                crate::entities::failed_inbox_unit::Column::InboxItemId
+                crate::entities::sigint_inbox_item_failed_unit_label::Column::InboxItemId
                     .eq(inbox_item.id),
             )
             .one(&env.dbx)
             .await
             .unwrap()
             .is_some());
-        assert!(crate::entities::failed_inbox_unit::Entity::find()
+        assert!(crate::entities::sigint_inbox_item_failed_unit_label::Entity::find()
             .filter(
-                crate::entities::failed_inbox_unit::Column::InboxItemId
+                crate::entities::sigint_inbox_item_failed_unit_label::Column::InboxItemId
                     .eq(untouched_inbox_item.id),
             )
             .one(&env.dbx)

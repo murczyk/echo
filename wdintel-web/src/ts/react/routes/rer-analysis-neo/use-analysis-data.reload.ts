@@ -37,6 +37,7 @@ import {
   normalizeCallsignLookupValue,
 } from '../../utils/callsign-normalization';
 import { isNullOrUndefined, isPresent, sortFrequenciesNumerically } from '../../utils/misc';
+import { getUnitIdFilterValue } from '../../utils/unit-search';
 import {
   ANALYSIS_SESSION_ACTIVITY_PAGE_ID,
   buildAnalysisReq,
@@ -384,7 +385,7 @@ export function buildAnalysisReqForFilterSection(
     case 'callsigns':
       return { ...analysisReq, selectedCallsigns: null };
     case 'units':
-      return { ...analysisReq, selectedUnits: null };
+      return { ...analysisReq, selectedUnits: null, selectedUnitIds: null };
     case 'locations':
       return { ...analysisReq, selectedLocations: null };
     case 'posts':
@@ -518,8 +519,8 @@ export async function loadFilterSectionData(
         ...current,
         units: toFilterOptions(
           unitsRsp.units,
-          (item) => item.unit,
-          (item) => item.unit,
+          (item) => getUnitIdFilterValue(item.unitId),
+          (item) => item.name,
           (item) => item.count,
         ),
       }));

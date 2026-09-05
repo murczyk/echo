@@ -45,7 +45,7 @@ const DEFAULT_COLUMN_VISIBILITY = {
   company: true,
   battalion: true,
   regiment: true,
-  brigade: false,
+  brigade: true,
   division: true,
   corps: false,
   army: true,

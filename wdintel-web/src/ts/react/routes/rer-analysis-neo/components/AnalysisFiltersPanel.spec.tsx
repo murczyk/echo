@@ -1196,6 +1196,21 @@ describe('AnalysisFiltersPanel', () => {
     expect(view.container.textContent).not.toContain('За замовчуванням');
   });
 
+  it('hides the exact-match control for canonical unit ids', async () => {
+    const view = await renderComponent(
+      buildProps({
+        queryState: {
+          ...emptyQueryState(),
+          unitsSelected: ['unit-id:17'],
+          unitsExactMatchOnly: true,
+        },
+      }),
+    );
+    rendered.push(view);
+
+    expect(view.container.textContent).not.toContain('Точний збіг');
+  });
+
   it('renders the exact-match checkbox using the explicit query value when units are selected', async () => {
     const view = await renderComponent(
       buildProps({

@@ -255,7 +255,7 @@ vi.mock('../../services/api/user-settings', () => ({
     showClassicDuty: false,
     showClassicAnalysis: false,
     dutyCollapseMediaPreviews: true,
-    mediaSummaryEnabled: true,
+    mediaSummaryEnabled: false,
     messageTextPreviewLines: 20,
   }),
   saveUserSettings: saveUserDutySettings,
@@ -392,7 +392,7 @@ describe('SettingsNeoPage', () => {
           showClassicDuty: false,
           showClassicAnalysis: false,
           dutyCollapseMediaPreviews: true,
-          mediaSummaryEnabled: true,
+          mediaSummaryEnabled: false,
         });
       }
     },
@@ -446,7 +446,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
 
@@ -490,7 +490,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
   });
@@ -524,7 +524,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
   });
@@ -558,7 +558,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
 
@@ -570,7 +570,9 @@ describe('SettingsNeoPage', () => {
     });
 
     const analysisSwitch = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === 'off',
+      (button) =>
+        button.textContent === 'off' &&
+        button.parentElement?.textContent?.includes('Згортати транскрипцію за замовчуванням'),
     );
     expect(analysisSwitch).toBeTruthy();
 
@@ -589,7 +591,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
   });
@@ -627,7 +629,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
 
@@ -651,7 +653,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
   });
@@ -668,7 +670,7 @@ describe('SettingsNeoPage', () => {
     expect(container.textContent).toContain('Оперативний');
     expect(container.textContent).toContain('Стислий опис файлів у картках');
     expect(container.querySelector('[data-message-card-mock="true"]')).not.toBeNull();
-    expect(container.querySelector('[data-media-summary-mock="true"]')).not.toBeNull();
+    expect(container.querySelector('[data-media-summary-mock="true"]')).toBeNull();
 
     saveUserDutySettings.mockClear();
 
@@ -694,7 +696,7 @@ describe('SettingsNeoPage', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: false,
+      mediaSummaryEnabled: true,
       messageTextPreviewLines: 20,
     });
   });

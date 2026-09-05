@@ -12,8 +12,7 @@ import {
 } from '@mui/material';
 
 import type { MessageCardPreviewNavigation } from './attachment-preview/message-card-preview.types';
-
-type BaseLayerId = 'googleHybrid' | 'openStreetMap';
+import { BaseLayerId } from '../../../../maps/base-layers';
 
 export function CoordinateMapPreviewControls({
   baseLayerId,
@@ -123,13 +122,18 @@ export function CoordinateMapPreviewControls({
               },
             }}
           >
-            <Tooltip title="Супутник" enterDelay={300}>
-              <ToggleButton aria-label="Супутник" value="googleHybrid">
+            <Tooltip title="Delta" enterDelay={300}>
+              <ToggleButton aria-label="Delta" value={BaseLayerId.Delta}>
+                <LayersOutlinedIcon fontSize="small" />
+              </ToggleButton>
+            </Tooltip>
+            <Tooltip title="Google" enterDelay={300}>
+              <ToggleButton aria-label="Google" value={BaseLayerId.Google}>
                 <LayersOutlinedIcon fontSize="small" />
               </ToggleButton>
             </Tooltip>
             <Tooltip title="OpenStreetMap" enterDelay={300}>
-              <ToggleButton aria-label="OpenStreetMap" value="openStreetMap">
+              <ToggleButton aria-label="OpenStreetMap" value={BaseLayerId.OpenStreetMap}>
                 <MapOutlinedIcon fontSize="small" />
               </ToggleButton>
             </Tooltip>

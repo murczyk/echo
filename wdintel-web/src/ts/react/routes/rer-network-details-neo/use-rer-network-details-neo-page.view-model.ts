@@ -39,7 +39,9 @@ type ViewModelArgs = {
   setPelengSearch: (pelengSearch: string) => void;
   setPelengEnabledFreqs: (pelengEnabledFreqs: string[]) => void;
   setPelengShowLabels: (pelengShowLabels: boolean) => void;
-  setPelengSatelliteEnabled: (pelengSatelliteEnabled: boolean) => void;
+  setPelengBaseLayerId: (
+    pelengBaseLayerId: NetworkDetailsNeoPageState['pelengBaseLayerId'],
+  ) => void;
   setPelengHeatmapEnabled: (pelengHeatmapEnabled: boolean) => void;
   setActiveNetworkDetailsTab: (
     activeNetworkDetailsTab: NetworkDetailsNeoPageState['activeNetworkDetailsTab'],
@@ -95,7 +97,7 @@ export function buildRerNetworkDetailsNeoPageViewModel({
   setPelengSearch,
   setPelengEnabledFreqs,
   setPelengShowLabels,
-  setPelengSatelliteEnabled,
+  setPelengBaseLayerId,
   setPelengHeatmapEnabled,
   setActiveNetworkDetailsTab,
   loadRelations,
@@ -256,8 +258,8 @@ export function buildRerNetworkDetailsNeoPageViewModel({
     setPelengEnabledFreqs,
     pelengShowLabels: state.pelengShowLabels,
     setPelengShowLabels,
-    pelengSatelliteEnabled: state.pelengSatelliteEnabled,
-    setPelengSatelliteEnabled,
+    pelengBaseLayerId: state.pelengBaseLayerId,
+    setPelengBaseLayerId,
     pelengHeatmapEnabled: state.pelengHeatmapEnabled,
     setPelengHeatmapEnabled,
     loadRelations,

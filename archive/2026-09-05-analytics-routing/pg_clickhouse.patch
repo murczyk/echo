@@ -1,0 +1,1015 @@
+diff --git a/src/deparse.c b/src/deparse.c
+index 8b6d6be..f326390 100644
+--- a/src/deparse.c
++++ b/src/deparse.c
+@@ -152,6 +152,7 @@ typedef struct deparse_expr_cxt {
+      */
+     SubPlan* subplan;
+     struct deparse_expr_cxt* parent_ctx;
++    bool join_quals;
+ } deparse_expr_cxt;
+ 
+ #define REL_ALIAS_PREFIX "r"
+@@ -1142,6 +1143,13 @@ foreign_expr_walker(Node* node, foreign_glob_cxt* glob_cxt) {
+     } break;
+     case T_CaseTestExpr:
+         break;
++    case T_AlternativeSubPlan: {
++        AlternativeSubPlan* alternatives = (AlternativeSubPlan*)node;
++
++        /* All alternatives implement the same expression. Keep its SubPlan. */
++        return alternatives->subplans != NIL &&
++               foreign_expr_walker(linitial(alternatives->subplans), glob_cxt);
++    }
+     case T_SubPlan: {
+         /*
+          * A SubPlan node is the planner's residue of a SubLink that
+@@ -1296,12 +1304,74 @@ subplan_gate_user_mapping(PlannerInfo* root, RelOptInfo* foreignrel, Oid serveri
+     return GetUserMapping(userid, serverid);
+ }
+ 
++static bool
++subplan_from_relids(
++    Node* node,
++    Query* query,
++    Oid serverid,
++    Oid userid,
++    Relids* relids
++) {
++    if (IsA(node, RangeTblRef)) {
++        RangeTblRef* rtr   = (RangeTblRef*)node;
++        RangeTblEntry* rte = rt_fetch(rtr->rtindex, query->rtable);
++        Oid check_user     = InvalidOid;
++
++        if (rte->rtekind != RTE_RELATION || rte->relkind != RELKIND_FOREIGN_TABLE ||
++            rte->securityQuals != NIL ||
++            GetForeignTable(rte->relid)->serverid != serverid) {
++            return false;
++        }
++#if PG_VERSION_NUM >= 160000
++        if (rte->perminfoindex != 0) {
++            check_user = getRTEPermissionInfo(query->rteperminfos, rte)->checkAsUser;
++        }
++#else
++        check_user = rte->checkAsUser;
++#endif
++        if (!OidIsValid(check_user)) {
++            check_user = GetUserId();
++        }
++        if (check_user != userid) {
++            return false;
++        }
++        *relids = bms_add_member(*relids, rtr->rtindex);
++        return true;
++    }
++    if (IsA(node, JoinExpr)) {
++        JoinExpr* join = (JoinExpr*)node;
++
++        /* Outer joins require null-extension and join-alias handling. */
++        return join->jointype == JOIN_INNER &&
++               subplan_from_relids(join->larg, query, serverid, userid, relids) &&
++               subplan_from_relids(join->rarg, query, serverid, userid, relids);
++    }
++    return false;
++}
++
++static bool
++subplan_join_quals_shippable(Node* node, foreign_glob_cxt* context) {
++    if (IsA(node, RangeTblRef)) {
++        return true;
++    }
++    if (IsA(node, JoinExpr)) {
++        JoinExpr* join = (JoinExpr*)node;
++
++        return !contain_subplans(join->quals) &&
++               foreign_expr_walker(join->quals, context) &&
++               subplan_join_quals_shippable(join->larg, context) &&
++               subplan_join_quals_shippable(join->rarg, context);
++    }
++    return false;
++}
++
+ static bool
+ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt) {
+     PlannerInfo* subroot;
+     Query* query;
+     foreign_glob_cxt sub_cxt;
+     CHFdwRelationInfo* fpinfo;
++    UserMapping* user;
+     ListCell* lc;
+ 
+     if (subplan->subLinkType != EXPR_SUBLINK &&
+@@ -1334,6 +1404,12 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt) {
+     if (fpinfo == NULL || fpinfo->server == NULL) {
+         return false;
+     }
++    user = subplan_gate_user_mapping(
++        glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
++    );
++    if (user == NULL) {
++        return false;
++    }
+ 
+     /* Structural features we do not deparse */
+     if (query->setOperations || query->cteList || query->windowClause ||
+@@ -1359,26 +1435,29 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt) {
+         return false;
+     }
+ 
+-    /*
+-     * FROM must be plain comma-joined foreign tables on the same server as
+-     * the outer scan.
+-     */
++    memset(&sub_cxt, 0, sizeof(sub_cxt));
++    sub_cxt.root           = subroot;
++    sub_cxt.foreignrel     = glob_cxt->foreignrel;
++    sub_cxt.subquery_scope = true;
+     foreach (lc, query->jointree->fromlist) {
+-        RangeTblRef* rtr;
+-        RangeTblEntry* rte;
+-
+-        if (!IsA(lfirst(lc), RangeTblRef)) {
++        /* Native IN is only equivalent when UNKNOWN can be treated as FALSE.
++         * Keep nullable value/NOT IN cases local for the newly supported joins. */
++        if (IsA(lfirst(lc), JoinExpr) && subplan->subLinkType == ANY_SUBLINK &&
++            !subplan->unknownEqFalse) {
+             return false;
+         }
+-        rtr = (RangeTblRef*)lfirst(lc);
+-        rte = rt_fetch(rtr->rtindex, query->rtable);
+-
+-        if (rte->rtekind != RTE_RELATION || rte->relkind != RELKIND_FOREIGN_TABLE ||
+-            rte->securityQuals != NIL) {
++        if (!subplan_from_relids(
++                lfirst(lc),
++                query,
++                fpinfo->server->serverid,
++                user->userid,
++                &sub_cxt.relids
++            )) {
+             return false;
+         }
+-
+-        if (GetForeignTable(rte->relid)->serverid != fpinfo->server->serverid) {
++    }
++    foreach (lc, query->jointree->fromlist) {
++        if (!subplan_join_quals_shippable(lfirst(lc), &sub_cxt)) {
+             return false;
+         }
+     }
+@@ -1436,21 +1515,6 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt) {
+         return false;
+     }
+ 
+-    /*
+-     * Walk the subquery's own expressions in a sub-scope whose relids are the
+-     * subquery's FROM entries.
+-     */
+-    memset(&sub_cxt, 0, sizeof(sub_cxt));
+-    sub_cxt.root           = subroot;
+-    sub_cxt.foreignrel     = glob_cxt->foreignrel; /* for fpinfo lookups */
+-    sub_cxt.subquery_scope = true;
+-    sub_cxt.relids         = NULL;
+-    foreach (lc, query->jointree->fromlist) {
+-        RangeTblRef* rtr = (RangeTblRef*)lfirst(lc);
+-
+-        sub_cxt.relids = bms_add_member(sub_cxt.relids, rtr->rtindex);
+-    }
+-
+     foreach (lc, query->targetList) {
+         TargetEntry* tle = lfirst_node(TargetEntry, lc);
+ 
+@@ -1477,14 +1541,8 @@ is_shippable_subplan(SubPlan* subplan, foreign_glob_cxt* glob_cxt) {
+      * its RTE's checkAsUser, e.g. a view's owner, when that is set), and when
+      * no mapping exists it refuses the pushdown rather than erroring.
+      */
+-    {
+-        UserMapping* user = subplan_gate_user_mapping(
+-            glob_cxt->root, glob_cxt->foreignrel, fpinfo->server->serverid
+-        );
+-
+-        if (user == NULL || !chfdw_version_ge(chfdw_get_server_version(user), 25, 8)) {
+-            return false;
+-        }
++    if (!chfdw_version_ge(chfdw_get_server_version(user), 25, 8)) {
++        return false;
+     }
+ 
+     return true;
+@@ -2265,7 +2323,12 @@ deparseSubqueryTargetList(deparse_expr_cxt* context) {
+     Assert(IS_SIMPLE_REL(foreignrel) || IS_JOIN_REL(foreignrel));
+ 
+     first = true;
+-    foreach (lc, foreignrel->reltarget->exprs) {
++    foreach (
++        lc,
++        ((CHFdwRelationInfo*)foreignrel->fdw_private)->subquery_exprs != NIL
++            ? ((CHFdwRelationInfo*)foreignrel->fdw_private)->subquery_exprs
++            : foreignrel->reltarget->exprs
++    ) {
+         Node* node = (Node*)lfirst(lc);
+ 
+         if (!first) {
+@@ -2442,6 +2505,7 @@ deparseFromExprForRel(
+             context.array_as_tuple = false;
+             context.no_sort_parens = false;
+             context.fpinfo         = fpinfo;
++            context.join_quals     = true;
+ 
+             appendStringInfoChar(buf, '(');
+             appendConditions(fpinfo->joinclauses, &context);
+@@ -2532,7 +2596,10 @@ deparseRangeTblRef(
+          * expressions specified in the relation's reltarget (see
+          * deparseSubqueryTargetList).
+          */
+-        ncols = list_length(foreignrel->reltarget->exprs);
++        ncols = list_length(
++            fpinfo->subquery_exprs != NIL ? fpinfo->subquery_exprs
++                                          : foreignrel->reltarget->exprs
++        );
+         if (ncols > 0) {
+             int i;
+ 
+@@ -2779,6 +2846,9 @@ deparseExpr(Expr* node, deparse_expr_cxt* context) {
+     case T_SubPlan:
+         deparseSubPlan((SubPlan*)node, context);
+         break;
++    case T_AlternativeSubPlan:
++        deparseSubPlan(linitial(((AlternativeSubPlan*)node)->subplans), context);
++        break;
+     default:
+         elog(ERROR, "unsupported expression type for deparse: %d", (int)nodeTag(node));
+         break;
+@@ -2832,6 +2902,33 @@ derived_column_number(Var* node, deparse_expr_cxt* context) {
+     return 0;
+ }
+ 
++static Var*
++semijoin_visible_var(Var* var, RelOptInfo* rel, bool join_quals) {
++    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
++
++    if (!IS_JOIN_REL(rel)) {
++        return var;
++    }
++    if (!join_quals && fpinfo->jointype == JOIN_SEMI &&
++        bms_is_member(var->varno, fpinfo->innerrel->relids)) {
++        Var* outer =
++            chfdw_semijoin_outer_var(var, fpinfo->joinclauses, fpinfo->outerrel);
++
++        if (outer != NULL) {
++            var = outer;
++        }
++    }
++    if (bms_is_member(var->varno, fpinfo->outerrel->relids) &&
++        !fpinfo->make_outerrel_subquery) {
++        return semijoin_visible_var(var, fpinfo->outerrel, false);
++    }
++    if (bms_is_member(var->varno, fpinfo->innerrel->relids) &&
++        !fpinfo->make_innerrel_subquery) {
++        return semijoin_visible_var(var, fpinfo->innerrel, false);
++    }
++    return var;
++}
++
+ static void
+ deparseVar(Var* node, deparse_expr_cxt* context) {
+     CustomObjectDef* cdef;
+@@ -2879,6 +2976,8 @@ deparseVar(Var* node, deparse_expr_cxt* context) {
+      */
+     Assert(context->subplan == NULL);
+ 
++    node = semijoin_visible_var(node, context->scanrel, context->join_quals);
++
+     colno = derived_column_number(node, context);
+     if (colno > 0) {
+         appendStringInfo(context->buf, "%s.c%d", context->derived_alias, colno);
+@@ -3567,29 +3666,59 @@ deparseSubPlanTargetList(deparse_expr_cxt* context) {
+  * with the outer query's aliases. Only the deparseRelation leaf is shared.
+  */
+ static void
+-deparseSubPlanFrom(deparse_expr_cxt* context) {
+-    SubPlan* subplan = context->subplan;
+-    Query* query     = context->root->parse;
+-    StringInfo buf   = context->buf;
+-    ListCell* lc;
+-    bool first = true;
+-
+-    Assert(subplan != NULL);
++deparseSubPlanFromNode(Node* node, deparse_expr_cxt* context) {
++    StringInfo buf = context->buf;
+ 
+-    foreach (lc, query->jointree->fromlist) {
+-        RangeTblRef* rtr   = lfirst_node(RangeTblRef, lc);
+-        RangeTblEntry* rte = rt_fetch(rtr->rtindex, query->rtable);
++    if (IsA(node, RangeTblRef)) {
++        RangeTblRef* rtr   = (RangeTblRef*)node;
++        RangeTblEntry* rte = rt_fetch(rtr->rtindex, context->root->parse->rtable);
+         Relation rel       = table_open_compat(rte->relid, NoLock);
+ 
+-        if (!first) {
+-            appendStringInfoString(buf, ", ");
+-        }
+-        first = false;
+         deparseRelation(buf, rel);
+         appendStringInfo(
+-            buf, " %s%d_%d", SUBPLAN_REL_ALIAS_PREFIX, subplan->plan_id, rtr->rtindex
++            buf,
++            " %s%d_%d",
++            SUBPLAN_REL_ALIAS_PREFIX,
++            context->subplan->plan_id,
++            rtr->rtindex
+         );
+         table_close_compat(rel, NoLock);
++    } else {
++        JoinExpr* join = castNode(JoinExpr, node);
++
++        /* Flatten INNER joins; their predicates are emitted in WHERE. */
++        deparseSubPlanFromNode(join->larg, context);
++        appendStringInfoString(buf, ", ");
++        deparseSubPlanFromNode(join->rarg, context);
++    }
++}
++
++static void
++deparseSubPlanFrom(deparse_expr_cxt* context) {
++    ListCell* lc;
++    bool first = true;
++
++    foreach (lc, context->root->parse->jointree->fromlist) {
++        if (!first) {
++            appendStringInfoString(context->buf, ", ");
++        }
++        first = false;
++        deparseSubPlanFromNode(lfirst(lc), context);
++    }
++}
++
++static void
++deparseSubPlanJoinQuals(Node* node, deparse_expr_cxt* context, bool* has_where) {
++    if (IsA(node, JoinExpr)) {
++        JoinExpr* join = (JoinExpr*)node;
++
++        deparseSubPlanJoinQuals(join->larg, context, has_where);
++        deparseSubPlanJoinQuals(join->rarg, context, has_where);
++        if (join->quals) {
++            appendStringInfoString(context->buf, *has_where ? " AND " : " WHERE ");
++            deparseSubPlanQuals(join->quals, context);
++            *has_where = true;
++        }
+     }
+ }
+ 
+@@ -3647,6 +3776,15 @@ deparseSubPlanQuery(SubPlan* subplan, deparse_expr_cxt* context) {
+         deparseSubPlanQuals(query->jointree->quals, &subctx);
+     }
+ 
++    {
++        ListCell* lc;
++        bool has_where = query->jointree->quals != NULL;
++
++        foreach (lc, query->jointree->fromlist) {
++            deparseSubPlanJoinQuals(lfirst(lc), &subctx, &has_where);
++        }
++    }
++
+     /* Keys off context->root->parse, which is the subquery here. */
+     appendGroupByClause(query->targetList, &subctx);
+ 
+@@ -6594,7 +6732,12 @@ get_relation_column_alias_ids(
+ 
+     /* Get the column alias ID */
+     i = 1;
+-    foreach (lc, foreignrel->reltarget->exprs) {
++    foreach (
++        lc,
++        ((CHFdwRelationInfo*)foreignrel->fdw_private)->subquery_exprs != NIL
++            ? ((CHFdwRelationInfo*)foreignrel->fdw_private)->subquery_exprs
++            : foreignrel->reltarget->exprs
++    ) {
+         if (equal(lfirst(lc), (Node*)node)) {
+             *colno = i;
+             return;
+diff --git a/src/fdw.c b/src/fdw.c
+index 3e94ae4..8fb78ac 100644
+--- a/src/fdw.c
++++ b/src/fdw.c
+@@ -2397,6 +2397,35 @@ extract_join_equals(List* conds, List** to) {
+     return res;
+ }
+ 
++Var*
++chfdw_semijoin_outer_var(Var* var, List* clauses, RelOptInfo* outerrel) {
++    ListCell* lc;
++
++    foreach (lc, clauses) {
++        RestrictInfo* clause = lfirst_node(RestrictInfo, lc);
++        OpExpr* op;
++        Var* left;
++        Var* right;
++
++        if (!is_simple_join_clause((Expr*)clause)) {
++            continue;
++        }
++        op    = (OpExpr*)clause->clause;
++        left  = linitial_node(Var, op->args);
++        right = lsecond_node(Var, op->args);
++        if (left->vartype != right->vartype || left->varcollid != right->varcollid) {
++            continue;
++        }
++        if (equal(var, left) && bms_is_member(right->varno, outerrel->relids)) {
++            return right;
++        }
++        if (equal(var, right) && bms_is_member(left->varno, outerrel->relids)) {
++            return left;
++        }
++    }
++    return NULL;
++}
++
+ /*
+  * Check if reltarget is safe for semi-join pushdown. Returns false if the
+  * target references columns from the inner relation that aren't in outer
+@@ -2407,7 +2436,9 @@ semijoin_target_ok(
+     PlannerInfo* root,
+     RelOptInfo* joinrel,
+     RelOptInfo* outerrel,
+-    RelOptInfo* innerrel
++    RelOptInfo* innerrel,
++    JoinType jointype,
++    List* clauses
+ ) {
+     List* vars;
+     ListCell* lc;
+@@ -2427,8 +2458,11 @@ semijoin_target_ok(
+ 
+         if (bms_is_member(var->varno, innerrel->relids) &&
+             !bms_is_member(var->varno, outerrel->relids)) {
+-            ok = false;
+-            break;
++            if (jointype != JOIN_SEMI ||
++                chfdw_semijoin_outer_var(var, clauses, outerrel) == NULL) {
++                ok = false;
++                break;
++            }
+         }
+     }
+ 
+@@ -2436,6 +2470,35 @@ semijoin_target_ok(
+     return ok;
+ }
+ 
++/* Keep wrapper projections separate from the planner's shared PathTarget. */
++static void
++add_subquery_join_outputs(RelOptInfo* rel, List* expressions) {
++    CHFdwRelationInfo* fpinfo = (CHFdwRelationInfo*)rel->fdw_private;
++    List* vars = pull_var_clause((Node*)expressions, PVC_RECURSE_PLACEHOLDERS);
++    ListCell* lc;
++
++    if (fpinfo->subquery_exprs == NIL) {
++        fpinfo->subquery_exprs = list_copy(rel->reltarget->exprs);
++    }
++    foreach (lc, vars) {
++        Var* var = lfirst_node(Var, lc);
++
++        if (bms_is_member(var->varno, rel->relids) &&
++            !list_member(fpinfo->subquery_exprs, var)) {
++            fpinfo->subquery_exprs = lappend(fpinfo->subquery_exprs, var);
++        }
++    }
++    list_free(vars);
++    if (IS_JOIN_REL(rel)) {
++        if (fpinfo->make_outerrel_subquery) {
++            add_subquery_join_outputs(fpinfo->outerrel, fpinfo->subquery_exprs);
++        }
++        if (fpinfo->make_innerrel_subquery) {
++            add_subquery_join_outputs(fpinfo->innerrel, fpinfo->subquery_exprs);
++        }
++    }
++}
++
+ /*
+  * Assess whether the join between inner and outer relations can be pushed down
+  * to the foreign server. As a side effect, save information we obtain in this
+@@ -2469,7 +2532,9 @@ foreign_join_ok(
+     case JOIN_SEMI: /* deparses to LEFT SEMI JOIN */
+     case JOIN_ANTI: /* deparses to LEFT ANTI JOIN */
+         /* Semi/anti-join target can only reference the outer relation. */
+-        if (!semijoin_target_ok(root, joinrel, outerrel, innerrel)) {
++        if (!semijoin_target_ok(
++                root, joinrel, outerrel, innerrel, jointype, extra->restrictlist
++            )) {
+             return false;
+         }
+         break;
+@@ -2493,20 +2558,6 @@ foreign_join_ok(
+         return false;
+     }
+ 
+-    /*
+-     * A SEMI/ANTI joinrel used as the input for a further join would deparse
+-     * as an inline nested join, which ClickHouse cannot parse, and the
+-     * subquery-wrapping escape hatch requires reltarget coverage that
+-     * SEMI/ANTI inputs do not guarantee. Keep such composites local; the
+-     * SEMI/ANTI join itself can still push down as the scan's top rel.
+-     */
+-    if ((IS_JOIN_REL(outerrel) &&
+-         (fpinfo_o->jointype == JOIN_SEMI || fpinfo_o->jointype == JOIN_ANTI)) ||
+-        (IS_JOIN_REL(innerrel) &&
+-         (fpinfo_i->jointype == JOIN_SEMI || fpinfo_i->jointype == JOIN_ANTI))) {
+-        return false;
+-    }
+-
+     /*
+      * If joining relations have local conditions, those conditions are
+      * required to be applied before joining the relations. Hence the join
+@@ -2595,8 +2646,14 @@ foreign_join_ok(
+      * relations that are required to be deparsed as subqueries, so save the
+      * relids of those relations for later use by the deparser.
+      */
+-    fpinfo->make_outerrel_subquery = false;
+-    fpinfo->make_innerrel_subquery = false;
++    fpinfo->make_outerrel_subquery =
++        IS_JOIN_REL(outerrel) &&
++        (jointype == JOIN_SEMI || jointype == JOIN_ANTI ||
++         fpinfo_o->jointype == JOIN_SEMI || fpinfo_o->jointype == JOIN_ANTI);
++    fpinfo->make_innerrel_subquery =
++        IS_JOIN_REL(innerrel) &&
++        (jointype == JOIN_SEMI || jointype == JOIN_ANTI ||
++         fpinfo_i->jointype == JOIN_SEMI || fpinfo_i->jointype == JOIN_ANTI);
+     Assert(bms_is_subset(fpinfo_o->lower_subquery_rels, outerrel->relids));
+     Assert(bms_is_subset(fpinfo_i->lower_subquery_rels, innerrel->relids));
+     fpinfo->lower_subquery_rels =
+@@ -2623,10 +2680,14 @@ foreign_join_ok(
+      */
+     switch (jointype) {
+     case JOIN_INNER:
+-        fpinfo->remote_conds =
+-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_i->remote_conds));
+-        fpinfo->remote_conds =
+-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_o->remote_conds));
++        fpinfo->remote_conds = list_concat(
++            fpinfo->remote_conds,
++            fpinfo->make_innerrel_subquery ? NIL : list_copy(fpinfo_i->remote_conds)
++        );
++        fpinfo->remote_conds = list_concat(
++            fpinfo->remote_conds,
++            fpinfo->make_outerrel_subquery ? NIL : list_copy(fpinfo_o->remote_conds)
++        );
+ 
+         /*
+          * For an inner join, some restrictions can be treated alike.
+@@ -2640,17 +2701,25 @@ foreign_join_ok(
+         break;
+ 
+     case JOIN_LEFT:
+-        fpinfo->joinclauses =
+-            list_concat(fpinfo->joinclauses, list_copy(fpinfo_i->remote_conds));
+-        fpinfo->remote_conds =
+-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_o->remote_conds));
++        fpinfo->joinclauses = list_concat(
++            fpinfo->joinclauses,
++            fpinfo->make_innerrel_subquery ? NIL : list_copy(fpinfo_i->remote_conds)
++        );
++        fpinfo->remote_conds = list_concat(
++            fpinfo->remote_conds,
++            fpinfo->make_outerrel_subquery ? NIL : list_copy(fpinfo_o->remote_conds)
++        );
+         break;
+ 
+     case JOIN_RIGHT:
+-        fpinfo->joinclauses =
+-            list_concat(fpinfo->joinclauses, list_copy(fpinfo_o->remote_conds));
+-        fpinfo->remote_conds =
+-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_i->remote_conds));
++        fpinfo->joinclauses = list_concat(
++            fpinfo->joinclauses,
++            fpinfo->make_outerrel_subquery ? NIL : list_copy(fpinfo_o->remote_conds)
++        );
++        fpinfo->remote_conds = list_concat(
++            fpinfo->remote_conds,
++            fpinfo->make_innerrel_subquery ? NIL : list_copy(fpinfo_i->remote_conds)
++        );
+         break;
+ 
+     case JOIN_SEMI:
+@@ -2661,25 +2730,17 @@ foreign_join_ok(
+          * outer's conditions go to remote_conds (WHERE). Extract join key
+          * equalities to joinclauses for the ON clause.
+          */
+-        fpinfo->joinclauses =
+-            list_concat(fpinfo->joinclauses, list_copy(fpinfo_i->remote_conds));
+-        fpinfo->remote_conds =
+-            list_concat(fpinfo->remote_conds, list_copy(fpinfo_o->remote_conds));
++        fpinfo->joinclauses = list_concat(
++            fpinfo->joinclauses,
++            fpinfo->make_innerrel_subquery ? NIL : list_copy(fpinfo_i->remote_conds)
++        );
++        fpinfo->remote_conds = list_concat(
++            fpinfo->remote_conds,
++            fpinfo->make_outerrel_subquery ? NIL : list_copy(fpinfo_o->remote_conds)
++        );
+         fpinfo->remote_conds =
+             extract_join_equals(fpinfo->remote_conds, &fpinfo->joinclauses);
+ 
+-        /*
+-         * Subquery-wrapping a join-typed input would require its
+-         * reltarget to cover every Var the ON clause references, which
+-         * does not hold for SEMI/ANTI inputs (join-only columns are not
+-         * propagated upstream). Until the deparser can widen the wrapped
+-         * subquery's targetlist, refuse ANTI pushdown when either input
+-         * is itself a join and fall back to local execution. SEMI keeps
+-         * its historical behavior.
+-         */
+-        if (jointype == JOIN_ANTI && (IS_JOIN_REL(outerrel) || IS_JOIN_REL(innerrel))) {
+-            return false;
+-        }
+         break;
+ 
+     case JOIN_FULL:
+@@ -2730,6 +2791,29 @@ foreign_join_ok(
+         }
+     }
+ 
++    if (fpinfo->make_outerrel_subquery || fpinfo->make_innerrel_subquery) {
++        List* needed = list_concat(
++            list_copy(joinrel->reltarget->exprs),
++            extract_actual_clauses(fpinfo->joinclauses, false)
++        );
++
++        needed =
++            list_concat(needed, extract_actual_clauses(fpinfo->remote_conds, false));
++        needed =
++            list_concat(needed, extract_actual_clauses(fpinfo->local_conds, false));
++        if (fpinfo->make_outerrel_subquery) {
++            add_subquery_join_outputs(outerrel, needed);
++            fpinfo->lower_subquery_rels =
++                bms_add_members(fpinfo->lower_subquery_rels, outerrel->relids);
++        }
++        if (fpinfo->make_innerrel_subquery) {
++            add_subquery_join_outputs(innerrel, needed);
++            fpinfo->lower_subquery_rels =
++                bms_add_members(fpinfo->lower_subquery_rels, innerrel->relids);
++        }
++        list_free(needed);
++    }
++
+     /* Mark that this join can be pushed down safely */
+     fpinfo->pushdown_safe = true;
+ 
+@@ -2938,7 +3022,8 @@ clickhouseGetForeignJoinPaths(
+     /*
+      * Skip if this join combination has been considered already.
+      */
+-    if (joinrel->fdw_private) {
++    if (joinrel->fdw_private &&
++        ((CHFdwRelationInfo*)joinrel->fdw_private)->pushdown_safe) {
+         return;
+     }
+ 
+diff --git a/src/include/fdw.h b/src/include/fdw.h
+index fa06aa2..5af0f06 100644
+--- a/src/include/fdw.h
++++ b/src/include/fdw.h
+@@ -229,6 +229,7 @@ typedef struct CHFdwRelationInfo {
+     List* setop_tlist;
+ 
+     /* Subquery information */
++    List* subquery_exprs;        /* Output plus columns needed by enclosing joins. */
+     bool make_outerrel_subquery; /* do we deparse outerrel as a
+                                   * subquery? */
+     bool make_innerrel_subquery; /* do we deparse innerrel as a
+@@ -543,4 +544,7 @@ chfdw_translate_to_char_format(const char* pgfmt, StringInfo out);
+ #define lnext_compat(l, i) lnext(l, i)
+ #endif
+ 
++extern Var*
++chfdw_semijoin_outer_var(Var* var, List* clauses, RelOptInfo* outerrel);
++
+ #endif /* CLICKHOUSE_FDW_H */
+diff --git a/test/sql/analytics_composition.sql b/test/sql/analytics_composition.sql
+new file mode 100644
+index 0000000..a153aa8
+--- /dev/null
++++ b/test/sql/analytics_composition.sql
+@@ -0,0 +1,125 @@
++SET datestyle = 'ISO';
++CREATE SERVER analytics_composition FOREIGN DATA WRAPPER clickhouse_fdw
++    OPTIONS (dbname 'analytics_composition_test', driver 'binary');
++CREATE USER MAPPING FOR CURRENT_USER SERVER analytics_composition;
++SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS analytics_composition_test');
++SELECT clickhouse_raw_query('CREATE DATABASE analytics_composition_test');
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.messages
++    (id Int64, label Nullable(String), deleted Bool) ENGINE=MergeTree ORDER BY id');
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.units
++    (id Int64, deleted Bool) ENGINE=MergeTree ORDER BY id');
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.links
++    (item_id Nullable(Int64), unit_id Int64) ENGINE=MergeTree ORDER BY unit_id');
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.media
++    (item_id Nullable(Int64)) ENGINE=MergeTree ORDER BY tuple()');
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.messages VALUES
++    (1,NULL,false),(2,''legacy'',false),(3,'''',false),(4,''other'',false),(5,NULL,true),(6,NULL,false)');
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.units VALUES (10,false),(20,true)');
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.links VALUES
++    (1,10),(1,10),(2,20),(3,10),(NULL,10),(5,10)');
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.media VALUES (1),(1),(2),(4),(NULL)');
++CREATE SCHEMA analytics_remote;
++IMPORT FOREIGN SCHEMA analytics_composition_test FROM SERVER analytics_composition INTO analytics_remote;
++CREATE SCHEMA analytics_local;
++CREATE TABLE analytics_local.messages AS TABLE analytics_remote.messages;
++CREATE TABLE analytics_local.units AS TABLE analytics_remote.units;
++CREATE TABLE analytics_local.links AS TABLE analytics_remote.links;
++CREATE TABLE analytics_local.media AS TABLE analytics_remote.media;
++
++-- Compare with PostgreSQL on identical inputs, including NULL and duplicate links.
++-- Keep filtering, aggregates and limits remote, except nullable NOT IN.
++DO $test$
++DECLARE
++    driver text;
++    query text;
++    expected jsonb;
++    actual jsonb;
++    plan jsonb;
++BEGIN
++    FOREACH driver IN ARRAY ARRAY['binary', 'http'] LOOP
++        EXECUTE format('ALTER SERVER analytics_composition OPTIONS (SET driver %L)', driver);
++        FOREACH query IN ARRAY ARRAY[
++            'SELECT count(*) FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted)
++             AND EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)',
++            'SELECT count(*) FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND (m.label=''legacy'' OR EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted))
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)',
++            'SELECT m.id FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND EXISTS (SELECT 1 FROM analytics_remote.links l WHERE l.item_id=m.id)
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)
++             ORDER BY m.id DESC LIMIT 2',
++            'SELECT m.id FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted)
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)
++             ORDER BY m.id LIMIT 2',
++            'SELECT m.id FROM analytics_remote.messages m WHERE m.id NOT IN
++             (SELECT l.item_id FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE NOT u.deleted)
++             ORDER BY m.id',
++            'SELECT m.id FROM analytics_remote.messages m WHERE
++             (m.label=''legacy'' OR EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id AND l.item_id=m.id WHERE NOT u.deleted))
++             ORDER BY m.id LIMIT 3',
++            'SELECT m.id FROM analytics_remote.messages m WHERE m.id >
++             (SELECT min(l.item_id) FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE NOT u.deleted)
++             ORDER BY m.id LIMIT 2',
++            'SELECT m.id,a.item_id FROM analytics_remote.messages m LEFT JOIN analytics_remote.media a ON a.item_id=m.id
++             WHERE NOT m.deleted AND EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted)
++             ORDER BY m.id,a.item_id LIMIT 5',
++            'SELECT count(*) FROM analytics_remote.messages m FULL JOIN analytics_remote.media a ON a.item_id=m.id
++             WHERE (m.id IS NULL OR NOT m.deleted) AND NOT EXISTS (SELECT 1 FROM analytics_remote.links l WHERE l.item_id=m.id)',
++            'SELECT count(*) FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND (m.label=''legacy'' OR NOT EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted))'
++        ] LOOP
++            EXECUTE format('SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM (%s) t', replace(query, 'analytics_remote.', 'analytics_local.')) INTO expected;
++            EXECUTE format('SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM (%s) t', query) INTO actual;
++            IF actual IS DISTINCT FROM expected THEN
++                RAISE EXCEPTION '% mismatch: % vs %, query %', driver, actual, expected, query;
++            END IF;
++            EXECUTE 'EXPLAIN (VERBOSE, COSTS OFF, FORMAT JSON) ' || query INTO plan;
++            IF position('m.id NOT IN' IN query) = 0 AND plan #>> '{0,Plan,Node Type}' <> 'Foreign Scan' THEN
++                RAISE EXCEPTION '% did not push down: %', driver, plan;
++            END IF;
++        END LOOP;
++    END LOOP;
++END;
++$test$;
++
++-- The SubPlan path must still enforce PostgreSQL table privileges.
++CREATE ROLE analytics_restricted;
++GRANT USAGE ON SCHEMA analytics_remote TO analytics_restricted;
++GRANT SELECT ON analytics_remote.messages TO analytics_restricted;
++CREATE USER MAPPING FOR analytics_restricted SERVER analytics_composition;
++SET ROLE analytics_restricted;
++SELECT m.id FROM analytics_remote.messages m WHERE m.label='legacy' OR EXISTS
++    (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id);
++RESET ROLE;
++GRANT SELECT ON analytics_remote.links,analytics_remote.units TO analytics_restricted;
++CREATE VIEW analytics_owned_links AS
++SELECT l.item_id FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE NOT u.deleted;
++ALTER VIEW analytics_owned_links OWNER TO analytics_restricted;
++DO $test$
++DECLARE
++    plan jsonb;
++    actual bigint[];
++BEGIN
++    SELECT array_agg(m.id ORDER BY m.id) INTO actual FROM analytics_remote.messages m
++    WHERE m.label='legacy' OR EXISTS (SELECT 1 FROM analytics_owned_links l WHERE l.item_id=m.id);
++    IF actual IS DISTINCT FROM ARRAY[1,2,3,5]::bigint[] THEN
++        RAISE EXCEPTION 'view owner result mismatch: %', actual;
++    END IF;
++    EXPLAIN (VERBOSE,COSTS OFF,FORMAT JSON)
++    SELECT m.id FROM analytics_remote.messages m
++    WHERE m.label='legacy' OR EXISTS (SELECT 1 FROM analytics_owned_links l WHERE l.item_id=m.id)
++    INTO plan;
++    IF plan #>> '{0,Plan,Filter}' IS NULL THEN
++        RAISE EXCEPTION 'different view owner must retain local subplan: %', plan;
++    END IF;
++END;
++$test$;
++DROP VIEW analytics_owned_links;
++DROP OWNED BY analytics_restricted;
++DROP ROLE analytics_restricted;
++DROP SCHEMA analytics_local CASCADE;
++DROP SCHEMA analytics_remote CASCADE;
++DROP SERVER analytics_composition CASCADE;
++SELECT clickhouse_raw_query('DROP DATABASE analytics_composition_test');
+diff --git a/test/expected/analytics_composition.out b/test/expected/analytics_composition.out
+new file mode 100644
+index 0000000..acf2ea5
+--- /dev/null
++++ b/test/expected/analytics_composition.out
+@@ -0,0 +1,190 @@
++SET datestyle = 'ISO';
++CREATE SERVER analytics_composition FOREIGN DATA WRAPPER clickhouse_fdw
++    OPTIONS (dbname 'analytics_composition_test', driver 'binary');
++CREATE USER MAPPING FOR CURRENT_USER SERVER analytics_composition;
++SELECT clickhouse_raw_query('DROP DATABASE IF EXISTS analytics_composition_test');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('CREATE DATABASE analytics_composition_test');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.messages
++    (id Int64, label Nullable(String), deleted Bool) ENGINE=MergeTree ORDER BY id');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.units
++    (id Int64, deleted Bool) ENGINE=MergeTree ORDER BY id');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.links
++    (item_id Nullable(Int64), unit_id Int64) ENGINE=MergeTree ORDER BY unit_id');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('CREATE TABLE analytics_composition_test.media
++    (item_id Nullable(Int64)) ENGINE=MergeTree ORDER BY tuple()');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.messages VALUES
++    (1,NULL,false),(2,''legacy'',false),(3,'''',false),(4,''other'',false),(5,NULL,true),(6,NULL,false)');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.units VALUES (10,false),(20,true)');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.links VALUES
++    (1,10),(1,10),(2,20),(3,10),(NULL,10),(5,10)');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++SELECT clickhouse_raw_query('INSERT INTO analytics_composition_test.media VALUES (1),(1),(2),(4),(NULL)');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++
++CREATE SCHEMA analytics_remote;
++IMPORT FOREIGN SCHEMA analytics_composition_test FROM SERVER analytics_composition INTO analytics_remote;
++CREATE SCHEMA analytics_local;
++CREATE TABLE analytics_local.messages AS TABLE analytics_remote.messages;
++CREATE TABLE analytics_local.units AS TABLE analytics_remote.units;
++CREATE TABLE analytics_local.links AS TABLE analytics_remote.links;
++CREATE TABLE analytics_local.media AS TABLE analytics_remote.media;
++-- Compare with PostgreSQL on identical inputs, including NULL and duplicate links.
++-- Keep filtering, aggregates and limits remote, except nullable NOT IN.
++DO $test$
++DECLARE
++    driver text;
++    query text;
++    expected jsonb;
++    actual jsonb;
++    plan jsonb;
++BEGIN
++    FOREACH driver IN ARRAY ARRAY['binary', 'http'] LOOP
++        EXECUTE format('ALTER SERVER analytics_composition OPTIONS (SET driver %L)', driver);
++        FOREACH query IN ARRAY ARRAY[
++            'SELECT count(*) FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted)
++             AND EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)',
++            'SELECT count(*) FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND (m.label=''legacy'' OR EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted))
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)',
++            'SELECT m.id FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND EXISTS (SELECT 1 FROM analytics_remote.links l WHERE l.item_id=m.id)
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)
++             ORDER BY m.id DESC LIMIT 2',
++            'SELECT m.id FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted)
++             AND NOT EXISTS (SELECT 1 FROM analytics_remote.media a WHERE a.item_id=m.id)
++             ORDER BY m.id LIMIT 2',
++            'SELECT m.id FROM analytics_remote.messages m WHERE m.id NOT IN
++             (SELECT l.item_id FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE NOT u.deleted)
++             ORDER BY m.id',
++            'SELECT m.id FROM analytics_remote.messages m WHERE
++             (m.label=''legacy'' OR EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id AND l.item_id=m.id WHERE NOT u.deleted))
++             ORDER BY m.id LIMIT 3',
++            'SELECT m.id FROM analytics_remote.messages m WHERE m.id >
++             (SELECT min(l.item_id) FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE NOT u.deleted)
++             ORDER BY m.id LIMIT 2',
++            'SELECT m.id,a.item_id FROM analytics_remote.messages m LEFT JOIN analytics_remote.media a ON a.item_id=m.id
++             WHERE NOT m.deleted AND EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted)
++             ORDER BY m.id,a.item_id LIMIT 5',
++            'SELECT count(*) FROM analytics_remote.messages m FULL JOIN analytics_remote.media a ON a.item_id=m.id
++             WHERE (m.id IS NULL OR NOT m.deleted) AND NOT EXISTS (SELECT 1 FROM analytics_remote.links l WHERE l.item_id=m.id)',
++            'SELECT count(*) FROM analytics_remote.messages m WHERE NOT m.deleted
++             AND (m.label=''legacy'' OR NOT EXISTS (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id AND NOT u.deleted))'
++        ] LOOP
++            EXECUTE format('SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM (%s) t', replace(query, 'analytics_remote.', 'analytics_local.')) INTO expected;
++            EXECUTE format('SELECT coalesce(jsonb_agg(t), ''[]''::jsonb) FROM (%s) t', query) INTO actual;
++            IF actual IS DISTINCT FROM expected THEN
++                RAISE EXCEPTION '% mismatch: % vs %, query %', driver, actual, expected, query;
++            END IF;
++            EXECUTE 'EXPLAIN (VERBOSE, COSTS OFF, FORMAT JSON) ' || query INTO plan;
++            IF position('m.id NOT IN' IN query) = 0 AND plan #>> '{0,Plan,Node Type}' <> 'Foreign Scan' THEN
++                RAISE EXCEPTION '% did not push down: %', driver, plan;
++            END IF;
++        END LOOP;
++    END LOOP;
++END;
++$test$;
++-- The SubPlan path must still enforce PostgreSQL table privileges.
++CREATE ROLE analytics_restricted;
++GRANT USAGE ON SCHEMA analytics_remote TO analytics_restricted;
++GRANT SELECT ON analytics_remote.messages TO analytics_restricted;
++CREATE USER MAPPING FOR analytics_restricted SERVER analytics_composition;
++SET ROLE analytics_restricted;
++SELECT m.id FROM analytics_remote.messages m WHERE m.label='legacy' OR EXISTS
++    (SELECT 1 FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE l.item_id=m.id);
++ERROR:  permission denied for foreign table links
++RESET ROLE;
++GRANT SELECT ON analytics_remote.links,analytics_remote.units TO analytics_restricted;
++CREATE VIEW analytics_owned_links AS
++SELECT l.item_id FROM analytics_remote.links l JOIN analytics_remote.units u ON u.id=l.unit_id WHERE NOT u.deleted;
++ALTER VIEW analytics_owned_links OWNER TO analytics_restricted;
++DO $test$
++DECLARE
++    plan jsonb;
++    actual bigint[];
++BEGIN
++    SELECT array_agg(m.id ORDER BY m.id) INTO actual FROM analytics_remote.messages m
++    WHERE m.label='legacy' OR EXISTS (SELECT 1 FROM analytics_owned_links l WHERE l.item_id=m.id);
++    IF actual IS DISTINCT FROM ARRAY[1,2,3,5]::bigint[] THEN
++        RAISE EXCEPTION 'view owner result mismatch: %', actual;
++    END IF;
++    EXPLAIN (VERBOSE,COSTS OFF,FORMAT JSON)
++    SELECT m.id FROM analytics_remote.messages m
++    WHERE m.label='legacy' OR EXISTS (SELECT 1 FROM analytics_owned_links l WHERE l.item_id=m.id)
++    INTO plan;
++    IF plan #>> '{0,Plan,Filter}' IS NULL THEN
++        RAISE EXCEPTION 'different view owner must retain local subplan: %', plan;
++    END IF;
++END;
++$test$;
++DROP VIEW analytics_owned_links;
++DROP OWNED BY analytics_restricted;
++DROP ROLE analytics_restricted;
++DROP SCHEMA analytics_local CASCADE;
++NOTICE:  drop cascades to 4 other objects
++DETAIL:  drop cascades to table analytics_local.messages
++drop cascades to table analytics_local.units
++drop cascades to table analytics_local.links
++drop cascades to table analytics_local.media
++DROP SCHEMA analytics_remote CASCADE;
++NOTICE:  drop cascades to 4 other objects
++DETAIL:  drop cascades to foreign table analytics_remote.links
++drop cascades to foreign table analytics_remote.media
++drop cascades to foreign table analytics_remote.messages
++drop cascades to foreign table analytics_remote.units
++DROP SERVER analytics_composition CASCADE;
++NOTICE:  drop cascades to user mapping for ubuntu on server analytics_composition
++SELECT clickhouse_raw_query('DROP DATABASE analytics_composition_test');
++ clickhouse_raw_query 
++----------------------
++ 
++(1 row)
++

@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { copyTextToClipboard } from '../../../../../copy-to-clipboard';
 import { renderWgsFloat } from '../../../importer-beta/coordinates';
+import { BaseLayerId, DEFAULT_BASE_LAYER_ID } from '../../../../../maps/base-layers';
 import { getTileLayers } from '../../../../../web-components/analysis-map/tile-layers';
 import { getCoordinateMgrsText, getCoordinateText } from '../../../../../maps/coordinate-format';
 import { formatCoordinateLocality } from '../../../../../maps/coordinate-locality';
@@ -19,12 +20,9 @@ import { MessageCardAttachmentPreviewHeader } from '../attachment-preview/Messag
 import { MessageCardAttachmentPreviewLayout } from '../attachment-preview/MessageCardAttachmentPreviewLayout';
 import type { CoordinatePreviewPoint } from '../message-coordinate-preview';
 import { getAttachmentPreviewStageSx } from '../attachment-preview/message-card-attachment-preview';
-import { getMessageCardAttachmentPreviewConfig } from '../attachment-preview/message-card-preview-config';
 import type { MessageCardPreviewNavigation } from '../attachment-preview/message-card-preview.types';
 
 type MapInitState = 'loading' | 'ready' | 'error';
-type BaseLayerId = 'googleHybrid' | 'openStreetMap';
-
 const PREVIEW_ZOOM = 13;
 const PREVIEW_MAX_ZOOM = 13;
 const PREVIEW_BOUNDS_PADDING: [number, number] = [40, 40];
@@ -84,20 +82,13 @@ function DocumentPointContext({ point }: { point: CoordinatePreviewPoint }) {
 export function CoordinateAttachmentPreviewRenderer({
   points,
   navigation,
-  isFullscreen,
-  onFullscreenChange,
   onClose,
 }: {
   points: CoordinatePreviewPoint[];
   navigation: MessageCardPreviewNavigation;
-  isFullscreen: boolean;
-  onFullscreenChange: (isFullscreen: boolean) => void;
   onClose: () => void;
 }) {
-  const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>('googleHybrid');
-  const previewConfig = getMessageCardAttachmentPreviewConfig('coordinate-map');
-  const canFullscreen = previewConfig.supportsFullscreen;
-  const dialogIsFullscreen = canFullscreen && isFullscreen;
+  const [baseLayerId, setBaseLayerId] = useState<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -118,23 +109,17 @@ export function CoordinateAttachmentPreviewRenderer({
       fileName="Координати"
       navigation={navigation}
       onClose={onClose}
-      isFullscreen={dialogIsFullscreen}
-      canFullscreen={canFullscreen}
-      onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
   );
 
   return (
     <MessageCardAttachmentPreviewLayout
-      isFullscreen={dialogIsFullscreen}
-      config={previewConfig}
       stage={
         <CoordinateMapPreview
           points={points}
           activeIndex={activeIndex}
           onActiveIndexChange={changeActiveIndex}
           baseLayerId={baseLayerId}
-          isFullscreen={dialogIsFullscreen}
         />
       }
       header={header}
@@ -152,7 +137,6 @@ export function CoordinateAttachmentPreviewRenderer({
       }
       navigation={navigation}
       swipeEnabled={false}
-      onToggleFullscreen={() => onFullscreenChange(!dialogIsFullscreen)}
     />
   );
 }
@@ -162,21 +146,19 @@ function CoordinateMapPreview({
   activeIndex,
   onActiveIndexChange,
   baseLayerId,
-  isFullscreen,
 }: {
   points: CoordinatePreviewPoint[];
   activeIndex: number;
   onActiveIndexChange: (index: number) => void;
   baseLayerId: BaseLayerId;
-  isFullscreen: boolean;
 }) {
   const theme = useTheme();
   const [mapHostEl, setMapHostEl] = useState<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRefs = useRef<L.CircleMarker[]>([]);
-  const layerRef = useRef<L.TileLayer | null>(null);
+  const layerRef = useRef<L.Layer | null>(null);
   const tileLayersRef = useRef<ReturnType<typeof getTileLayers> | null>(null);
-  const baseLayerIdRef = useRef<BaseLayerId>('googleHybrid');
+  const baseLayerIdRef = useRef<BaseLayerId>(DEFAULT_BASE_LAYER_ID);
   const pointsRef = useRef(points);
   const activeIndexRef = useRef(activeIndex);
   const previousActiveIndexRef = useRef(activeIndex);
@@ -225,8 +207,7 @@ function CoordinateMapPreview({
       return;
     }
 
-    const nextLayer =
-      baseLayerId === 'googleHybrid' ? tileLayers.googleHybrid : tileLayers.openStreetMap;
+    const nextLayer = tileLayers[baseLayerId];
     if (layerRef.current === nextLayer) {
       return;
     }
@@ -265,25 +246,6 @@ function CoordinateMapPreview({
       mapRef.current?.invalidateSize();
     });
   }, [activeIndex]);
-
-  useEffect(() => {
-    if (invalidateFrameRef.current !== null) {
-      window.cancelAnimationFrame(invalidateFrameRef.current);
-      invalidateFrameRef.current = null;
-    }
-
-    invalidateFrameRef.current = window.requestAnimationFrame(() => {
-      invalidateFrameRef.current = null;
-      mapRef.current?.invalidateSize();
-    });
-
-    return () => {
-      if (invalidateFrameRef.current !== null) {
-        window.cancelAnimationFrame(invalidateFrameRef.current);
-        invalidateFrameRef.current = null;
-      }
-    };
-  }, [isFullscreen]);
 
   useEffect(() => {
     if (mapHostEl == null) {
@@ -373,10 +335,7 @@ function CoordinateMapPreview({
 
       const tileLayers = getTileLayers();
       tileLayersRef.current = tileLayers;
-      const baseLayer =
-        baseLayerIdRef.current === 'googleHybrid'
-          ? tileLayers.googleHybrid
-          : tileLayers.openStreetMap;
+      const baseLayer = tileLayers[baseLayerIdRef.current];
       baseLayer.addTo(map);
 
       const markers = visiblePoints.map(({ lat, lng, label }, index) => {
@@ -564,7 +523,7 @@ function CoordinateMapPreview({
         overflow: 'hidden',
         borderRadius: 0,
         backgroundColor: 'background.paper',
-        ...getAttachmentPreviewStageSx(theme, isFullscreen),
+        ...getAttachmentPreviewStageSx(),
       }}
     >
       <Box

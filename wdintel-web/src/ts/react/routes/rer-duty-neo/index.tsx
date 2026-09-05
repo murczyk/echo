@@ -45,6 +45,7 @@ export function RerDutyNeoPage({
   const [activeFeedId, setActiveFeedId] = useState<string | null>(null);
   const [createMessageOpen, setCreateMessageOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<{ id: number; message: InboxMessage } | null>(null);
+  const [editAsReport, setEditAsReport] = useState(false);
   const [reportSource, setReportSource] = useState<{ id: number; message: InboxMessage } | null>(
     null,
   );
@@ -66,6 +67,7 @@ export function RerDutyNeoPage({
         if (!report) throw new Error('Розвіддонесення не знайдено.');
         setCreateMessageOpen(false);
         setReportSource(null);
+        setEditAsReport(true);
         setEditTarget({ id: report[0], message: report[1] });
       } catch (loadError) {
         notify({
@@ -80,10 +82,12 @@ export function RerDutyNeoPage({
   const openMessageEditor = useCallback((target: { id: number; message: InboxMessage }) => {
     setCreateMessageOpen(false);
     setReportSource(null);
+    setEditAsReport(isIntelligenceReport(target.message));
     setEditTarget(target);
   }, []);
   const openReportComposer = useCallback((source: { id: number; message: InboxMessage }) => {
     setCreateMessageOpen(false);
+    setEditAsReport(false);
     setEditTarget(null);
     setReportSource(source);
   }, []);
@@ -258,12 +262,14 @@ export function RerDutyNeoPage({
   const [hasCompletedInitialLoad, setHasCompletedInitialLoad] = useState(false);
   const openCreateMessageComposer = useCallback(() => {
     setEditTarget(null);
+    setEditAsReport(false);
     setReportSource(null);
     setCreateMessageOpen(true);
   }, []);
   const closeMessageEditor = useCallback(() => {
     setCreateMessageOpen(false);
     setEditTarget(null);
+    setEditAsReport(false);
     setReportSource(null);
   }, []);
   const handleCreatedMessage = useCallback(() => {
@@ -388,17 +394,18 @@ export function RerDutyNeoPage({
         cyberEchoEnabled={cyberEchoEnabled}
         currentUser={currentUser}
         editTarget={editTarget}
+        editAsReport={editAsReport}
         reportSource={reportSource}
         onClose={closeMessageEditor}
         onSubmitEdit={
-          editTarget && !isIntelligenceReport(editTarget.message)
+          editTarget && !editAsReport
             ? async (messageId, message) => {
                 handleEditedMessage(messageId, message);
               }
             : undefined
         }
         onEditSuccess={() => {
-          if (editTarget && isIntelligenceReport(editTarget.message)) {
+          if (editAsReport) {
             reloadFeeds();
           } else {
             reloadEditedFeeds();
