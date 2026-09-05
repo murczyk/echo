@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { MouseEvent } from 'react';
 import BrokenImageOutlinedIcon from '@mui/icons-material/BrokenImageOutlined';
-import { Box, ButtonBase, Skeleton, Typography } from '@mui/material';
+import { ButtonBase, Skeleton, Typography } from '@mui/material';
 
 import {
   deriveImageDownloadName,
@@ -53,16 +53,7 @@ export function MessageCardImageThumb({
   };
 
   return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        position: 'relative',
-        maxWidth: 150,
-        height: 150,
-        minWidth: 85,
-        alignSelf: 'flex-start',
-      }}
-    >
+    <div className="relative inline-flex h-[150px] min-w-[85px] max-w-[150px] self-start">
       <ButtonBase
         component="button"
         type="button"
@@ -73,55 +64,21 @@ export function MessageCardImageThumb({
         data-summary-selected={selected ? 'true' : undefined}
         data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}
         data-picture-thumb-layout={variant}
-        sx={{
-          display: 'inline-flex',
-          width: '100%',
-          height: '100%',
-          textAlign: 'left',
-          cursor: canOpen ? 'pointer' : 'default',
-          color: 'inherit',
-          borderRadius: 1.5,
-          overflow: 'hidden',
-          border: '1px solid',
-          borderColor: selected ? 'primary.light' : 'divider',
-          backgroundColor: selected ? 'action.selected' : 'action.hover',
-          boxShadow: selected ? 1 : 0,
-          '&:disabled': {
-            color: 'text.disabled',
-          },
-          '&:focus-visible': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
-            outlineOffset: '-2px',
-          },
-        }}
+        className={`inline-flex h-full w-full overflow-hidden rounded-md border border-solid text-left text-inherit focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
+          selected
+            ? 'border-[var(--color-action)] bg-[color-mix(in_srgb,var(--color-action)_14%,transparent)] shadow-sm'
+            : 'border-[var(--color-divider)] bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] shadow-none'
+        } ${canOpen ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        <Box
-          sx={{
-            position: 'relative',
-            display: 'flex',
-            width: '100%',
-            height: '100%',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-          }}
-        >
+        <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
           {!loaded && !failed && (
             <Skeleton
               variant="rectangular"
               animation="wave"
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                zIndex: 0,
-              }}
+              className="absolute inset-0 z-0 h-full! w-full!"
             />
           )}
-          <Box
-            component="img"
+          <img
             src={image.href}
             alt="Зображення повідомлення"
             onLoad={() => {
@@ -133,42 +90,19 @@ export function MessageCardImageThumb({
               setLoaded(false);
             }}
             {...imageLoadingProps}
-            sx={{
-              display: 'block',
-              maxWidth: 150,
-              height: 150,
-              width: 'auto',
-              objectFit: 'cover',
-              opacity: showImage ? 1 : 0,
-              transition: 'opacity 120ms ease-out',
-              pointerEvents: 'none',
-            }}
+            className={`pointer-events-none block h-[150px] w-auto max-w-[150px] object-cover transition-opacity duration-[120ms] ease-out ${
+              showImage ? 'opacity-100' : 'opacity-0'
+            }`}
           />
           {failed ? (
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                zIndex: 1,
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 0.5,
-                px: 1.5,
-                py: 1,
-                color: 'text.secondary',
-              }}
-            >
+            <div className="absolute inset-0 z-[1] flex h-full w-full flex-col items-center justify-center gap-0.5 px-1.5 py-1 text-[var(--color-text-muted)]">
               <BrokenImageOutlinedIcon aria-hidden />
-              <Typography variant="caption" component="span" sx={{ textAlign: 'center' }}>
+              <Typography variant="caption" component="span" className="text-center">
                 Зображення недоступне
               </Typography>
-            </Box>
+            </div>
           ) : null}
-        </Box>
+        </div>
         <span className="sr-only">Зображення {index + 1}</span>
       </ButtonBase>
       <MessageMediaThumbnailDownloadLink
@@ -179,6 +113,6 @@ export function MessageCardImageThumb({
         isDownloadStarting={isDownloadStarting}
         onDownloadStart={onDownloadStart}
       />
-    </Box>
+    </div>
   );
 }

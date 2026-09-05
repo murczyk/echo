@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import { Box, ButtonBase, Typography, Skeleton } from '@mui/material';
+import { ButtonBase, Skeleton, Typography } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import {
@@ -184,16 +184,7 @@ export function MessageCardVideoThumb({
   const showThumbnail = thumbnail.state === 'loaded';
 
   return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        position: 'relative',
-        maxWidth: 150,
-        height: 150,
-        minWidth: 85,
-        alignSelf: 'flex-start',
-      }}
-    >
+    <div className="relative inline-flex h-[150px] min-w-[85px] max-w-[150px] self-start">
       <ButtonBase
         ref={thumbnailRequest.targetRef}
         component="button"
@@ -202,55 +193,20 @@ export function MessageCardVideoThumb({
         disabled={!canOpen}
         aria-label="Відкрити відео"
         data-video-thumb-state={thumbnail.state}
-        sx={{
-          display: 'inline-flex',
-          width: '100%',
-          height: '100%',
-          textAlign: 'left',
-          cursor: canOpen ? 'pointer' : 'default',
-          color: 'inherit',
-          borderRadius: 1.5,
-          overflow: 'hidden',
-          border: '1px solid',
-          borderColor: 'divider',
-          backgroundColor: 'action.hover',
-          '&:disabled': {
-            color: 'text.disabled',
-          },
-          '&:focus-visible': {
-            outline: '2px solid',
-            outlineColor: 'primary.main',
-            outlineOffset: '-2px',
-          },
-        }}
+        className={`inline-flex h-full w-full overflow-hidden rounded-md border border-solid border-[var(--color-divider)] bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] text-left text-inherit focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
+          canOpen ? 'cursor-pointer' : 'cursor-default'
+        }`}
       >
-        <Box
-          sx={{
-            position: 'relative',
-            display: 'flex',
-            width: '100%',
-            height: '100%',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-          }}
-        >
+        <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
           {thumbnail.state === 'loading' && thumbnailSrc !== '' ? (
             <Skeleton
               variant="rectangular"
               animation="wave"
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                zIndex: 0,
-              }}
+              className="absolute inset-0 z-0 h-full! w-full!"
             />
           ) : null}
           {thumbnail.imageSrc !== null ? (
-            <Box
-              component="img"
+            <img
               src={thumbnail.imageSrc}
               alt=""
               loading="lazy"
@@ -258,68 +214,27 @@ export function MessageCardVideoThumb({
               fetchPriority="low"
               onLoad={thumbnail.markLoaded}
               onError={thumbnail.markFailed}
-              sx={{
-                display: 'block',
-                maxWidth: 150,
-                height: 150,
-                width: 'auto',
-                objectFit: 'cover',
-                opacity: showThumbnail ? 1 : 0,
-                transition: 'opacity 120ms ease-out',
-                pointerEvents: 'none',
-              }}
+              className={`pointer-events-none block h-[150px] w-auto max-w-[150px] object-cover transition-opacity duration-[120ms] ease-out ${
+                showThumbnail ? 'opacity-100' : 'opacity-0'
+              }`}
             />
           ) : null}
-          <Box
-            sx={{
-              backgroundColor: 'transparent',
-              position: 'absolute',
-              inset: 0,
-              zIndex: 1,
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'background-color 120ms ease-out',
-            }}
-          >
+          <div className="absolute inset-0 z-[1] flex h-full w-full flex-col items-center justify-center bg-transparent transition-colors duration-[120ms] ease-out">
             {showThumbnail ? (
-              <PlayArrowIcon
-                sx={{
-                  fontSize: 32,
-                  color: '#fff',
-                  filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))',
-                }}
-              />
+              <PlayArrowIcon className="text-[32px] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]" />
             ) : (
               <>
-                <PlayArrowIcon
-                  aria-hidden
-                  sx={{
-                    fontSize: 32,
-                    color: 'text.secondary',
-                  }}
-                />
+                <PlayArrowIcon aria-hidden className="text-[32px] text-[var(--color-text-muted)]" />
                 <Typography
                   variant="caption"
-                  sx={{
-                    px: 1,
-                    width: '100%',
-                    textAlign: 'center',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    color: 'text.secondary',
-                  }}
+                  className="w-full overflow-hidden text-ellipsis whitespace-nowrap px-2 text-center text-[var(--color-text-muted)]"
                 >
                   {displayName}
                 </Typography>
               </>
             )}
-          </Box>
-        </Box>
+          </div>
+        </div>
       </ButtonBase>
       <MessageMediaThumbnailDownloadLink
         href={fullVideoHref}
@@ -329,6 +244,6 @@ export function MessageCardVideoThumb({
         isDownloadStarting={isDownloadStarting}
         onDownloadStart={onDownloadStart}
       />
-    </Box>
+    </div>
   );
 }
