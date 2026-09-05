@@ -61,6 +61,12 @@ operations refuse to cross a release mismatch. A dedicated serialized
 analytics reconciler owns schema repair, while the frequent health service is
 read-only apart from its replication heartbeat and only reports drift.
 
+Gateway extension hotfixes use a checksummed extension-only artifact. The
+installer holds the reconciliation lock, saves the previous library and
+configuration hashes, and stops gateway PostgreSQL before replacing its
+library. Inbox diagnostics record the final operation outcome and duration,
+including complete PostgreSQL fallback after candidate revalidation.
+
 ## Messenger processing
 
 `echo-messengers` is an independently deployable workspace package and systemd
