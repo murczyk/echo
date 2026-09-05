@@ -1,5 +1,12 @@
 # Analytics precision hotfix — 2026-09-05
 
+All nine active application servers were redeployed sequentially to
+`0.1.1-rc.202609051117` (commit `46e7f48d0d92278509c7853896372c34734c60e8`).
+All six analytics gateways run the pinned precision extension; CBR staging, CBR,
+and Kupiansk remain without analytics. The final audit passed services, HTTP,
+replication, cleared maintenance, configuration hashes and SHA256 checks for 572 packaged `/usr` files
+on every application server. See [fleet-comparison.json](fleet-comparison.json).
+
 ## Provenance and release scope
 
 The deployment fork is `codex/v0.3.2-search-backports`, based on deployed
@@ -91,11 +98,89 @@ The installer saves rollback artifacts/configuration hashes, coordinates the
 reconciliation lock/timers, stops the gateway cluster before replacing its library,
 and verifies the checksum and reads after restarting.
 
-Detailed local evidence is retained in
-`/tmp/echo-analytics-precision-20260905`; selected input and verification hashes are
-in [evidence-sha256.json](evidence-sha256.json). Real-data samples remain outside the
-repository. Fleet results, observation windows, full-operation outcomes/fallback
-reasons, and notification receipts will be added after deployment.
+Detailed evidence is preserved in
+`/home/ubuntu/workspace/echo-analytics-precision-20260905` (with the working copy in
+`/tmp/echo-analytics-precision-20260905`). Selected evidence hashes are in
+[evidence-sha256.json](evidence-sha256.json); real-data samples and raw journals
+remain outside the repository. The first rollout attempt is retained separately.
+
+## Final deployment and comparison
+
+The final application package was built once by
+[CI run 33962950485](https://github.com/echoua/echo/actions/runs/33962950485) and reused
+on all nine servers. Its SHA256 is
+`5a131f9c7caa55e9100d06fb70ee3f82253f4389b449d411a50cf2cae99f7fe4`;
+the installed application binary SHA256 is
+`45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b`.
+The frontend build passed in CI; the 335 relevant Rust fixtures, Cargo check,
+Clippy and formatting checks passed locally. CI's combined test step was skipped
+by the existing workflow configuration, so it is not counted as another test run.
+
+The user waived the remaining timed observation minimums and requested the least
+disruptive recovery: fix forward, reserving rollback for serious service failures.
+The earlier Pivnich restore had already started before that instruction and
+finished successfully. It was then upgraded forward. No further rollback occurred.
+Gate durations below cover immediate verification after controlled replays;
+they do not represent the originally planned 5/15/30-minute holds.
+
+| Server | Analytics | Controlled hybrid / primary reads | Live hybrid reads in gate | Gate seconds |
+| --- | --- | ---: | ---: | ---: |
+| staging | yes | 4 / 0 | 0 | 27.0 |
+| kharkiv2 | yes | 4 / 0 | 0 | 27.4 |
+| zp2 | yes | 5 / 0 | 461 | 27.3 |
+| siversk | yes | 4 / 0 | 239 | 28.0 |
+| skhid | yes | 4 / 0 | 287 | 28.3 |
+| pivnich | yes | 4 / 0 | 669 | 30.2 |
+| cbr-staging | no | 0 / 4 | 0 | 5.1 |
+| cbr | no | 0 / 4 | 0 | 8.9 |
+| kupiansk | no | 0 / 4 | 0 | 5.7 |
+
+All 37 controlled replays matched fully hydrated primary results and complete
+message digests: 25 hybrid reads and 12 primary reads on unconfigured sites.
+Each site included a nonempty fixture. All six gateways passed stable source /
+gateway input fingerprints, bounded join comparisons, healthy replication and
+the fractional self-comparison. ZP2 message `12823417` returned no rows on either
+side for `timestamp > '2026-09-05 09:07:59.026668'`; remote SQL used
+`cast('2026-09-05 09:07:59.026668' as DateTime64(6, 'UTC'))`.
+
+The final fleet audit recorded **19,258 complete hybrid inbox successes**, 342
+successful primary inbox operations and **zero final inbox fallbacks**. Its
+windows start at the later of the five-minute audit boundary and each site's
+verification start. Quiet staging hosts are supported by explicit replays.
+The JSON report keeps audit and gate windows separate; overlapping windows must
+not be added together. It also retains every PostgreSQL route reason, including
+`query_policy`, `unconfigured`, `analytics_skipped` and records without a final
+outcome. These route-log records are distinct from completed inbox operations.
+
+Pivnich's deployment transition included **975 successful complete PostgreSQL
+inbox fallbacks** while desired-state health/reconciliation and the candidate
+circuit recovered. There was one new-application count fallback timeout
+(SQLSTATE `57014`) and two count-timeout completions from the previous application
+around the gateway upgrade. The older application lacked complete count-operation
+logging; those timeout records remain separately identified. No precision
+mismatch, incomplete revalidation or affected-query timeout/circuit recurrence
+was observed after the verification boundary or in the final audit.
+
+The corrected ordering query used indexed lookups for 50 bounded Pivnich
+candidates and completed in 1.186 ms. Staging plans for the actual total count,
+fresh-tail count and historical gateway count completed in 0.301, 0.381 and
+41.533 ms respectively. The tagged historical-count plan captured one remote execution,
+reading 90,118 rows and returning one aggregate row. These are bounded plan
+observations; repeated benchmarks remained confined to restored development data.
+
+Existing findings remain visible: missing AOR assignments and network-membership
+consistency checks; Signal CLI startup connection refusals; Iggy heartbeat messages
+from clients that have shut down; and a recovery guard skipping a deleted message.
+Earlier Siversk observations also contained unrelated Delta EXO account errors.
+Legacy candidate-route warnings persist on hosts without analytics; complete
+inbox diagnostics correctly identify their successful primary operations.
+No warning or revalidation check was removed to obtain these results.
+
+The report includes all nine successful deployment notification receipts and the
+five earlier-attempt receipts. Application recovery packages/configuration hashes
+are in `/var/backups/echo-analytics-precision-20260905/app-forward`; original
+backups remain under `app`. Gateway backup paths are recorded per site in the
+JSON report; Pivnich's forward upgrade uses `gateway-forward`.
 
 No production slowlog reduction percentage is claimed without a measured
 production comparison.
