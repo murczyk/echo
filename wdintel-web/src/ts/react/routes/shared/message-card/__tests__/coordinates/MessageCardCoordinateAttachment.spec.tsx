@@ -159,6 +159,8 @@ describe('MessageCardCoordinateAttachment', () => {
       container.querySelector('[data-coordinate-preview-tile]')?.getAttribute('style'),
     ).toEqual(expect.stringContaining('height: 100%'));
     expect(container.textContent).not.toContain('+');
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('1');
+    expect(container.textContent).not.toContain('50.45044, 30.52355');
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -180,7 +182,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(dialog?.getAttribute('data-lng')).toBe('30.52355');
   });
 
-  it('shows one unified preview with the pluralized point count', async () => {
+  it('shows one unified preview with the numeric point count', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
       points: [
@@ -207,10 +209,11 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     expect(container.querySelectorAll('button[aria-label^="Open "]')).toHaveLength(1);
-    expect(container.textContent).toContain('9 точок');
+    expect(container.textContent).toContain('9');
+    expect(container.textContent).not.toContain('точок');
     expect(container.textContent).not.toContain('+1');
     expect(container.querySelectorAll('[data-coordinate-preview-count]')).toHaveLength(1);
-    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9 точок');
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9');
     const button = container.querySelector('button[aria-label="Open BRAVO on map"]');
     expect(button).not.toBeNull();
     expect(button?.getAttribute('style')).toContain('width: 100%');
@@ -369,7 +372,7 @@ describe('MessageCardCoordinateAttachment', () => {
     const overlay = container.querySelector('[data-coordinate-preview-retry-overlay]');
     expect(host?.contains(tile)).toBe(true);
     expect(host?.contains(overlay)).toBe(true);
-    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2 точки');
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2');
     expect(overlay?.getAttribute('title')).toBe('point search failed');
     expect(
       overlay?.querySelector('button[aria-label="Повторити завантаження координат"]'),
@@ -409,7 +412,7 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(host?.contains(container.querySelector('[data-coordinate-preview-retry-overlay]'))).toBe(
       true,
     );
-    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2 точки');
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2');
 
     await act(async () => {
       retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));

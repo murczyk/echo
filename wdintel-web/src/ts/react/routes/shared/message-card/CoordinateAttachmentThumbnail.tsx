@@ -6,10 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { DEFAULT_BASE_LAYER_ID } from '../../../../maps/base-layers';
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
-import {
-  formatCoordinatePreviewPointCount,
-  type CoordinatePreviewPoint,
-} from './message-coordinate-preview';
+import type { CoordinatePreviewPoint } from './message-coordinate-preview';
 
 const PREVIEW_HEIGHT_PX = 120;
 const PREVIEW_MAX_WIDTH_PX = 180;
@@ -282,59 +279,31 @@ export function CoordinateAttachmentThumbnail({
               style={{ zIndex: 2 }}
               sx={{
                 position: 'absolute',
-                left: 8,
-                right: 8,
-                top: 8,
+                right: 4,
+                top: 4,
                 display: 'flex',
                 alignItems: 'flex-start',
-                justifyContent: 'flex-start',
-                gap: 0.75,
+                justifyContent: 'flex-end',
                 pointerEvents: 'none',
                 zIndex: 2,
               }}
             >
-              {points.length === 1 ? (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    px: 0.75,
-                    py: 0.5,
-                    borderRadius: 1.5,
-                    bgcolor: 'rgba(10, 13, 18, 0.7)',
-                    color: 'common.white',
-                    fontWeight: 700,
-                    lineHeight: 1.2,
-                    backdropFilter: 'blur(6px)',
-                    maxWidth: '100%',
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {point.label}
-                </Typography>
-              ) : (
-                <Typography
-                  variant="caption"
-                  data-coordinate-preview-count="true"
-                  sx={{
-                    px: 0.75,
-                    py: 0.5,
-                    borderRadius: 1.5,
-                    bgcolor: 'rgba(10, 13, 18, 0.7)',
-                    color: 'common.white',
-                    fontWeight: 700,
-                    lineHeight: 1.2,
-                    backdropFilter: 'blur(6px)',
-                    maxWidth: '100%',
-                    whiteSpace: 'pre-wrap',
-                    overflowWrap: 'anywhere',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  {formatCoordinatePreviewPointCount(points.length)}
-                </Typography>
-              )}
+              <Typography
+                variant="caption"
+                data-coordinate-preview-count="true"
+                sx={{
+                  px: 0.75,
+                  py: 0.5,
+                  borderRadius: 1.5,
+                  bgcolor: 'rgba(10, 13, 18, 0.7)',
+                  color: 'common.white',
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                  backdropFilter: 'blur(6px)',
+                }}
+              >
+                {points.length}
+              </Typography>
             </Box>
           </ButtonBase>
         </Tooltip>
