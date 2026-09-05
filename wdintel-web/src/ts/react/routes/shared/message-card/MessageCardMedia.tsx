@@ -538,7 +538,10 @@ export function MessageMediaThumbnailDownloadLink({
   const label = `Завантажити вкладення: ${displayName}`;
   return (
     <Tooltip title={label} enterDelay={400}>
-      <MessageCardDisabledControlCursorWrapper disabled={downloading}>
+      <MessageCardDisabledControlCursorWrapper
+        disabled={downloading}
+        className="message-card-thumbnail-download"
+      >
         <IconButton
           component="a"
           href={href}
@@ -557,10 +560,6 @@ export function MessageMediaThumbnailDownloadLink({
             });
           }}
           sx={{
-            position: 'absolute',
-            top: 5,
-            right: 5,
-            zIndex: 3,
             width: 22,
             height: 22,
             color: 'rgba(255, 255, 255, 0.92)',

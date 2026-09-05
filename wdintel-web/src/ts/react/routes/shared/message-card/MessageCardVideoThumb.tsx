@@ -197,18 +197,19 @@ export function MessageCardVideoThumb({
         data-video-thumb-state={thumbnail.state}
         data-summary-selected={selected ? 'true' : undefined}
         aria-current={selected ? 'true' : undefined}
-        className={`inline-flex h-full w-full overflow-hidden rounded-md border border-solid text-left text-inherit focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
+        className={`inline-flex h-full w-full min-w-full max-w-full flex-[0_0_100%] overflow-hidden rounded-md text-left text-inherit ring-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
           selected
-            ? 'border-[var(--color-action)] bg-[color-mix(in_srgb,var(--color-action)_14%,transparent)] shadow-sm'
-            : 'border-[var(--color-divider)] bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] shadow-none'
+            ? 'bg-[color-mix(in_srgb,var(--color-action)_14%,transparent)] ring-[var(--color-action)] shadow-sm'
+            : 'bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] ring-[var(--color-divider)] shadow-none'
         } ${canOpen ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+        <div className="relative flex h-full w-full min-w-full max-w-full flex-[0_0_100%] items-center justify-center overflow-hidden">
           {thumbnail.state === 'loading' && thumbnailSrc !== '' ? (
             <Skeleton
               variant="rectangular"
               animation="wave"
-              className="absolute inset-0 z-0 h-full! w-full!"
+              data-message-card-thumbnail-skeleton="true"
+              className="absolute inset-0 z-0 !h-full !w-full"
             />
           ) : null}
           {thumbnail.imageSrc !== null ? (
@@ -220,7 +221,7 @@ export function MessageCardVideoThumb({
               fetchPriority="low"
               onLoad={thumbnail.markLoaded}
               onError={thumbnail.markFailed}
-              className={`pointer-events-none block h-full w-full object-cover transition-opacity duration-[120ms] ease-out ${
+              className={`pointer-events-none absolute inset-0 block h-full w-full object-cover transition-opacity duration-[120ms] ease-out ${
                 showThumbnail ? 'opacity-100' : 'opacity-0'
               }`}
             />

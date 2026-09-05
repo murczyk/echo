@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 import {
+  createDeferredMediaResponse,
   MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES,
   openMessageCardPreviewHost,
 } from './message-card-media-preview.fixtures';
@@ -135,6 +136,62 @@ test.describe('@smoke', () => {
     await expect(imageDialog).toBeVisible();
     await imageDialog.getByRole('button', { name: 'Закрити' }).click();
     await expect(imageDialog).toHaveCount(0);
+  });
+
+  test('image thumbnail loading fills the tile without blocking its download overlay', async ({
+    page,
+  }) => {
+    for (const host of ['duty', 'analysis'] as const) {
+      const deferredImageResponse = createDeferredMediaResponse();
+      try {
+        await openMessageCardPreviewHost(page, host, { deferredImageResponse });
+        await deferredImageResponse.waitForRequest();
+
+        const preview = page.getByRole('button', { name: 'Відкрити зображення' }).first();
+        const shell = preview.locator('..');
+        const skeleton = preview.locator('[data-message-card-thumbnail-skeleton="true"]');
+        const download = shell.getByRole('link', { name: /Завантажити вкладення:/ });
+        await expect(skeleton).toBeVisible();
+        await expect(download).toBeVisible();
+        const [shellBox, previewBox, skeletonBox, downloadBox] = await Promise.all([
+          shell.boundingBox(),
+          preview.boundingBox(),
+          skeleton.boundingBox(),
+          download.boundingBox(),
+        ]);
+        expect(shellBox?.width).toBe(72);
+        expect(shellBox?.height).toBe(72);
+        expect(previewBox).toEqual(shellBox);
+        expect(skeletonBox).toEqual(shellBox);
+        expect(downloadBox?.x).toBeGreaterThanOrEqual((shellBox?.x ?? 0) + 45);
+        expect(downloadBox?.y).toBeGreaterThanOrEqual(shellBox?.y ?? 0);
+        expect((downloadBox?.x ?? 0) + (downloadBox?.width ?? 0)).toBeLessThanOrEqual(
+          (shellBox?.x ?? 0) + (shellBox?.width ?? 0),
+        );
+        expect((downloadBox?.y ?? 0) + (downloadBox?.height ?? 0)).toBeLessThanOrEqual(
+          (shellBox?.y ?? 0) + (shellBox?.height ?? 0),
+        );
+
+        deferredImageResponse.release();
+        await expect(preview).toHaveAttribute('data-picture-thumb-state', 'loaded');
+        const image = preview.locator('img');
+        await expect(image).toBeVisible();
+        expect(await image.boundingBox()).toEqual(shellBox);
+
+        await expectDownloadAndFilename(
+          page,
+          download,
+          MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1,
+        );
+        await expect(page.getByRole('dialog', { name: 'Перегляд зображення' })).toHaveCount(0);
+        await preview.click({ position: { x: 12, y: 60 } });
+        const dialog = page.getByRole('dialog', { name: 'Перегляд зображення' });
+        await expect(dialog).toBeVisible();
+        await dialog.getByRole('button', { name: 'Закрити' }).click();
+      } finally {
+        deferredImageResponse.release();
+      }
+    }
   });
 });
 

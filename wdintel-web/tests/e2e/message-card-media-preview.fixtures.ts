@@ -26,6 +26,38 @@ const MESSAGE_CARD_POLISH_NETWORKS = [
 const TRANSPARENT_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP7bq8W2QAAAABJRU5ErkJggg==';
 
+export type DeferredMediaResponse = {
+  waitForRequest: () => Promise<void>;
+  release: () => void;
+  fulfill: (route: Route, body: BodyInit, contentType: string) => Promise<void>;
+};
+
+export function createDeferredMediaResponse(): DeferredMediaResponse {
+  let resolveRequest!: () => void;
+  let resolveRelease!: () => void;
+  const request = new Promise<void>((resolve) => {
+    resolveRequest = resolve;
+  });
+  const release = new Promise<void>((resolve) => {
+    resolveRelease = resolve;
+  });
+  let released = false;
+
+  return {
+    waitForRequest: () => request,
+    release: () => {
+      if (released) return;
+      released = true;
+      resolveRelease();
+    },
+    fulfill: async (route, body, contentType) => {
+      resolveRequest();
+      await release;
+      await fulfillAsset(route, body, contentType);
+    },
+  };
+}
+
 function buildValidWavAudioFixture(): Buffer {
   const sampleRate = 8_000;
   const sampleCount = sampleRate / 10;
@@ -237,12 +269,23 @@ async function fulfillAsset(route: Route, body: BodyInit, contentType: string): 
   });
 }
 
-export async function installMessageCardMediaPreviewAssetRoutes(page: Page): Promise<void> {
+export async function installMessageCardMediaPreviewAssetRoutes(
+  page: Page,
+  deferredImageResponse?: DeferredMediaResponse,
+): Promise<void> {
   await page.route(`**${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/**`, async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const fileName = pathname.split('/').pop() ?? '';
 
     if (fileName === MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1) {
+      if (deferredImageResponse) {
+        await deferredImageResponse.fulfill(
+          route,
+          Buffer.from(TRANSPARENT_PNG_BASE64, 'base64'),
+          'image/png',
+        );
+        return;
+      }
       await fulfillAsset(route, Buffer.from(TRANSPARENT_PNG_BASE64, 'base64'), 'image/png');
       return;
     }
@@ -350,6 +393,7 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError = false,
     coordinateLabel,
     coordinatePointCount = 1,
+    deferredImageResponse,
   }: {
     revealAudio?: boolean;
     revealCoordinates?: boolean;
@@ -358,9 +402,10 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError?: boolean;
     coordinateLabel?: string;
     coordinatePointCount?: number;
+    deferredImageResponse?: DeferredMediaResponse;
   } = {},
 ): Promise<void> {
-  await installMessageCardMediaPreviewAssetRoutes(page);
+  await installMessageCardMediaPreviewAssetRoutes(page, deferredImageResponse);
   await installMessageCardMediaPreviewHostFixture(
     page,
     host,
@@ -370,7 +415,10 @@ export async function openMessageCardPreviewHost(
     coordinateLabel,
     coordinatePointCount,
   );
-  await page.goto(host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo');
+  await page.goto(
+    host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo',
+    deferredImageResponse ? { waitUntil: 'domcontentloaded' } : undefined,
+  );
 
   const ensureAttachmentExpanded = async (name: RegExp) => {
     const control = page.getByRole('button', { name });
