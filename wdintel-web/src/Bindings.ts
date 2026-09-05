@@ -1062,6 +1062,8 @@ export type RerDutyQueryStateWf = {
   postsDenied: Array<string> | null;
   unitsSelected: Array<string> | null;
   unitsDenied: Array<string> | null;
+  selectedUnitIds: Array<number> | null;
+  deniedUnitIds: Array<number> | null;
   unitsExactMatchOnly: boolean | null;
   lastViewedMessageId: number | null;
   highlightKeywordsEnabled: boolean | null;

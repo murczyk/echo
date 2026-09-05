@@ -1515,7 +1515,7 @@ pub async fn user_sigint_groups_detailed(
             .c(h!())?;
         keys = recent_keys.into_iter().flatten().collect();
     }
-    let groups = crate::messenger::group::collect_groups_f2(keys, &env.dbx)
+    let groups = crate::messenger::group::collect_groups_f2(keys, &env)
         .await
         .c(h!())?;
     Ok(Json(groups))

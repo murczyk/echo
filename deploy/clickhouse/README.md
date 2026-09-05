@@ -607,10 +607,9 @@ decoding and PostgreSQL query semantics consistent with the source database.
 
 The analysis result, facet, and dedicated facet-count endpoints use this path:
 
-- `/api/rer-importer/get-inbox` for closed RER analysis ranges, historical
-  Duty context, and the historical portion of long live ranges;
-- `/api/rer-importer/get-inbox-count` except recent Duty polling described
-  below;
+- `/api/rer-importer/get-inbox` for bounded ranges and initial/latest pages;
+- `/api/rer-importer/get-inbox-count`;
+- the deprecated combined `/api/rer/analysis/stats` endpoint;
 - `/api/rer/analysis/stats/count`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
@@ -626,6 +625,15 @@ PostgreSQL snapshot remain on PostgreSQL. An analytical operation is retried
 from the beginning on PostgreSQL, so a failed attempt cannot mix partial
 analytical and PostgreSQL result sets.
 
+Unit labels and explicit unit IDs retain their selected/denied, undefined,
+deleted-unit, and legacy saved-filter semantics. Unit and media filters use
+bounded existence queries so duplicate links and attachments do not multiply
+messages. Bounded unlimited inbox requests and report candidates use keyset
+pages; existing report caps and unbounded-request rejection remain in place.
+Read-only group activity enrichment uses the shared analytics service. Redis
+hits are retained, while timeline and statistics cache misses read raw inputs
+through analytics before primary-side cache maintenance.
+
 Existing five-minute aggregate generation remains intact. Count dimension totals use scalar
 `COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
 message-ID sets. Selected-callsign filters use pushed-down JSONB top-level
@@ -636,23 +644,17 @@ translate. Serialized `tsvector` matching, String-backed JSON/JSONB body
 extraction, and Cyrillic `ILIKE` execute in ClickHouse; unsupported request
 shapes retain their existing PostgreSQL routing or whole-operation fallback.
 
-`/api/rer-importer/get-inbox` uses a stricter live-data policy than the
-eventually consistent endpoints below. RER analysis ranges shorter than 25
-hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
-current time read from source PostgreSQL. Longer live ranges merge the
-ClickHouse candidate page with a source PostgreSQL candidate page restricted
-to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
-the merged IDs on source PostgreSQL.
-
-Both RER Duty pages route initial/latest requests and requests whose cursor was
-created in source PostgreSQL within the last hour directly to source
-PostgreSQL, before any analytics health check or gateway query. Cursor age uses
-`signal_message.created_at`, not the interception timestamp. Recent date-only
-polls follow the same rule. Historical `before_id_noninclusive` context remains
-eligible for ClickHouse. Open-ended message and count requests after an older
-cursor split or merge the historical ClickHouse range with a primary
-PostgreSQL fresh tail. Any analytics, tail, or revalidation failure retries the
-complete request on PostgreSQL. Other callers retain their existing routing.
+`/api/rer-importer/get-inbox` merges analytics candidates with a source
+PostgreSQL tail covering `max(2 * freshness_max_age_ms, 5 minutes)`, including
+recent analysis ranges, Duty polling, and initial/latest requests. The tail
+uses `signal_message.created_at`, so backdated arrivals are included. Its
+boundary is captured before the analytics scan. Candidates are deduplicated,
+hydrated in bounded batches, revalidated, and ordered on source PostgreSQL.
+Any analytics, tail, or revalidation failure retries the complete request on
+PostgreSQL. Counts split historical and fresh records at the same created-at
+boundary to avoid overlap. Routing logs identify the operation, selected
+connection, fallback reason, outcome, and elapsed time; primary authorization,
+hydration, transaction-dependent work, and writes remain intentional.
 
 ## WAL retention and recovery
 

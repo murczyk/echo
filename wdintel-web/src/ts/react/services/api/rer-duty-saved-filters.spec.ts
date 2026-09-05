@@ -14,6 +14,9 @@ const snakeCaseReq = {
   groups_selected: ['saved-selected'],
   groups_denied: ['saved-denied'],
   units_selected: ['unit-a'],
+  units_denied: ['unit-b'],
+  selected_unit_ids: [11],
+  denied_unit_ids: [12],
   units_exact_match_only: true,
   last_viewed_message_id: 42,
 };
@@ -31,7 +34,8 @@ describe('RER Duty saved-filter API', () => {
     expect(filters[0].req).toMatchObject({
       groupsSelected: ['saved-selected'],
       groupsDenied: ['saved-denied'],
-      unitsSelected: ['unit-a'],
+      unitsSelected: ['unit-id:11', 'unit-a'],
+      unitsDenied: ['unit-id:12', 'unit-b'],
       unitsExactMatchOnly: true,
       lastViewedMessageId: 42,
     });
@@ -52,8 +56,10 @@ describe('RER Duty saved-filter API', () => {
         freqsDenied: null,
         postsSelected: null,
         postsDenied: null,
-        unitsSelected: ['unit-a'],
-        unitsDenied: null,
+        unitsSelected: ['unit-id:11', 'unit-a'],
+        unitsDenied: ['unit-id:12', 'unit-b'],
+        selectedUnitIds: null,
+        deniedUnitIds: null,
         unitsExactMatchOnly: true,
         lastViewedMessageId: 42,
         highlightKeywordsEnabled: null,
@@ -72,13 +78,16 @@ describe('RER Duty saved-filter API', () => {
         freqs_denied: null,
         posts_selected: null,
         posts_denied: null,
-        units_selected: ['unit-a'],
-        units_denied: null,
+        units_selected: ['unit-id:11', 'unit-a'],
+        units_denied: ['unit-id:12', 'unit-b'],
+        selected_unit_ids: [11],
+        denied_unit_ids: [12],
         units_exact_match_only: true,
         last_viewed_message_id: 42,
       },
     });
     expect(filters[0].req.groupsSelected).toEqual(['saved-selected']);
+    expect(filters[0].req.unitsSelected).toEqual(['unit-id:11', 'unit-a']);
     expect(filters[0].req.unitsExactMatchOnly).toBe(true);
   });
 });

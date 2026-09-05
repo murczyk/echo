@@ -1,4 +1,6 @@
-use crate::entities::{orbit_unit, orbit_unit_sigint_unit, sigint_unit};
+use crate::entities::{
+    orbit_sync, orbit_unit, orbit_unit_sigint_unit, sigint_unit,
+};
 use crate::error::AppError;
 use crate::orbit::dictionary::DictionaryMaps;
 use crate::orbit::persistence::{ExistingUnit, ImportState, ImportUnit};
@@ -18,6 +20,8 @@ use uuid::Uuid;
 mod dictionary;
 mod duplicate_candidate_review;
 mod duplicate_units;
+mod echelon_number_fix;
+mod generated_unit_names;
 mod hierarchy;
 mod matching;
 mod persistence;
@@ -26,12 +30,23 @@ mod test_link;
 mod tui;
 mod types;
 mod unit_name_cleanup;
+mod unlinked_orbit_units;
 mod unparsed_units;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinkProvenance {
     Manual,
     Automatic,
+}
+
+#[derive(Default)]
+pub struct OrbitMatcherCache {
+    cached: Option<CachedOrbitMatcher>,
+}
+
+struct CachedOrbitMatcher {
+    orbit_sync: orbit_sync::Model,
+    matcher: matching::TestLinkMatcher,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -264,10 +279,6 @@ pub async fn run_import_tui(mode: Mode) -> Result<(), AppError> {
     Ok(run_selected_action(mode).await.c(h!())?)
 }
 
-pub async fn oneoff_test_link_units(mode: Mode) -> Result<(), AppError> {
-    Ok(test_link::run(mode).await.c(h!())?)
-}
-
 pub async fn tui_merge_unit_duplicates(
     mode: Mode,
     dry_run: bool,
@@ -288,12 +299,48 @@ pub async fn tui_fix_unit_names(mode: Mode) -> Result<(), AppError> {
 
 pub async fn closest_orbit_matches_for_sigint_unit(
     db: &sea_orm::DatabaseConnection,
+    cache_lock: &tokio::sync::RwLock<OrbitMatcherCache>,
     sigint_unit: &sigint_unit::Model,
 ) -> anyhow::Result<Vec<OrbitMatchCandidate>> {
-    let units = persistence::load_latest_synced_source_units(db)
+    let orbit_sync = persistence::load_latest_sync(db)
         .await
-        .c("failed to load synchronized ORBIT units for search")?;
-    Ok(matching::closest_orbit_matches(&units, sigint_unit)
+        .c(h!())?
+        .ok_or_else(|| anyhow::anyhow!("ORBIT data has not been synchronized"))
+        .c(h!())?;
+    let cache = cache_lock.read().await;
+    if let Some(cached) = cache
+        .cached
+        .as_ref()
+        .filter(|cached| cached.orbit_sync == orbit_sync)
+    {
+        return Ok(cached
+            .matcher
+            .closest_matches(sigint_unit)
+            .into_iter()
+            .map(OrbitMatchCandidate::from)
+            .collect());
+    }
+    drop(cache);
+    let mut cache = cache_lock.write().await;
+    if cache
+        .cached
+        .as_ref()
+        .is_none_or(|cached| cached.orbit_sync != orbit_sync)
+    {
+        let units = persistence::load_synced_source_units(db, &orbit_sync)
+            .await
+            .c(h!())?;
+        cache.cached = Some(CachedOrbitMatcher {
+            orbit_sync,
+            matcher: matching::TestLinkMatcher::from_units(units),
+        });
+    }
+    Ok(cache
+        .cached
+        .as_ref()
+        .expect("ORBIT matcher cache must be populated")
+        .matcher
+        .closest_matches(sigint_unit)
         .into_iter()
         .map(OrbitMatchCandidate::from)
         .collect())
@@ -418,7 +465,15 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
             run_prepare_import(mode).await.c(h!())
         }
         Some(tui::StartAction::Import) => run_import(mode).await.c(h!()),
-        Some(tui::StartAction::LinkUnits) => test_link::run(mode).await.c(h!()),
+        Some(tui::StartAction::LinkSigintUnitsToOrbit) => {
+            test_link::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::LinkOrbitUnitsToSigint) => {
+            unlinked_orbit_units::run(mode).await.c(h!())
+        }
+        Some(tui::StartAction::FixLinkedUnitEchelonNumbers) => {
+            echelon_number_fix::run(mode).await.c(h!())
+        }
         Some(tui::StartAction::MergeUnitDuplicates) => {
             duplicate_units::run(mode, false).await.c(h!())
         }
@@ -431,125 +486,11 @@ async fn run_selected_action(mode: Mode) -> anyhow::Result<()> {
         Some(tui::StartAction::FixUnitNames) => {
             unit_name_cleanup::run(mode).await.c(h!())
         }
-        Some(tui::StartAction::ReconcileSigintUnits) => {
-            run_sigint_unit_reconciliation(mode).await.c(h!())
+        Some(tui::StartAction::ReviewGeneratedUnitNames) => {
+            generated_unit_names::run(mode).await.c(h!())
         }
         Some(tui::StartAction::Reimport) => run_reimport(mode).await.c(h!()),
         None => Ok(()),
-    }
-}
-
-async fn run_sigint_unit_reconciliation(mode: Mode) -> anyhow::Result<()> {
-    if !tui::confirm_sigint_unit_reconciliation().c(h!())? {
-        return Ok(());
-    }
-    let db = connect_database(mode).await.c(h!())?;
-    let import_lock = acquire_import_lock(&db).await.c(h!())?;
-    let changes = crate::sigint::unit::orbit::proposed_orbit_hierarchy_changes(
-        &import_lock,
-    )
-    .await
-    .c(h!())?;
-    let Some(accepted_changes) =
-        review_sigint_unit_hierarchy_changes(&changes).c(h!())?
-    else {
-        return Ok(());
-    };
-    let login = crate::users::system_login_id(&db).await.c(h!())?;
-    let stats =
-        crate::sigint::unit::orbit::reconcile_selected_orbit_hierarchy_changes(
-            &db,
-            &login,
-            &accepted_changes,
-        )
-        .await
-        .c(h!())?;
-    import_lock.commit().await.c(h!())?;
-    println!(
-        "Reconciled {} linked SIGINT units: {} hierarchies updated, {} inconsistent, {} multiple-link hierarchies skipped, {} duplicates merged.",
-        stats.scanned,
-        stats.hierarchy_updated,
-        stats.inconsistent,
-        stats.multiple_links_skipped,
-        stats.merged,
-    );
-    Ok(())
-}
-
-fn review_sigint_unit_hierarchy_changes(
-    changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
-) -> Result<
-    Option<Vec<crate::sigint::unit::orbit::OrbitUnitHierarchyChange>>,
-    AppError,
-> {
-    if changes.is_empty() {
-        return Ok(Some(Vec::new()));
-    }
-    let mut terminal = tui::setup_terminal().c(h!())?;
-    let result =
-        review_sigint_unit_hierarchy_changes_inner(&mut terminal, changes);
-    tui::restore_terminal(&mut terminal).c(h!())?;
-    result
-}
-
-fn review_sigint_unit_hierarchy_changes_inner(
-    terminal: &mut tui::OrbitTerminal,
-    changes: &[crate::sigint::unit::orbit::OrbitUnitHierarchyChange],
-) -> Result<
-    Option<Vec<crate::sigint::unit::orbit::OrbitUnitHierarchyChange>>,
-    AppError,
-> {
-    let mut accepted_changes = Vec::new();
-    for (index, change) in changes.iter().enumerate() {
-        let lines = change
-            .attributes
-            .iter()
-            .flat_map(|attribute| {
-                [
-                    attribute.attribute.to_string(),
-                    format!(
-                        "  current:  {}",
-                        display_or_empty(&attribute.current)
-                    ),
-                    format!(
-                        "  proposed: {}",
-                        display_or_empty(&attribute.proposed)
-                    ),
-                ]
-            })
-            .collect::<Vec<_>>();
-        let decision = tui::review_sigint_unit_enrichment(
-            terminal,
-            &format!(
-                "Enrich SIGINT unit {}: {}?",
-                change.sigint_unit_id,
-                display_or_empty(&change.sigint_unit_name)
-            ),
-            &lines,
-            &format!("SIGINT unit {}/{}", index + 1, changes.len()),
-        )
-        .c(h!())?;
-        match decision {
-            tui::EnrichmentDecision::Confirm => {
-                accepted_changes.push(change.clone());
-            }
-            tui::EnrichmentDecision::Deny => {}
-            tui::EnrichmentDecision::ConfirmAll => {
-                accepted_changes.extend_from_slice(&changes[index..]);
-                break;
-            }
-            tui::EnrichmentDecision::DenyAll => break,
-            tui::EnrichmentDecision::Quit => return Ok(None),
-        }
-    }
-    Ok(Some(accepted_changes))
-}
-
-fn display_or_empty(value: &str) -> &str {
-    if value.is_empty() {
-        "<empty>"
-    } else {
-        value
     }
 }
 
@@ -567,7 +508,8 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
     let snapshot = snapshot::load_latest_snapshot(mode).await.c(h!())?;
     let db = connect_database(mode).await.c(h!())?;
     let import_lock = acquire_import_lock(&db).await.c(h!())?;
-    let latest_sync = persistence::load_latest_sync(&db).await.c(h!())?;
+    let latest_sync =
+        persistence::load_latest_sync(&import_lock).await.c(h!())?;
     if let Some(sync) =
         latest_sync.filter(|sync| sync.archive_md5 == snapshot.archive_md5)
     {
@@ -580,22 +522,41 @@ async fn run_import(mode: Mode) -> anyhow::Result<()> {
             return Ok(());
         }
     } else {
-        sync_snapshot_units(&db, &snapshot).await.c(h!())?;
+        sync_snapshot_units(&import_lock, &snapshot).await.c(h!())?;
     }
     import_lock.commit().await.c(h!())?;
-    Ok(())
+    sync_sigint_units(&db).await.c(h!())
 }
 
 async fn run_reimport(mode: Mode) -> anyhow::Result<()> {
-    let snapshot = snapshot::load_latest_snapshot(mode).await?;
-    if !tui::confirm_reimport()? {
+    let snapshot = snapshot::load_latest_snapshot(mode).await.c(h!())?;
+    if !tui::confirm_reimport().c(h!())? {
         return Ok(());
     }
-    let db = connect_database(mode).await?;
+    let db = connect_database(mode).await.c(h!())?;
     let transaction = acquire_import_lock(&db).await.c(h!())?;
-    erase_orbit_data(&transaction).await?;
-    sync_snapshot_units(&transaction, &snapshot).await?;
+    erase_orbit_data(&transaction).await.c(h!())?;
+    sync_snapshot_units(&transaction, &snapshot).await.c(h!())?;
     transaction.commit().await.c(h!())?;
+    sync_sigint_units(&db).await.c(h!())
+}
+
+async fn sync_sigint_units(
+    db: &sea_orm::DatabaseConnection,
+) -> anyhow::Result<()> {
+    test_link::run_automatic_with_database(db).await.c(h!())?;
+    let transaction = acquire_import_lock(db).await.c(h!())?;
+    let login = crate::users::system_login_id(&transaction).await.c(h!())?;
+    let imported = crate::sigint::unit::orbit::import_unlinked_orbit_units(
+        &transaction,
+        &login,
+    )
+    .await
+    .c(h!())?;
+    transaction.commit().await.c(h!())?;
+    println!(
+        "Imported {imported} unmatched ORBIT units as inactive SIGINT units."
+    );
     Ok(())
 }
 
@@ -781,6 +742,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::entities::{orbit_sync, orbit_unit_echelon};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
     use serial_test::serial;
 
@@ -868,5 +830,111 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn sync_links_exact_units_before_importing_unmatched_units() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        let synced_at = Utc::now().naive_utc();
+        let echelon_id = Uuid::new_v4();
+        orbit_unit_echelon::ActiveModel {
+            id: Set(echelon_id),
+            key: Set("battalion".to_string()),
+            name: Set(format!("Battalion-{echelon_id}")),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+        let exact_orbit_unit_id = Uuid::new_v4();
+        let unmatched_orbit_unit_id = Uuid::new_v4();
+        orbit_unit::Entity::insert_many([
+            orbit_unit_for_sync(
+                exact_orbit_unit_id,
+                echelon_id,
+                "3 мсб",
+                synced_at,
+            ),
+            orbit_unit_for_sync(
+                unmatched_orbit_unit_id,
+                echelon_id,
+                "4 мсб",
+                synced_at,
+            ),
+        ])
+        .exec(&env.dbx)
+        .await
+        .unwrap();
+        let sync = persistence::record_sync(
+            &env.dbx,
+            "0123456789abcdef0123456789abcdef",
+            synced_at,
+        )
+        .await
+        .unwrap();
+        let exact_sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            sigint_unit::ActiveModel {
+                battalion: Set("3 мсб".to_string()),
+                active: Set(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        sync_sigint_units(&env.dbx).await.unwrap();
+
+        let exact_link = orbit_unit_sigint_unit::Entity::find_by_id((
+            exact_orbit_unit_id,
+            exact_sigint_unit.id,
+        ))
+        .one(&env.dbx)
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(!exact_link.is_manual);
+        let unmatched_link = orbit_unit_sigint_unit::Entity::find()
+            .filter(
+                orbit_unit_sigint_unit::Column::OrbitUnitId
+                    .eq(unmatched_orbit_unit_id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        let unmatched_sigint_unit =
+            sigint_unit::Entity::find_by_id(unmatched_link.sigint_unit_id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(unmatched_link.is_manual);
+        assert!(!unmatched_sigint_unit.active);
+        assert_eq!(unmatched_sigint_unit.battalion, "4 мсб");
+
+        orbit_sync::Entity::delete_by_id(sync.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+    }
+
+    fn orbit_unit_for_sync(
+        unit_id: Uuid,
+        echelon_id: Uuid,
+        name: &str,
+        synced_at: chrono::NaiveDateTime,
+    ) -> orbit_unit::ActiveModel {
+        orbit_unit::ActiveModel {
+            unit_id: Set(unit_id),
+            unit_name_short: Set(Some(name.to_string())),
+            operational_unit_name_full: Set(Some(name.to_string())),
+            generative_unit_name_full: Set(Some(name.to_string())),
+            unit_echelon_id: Set(Some(echelon_id)),
+            updated_at: Set(synced_at),
+            is_snapshot_root: Set(true),
+            ..Default::default()
+        }
     }
 }
