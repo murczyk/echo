@@ -278,3 +278,18 @@ The deployed baseline still performs its anti join and final aggregate locally.
 This is bounded production diagnostic evidence, not a repeated benchmark or a
 new source/gateway fingerprint parity comparison. The application fixture
 compares primary and analytics counts for both cursor directions and date sorts.
+
+
+## Combined tag-count routing correction
+
+The subsequent ZP2 observation showed stable inbox counts and candidates but
+repeated combined-statistics failures in its distinct tag-count subquery.
+That helper still applied the original unit hierarchy predicate, issuing
+per-message gateway unit lookups. [tag-count-routing.json](tag-count-routing.json)
+records the runtime error and route observations. Combined tag counts now reuse
+the operation's resolved unit filters; the standalone endpoint resolves them
+once on the primary database. Both apply the same bounded unit predicates as
+the working tag facet before counting distinct tags. Tag access and facet
+selection semantics are retained. The functional tag-count helper now executes
+the production path and compares it with its PostgreSQL query result, including
+legacy labels, exact matches and mixed undefined/ID selections.

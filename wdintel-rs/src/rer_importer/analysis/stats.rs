@@ -3724,29 +3724,40 @@ pub(super) async fn count_tags_with_db(
 
 pub(super) async fn count_tags_analytics_with_db(
     req: &Json<AnalysisStatsReq>,
-    user: &Identity,
+    login_id: &uuid::Uuid,
     db: &DatabaseConnection,
+    source_db: &DatabaseConnection,
     master_keys: Vec<String>,
     tag_access: &AnalyticsTagAccess,
     scope: Option<&AnalyticsMessageIdScope>,
+    resolved_units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<i64, AppError> {
     if scope.is_some_and(|scope| scope.is_empty()) {
         return Ok(0);
     }
-    let login_value = login_id_from_identity(user)?;
     let dt_since = dt_from_millis(req.since_date_inclusive_ms).context(h!())?;
     let dt_till =
         dt_from_millis(req.till_date_noninclusive_ms).context(h!())?;
+    let units = resolve_or_borrow_analysis_unit_filters(
+        source_db,
+        &req.0,
+        scope,
+        resolved_units,
+    )
+    .await
+    .context(h!())?;
     let tags_res = build_tags_analytics_count_query_with_scope(
         &req.0,
-        &login_value,
+        login_id,
         &tag_access.accessible_tag_ids,
         &tag_access.unit_login_ids,
         dt_since,
         dt_till,
         master_keys,
         scope,
-    )?;
+        units.as_deref(),
+    )
+    .context(h!())?;
     let result = tags_res
         .into_model::<DistinctCountRes>()
         .one(db)
@@ -3968,6 +3979,7 @@ pub(super) fn build_tags_analytics_count_query(
         dt_till,
         master_keys,
         None,
+        None,
     )
 }
 
@@ -3980,20 +3992,37 @@ fn build_tags_analytics_count_query_with_scope(
     dt_till: NaiveDateTime,
     master_keys: Vec<String>,
     scope: Option<&AnalyticsMessageIdScope>,
+    units: Option<&ResolvedAnalyticsUnitFilters>,
 ) -> Result<Select<sigint_inbox_item::Entity>, AppError> {
+    let mut without_units = req.clone();
+    without_units.selected_units = None;
+    without_units.selected_unit_ids = None;
+    let query = build_tags_filtered_query_with_owner_condition(
+        &without_units,
+        login_str,
+        accessible_tag_ids_condition(accessible_tag_ids),
+        Some((accessible_tag_ids, unit_login_ids)),
+        dt_since,
+        dt_till,
+        master_keys,
+        scope,
+        true,
+        None,
+    )
+    .context(h!())?;
+    let query = apply_analysis_unit_filters(
+        query,
+        &req.selected_units,
+        &req.selected_unit_ids,
+        &req.units_exact_match_only,
+        dt_since,
+        dt_till,
+        scope,
+        units,
+    )
+    .context(h!())?;
     Ok(build_distinct_count_query(
-        build_tags_filtered_query_with_owner_condition(
-            req,
-            login_str,
-            accessible_tag_ids_condition(accessible_tag_ids),
-            Some((accessible_tag_ids, unit_login_ids)),
-            dt_since,
-            dt_till,
-            master_keys,
-            scope,
-            true,
-            None,
-        )?,
+        query,
         Expr::col(sigint_inbox_item_tag::Column::TagId),
     ))
 }
