@@ -258,3 +258,23 @@ as a non-null parameter. These gateway-only samples did not capture input
 fingerprints before/after, so timings are diagnostic individual reads, not a
 controlled benchmark. The existing database-backed mixed/undefined/denied
 legacy-unit regression passes with the revised application query builder.
+
+
+## Deployed gateway cursor compatibility
+
+Longer observation of the corrected ZP2 application found a separate recurring
+count timeout combining sender exclusions and a timestamp/ID cursor. The
+baseline gateway leaves PostgreSQL row comparisons local, preventing adjacent
+joins and filters from being pushed down. Analytics pagination now expands the
+same lexicographic condition into scalar comparisons; primary pagination keeps
+its tuple condition. NULL cursor handling is unchanged.
+
+[cursor-compatibility.json](cursor-compatibility.json) records the actual SQL,
+original gateway plan, revised execution statistics and a twelve-case SQL
+comparison including timestamp ties and NULL rows. The affected live request
+previously cancelled around 25 seconds. A single revised historical-tail check
+completed in 84.018 ms, returning 130 and 128 rows from two remote fragments.
+The deployed baseline still performs its anti join and final aggregate locally.
+This is bounded production diagnostic evidence, not a repeated benchmark or a
+new source/gateway fingerprint parity comparison. The application fixture
+compares primary and analytics counts for both cursor directions and date sorts.
