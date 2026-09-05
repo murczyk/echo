@@ -546,9 +546,24 @@ impl TusHandler {
         };
 
         let metadata = file.metadata().await.c(h!())?;
+        let expires = self
+            .expires_at_for_metadata(&metadata, true)
+            .context(h!())?;
+        if expires <= Utc::now() {
+            drop(file);
+            self.remove_expired_upload(&file_path).await;
+            return Ok(self.rejected_chunk_response(
+                StatusCode::NOT_FOUND,
+                "pending_upload_expired",
+                Some(file_id),
+                Some(upload_length),
+                Some(upload_offset),
+                None,
+            ));
+        }
         let mut builder = HttpResponse::NoContent();
         self.add_default_headers(&mut builder);
-        self.add_expires_header_for_metadata(&metadata, true, &mut builder)?;
+        self.add_expires_header(expires, &mut builder);
         let upload_offset =
             match Self::write(&mut file, upload_offset, upload_length, payload)
                 .await?
@@ -1033,6 +1048,48 @@ mod tests {
             .await
             .unwrap());
         assert_eq!(upload_length, 11);
+    }
+
+    // Regression for ECHO-3324: PATCH must not revive an expired pending upload.
+    #[tokio::test]
+    async fn expired_pending_upload_is_rejected_before_writing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let login = Uuid::new_v4();
+        let mut handler = test_handler(&temp_dir);
+        handler.config.pending_expires_in = Duration::ZERO;
+        let mut headers = tus_headers();
+        headers
+            .insert(HEADER_NAME_UPLOAD_LENGTH, HeaderValue::from_static("5"));
+        let response = handler
+            .process_post_request(&login, &headers)
+            .await
+            .unwrap();
+        let upload_url = header_value(&response, header::LOCATION);
+        let request_file = upload_url.strip_prefix(&handler.prefix).unwrap();
+        let (file_path, _, _) = handler
+            .parse_request_file_path(&login, request_file, true)
+            .await
+            .unwrap()
+            .unwrap();
+
+        headers.insert(header::CONTENT_TYPE, HEADER_VALUE_CONTENT_TYPE_PATCH);
+        headers
+            .insert(HEADER_NAME_UPLOAD_OFFSET, HeaderValue::from_static("0"));
+        let response = handler
+            .process_patch_request(
+                &login,
+                &headers,
+                request_file,
+                test_payload(b"image"),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(!tokio::fs::try_exists(&file_path).await.unwrap());
+        assert!(!tokio::fs::try_exists(handler.metadata_path(&file_path))
+            .await
+            .unwrap());
     }
 
     // Regression for ECHO-3324: completed uploads use their own expiration TTL consistently.
