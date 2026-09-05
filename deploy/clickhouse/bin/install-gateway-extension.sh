@@ -103,7 +103,7 @@ replace_library "$candidate"
 pg_ctlcluster "$POSTGRESQL_MAJOR" main start
 runuser -u postgres -- "/usr/lib/postgresql/$POSTGRESQL_MAJOR/bin/psql" \
   -XqAt -v ON_ERROR_STOP=1 -d echo_analytics_gateway \
-  -c "SET statement_timeout='15s'; SELECT pgch_version(); SELECT 1 FROM signal_message WHERE id BETWEEN 1 AND 10 LIMIT 1;"
+  -c "SET statement_timeout='15s'; SELECT extversion FROM pg_catalog.pg_extension WHERE extname='pg_clickhouse'; SELECT 1 FROM signal_message WHERE id BETWEEN 1 AND 10 LIMIT 1;"
 sha256sum --check "$backup_dir/config.sha256" >/dev/null
 stopped=false
 log "Gateway library verified: $expected_sha; rollback: $backup_dir"
