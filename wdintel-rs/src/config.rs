@@ -24,6 +24,10 @@ pub const PGBACKREST_CONF_INCLUDE_DIR: &str = "/etc/pgbackrest/conf.d";
 pub const PGBACKREST_STANZA_CONF_PREFIX: &str = "pgbackrest-";
 pub const PGBACKREST_STANZA_CONF_SUFFIX: &str = ".conf";
 pub const PG_SLOW_STATEMENT_THRESHOLD_MS: u64 = 5_000;
+/// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
+/// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
+/// `dutyFeedRequestDeadline.ts` must cover this and
+/// `ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT` sequentially, plus transport allowance.
 pub const POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT: u64 =
     60_000;
@@ -1090,6 +1094,10 @@ pub const NETWORK_INVALIDATION_TASK_TAG_OLD: &str = "old";
 pub const NETWORK_INVALIDATION_TASK_TAG_RECENT: &str = "recent";
 pub const NETWORK_INVALIDATION_TASK_TAG_UNASSIGNED: &str = "unassigned";
 pub const ANALYTICS_CONNECT_TIMEOUT_MS_DEFAULT: u64 = 5_000;
+/// DUTY_FEED_COUNT_DEADLINE_SYNC: the frontend
+/// `DUTY_FEED_BACKGROUND_REQUEST_DEADLINE_MS` in
+/// `dutyFeedRequestDeadline.ts` must cover this and
+/// `POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT` sequentially, plus transport allowance.
 pub const ANALYTICS_QUERY_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 pub const ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT: u64 = 90_000;
 pub const ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT: u64 = 30_000;
