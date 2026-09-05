@@ -2928,7 +2928,14 @@ describe('MessageCard', () => {
 
   it('omits attachment summaries and text dividers when the message has no body or attachments', async () => {
     const view = await renderCard({
-      msg: buildMessage({ text: null, textMarked: null, images: [], media: [], coords: null }),
+      msg: buildMessage({
+        text: null,
+        textMarked: null,
+        images: [],
+        media: [],
+        coords: null,
+        extendedForm: null,
+      }),
     });
     rendered.push(view);
 
@@ -3012,18 +3019,59 @@ describe('MessageCard', () => {
     ).toBe(true);
   });
 
-  it('ECHO-3324 keeps the metadata-to-message divider in compact and expanded cards', async () => {
-    const compact = await renderCard({ feedCount: 3 });
-    rendered.push(compact);
-    expect(
-      compact.container.querySelectorAll('.message-card-main .message-card-divider'),
-    ).toHaveLength(2);
+  it.each([
+    ['metadata only', buildMessage({ text: null, extendedForm: null }), 0],
+    ['metadata and text', buildMessage({ extendedForm: null }), 1],
+    [
+      'metadata and attachment without text',
+      buildMessage({ text: null, extendedForm: null, images: ['https://example.test/image.png'] }),
+      1,
+    ],
+    [
+      'metadata, text, and attachment',
+      buildMessage({ extendedForm: null, images: ['https://example.test/image.png'] }),
+      2,
+    ],
+    ['metadata and empty body', buildMessage({ text: '', extendedForm: null }), 0],
+  ])(
+    'ECHO-3324 renders %s with the expected content-aware dividers',
+    async (_, msg, dividerCount) => {
+      const view = await renderCard({ msg });
+      rendered.push(view);
+      expect(
+        view.container.querySelectorAll('.message-card-main .message-card-divider'),
+      ).toHaveLength(dividerCount);
+    },
+  );
 
-    const expanded = await renderCard({ feedCount: 1 });
-    rendered.push(expanded);
+  it('ECHO-3324 includes raw coordinates and visible sidebars in divider boundaries without trailing dividers', async () => {
+    const withRawCoordinates = await renderCard({
+      msg: buildMessage({ text: null, extendedForm: null, coords: 'somewhere near the ridge' }),
+    });
+    rendered.push(withRawCoordinates);
     expect(
-      expanded.container.querySelectorAll('.message-card-main .message-card-divider'),
-    ).toHaveLength(2);
+      withRawCoordinates.container.querySelectorAll('.message-card-main .message-card-divider'),
+    ).toHaveLength(1);
+    expect(
+      withRawCoordinates.container.querySelector('.message-card-main-sidebar-divider'),
+    ).not.toBeNull();
+
+    const withoutSidebar = await renderCard({
+      tagsMap: {},
+      msg: buildMessage({
+        text: null,
+        extendedForm: null,
+        tags: [],
+        inboxTags: [],
+        parentMessages: [],
+        intelligenceReports: [],
+      }),
+    });
+    rendered.push(withoutSidebar);
+    expect(withoutSidebar.container.querySelector('.message-card-main-sidebar-divider')).toBeNull();
+    expect(
+      withoutSidebar.container.querySelector('.message-card-main .message-card-divider'),
+    ).toBeNull();
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {

@@ -124,7 +124,7 @@ async function installTaggedVisualFixture(page: Page): Promise<void> {
       inbox_items: [[41, message as never]],
     }),
     tagsResponse: [
-      [1, { id: 1, label: 'Рух', is_palitra: false }],
+      [1, { id: 1, label: 'Рух', is_palitra: false, ownerOrganismId: 1 }],
       [2, { id: 2, label: 'Зв’язок', is_palitra: false }],
       [3, { id: 3, label: 'РЕБ', is_palitra: false }],
       [4, { id: 4, label: 'Артилерія', is_palitra: false }],
@@ -268,6 +268,147 @@ test.describe('message card visual regression', () => {
       await expect.poll(rowCount).toBe(1);
     });
   }
+
+  test('ECHO-3324 keeps Duty and Analysis toolbar controls contiguous and the tag expander spaced', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+
+    for (const host of ['duty', 'analysis'] as const) {
+      await openMessageCardPreviewHost(page, host);
+      const card = page.locator('.message-card-root').first();
+      const buttons = card.locator('[aria-label="Дії повідомлення"] .message-card-action-btn');
+
+      for (const cardWidth of [920, 330]) {
+        await card.evaluate((element, width) => {
+          const item = element.closest<HTMLElement>('.message-card-item');
+          if (item) item.style.width = `${width}px`;
+        }, cardWidth);
+        await expect(buttons.first()).toHaveCSS('margin-left', '0px');
+        await expect(buttons.first()).toHaveCSS('width', '28px');
+        await expect(buttons.first()).toHaveCSS('height', '28px');
+        expect(
+          await buttons.evaluateAll((elements) => {
+            const rows = new Map<number, DOMRect[]>();
+            for (const element of elements) {
+              const rect = element.getBoundingClientRect();
+              const row = Math.round(rect.top);
+              rows.set(row, [...(rows.get(row) ?? []), rect]);
+            }
+            return [...rows.values()].every((row) => {
+              const sorted = row.toSorted((left, right) => left.left - right.left);
+              return sorted.every(
+                (button, index) => index === 0 || button.left <= sorted[index - 1].right + 1,
+              );
+            });
+          }),
+        ).toBe(true);
+        const metrics = await buildMetrics(card);
+        expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+      }
+    }
+
+    await installTaggedVisualFixture(page);
+    await page.goto('/rer-duty-neo?state-short=short-1');
+    const card = page.locator('.message-card-root').first();
+    const expand = card.locator('.message-card-tag-expand');
+    const chip = card.locator('[data-message-card-tags="true"] button').first();
+    await expect(expand).toHaveCSS('margin-left', '4px');
+    const [expandBox, chipBox] = await Promise.all([expand.boundingBox(), chip.boundingBox()]);
+    expect(
+      Math.abs(
+        (expandBox?.y ?? 0) +
+          (expandBox?.height ?? 0) / 2 -
+          ((chipBox?.y ?? 0) + (chipBox?.height ?? 0) / 2),
+      ),
+    ).toBeLessThanOrEqual(1);
+  });
+
+  test('ECHO-3324 preserves semantic card tokens, responsive dividers, and thumbnail geometry', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1500, height: 900 });
+    await openMessageCardPreviewHost(page, 'duty');
+    const card = page.locator('.message-card-root').first();
+    const imageControls = card.locator(
+      '[data-picture-thumb-layout].message-card-thumbnail-control',
+    );
+    const videoControls = card.locator('[data-video-thumb-state].message-card-thumbnail-control');
+    await expect(imageControls).toHaveCount(2);
+    await expect(videoControls).toHaveCount(2);
+    for (const control of await imageControls.all()) {
+      await expect(control).toHaveCSS('border-radius', '8px');
+    }
+    for (const control of await videoControls.all()) {
+      await expect(control).toHaveCSS('border-radius', '8px');
+    }
+
+    const coordinateAttachmentControl = card.getByRole('button', {
+      name: /^Розгорнути координати:|^Згорнути координати:/,
+    });
+    await coordinateAttachmentControl.click();
+    await expect(imageControls).toBeHidden();
+    await expect(videoControls).toBeHidden();
+    const coordinateControl = card.locator(
+      '[data-coordinate-preview-tile] .message-card-thumbnail-control',
+    );
+    await expect(coordinateControl).toHaveCount(1);
+    await expect(coordinateControl).toBeVisible();
+    await expect(coordinateControl).toHaveCSS('border-radius', '8px');
+    const counter = card.locator('[data-coordinate-preview-count="true"]');
+    await expect(counter).toHaveCSS('font-size', '10px');
+    await expect(counter).toHaveCSS('font-weight', '400');
+
+    const colors = await card.evaluate((element) => {
+      const probe = document.createElement('div');
+      probe.style.background = 'var(--color-card)';
+      element.append(probe);
+      const values = {
+        card: getComputedStyle(element).backgroundColor,
+        colorCard: getComputedStyle(probe).backgroundColor,
+      };
+      probe.remove();
+      return values;
+    });
+    expect(colors.card).toBe(colors.colorCard);
+
+    await installTaggedVisualFixture(page);
+    await page.goto('/rer-duty-neo?state-short=short-1');
+    const taggedCard = page.locator('.message-card-root').first();
+    const tagDivider = taggedCard.locator('.message-card-tag--with-divider');
+    await expect(tagDivider).toHaveCount(1);
+    await expect(tagDivider).toBeVisible();
+    const tagDividerColor = await tagDivider.evaluate(
+      (element) => getComputedStyle(element).borderLeftColor,
+    );
+    const horizontalDividerColor = await taggedCard
+      .locator('.message-card-divider')
+      .first()
+      .evaluate((element) => getComputedStyle(element, '::before').backgroundColor);
+    expect(tagDividerColor).toBe(horizontalDividerColor);
+    expect(
+      await taggedCard
+        .locator('.message-card-main-sidebar-divider')
+        .evaluate((element) => getComputedStyle(element, '::before').backgroundColor),
+    ).toBe(horizontalDividerColor);
+
+    await taggedCard.evaluate((element) => {
+      const item = element.closest<HTMLElement>('.message-card-item');
+      if (item) item.style.width = '920px';
+    });
+    await expect(taggedCard.locator('.message-card-main-sidebar-divider')).toHaveCSS(
+      'display',
+      'none',
+    );
+    await taggedCard.evaluate((element) => {
+      const item = element.closest<HTMLElement>('.message-card-item');
+      if (item) item.style.width = '330px';
+    });
+    await expect(taggedCard.locator('.message-card-main-sidebar-divider')).toHaveCSS(
+      'display',
+      'flex',
+    );
+  });
 
   for (const cardWidth of [920, 330] as const) {
     test(`ECHO-3324 keeps a ${cardWidth}px card within bounds without an empty sidebar`, async ({

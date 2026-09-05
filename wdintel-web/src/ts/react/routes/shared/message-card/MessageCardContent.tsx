@@ -661,48 +661,42 @@ export function MessageCardMessageBody({
     ? textPrimary.some((node) => isPresent(node))
     : isPresent(textPrimary);
 
-  const messageTextSection =
-    hasTextPrimary || hasMessageTextOverflow ? (
-      <>
-        {metadata ? <div className="message-card-divider" /> : null}
-        <div className="message-card-main-section message-card-message-text">
-          <div
-            className={
-              msg.textMarked && msg.textMarked.length > 0
-                ? 'text-marked whitespace-pre-wrap wrap-break-word'
-                : 'whitespace-pre-wrap wrap-break-word'
+  const hasMessageText = hasTextPrimary || hasMessageTextOverflow;
+  const messageTextSection = hasMessageText ? (
+    <div className="message-card-main-section message-card-message-text">
+      <div
+        className={
+          msg.textMarked && msg.textMarked.length > 0
+            ? 'text-marked whitespace-pre-wrap wrap-break-word'
+            : 'whitespace-pre-wrap wrap-break-word'
+        }
+      >
+        {textPrimary}
+        {hasMessageTextOverflow ? (
+          <Button
+            size="small"
+            color="inherit"
+            variant="text"
+            onClick={() => setIsMessageTextExpanded((value) => !value)}
+            aria-expanded={isMessageTextExpanded}
+            aria-label={
+              isMessageTextExpanded ? 'Згорнути текст повідомлення' : 'Показати текст повідомлення'
             }
+            endIcon={
+              isMessageTextExpanded ? (
+                <ExpandLessIcon fontSize="inherit" aria-hidden />
+              ) : (
+                <ExpandMoreIcon fontSize="inherit" aria-hidden />
+              )
+            }
+            className="message-card-text-expand"
           >
-            {textPrimary}
-            {hasMessageTextOverflow ? (
-              <Button
-                size="small"
-                color="inherit"
-                variant="text"
-                onClick={() => setIsMessageTextExpanded((value) => !value)}
-                aria-expanded={isMessageTextExpanded}
-                aria-label={
-                  isMessageTextExpanded
-                    ? 'Згорнути текст повідомлення'
-                    : 'Показати текст повідомлення'
-                }
-                endIcon={
-                  isMessageTextExpanded ? (
-                    <ExpandLessIcon fontSize="inherit" aria-hidden />
-                  ) : (
-                    <ExpandMoreIcon fontSize="inherit" aria-hidden />
-                  )
-                }
-                className="message-card-text-expand"
-              >
-                {isMessageTextExpanded ? 'згорнути' : 'розгорнути'}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <div className="message-card-divider" />
-      </>
-    ) : null;
+            {isMessageTextExpanded ? 'згорнути' : 'розгорнути'}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
 
   const toggleAttachmentSection = (section: Exclude<ActiveAttachmentSection, null>) => {
     setActiveAttachmentSection((current) => (current === section ? null : section));
@@ -819,6 +813,26 @@ export function MessageCardMessageBody({
         }}
       />
     ) : null;
+  const hasVisibleMediaContent =
+    (isMediaVisible && hasMediaAttachments) ||
+    (!collapseMediaPreviews && coordinateMapAttachment != null);
+  const hasVisibleCoordinateContent = collapseMediaPreviews && coordinateMapAttachment != null;
+  const hasVisibleDocumentContent = isDocumentVisible && hasDocumentAttachments;
+  const hasVisibleAudioContent = isAudioVisible && audioAttachments.length > 0;
+  const hasVisibleSummary = showSummaryCarousel && selectedSummaryMediaIdentity != null;
+  const hasExtendedForm = isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '';
+  const hasFollowingMainContent =
+    unpreviewableRawCoordinates != null ||
+    attachmentCounters != null ||
+    hasVisibleMediaContent ||
+    hasVisibleCoordinateContent ||
+    hasVisibleDocumentContent ||
+    hasVisibleSummary ||
+    hasVisibleAudioContent ||
+    hasExtendedForm;
+  const hasMainColumnContent = metadata != null || hasMessageText || hasFollowingMainContent;
+  const showMetadataDivider = metadata != null && (hasMessageText || hasFollowingMainContent);
+  const showMessageTextDivider = hasMessageText && hasFollowingMainContent;
 
   return (
     <div className="message-card-content">
@@ -852,7 +866,9 @@ export function MessageCardMessageBody({
       >
         <div className="message-card-main">
           {metadata ? <div className="message-card-main-section">{metadata}</div> : null}
+          {showMetadataDivider ? <div className="message-card-divider" /> : null}
           {messageTextSection}
+          {showMessageTextDivider ? <div className="message-card-divider" /> : null}
           {unpreviewableRawCoordinates != null ? (
             <MessageCardRawCoordinates coordinates={unpreviewableRawCoordinates} />
           ) : null}
@@ -926,7 +942,7 @@ export function MessageCardMessageBody({
               ))}
             </div>
           ) : null}
-          {showSummaryCarousel && selectedSummaryMediaIdentity != null ? (
+          {hasVisibleSummary ? (
             <MessageCardMediaSummaryCarousel
               items={summaryScope}
               selectedIdentity={selectedSummaryMediaIdentity}
@@ -934,7 +950,7 @@ export function MessageCardMessageBody({
             />
           ) : null}
           {collapseMediaPreviews ? coordinateMapAttachment : null}
-          {audioAttachments.length > 0 && isAudioVisible ? (
+          {hasVisibleAudioContent ? (
             <div className="mt-1 flex flex-col items-start w-full">
               {audioAttachments.map((attachment) => (
                 <MessageMediaAudioPlayer
@@ -946,7 +962,7 @@ export function MessageCardMessageBody({
               ))}
             </div>
           ) : null}
-          {isPresent(msg.extendedForm) && msg.extendedForm.trim() !== '' ? (
+          {hasExtendedForm ? (
             <div className="flex flex-row items-center gap-[6px] min-w-0">
               <ChatBubbleOutlineOutlinedIcon
                 sx={{ fontSize: 13, color: 'var(--color-action)', flexShrink: 0 }}
@@ -958,6 +974,9 @@ export function MessageCardMessageBody({
             </div>
           ) : null}
         </div>
+        {hasMainColumnContent && hasSidebarContent ? (
+          <div className="message-card-main-sidebar-divider" aria-hidden="true" />
+        ) : null}
         {hasSidebarContent ? (
           <div className="message-card-sidebar">
             {tagsSection}

@@ -205,6 +205,7 @@ export function CoordinateAttachmentThumbnail({
       {!isNearViewport ? (
         <Skeleton
           variant="rounded"
+          className="message-card-thumbnail-control"
           height={fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX}
           animation="wave"
           sx={{
@@ -220,6 +221,7 @@ export function CoordinateAttachmentThumbnail({
             type="button"
             onClick={onOpen}
             aria-label={`Open ${point.label} on map`}
+            className="message-card-thumbnail-control"
             style={{
               flex: flexStyle,
               width: widthStyle,
@@ -297,7 +299,8 @@ export function CoordinateAttachmentThumbnail({
                   borderRadius: 1.5,
                   bgcolor: 'rgba(10, 13, 18, 0.7)',
                   color: 'common.white',
-                  fontWeight: 700,
+                  fontSize: 10,
+                  fontWeight: 400,
                   lineHeight: 1.2,
                   backdropFilter: 'blur(6px)',
                 }}

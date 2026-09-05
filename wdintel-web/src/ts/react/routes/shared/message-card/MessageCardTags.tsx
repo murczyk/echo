@@ -406,7 +406,7 @@ function MessageCardTagsComponent({
       data-message-card-tags="true"
       className="flex w-full min-w-0 flex-col gap-y-1.5"
     >
-      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <div className="flex min-h-6 min-w-0 flex-1 items-center gap-2 overflow-x-hidden">
           {row1Chips.map((row) => (
             <MessageCardTagChip
@@ -419,7 +419,9 @@ function MessageCardTagsComponent({
             />
           ))}
         </div>
-        <div className="shrink-0 justify-self-end">{expandToggleButton}</div>
+        <div className="message-card-tag-expand-wrapper shrink-0 justify-self-end">
+          {expandToggleButton}
+        </div>
       </div>
       {botPrompt}
     </div>
