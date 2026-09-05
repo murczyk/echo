@@ -195,6 +195,14 @@ a {
   background: var(--bs-body-bg);
 }
 
+.message-card-thumbnail-shell {
+  width: 72px;
+  min-width: 72px;
+  max-width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+
 html[data-bs-theme='dark'] .message-card-root {
   --message-card-tag-background: #1c232d;
   --message-card-tag-border: #414143;

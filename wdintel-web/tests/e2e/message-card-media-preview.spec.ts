@@ -74,6 +74,17 @@ test.describe('@smoke', () => {
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
       await openMessageCardPreviewHost(page, host);
 
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`,
+        }),
+      ).toBeVisible();
+
       const imageDialog = await openImagePreview(page);
       await expect(imageDialog).toBeVisible();
       await expect(imageDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
@@ -192,20 +203,23 @@ test.describe('message card media preview contract', () => {
 
         const coordinateHost = card.locator('[data-coordinate-preview-root]');
         const coordinateTile = card.locator('[data-coordinate-preview-tile]');
+        const coordinateCount = coordinateTile.locator('[data-coordinate-preview-count]');
         const retryOverlay = card.locator('[data-coordinate-preview-retry-overlay]');
         await expect(coordinateHost).toBeVisible();
         await expect(coordinateTile).toBeVisible();
+        await expect(coordinateCount).toHaveText('1');
         await expect(retryOverlay).toBeVisible();
         const [hostBox, coordinateBox] = await Promise.all([
           coordinateHost.boundingBox(),
           coordinateTile.boundingBox(),
         ]);
         expect(hostBox?.width).toBe(hostBox?.height);
-        expect(hostBox?.width).toBe(112);
+        expect(hostBox?.width).toBe(72);
         expect(coordinateBox?.width).toBe(coordinateBox?.height);
         expect(coordinateBox?.width).toBe(hostBox?.width);
-        expect(coordinateBox?.width).toBe(112);
-        expect(coordinateBox?.width).toBeGreaterThan(imageBox?.width ?? 0);
+        expect(coordinateBox?.width).toBe(72);
+        expect(coordinateBox?.width).toBe(imageBox?.width);
+        expect(coordinateBox?.height).toBe(imageBox?.height);
         const [overlayBox, hostOverflow] = await Promise.all([
           retryOverlay.boundingBox(),
           coordinateHost.evaluate((element) => getComputedStyle(element).overflow),
@@ -249,7 +263,7 @@ test.describe('message card media preview contract', () => {
         host.evaluate((element) => getComputedStyle(element).overflow),
       ]);
       expect(hostBox?.width).toBe(hostBox?.height);
-      expect(hostBox?.width).toBe(112);
+      expect(hostBox?.width).toBe(72);
       expect(tileBox?.width).toBe(hostBox?.width);
       expect(tileBox?.height).toBe(hostBox?.height);
       expect(hostOverflow).toBe('hidden');
@@ -271,19 +285,23 @@ test.describe('message card media preview contract', () => {
     await expect(failureTile).toHaveCount(0);
   });
 
-  test('ECHO-3324 wraps long coordinate labels inside shared Duty and Analysis tiles', async ({
+  test('ECHO-3324 renders numeric coordinate counts inside shared Duty and Analysis tiles', async ({
     page,
   }) => {
     const coordinateLabel = '50.45044, 30.52355 — сектор Північний';
 
     for (const host of ['duty', 'analysis'] as const) {
-      await openMessageCardPreviewHost(page, host, { revealCoordinates: true, coordinateLabel });
+      await openMessageCardPreviewHost(page, host, {
+        revealCoordinates: true,
+        coordinateLabel,
+        coordinatePointCount: 9,
+      });
       const card = page.locator('.message-card-root').first();
       const coordinateTile = card.locator('[data-coordinate-preview-tile]');
       const coordinateButton = card.getByRole('button', {
         name: `Open ${coordinateLabel} on map`,
       });
-      const badge = coordinateTile.getByText(coordinateLabel, { exact: true });
+      const count = coordinateTile.locator('[data-coordinate-preview-count]');
       const mediaControl = card.getByRole('button', { name: /^(Розгорнути|Згорнути) медіа:/ });
       const coordinateControl = card.getByRole('button', {
         name: /^(Розгорнути|Згорнути) координати:/,
@@ -302,11 +320,15 @@ test.describe('message card media preview contract', () => {
         ]);
         await coordinateControl.click();
         await expect(coordinateTile).toBeVisible();
-        await expect(badge).toHaveText(coordinateLabel);
-        const [tileBox, badgeBox, badgeMetrics] = await Promise.all([
+        await expect(count).toHaveText('9');
+        expect(await coordinateTile.textContent()).toBe('9');
+        expect(await coordinateTile.textContent()).not.toContain(coordinateLabel);
+        expect(await coordinateTile.textContent()).not.toContain('50.45044, 30.52355');
+        expect(await coordinateTile.textContent()).not.toMatch(/точка|точки|точок|…|\.\.\./i);
+        const [tileBox, countBox, countMetrics] = await Promise.all([
           coordinateTile.boundingBox(),
-          badge.boundingBox(),
-          badge.evaluate((element) => {
+          count.boundingBox(),
+          count.evaluate((element) => {
             const styles = getComputedStyle(element);
             return {
               whiteSpace: styles.whiteSpace,
@@ -318,22 +340,27 @@ test.describe('message card media preview contract', () => {
             };
           }),
         ]);
-        expect(tileBox?.width).toBe(112);
-        expect(tileBox?.height).toBe(112);
+        expect(tileBox?.width).toBe(72);
+        expect(tileBox?.height).toBe(72);
         expect(imageBox?.width).toBe(72);
         expect(imageBox?.height).toBe(72);
         expect(videoBox?.width).toBe(72);
         expect(videoBox?.height).toBe(72);
-        expect(badgeMetrics.whiteSpace).toBe('pre-wrap');
-        expect(badgeMetrics.textOverflow).not.toBe('ellipsis');
-        expect(badgeMetrics.scrollWidth).toBeLessThanOrEqual(badgeMetrics.clientWidth + 1);
-        expect(badgeMetrics.scrollHeight).toBeGreaterThan(badgeMetrics.lineHeight + 1);
-        expect(badgeBox?.x).toBeGreaterThanOrEqual(tileBox?.x ?? 0);
-        expect((badgeBox?.x ?? 0) + (badgeBox?.width ?? 0)).toBeLessThanOrEqual(
+        expect(countMetrics.whiteSpace).toBe('normal');
+        expect(countMetrics.textOverflow).not.toBe('ellipsis');
+        expect(countMetrics.scrollWidth).toBeLessThanOrEqual(countMetrics.clientWidth + 1);
+        expect(countBox?.x).toBeGreaterThanOrEqual(tileBox?.x ?? 0);
+        expect((countBox?.x ?? 0) + (countBox?.width ?? 0)).toBeLessThanOrEqual(
           (tileBox?.x ?? 0) + (tileBox?.width ?? 0),
         );
-        expect((badgeBox?.y ?? 0) + (badgeBox?.height ?? 0)).toBeLessThanOrEqual(
+        expect((countBox?.y ?? 0) + (countBox?.height ?? 0)).toBeLessThanOrEqual(
           (tileBox?.y ?? 0) + (tileBox?.height ?? 0),
+        );
+        expect((countBox?.x ?? 0) + (countBox?.width ?? 0)).toBeGreaterThan(
+          (tileBox?.x ?? 0) + (tileBox?.width ?? 0) / 2,
+        );
+        expect((countBox?.y ?? 0) + (countBox?.height ?? 0)).toBeLessThan(
+          (tileBox?.y ?? 0) + (tileBox?.height ?? 0) / 2,
         );
       }
 

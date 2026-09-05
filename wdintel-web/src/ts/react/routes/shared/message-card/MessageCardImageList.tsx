@@ -1,5 +1,6 @@
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import type { ReactNode } from 'react';
+import type { MessageCardDownloadGuardProps } from './MessageCardMedia';
 import type { MessageCardImage } from './message-card-image-utils';
 import { MessageCardImageThumb } from './MessageCardImageThumb';
 import { MessageCardVideoThumb } from './MessageCardVideoThumb';
@@ -12,6 +13,8 @@ export function MessageCardImageList({
   trailingContent,
   onOpen,
   onOpenVideo,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   images: MessageCardImage[];
   videos?: MessageMediaInfo[];
@@ -20,7 +23,7 @@ export function MessageCardImageList({
   trailingContent?: ReactNode;
   onOpen: (index: number) => void;
   onOpenVideo?: (index: number) => void;
-}) {
+} & MessageCardDownloadGuardProps) {
   const imageCount = images.length;
   const videoCount = videos.length;
 
@@ -36,6 +39,8 @@ export function MessageCardImageList({
           variant={imageCount === 1 && videoCount === 0 ? 'single' : 'multi'}
           selected={selectedImageIndex === index}
           onOpen={onOpen}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       ))}
       {videos.map((attachment, index) => (
@@ -45,6 +50,8 @@ export function MessageCardImageList({
           index={index}
           selected={selectedVideoIndex === index}
           onOpen={onOpenVideo ?? (() => {})}
+          isDownloadStarting={isDownloadStarting}
+          onDownloadStart={onDownloadStart}
         />
       ))}
       {trailingContent}

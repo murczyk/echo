@@ -51,7 +51,26 @@ vi.mock('@mui/material', () => ({
       </button>
     );
   }),
+  CircularProgress: (props: Record<string, unknown>) => <span {...props}>loading</span>,
+  IconButton: ({
+    children,
+    component,
+    href,
+    target,
+    rel,
+    ...props
+  }: {
+    children?: ReactNode;
+    component?: ElementType;
+    href?: string;
+    target?: string;
+    rel?: string;
+  } & Record<string, unknown>) => {
+    const Component = component ?? 'button';
+    return createElement(Component, { href, target, rel, ...props }, children);
+  },
   Skeleton: () => <span data-skeleton />,
+  Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Typography: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
 }));
 
@@ -88,7 +107,15 @@ async function renderThumb(attachment: MessageMediaInfo) {
   const onOpen = vi.fn();
 
   await act(async () => {
-    root.render(<MessageCardVideoThumb attachment={attachment} index={0} onOpen={onOpen} />);
+    root.render(
+      <MessageCardVideoThumb
+        attachment={attachment}
+        index={0}
+        onOpen={onOpen}
+        isDownloadStarting={() => false}
+        onDownloadStart={() => true}
+      />,
+    );
   });
 
   return { container, root, onOpen };
