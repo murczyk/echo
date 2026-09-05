@@ -8102,6 +8102,53 @@ async fn analytics_candidates_preserve_unit_media_permissions_and_paging() {
         .unwrap()
         .unwrap();
     assert_eq!(candidates, expected[10..10 + INBOX_MESSAGES_PAGE_LIMIT]);
+    for sort_by in [
+        InboxMessagesSortBy::IMSDatetime,
+        InboxMessagesSortBy::IMSTimestamp,
+    ] {
+        for newer in [false, true] {
+            let cursor_req = InboxMessagesReq {
+                sort_by: Some(sort_by),
+                since_id_noninclusive: newer.then_some(expected[9]),
+                before_id_noninclusive: (!newer).then_some(expected[9]),
+                ..req.clone()
+            };
+            let primary =
+                crate::rer_importer::inbox::query::build_inbox_digest_query(
+                    &login,
+                    &fixture.env,
+                    &cursor_req,
+                )
+                .await
+                .unwrap();
+            let analytics = crate::rer_importer::inbox::query::build_analytics_inbox_digest_query(
+                &login,
+                &fixture.env,
+                &cursor_req,
+                db,
+                90_000,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            for query in [primary, analytics] {
+                let quantity: i64 = db
+                    .query_one_raw(Statement::from_string(
+                        DbBackend::Postgres,
+                        query,
+                    ))
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .try_get("", "count")
+                    .unwrap();
+                assert_eq!(
+                    quantity,
+                    if newer { expected.len() as i64 - 10 } else { 9 }
+                );
+            }
+        }
+    }
     req.since_id_noninclusive = None;
     req.since_date_inclusive_ms = None;
     req.till_date_inclusive_ms = None;

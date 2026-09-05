@@ -17,7 +17,6 @@ use crate::types::*;
 use crate::utils::*;
 use chrono::{Duration, NaiveDateTime, Utc};
 use sea_orm::{sea_query::PostgresQueryBuilder, *};
-use sea_query::types::IntoColumnRef;
 use sea_query::{Alias, Expr, ExprTrait, Query, SelectStatement, SimpleExpr};
 use std::collections::BTreeSet;
 
@@ -549,7 +548,7 @@ fn left_join_denied_analytics_message_groups(
 async fn build_filtered_inbox_query_with_scope<'a, 'async_trait, C>(
     dbx: &'a C,
     login: &uuid::Uuid,
-    env: &Env,
+    _env: &Env,
     req: &InboxMessagesReq,
     scope: Option<&AnalyticsMessageIdScope>,
     internal_lower_bound: Option<NaiveDateTime>,
@@ -729,9 +728,14 @@ where
         ));
     }
 
-    q = get_pagination_filters_with_conn(dbx, env, req, q)
-        .await
-        .c(h!())?;
+    q = get_pagination_filters_with_conn(
+        dbx,
+        purpose == InboxQueryPurpose::Analytics,
+        req,
+        q,
+    )
+    .await
+    .c(h!())?;
     Ok(q)
 }
 
@@ -1968,6 +1972,32 @@ where
     Ok(sql)
 }
 
+fn inbox_cursor_comparison(
+    ordering: SimpleExpr,
+    id: SimpleExpr,
+    cursor: (SimpleExpr, i64),
+    newer: bool,
+    analytics: bool,
+) -> SimpleExpr {
+    let compare = |left: SimpleExpr, right: SimpleExpr| {
+        if newer {
+            left.gt(right)
+        } else {
+            left.lt(right)
+        }
+    };
+    if analytics {
+        // The deployed gateway cannot push PostgreSQL row comparisons down.
+        compare(ordering.clone(), cursor.0.clone())
+            .or(ordering.eq(cursor.0).and(compare(id, cursor.1.into())))
+    } else {
+        compare(
+            Expr::tuple([ordering, id]),
+            SimpleExpr::Tuple(vec![cursor.0, cursor.1.into()]),
+        )
+    }
+}
+
 /// Build pagination filters.
 pub async fn get_pagination_filters<Q>(
     env: &Env,
@@ -1977,12 +2007,12 @@ pub async fn get_pagination_filters<Q>(
 where
     Q: QueryFilter,
 {
-    get_pagination_filters_with_conn(&env.dbx, env, req, q).await
+    get_pagination_filters_with_conn(&env.dbx, false, req, q).await
 }
 
 pub async fn get_pagination_filters_with_conn<'a, 'async_trait, C, Q>(
     dbx: &'a C,
-    _env: &Env,
+    analytics: bool,
     req: &InboxMessagesReq,
     q: Q,
 ) -> Result<Q, AppError>
@@ -2029,21 +2059,14 @@ where
                     };
                     q = if let Some(datetime) = inbox.datetime {
                         let ts = to_ts_expr(datetime);
-                        q.filter(
-                            Expr::tuple([
-                                sigint_inbox_item::Column::Datetime
-                                    .into_column_ref()
-                                    .into(),
-                                Expr::cust("sigint_inbox_item.id"),
-                                // signal_message::Column::Id.into_column_ref().into(),
-                            ])
-                            .gt(
-                                SimpleExpr::Tuple(vec![
-                                    ts,
-                                    since_id_noninclusive.into(),
-                                ]),
-                            ),
-                        )
+                        q.filter(inbox_cursor_comparison(
+                            sigint_inbox_item::Column::Datetime
+                                .into_simple_expr(),
+                            Expr::cust("sigint_inbox_item.id"),
+                            (ts, since_id_noninclusive),
+                            true,
+                            analytics,
+                        ))
                     } else {
                         q.filter(since_id_null_bucket_filter(
                             since_id_noninclusive,
@@ -2056,21 +2079,14 @@ where
                 InboxMessagesSortBy::IMSTimestamp => {
                     q = if let Some(timestamp) = message.timestamp {
                         let ts = to_ts_expr(timestamp);
-                        q.filter(
-                            Expr::tuple([
-                                signal_message::Column::Timestamp
-                                    .into_column_ref()
-                                    .into(),
-                                Expr::cust("signal_message.id"),
-                                // signal_message::Column::Id.into_column_ref().into(),
-                            ])
-                            .gt(
-                                SimpleExpr::Tuple(vec![
-                                    ts,
-                                    since_id_noninclusive.into(),
-                                ]),
-                            ),
-                        )
+                        q.filter(inbox_cursor_comparison(
+                            signal_message::Column::Timestamp
+                                .into_simple_expr(),
+                            Expr::cust("signal_message.id"),
+                            (ts, since_id_noninclusive),
+                            true,
+                            analytics,
+                        ))
                     } else {
                         q.filter(since_id_null_bucket_filter(
                             since_id_noninclusive,
@@ -2107,38 +2123,26 @@ where
                         break '_if;
                     };
                     let datetime = to_ts_expr(datetime);
-                    q = q.filter(
-                        Expr::tuple([
-                            sigint_inbox_item::Column::Datetime
-                                .into_column_ref()
-                                .into(),
-                            Expr::cust("sigint_inbox_item.id"),
-                            // signal_message::Column::Id.into_column_ref().into(),
-                        ])
-                        .lt(SimpleExpr::Tuple(vec![
-                            datetime,
-                            before_id_noninclusive.into(),
-                        ])),
-                    );
+                    q = q.filter(inbox_cursor_comparison(
+                        sigint_inbox_item::Column::Datetime.into_simple_expr(),
+                        Expr::cust("sigint_inbox_item.id"),
+                        (datetime, before_id_noninclusive),
+                        false,
+                        analytics,
+                    ));
                 }
                 InboxMessagesSortBy::IMSTimestamp => {
                     let Some(timestamp) = message.timestamp else {
                         break '_if;
                     };
                     let timestamp = to_ts_expr(timestamp);
-                    q = q.filter(
-                        Expr::tuple([
-                            signal_message::Column::Timestamp
-                                .into_column_ref()
-                                .into(),
-                            Expr::cust("signal_message.id"),
-                            // signal_message::Column::Id.into_column_ref().into(),
-                        ])
-                        .lt(SimpleExpr::Tuple(vec![
-                            timestamp,
-                            before_id_noninclusive.into(),
-                        ])),
-                    );
+                    q = q.filter(inbox_cursor_comparison(
+                        signal_message::Column::Timestamp.into_simple_expr(),
+                        Expr::cust("signal_message.id"),
+                        (timestamp, before_id_noninclusive),
+                        false,
+                        analytics,
+                    ));
                 }
             }
         }
