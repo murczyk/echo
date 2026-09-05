@@ -233,3 +233,28 @@ primary created-at tail specifically covers fresh and backdated arrivals.
 
 The ≥95% production PostgreSQL slowlog reduction remains a later rollout/soak
 acceptance target. No claim of that reduction is made here.
+
+## Follow-up from the fleet rollout
+
+The first published application build exposed recurring 25-second cancellations
+on ZP2 for legacy-unit correlated subqueries. Whole-operation PostgreSQL fallback
+succeeded, but the shared circuit repeatedly opened. Skhid and Pivnich deployment
+was held while correcting the query shape.
+
+The deployed `32df74d` extension supports correlated subqueries with flat FROM
+entries, but refuses explicit JOIN trees. Legacy-unit EXISTS now uses comma
+FROM entries plus the identical inner-join predicates in WHERE. Aliases,
+NULL behavior, network/frequency active windows and link bounds are retained.
+This compatibility change does not require replacing the shared extension.
+
+[gateway-compatibility.json](gateway-compatibility.json) records bounded ZP2
+comparisons. For 200 dated candidate IDs and network 2,857, both forms return
+six messages; one execution changes from 3,342.323 ms with local aggregation
+to 174.415 ms with a remote aggregate. Another sample returns zero in both
+forms (3,940.759 versus 134.579 ms). A nullable-date sample causes the old
+parameterized subplan to reject NULL DateTime parameters; the remote form
+returns the correct empty match without sending a nullable correlation value
+as a non-null parameter. These gateway-only samples did not capture input
+fingerprints before/after, so timings are diagnostic individual reads, not a
+controlled benchmark. The existing database-backed mixed/undefined/denied
+legacy-unit regression passes with the revised application query builder.

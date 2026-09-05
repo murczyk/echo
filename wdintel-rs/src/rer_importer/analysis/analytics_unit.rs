@@ -459,6 +459,7 @@ fn analytics_unit_link_match(
     let frequency_alias = Alias::new(format!("{prefix}_frequency"));
     let message_datetime = Expr::col(sigint_inbox_item::Column::Datetime);
     let mut query = sea_query::Query::select();
+    // Deployed pg_clickhouse requires flat FROM lists for correlated pushdown.
     query
         .expr(Expr::value(1))
         .from_as(
@@ -468,26 +469,18 @@ fn analytics_unit_link_match(
             ),
             link_alias.clone(),
         )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_network::Entity,
+        .from_as(sigint_network::Entity, network_alias.clone())
+        .from_as(sigint_network_freq::Entity, frequency_alias.clone())
+        .cond_where(analytics_unit_network_join_condition(
             network_alias.clone(),
-            analytics_unit_network_join_condition(
-                network_alias.clone(),
-                link_alias.clone(),
-                message_datetime.clone(),
-            ),
-        )
-        .join_as(
-            JoinType::InnerJoin,
-            sigint_network_freq::Entity,
-            frequency_alias.clone(),
-            analytics_unit_frequency_join_condition(
-                frequency_alias,
-                network_alias,
-                message_datetime,
-            ),
-        )
+            link_alias.clone(),
+            message_datetime.clone(),
+        ))
+        .cond_where(analytics_unit_frequency_join_condition(
+            frequency_alias,
+            network_alias,
+            message_datetime,
+        ))
         .cond_where(analytics_unit_link_join_condition(
             link_alias,
             network_ids,

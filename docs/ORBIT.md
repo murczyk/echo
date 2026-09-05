@@ -229,9 +229,10 @@ can target active units, inactive units, or both.
 ### Review SIGINT unit names generated from echelons
 
 This workflow checks every non-deleted SIGINT unit in ID order. Generated names
-exclude `other`, blacklisted army and corps values, military district, and army
-region. Automatic mode applies every current proposal; manual mode shows a
-colored current/generated word diff and offers to apply, skip, or stop.
+exclude `other`, blacklisted army and corps values even when legacy data stores
+them in lower-echelon fields, military district, and army region. Automatic
+mode applies every current proposal; manual mode shows a colored
+current/generated word diff and offers to apply, skip, or stop.
 Automatic mode can target active units, inactive units, or both. Accepted
 changes update only the name. In manual mode, a concurrent change to
 the name or any echelon makes the reviewed proposal stale and leaves it
