@@ -84,10 +84,11 @@ where
 
 pub async fn collect_groups(
     keys: Vec<String>,
-    txn: &DatabaseConnection,
+    env: &Env,
     is_admin: bool,
     opts: CollectGroupsOpts,
 ) -> Result<Vec<types::SignalGroupEntry>, AppError> {
+    let txn = &env.dbx;
     let signal_groups = signal_group::Entity::find()
         .filter(signal_group::Column::Deleted.eq(false))
         .filter(signal_group::Column::IsArchived.eq(false))
@@ -98,7 +99,9 @@ pub async fn collect_groups(
     let group_stats = if opts.skip_group_stats {
         BTreeMap::new()
     } else {
-        collect_group_stats(keys.clone(), txn).await.context(h!())?
+        crate::rer_importer::analysis::read_group_activity(env, keys.clone())
+            .await
+            .context(h!())?
     };
 
     let group_aors = if is_admin {
@@ -139,7 +142,7 @@ pub async fn collect_groups(
 
 pub async fn collect_groups_f2(
     keys: Vec<String>,
-    txn: &DatabaseConnection,
+    env: &Env,
 ) -> Result<Vec<types::SignalGroupEntryF2>, AppError> {
     #[derive(FromQueryResult, Eq, PartialEq, Hash)]
     struct GroupRow {
@@ -147,6 +150,7 @@ pub async fn collect_groups_f2(
         pub master_key: String,
         pub kind: String,
     }
+    let txn = &env.dbx;
     let signal_groups = signal_group::Entity::find()
         .join(
             JoinType::InnerJoin,
@@ -171,7 +175,9 @@ pub async fn collect_groups_f2(
         .into_iter()
         .collect::<HashSet<_>>();
     let group_stats =
-        collect_group_stats(keys.clone(), txn).await.context(h!())?;
+        crate::rer_importer::analysis::read_group_activity(env, keys.clone())
+            .await
+            .context(h!())?;
     let data: Vec<types::SignalGroupEntryF2> = signal_groups
         .into_iter()
         .map(|group| {

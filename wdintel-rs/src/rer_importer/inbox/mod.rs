@@ -45,7 +45,6 @@ type InboxDigest = (i64, Option<NaiveDateTime>);
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RerAnalysisInboxRoute {
     Default,
-    PostgresRecent,
     AnalyticsHybrid,
 }
 
@@ -817,7 +816,7 @@ async fn inbox_messages(
         .c(h!())?;
     let signal_groups = load_inbox_signal_groups(
         &inbox_items,
-        &env.dbx,
+        &env,
         is_admin,
         skip_group_stats,
     )
@@ -1127,21 +1126,6 @@ async fn query_inbox_digest(
                 })
         })?;
     Ok((query_res.try_get("", "count")?, first_element_ts))
-}
-
-async fn query_inbox_candidate_ids(
-    db: DatabaseConnection,
-    query: String,
-) -> Result<Vec<i64>, AppError> {
-    let rows = db
-        .query_all_raw(Statement::from_string(DatabaseBackend::Postgres, query))
-        .await
-        .context(h!())?;
-    let mut ids = Vec::with_capacity(rows.len());
-    for row in rows {
-        ids.push(row.try_get("", "id")?);
-    }
-    Ok(ids)
 }
 
 async fn query_inbox_digest_singleflight<F, Fut>(
@@ -1498,8 +1482,8 @@ async fn inbox_messages_count(
             first_element_ts: None,
         }));
     }
-    let duty_uses_source_postgres =
-        duty_inbox_request_uses_source_postgres(&env.dbx, &req).await;
+    let duty_uses_source_postgres = env.analytics.is_none()
+        && duty_inbox_request_uses_source_postgres(&env.dbx, &req).await;
     let q = if duty_uses_source_postgres {
         build_correlated_inbox_digest_query(&login, &env, &req)
             .await
@@ -3043,27 +3027,9 @@ async fn get_inbox_messages_with_analytics_candidates(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    if duty_inbox_request_uses_source_postgres(&env.dbx, req).await {
-        let internal_lower_bound =
-            rer_duty_neo_adaptive_lower_bound(login, env, req).await;
-        return get_inbox_messages_with_internal_lower_bound(
-            login,
-            logins,
-            env,
-            req,
-            internal_lower_bound,
-        )
-        .await;
-    }
     let now = Utc::now().naive_utc();
     let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
     match rer_analysis_inbox_route(req, now, freshness_max_age_ms) {
-        RerAnalysisInboxRoute::PostgresRecent => {
-            return load_recent_rer_analysis_inbox_from_postgres(
-                login, logins, env, req,
-            )
-            .await;
-        }
         RerAnalysisInboxRoute::AnalyticsHybrid => {
             if analytics_inbox_candidates_supported(req) {
                 if let Some(messages) =
@@ -3121,11 +3087,7 @@ async fn get_inbox_messages_with_analytics_candidates(
 }
 
 fn rer_duty_fresh_tail_request_supported(req: &InboxMessagesReq) -> bool {
-    inbox_request_is_for_rer_duty(req)
-        && req.since_id_noninclusive.is_some()
-        && req.before_id_noninclusive.is_none()
-        && req.till_date_inclusive_ms.is_none()
-        && analytics_inbox_request_supported(req)
+    analytics_inbox_request_supported(req)
 }
 
 fn rer_duty_fresh_tail_candidates_supported(req: &InboxMessagesReq) -> bool {
@@ -3160,33 +3122,7 @@ fn rer_analysis_inbox_route(
     if since > now || till < since || till < fresh_tail_lower_bound {
         return RerAnalysisInboxRoute::Default;
     }
-    if till - since < Duration::hours(RER_ANALYSIS_POSTGRES_RECENT_RANGE_HOURS)
-    {
-        RerAnalysisInboxRoute::PostgresRecent
-    } else {
-        RerAnalysisInboxRoute::AnalyticsHybrid
-    }
-}
-
-async fn load_recent_rer_analysis_inbox_from_postgres(
-    login: &uuid::Uuid,
-    logins: &Vec<uuid::Uuid>,
-    env: &Env,
-    req: &InboxMessagesReq,
-) -> Result<Vec<(i64, InboxMessage)>, AppError> {
-    let started = Instant::now();
-    let messages = get_inbox_messages_with_internal_lower_bound(
-        login, logins, env, req, None,
-    )
-    .await
-    .context(h!())?;
-    info!(
-        target: "rer_analysis_inbox_route",
-        "rer_analysis_inbox_route route=postgres_recent result_count={} elapsed_ms={}",
-        messages.len(),
-        started.elapsed().as_millis(),
-    );
-    Ok(messages)
+    RerAnalysisInboxRoute::AnalyticsHybrid
 }
 
 async fn try_load_rer_analysis_inbox_hybrid(
@@ -3326,6 +3262,11 @@ async fn load_hybrid_inbox_candidate_ids(
     minimum_tail_minutes: i64,
     empty_scope_policy: AnalyticsEmptyScopePolicy,
 ) -> Result<Option<HybridInboxCandidateIds>, AppError> {
+    let created_at_lower_bound = analytics_fresh_tail_lower_bound(
+        Utc::now().naive_utc(),
+        analytics_freshness_max_age_ms(env),
+        minimum_tail_minutes,
+    );
     let analytics_ids =
         match load_analytics_inbox_candidate_ids(login, env, req)
             .await
@@ -3346,7 +3287,7 @@ async fn load_hybrid_inbox_candidate_ids(
         login,
         env,
         req,
-        minimum_tail_minutes,
+        created_at_lower_bound,
     )
     .await
     .context(h!())?;
@@ -3365,15 +3306,9 @@ async fn load_postgres_fresh_tail_candidate_ids(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
-    minimum_tail_minutes: i64,
+    created_at_lower_bound: NaiveDateTime,
 ) -> Result<Vec<i64>, AppError> {
-    let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
-    let created_at_lower_bound = analytics_fresh_tail_lower_bound(
-        Utc::now().naive_utc(),
-        freshness_max_age_ms,
-        minimum_tail_minutes,
-    );
-    let query = build_postgres_fresh_tail_inbox_candidates_query(
+    let ids = load_postgres_fresh_tail_inbox_candidates(
         &env.dbx,
         login,
         env,
@@ -3382,9 +3317,7 @@ async fn load_postgres_fresh_tail_candidate_ids(
     )
     .await
     .context(h!())?;
-    Ok(query_inbox_candidate_ids(env.dbx.clone(), query)
-        .await
-        .context(h!())?)
+    Ok(ids)
 }
 
 fn analytics_fresh_tail_lower_bound(
@@ -3430,7 +3363,7 @@ async fn load_analytics_inbox_candidate_ids(
         "inbox message candidates",
         analytics_inbox_candidates_supported(req),
         |db| async move {
-            let query = build_analytics_inbox_candidates_query(
+            let candidates = load_analytics_inbox_candidates(
                 &login_value,
                 &analytics_env,
                 &analytics_req,
@@ -3439,10 +3372,8 @@ async fn load_analytics_inbox_candidate_ids(
             )
             .await
             .context(h!())?;
-            match query {
-                Some(query) => query_inbox_candidate_ids(db, query)
-                    .await
-                    .map(AnalyticsInboxCandidateIds::Available),
+            match candidates {
+                Some(ids) => Ok(AnalyticsInboxCandidateIds::Available(ids)),
                 None => Ok(AnalyticsInboxCandidateIds::EmptyScope),
             }
         },
@@ -3501,25 +3432,55 @@ async fn hydrate_hybrid_inbox_candidates(
     req: &InboxMessagesReq,
     candidate_ids: &[i64],
 ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
-    if candidate_ids.is_empty() {
-        return Ok(Some(Vec::new()));
-    }
-    let query = build_inbox_query_for_candidate_ids(
-        &env.dbx,
+    match hydrate_hybrid_inbox_candidates_inner(
         login,
+        logins,
         env,
         req,
         candidate_ids,
-        false,
     )
     .await
-    .context(h!())?;
-    let mut messages = fetch_inbox_messages_with_query(
-        &env.dbx, login, logins, env, req, &query,
-    )
-    .await
-    .context(h!())?;
+    {
+        Ok(messages) => Ok(messages),
+        Err(error) => {
+            warn!(target: "analytics_route", "operation=inbox_hydration route=postgres reason=revalidation_error error={error:?}");
+            Ok(None)
+        }
+    }
+}
+
+async fn hydrate_hybrid_inbox_candidates_inner(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    candidate_ids: &[i64],
+) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+    if candidate_ids.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let mut messages = Vec::with_capacity(candidate_ids.len());
+    for ids in candidate_ids.chunks(ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE) {
+        let query = build_inbox_query_for_candidate_ids(
+            &env.dbx, login, env, req, ids, false,
+        )
+        .await
+        .context(h!())?;
+        messages.extend(
+            fetch_inbox_messages_with_query(
+                &env.dbx, login, logins, env, req, &query,
+            )
+            .await
+            .context(h!())?,
+        );
+    }
     if !analytics_candidate_revalidation_is_complete(&messages, candidate_ids) {
+        return Ok(None);
+    }
+    let ordered_ids = order_inbox_candidate_ids(&env.dbx, req, candidate_ids)
+        .await
+        .context(h!())?;
+    if !restore_analytics_candidate_order(&mut messages, &ordered_ids) {
         return Ok(None);
     }
     retain_hybrid_inbox_page(&mut messages, req);
@@ -3527,7 +3488,7 @@ async fn hydrate_hybrid_inbox_candidates(
 }
 
 fn retain_hybrid_inbox_page<T>(rows: &mut Vec<T>, req: &InboxMessagesReq) {
-    if rows.len() <= INBOX_MESSAGES_PAGE_LIMIT {
+    if req.nolimit == Some(true) || rows.len() <= INBOX_MESSAGES_PAGE_LIMIT {
         return;
     }
     if inbox_results_reverse_query_order(req) {
@@ -3541,12 +3502,10 @@ fn analytics_candidate_revalidation_is_complete<T>(
     rows: &[(i64, T)],
     candidate_ids: &[i64],
 ) -> bool {
+    let row_ids = rows.iter().map(|(id, _)| *id).collect::<BTreeSet<_>>();
     rows.len() == candidate_ids.len()
-        && rows.iter().map(|(id, _)| id).collect::<BTreeSet<_>>().len()
-            == candidate_ids.len()
-        && candidate_ids
-            .iter()
-            .all(|id| rows.iter().any(|(row_id, _)| row_id == id))
+        && row_ids.len() == candidate_ids.len()
+        && candidate_ids.iter().all(|id| row_ids.contains(id))
 }
 
 fn restore_analytics_candidate_order<T>(
@@ -3995,11 +3954,11 @@ mod tests {
             ..req.clone()
         }));
 
-        assert!(!rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
+        assert!(rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
             page_id: Some("rer-analysis".to_string()),
             ..req.clone()
         }));
-        assert!(!rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
+        assert!(rer_duty_fresh_tail_request_supported(&InboxMessagesReq {
             before_id_noninclusive: Some(43),
             ..req.clone()
         }));
@@ -4016,7 +3975,7 @@ mod tests {
             )
         );
         assert!(analytics_inbox_candidates_supported(&historical_context));
-        assert!(!rer_duty_fresh_tail_candidates_supported(
+        assert!(rer_duty_fresh_tail_candidates_supported(
             &InboxMessagesReq {
                 nolimit: Some(true),
                 ..req
@@ -4081,7 +4040,7 @@ mod tests {
         );
         assert_eq!(
             rer_analysis_inbox_route(&recent, now, 90_000),
-            RerAnalysisInboxRoute::PostgresRecent
+            RerAnalysisInboxRoute::AnalyticsHybrid
         );
 
         let exact_threshold = rer_analysis_req(now - Duration::hours(25), now);
@@ -4119,7 +4078,7 @@ mod tests {
         );
         assert_eq!(
             rer_analysis_inbox_route(&within_eight_minutes, now, 240_000),
-            RerAnalysisInboxRoute::PostgresRecent
+            RerAnalysisInboxRoute::AnalyticsHybrid
         );
 
         let outside_eight_minutes = rer_analysis_req(
@@ -5731,6 +5690,105 @@ mod tests {
         }
 
         Ok(message)
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn hybrid_inbox_revalidates_backdated_arrivals_and_lagged_deletions()
+    {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let first = seed_message_with_media(
+            &env,
+            &group,
+            Some("image/png"),
+            "hybrid-first",
+        )
+        .await
+        .unwrap();
+        let second =
+            seed_message_with_media(&env, &group, None, "hybrid-second")
+                .await
+                .unwrap();
+        let historical =
+            seed_message_with_media(&env, &group, None, "hybrid-historical")
+                .await
+                .unwrap();
+        let now = Utc::now().naive_utc();
+        let event_time = now - Duration::days(30);
+        let ids = vec![first.id, second.id, historical.id];
+        sigint_inbox_item::Entity::update_many()
+            .col_expr(
+                sigint_inbox_item::Column::Datetime,
+                Expr::value(event_time),
+            )
+            .filter(sigint_inbox_item::Column::Id.is_in(ids.clone()))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::CreatedAt,
+                Expr::value(now - Duration::hours(1)),
+            )
+            .filter(signal_message::Column::Id.eq(historical.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let req = InboxMessagesReq {
+            since_date_inclusive_ms: Some(
+                (event_time - Duration::seconds(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            till_date_inclusive_ms: Some(
+                (event_time + Duration::seconds(1))
+                    .and_utc()
+                    .timestamp_millis(),
+            ),
+            nolimit: Some(true),
+            ..Default::default()
+        };
+        let tail = load_postgres_fresh_tail_inbox_candidates(
+            &env.dbx,
+            &login.id,
+            &env,
+            &req,
+            now - Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tail, vec![first.id, second.id]);
+        let candidates =
+            merge_inbox_candidate_ids(vec![historical.id, first.id], tail);
+        let rows = hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            &candidates,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(rows.iter().map(|(id, _)| *id).collect::<Vec<_>>(), ids);
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(first.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        assert!(hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &req,
+            &candidates,
+        )
+        .await
+        .unwrap()
+        .is_none());
     }
 
     #[serial]

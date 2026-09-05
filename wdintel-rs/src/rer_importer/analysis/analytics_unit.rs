@@ -269,9 +269,15 @@ where
 {
     if let Some(scope) = scope {
         if selected_units.as_ref().is_none_or(Vec::is_empty) {
-            return Ok(super::filter_selected_unit_ids(
-                query,
-                selected_unit_ids,
+            return Ok(query.apply_if(
+                selected_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
+                |query, ids| {
+                    query.filter(super::message_has_linked_unit_ids_with_scope(
+                        ids,
+                        false,
+                        Some(scope),
+                    ))
+                },
             ));
         } else {
             let resolved = resolved
@@ -330,14 +336,12 @@ pub(in crate::rer_importer) fn apply_resolved_analytics_unit_filters_with_ids<
 where
     E: EntityTrait,
 {
-    let selected_link = join_analytics_unit_link_if_needed(
-        &mut query,
+    let selected_link = analytics_unit_link_match(
         "analytics_selected_unit",
         &resolved.selected.linked_network_ids,
         scope,
     );
-    let denied_link = join_analytics_unit_link_if_needed(
-        &mut query,
+    let denied_link = analytics_unit_link_match(
         "analytics_denied_unit",
         &resolved.denied.linked_network_ids,
         scope,
@@ -345,8 +349,7 @@ where
     let any_link = if resolved.selected.includes_undefined
         || resolved.denied.includes_undefined
     {
-        join_analytics_unit_link_if_needed(
-            &mut query,
+        analytics_unit_link_match(
             "analytics_any_unit",
             &resolved.all_unit_network_ids,
             scope,
@@ -366,7 +369,13 @@ where
     let selected_unit_ids = selected_unit_ids
         .as_ref()
         .filter(|unit_ids| !unit_ids.is_empty())
-        .map(|unit_ids| super::message_has_linked_unit_ids(unit_ids, false));
+        .map(|unit_ids| {
+            super::message_has_linked_unit_ids_with_scope(
+                unit_ids,
+                false,
+                Some(scope),
+            )
+        });
     match (selected_units, selected_unit_ids) {
         (None, None) => {}
         (None, Some(condition)) | (Some(condition), None) => {
@@ -392,14 +401,11 @@ where
 
 fn analytics_unit_filter_match(
     unit_filter: &ResolvedAnalyticsUnitFilter,
-    linked_frequency_alias: Option<&Alias>,
-    any_frequency_alias: Option<&Alias>,
+    linked_frequency_match: Option<&SimpleExpr>,
+    any_frequency_match: Option<&SimpleExpr>,
     exact_match_only: bool,
 ) -> SimpleExpr {
-    let linked_match = linked_frequency_alias.map(|alias| {
-        Expr::col((alias.clone(), sigint_network_freq::Column::Id))
-            .is_not_null()
-    });
+    let linked_match = linked_frequency_match.cloned();
     let ordinary_match = (!unit_filter.ordinary_names.is_empty()).then(|| {
         let linked_match = linked_match.unwrap_or_else(|| Expr::value(false));
         if exact_match_only {
@@ -411,11 +417,9 @@ fn analytics_unit_filter_match(
     });
     let undefined_match = unit_filter.includes_undefined.then(|| {
         analytics_header_unit_is_undefined().and(
-            any_frequency_alias
-                .map(|alias| {
-                    Expr::col((alias.clone(), sigint_network_freq::Column::Id))
-                        .is_null()
-                })
+            any_frequency_match
+                .cloned()
+                .map(SimpleExpr::not)
                 .unwrap_or_else(|| Expr::value(true)),
         )
     });
@@ -442,15 +446,11 @@ fn analytics_header_unit_is_undefined() -> SimpleExpr {
     header.clone().is_null().or(header.eq(""))
 }
 
-fn join_analytics_unit_link_if_needed<E>(
-    query: &mut Select<E>,
+fn analytics_unit_link_match(
     prefix: &str,
     network_ids: &[i64],
     scope: &AnalyticsMessageIdScope,
-) -> Option<Alias>
-where
-    E: EntityTrait,
-{
+) -> Option<SimpleExpr> {
     if network_ids.is_empty() {
         return None;
     }
@@ -458,41 +458,42 @@ where
     let network_alias = Alias::new(format!("{prefix}_network"));
     let frequency_alias = Alias::new(format!("{prefix}_frequency"));
     let message_datetime = Expr::col(sigint_inbox_item::Column::Datetime);
-    QueryTrait::query(query)
-        .join_as(
-            JoinType::LeftJoin,
+    let mut query = sea_query::Query::select();
+    query
+        .expr(Expr::value(1))
+        .from_as(
             (
                 Alias::new("echo_clickhouse_derived"),
                 Alias::new("message_network_link"),
             ),
             link_alias.clone(),
-            analytics_unit_link_join_condition(
-                link_alias.clone(),
-                network_ids,
-                scope,
-            ),
         )
         .join_as(
-            JoinType::LeftJoin,
+            JoinType::InnerJoin,
             sigint_network::Entity,
             network_alias.clone(),
             analytics_unit_network_join_condition(
                 network_alias.clone(),
-                link_alias,
+                link_alias.clone(),
                 message_datetime.clone(),
             ),
         )
         .join_as(
-            JoinType::LeftJoin,
+            JoinType::InnerJoin,
             sigint_network_freq::Entity,
             frequency_alias.clone(),
             analytics_unit_frequency_join_condition(
-                frequency_alias.clone(),
+                frequency_alias,
                 network_alias,
                 message_datetime,
             ),
-        );
-    Some(frequency_alias)
+        )
+        .cond_where(analytics_unit_link_join_condition(
+            link_alias,
+            network_ids,
+            scope,
+        ));
+    Some(Expr::exists(query))
 }
 
 fn analytics_unit_link_join_condition(
