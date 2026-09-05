@@ -100,10 +100,14 @@ afterEach(() => {
 
 // @test-scope safeguard: prevents duplicate callsign warnings from being omitted while editing or importing rows
 describe('useRerCallsignsNeoPage duplicate hints', () => {
+  // @test-scope safeguard: prevents a distinct same-named unit ID from becoming unselectable while blank unit labels are excluded
   it('exposes selectable units without blank-name entries', () => {
     const page = renderHookHarness();
 
-    expect(page.selectableUnits).toEqual([{ id: 1, name: '11 АК', active: true }]);
+    expect(page.selectableUnits).toEqual([
+      { id: 1, name: '11 АК', active: true },
+      { id: 2, name: '11 АК', active: true },
+    ]);
   });
 
   it('calculates duplicate hints immediately after quick paste', () => {

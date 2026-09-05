@@ -1397,6 +1397,7 @@ where
 pub(crate) async fn upsert_editable_sigint_comment<'a, 'async_trait, C>(
     db: &'a C,
     item_id: i64,
+    signal_message_uuid: Option<uuid::Uuid>,
     login: &uuid::Uuid,
     logins: &[uuid::Uuid],
     comment: &str,
@@ -1413,11 +1414,13 @@ where
         sigint_comment::ActiveModel {
             id: NotSet,
             signal_message_id: Set(item_id),
+            signal_message_uuid: Set(signal_message_uuid),
             login_id: Set(*login),
             comment: Set(comment.to_string()),
             created_at: NotSet,
             sigint_post_id: NotSet,
             migrated_signal_message_id: NotSet,
+            migrated_signal_message_uuid: NotSet,
         }
         .insert(db)
         .await
@@ -1428,12 +1431,16 @@ where
     sigint_comment::ActiveModel {
         id: Set(comment_to_update.id),
         signal_message_id: Set(item_id),
+        signal_message_uuid: Set(comment_to_update.signal_message_uuid),
         login_id: Set(comment_to_update.login_id),
         comment: Set(comment.to_string()),
         created_at: NotSet,
         sigint_post_id: NotSet,
         migrated_signal_message_id: Set(
             comment_to_update.migrated_signal_message_id
+        ),
+        migrated_signal_message_uuid: Set(
+            comment_to_update.migrated_signal_message_uuid
         ),
     }
     .update(db)
@@ -1804,7 +1811,7 @@ pub async fn load_inbox_signal_profiles(
 
 pub async fn load_inbox_signal_groups(
     inbox_items: &Vec<(i64, InboxMessage)>,
-    txn: &DatabaseConnection,
+    env: &Env,
     is_admin: bool,
     skip_group_stats: bool,
 ) -> Result<Vec<SignalGroupEntry>, AppError> {
@@ -1816,7 +1823,7 @@ pub async fn load_inbox_signal_groups(
         .collect_vec();
     let data = collect_groups(
         callsigns,
-        txn,
+        env,
         is_admin,
         CollectGroupsOpts { skip_group_stats },
     )
@@ -1985,6 +1992,10 @@ pub async fn submit_upsert_inbox_item(
         None => crate::rer_importer::body_noheader::extract_text(&message.text)
             .c(h!())?,
     };
+    let signal_message_uuid =
+        crate::sigint::message_id::find_signal_message_uuid(txn, id)
+            .await
+            .c(h!())?;
     // upsert sigint_comment
     if let Some(extended_form) = message.extended_form.as_ref() {
         if !upsert_existing_editable_linked_message_comment(
@@ -2000,6 +2011,7 @@ pub async fn submit_upsert_inbox_item(
             upsert_editable_sigint_comment(
                 txn,
                 id,
+                signal_message_uuid,
                 login,
                 logins,
                 extended_form,
@@ -2025,7 +2037,9 @@ pub async fn submit_upsert_inbox_item(
     .c(h!())?;
 
     if invalidate_body_derived_fields {
-        clear_body_derived_fields(txn, id).await.c(h!())?;
+        clear_body_derived_fields(txn, id, signal_message_uuid)
+            .await
+            .c(h!())?;
     }
     let datetime = crate::inbox::datetime::from_date_time_text(
         message.date.as_deref(),
@@ -2036,6 +2050,7 @@ pub async fn submit_upsert_inbox_item(
     let insert_res =
         sigint_inbox_item::Entity::insert(sigint_inbox_item::ActiveModel {
             id: Set(id),
+            id_uuid: Set(signal_message_uuid),
             date: Set(message.date.clone()),
             time: Set(message.time.clone()),
             freq: Set(freq),
@@ -2099,6 +2114,7 @@ pub async fn submit_upsert_inbox_item(
     crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
         txn,
         inbox_id,
+        signal_message_uuid,
         message.unit.as_deref(),
         message.unit.as_deref(),
     )
@@ -2107,15 +2123,22 @@ pub async fn submit_upsert_inbox_item(
     crate::rer_importer::inbox::metadata::refresh_metadata(inbox_id, txn)
         .await
         .c(h!())?;
-    crate::tags::modify::upsert_tags(login, inbox_id, message, txn)
-        .await
-        .c(h!())?;
+    crate::tags::modify::upsert_tags(
+        login,
+        inbox_id,
+        signal_message_uuid,
+        message,
+        txn,
+    )
+    .await
+    .c(h!())?;
     crate::location::peleng::delete_inbox_pelengs(inbox_id, txn)
         .await
         .c(h!())?;
     crate::location::peleng::insert_pelengs(
         coords_vec,
         inbox_id,
+        signal_message_uuid,
         Utc::now().naive_utc(),
         crate::rer_importer::pelengation_object::extract(&message.text),
         txn,
@@ -2130,6 +2153,7 @@ pub async fn submit_upsert_inbox_item(
     crate::battle_line::settlement_queue::reconcile_item_locations(
         txn,
         inbox_id,
+        new_item.id_uuid,
         new_item.location_v2.as_deref(),
     )
     .await
@@ -2153,9 +2177,15 @@ pub async fn submit_upsert_inbox_item(
         ),
         alg2: existing_alg2,
     };
-    crate::inbox::callsigns::sync(txn, inbox_id, callsigns, *login)
-        .await
-        .c(h!())?;
+    crate::inbox::callsigns::sync(
+        txn,
+        inbox_id,
+        new_item.id_uuid,
+        callsigns,
+        *login,
+    )
+    .await
+    .c(h!())?;
     crate::sigint::network::etalon_calc::calculate_sigint_inbox_item_networks(
         vec![new_item],
         txn,
@@ -2217,6 +2247,7 @@ async fn resolve_manual_location_v2(
 async fn clear_body_derived_fields(
     txn: &DatabaseTransaction,
     inbox_id: i64,
+    inbox_item_uuid: Option<uuid::Uuid>,
 ) -> Result<(), AppError> {
     sigint_inbox_item::Entity::update_many()
         .col_expr(
@@ -2259,9 +2290,13 @@ async fn clear_body_derived_fields(
     .exec(txn)
     .await
     .c(h!())?;
-    crate::ai_callsign::worker::enqueue_if_enabled(txn, inbox_id)
-        .await
-        .c(h!())?;
+    crate::ai_callsign::worker::enqueue_if_enabled(
+        txn,
+        inbox_id,
+        inbox_item_uuid,
+    )
+    .await
+    .c(h!())?;
     crate::ai_settlement::worker::enqueue_if_enabled(txn, inbox_id)
         .await
         .c(h!())?;

@@ -24,6 +24,8 @@ describe('roles', () => {
     expect(canReadDevices(['Api'])).toBe(false);
     expect(hasRole(['Full'], 'DeleteMsg')).toBe(true);
     expect(hasRole(['Admin'], 'NoAutoLogout')).toBe(false);
+    expect(hasRole(['No2FA'], 'No2FA')).toBe(true);
+    expect(hasRole(['Admin'], 'No2FA')).toBe(false);
   });
 
   it('resolves Devices capabilities by action instead of role inheritance', () => {

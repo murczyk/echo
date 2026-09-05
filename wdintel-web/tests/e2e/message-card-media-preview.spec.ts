@@ -51,33 +51,15 @@ async function expectPreviewCounter(dialog: Locator, value: string) {
   await expect(counter).toHaveText(value);
 }
 
-async function makeWindowed(dialog: Locator) {
-  const exitFullscreen = dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' });
-  if (await exitFullscreen.isVisible()) await exitFullscreen.click();
-  await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
-}
-
-async function verifyFullscreenEscape(
-  page: Page,
-  dialog: Locator,
-  reopen: () => Promise<Locator>,
-  closesFullscreen: boolean,
-) {
-  await makeWindowed(dialog);
+async function verifyEscapeClose(page: Page, dialog: Locator, reopen: () => Promise<Locator>) {
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 
   dialog = await reopen();
-  await makeWindowed(dialog);
-  await dialog.getByRole('button', { name: 'Повноекранний режим' }).click();
-  await expect(dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' })).toBeVisible();
-  await page.keyboard.press('Escape');
-  if (closesFullscreen) {
-    await expect(dialog).toHaveCount(0);
-    return;
-  }
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Повноекранний режим' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Вийти з повноекранного режиму' })).toHaveCount(
+    0,
+  );
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 }
@@ -87,6 +69,17 @@ test.describe('@smoke', () => {
   for (const host of ['duty', 'analysis'] as const) {
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
       await openMessageCardPreviewHost(page, host);
+
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`,
+        }),
+      ).toBeVisible();
 
       const imageDialog = await openImagePreview(page);
       await expect(imageDialog).toBeVisible();
@@ -114,6 +107,10 @@ test.describe('@smoke', () => {
         textDialog.getByRole('link', { name: 'Відкрити в новій вкладці' }),
       ).toBeVisible();
       await expect(textDialog.getByRole('link', { name: 'Скачати' })).toBeVisible();
+      await expect(textDialog.getByRole('button', { name: 'Повноекранний режим' })).toHaveCount(0);
+      await expect(
+        textDialog.getByRole('button', { name: 'Вийти з повноекранного режиму' }),
+      ).toHaveCount(0);
       await textDialog.getByRole('button', { name: 'Закрити' }).click();
 
       const markdownDialog = await openMarkdownPreview(page);
@@ -177,7 +174,7 @@ test.describe('message card media preview contract', () => {
     await page.keyboard.press('ArrowLeft');
     await expectPreviewCounter(imageDialog, '1 / 6');
 
-    await verifyFullscreenEscape(page, imageDialog, () => openImagePreview(page), true);
+    await verifyEscapeClose(page, imageDialog, () => openImagePreview(page));
   });
 
   // @test-scope safeguard: preserves operators' ability to inspect, download, and close video attachments without losing carousel position
@@ -208,7 +205,7 @@ test.describe('message card media preview contract', () => {
     await page.keyboard.press('ArrowLeft');
     await expectPreviewCounter(videoDialog, '3 / 6');
 
-    await verifyFullscreenEscape(page, videoDialog, () => openVideoPreview(page), false);
+    await verifyEscapeClose(page, videoDialog, () => openVideoPreview(page));
   });
 
   // @test-scope safeguard: preserves source-text inspection and predictable escape behavior for text and Markdown evidence
@@ -233,6 +230,12 @@ test.describe('message card media preview contract', () => {
       textDialog.getByRole('link', { name: 'Скачати' }),
       MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.text,
     );
+    await expect(textDialog.getByRole('button', { name: 'Зменшити' })).toHaveCount(0);
+    await expect(textDialog.getByRole('button', { name: 'Повноекранний режим' })).toHaveCount(0);
+    await expect(
+      textDialog.getByRole('button', { name: 'Вийти з повноекранного режиму' }),
+    ).toHaveCount(0);
+
     await textDialog.getByRole('button', { name: 'Наступне' }).click();
 
     const markdownDialog = page.getByRole('dialog', { name: 'Перегляд документа' });

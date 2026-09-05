@@ -1,0 +1,114 @@
+{
+  "captured_at": "2026-09-05T08:16:47.975127+00:00",
+  "application_release": "0.1.1-rc.202609050758",
+  "host": "echo-zp2",
+  "discovered_path": "combined count statistics -> count_tags_analytics_with_db -> build_tags_analytics_count_query_with_scope",
+  "runtime_error": "[2026-09-05T08:10:06Z WARN  wdintel_rs::rer_importer::analysis] analysis stats count analytics query failed after 27.902687892s, retrying via PostgreSQL: AnyhowError { source: Error { context: \"at wdintel-rs/src/rer_importer/analysis/mod.rs line 8996 column 14\", source: AnyhowError { source: Error { context: \"at wdintel-rs/src/rer_importer/analysis/stats.rs line 3754 column 18\", source: Query( SqlxError( Database( PgDatabaseError { severity: Error, code: \"2F000\", message: \"pg_clickhouse: query was canceled\", detail: Some( \"Remote Query: SELECT NULL FROM echo_analytics.sigint_unit WHERE ((NOT deleted)) AND ((name IN ('1 ПДБ 247 ДШП 7 ДШД','1 пдб 247 дшп 7 дшд','108 ДШП 7 ДШД','108 дшп 7 дшд','166 МСП 19 МСД 58 А','166 МСП 19 МСД 58 ЗА','166 МСП 19 МСД 58 ЗВА','166 мсп 19 мсд 58 А','166 мсп 19 мсд 58 ЗА','166 мсп 19 мсд 58 ЗВА','166 мсп 19 мсд 58 а','166 мсп 19 мсд 58 за','166 мсп 19 мсд 58 зва','3 ПДБ 108 ДШП 7 ДШД','3 ПДБ 247 ДШП 7 ДШД','3 пдб 108 дшп 7 дшд','3 пдб 247 дшп 7 дшд'))) AND (((company = '') OR (company = {p1:String}))) AND (((battalion = '') OR (battalion = {p2:String}))) AND (((regiment = '') OR (regiment = {p3:String}))) AND (((division = '') OR (division = {p4:String}))) AND (((army = '') OR (army = {p5:String}))) AND (((company <> '') OR (battalion <> '') OR (regiment <> '') OR (division <> '') OR (army <> '')))\", ), hint: None, position: None, where: None, schema: None, table: None, column: None, data_type: None, constraint: None, file: Some( \"pglink.c\", ), line: Some( 992, ), routine: Some( \"binary_simple_query\", ), }, ), ), ), }, }, }, } at wdintel-rs/src/rer_importer/analysis/mod.rs::8282",
+  "observation": {
+    "host": "echo-zp2",
+    "since_epoch": 1788595748,
+    "captured_at": "2026-09-05T08:14:56.880478+00:00",
+    "operations": [
+      {
+        "operation": "analysis stats callsigns",
+        "successes": 1,
+        "failures": 0,
+        "primary_routes": 0,
+        "max_success_ms": 410
+      },
+      {
+        "operation": "analysis stats count",
+        "successes": 0,
+        "failures": 5,
+        "primary_routes": 15,
+        "max_success_ms": 0
+      },
+      {
+        "operation": "analysis stats freqs",
+        "successes": 2,
+        "failures": 0,
+        "primary_routes": 0,
+        "max_success_ms": 586
+      },
+      {
+        "operation": "analysis stats posts",
+        "successes": 0,
+        "failures": 0,
+        "primary_routes": 1,
+        "max_success_ms": 0
+      },
+      {
+        "operation": "analysis stats tags",
+        "successes": 12,
+        "failures": 0,
+        "primary_routes": 1,
+        "max_success_ms": 757
+      },
+      {
+        "operation": "inbox message candidates",
+        "successes": 6773,
+        "failures": 0,
+        "primary_routes": 0,
+        "max_success_ms": 1720
+      },
+      {
+        "operation": "rer duty inbox messages count",
+        "successes": 1704,
+        "failures": 0,
+        "primary_routes": 0,
+        "max_success_ms": 2026
+      }
+    ],
+    "failures": [
+      {
+        "time": "2026-09-05 08:12:31.390415412",
+        "body": "[2026-09-05T08:12:30Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=analytics_error outcome=success elapsed_ms=4830 at wdintel-rs/src/rer_importer/analysis/mod.rs::8305"
+      },
+      {
+        "time": "2026-09-05 08:11:48.780330900",
+        "body": "[2026-09-05T08:11:47Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=analytics_error outcome=success elapsed_ms=29569 at wdintel-rs/src/rer_importer/analysis/mod.rs::8305"
+      },
+      {
+        "time": "2026-09-05 08:11:04.671306862",
+        "body": "[2026-09-05T08:11:04Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=analytics_error outcome=success elapsed_ms=31810 at wdintel-rs/src/rer_importer/analysis/mod.rs::8305"
+      },
+      {
+        "time": "2026-09-05 08:10:54.139063302",
+        "body": "[2026-09-05T08:10:53Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=analytics_error outcome=success elapsed_ms=31886 at wdintel-rs/src/rer_importer/analysis/mod.rs::8305"
+      },
+      {
+        "time": "2026-09-05 08:10:12.091349390",
+        "body": "[2026-09-05T08:10:11Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=analytics_error outcome=success elapsed_ms=4639 at wdintel-rs/src/rer_importer/analysis/mod.rs::8305"
+      },
+      {
+        "time": "2026-09-05 08:14:49.076386230",
+        "body": "[2026-09-05T08:14:48Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=circuit_open at wdintel-rs/src/rer_importer/analysis/mod.rs::8123"
+      },
+      {
+        "time": "2026-09-05 08:11:47.986892748",
+        "body": "[2026-09-05T08:11:46Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=circuit_open at wdintel-rs/src/rer_importer/analysis/mod.rs::8123"
+      },
+      {
+        "time": "2026-09-05 08:11:39.057209554",
+        "body": "[2026-09-05T08:11:38Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=circuit_open at wdintel-rs/src/rer_importer/analysis/mod.rs::8123"
+      },
+      {
+        "time": "2026-09-05 08:10:33.835631705",
+        "body": "[2026-09-05T08:10:32Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=circuit_open at wdintel-rs/src/rer_importer/analysis/mod.rs::8123"
+      },
+      {
+        "time": "2026-09-05 08:10:17.564179279",
+        "body": "[2026-09-05T08:10:16Z INFO  analytics_route] operation=\"analysis stats count\" route=postgres reason=circuit_open at wdintel-rs/src/rer_importer/analysis/mod.rs::8123"
+      }
+    ]
+  },
+  "fix": "Pass the already resolved unit filters to combined tag counts; resolve once using the primary database for the standalone tag count endpoint. Clear original unit filters before constructing the analytics base and apply the bounded shared unit predicates before counting distinct tags.",
+  "validation": "The functional helper now runs the production analytics tag count function in addition to its PostgreSQL query comparison. Added legacy non-exact, exact/no-match and mixed undefined/ID count cases. Full rer_analysis_ regression suite and Rust checks run locally; production observation recorded separately during deployment.",
+  "functional_test_result": {
+    "filter": "rer_analysis_",
+    "passed": 47,
+    "failed": 0,
+    "database": "wd_test_analytics_fixes_20260905",
+    "file_database": "wd_files_test_analytics_fixes_20260905"
+  }
+}

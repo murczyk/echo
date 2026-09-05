@@ -36,7 +36,7 @@ describe('user-settings api', () => {
       showClassicDuty: false,
       showClassicAnalysis: false,
       dutyCollapseMediaPreviews: true,
-      mediaSummaryEnabled: true,
+      mediaSummaryEnabled: false,
       messageTextPreviewLines: 20,
     });
   });
@@ -58,7 +58,7 @@ describe('user-settings api', () => {
   });
 
   it.each([
-    ['null', null, true],
+    ['null', null, false],
     ['explicit false', false, false],
     ['explicit true', true, true],
   ])('normalizes %s media-summary preferences', async (_, mediaSummaryEnabled, expected) => {

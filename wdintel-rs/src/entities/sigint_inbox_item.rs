@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: i64,
+    pub id_uuid: Option<Uuid>,
     #[sea_orm(column_type = "Text", nullable)]
     pub date: Option<String>,
     #[sea_orm(column_type = "Text", nullable)]
@@ -66,8 +67,6 @@ pub enum Relation {
         on_delete = "SetNull"
     )]
     DeviceName,
-    #[sea_orm(has_many = "super::failed_inbox_unit::Entity")]
-    FailedInboxUnit,
     #[sea_orm(
         belongs_to = "super::nominatimres::Entity",
         from = "Column::NominatimresId",
@@ -78,6 +77,8 @@ pub enum Relation {
     Nominatimres,
     #[sea_orm(has_many = "super::sigint_inbox_item_callsign::Entity")]
     SigintInboxItemCallsign,
+    #[sea_orm(has_many = "super::sigint_inbox_item_failed_unit_label::Entity")]
+    SigintInboxItemFailedUnitLabel,
     #[sea_orm(has_many = "super::sigint_inbox_item_metadata::Entity")]
     SigintInboxItemMetadata,
     #[sea_orm(has_many = "super::sigint_inbox_item_network::Entity")]
@@ -134,12 +135,6 @@ impl Related<super::device_name::Entity> for Entity {
     }
 }
 
-impl Related<super::failed_inbox_unit::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::FailedInboxUnit.def()
-    }
-}
-
 impl Related<super::nominatimres::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Nominatimres.def()
@@ -149,6 +144,12 @@ impl Related<super::nominatimres::Entity> for Entity {
 impl Related<super::sigint_inbox_item_callsign::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SigintInboxItemCallsign.def()
+    }
+}
+
+impl Related<super::sigint_inbox_item_failed_unit_label::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintInboxItemFailedUnitLabel.def()
     }
 }
 

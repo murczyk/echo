@@ -13,6 +13,7 @@ import {
 } from '../../utils/misc';
 import { normalizeUnknownUnitSelections } from '../shared/analysis-unit-filter';
 import { normalizeCallsignFilterValues } from '../../utils/callsign-normalization';
+import { getCanonicalUnitIdValue, getUnitIdFilterValue } from '../../utils/unit-search';
 import type { AnalysisQueryState } from './types';
 
 export const ANALYSIS_ROUTE_PAGE_ID = 'rer-analysis-neo';
@@ -28,6 +29,23 @@ export type AnalysisPanelQueryState = {
   leftPanelOpen: boolean | null;
   rightPanelOpen: boolean | null;
 };
+
+function partitionUnitSelections(values: readonly string[]): {
+  ids: number[];
+  legacy: string[];
+} {
+  const ids: number[] = [];
+  const legacy: string[] = [];
+  values.forEach((value) => {
+    const unitId = getCanonicalUnitIdValue(value);
+    if (unitId !== null) {
+      ids.push(unitId);
+    } else {
+      legacy.push(value);
+    }
+  });
+  return { ids: [...new Set(ids)], legacy: [...new Set(legacy)] };
+}
 
 /** Duty / deep links append `?showMap=true` so the map center tab opens (see `buildRerAnalysisNeoHref` in rer-duty-neo). */
 export function shouldOpenAnalysisMapFromSearchParams(searchParams: URLSearchParams): boolean {
@@ -266,6 +284,7 @@ export function buildAnalysisReq(
           ]),
         )
       : query.freqsSelected;
+  const units = partitionUnitSelections(query.unitsSelected);
 
   return {
     sinceDateInclusiveMs,
@@ -275,7 +294,8 @@ export function buildAnalysisReq(
     selectedFreqs: expandedFreqs.length ? expandedFreqs : null,
     selectedPosts: query.postsSelected.length ? query.postsSelected : null,
     selectedCallsigns: query.callsignsSelected.length ? query.callsignsSelected : null,
-    selectedUnits: query.unitsSelected.length ? query.unitsSelected : null,
+    selectedUnits: units.legacy.length ? units.legacy : null,
+    selectedUnitIds: units.ids.length ? units.ids : null,
     selectedDeviceNames: query.deviceNamesSelected.length ? query.deviceNamesSelected : null,
     selectedLocations: query.locationsSelected.length ? query.locationsSelected : null,
     selectedAors: query.aorsSelected.length
@@ -301,7 +321,7 @@ export function buildAnalysisReq(
     onlyWithMetadata: query.onlyWithMetadata,
     withoutMetadata: query.withoutMetadata,
     includePelengLocations: query.includePelengLocations,
-    unitsExactMatchOnly: query.unitsExactMatchOnly,
+    unitsExactMatchOnly: units.legacy.length ? query.unitsExactMatchOnly : null,
     filterTagsOption: query.filterTagsOption,
     withoutModelTags: query.withoutModelTags,
     reportTagsOnlyThisUnit: query.reportTagsOnlyThisUnit,
@@ -335,8 +355,10 @@ export function buildInboxReq(
     deniedFreqs: null,
     selectedCallsigns: req.selectedCallsigns,
     selectedUnits: req.selectedUnits,
+    selectedUnitIds: req.selectedUnitIds,
     selectedDeviceNames: req.selectedDeviceNames,
     deniedUnits: null,
+    deniedUnitIds: null,
     selectedLocations: req.selectedLocations,
     nolimit: null,
     orWithExtendedForm: req.orWithExtendedForm,
@@ -424,7 +446,10 @@ export function queryStateFromSavedFilter(
     sendersSelected: req.selectedSenders ?? [],
     freqsSelected: req.selectedFreqs ?? [],
     callsignsSelected: req.selectedCallsigns ?? [],
-    unitsSelected: req.selectedUnits ?? [],
+    unitsSelected: [
+      ...(req.selectedUnitIds ?? []).map(getUnitIdFilterValue),
+      ...(req.selectedUnits ?? []),
+    ],
     deviceNamesSelected: req.selectedDeviceNames ?? [],
     locationsSelected: req.selectedLocations ?? [],
     postsSelected: req.selectedPosts ?? [],
@@ -508,7 +533,10 @@ function canonicalizeAnalysisReqToQueryState(req: AnalysisStatsReq): AnalysisQue
     sendersSelected: normalized.selectedSenders ?? [],
     freqsSelected: normalized.selectedFreqs ?? [],
     callsignsSelected: normalized.selectedCallsigns ?? [],
-    unitsSelected: normalized.selectedUnits ?? [],
+    unitsSelected: [
+      ...(normalized.selectedUnitIds ?? []).map(getUnitIdFilterValue),
+      ...(normalized.selectedUnits ?? []),
+    ],
     deviceNamesSelected: normalized.selectedDeviceNames ?? [],
     locationsSelected: normalized.selectedLocations ?? [],
     postsSelected: normalized.selectedPosts ?? [],

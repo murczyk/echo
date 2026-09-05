@@ -15,9 +15,10 @@ use regex::Regex;
 use sea_orm::*;
 use std::collections::HashSet;
 
-pub async fn enqueue_unit_tag_recalculation_for_inbox_item<C>(
+pub(crate) async fn enqueue_unit_tag_recalculation_for_inbox_item<C>(
     db: &C,
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<uuid::Uuid>,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -26,6 +27,7 @@ where
         sigint_inbox_item_unit_tag_queue::ActiveModel {
             id: NotSet,
             sigint_inbox_item_id: Set(sigint_inbox_item_id),
+            sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
             created_at: NotSet,
         },
     )
@@ -65,13 +67,16 @@ where
             signal_group::Column::InterseptionKind.eq(InterseptionKind::Other),
         )
         .select_only()
-        .column(sigint_inbox_item::Column::Id)
-        .into_tuple::<i64>()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::IdUuid,
+        ])
+        .into_tuple::<(i64, Option<uuid::Uuid>)>()
         .all(db)
         .await
         .c(h!())?;
-    for item_id in item_ids {
-        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id)
+    for (item_id, item_uuid) in item_ids {
+        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id, item_uuid)
             .await
             .c(h!())?;
     }
@@ -100,13 +105,16 @@ where
         .filter(sigint_inbox_item::Column::Datetime.gte(since))
         .filter(signal_message_group::Column::GroupMasterKey.eq(master_key))
         .select_only()
-        .column(sigint_inbox_item::Column::Id)
-        .into_tuple::<i64>()
+        .columns([
+            sigint_inbox_item::Column::Id,
+            sigint_inbox_item::Column::IdUuid,
+        ])
+        .into_tuple::<(i64, Option<uuid::Uuid>)>()
         .all(db)
         .await
         .c(h!())?;
-    for item_id in item_ids {
-        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id)
+    for (item_id, item_uuid) in item_ids {
+        enqueue_unit_tag_recalculation_for_inbox_item(db, item_id, item_uuid)
             .await
             .c(h!())?;
     }
@@ -196,7 +204,7 @@ where
             .c(h!())?;
         return Ok(());
     }
-    let Some((_sigint_inbox_item, device_name)) =
+    let Some((sigint_inbox_item, device_name)) =
         sigint_inbox_item::Entity::find_by_id(sigint_inbox_item_id)
             .find_also_related(device_name::Entity)
             .one(db)
@@ -226,9 +234,14 @@ where
             .and_then(|device_name| device_name.name.as_deref()),
         &body,
     );
-    sync_network_links(db, sigint_inbox_item_id, matched_networks)
-        .await
-        .c(h!())?;
+    sync_network_links(
+        db,
+        sigint_inbox_item_id,
+        sigint_inbox_item.id_uuid,
+        matched_networks,
+    )
+    .await
+    .c(h!())?;
     Ok(())
 }
 
@@ -259,6 +272,7 @@ where
 async fn sync_network_links<C>(
     db: &C,
     sigint_inbox_item_id: i64,
+    sigint_inbox_item_uuid: Option<uuid::Uuid>,
     matched_networks: Vec<sigint_network::Model>,
 ) -> anyhow::Result<()>
 where
@@ -300,6 +314,7 @@ where
                 sigint_inbox_item_network::ActiveModel {
                     id: NotSet,
                     sigint_inbox_item_id: Set(sigint_inbox_item_id),
+                    sigint_inbox_item_uuid: Set(sigint_inbox_item_uuid),
                     sigint_network_id: Set(network_id),
                     created_at: NotSet,
                 },
@@ -861,6 +876,7 @@ mod tests {
         sigint_inbox_item_network::Model {
             id,
             sigint_inbox_item_id: 100,
+            sigint_inbox_item_uuid: Some(uuid::Uuid::now_v7()),
             sigint_network_id,
             created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
                 .unwrap()

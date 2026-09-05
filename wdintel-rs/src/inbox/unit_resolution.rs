@@ -12,10 +12,10 @@ use crate::config::{
 };
 use crate::entities::sea_orm_active_enums::SigintInboxItemUnitKind;
 use crate::entities::{
-    failed_inbox_unit, orbit_unit, orbit_unit_echelon, orbit_unit_sigint_unit,
-    sigint_inbox_item, sigint_inbox_item_network, sigint_inbox_item_unit,
-    sigint_network, sigint_network_unit, sigint_unit, sigint_unit_label,
-    signal_message,
+    failed_unit_label, orbit_unit, orbit_unit_echelon, orbit_unit_sigint_unit,
+    sigint_inbox_item, sigint_inbox_item_failed_unit_label,
+    sigint_inbox_item_network, sigint_inbox_item_unit, sigint_network,
+    sigint_network_unit, sigint_unit, sigint_unit_label, signal_message,
 };
 use crate::{h, orbit};
 use anyhow::Context;
@@ -641,29 +641,36 @@ async fn mark_failure_resolved<C>(
 where
     C: ConnectionTrait,
 {
-    failed_inbox_unit::Entity::update_many()
-        .col_expr(failed_inbox_unit::Column::Deleted, Expr::value(true))
+    sigint_inbox_item_failed_unit_label::Entity::update_many()
         .col_expr(
-            failed_inbox_unit::Column::DeletedAt,
+            sigint_inbox_item_failed_unit_label::Column::Deleted,
+            Expr::value(true),
+        )
+        .col_expr(
+            sigint_inbox_item_failed_unit_label::Column::DeletedAt,
             Expr::value(Utc::now().naive_utc()),
         )
-        .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        .filter(
+            sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                .eq(inbox_item_id),
+        )
+        .filter(sigint_inbox_item_failed_unit_label::Column::Deleted.eq(false))
         .exec(db)
         .await
         .context(h!())?;
     Ok(())
 }
 
-async fn upsert_failure<C>(
+pub(crate) async fn upsert_failure<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_txt: &str,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    upsert_failure_inner(db, inbox_item_id, unit_txt, None)
+    upsert_failure_inner(db, inbox_item_id, inbox_item_uuid, unit_txt, None)
         .await
         .context(h!())
 }
@@ -671,20 +678,28 @@ where
 async fn upsert_failure_cached<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_txt: &str,
     cache: &mut FailureMetadataCache,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
 {
-    upsert_failure_inner(db, inbox_item_id, unit_txt, Some(cache))
-        .await
-        .context(h!())
+    upsert_failure_inner(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        unit_txt,
+        Some(cache),
+    )
+    .await
+    .context(h!())
 }
 
 async fn upsert_failure_inner<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_txt: &str,
     cache: Option<&mut FailureMetadataCache>,
 ) -> anyhow::Result<()>
@@ -692,81 +707,95 @@ where
     C: ConnectionTrait,
 {
     let normalized_unit_txt = normalize_unit_label(unit_txt);
-    let existing = failed_inbox_unit::Entity::find()
-        .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
-        .filter(Expr::cust_with_values(
-            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
-            vec![normalized_unit_txt.clone()],
-        ))
-        .order_by_asc(failed_inbox_unit::Column::Id)
-        .one(db)
-        .await
-        .context(h!())?;
     let group_metadata = if let Some(group_metadata) = cache
         .as_deref()
         .and_then(|cache| cache.get(&normalized_unit_txt))
     {
         Some(group_metadata.clone())
     } else {
-        failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        failed_unit_label::Entity::find()
             .filter(Expr::cust_with_values(
-                "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+                "lower(regexp_replace(btrim(failed_unit_label.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
                 vec![normalized_unit_txt.clone()],
             ))
-            .order_by_desc(failed_inbox_unit::Column::IsBadData)
-            .order_by_desc(failed_inbox_unit::Column::Id)
             .one(db)
             .await
             .context(h!())?
-            .map(|failure| (failure.is_bad_data, failure.note))
+            .map(|label| (label.is_bad_data, label.note))
     };
-    let (is_bad_data, note) = group_metadata
-        .as_ref()
-        .cloned()
-        .or_else(|| {
-            existing
-                .as_ref()
-                .map(|failure| (failure.is_bad_data, failure.note.clone()))
-        })
-        .unwrap_or_default();
+    let (is_bad_data, note) =
+        group_metadata.as_ref().cloned().unwrap_or_default();
     let is_bad_data = is_bad_data || should_auto_archive_failed_unit(unit_txt);
     if let Some(cache) = cache {
-        cache.insert(normalized_unit_txt, (is_bad_data, note.clone()));
+        cache.insert(normalized_unit_txt.clone(), (is_bad_data, note.clone()));
     }
-    failed_inbox_unit::Entity::insert(failed_inbox_unit::ActiveModel {
+    failed_unit_label::Entity::insert(failed_unit_label::ActiveModel {
             id: NotSet,
             created_at: NotSet,
-            deleted: Set(false),
-            is_bad_data: Set(is_bad_data),
-            inbox_item_id: Set(inbox_item_id),
             unit_txt: Set(unit_txt.trim().to_string()),
-            deleted_at: Set(None),
+            is_bad_data: Set(is_bad_data),
             note: Set(note),
         })
         .on_conflict(
-            OnConflict::column(failed_inbox_unit::Column::InboxItemId)
+            OnConflict::new()
                 .expr(Expr::cust(
                     "lower(regexp_replace(btrim(unit_txt), '[[:space:]]+', ' ', 'g'))",
                 ))
-                .update_columns([
-                    failed_inbox_unit::Column::Deleted,
-                    failed_inbox_unit::Column::IsBadData,
-                    failed_inbox_unit::Column::UnitTxt,
-                    failed_inbox_unit::Column::DeletedAt,
-                    failed_inbox_unit::Column::Note,
-                ])
+                .do_nothing()
                 .to_owned(),
         )
         .exec_without_returning(db)
         .await
         .context(h!())?;
+    let label = failed_unit_label::Entity::find()
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(failed_unit_label.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalized_unit_txt],
+        ))
+        .one(db)
+        .await
+        .context(h!())?
+        .context(h!())?;
+    if is_bad_data && !label.is_bad_data {
+        failed_unit_label::Entity::update_many()
+            .col_expr(failed_unit_label::Column::IsBadData, Expr::value(true))
+            .filter(failed_unit_label::Column::Id.eq(label.id))
+            .exec(db)
+            .await
+            .context(h!())?;
+    }
+    sigint_inbox_item_failed_unit_label::Entity::insert(
+        sigint_inbox_item_failed_unit_label::ActiveModel {
+            id: NotSet,
+            created_at: NotSet,
+            inbox_item_id: Set(inbox_item_id),
+            inbox_item_uuid: Set(inbox_item_uuid),
+            failed_unit_label_id: Set(label.id),
+            deleted: Set(false),
+            deleted_at: Set(None),
+        },
+    )
+    .on_conflict(
+        OnConflict::columns([
+            sigint_inbox_item_failed_unit_label::Column::InboxItemId,
+            sigint_inbox_item_failed_unit_label::Column::FailedUnitLabelId,
+        ])
+        .update_columns([
+            sigint_inbox_item_failed_unit_label::Column::Deleted,
+            sigint_inbox_item_failed_unit_label::Column::DeletedAt,
+        ])
+        .to_owned(),
+    )
+    .exec_without_returning(db)
+    .await
+    .context(h!())?;
     Ok(())
 }
 
 async fn replace_parsed_unit_links<C>(
     db: &C,
     inbox_item_id: i64,
+    item_uuid: Option<Uuid>,
     sigint_unit_ids: &[i64],
 ) -> anyhow::Result<()>
 where
@@ -781,7 +810,6 @@ where
         .exec(db)
         .await
         .context(h!())?;
-
     let unit_links = sigint_unit_ids
         .iter()
         .copied()
@@ -789,6 +817,7 @@ where
         .into_iter()
         .map(|sigint_unit_id| sigint_inbox_item_unit::ActiveModel {
             id: NotSet,
+            item_uuid: Set(item_uuid),
             created_at: NotSet,
             item_id: Set(inbox_item_id),
             unit_id: Set(sigint_unit_id),
@@ -908,10 +937,30 @@ async fn insert_network_unit_links<C>(
 where
     C: ConnectionTrait,
 {
+    let unit_links = unit_links.into_iter().collect::<Vec<_>>();
+    let item_uuids = sigint_inbox_item::Entity::find()
+        .select_only()
+        .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::IdUuid)
+        .filter(
+            sigint_inbox_item::Column::Id.eq_any(
+                unit_links
+                    .iter()
+                    .map(|(item_id, _)| *item_id)
+                    .collect::<Vec<_>>(),
+            ),
+        )
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(db)
+        .await
+        .context(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
     let unit_links = unit_links
         .into_iter()
         .map(|(item_id, unit_id)| sigint_inbox_item_unit::ActiveModel {
             id: NotSet,
+            item_uuid: Set(item_uuids.get(&item_id).copied().flatten()),
             created_at: NotSet,
             item_id: Set(item_id),
             unit_id: Set(unit_id),
@@ -990,6 +1039,7 @@ where
 pub(crate) async fn resolve_and_sync_inbox_item<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_v2: Option<&str>,
     unit: Option<&str>,
 ) -> anyhow::Result<Option<i64>>
@@ -999,14 +1049,21 @@ where
     let resolved_unit_texts = resolve_unit_text_candidates(db, unit_v2, unit)
         .await
         .context(h!())?;
-    sync_resolved_inbox_item(db, inbox_item_id, resolved_unit_texts, None)
-        .await
-        .context(h!())
+    sync_resolved_inbox_item(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        resolved_unit_texts,
+        None,
+    )
+    .await
+    .context(h!())
 }
 
 async fn resolve_and_sync_inbox_item_cached<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     unit_v2: Option<&str>,
     unit: Option<&str>,
     cache: &mut InboxUnitBackfillCache,
@@ -1021,6 +1078,7 @@ where
     sync_resolved_inbox_item(
         db,
         inbox_item_id,
+        inbox_item_uuid,
         resolved_unit_texts,
         Some(&mut cache.failure_metadata),
     )
@@ -1031,6 +1089,7 @@ where
 async fn sync_resolved_inbox_item<C>(
     db: &C,
     inbox_item_id: i64,
+    inbox_item_uuid: Option<Uuid>,
     resolved_unit_texts: Vec<UnitTextResolution>,
     mut failure_metadata_cache: Option<&mut FailureMetadataCache>,
 ) -> anyhow::Result<Option<i64>>
@@ -1041,13 +1100,21 @@ where
         .iter()
         .filter_map(|resolution| resolution.sigint_unit_id)
         .collect_vec();
-    replace_parsed_unit_links(db, inbox_item_id, &sigint_unit_ids)
-        .await
-        .context(h!())?;
+    replace_parsed_unit_links(
+        db,
+        inbox_item_id,
+        inbox_item_uuid,
+        &sigint_unit_ids,
+    )
+    .await
+    .context(h!())?;
 
     if resolved_unit_texts.is_empty() {
-        failed_inbox_unit::Entity::delete_many()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item_id))
+        sigint_inbox_item_failed_unit_label::Entity::delete_many()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(inbox_item_id),
+            )
             .exec(db)
             .await
             .context(h!())?;
@@ -1061,15 +1128,21 @@ where
                     upsert_failure_cached(
                         db,
                         inbox_item_id,
+                        inbox_item_uuid,
                         &resolution.text,
                         cache,
                     )
                     .await
                     .context(h!())?;
                 } else {
-                    upsert_failure(db, inbox_item_id, &resolution.text)
-                        .await
-                        .context(h!())?;
+                    upsert_failure(
+                        db,
+                        inbox_item_id,
+                        inbox_item_uuid,
+                        &resolution.text,
+                    )
+                    .await
+                    .context(h!())?;
                 }
             }
         }
@@ -1084,18 +1157,28 @@ pub(crate) async fn mark_failures_pending_for_text<C>(
 where
     C: ConnectionTrait,
 {
-    let result = failed_inbox_unit::Entity::update_many()
-        .col_expr(failed_inbox_unit::Column::Deleted, Expr::value(true))
+    let label_ids = failed_unit_label::Entity::find()
+        .select_only()
+        .column(failed_unit_label::Column::Id)
+        .filter(failed_unit_label::Column::IsBadData.eq(false))
+        .filter(Expr::cust_with_values(
+            "lower(regexp_replace(btrim(failed_unit_label.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
+            vec![normalize_unit_label(unit_txt)],
+        ));
+    let result = sigint_inbox_item_failed_unit_label::Entity::update_many()
         .col_expr(
-            failed_inbox_unit::Column::DeletedAt,
+            sigint_inbox_item_failed_unit_label::Column::Deleted,
+            Expr::value(true),
+        )
+        .col_expr(
+            sigint_inbox_item_failed_unit_label::Column::DeletedAt,
             Expr::value(Utc::now().naive_utc()),
         )
-        .filter(failed_inbox_unit::Column::Deleted.eq(false))
-        .filter(failed_inbox_unit::Column::IsBadData.eq(false))
-        .filter(Expr::cust_with_values(
-            "lower(regexp_replace(btrim(failed_inbox_unit.unit_txt), '[[:space:]]+', ' ', 'g')) = $1",
-            vec![normalize_unit_label(unit_txt)],
-        ))
+        .filter(sigint_inbox_item_failed_unit_label::Column::Deleted.eq(false))
+        .filter(
+            sigint_inbox_item_failed_unit_label::Column::FailedUnitLabelId
+                .in_subquery(label_ids.into_query()),
+        )
         .exec(db)
         .await
         .context(h!())?;
@@ -1138,6 +1221,7 @@ where
             resolve_and_sync_inbox_item(
                 db,
                 item.id,
+                item.id_uuid,
                 item.unit_v2.as_deref(),
                 item.unit.as_deref(),
             )
@@ -1150,7 +1234,8 @@ where
 
 async fn verify_pending_failure<C>(
     db: &C,
-    failure: failed_inbox_unit::Model,
+    failure: sigint_inbox_item_failed_unit_label::Model,
+    label: failed_unit_label::Model,
 ) -> anyhow::Result<()>
 where
     C: ConnectionTrait,
@@ -1168,12 +1253,13 @@ where
     resolve_and_sync_inbox_item(
         db,
         inbox_item.id,
+        inbox_item.id_uuid,
         inbox_item.unit_v2.as_deref(),
         inbox_item.unit.as_deref(),
     )
     .await
     .context(h!())?;
-    match failed_inbox_unit::Entity::find_by_id(failure_id)
+    match sigint_inbox_item_failed_unit_label::Entity::find_by_id(failure_id)
         .one(db)
         .await
         .context(h!())?
@@ -1183,8 +1269,8 @@ where
         }
         Some(_) => {
             warn!(
-                "Reactivated unresolved inbox unit failure id={} inbox_item_id={} after verification failed",
-                failure_id, inbox_item.id
+                "Reactivated unresolved inbox unit failure id={} inbox_item_id={} label={:?} after verification failed",
+                failure_id, inbox_item.id, label.unit_txt
             );
         }
         None => {}
@@ -1198,36 +1284,66 @@ pub(crate) async fn run_failed_inbox_unit_worker_once(
     let transaction = db.begin().await.context(h!())?;
     let cleanup_before = Utc::now().naive_utc()
         - Duration::days(FAILED_INBOX_UNIT_RETENTION_DAYS);
-    failed_inbox_unit::Entity::delete_many()
-        .filter(failed_inbox_unit::Column::Deleted.eq(true))
-        .filter(failed_inbox_unit::Column::DeletedAt.lte(cleanup_before))
+    sigint_inbox_item_failed_unit_label::Entity::delete_many()
+        .filter(sigint_inbox_item_failed_unit_label::Column::Deleted.eq(true))
+        .filter(
+            sigint_inbox_item_failed_unit_label::Column::DeletedAt
+                .lte(cleanup_before),
+        )
         .exec(&transaction)
         .await
         .context(h!())?;
 
-    let failures = failed_inbox_unit::Entity::find()
-        .filter(failed_inbox_unit::Column::Deleted.eq(true))
-        .filter(failed_inbox_unit::Column::IsBadData.eq(false))
-        .order_by_asc(failed_inbox_unit::Column::DeletedAt)
-        .order_by_asc(failed_inbox_unit::Column::Id)
+    let retryable_label_ids = failed_unit_label::Entity::find()
+        .select_only()
+        .column(failed_unit_label::Column::Id)
+        .filter(failed_unit_label::Column::IsBadData.eq(false));
+    let failures = sigint_inbox_item_failed_unit_label::Entity::find()
+        .filter(sigint_inbox_item_failed_unit_label::Column::Deleted.eq(true))
+        .filter(
+            sigint_inbox_item_failed_unit_label::Column::FailedUnitLabelId
+                .in_subquery(retryable_label_ids.into_query()),
+        )
+        .order_by_asc(sigint_inbox_item_failed_unit_label::Column::DeletedAt)
+        .order_by_asc(sigint_inbox_item_failed_unit_label::Column::Id)
         .limit(FAILED_INBOX_UNIT_WORKER_BATCH_SIZE)
         .lock_with_behavior(LockType::Update, LockBehavior::SkipLocked)
         .all(&transaction)
         .await
         .context(h!())?;
+    let label_ids = failures
+        .iter()
+        .map(|failure| failure.failed_unit_label_id)
+        .collect_vec();
+    let labels = failed_unit_label::Entity::find()
+        .filter(failed_unit_label::Column::Id.is_in(label_ids))
+        .all(&transaction)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|label| (label.id, label))
+        .collect::<HashMap<_, _>>();
+    let mut affected_inbox_item_ids = BTreeSet::new();
     for failure in failures {
+        let label = labels
+            .get(&failure.failed_unit_label_id)
+            .cloned()
+            .context(h!())?;
         let inbox_item_id = failure.inbox_item_id;
-        verify_pending_failure(&transaction, failure)
+        verify_pending_failure(&transaction, failure, label)
             .await
             .context(h!())?;
-        crate::stats::enqueue_group_stats_recalculation_for_message(
-            &transaction,
-            inbox_item_id,
-            format!("resolved pending unit for inbox message {inbox_item_id}"),
-        )
-        .await
-        .context(h!())?;
+        affected_inbox_item_ids.insert(inbox_item_id);
     }
+    let affected_inbox_item_ids =
+        affected_inbox_item_ids.into_iter().collect::<Vec<_>>();
+    crate::stats::enqueue_group_stats_recalculation_for_messages(
+        &transaction,
+        &affected_inbox_item_ids,
+        "resolved pending units for inbox messages",
+    )
+    .await
+    .context(h!())?;
     transaction.commit().await.context(h!())?;
     Ok(())
 }
@@ -1292,6 +1408,7 @@ pub(crate) async fn backfill_inbox_unit_links(
             resolve_and_sync_inbox_item_cached(
                 &transaction,
                 item.id,
+                item.id_uuid,
                 item.unit_v2.as_deref(),
                 item.unit.as_deref(),
                 &mut cache,
@@ -1375,6 +1492,27 @@ mod tests {
     use super::*;
     use sea_orm::{ActiveModelTrait, IntoActiveModel};
     use serial_test::serial;
+
+    async fn failure_rows(
+        db: &DatabaseConnection,
+        inbox_item_id: i64,
+    ) -> Vec<(
+        sigint_inbox_item_failed_unit_label::Model,
+        failed_unit_label::Model,
+    )> {
+        sigint_inbox_item_failed_unit_label::Entity::find()
+            .find_also_related(failed_unit_label::Entity)
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(inbox_item_id),
+            )
+            .all(db)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|(link, label)| (link, label.unwrap()))
+            .collect()
+    }
 
     fn unique_unit_label() -> String {
         let number = Utc::now().timestamp_micros().unsigned_abs() % 8_000_000
@@ -1748,6 +1886,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1763,15 +1902,10 @@ mod tests {
             .await,
             vec![first.id, second.id]
         );
-        let failures = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
-            .filter(failed_inbox_unit::Column::Deleted.eq(false))
-            .all(&env.dbx)
-            .await
-            .unwrap();
+        let failures = failure_rows(&env.dbx, item.id).await;
         assert_eq!(failures.len(), 1);
         assert_eq!(
-            normalize_unit_label(&failures[0].unit_txt),
+            normalize_unit_label(&failures[0].1.unit_txt),
             normalize_unit_label(&missing_label)
         );
     }
@@ -1784,16 +1918,20 @@ mod tests {
         let label = format!("concurrent-missing-{}", Uuid::new_v4());
         let item = insert_inbox_item(&env.dbx, Some(&label), None, None).await;
 
-        let results = futures::future::join_all(
-            (0..8).map(|_| upsert_failure(&env.dbx, item.id, &label)),
-        )
-        .await;
+        let results =
+            futures::future::join_all((0..8).map(|_| {
+                upsert_failure(&env.dbx, item.id, item.id_uuid, &label)
+            }))
+            .await;
         for result in results {
             result.unwrap();
         }
 
-        let failures = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
+        let failures = sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(item.id),
+            )
             .all(&env.dbx)
             .await
             .unwrap();
@@ -1836,6 +1974,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1853,9 +1992,14 @@ mod tests {
             .await,
             expected
         );
-        assert!(failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
-            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(item.id)
+            )
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::Deleted.eq(false)
+            )
             .all(&env.dbx)
             .await
             .unwrap()
@@ -1888,6 +2032,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1903,9 +2048,14 @@ mod tests {
             .await,
             vec![unit.id]
         );
-        assert!(failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
-            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(item.id)
+            )
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::Deleted.eq(false)
+            )
             .all(&env.dbx)
             .await
             .unwrap()
@@ -1933,6 +2083,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             item.id,
+            item.id_uuid,
             item.unit_v2.as_deref(),
             None,
         )
@@ -1948,9 +2099,14 @@ mod tests {
             .await,
             vec![unit.id]
         );
-        assert!(failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(item.id))
-            .filter(failed_inbox_unit::Column::Deleted.eq(false))
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(item.id)
+            )
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::Deleted.eq(false)
+            )
             .all(&env.dbx)
             .await
             .unwrap()
@@ -1962,59 +2118,50 @@ mod tests {
     async fn reprocessing_preserves_archived_failure_metadata() {
         let (env, _guard) =
             crate::functest::tests::cleanup_locked().await.unwrap();
-        let label = format!("archived-failure-{}", Uuid::new_v4());
-        let first = insert_inbox_item(&env.dbx, Some(&label), None, None).await;
+        let label_txt = format!("archived-failure-{}", Uuid::new_v4());
+        let first =
+            insert_inbox_item(&env.dbx, Some(&label_txt), None, None).await;
         resolve_and_sync_inbox_item(
             &env.dbx,
             first.id,
+            first.id_uuid,
             first.unit_v2.as_deref(),
             None,
         )
         .await
         .unwrap();
-        let failure = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(first.id))
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        let mut failure = failure.into_active_model();
-        failure.is_bad_data = Set(true);
-        failure.note = Set("keep this note".to_string());
-        failure.update(&env.dbx).await.unwrap();
+        let label = failure_rows(&env.dbx, first.id).await.remove(0).1;
+        let mut label = label.into_active_model();
+        label.is_bad_data = Set(true);
+        label.note = Set("keep this note".to_string());
+        label.update(&env.dbx).await.unwrap();
 
         resolve_and_sync_inbox_item(
             &env.dbx,
             first.id,
+            first.id_uuid,
             first.unit_v2.as_deref(),
             None,
         )
         .await
         .unwrap();
         let second =
-            insert_inbox_item(&env.dbx, Some(&label), None, None).await;
+            insert_inbox_item(&env.dbx, Some(&label_txt), None, None).await;
         resolve_and_sync_inbox_item(
             &env.dbx,
             second.id,
+            second.id_uuid,
             second.unit_v2.as_deref(),
             None,
         )
         .await
         .unwrap();
 
-        let failures = failed_inbox_unit::Entity::find()
-            .filter(
-                failed_inbox_unit::Column::InboxItemId
-                    .is_in([first.id, second.id]),
-            )
-            .all(&env.dbx)
-            .await
-            .unwrap();
-        assert_eq!(failures.len(), 2);
-        assert!(failures.iter().all(|failure| failure.is_bad_data));
-        assert!(failures
-            .iter()
-            .all(|failure| failure.note == "keep this note"));
+        let first_failure = failure_rows(&env.dbx, first.id).await.remove(0);
+        let second_failure = failure_rows(&env.dbx, second.id).await.remove(0);
+        assert_eq!(first_failure.1.id, second_failure.1.id);
+        assert!(first_failure.1.is_bad_data);
+        assert_eq!(first_failure.1.note, "keep this note");
     }
 
     #[tokio::test]
@@ -2196,6 +2343,7 @@ mod tests {
                 resolve_and_sync_inbox_item(
                     &env.dbx,
                     inbox_item.id,
+                    inbox_item.id_uuid,
                     None,
                     inbox_item.unit.as_deref(),
                 )
@@ -2212,14 +2360,10 @@ mod tests {
         )
         .await
         .is_empty());
-        let failures = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(inbox_item.id))
-            .all(&env.dbx)
-            .await
-            .unwrap();
+        let failures = failure_rows(&env.dbx, inbox_item.id).await;
         assert_eq!(failures.len(), 1);
-        assert_eq!(failures[0].unit_txt, "невідомий   сирий підрозділ");
-        assert!(!failures[0].deleted);
+        assert_eq!(failures[0].1.unit_txt, "невідомий   сирий підрозділ");
+        assert!(!failures[0].0.deleted);
     }
 
     #[tokio::test]
@@ -2232,20 +2376,16 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             raw_marker.id,
+            raw_marker.id_uuid,
             None,
             raw_marker.unit.as_deref(),
         )
         .await
         .unwrap();
 
-        let raw_failure = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(raw_marker.id))
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(raw_failure.unit_txt, "НВ");
-        assert!(raw_failure.is_bad_data);
+        let raw_failure = failure_rows(&env.dbx, raw_marker.id).await.remove(0);
+        assert_eq!(raw_failure.1.unit_txt, "НВ");
+        assert!(raw_failure.1.is_bad_data);
 
         let parsed_label = unique_unit_label();
         let unit_v2 = format!("н/в {parsed_label}");
@@ -2254,20 +2394,17 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             parsed_unit.id,
+            parsed_unit.id_uuid,
             parsed_unit.unit_v2.as_deref(),
             None,
         )
         .await
         .unwrap();
 
-        let parsed_failure = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(parsed_unit.id))
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(parsed_failure.unit_txt, parsed_label);
-        assert!(!parsed_failure.is_bad_data);
+        let parsed_failure =
+            failure_rows(&env.dbx, parsed_unit.id).await.remove(0);
+        assert_eq!(parsed_failure.1.unit_txt, parsed_label);
+        assert!(!parsed_failure.1.is_bad_data);
     }
 
     #[tokio::test]
@@ -2281,14 +2418,16 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             first.id,
+            first.id_uuid,
             None,
             first.unit.as_deref(),
         )
         .await
         .unwrap();
-        failed_inbox_unit::Entity::update_many()
-            .col_expr(failed_inbox_unit::Column::IsBadData, Expr::value(true))
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(first.id))
+        let label_id = failure_rows(&env.dbx, first.id).await.remove(0).1.id;
+        failed_unit_label::Entity::update_many()
+            .col_expr(failed_unit_label::Column::IsBadData, Expr::value(true))
+            .filter(failed_unit_label::Column::Id.eq(label_id))
             .exec(&env.dbx)
             .await
             .unwrap();
@@ -2299,19 +2438,15 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             second.id,
+            second.id_uuid,
             None,
             second.unit.as_deref(),
         )
         .await
         .unwrap();
 
-        let failure = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(second.id))
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(failure.is_bad_data);
+        let failure = failure_rows(&env.dbx, second.id).await.remove(0);
+        assert!(failure.1.is_bad_data);
     }
 
     #[tokio::test]
@@ -2619,16 +2754,21 @@ mod tests {
         .await
         .unwrap();
         let label = format!("worker-label-{}", Uuid::new_v4());
-        let successful =
-            insert_inbox_item(&env.dbx, Some(&label), None, None).await;
-        resolve_and_sync_inbox_item(
-            &env.dbx,
-            successful.id,
-            successful.unit_v2.as_deref(),
-            None,
-        )
-        .await
-        .unwrap();
+        let successful_items = vec![
+            insert_inbox_item(&env.dbx, Some(&label), None, None).await,
+            insert_inbox_item(&env.dbx, Some(&label), None, None).await,
+        ];
+        for successful in &successful_items {
+            resolve_and_sync_inbox_item(
+                &env.dbx,
+                successful.id,
+                successful.id_uuid,
+                successful.unit_v2.as_deref(),
+                None,
+            )
+            .await
+            .unwrap();
+        }
         crate::sigint::unit::labels::insert_label(
             &env.dbx,
             sigint_unit.id,
@@ -2640,7 +2780,7 @@ mod tests {
             mark_failures_pending_for_text(&env.dbx, &label)
                 .await
                 .unwrap(),
-            1
+            2
         );
 
         let unresolved_label = format!("worker-unresolved-{}", Uuid::new_v4());
@@ -2650,6 +2790,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             unresolved.id,
+            unresolved.id_uuid,
             unresolved.unit_v2.as_deref(),
             None,
         )
@@ -2666,6 +2807,7 @@ mod tests {
         resolve_and_sync_inbox_item(
             &env.dbx,
             stale.id,
+            stale.id_uuid,
             stale.unit_v2.as_deref(),
             None,
         )
@@ -2681,24 +2823,32 @@ mod tests {
 
         run_failed_inbox_unit_worker_once(&env.dbx).await.unwrap();
 
-        assert_eq!(
-            unit_ids_for_kind(
-                &env.dbx,
-                successful.id,
-                SigintInboxItemUnitKind::Parsed,
-            )
-            .await,
-            vec![sigint_unit.id]
-        );
-        assert!(failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(successful.id),)
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .is_none());
+        for successful in successful_items {
+            assert_eq!(
+                unit_ids_for_kind(
+                    &env.dbx,
+                    successful.id,
+                    SigintInboxItemUnitKind::Parsed,
+                )
+                .await,
+                vec![sigint_unit.id]
+            );
+            assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+                .filter(
+                    sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                        .eq(successful.id),
+                )
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .is_none());
+        }
 
-        let failure = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(unresolved.id))
+        let failure = sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(unresolved.id),
+            )
             .one(&env.dbx)
             .await
             .unwrap()
@@ -2706,17 +2856,131 @@ mod tests {
         assert!(!failure.deleted);
         assert_eq!(failure.deleted_at, None);
 
-        let failures = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(stale_id))
-            .all(&env.dbx)
-            .await
-            .unwrap();
+        let failures = failure_rows(&env.dbx, stale_id).await;
         assert_eq!(failures.len(), 1);
         assert_eq!(
-            normalize_unit_label(&failures[0].unit_txt),
+            normalize_unit_label(&failures[0].1.unit_txt),
             normalize_unit_label(&current_label)
         );
-        assert!(!failures[0].deleted);
+        assert!(!failures[0].0.deleted);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn verification_worker_rolls_back_when_stats_enqueue_fails() {
+        use crate::entities::{
+            group_stats_recalculation_task, signal_group, signal_message_group,
+        };
+
+        let (env, _guard) =
+            crate::functest::tests::cleanup_locked().await.unwrap();
+        let sigint_unit = crate::functest::tests::mk_sigint_unit(
+            &env.dbx,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let label = format!("postcommit-worker-label-{}", Uuid::new_v4());
+        let inbox_item =
+            insert_inbox_item(&env.dbx, Some(&label), None, None).await;
+        resolve_and_sync_inbox_item(
+            &env.dbx,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            inbox_item.unit_v2.as_deref(),
+            None,
+        )
+        .await
+        .unwrap();
+        crate::sigint::unit::labels::insert_label(
+            &env.dbx,
+            sigint_unit.id,
+            &label,
+        )
+        .await
+        .unwrap();
+        mark_failures_pending_for_text(&env.dbx, &label)
+            .await
+            .unwrap();
+        let group_master_key = signal_group::Entity::find()
+            .filter(signal_group::Column::Deleted.eq(false))
+            .select_only()
+            .column(signal_group::Column::MasterKey)
+            .into_tuple::<String>()
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .unwrap();
+        signal_message_group::ActiveModel {
+            signal_message_id: Set(inbox_item.id),
+            group_master_key: Set(Some(group_master_key)),
+            created_at: Set(Utc::now().naive_utc()),
+            ..Default::default()
+        }
+        .insert(&env.dbx)
+        .await
+        .unwrap();
+
+        let mut config = crate::config::read_config(crate::Mode::Test).unwrap();
+        config.postgres_runtime = Some(crate::config::PostgresRuntimeConfig {
+            statement_timeout_ms:
+                crate::config::POSTGRES_RUNTIME_STATEMENT_TIMEOUT_MS_DEFAULT,
+            report_worker_statement_timeout_ms:
+                crate::config::POSTGRES_RUNTIME_REPORT_WORKER_STATEMENT_TIMEOUT_MS_DEFAULT,
+            lock_timeout_ms: 25,
+            idle_in_transaction_session_timeout_ms:
+                crate::config::POSTGRES_RUNTIME_IDLE_IN_TRANSACTION_SESSION_TIMEOUT_MS_DEFAULT,
+        });
+        let worker_db = crate::new_pg_runtime_pool_from_config(
+            &config,
+            crate::PgRuntimePoolRole::Bgworker,
+        )
+        .await
+        .unwrap();
+        let blocker = env.dbx.begin().await.unwrap();
+        blocker
+            .execute_unprepared(
+                "lock table group_stats_recalculation_task in access exclusive mode",
+            )
+            .await
+            .unwrap();
+
+        assert!(run_failed_inbox_unit_worker_once(&worker_db).await.is_err());
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(inbox_item.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_some());
+
+        blocker.rollback().await.unwrap();
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            0
+        );
+        run_failed_inbox_unit_worker_once(&worker_db).await.unwrap();
+        assert_eq!(
+            group_stats_recalculation_task::Entity::find()
+                .count(&env.dbx)
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(inbox_item.id),
+            )
+            .one(&env.dbx)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -2738,43 +3002,51 @@ mod tests {
             None,
         )
         .await;
-        for (inbox_item_id, is_bad_data, deleted_at) in [
+        for (inbox_item_id, inbox_item_uuid, is_bad_data, deleted_at) in [
             (
                 old_item.id,
+                old_item.id_uuid,
                 false,
                 Utc::now().naive_utc()
                     - Duration::days(FAILED_INBOX_UNIT_RETENTION_DAYS + 1),
             ),
-            (bad_item.id, true, Utc::now().naive_utc()),
+            (bad_item.id, bad_item.id_uuid, true, Utc::now().naive_utc()),
         ] {
-            failed_inbox_unit::ActiveModel {
-                deleted: Set(true),
-                is_bad_data: Set(is_bad_data),
-                inbox_item_id: Set(inbox_item_id),
-                unit_txt: Set(format!("pending-{inbox_item_id}")),
-                deleted_at: Set(Some(deleted_at)),
-                ..Default::default()
-            }
-            .insert(&env.dbx)
+            upsert_failure(
+                &env.dbx,
+                inbox_item_id,
+                inbox_item_uuid,
+                &format!("pending-{inbox_item_id}"),
+            )
             .await
             .unwrap();
+            let (link, label) =
+                failure_rows(&env.dbx, inbox_item_id).await.remove(0);
+            if is_bad_data {
+                let mut label = label.into_active_model();
+                label.is_bad_data = Set(true);
+                label.update(&env.dbx).await.unwrap();
+            }
+            let mut link = link.into_active_model();
+            link.deleted = Set(true);
+            link.deleted_at = Set(Some(deleted_at));
+            link.update(&env.dbx).await.unwrap();
         }
 
         run_failed_inbox_unit_worker_once(&env.dbx).await.unwrap();
 
-        assert!(failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(old_item.id))
+        assert!(sigint_inbox_item_failed_unit_label::Entity::find()
+            .filter(
+                sigint_inbox_item_failed_unit_label::Column::InboxItemId
+                    .eq(old_item.id)
+            )
             .one(&env.dbx)
             .await
             .unwrap()
             .is_none());
-        let bad_failure = failed_inbox_unit::Entity::find()
-            .filter(failed_inbox_unit::Column::InboxItemId.eq(bad_item.id))
-            .one(&env.dbx)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(bad_failure.deleted);
-        assert!(bad_failure.is_bad_data);
+        let (bad_link, bad_label) =
+            failure_rows(&env.dbx, bad_item.id).await.remove(0);
+        assert!(bad_link.deleted);
+        assert!(bad_label.is_bad_data);
     }
 }

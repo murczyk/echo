@@ -103,6 +103,14 @@ syncs the packaged exclusions before running migrations and fails if analytics
 does not become healthy afterward. Do not replace that guard with a warning or
 an automatic full-mirror resync.
 
+## Configuration compatibility
+
+When adding configuration values, prefer backward-compatible behavior for
+existing deployments whose configs may not be updated at the same time. If a
+new value enables an optional feature, keep that feature disabled when the
+value is absent and emit a startup warning instead of breaking an existing
+workflow such as user login.
+
 ## Architecture documentation
 
 Require changes to deployment topology, process or worker ownership, storage,

@@ -11,6 +11,7 @@ use chrono::prelude::*;
 use elm_rs::{Elm, ElmDecode, ElmEncode};
 use sea_orm::{prelude::Expr, *};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(
     Elm, ElmEncode, ElmDecode, Debug, Serialize, Deserialize, PartialEq, Clone,
@@ -29,19 +30,32 @@ async fn bookmark_add(
     let login = login_id_from_identity(&user)?;
     let txn = env.dbx.begin().await.c(h!())?;
 
-    let bookmarks =
+    let duplicate_ids =
         crate::rer_importer::inbox::find_all_duplicates(&txn, req.message_id)
             .await
-            .c(h!())?
-            .into_iter()
-            .map(|id| sigint_bookmark::ActiveModel {
-                id: NotSet,
-                login_id: Set(login),
-                signal_message_id: Set(id),
-                deleted: Set(false),
-                created_at: NotSet,
-            })
-            .collect::<Vec<sigint_bookmark::ActiveModel>>();
+            .c(h!())?;
+    let message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(signal_message::Column::Id.is_in(duplicate_ids.clone()))
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(&txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+    let bookmarks = duplicate_ids
+        .into_iter()
+        .map(|id| sigint_bookmark::ActiveModel {
+            id: NotSet,
+            signal_message_uuid: Set(message_uuids.get(&id).copied().flatten()),
+            login_id: Set(login),
+            signal_message_id: Set(id),
+            deleted: Set(false),
+            created_at: NotSet,
+        })
+        .collect::<Vec<sigint_bookmark::ActiveModel>>();
 
     if !bookmarks.is_empty() {
         sigint_bookmark::Entity::insert_many(bookmarks)

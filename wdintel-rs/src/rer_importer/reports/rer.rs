@@ -1569,6 +1569,7 @@ mod tests {
     fn signal_message(id: i64, body: &str) -> signal_message::Model {
         signal_message::Model {
             id,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             body: Some(body.to_string()),
             created_at: chrono::Utc::now().naive_utc(),
             timestamp: None,
@@ -1592,6 +1593,7 @@ mod tests {
     ) -> sigint_inbox_item::Model {
         sigint_inbox_item::Model {
             id,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,
             time: None,
             freq: None,
@@ -1903,6 +1905,7 @@ mod tests {
     fn parse_points_uses_coords_and_pipe_delimited_location_v2() {
         let item = sigint_inbox_item::Model {
             id: 1,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,
             time: None,
             freq: None,
@@ -2219,6 +2222,7 @@ mod tests {
     fn message_body_without_headers_strips_non_rer_header() {
         let message = signal_message::Model {
             id: 1,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             body: Some(
                 "50 обрБпС [33hhfg50d] | 2026-06-26_08-13-12\nПерехоплення"
                     .to_string(),
@@ -2247,6 +2251,7 @@ mod tests {
     fn message_body_without_headers_strips_meow_header() {
         let message = signal_message::Model {
             id: 1,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             body: Some(
                 "50 обрБпС\n05.58 (МСК/Київ) +- 10хв\n\nПерехоплення"
                     .to_string(),
@@ -2375,6 +2380,7 @@ mod tests {
     fn report_message_timestamp_falls_back_to_signal_timestamp() {
         let item = sigint_inbox_item::Model {
             id: 1,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,
             time: None,
             freq: None,
@@ -2402,6 +2408,7 @@ mod tests {
         };
         let message = signal_message::Model {
             id: 1,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             body: Some("Перехоплення".to_string()),
             created_at: dt(1, 0),
             timestamp: Some(dt(5, 58)),
@@ -2424,6 +2431,7 @@ mod tests {
     fn report_message_timestamp_converts_item_datetime_to_kyiv() {
         let item = sigint_inbox_item::Model {
             id: 1,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             date: None,
             time: None,
             freq: None,
@@ -2451,6 +2459,7 @@ mod tests {
         };
         let message = signal_message::Model {
             id: 1,
+            id_uuid: Some(uuid::Uuid::now_v7()),
             body: Some("Перехоплення".to_string()),
             created_at: dt(1, 0),
             timestamp: Some(dt(6, 58)),

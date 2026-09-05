@@ -50,6 +50,7 @@ pub mod points;
 pub mod post;
 pub mod report_chunking;
 pub mod reports;
+pub mod saved_filter_unit_ids;
 pub mod search;
 pub mod signals;
 pub mod types;
@@ -1051,7 +1052,7 @@ pub async fn signal_group_info_batch(
         req.groups.iter().map(|b| b.master_key.clone()).collect();
     let data = crate::messenger::group::collect_groups(
         keys,
-        &env.dbx,
+        &env,
         is_admin,
         crate::messenger::group::CollectGroupsOpts {
             skip_group_stats: req.skip_group_stats.unwrap_or(false),
@@ -1088,7 +1089,7 @@ pub async fn signal_groups(
         .c(h!())?;
     let data = crate::messenger::group::collect_groups(
         keys,
-        &env.dbx,
+        &env,
         is_admin,
         crate::messenger::group::CollectGroupsOpts {
             skip_group_stats: false,
@@ -1496,6 +1497,7 @@ pub async fn oneoff_reprocess_unit_names(
                 crate::battle_line::settlement_queue::reconcile_item_locations(
                     &txn,
                     item.id,
+                    item.id_uuid,
                     location_v2.as_deref(),
                 )
                 .await
@@ -1503,6 +1505,7 @@ pub async fn oneoff_reprocess_unit_names(
                 crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
                     &txn,
                     item.id,
+                    item.id_uuid,
                     item.unit_v2.as_deref(),
                     item.unit.as_deref(),
                 )
@@ -1962,6 +1965,7 @@ mod messenger_media_tests {
         let media = iter::once(signal_message_media::Model {
             id: uuid::Uuid::nil(),
             signal_message_id: 1,
+            signal_message_uuid: Some(uuid::Uuid::now_v7()),
             content_type: "text/plain".to_string(),
             file_ext: Some("txt".to_string()),
             file_name: Some("negative.txt".to_string()),

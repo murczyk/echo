@@ -677,22 +677,6 @@ where
     )
 }
 
-pub(crate) fn filter_selected_units_correlated<Q>(
-    q: Q,
-    selected_units: &Option<Vec<String>>,
-    units_exact_match_only: &Option<bool>,
-) -> Result<Q, AppError>
-where
-    Q: QueryFilter,
-{
-    filter_selected_units_with_correlation(
-        q,
-        selected_units,
-        units_exact_match_only,
-        true,
-    )
-}
-
 fn filter_selected_units_with_correlation<Q>(
     q: Q,
     selected_units: &Option<Vec<String>>,
@@ -702,6 +686,22 @@ fn filter_selected_units_with_correlation<Q>(
 where
     Q: QueryFilter,
 {
+    let condition = selected_units_condition(
+        selected_units,
+        units_exact_match_only,
+        force_correlation,
+    );
+    Ok(match condition {
+        Some(condition) => q.filter(condition),
+        None => q,
+    })
+}
+
+fn selected_units_condition(
+    selected_units: &Option<Vec<String>>,
+    units_exact_match_only: &Option<bool>,
+    force_correlation: bool,
+) -> Option<SimpleExpr> {
     let mut m_empty_filter = None;
     let mut m_filter = None;
     let selected_units = expand_unit_filter_values(selected_units);
@@ -747,11 +747,76 @@ where
         }
     }
     match (m_filter, m_empty_filter) {
-        (None, None) => Ok(q),
-        (None, Some(f)) => Ok(q.filter(f)),
-        (Some(f), None) => Ok(q.filter(f)),
-        (Some(f1), Some(f2)) => Ok(q.filter(f1.or(f2))),
+        (None, None) => None,
+        (None, Some(f)) | (Some(f), None) => Some(f),
+        (Some(f1), Some(f2)) => Some(f1.or(f2)),
     }
+}
+
+pub fn filter_selected_units_or_ids<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_units_or_ids_with_correlation(
+        q,
+        selected_units,
+        selected_unit_ids,
+        units_exact_match_only,
+        false,
+    )
+}
+
+pub(crate) fn filter_selected_units_or_ids_correlated<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    filter_selected_units_or_ids_with_correlation(
+        q,
+        selected_units,
+        selected_unit_ids,
+        units_exact_match_only,
+        true,
+    )
+}
+
+fn filter_selected_units_or_ids_with_correlation<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+    force_correlation: bool,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let units = selected_units_condition(
+        selected_units,
+        units_exact_match_only,
+        force_correlation,
+    );
+    let unit_ids = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+        .map(|unit_ids| {
+            message_has_linked_unit_ids(unit_ids, force_correlation)
+        });
+    Ok(match (units, unit_ids) {
+        (None, None) => q,
+        (None, Some(condition)) | (Some(condition), None) => {
+            q.filter(condition)
+        }
+        (Some(units), Some(unit_ids)) => q.filter(units.or(unit_ids)),
+    })
 }
 
 /// Фільтрує запит, виключаючи повідомлення, що відповідають вказаним підрозділам.
@@ -776,6 +841,109 @@ where
         units_exact_match_only,
         false,
     )
+}
+
+pub fn filter_selected_unit_ids<Q>(
+    q: Q,
+    selected_unit_ids: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(selected_unit_ids) = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(selected_unit_ids, false))
+}
+
+pub fn filter_denied_unit_ids<Q>(q: Q, denied_unit_ids: &Option<Vec<i64>>) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(denied_unit_ids) = denied_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(denied_unit_ids, false).not())
+}
+
+pub(crate) fn filter_denied_unit_ids_correlated<Q>(
+    q: Q,
+    denied_unit_ids: &Option<Vec<i64>>,
+) -> Q
+where
+    Q: QueryFilter,
+{
+    let Some(denied_unit_ids) = denied_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+    else {
+        return q;
+    };
+    q.filter(message_has_linked_unit_ids(denied_unit_ids, true).not())
+}
+
+fn message_has_linked_unit_ids(
+    unit_ids: &[i64],
+    force_correlation: bool,
+) -> SimpleExpr {
+    message_has_linked_unit_ids_with_scope(unit_ids, force_correlation, None)
+}
+
+pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
+    unit_ids: &[i64],
+    force_correlation: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> SimpleExpr {
+    let link_alias = Alias::new("selected_unit_link");
+    let unit_alias = Alias::new("selected_unit_by_id");
+    let mut query = Query::select();
+    query
+        .expr(Expr::value(1))
+        .from_as(sigint_inbox_item_unit::Entity, link_alias.clone())
+        .join_as(
+            JoinType::InnerJoin,
+            sigint_unit::Entity,
+            unit_alias.clone(),
+            Expr::col((unit_alias.clone(), sigint_unit::Column::Id)).equals((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::UnitId,
+            )),
+        )
+        .and_where(
+            Expr::col((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::ItemId,
+            ))
+            .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
+        )
+        .and_where(
+            Expr::col((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::UnitId,
+            ))
+            .is_in(unit_ids.to_vec()),
+        )
+        .and_where(
+            Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
+        );
+    if let Some(scope) = scope {
+        query.and_where(
+            scope.condition((
+                link_alias,
+                sigint_inbox_item_unit::Column::ItemId,
+            )),
+        );
+    }
+    if force_correlation {
+        query.offset(0);
+    }
+    Expr::exists(query.to_owned())
 }
 
 pub(crate) fn filter_denied_units_correlated<Q>(
@@ -1099,6 +1267,43 @@ where
     Ok(q.filter(Expr::cust(format!(
         r#""sigint_inbox_item"."id" IN ({matching_ids})"#
     ))))
+}
+
+pub(super) fn filter_selected_units_or_ids_for_period<Q>(
+    q: Q,
+    selected_units: &Option<Vec<String>>,
+    selected_unit_ids: &Option<Vec<i64>>,
+    units_exact_match_only: &Option<bool>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> Result<Q, AppError>
+where
+    Q: QueryFilter,
+{
+    let units = unit_match_ids_for_period(
+        selected_units,
+        units_exact_match_only,
+        dt_since,
+        dt_till,
+    )
+    .context(h!())?
+    .map(|matching_ids| {
+        Expr::cust(format!(r#""sigint_inbox_item"."id" IN ({matching_ids})"#))
+    })
+    .or_else(|| {
+        selected_units_condition(selected_units, units_exact_match_only, false)
+    });
+    let unit_ids = selected_unit_ids
+        .as_ref()
+        .filter(|unit_ids| !unit_ids.is_empty())
+        .map(|unit_ids| message_has_linked_unit_ids(unit_ids, false));
+    Ok(match (units, unit_ids) {
+        (None, None) => q,
+        (None, Some(condition)) | (Some(condition), None) => {
+            q.filter(condition)
+        }
+        (Some(units), Some(unit_ids)) => q.filter(units.or(unit_ids)),
+    })
 }
 
 pub(super) fn filter_denied_units_for_period<Q>(
@@ -3281,6 +3486,7 @@ async fn query_summary_table_freq_analytics(
     }
     let mut analytics_req = req.clone();
     analytics_req.selected_units = None;
+    analytics_req.selected_unit_ids = None;
     let filtered_messages =
         build_summary_table_filtered_messages_query_with_access(
             login,
@@ -3291,11 +3497,12 @@ async fn query_summary_table_freq_analytics(
         )
         .context(h!())?;
     let filtered_messages =
-        analytics_unit::apply_resolved_analytics_unit_filters(
+        analytics_unit::apply_resolved_analytics_unit_filters_with_ids(
             filtered_messages,
             &resolved_units,
             &scope,
             req.units_exact_match_only.unwrap_or(false),
+            &req.selected_unit_ids,
         );
     let counts = filtered_messages
         .clone()
@@ -3891,6 +4098,7 @@ fn build_summary_table_filtered_messages_query_with_access(
     let q = crate::rer_importer::analysis::analytics_unit::apply_analysis_unit_filters(
         q,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
         dt_since,
         dt_till,
@@ -5255,9 +5463,10 @@ pub async fn edit_freq_unit_name(
         &reqan.selected_senders,
         &sigint_groups,
     )?;
-    let rows_res = filter_selected_units(
+    let rows_res = filter_selected_units_or_ids(
         rows_res,
         &reqan.selected_units,
+        &reqan.selected_unit_ids,
         &req.analysis_stats_req.units_exact_match_only,
     )?;
     let rows_res =
@@ -5315,6 +5524,7 @@ pub async fn edit_freq_unit_name(
             crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
                 &txn,
                 row.id,
+                row.id_uuid,
                 row.unit_v2.as_deref(),
                 row.unit.as_deref(),
             )
@@ -6108,9 +6318,10 @@ fn build_new_callsign_filtered_items_query(
     let query = filter_selected_senders(query, &req.selected_senders)?;
     let query = filter_selected_freqs(query, &req.selected_freqs)?;
     let query = filter_selected_posts(query, &req.selected_posts)?;
-    let query = filter_selected_units(
+    let query = filter_selected_units_or_ids(
         query,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
     )?;
     let query = filter_selected_locations(
@@ -7043,7 +7254,7 @@ async fn group_stats(
     };
     let group_names = collect_group_names(
         &groups,
-        &env.dbx,
+        &env,
         is_admin,
         analytics_group_stats.as_ref(),
     )
@@ -7261,6 +7472,7 @@ async fn freq_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let freqs = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats freqs",
@@ -7270,6 +7482,7 @@ async fn freq_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 analytics_freshness_max_age_ms,
             )
@@ -7314,6 +7527,7 @@ async fn callsign_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let callsigns = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats callsigns",
@@ -7329,6 +7543,7 @@ async fn callsign_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 &message_id_scope,
             )
@@ -7373,6 +7588,7 @@ async fn metadata_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let metadata = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats metadata",
@@ -7388,6 +7604,7 @@ async fn metadata_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 &message_id_scope,
             )
@@ -7434,6 +7651,7 @@ async fn tag_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let tags = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats tags",
@@ -7449,6 +7667,7 @@ async fn tag_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 &message_id_scope,
@@ -7900,6 +8119,10 @@ async fn count_stats(
         .map(AnalyticsConfig::retry_cooldown_ms)
         .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT);
     let postgres_query = query_count_stats_postgres(&req, &user, &env, access);
+    if analytics_query.is_none() {
+        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={}",
+            if analytics.is_none() { "unconfigured" } else { "circuit_open" });
+    }
     let response = with_count_stats_analytics_fallback(
         analytics_query,
         core::time::Duration::from_millis(timeout_ms),
@@ -7925,7 +8148,6 @@ fn analytics_stats_request_supported(
     env: &Env,
 ) -> bool {
     analytics_count_request_supported(req)
-        && req.selected_units.as_ref().is_none_or(Vec::is_empty)
         && !crate::stats::should_prefer_redis_stats(req, &env.config)
 }
 
@@ -7950,18 +8172,14 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    analytics_inbox_filter_supported(req)
-        && !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+    !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+        || (req.load_latest == Some(true) && req.nolimit != Some(true))
 }
 
 pub(crate) fn analytics_inbox_candidates_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    analytics_inbox_request_supported(req) && req.nolimit != Some(true)
-}
-
-fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
-    req.only_with_media != Some(true)
+    analytics_inbox_request_supported(req)
 }
 
 #[derive(Clone)]
@@ -8048,6 +8266,7 @@ where
     let _retry_cancellation_guard = retry_attempt
         .as_ref()
         .map(AnalyticsRetryAttempt::cancellation_guard);
+    let mut reason = "analytics_skipped";
     if let Some(analytics_query) = analytics_query {
         let started = std::time::Instant::now();
         match tokio::time::timeout(timeout, analytics_query).await {
@@ -8055,30 +8274,37 @@ where
                 if let Some(retry_attempt) = retry_attempt {
                     retry_attempt.record_success();
                 }
-                trace!(
-                    "analysis stats count used analytics in {:?}",
-                    started.elapsed()
-                );
+                info!(target: "analytics_route", "operation=\"analysis stats count\" route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(response);
             }
-            Ok(Err(err)) => warn!(
-                "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
-                started.elapsed(),
-                err
-            ),
-            Err(_) => warn!(
-                "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
-                started.elapsed()
-            ),
+            Ok(Err(err)) => {
+                reason = "analytics_error";
+                warn!(
+                    "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+                    started.elapsed(),
+                    err
+                );
+            }
+            Err(_) => {
+                reason = "analytics_timeout";
+                warn!(
+                    "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
+                    started.elapsed()
+                );
+            }
         }
         if let Some(retry_attempt) = retry_attempt {
             retry_attempt.record_failure(retry_cooldown);
         }
     }
 
-    postgres_query.await.map_err(|error| {
+    let started = std::time::Instant::now();
+    let response = postgres_query.await.map_err(|error| {
         map_postgres_runtime_timeout(error, "analysis stats count")
-    })
+    });
+    info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={reason} outcome={} elapsed_ms={}",
+        if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
+    response
 }
 
 pub(crate) async fn with_analytics_read_fallback<T, A, AFut, P, PFut>(
@@ -8162,6 +8388,13 @@ where
                 .map(|retry_attempt| (analytics, retry_attempt))
         });
 
+    let mut reason = if !analytics_supported {
+        "query_policy"
+    } else if env.analytics.is_none() {
+        "unconfigured"
+    } else {
+        "circuit_open"
+    };
     if let Some((analytics, retry_attempt)) = analytics_attempt {
         let _retry_cancellation_guard = retry_attempt.cancellation_guard();
         let started = std::time::Instant::now();
@@ -8189,18 +8422,21 @@ where
         match response {
             Some(Ok(response)) => {
                 retry_attempt.record_success();
-                trace!("{operation} used analytics in {:?}", started.elapsed());
+                info!(target: "analytics_route", "operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(response);
             }
-            Some(Err(err)) => warn!(
-                "{operation} analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
-                started.elapsed(),
-                err
-            ),
-            None => warn!(
-                "{operation} analytics query timed out after {:?}, retrying via PostgreSQL",
-                started.elapsed()
-            ),
+            Some(Err(err)) => {
+                reason = "analytics_error";
+                warn!(
+                    "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
+                );
+            }
+            None => {
+                reason = "analytics_timeout";
+                warn!(
+                    "{operation} analytics query timed out; retrying via PostgreSQL"
+                );
+            }
         }
         let retry_cooldown = core::time::Duration::from_millis(
             analytics_config
@@ -8217,9 +8453,10 @@ where
     let started = std::time::Instant::now();
     let response = postgres_query(env.replica())
         .await
-        .map_err(|error| map_postgres_runtime_timeout(error, operation))?;
-    trace!("{operation} used PostgreSQL in {:?}", started.elapsed());
-    Ok(response)
+        .map_err(|error| map_postgres_runtime_timeout(error, operation));
+    info!(target: "analytics_route", "operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
+        if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
+    response
 }
 
 pub(crate) fn map_postgres_runtime_timeout(
@@ -8749,11 +8986,13 @@ async fn query_count_stats_catalog_dimensions(
     .context(h!())?;
     let tags = stats::count_tags_analytics_with_db(
         req,
-        user,
+        &login_id_from_identity(user).context(h!())?,
         db,
+        &env.dbx,
         master_keys.clone(),
         analytics_tag_access,
         Some(message_id_scope),
+        resolved_units,
     )
     .await
     .context(h!())?;
@@ -9163,10 +9402,10 @@ async fn tag_stats_count(
             .c(h!())?;
     let analytics_tag_access =
         resolve_analytics_tag_access_if_enabled(&env, &req, &login).await?;
+    let analytics_source_db = env.dbx.clone();
     let analytics_master_keys = master_keys.clone();
     let analytics_req = &req;
     let postgres_req = &req;
-    let analytics_user = &user;
     let postgres_user = &user;
     let postgres_env = &env;
     let analytics_freshness_max_age_ms = env
@@ -9188,11 +9427,13 @@ async fn tag_stats_count(
             .await?;
             stats::count_tags_analytics_with_db(
                 analytics_req,
-                analytics_user,
+                &login,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 Some(&message_id_scope),
+                None,
             )
             .await
         },
@@ -9502,39 +9743,75 @@ async fn stats_deprecated(
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
-    let master_keys_noimport = master_keys.clone();
+    let freshness = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let response = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis combined stats",
+        analytics_stats_request_supported(&req, &env),
+        |db| {
+            query_combined_stats_analytics(
+                &req,
+                &user,
+                &env,
+                db,
+                master_keys.clone(),
+                freshness,
+            )
+        },
+        |_| {
+            query_combined_stats_postgres(
+                &req,
+                &user,
+                &env,
+                master_keys.clone(),
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    debug!("[stats] get stats: {:?}", instant.elapsed());
+    Ok(Json(response))
+}
 
-    let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
+async fn query_combined_stats_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<AnalysisStatsRsp, AppError> {
+    let groups = stats::fetch_groups(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let senders = stats::fetch_senders(&req, &user, &env, master_keys.clone())
+    let senders = stats::fetch_senders(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let posts = stats::fetch_posts(&req, &user, &env, master_keys.clone())
+    let posts = stats::fetch_posts(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let freqs = stats::fetch_freqs(&req, &user, &env, master_keys.clone())
+    let freqs = stats::fetch_freqs(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let callsigns =
-        stats::fetch_callsigns(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
-    let tags = stats::fetch_tags(&req, &user, &env, master_keys.clone())
+    let callsigns = stats::fetch_callsigns(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let units = stats::fetch_units(&req, &user, &env, master_keys.clone())
+    let tags = stats::fetch_tags(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let locations = fetch_locations(&user, &env, &req, master_keys.clone())
+    let units = stats::fetch_units(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let locations = fetch_locations(user, env, req, master_keys.clone())
         .await
         .c(h!())?;
-    let count = stats::fetch_counts(&req, &user, &env, master_keys.clone())
+    let count = stats::fetch_counts(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    debug!("[stats] get stats: {:?}", instant.elapsed());
-
-    Ok(Json(AnalysisStatsRsp {
+    Ok(AnalysisStatsRsp {
         groups,
         senders,
         posts,
@@ -9545,7 +9822,135 @@ async fn stats_deprecated(
         tags,
         count_overall: count.0,
         count_selected: count.1,
-    }))
+    })
+}
+
+async fn query_combined_stats_analytics(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness: u64,
+) -> Result<AnalysisStatsRsp, AppError> {
+    let login = login_id_from_identity(user).context(h!())?;
+    let scope =
+        stats::resolve_analytics_message_id_scope(&req.0, &db, freshness)
+            .await
+            .context(h!())?;
+    let access = stats::resolve_analytics_tag_access(
+        &env.dbx,
+        &login,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .await
+    .context(h!())?;
+    let groups = stats::fetch_groups_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        Some(&scope),
+        None,
+    )
+    .await
+    .context(h!())?;
+    let senders = stats::fetch_senders_raw_with_db(
+        req,
+        user,
+        env,
+        &db,
+        master_keys.clone(),
+        freshness,
+    )
+    .await
+    .context(h!())?;
+    let posts = stats::fetch_posts_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let freqs = stats::fetch_freqs_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        freshness,
+    )
+    .await
+    .context(h!())?;
+    let callsigns = stats::fetch_callsigns_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let tags = stats::fetch_tags_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        &access,
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let units = stats::fetch_units_raw_with_db(
+        req,
+        user,
+        &db,
+        master_keys.clone(),
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let locations = merge_locations(
+        stats::fetch_locations_raw_with_db(
+            req,
+            user,
+            &db,
+            &env.dbx,
+            master_keys.clone(),
+            &scope,
+        )
+        .await
+        .context(h!())?,
+    );
+    let count = stats::fetch_counts_raw_with_db(
+        req,
+        user,
+        env,
+        &db,
+        master_keys,
+        Some(&scope),
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(AnalysisStatsRsp {
+        groups,
+        senders,
+        posts,
+        freqs,
+        callsigns,
+        units,
+        locations,
+        tags,
+        count_overall: count.0,
+        count_selected: count.1,
+    })
 }
 
 async fn collect_sender_names(
@@ -9570,12 +9975,35 @@ async fn collect_sender_names(
         })
         .collect())
 }
+pub(crate) async fn read_group_activity(
+    env: &Env,
+    keys: Vec<String>,
+) -> Result<BTreeMap<String, SignalGroupStats>, AppError> {
+    let analytics_keys = keys.clone();
+    with_analytics_read_fallback(
+        env,
+        "group activity enrichment",
+        true,
+        |db| async move {
+            stats::fetch_group_activity_stats_with_db(&db, analytics_keys)
+                .await
+                .context(h!())
+                .map_err(AppError::from)
+        },
+        |db| async move { collect_group_stats(keys, &db).await },
+    )
+    .await
+    .context(h!())
+    .map_err(AppError::from)
+}
+
 async fn collect_group_names(
     groups: &Vec<AnalysisStatsGroup>,
-    txn: &DatabaseConnection,
+    env: &Env,
     is_admin: bool,
     analytics_group_stats: Option<&BTreeMap<String, SignalGroupStats>>,
 ) -> anyhow::Result<Vec<SignalGroupEntry>> {
+    let txn = &env.dbx;
     let mut result = vec![];
     let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
     let signal_groups = signal_group::Entity::find()
@@ -9607,7 +10035,7 @@ async fn collect_group_names(
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
-        None => collect_group_stats(keys.clone(), txn).await.context(h!())?,
+        None => read_group_activity(env, keys.clone()).await.context(h!())?,
     };
 
     let group_aors = if is_admin {

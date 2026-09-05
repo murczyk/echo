@@ -48,7 +48,7 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 
 - ClickHouse `26.3.12.3` LTS from its signed apt repository.
 - PeerDB `v0.37.1` at its release commit.
-- `pg_clickhouse` `v0.3.2-echo.1`, built specifically for PostgreSQL 18 from
+- `pg_clickhouse` `v0.3.2-echo.2`, built specifically for PostgreSQL 18 from
   the `codex/v0.3.2-search-backports` fork branch. The pinned commit
   includes the foreign-scan RTE fix from upstream PR #319, the concurrent
   binary-scan fix from upstream PR #296, local compatible `DISTINCT` pushdown,
@@ -56,7 +56,12 @@ All pins and downloadable checksums live in [versions.env](versions.env):
   upstream SubPlan pushdown for compatible correlated and uncorrelated
   subqueries. It also backports JSONB top-level existence (`?`) pushdown from
   upstream PR #325 for native ClickHouse JSON and String-backed compatibility
-  views. The first prevents
+  views. Revision 2 retains microseconds in constants, timestamp casts, prepared
+  parameters, and HTTP inserts; includes the upstream formatter and
+  `to_timestamp()` fixes; and composes correlated INNER and SEMI/ANTI joins.
+  Inner-dependent SEMI/ANTI restrictions remain in `ON`, adapted from upstream
+  PR #347 at `f49ddb02`. NULL parameters and naive timestamp roundtrips agree
+  across both drivers. Imported table schemas remain unchanged. The first prevents
   `cache lookup failed for foreign table 0` in affected pushed-down joins and
   uses PostgreSQL's executor-populated user and foreign-server metadata.
   The second gives simultaneously active scans separate native connections,
@@ -79,6 +84,48 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 
 Exact ClickHouse packages are held after installation. Upgrades are explicit:
 update pins/checksums, rebuild artifacts, test in development, then staging.
+
+### Extension-only hotfixes
+
+Run `bin/build-gateway-extension.sh <artifact-directory>` on the Debian 13
+builder after updating the exact fork commit and artifact revision in
+`versions.env`. Reuse the resulting archive, `build-info.json`, and
+`SHA256SUMS` across all gateways. This path builds only `pg_clickhouse`.
+
+Copy the reviewed bundle and artifact to the gateway, then run
+`sudo bin/install-gateway-extension.sh <archive> <archive-sha256> <backup-directory>`.
+The installer verifies the pinned commit, PostgreSQL major, artifact revision,
+and library checksum. It holds the analytics reconciliation lock, pauses active
+reconciliation/health timers, saves the current library and configuration
+hashes, stops PostgreSQL 18/main, replaces only the library, restarts, and checks
+gateway reads. A failure restores the saved library. Roll back a later failed
+promotion gate with `sudo bin/install-gateway-extension.sh --rollback <backup-directory>`.
+No imported table schema or other analytics component is reinstalled.
+
+Before advancing, verify catalog connections, CDC recovery, analytics health,
+the application deployment lifecycle, bounded source/gateway parity, and the
+required observation window. `inbox_operation` records final hybrid successes
+and all complete fallback outcomes, including fallback duration; candidate
+query successes alone are insufficient. Its `failed_stage` distinguishes
+candidate retrieval, primary-tail loading, hydration/revalidation, and ordering.
+Retain the existing warning logs and attribute CDC freshness failures separately.
+
+Use a bounded `InboxMessagesReq` JSON file and an existing RER login for controlled
+read-only replays on quiet hosts:
+
+```bash
+sudo env PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify' \
+  /usr/bin/wdintel-rs --mode=live oneoff-compare-inbox \
+  --login <login> --request-path <request.json> --require-hybrid
+```
+
+The command applies normal primary authorization, compares complete hydrated
+results with PostgreSQL reads before and after the operation, and fails on
+changing inputs, mismatches, or missing required hybrid completion. It emits
+request/result fingerprints and final-operation diagnostics. Omit
+`--require-hybrid` for requests or hosts that intentionally use PostgreSQL.
+Summarize archived application logs with
+`python3 scripts/analytics/summarize_inbox_operations.py <journal.jsonl>`.
 
 ## Network and ports
 
@@ -150,6 +197,21 @@ table is created later, it remains excluded automatically.
 intentionally excluded from analytics. Before applying
 `m20260818_130237_battle_line_and_inbox_settlement`, deploy and reconcile the
 updated exclusion file so these tables never enter the PeerDB mirror.
+
+Failed unit labels and their inbox-item links are PostgreSQL-only operational
+state and are intentionally excluded from analytics. Before applying
+`m20260827_154846_normalize_failed_unit_labels`, deploy and reconcile the
+updated exclusion file. The legacy `failed_inbox_unit` exclusion remains in
+the file so pre-migration reconciliation cannot snapshot the table immediately
+before it is dropped. The migration deliberately discards its rows; run the
+inbox-unit backfill later to rebuild the normalized label and link tables.
+
+`login_totp` stores second-factor enrollment secrets and is intentionally
+excluded from analytics. Before applying
+`m20260827_180023_add_login_totp_secret`, deploy and reconcile the updated
+exclusion file so PeerDB never snapshots or mirrors that table. After
+migration, confirm the analytics health check is green and that no raw
+ClickHouse table or gateway view exists for `login_totp`.
 
 Durable normalized domain tables, including
 `sigint_inbox_item_callsign` and `sigint_inbox_item_settlement`, are
@@ -592,10 +654,9 @@ decoding and PostgreSQL query semantics consistent with the source database.
 
 The analysis result, facet, and dedicated facet-count endpoints use this path:
 
-- `/api/rer-importer/get-inbox` for closed RER analysis ranges, historical
-  Duty context, and the historical portion of long live ranges;
-- `/api/rer-importer/get-inbox-count` except recent Duty polling described
-  below;
+- `/api/rer-importer/get-inbox` for bounded ranges and initial/latest pages;
+- `/api/rer-importer/get-inbox-count`;
+- the deprecated combined `/api/rer/analysis/stats` endpoint;
 - `/api/rer/analysis/stats/count`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks,metadata}`
 - `/api/rer/analysis/stats/{groups,senders,posts,freqs,callsigns,tags,units,locations,aors,networks}/count`
@@ -611,6 +672,15 @@ PostgreSQL snapshot remain on PostgreSQL. An analytical operation is retried
 from the beginning on PostgreSQL, so a failed attempt cannot mix partial
 analytical and PostgreSQL result sets.
 
+Unit labels and explicit unit IDs retain their selected/denied, undefined,
+deleted-unit, and legacy saved-filter semantics. Unit and media filters use
+bounded existence queries so duplicate links and attachments do not multiply
+messages. Bounded unlimited inbox requests and report candidates use keyset
+pages; existing report caps and unbounded-request rejection remain in place.
+Read-only group activity enrichment uses the shared analytics service. Redis
+hits are retained, while timeline and statistics cache misses read raw inputs
+through analytics before primary-side cache maintenance.
+
 Existing five-minute aggregate generation remains intact. Count dimension totals use scalar
 `COUNT(DISTINCT ...)` queries so the gateway receives aggregates rather than
 message-ID sets. Selected-callsign filters use pushed-down JSONB top-level
@@ -621,23 +691,17 @@ translate. Serialized `tsvector` matching, String-backed JSON/JSONB body
 extraction, and Cyrillic `ILIKE` execute in ClickHouse; unsupported request
 shapes retain their existing PostgreSQL routing or whole-operation fallback.
 
-`/api/rer-importer/get-inbox` uses a stricter live-data policy than the
-eventually consistent endpoints below. RER analysis ranges shorter than 25
-hours and ending within `max(2 * freshness_max_age_ms, 5 minutes)` of the
-current time read from source PostgreSQL. Longer live ranges merge the
-ClickHouse candidate page with a source PostgreSQL candidate page restricted
-to that fresh overlap, then deduplicate, hydrate, revalidate, order, and limit
-the merged IDs on source PostgreSQL.
-
-Both RER Duty pages route initial/latest requests and requests whose cursor was
-created in source PostgreSQL within the last hour directly to source
-PostgreSQL, before any analytics health check or gateway query. Cursor age uses
-`signal_message.created_at`, not the interception timestamp. Recent date-only
-polls follow the same rule. Historical `before_id_noninclusive` context remains
-eligible for ClickHouse. Open-ended message and count requests after an older
-cursor split or merge the historical ClickHouse range with a primary
-PostgreSQL fresh tail. Any analytics, tail, or revalidation failure retries the
-complete request on PostgreSQL. Other callers retain their existing routing.
+`/api/rer-importer/get-inbox` merges analytics candidates with a source
+PostgreSQL tail covering `max(2 * freshness_max_age_ms, 5 minutes)`, including
+recent analysis ranges, Duty polling, and initial/latest requests. The tail
+uses `signal_message.created_at`, so backdated arrivals are included. Its
+boundary is captured before the analytics scan. Candidates are deduplicated,
+hydrated in bounded batches, revalidated, and ordered on source PostgreSQL.
+Any analytics, tail, or revalidation failure retries the complete request on
+PostgreSQL. Counts split historical and fresh records at the same created-at
+boundary to avoid overlap. Routing logs identify the operation, selected
+connection, fallback reason, outcome, and elapsed time; primary authorization,
+hydration, transaction-dependent work, and writes remain intentional.
 
 ## WAL retention and recovery
 

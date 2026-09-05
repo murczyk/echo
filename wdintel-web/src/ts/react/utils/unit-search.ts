@@ -7,16 +7,31 @@ import {
 
 export const UNIT_FILTER_UNSET_ID = 0;
 const UNIT_FILTER_UNSET_NAME = 'Не визначено';
+const UNIT_FILTER_ID_PREFIX = 'unit-id:';
 
 export function getUnitDisplayLabel(unit: Unit): string {
   return unit.name.trim() || `#${unit.id}`;
 }
 
 export function getUnitFilterValue(unit: Unit): string {
-  if (unit.id === UNIT_FILTER_UNSET_ID) {
-    return UNIT_FILTER_UNSET_NAME;
-  }
-  return unit.name.trim();
+  return unit.id === UNIT_FILTER_UNSET_ID ? UNIT_FILTER_UNSET_NAME : getUnitIdFilterValue(unit.id);
+}
+
+export function getUnitIdFilterValue(unitId: number): string {
+  return unitId === UNIT_FILTER_UNSET_ID
+    ? UNIT_FILTER_UNSET_NAME
+    : `${UNIT_FILTER_ID_PREFIX}${unitId}`;
+}
+
+export function getCanonicalUnitIdValue(value: string): number | null {
+  if (!value.startsWith(UNIT_FILTER_ID_PREFIX)) return null;
+  const rawUnitId = value.slice(UNIT_FILTER_ID_PREFIX.length);
+  const unitId = Number(rawUnitId);
+  return Number.isSafeInteger(unitId) && unitId > 0 && String(unitId) === rawUnitId ? unitId : null;
+}
+
+export function isCanonicalUnitIdValue(value: string): boolean {
+  return getCanonicalUnitIdValue(value) !== null;
 }
 
 function createSyntheticUnsetUnit(): Unit {
@@ -54,21 +69,10 @@ export function buildUnitFilterOptions(unitsList: Unit[]): Unit[] {
 }
 
 export function buildSelectableUnitOptions(unitsList: Unit[]): Unit[] {
-  const byName = new Map<string, Unit>();
-
-  for (const unit of unitsList) {
-    if (unit.active === false) continue;
-    const name = unit.name.trim();
-    if (name.length === 0) continue;
-
-    const existing = byName.get(name);
-    if (!existing || unit.id < existing.id) {
-      byName.set(name, { ...unit, name });
-    }
-  }
-
-  const sorted = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
-  return sorted;
+  return unitsList
+    .filter((unit) => unit.active && unit.name.trim().length > 0)
+    .map((unit) => ({ ...unit, name: unit.name.trim() }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 }
 
 export function buildUnitLookupOptions(

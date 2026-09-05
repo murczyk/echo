@@ -23,11 +23,15 @@ vi.mock('../../../../renderers/ImageAttachmentPreviewRenderer', () => ({
     onEditModeChange,
     initialAction,
     onInitialActionConsumed,
+    reportVisible,
+    onReportVisibleChange,
   }: {
     registerEditorEscapeHandler?: (handler: (event: KeyboardEvent) => boolean) => void;
     onEditModeChange?: (editing: boolean) => void;
     initialAction?: 'edit-image';
     onInitialActionConsumed?: () => void;
+    reportVisible: boolean;
+    onReportVisibleChange: (visible: boolean) => void;
   }) => {
     useLayoutEffect(() => {
       registerEditorEscapeHandler?.(imageEditorEscapeHandler);
@@ -40,7 +44,11 @@ vi.mock('../../../../renderers/ImageAttachmentPreviewRenderer', () => ({
       }
     }, [initialAction, onInitialActionConsumed]);
     return (
-      <div data-renderer="image">
+      <div data-renderer="image" data-report-visible={String(reportVisible)}>
+        <button
+          aria-label="Перемкнути панель розвіддонесення"
+          onClick={() => onReportVisibleChange(!reportVisible)}
+        />
         <button aria-label="Почати редагування" onClick={() => onEditModeChange?.(true)} />
         <button aria-label="Завершити редагування" onClick={() => onEditModeChange?.(false)} />
         <input data-image-editor-local-escape onKeyDown={(event) => event.stopPropagation()} />
@@ -50,11 +58,15 @@ vi.mock('../../../../renderers/ImageAttachmentPreviewRenderer', () => ({
 }));
 
 vi.mock('../../../../renderers/VideoAttachmentPreviewRenderer', () => ({
-  VideoAttachmentPreviewRenderer: () => <div data-renderer="video" />,
+  VideoAttachmentPreviewRenderer: ({ reportVisible }: { reportVisible: boolean }) => (
+    <div data-renderer="video" data-report-visible={String(reportVisible)} />
+  ),
 }));
 
 vi.mock('../../../../renderers/DocumentAttachmentPreviewRenderer', () => ({
-  DocumentAttachmentPreviewRenderer: () => <div data-renderer="document" />,
+  DocumentAttachmentPreviewRenderer: ({ reportVisible }: { reportVisible: boolean }) => (
+    <div data-renderer="document" data-report-visible={String(reportVisible)} />
+  ),
 }));
 
 vi.mock('../../../../renderers/CoordinateAttachmentPreviewRenderer', () => ({
@@ -204,5 +216,70 @@ describe('MessageCardAttachmentPreviewDialog', () => {
       ),
     );
     expect(consumeInitialAction).toHaveBeenCalledOnce();
+  });
+
+  it('preserves the report panel across attachment types', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const navigation = { index: 0, count: items.length, onPrevious: vi.fn(), onNext: vi.fn() };
+    const commonProps = {
+      navigation,
+      onClose: vi.fn(),
+      reportDraft: { value: 'Чернетка', onChange: vi.fn() },
+    };
+
+    await act(async () =>
+      root?.render(<MessageCardAttachmentPreviewDialog item={items[0]!} {...commonProps} />),
+    );
+    expect(
+      container.querySelector('[data-report-visible]')?.getAttribute('data-report-visible'),
+    ).toBe('false');
+
+    await act(async () =>
+      (
+        container?.querySelector(
+          '[aria-label="Перемкнути панель розвіддонесення"]',
+        ) as HTMLButtonElement
+      ).click(),
+    );
+    expect(
+      container.querySelector('[data-report-visible]')?.getAttribute('data-report-visible'),
+    ).toBe('true');
+
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[1]!}
+          {...commonProps}
+          navigation={{ ...navigation, index: 1 }}
+        />,
+      ),
+    );
+    expect(
+      container.querySelector('[data-renderer="video"]')?.getAttribute('data-report-visible'),
+    ).toBe('true');
+
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[3]!}
+          {...commonProps}
+          navigation={{ ...navigation, index: 3 }}
+        />,
+      ),
+    );
+    await act(async () =>
+      root?.render(
+        <MessageCardAttachmentPreviewDialog
+          item={items[2]!}
+          {...commonProps}
+          navigation={{ ...navigation, index: 2 }}
+        />,
+      ),
+    );
+    expect(
+      container.querySelector('[data-renderer="document"]')?.getAttribute('data-report-visible'),
+    ).toBe('true');
   });
 });

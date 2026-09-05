@@ -1631,12 +1631,14 @@ pub(crate) async fn persist_recomputed_inbox_item_callsigns<C>(
 where
     C: ConnectionTrait,
 {
+    let inbox_item_uuid = inbox_item.id_uuid;
     let mut inbox_item = inbox_item.into_active_model();
     inbox_item.callsign_tokens = Set(Some(recomputed.callsign_tokens.clone()));
     inbox_item.update(dbx).await.c(h!())?;
     crate::inbox::callsigns::sync(
         dbx,
         recomputed.inbox_item_id,
+        inbox_item_uuid,
         crate::inbox::callsigns::InboxItemCallsigns {
             primary: recomputed.after.clone(),
             alg2: recomputed.alg2.clone(),
@@ -1685,6 +1687,7 @@ pub async fn callsigns_graph(
         selected_posts: req.selected_posts.clone(),
         selected_callsigns: req.selected_callsigns.clone(),
         selected_units: req.selected_units.clone(),
+        selected_unit_ids: req.selected_unit_ids.clone(),
         selected_locations: req.selected_locations.clone(),
         selected_device_names: req.selected_device_names.clone(),
         selected_networks: req.selected_networks.clone(),
@@ -1868,9 +1871,10 @@ pub async fn callsigns_graph(
     )?;
     let q = filter_selected_freqs(q, &req.selected_freqs)?;
     let q = filter_selected_posts(q, &req.selected_posts)?;
-    let q = filter_selected_units(
+    let q = filter_selected_units_or_ids(
         q,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
     )?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;

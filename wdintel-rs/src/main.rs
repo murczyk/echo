@@ -305,6 +305,16 @@ pub struct OneoffBackfillSignalMessageAuthorLoginPs {
 }
 
 #[derive(clap::Parser, Debug)]
+pub struct OneoffBackfillSignalMessageUuidPs {
+    /// Number of rows read in each batch.
+    #[arg(long, default_value_t = 10_000)]
+    pub batch_size: u64,
+    /// Start the UUID backfill from the beginning instead of the stored checkpoint.
+    #[arg(long, action)]
+    pub reset_checkpoint: bool,
+}
+
+#[derive(clap::Parser, Debug)]
 pub struct OneoffPrepareInboxNetworkUniquenessPs {
     /// Confirm deletion of duplicate links and online unique-index creation.
     #[arg(long, action)]
@@ -745,6 +755,16 @@ pub struct CompareRerCountsPs {
     pub request_path: String,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct CompareInboxPs {
+    #[arg(long)]
+    pub login: String,
+    #[arg(long)]
+    pub request_path: String,
+    #[arg(long)]
+    pub require_hybrid: bool,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffFixEchoimGroupsPs {
     #[arg(long, default_value = "false")]
@@ -998,9 +1018,7 @@ enum Cmd {
     NetworkInvalidationTui,
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
-    /// Link database SIGINT units to synchronized ORBIT units.
-    OneoffTestLinkUnits,
-    /// Merge safe ORBIT-backed unit duplicates in automatic or manual mode.
+    /// Merge ORBIT-backed unit duplicates in manual mode.
     TuiMergeOrbitUnitDuplicates(OrbitReviewWorkflowPs),
     /// Resolve unparsed unit labels in automatic or manual mode.
     TuiResolveOrbitUnparsedUnits(OrbitReviewWorkflowPs),
@@ -1077,6 +1095,7 @@ enum Cmd {
     OneoffDeleteDeletedGoiKnowledge(OneoffDeleteDeletedGoiKnowledgePs),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffCompareRerCounts(CompareRerCountsPs),
+    OneoffCompareInbox(CompareInboxPs),
     OneoffPopulateSignalMessageGroupIds,
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
@@ -1098,6 +1117,7 @@ enum Cmd {
     OneoffBackfillSignalMessageAuthorLogin(
         OneoffBackfillSignalMessageAuthorLoginPs,
     ),
+    OneoffBackfillSignalMessageUuid(OneoffBackfillSignalMessageUuidPs),
     OneoffPrepareInboxNetworkUniqueness(OneoffPrepareInboxNetworkUniquenessPs),
     OneoffBackfillInboxUnitLinks(OneoffBackfillInboxUnitLinksPs),
     OneoffLinkInboxSettlements(OneoffLinkInboxSettlementsPs),
@@ -1110,6 +1130,8 @@ enum Cmd {
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
+    /// Review and migrate saved unit filters from labels to unit IDs.
+    OneoffMigrateSavedFilterUnitIds,
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
@@ -1809,6 +1831,10 @@ async fn async_main(
         Cmd::OneoffCompareRerCounts(ps) => {
             oneoff_compare_rer_counts(mode, ps).await
         }
+        Cmd::OneoffCompareInbox(ps) => {
+            rer_importer::inbox::verification::run(mode, ps).await.c(h!())?;
+            Ok(())
+        }
         Cmd::OneoffPopulateSignalMessageGroupIds => {
             messenger::group::oneoff::oneoff_populate_signal_message_group_ids(
                 mode,
@@ -1868,6 +1894,12 @@ async fn async_main(
             sigint::oneoff::oneoff_backfill_signal_message_author_login(mode, &ps)
                 .await
         }
+        Cmd::OneoffBackfillSignalMessageUuid(ps) => {
+            sigint::message_uuid_oneoff::oneoff_backfill_signal_message_uuid(
+                mode, &ps,
+            )
+            .await
+        }
         Cmd::OneoffPrepareInboxNetworkUniqueness(ps) => {
             sigint::network::etalon_calc::oneoff::oneoff_prepare_inbox_network_uniqueness(
                 mode, &ps,
@@ -1920,11 +1952,13 @@ async fn async_main(
         Cmd::OneoffReprocessInboxPosts(ps) => {
             rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
         }
+        Cmd::OneoffMigrateSavedFilterUnitIds => {
+            rer_importer::saved_filter_unit_ids::run(mode).await
+        }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
-        Cmd::OneoffTestLinkUnits => orbit::oneoff_test_link_units(mode).await,
         Cmd::TuiMergeOrbitUnitDuplicates(ps) => {
             orbit::tui_merge_unit_duplicates(mode, ps.dry_run).await
         }

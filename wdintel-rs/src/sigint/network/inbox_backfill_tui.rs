@@ -705,6 +705,7 @@ async fn apply_backfill_entry(
     crate::inbox::unit_resolution::resolve_and_sync_inbox_item(
         &txn,
         item.id,
+        item.id_uuid,
         item.unit_v2.as_deref(),
         item.unit.as_deref(),
     )

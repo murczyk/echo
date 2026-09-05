@@ -1,5 +1,6 @@
 use super::{matching, persistence, test_link, tui, EchoEchelon};
 use crate::config::{
+    ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
     ORBIT_AUTO_LINK_MAX_LEVENSHTEIN_DISTANCE, ORBIT_DRY_RUN_REPORT_TOP_LIMIT,
     ORBIT_TEST_LINK_UNITS_MAX_RATING, ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE,
 };
@@ -495,7 +496,7 @@ async fn persist_selections(
 ) -> anyhow::Result<Vec<LabelLinkAction>> {
     let mut actions = Vec::new();
     let batch_size = match link_mode {
-        tui::LinkMode::Automatic => 1,
+        tui::LinkMode::Automatic => ORBIT_AUTOMATIC_PERSIST_BATCH_SIZE,
         tui::LinkMode::Manual => ORBIT_UNPARSED_UNITS_PERSIST_BATCH_SIZE,
     };
     for selections in selections.chunks(batch_size) {
@@ -672,8 +673,8 @@ where
 mod tests {
     use super::*;
     use crate::entities::{
-        failed_inbox_unit, orbit_unit_echelon, sigint_inbox_item,
-        sigint_unit_label,
+        failed_unit_label, orbit_unit_echelon, sigint_inbox_item,
+        sigint_inbox_item_failed_unit_label, sigint_unit_label,
     };
     use crate::orbit::types::{DictionaryValue, SourceUnit};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set};
@@ -953,16 +954,17 @@ mod tests {
                 .len(),
             2,
         );
-        assert!(failed_inbox_unit::Entity::find()
+        let failures = sigint_inbox_item_failed_unit_label::Entity::find()
+            .find_also_related(failed_unit_label::Entity)
             .filter(
-                failed_inbox_unit::Column::UnitTxt
-                    .is_in(["4 мсб", "4 мсб (на БМП)",])
+                failed_unit_label::Column::UnitTxt
+                    .is_in(["4 мсб", "4 мсб (на БМП)"]),
             )
             .all(&env.dbx)
             .await
-            .unwrap()
-            .iter()
-            .all(|failure| failure.deleted));
+            .unwrap();
+        assert_eq!(failures.len(), 2);
+        assert!(failures.iter().all(|(failure, _)| failure.deleted));
 
         orbit_unit::Entity::delete_by_id(orbit_unit_id)
             .exec(&env.dbx)
@@ -991,12 +993,12 @@ mod tests {
         )
         .await
         .unwrap();
-        failed_inbox_unit::ActiveModel {
-            inbox_item_id: Set(inbox_item.id),
-            unit_txt: Set(unit_txt.to_string()),
-            ..Default::default()
-        }
-        .insert(db)
+        crate::inbox::unit_resolution::upsert_failure(
+            db,
+            inbox_item.id,
+            inbox_item.id_uuid,
+            unit_txt,
+        )
         .await
         .unwrap();
     }

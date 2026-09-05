@@ -18,6 +18,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
 
 #[derive(Debug, FromQueryResult)]
 struct CommentExportRow {
@@ -242,6 +243,10 @@ pub async fn create_linked_message_comment_with_context(
 ) -> Result<i64, AppError> {
     let comment_created_at = created_at.unwrap_or_else(Utc::now);
     let comment_created_at = comment_created_at.naive_utc();
+    let comment_uuid = crate::sigint::message_id::signal_message_uuid(
+        Some(comment_created_at),
+        comment_created_at,
+    );
     let sender =
         crate::sigint::direct_submit::query::ensure_current_user_sender(
             txn, login,
@@ -268,6 +273,7 @@ pub async fn create_linked_message_comment_with_context(
         true,
         true,
         crate::rer_importer::inbox::bl::InboxLocationSubmitMode::PreserveTyped,
+        Some(comment_uuid),
     )
     .await
     .c(h!())?;
@@ -282,11 +288,20 @@ pub async fn create_linked_message_comment_with_context(
             .into_active_model();
     signal_message.created_at = Set(comment_created_at);
     signal_message.timestamp = Set(Some(comment_created_at));
-    signal_message.update(txn).await.c(h!())?;
+    let signal_message = signal_message.update(txn).await.c(h!())?;
+    let parent_signal_message_uuid =
+        crate::sigint::message_id::find_signal_message_uuid(
+            txn,
+            parent_signal_message_id,
+        )
+        .await
+        .c(h!())?;
 
     intel_product::ActiveModel {
         intel_message_id: Set(submitted.signal_message_id),
+        intel_message_uuid: Set(signal_message.id_uuid),
         source_message_id: Set(parent_signal_message_id),
+        source_message_uuid: Set(parent_signal_message_uuid),
         relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
         created_at: NotSet,
     }
@@ -326,6 +341,13 @@ where
         .c(h!())?
         .into_active_model();
     comment.migrated_signal_message_id = Set(Some(signal_message_id));
+    comment.migrated_signal_message_uuid =
+        Set(crate::sigint::message_id::find_signal_message_uuid(
+            dbx,
+            signal_message_id,
+        )
+        .await
+        .c(h!())?);
     comment.update(dbx).await.c(h!())?;
     Ok(())
 }
@@ -344,6 +366,10 @@ where
 {
     let signal_message = signal_message::ActiveModel {
         id: NotSet,
+        id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+            Some(created_at),
+            created_at,
+        ))),
         body: Set(Some(comment.to_string())),
         created_at: Set(created_at),
         timestamp: Set(Some(created_at)),
@@ -362,6 +388,15 @@ where
     .await
     .c(h!())?;
     let signal_message_id = signal_message.id;
+    let parent_signal_message_uuid =
+        signal_message::Entity::find_by_id(parent_signal_message_id)
+            .select_only()
+            .column(signal_message::Column::IdUuid)
+            .into_tuple::<Option<Uuid>>()
+            .one(dbx)
+            .await
+            .c(h!())?
+            .flatten();
     let message_uid = crate::messenger::id::generate_message_id(
         crate::messenger::id::MessageMeta {
             id: signal_message_id,
@@ -372,7 +407,7 @@ where
     .c(h!())?;
     let mut signal_message = signal_message.into_active_model();
     signal_message.message_uid = Set(Some(message_uid));
-    signal_message.update(dbx).await.c(h!())?;
+    let signal_message = signal_message.update(dbx).await.c(h!())?;
 
     let body_noheader = crate::rer_importer::body_noheader::NoHeadersBody {
         body: comment.to_string(),
@@ -381,6 +416,7 @@ where
     };
     sigint_inbox_item::ActiveModel {
         id: Set(signal_message_id),
+        id_uuid: Set(signal_message.id_uuid),
         date: Set(None),
         time: Set(None),
         freq: Set(None),
@@ -411,7 +447,9 @@ where
     .c(h!())?;
     intel_product::ActiveModel {
         intel_message_id: Set(signal_message_id),
+        intel_message_uuid: Set(signal_message.id_uuid),
         source_message_id: Set(parent_signal_message_id),
+        source_message_uuid: Set(parent_signal_message_uuid),
         relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
         created_at: NotSet,
     }
@@ -516,6 +554,10 @@ async fn migrate_comment_batch(
         let marker = migrated_comment_message_marker(comment.id);
         signal_messages.push(signal_message::ActiveModel {
             id: NotSet,
+            id_uuid: Set(Some(crate::sigint::message_id::signal_message_uuid(
+                Some(comment.created_at),
+                comment.created_at,
+            ))),
             body: Set(Some(comment.comment.clone())),
             created_at: Set(comment.created_at),
             timestamp: Set(Some(comment.created_at)),
@@ -571,6 +613,7 @@ async fn migrate_comment_batch(
         };
         inbox_items.push(sigint_inbox_item::ActiveModel {
             id: Set(signal_message.id),
+            id_uuid: Set(signal_message.id_uuid),
             date: Set(None),
             time: Set(None),
             freq: Set(None),
@@ -601,6 +644,7 @@ async fn migrate_comment_batch(
         migrated_comments.push((
             comment.id,
             signal_message.id,
+            signal_message.id_uuid,
             comment.signal_message_id,
         ));
     }
@@ -615,12 +659,50 @@ async fn migrate_comment_batch(
     update_migrated_comment_message_uids(txn, &message_uid_updates)
         .await
         .c(h!())?;
+    let linked_message_ids = migrated_comments
+        .iter()
+        .map(|(_, signal_message_id, _, _)| *signal_message_id)
+        .collect::<Vec<_>>();
+    let parent_message_ids = migrated_comments
+        .iter()
+        .map(|(_, _, _, parent_signal_message_id)| *parent_signal_message_id)
+        .collect::<Vec<_>>();
+    let message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(signal_message::Column::Id.is_in(linked_message_ids))
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+    let parent_message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(signal_message::Column::Id.is_in(parent_message_ids))
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
     let links = migrated_comments
         .iter()
-        .map(|(_, signal_message_id, parent_signal_message_id)| {
+        .map(|(_, signal_message_id, _, parent_signal_message_id)| {
             intel_product::ActiveModel {
                 intel_message_id: Set(*signal_message_id),
+                intel_message_uuid: Set(message_uuids
+                    .get(signal_message_id)
+                    .copied()
+                    .flatten()),
                 source_message_id: Set(*parent_signal_message_id),
+                source_message_uuid: Set(parent_message_uuids
+                    .get(parent_signal_message_id)
+                    .copied()
+                    .flatten()),
                 relation_kind: Set(intel_product::RELATION_KIND_COMMENT),
                 created_at: NotSet,
             }
@@ -680,31 +762,49 @@ async fn update_migrated_comment_message_uids(
 
 async fn update_migrated_comment_markers(
     txn: &DatabaseTransaction,
-    migrated_comments: &[(i64, i64, i64)],
+    migrated_comments: &[(i64, i64, Option<Uuid>, i64)],
 ) -> Result<(), AppError> {
     if migrated_comments.is_empty() {
         return Ok(());
     }
 
-    let mut values = Vec::<Value>::with_capacity(migrated_comments.len() * 2);
+    let mut values = Vec::<Value>::with_capacity(migrated_comments.len() * 3);
     let cases = migrated_comments
         .iter()
         .enumerate()
-        .map(|(index, (comment_id, signal_message_id, _))| {
-            let comment_placeholder = index * 2 + 1;
-            let message_placeholder = comment_placeholder + 1;
-            values.push((*comment_id).into());
-            values.push((*signal_message_id).into());
-            format!("WHEN ${comment_placeholder} THEN ${message_placeholder}")
+        .map(
+            |(
+                index,
+                (comment_id, signal_message_id, signal_message_uuid, _),
+            )| {
+                let comment_placeholder = index * 3 + 1;
+                let message_placeholder = comment_placeholder + 1;
+                values.push((*comment_id).into());
+                values.push((*signal_message_id).into());
+                values.push((*signal_message_uuid).into());
+                format!(
+                    "WHEN ${comment_placeholder} THEN ${message_placeholder}"
+                )
+            },
+        )
+        .collect::<Vec<_>>();
+    let uuid_cases = migrated_comments
+        .iter()
+        .enumerate()
+        .map(|(index, (_, _, _, _))| {
+            let comment_placeholder = index * 3 + 1;
+            let uuid_placeholder = comment_placeholder + 2;
+            format!("WHEN ${comment_placeholder} THEN ${uuid_placeholder}")
         })
         .collect::<Vec<_>>();
     let ids = (0..migrated_comments.len())
-        .map(|index| format!("${}", index * 2 + 1))
+        .map(|index| format!("${}", index * 3 + 1))
         .collect::<Vec<_>>()
         .join(", ");
     let sql = format!(
-        "UPDATE sigint_comment SET migrated_signal_message_id = CASE id {} ELSE migrated_signal_message_id END WHERE id IN ({ids})",
-        cases.join(" ")
+        "UPDATE sigint_comment SET migrated_signal_message_id = CASE id {} ELSE migrated_signal_message_id END, migrated_signal_message_uuid = CASE id {} ELSE migrated_signal_message_uuid END WHERE id IN ({ids})",
+        cases.join(" "),
+        uuid_cases.join(" "),
     );
     txn.execute_raw(Statement::from_sql_and_values(
         DatabaseBackend::Postgres,
@@ -1548,10 +1648,12 @@ pub async fn oneoff_import_sigint_comments(
                 id: NotSet,
                 login_id: Set(login),
                 signal_message_id: Set(message.id),
+                signal_message_uuid: Set(message.id_uuid),
                 comment: Set(row.comment.clone()),
                 created_at: NotSet,
                 sigint_post_id: NotSet,
                 migrated_signal_message_id: NotSet,
+                migrated_signal_message_uuid: NotSet,
             };
 
             match active.insert(&dbx).await {

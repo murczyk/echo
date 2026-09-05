@@ -5,6 +5,7 @@ import type { NewCallsignsRes } from '../../../../Bindings';
 import { fetchAnalysisLocations, fetchAnalysisUnits } from '../../services/api/analysis';
 import { isAbortError } from '../../services/api/client';
 import { isNullOrUndefined } from '../../utils/misc';
+import { getUnitIdFilterValue } from '../../utils/unit-search';
 import { buildAnalysisReq } from './helpers';
 import { emptyNewCallsigns, toErrorMessage, topItems } from './use-analysis-data.shared';
 import { useLoadNewCallsigns } from './use-analysis-data.support';
@@ -79,8 +80,9 @@ export function useAnalysisTopSidebarData({
       setTopUnits(
         topItems(
           unitsRsp.units,
-          (item) => item.unit,
+          (item) => item.name,
           (item) => item.count,
+          (item) => getUnitIdFilterValue(item.unitId),
         ),
       );
       setTopLocations(

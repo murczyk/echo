@@ -6,36 +6,27 @@ use serde::{Deserialize, Serialize};
 #[derive(
     Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize,
 )]
-#[sea_orm(table_name = "failed_inbox_unit")]
+#[sea_orm(table_name = "failed_unit_label")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub created_at: DateTime,
-    pub deleted: bool,
-    pub is_bad_data: bool,
-    pub inbox_item_id: i64,
     #[sea_orm(column_type = "Text")]
     pub unit_txt: String,
-    pub deleted_at: Option<DateTime>,
+    pub is_bad_data: bool,
     #[sea_orm(column_type = "Text")]
     pub note: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(
-        belongs_to = "super::sigint_inbox_item::Entity",
-        from = "Column::InboxItemId",
-        to = "super::sigint_inbox_item::Column::Id",
-        on_update = "NoAction",
-        on_delete = "Cascade"
-    )]
-    SigintInboxItem,
+    #[sea_orm(has_many = "super::sigint_inbox_item_failed_unit_label::Entity")]
+    SigintInboxItemFailedUnitLabel,
 }
 
-impl Related<super::sigint_inbox_item::Entity> for Entity {
+impl Related<super::sigint_inbox_item_failed_unit_label::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SigintInboxItem.def()
+        Relation::SigintInboxItemFailedUnitLabel.def()
     }
 }
 

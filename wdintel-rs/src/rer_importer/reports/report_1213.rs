@@ -1153,6 +1153,7 @@ mod tests {
         crate::inbox::callsigns::sync(
             dbx,
             inbox_item.id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns {
                 primary: callsigns
                     .iter()

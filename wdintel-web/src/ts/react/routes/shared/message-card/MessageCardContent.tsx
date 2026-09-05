@@ -43,16 +43,16 @@ import {
   hasCoordinatePreviewCandidate,
   type CoordinatePreviewPoint,
 } from './message-coordinate-preview';
+import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
 import {
   isAudioMediaAttachment,
-  canDownloadAllMessageAttachments,
   isVideoMediaAttachment,
   mediaAttachmentContentType,
   mediaAttachmentDisplayName,
   MessageMediaAudioPlayer,
-  MessageMediaDownloadAllLink,
   MessageMediaDownloadLink,
-  MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS,
+  type MessageCardDownloadGuardProps,
+  useMessageCardDownloadGuard,
 } from './MessageCardMedia';
 import { collectMessageImages } from './message-card-image-utils';
 import { MessageCardImageList } from './MessageCardImageList';
@@ -260,8 +260,10 @@ export function MessageCardMessageBody({
   onOpenPointsOnMap,
   onAddPointHighlightBlacklist,
   collapseMediaPreviews = false,
-  mediaSummaryEnabled = true,
+  mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
   messageTextPreviewLines = 20,
+  isDownloadStarting,
+  onDownloadStart,
 }: {
   compact?: boolean;
   messageId: number;
@@ -292,7 +294,7 @@ export function MessageCardMessageBody({
   collapseMediaPreviews?: boolean;
   mediaSummaryEnabled?: boolean;
   messageTextPreviewLines?: 20 | 40 | null;
-}) {
+} & MessageCardDownloadGuardProps) {
   const nameCache = usePointBlacklistPaletteNamesCache();
   const { notify } = useOptionalPowerSnackbar();
   const images = collectMessageImages(msg);
@@ -302,38 +304,6 @@ export function MessageCardMessageBody({
   const [revealedVisualMedia, setRevealedVisualMedia] = useState(!collapseMediaPreviews);
   const [revealedAudioMedia, setRevealedAudioMedia] = useState(!collapseMediaPreviews);
   const [revealedCoordinateMedia, setRevealedCoordinateMedia] = useState(!collapseMediaPreviews);
-  const [activeDownloadKeys, setActiveDownloadKeys] = useState<Set<string>>(() => new Set());
-  const activeDownloadKeysRef = useRef<Set<string>>(new Set());
-  const downloadCooldownTimersRef = useRef<Map<string, number>>(new Map());
-  const isDownloadStarting = useCallback(
-    (downloadKey: string) =>
-      activeDownloadKeys.has(downloadKey) || activeDownloadKeysRef.current.has(downloadKey),
-    [activeDownloadKeys],
-  );
-  const onDownloadStart = useCallback((downloadKey: string) => {
-    if (activeDownloadKeysRef.current.has(downloadKey)) return false;
-    const nextActiveDownloadKeys = new Set(activeDownloadKeysRef.current);
-    nextActiveDownloadKeys.add(downloadKey);
-    activeDownloadKeysRef.current = nextActiveDownloadKeys;
-    setActiveDownloadKeys(nextActiveDownloadKeys);
-    const timer = window.setTimeout(() => {
-      const activeKeys = new Set(activeDownloadKeysRef.current);
-      activeKeys.delete(downloadKey);
-      activeDownloadKeysRef.current = activeKeys;
-      setActiveDownloadKeys(activeKeys);
-      downloadCooldownTimersRef.current.delete(downloadKey);
-    }, MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS);
-    downloadCooldownTimersRef.current.set(downloadKey, timer);
-    return true;
-  }, []);
-  useEffect(() => {
-    return () => {
-      for (const timer of downloadCooldownTimersRef.current.values()) {
-        window.clearTimeout(timer);
-      }
-      downloadCooldownTimersRef.current.clear();
-    };
-  }, []);
   useEffect(() => {
     setIsMessageTextExpanded(false);
   }, [messageText, messageTextPreviewLines]);
@@ -539,7 +509,6 @@ export function MessageCardMessageBody({
   const downloadAttachments = attachmentMedia.filter(
     (attachment) => !isAudioMediaAttachment(attachment) && !isVideoMediaAttachment(attachment),
   );
-  const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
   const hasImageOrVideoAttachments = images.length > 0 || videoAttachments.length > 0;
 
   const videoPreviewSources = useMemo(() => {
@@ -630,6 +599,8 @@ export function MessageCardMessageBody({
               blurActiveElement();
               setAttachmentPreviewIndex(images.length + index);
             }}
+            isDownloadStarting={isDownloadStarting}
+            onDownloadStart={onDownloadStart}
           />
         ) : (
           <MessageCardMediaRevealBanner
@@ -705,15 +676,6 @@ export function MessageCardMessageBody({
               onDownloadStart={onDownloadStart}
             />
           ))}
-        </div>
-      ) : null}
-      {canDownloadAllAttachments ? (
-        <div className="mt-1 flex items-start w-full">
-          <MessageMediaDownloadAllLink
-            messageId={messageId}
-            isDownloadStarting={isDownloadStarting}
-            onDownloadStart={onDownloadStart}
-          />
         </div>
       ) : null}
       {mediaSummaryEnabled ? (
@@ -910,4 +872,27 @@ function useMemoText(
 
 // Repeated card-content path: avoid structural MUI wrappers and per-card layout sx.
 // Preserve MUI theme parity through semantic styles; see ./AGENTS.md.
-export const MessageCardContent = memo(MessageCardMessageBody);
+export const MessageCardContentWithDownloadGuard = memo(MessageCardMessageBody);
+
+type MessageCardContentFallbackProps = Omit<
+  Parameters<typeof MessageCardMessageBody>[0],
+  keyof MessageCardDownloadGuardProps
+> &
+  Partial<MessageCardDownloadGuardProps>;
+
+function MessageCardContentWithFallbackGuard({
+  isDownloadStarting: providedIsDownloadStarting,
+  onDownloadStart: providedOnDownloadStart,
+  ...props
+}: MessageCardContentFallbackProps) {
+  const fallbackDownloadGuard = useMessageCardDownloadGuard();
+  return (
+    <MessageCardMessageBody
+      {...props}
+      isDownloadStarting={providedIsDownloadStarting ?? fallbackDownloadGuard.isDownloadStarting}
+      onDownloadStart={providedOnDownloadStart ?? fallbackDownloadGuard.onDownloadStart}
+    />
+  );
+}
+
+export const MessageCardContent = memo(MessageCardContentWithFallbackGuard);

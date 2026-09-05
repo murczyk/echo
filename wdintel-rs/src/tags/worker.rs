@@ -32,6 +32,7 @@ pub struct ProcessMessagesResult {
 #[derive(FromQueryResult)]
 pub struct SigintInboxItemText {
     pub id: i64,
+    pub id_uuid: Option<Uuid>,
     pub body_noheader: Json,
 }
 
@@ -181,6 +182,7 @@ pub async fn process_messages<C: ConnectionTrait>(
         .filter(sigint_inbox_item::Column::BodyNoheader.is_not_null())
         .select_only()
         .column(sigint_inbox_item::Column::Id)
+        .column(sigint_inbox_item::Column::IdUuid)
         .column(sigint_inbox_item::Column::BodyNoheader)
         .into_model::<SigintInboxItemText>()
         .all(dbx)
@@ -221,6 +223,7 @@ pub async fn process_messages<C: ConnectionTrait>(
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),
+                    sigint_inbox_item_uuid: Set(inbox_items[index].id_uuid),
                     login_id: Set(login),
                     model: Set(model),
                     confidence: Set(TAG_SUGGEST_WORKER_REGEX_CONFIDENCE),
@@ -252,6 +255,7 @@ pub async fn process_messages<C: ConnectionTrait>(
                 let model = sigint_inbox_item_tag::ActiveModel {
                     tag_id: Set(tag_id),
                     sigint_inbox_item_id: Set(message_id),
+                    sigint_inbox_item_uuid: Set(inbox_items[index].id_uuid),
                     login_id: Set(login),
                     model: Set(Some(model)),
                     confidence: Set(confidence),

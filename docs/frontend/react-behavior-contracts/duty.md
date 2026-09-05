@@ -29,7 +29,7 @@
 - **Preconditions:** user settings are loaded or an in-session settings update is received
 - **User action or external event:** the user disables message-text previews
 - **Expected observable result:** `Off` remains selected; it is not coerced back to the default line limit.
-- **Loading/empty/error/success behavior:** an omitted preference uses the application default.
+- **Loading/empty/error/success behavior:** omitted settings use 20 message-preview lines and keep media summaries disabled.
 - **URL, localStorage, or user-settings persistence:** `messageTextPreviewLines: null` is the persisted Off value.
 - **API endpoint and compatibility requirements:** user-settings responses and update events preserve null for the preference.
 - **Responsive and keyboard requirements:** none.

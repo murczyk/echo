@@ -222,6 +222,7 @@ where
             id: NotSet,
             login_id: NotSet,
             signal_message_id: Set(message_id),
+            signal_message_uuid: Set(message.id_uuid),
             deleted: Set(false),
             created_at: NotSet,
         })
@@ -255,6 +256,7 @@ where
 
     let result = sigint_inbox_item::ActiveModel {
         id: Set(message.id),
+        id_uuid: Set(message.id_uuid),
         date: Set(date_v),
         time: Set(time_v),
         freq: Set(freq),
@@ -294,6 +296,7 @@ where
     crate::battle_line::settlement_queue::reconcile_item_locations(
         txn,
         result.id,
+        result.id_uuid,
         result.location_v2.as_deref(),
     )
     .await
@@ -301,6 +304,7 @@ where
     unit_resolution::resolve_and_sync_inbox_item(
         txn,
         result.id,
+        result.id_uuid,
         result.unit_v2.as_deref(),
         result.unit.as_deref(),
     )
@@ -310,6 +314,7 @@ where
     callsigns::sync(
         txn,
         result.id,
+        result.id_uuid,
         callsigns::InboxItemCallsigns {
             primary: callsigns_alg1,
             alg2: callsigns_alg2,
@@ -321,6 +326,7 @@ where
 
     crate::rer_importer::inbox::metadata::refresh_metadata_for_body(
         result.id,
+        result.id_uuid,
         &message.body.clone().unwrap_or_default(),
         txn,
     )
@@ -328,9 +334,16 @@ where
     .c(h!())?;
 
     if comment_parsing_enabled {
-        insert_missing_auto_comments(txn, config, message.id, post_id, &body)
-            .await
-            .c(h!())?;
+        insert_missing_auto_comments(
+            txn,
+            config,
+            message.id,
+            result.id_uuid,
+            post_id,
+            &body,
+        )
+        .await
+        .c(h!())?;
     }
 
     let ts = datetime
@@ -343,6 +356,7 @@ where
     crate::location::peleng::insert_pelengs(
         coords_vec,
         result.id,
+        result.id_uuid,
         ts,
         pelengation_object,
         txn,
@@ -396,9 +410,13 @@ where
     .await
     .c(h!())?;
 
-    crate::ai_callsign::worker::enqueue_if_enabled(txn, message.id)
-        .await
-        .c(h!())?;
+    crate::ai_callsign::worker::enqueue_if_enabled(
+        txn,
+        message.id,
+        result.id_uuid,
+    )
+    .await
+    .c(h!())?;
     crate::ai_settlement::worker::enqueue_if_enabled(txn, message.id)
         .await
         .c(h!())?;
@@ -689,6 +707,7 @@ async fn insert_missing_auto_comments<'a, 'async_trait, C>(
     txn: &'a C,
     config: &Config,
     signal_message_id: i64,
+    signal_message_uuid: Option<Uuid>,
     sigint_post_id: Option<i64>,
     body: &str,
 ) -> Result<(), AppError>
@@ -721,11 +740,13 @@ where
             None => sigint_comment::ActiveModel {
                 id: NotSet,
                 signal_message_id: Set(signal_message_id),
+                signal_message_uuid: Set(signal_message_uuid),
                 login_id: Set(system_login_id),
                 comment: Set(text.clone()),
                 created_at: NotSet,
                 sigint_post_id: Set(sigint_post_id),
                 migrated_signal_message_id: NotSet,
+                migrated_signal_message_uuid: NotSet,
             }
             .insert(txn)
             .await
@@ -1044,6 +1065,7 @@ mod tests {
             &env.dbx,
             &env.config,
             message.id,
+            message.id_uuid,
             None,
             body,
         )

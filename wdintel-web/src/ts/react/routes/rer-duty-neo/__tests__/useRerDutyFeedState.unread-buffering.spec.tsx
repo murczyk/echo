@@ -312,7 +312,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     });
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(7);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith(
+      'mf-0',
+      2,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
@@ -379,7 +383,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
   });
 
   it('keeps empty feeds from notifying even when count responses are positive', async () => {
-    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([]));
+    hoisted.fetchInboxMessages.mockResolvedValue(inboxRsp([], null));
 
     const apiRef: React.MutableRefObject<ReturnType<typeof useRerDutyFeedState> | null> = {
       current: null,
@@ -474,8 +478,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     });
 
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(7);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 7);
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
 
     hoisted.notifyDutyNewMessages.mockReset();
     hoisted.fetchInboxCount.mockResolvedValueOnce({ quantity: 9, firstElementTs: null });
@@ -488,7 +491,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
 
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(9);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith(
+      'mf-0',
+      2,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
   });
 
   it('keeps queued unread updates when loading newer messages and preserves the newest cursor', async () => {
@@ -617,7 +624,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     expect(apiRef.current!.messageFeeds[0].unreadCount).toBe(7);
     expectTailCountRequest(10);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith(
+      'mf-0',
+      2,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
 
     // Historical read state can live outside the fixed window and must survive the zero-row path.
     const historicalId = -1;
@@ -680,7 +691,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect.objectContaining({ sinceIdNoninclusive: 15 }),
     );
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith(
+      'mf-0',
+      2,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
   });
 
   it('retains the unread cursor for unread newer appends and lets polling correct the count', async () => {
@@ -745,7 +760,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
     expectTailCountRequest(10);
     expect(apiRef.current?.messageFeeds[0]?.unreadCount).toBe(7);
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 2);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith(
+      'mf-0',
+      2,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
   });
 
   it('marks the current window read on a zero-row markAllRead append without scrolling', async () => {
@@ -1065,7 +1084,7 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect.objectContaining({ sinceIdNoninclusive: null, nolimit: true }),
     );
     expect(rewindRequests.some((request) => request?.sinceIdNoninclusive === 40)).toBe(false);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith('mf-0', 5);
+    expect(hoisted.notifyDutyNewMessages).not.toHaveBeenCalled();
 
     await act(async () =>
       apiRef.current!.setMessageFeeds((feeds) =>
@@ -1142,7 +1161,11 @@ describe('useRerDutyFeedState — unread buffering and read state', () => {
       expect.objectContaining({ sinceIdNoninclusive: 140 }),
     );
     expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledTimes(1);
-    expect(hoisted.notifyDutyNewMessages).toHaveBeenLastCalledWith('mf-0', 1);
+    expect(hoisted.notifyDutyNewMessages).toHaveBeenCalledWith(
+      'mf-0',
+      1,
+      hoisted.beginDutyNotificationPollCycle.mock.results.at(-1)?.value,
+    );
   });
 
   it('keeps unread cursors independent across feeds', async () => {

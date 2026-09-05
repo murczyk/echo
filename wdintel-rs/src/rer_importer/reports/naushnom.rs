@@ -385,11 +385,13 @@ async fn get_inbox_messages_report_network_chunk(
     let q = filter_denied_freqs(q, &req.denied_freqs)?;
     let q = filter_selected_callsigns(q, &req.selected_callsigns)?;
     let q = filter_search(q, &req.search)?;
-    let q = filter_selected_units(
+    let q = filter_selected_units_or_ids(
         q,
         &req.selected_units,
+        &req.selected_unit_ids,
         &req.units_exact_match_only,
     )?;
+    let q = filter_denied_unit_ids(q, &req.denied_unit_ids);
     let q = filter_selected_networks(
         q,
         &req.selected_networks,

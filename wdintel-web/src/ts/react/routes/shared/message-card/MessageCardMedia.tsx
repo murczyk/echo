@@ -1,9 +1,9 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import DownloadIcon from '@mui/icons-material/Download';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutline';
-import { Box, Button, CircularProgress, Tooltip } from '@mui/material';
+import { Box, Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
 
 import type { MessageMediaInfo } from '../../../../../Bindings';
 import { getMuiPaletteMode, useMuiPaletteMode } from '../../../mui-theme';
@@ -18,10 +18,10 @@ const AUDIO_PLAYER_TOP_PADDING_PX = 0;
 const AUDIO_PLAYER_Z_INDEX = 0;
 const AUDIO_DERIVED_IMAGE_MAX_SOURCE_SIZE_BYTES = 100 * 1024 * 1024;
 export const MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS = 3_000;
-// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES
-// and useMessageUppy.ts:MAX_MESSAGE_ATTACHMENTS.
+export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY = 'archive';
+export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME = 'attachments.zip';
+export const MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL = 'Завантажити все';
 export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES = 20;
-// Keep synchronized with wdintel-rs/src/config.rs:RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES.
 export const RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 
 export type MessageCardDownloadGuardProps = {
@@ -33,7 +33,7 @@ export function messageCardMediaDownloadKey(mediaId: string | number): string {
   return `media:${String(mediaId)}`;
 }
 
-function guardMessageCardDownloadClick(
+export function guardMessageCardDownloadClick(
   event: MouseEvent<HTMLElement>,
   downloadKey: string,
   { isDownloadStarting, onDownloadStart }: MessageCardDownloadGuardProps,
@@ -41,6 +41,43 @@ function guardMessageCardDownloadClick(
   if (isDownloadStarting(downloadKey) || !onDownloadStart(downloadKey)) {
     event.preventDefault();
   }
+}
+
+export function useMessageCardDownloadGuard(): MessageCardDownloadGuardProps {
+  const [activeDownloadKeys, setActiveDownloadKeys] = useState<Set<string>>(() => new Set());
+  const activeDownloadKeysRef = useRef<Set<string>>(new Set());
+  const downloadCooldownTimersRef = useRef<Map<string, number>>(new Map());
+  const isDownloadStarting = useCallback(
+    (downloadKey: string) =>
+      activeDownloadKeys.has(downloadKey) || activeDownloadKeysRef.current.has(downloadKey),
+    [activeDownloadKeys],
+  );
+  const onDownloadStart = useCallback((downloadKey: string) => {
+    if (activeDownloadKeysRef.current.has(downloadKey)) return false;
+    const nextActiveDownloadKeys = new Set(activeDownloadKeysRef.current);
+    nextActiveDownloadKeys.add(downloadKey);
+    activeDownloadKeysRef.current = nextActiveDownloadKeys;
+    setActiveDownloadKeys(nextActiveDownloadKeys);
+    const timer = window.setTimeout(() => {
+      const activeKeys = new Set(activeDownloadKeysRef.current);
+      activeKeys.delete(downloadKey);
+      activeDownloadKeysRef.current = activeKeys;
+      setActiveDownloadKeys(activeKeys);
+      downloadCooldownTimersRef.current.delete(downloadKey);
+    }, MESSAGE_CARD_DOWNLOAD_START_COOLDOWN_MS);
+    downloadCooldownTimersRef.current.set(downloadKey, timer);
+    return true;
+  }, []);
+  useEffect(() => {
+    return () => {
+      for (const timer of downloadCooldownTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      downloadCooldownTimersRef.current.clear();
+    };
+  }, []);
+
+  return { isDownloadStarting, onDownloadStart };
 }
 
 const AUDIO_FILE_EXTENSIONS = [
@@ -146,23 +183,25 @@ export function mediaAttachmentSizeBytes(m: MessageMediaInfo): number | null {
   return m.sizeBytes ?? raw.size_bytes ?? null;
 }
 
+export function messageCardAttachmentsArchiveHref(messageId: number): string {
+  return `/api/rer-importer/messages/${messageId}/attachments.zip`;
+}
+
+export function mediaDownloadAttr(displayName: string, fallbackName: string): string {
+  return displayName === '<файл без назви>' ? fallbackName : displayName.replace(/[/\\]/g, '_');
+}
+
 export function canDownloadAllMessageAttachments(attachments: MessageMediaInfo[]): boolean {
   if (attachments.length <= 1 || attachments.length > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_FILES) {
     return false;
   }
-
-  let totalBytes = 0;
-  for (const attachment of attachments) {
+  const knownTotalBytes = attachments.reduce((totalBytes, attachment) => {
     const sizeBytes = mediaAttachmentSizeBytes(attachment);
-    if (sizeBytes === null || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
-      return false;
-    }
-    totalBytes += sizeBytes;
-    if (totalBytes > RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES) {
-      return false;
-    }
-  }
-  return true;
+    return typeof sizeBytes === 'number' && Number.isFinite(sizeBytes) && sizeBytes > 0
+      ? totalBytes + sizeBytes
+      : totalBytes;
+  }, 0);
+  return knownTotalBytes <= RER_MESSAGE_ATTACHMENTS_ZIP_MAX_TOTAL_BYTES;
 }
 
 const MESSENGER_MEDIA_PATH_RE = /\/api\/messenger\/media\/([^/?#]+)/;
@@ -252,8 +291,7 @@ export function MessageMediaAudioPlayer({
 
   const downloadKey = messageCardMediaDownloadKey(String(attachment.id));
   const downloading = isDownloadStarting(downloadKey);
-  const downloadAttr =
-    displayName === '<файл без назви>' ? 'attachment' : displayName.replace(/[/\\]/g, '_');
+  const downloadAttr = mediaDownloadAttr(displayName, 'attachment');
   const downloadLabel = `Завантажити аудіо: ${displayName}`;
   const downloadAriaLabel = downloading ? 'Завантаження…' : downloadLabel;
 
@@ -338,8 +376,7 @@ export function MessageMediaDownloadLink({
   const displayName = mediaAttachmentDisplayName(attachment);
   const downloadKey = messageCardMediaDownloadKey(String(attachment.id));
   const downloading = isDownloadStarting(downloadKey);
-  const downloadAttr =
-    displayName === '<файл без назви>' ? 'attachment' : displayName.replace(/[/\\]/g, '_');
+  const downloadAttr = mediaDownloadAttr(displayName, 'attachment');
   return (
     <Tooltip title={displayName} enterDelay={400}>
       <MessageCardDisabledControlCursorWrapper disabled={downloading}>
@@ -420,7 +457,7 @@ export function MessageMediaDownloadAllLink({
   isDownloadStarting,
   onDownloadStart,
 }: { messageId: number } & MessageCardDownloadGuardProps) {
-  const downloadKey = 'archive';
+  const downloadKey = MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY;
   const downloading = isDownloadStarting(downloadKey);
   return (
     <MessageCardDisabledControlCursorWrapper disabled={downloading}>
@@ -428,13 +465,13 @@ export function MessageMediaDownloadAllLink({
         component="a"
         size="small"
         variant="outlined"
-        href={`/api/rer-importer/messages/${messageId}/attachments.zip`}
-        download="attachments.zip"
+        href={messageCardAttachmentsArchiveHref(messageId)}
+        download={MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME}
         target="_blank"
         rel="noopener noreferrer"
         disabled={downloading}
         aria-busy={downloading}
-        aria-label={downloading ? 'Завантаження…' : 'Завантажити все'}
+        aria-label={downloading ? 'Завантаження…' : MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL}
         onClick={(event) =>
           guardMessageCardDownloadClick(event, downloadKey, {
             isDownloadStarting,
@@ -473,9 +510,85 @@ export function MessageMediaDownloadAllLink({
           )
         }
       >
-        {downloading ? 'Завантаження…' : 'Завантажити все'}
+        {downloading ? 'Завантаження…' : MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL}
       </Button>
     </MessageCardDisabledControlCursorWrapper>
+  );
+}
+
+export function MessageMediaThumbnailDownloadLink({
+  href,
+  displayName,
+  downloadName,
+  downloadKey,
+  isDownloadStarting,
+  onDownloadStart,
+}: {
+  href: string;
+  displayName: string;
+  downloadName: string;
+  downloadKey: string;
+} & MessageCardDownloadGuardProps) {
+  if (href.trim() === '') return null;
+
+  const downloading = isDownloadStarting(downloadKey);
+  const label = `Завантажити вкладення: ${displayName}`;
+  return (
+    <Tooltip title={label} enterDelay={400}>
+      <MessageCardDisabledControlCursorWrapper disabled={downloading}>
+        <IconButton
+          component="a"
+          href={href}
+          download={downloadName}
+          target="_blank"
+          rel="noopener noreferrer"
+          size="small"
+          disabled={downloading}
+          aria-busy={downloading}
+          aria-label={downloading ? 'Завантаження…' : label}
+          onClick={(event) => {
+            event.stopPropagation();
+            guardMessageCardDownloadClick(event, downloadKey, {
+              isDownloadStarting,
+              onDownloadStart,
+            });
+          }}
+          sx={{
+            position: 'absolute',
+            top: 5,
+            right: 5,
+            zIndex: 3,
+            width: 22,
+            height: 22,
+            color: 'rgba(255, 255, 255, 0.92)',
+            backgroundColor: 'rgba(15, 23, 42, 0.42)',
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.28)',
+            opacity: { xs: 0.78, sm: 0.62 },
+            transition: 'opacity 120ms ease-out, background-color 120ms ease-out',
+            '&:hover, &:focus-visible': {
+              opacity: 0.95,
+              backgroundColor: 'rgba(15, 23, 42, 0.64)',
+            },
+            '&[aria-busy="true"]': {
+              color: 'rgba(255, 255, 255, 0.92)',
+              backgroundColor: 'rgba(15, 23, 42, 0.42)',
+              opacity: { xs: 0.78, sm: 0.62 },
+            },
+            '& svg': { fontSize: 15 },
+          }}
+        >
+          {downloading ? (
+            <CircularProgress
+              size={12}
+              aria-label="Завантаження…"
+              sx={{ color: 'rgba(255, 255, 255, 0.86)' }}
+            />
+          ) : (
+            <DownloadIcon aria-hidden />
+          )}
+        </IconButton>
+      </MessageCardDisabledControlCursorWrapper>
+    </Tooltip>
   );
 }
 

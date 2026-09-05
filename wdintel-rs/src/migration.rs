@@ -139,7 +139,7 @@ fn is_unquoted_identifier(value: &str) -> bool {
             .all(|character| matches!(character, 'a'..='z' | '0'..='9' | '_'))
 }
 
-async fn ensure_echo_gpu_uuid_v7_generator(
+pub(crate) async fn ensure_echo_gpu_uuid_v7_generator(
     dbx: &DatabaseConnection,
 ) -> Result<(), AppError> {
     dbx.execute_unprepared(

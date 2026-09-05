@@ -31,6 +31,8 @@ public.palitra_highlight_blacklist
 # PostgreSQL-only parsing configuration.
 public.sigint_comment_blacklist
 public.failed_inbox_unit
+public.failed_unit_label
+public.sigint_inbox_item_failed_unit_label
 public.sigint_unit_label
 public.sigint_unit_change
 public.battle_line_version
@@ -84,3 +86,6 @@ public.ai_agent_chat_mattermost_notification
 
 # Device integration secrets.
 public.device_settings
+
+# Login TOTP seeds (plaintext second-factor credentials).
+public.login_totp

@@ -274,10 +274,14 @@ afterEach(() => {
 
 // @test-scope safeguard: prevents network-detail unit option refreshes from dropping current unit selections.
 describe('useRerNetworkDetailsNeoPage unit options', () => {
+  // @test-scope safeguard: prevents a distinct same-named unit ID from disappearing from network assignment while blank labels are excluded
   it('filters blank-name units before building lookup options', () => {
     const page = renderHookHarness();
 
-    expect(page.unitOptions).toEqual([{ id: 1, label: '11 АК' }]);
+    expect(page.unitOptions).toEqual([
+      { id: 1, label: '11 АК' },
+      { id: 2, label: '11 АК' },
+    ]);
   });
 
   it('puts all-band AOR first and filters blank posts', () => {

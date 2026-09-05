@@ -1,35 +1,67 @@
 /**
  * @vitest-environment happy-dom
  */
-import { FormProvider, useForm } from 'react-hook-form';
+import { FormProvider, useForm, useWatch } from 'react-hook-form';
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AttachmentsSection } from '../AttachmentsSection';
 import { EMPTY_FORM_VALUES, type MessageFormData } from '../../manage-message-drawer.schema';
 
-const previewMocks = vi.hoisted(() => ({ imageEditing: null as any }));
+const previewMocks = vi.hoisted(() => ({ imageEditing: null as any, reportDraft: null as any }));
 const authRedirectMocks = vi.hoisted(() => ({ emitUnauthorizedEvent: vi.fn() }));
 vi.mock('../../../message-card/attachment-preview/MessageCardAttachmentPreviewProvider', () => ({
-  MessageCardAttachmentPreviewProvider: ({ imageEditing }: { imageEditing: unknown }) => {
+  MessageCardAttachmentPreviewProvider: ({
+    imageEditing,
+    reportDraft,
+  }: {
+    imageEditing: unknown;
+    reportDraft?: unknown;
+  }) => {
     previewMocks.imageEditing = imageEditing;
+    previewMocks.reportDraft = reportDraft ?? null;
     return <div role="dialog" />;
   },
 }));
 vi.mock('../../../../../auth-redirect', () => authRedirectMocks);
 
-function Form({ children }: { children: ReactNode }) {
-  const methods = useForm<MessageFormData>({ defaultValues: EMPTY_FORM_VALUES });
-  return createElement(FormProvider, methods, children);
+function Form({
+  children,
+  defaultValues = EMPTY_FORM_VALUES,
+}: {
+  children: ReactNode;
+  defaultValues?: MessageFormData;
+}) {
+  const methods = useForm<MessageFormData>({ defaultValues });
+  const fullBody = useWatch({ control: methods.control, name: 'full_body' }) ?? '';
+  return createElement(
+    FormProvider,
+    methods,
+    children,
+    <output data-testid="full-body">{fullBody}</output>,
+  );
 }
 
-async function renderSection(files: unknown[] = [], existingMedia: any[] = [], uppy: any = {}) {
+async function renderSection(
+  files: unknown[] = [],
+  existingMedia: any[] = [],
+  uppy: any = {},
+  options: {
+    reportTextPreviewEnabled?: boolean;
+    initialReportText?: string;
+  } = {},
+) {
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);
   await act(async () => {
     root.render(
-      <Form>
+      <Form
+        defaultValues={{
+          ...EMPTY_FORM_VALUES,
+          full_body: options.initialReportText ?? EMPTY_FORM_VALUES.full_body,
+        }}
+      >
         <AttachmentsSection
           uppy={uppy}
           uppyFiles={files as never[]}
@@ -39,6 +71,7 @@ async function renderSection(files: unknown[] = [], existingMedia: any[] = [], u
           handleDropzoneKeyDown={vi.fn()}
           busy={false}
           existingMedia={existingMedia}
+          reportTextPreviewEnabled={options.reportTextPreviewEnabled}
         />
       </Form>,
     );
@@ -66,6 +99,7 @@ describe('AttachmentsSection media previews', () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    previewMocks.reportDraft = null;
     document.body.replaceChildren();
   });
 
@@ -520,6 +554,46 @@ describe('AttachmentsSection media previews', () => {
     const dialog = document.body.querySelector('div[role="dialog"]');
     expect(dialog).not.toBeNull();
 
+    act(() => root.unmount());
+  });
+
+  it('shares report text with the attachment preview draft in report mode', async () => {
+    const existingMedia = [
+      {
+        id: 'media-doc',
+        fileName: 'report.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 2048,
+        href: 'https://example.com/report.pdf',
+        transcription: null,
+      },
+    ];
+
+    const { container, root } = await renderSection(
+      [],
+      existingMedia,
+      {},
+      {
+        reportTextPreviewEnabled: true,
+        initialReportText: 'Початковий текст',
+      },
+    );
+
+    await act(async () => {
+      container
+        .querySelector('button[aria-label="Переглянути report.pdf"]')
+        ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(previewMocks.reportDraft?.value).toBe('Початковий текст');
+
+    await act(async () => {
+      previewMocks.reportDraft?.onChange('Оновлений текст');
+    });
+
+    expect(container.querySelector('[data-testid="full-body"]')?.textContent).toBe(
+      'Оновлений текст',
+    );
     act(() => root.unmount());
   });
 });

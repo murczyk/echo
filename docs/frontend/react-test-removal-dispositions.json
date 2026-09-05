@@ -2714,13 +2714,13 @@
       "originalFile": "src/ts/react/hooks/use-duty-settings.spec.tsx",
       "identity": "useDutySettings > defaults an absent preview limit to 20",
       "subsystem": "react-entrypoints-and-utilities",
-      "disposition": "retained-and-moved",
-      "reason": "Operational parser/compatibility coverage.",
-      "behaviorReference": "react-analysis-query-state-normalization",
+      "disposition": "removed",
+      "reason": "Default-value restatement; the compatibility behavior is recorded in the Duty behavior contract.",
+      "behaviorReference": "react-duty-message-preview-preference",
       "userVisibleOrAppearance": "compatibility",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/hooks/__tests__/recovered/use-duty-settings.spec.tsx"
+      "recoveryStatus": "audited-removed",
+      "recoveredTestFile": null
     },
     {
       "originalFile": "src/ts/react/mui-theme.spec.tsx",

@@ -10,6 +10,7 @@ use echo_im::types::{MessageAttachmentF1, MessageF1};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use sea_orm::*;
+use std::collections::HashMap;
 use std::path::Path;
 use uuid::Uuid;
 
@@ -248,6 +249,7 @@ async fn promote_duplicate_trace_for_deleted_original(
     for (group_link, _) in duplicate_traces {
         let mut group_link = group_link.into_active_model();
         group_link.signal_message_id = Set(promoted_message.id);
+        group_link.signal_message_uuid = Set(promoted_message.id_uuid);
         group_link.message_uid = Set(promoted_message.message_uid.clone());
         group_link.update(txn).await.c(h!())?;
     }
@@ -255,6 +257,7 @@ async fn promote_duplicate_trace_for_deleted_original(
         txn,
         original_message.id,
         promoted_message.id,
+        promoted_message.id_uuid,
     )
     .await
     .c(h!())?;
@@ -343,6 +346,21 @@ async fn copy_manual_annotations_from_messages_to_promoted_messages(
     original_message_ids: &[i64],
     promoted_message_ids: &[i64],
 ) -> anyhow::Result<()> {
+    let promoted_message_uuids = signal_message::Entity::find()
+        .select_only()
+        .column(signal_message::Column::Id)
+        .column(signal_message::Column::IdUuid)
+        .filter(
+            signal_message::Column::Id
+                .is_in(promoted_message_ids.iter().copied()),
+        )
+        .into_tuple::<(i64, Option<Uuid>)>()
+        .all(txn)
+        .await
+        .c(h!())?
+        .into_iter()
+        .collect::<HashMap<_, _>>();
+
     for original_message_id in original_message_ids.iter().copied().unique() {
         for promoted_message_id in promoted_message_ids.iter().copied().unique()
         {
@@ -353,6 +371,10 @@ async fn copy_manual_annotations_from_messages_to_promoted_messages(
                 txn,
                 original_message_id,
                 promoted_message_id,
+                promoted_message_uuids
+                    .get(&promoted_message_id)
+                    .copied()
+                    .flatten(),
             )
             .await
             .c(h!())?;
@@ -365,15 +387,18 @@ async fn copy_manual_annotations_to_promoted_message(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
 ) -> anyhow::Result<()> {
     copy_annotation_rows(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_comment (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 comment,
                 created_at,
                 sigint_post_id
@@ -381,6 +406,7 @@ async fn copy_manual_annotations_to_promoted_message(
             select
                 c.login_id,
                 $2,
+                $3,
                 c.comment,
                 c.created_at,
                 c.sigint_post_id
@@ -403,16 +429,19 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_bookmark (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 created_at,
                 deleted
             )
             select
                 b.login_id,
                 $2,
+                $3,
                 b.created_at,
                 b.deleted
             from sigint_bookmark b
@@ -433,16 +462,19 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_important (
                 login_id,
                 signal_message_id,
+                signal_message_uuid,
                 created_at,
                 deleted
             )
             select
                 i.login_id,
                 $2,
+                $3,
                 i.created_at,
                 i.deleted
             from sigint_important i
@@ -464,9 +496,11 @@ async fn copy_manual_annotations_to_promoted_message(
         txn,
         original_message_id,
         promoted_message_id,
+        promoted_message_uuid,
         r#"
             insert into sigint_inbox_item_tag (
                 sigint_inbox_item_id,
+                sigint_inbox_item_uuid,
                 tag_id,
                 confidence,
                 login_id,
@@ -474,6 +508,7 @@ async fn copy_manual_annotations_to_promoted_message(
             )
             select
                 $2,
+                $3,
                 t.tag_id,
                 t.confidence,
                 t.login_id,
@@ -493,7 +528,7 @@ async fn copy_manual_annotations_to_promoted_message(
     )
     .await
     .c(h!())?;
-    copy_annotation_rows(
+    copy_annotation_rows_without_uuid(
         txn,
         original_message_id,
         promoted_message_id,
@@ -513,6 +548,27 @@ async fn copy_manual_annotations_to_promoted_message(
 }
 
 async fn copy_annotation_rows(
+    txn: &DatabaseTransaction,
+    original_message_id: i64,
+    promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
+    sql: &str,
+) -> anyhow::Result<()> {
+    txn.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        sql,
+        [
+            original_message_id.into(),
+            promoted_message_id.into(),
+            promoted_message_uuid.into(),
+        ],
+    ))
+    .await
+    .c(h!())?;
+    Ok(())
+}
+
+async fn copy_annotation_rows_without_uuid(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
@@ -578,6 +634,7 @@ async fn transfer_media_to_promoted_message(
     txn: &DatabaseTransaction,
     original_message_id: i64,
     promoted_message_id: i64,
+    promoted_message_uuid: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let media_rows = signal_message_media::Entity::find()
         .filter(
@@ -590,6 +647,7 @@ async fn transfer_media_to_promoted_message(
     for media in media_rows {
         let mut media = media.into_active_model();
         media.signal_message_id = Set(promoted_message_id);
+        media.signal_message_uuid = Set(promoted_message_uuid);
         media.update(txn).await.c(h!())?;
     }
     Ok(())
@@ -1010,6 +1068,7 @@ pub async fn reconcile_active_message_with_staged_media(
                 txn,
                 source_message_id,
                 unstage_result.message.id,
+                unstage_result.message.id_uuid,
             )
             .await
             .c(h!())?;
@@ -1875,6 +1934,7 @@ async fn replace_media_if_changed(
     let uploaded_media = crate::messenger::media::persist_staged_media(
         staged_media,
         signal_message.id,
+        signal_message.id_uuid,
         txn,
     )
     .await
@@ -2064,15 +2124,16 @@ async fn reset_machine_derived_inbox_data(
     signal_message_id: i64,
 ) -> anyhow::Result<()> {
     let system_login_id = crate::users::system_login_id(txn).await?;
-    if sigint_inbox_item::Entity::find_by_id(signal_message_id)
-        .one(txn)
-        .await
-        .c(h!())?
-        .is_some()
+    if let Some(inbox_item) =
+        sigint_inbox_item::Entity::find_by_id(signal_message_id)
+            .one(txn)
+            .await
+            .c(h!())?
     {
         crate::inbox::callsigns::sync(
             txn,
             signal_message_id,
+            inbox_item.id_uuid,
             crate::inbox::callsigns::InboxItemCallsigns::default(),
             system_login_id,
         )
@@ -2190,6 +2251,14 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original_message_id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    txn,
+                    original_message_id,
+                )
+                .await
+                .unwrap(),
+            ),
             group_master_key: Set(Some(group_id.to_string())),
             sender: Set(trace.sender.clone()),
             login_id: Set(None),
@@ -2269,6 +2338,7 @@ mod tests {
             &txn,
             original.id,
             promoted.id,
+            promoted.id_uuid,
         )
         .await
         .unwrap();
@@ -2638,6 +2708,14 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(
+                crate::sigint::message_id::find_signal_message_uuid(
+                    &txn,
+                    original.id,
+                )
+                .await
+                .unwrap(),
+            ),
             group_master_key: Set(Some(group_id.clone())),
             sender: Set(trace.sender.clone()),
             login_id: Set(None),
@@ -2759,6 +2837,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(original.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("original.txt".to_string())),
@@ -3981,6 +4060,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -4095,6 +4175,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(Uuid::now_v7()),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("image/jpeg".to_string()),
             file_ext: Set(Some("jpg".to_string())),
             file_name: Set(Some("a.jpg".to_string())),
@@ -4845,6 +4926,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5059,6 +5141,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5190,6 +5273,7 @@ mod tests {
         signal_message_media::ActiveModel {
             id: Set(media_id),
             signal_message_id: Set(source_message.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             content_type: Set("text/plain".to_string()),
             file_ext: Set(Some("txt".to_string())),
             file_name: Set(Some("old.txt".to_string())),
@@ -5466,6 +5550,7 @@ mod tests {
         signal_message_group::ActiveModel {
             id: NotSet,
             signal_message_id: Set(original.id),
+            signal_message_uuid: Set(source_message.id_uuid),
             group_master_key: Set(Some(group_id.clone())),
             sender: Set(source_message.sender.clone()),
             login_id: Set(source_message.login_id),
@@ -5612,6 +5697,7 @@ mod tests {
             sigint_important::ActiveModel {
                 id: NotSet,
                 signal_message_id: Set(signal_message.id),
+                signal_message_uuid: NotSet,
                 login_id: Set(None),
                 created_at: NotSet,
                 deleted: Set(false),
@@ -5624,6 +5710,7 @@ mod tests {
             sigint_important::ActiveModel {
                 id: NotSet,
                 signal_message_id: Set(signal_message.id),
+                signal_message_uuid: NotSet,
                 login_id: Set(Some(login.id)),
                 created_at: NotSet,
                 deleted: Set(false),

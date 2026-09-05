@@ -17,6 +17,7 @@ import { CoordinateAttachmentPreviewRenderer } from '../renderers/CoordinateAtta
 import { DocumentAttachmentPreviewRenderer } from '../renderers/DocumentAttachmentPreviewRenderer';
 import { ImageAttachmentPreviewRenderer } from '../renderers/ImageAttachmentPreviewRenderer';
 import { VideoAttachmentPreviewRenderer } from '../renderers/VideoAttachmentPreviewRenderer';
+import type { AttachmentPreviewReportDraft } from './ReportTextPreview';
 import type {
   ImageEditorEscapeHandler,
   ImageEditingCapability,
@@ -50,23 +51,24 @@ export function MessageCardAttachmentPreviewDialog({
   onDownloadStart = allowDownloadStart,
   imageEditing,
   initialAction,
+  reportDraft,
 }: {
   item: MessageCardPreviewItem;
   navigation: MessageCardPreviewNavigation;
   onClose: () => void;
   imageEditing?: ImageEditingCapability;
   initialAction?: 'edit-image';
+  reportDraft?: AttachmentPreviewReportDraft;
 } & Partial<MessageCardDownloadGuardProps>) {
   const previewKind = getPreviewKind(item);
   const dialogLabel = getPreviewDialogLabel(previewKind);
-  const [isFullscreen, setIsFullscreen] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [pendingInitialAction, setPendingInitialAction] = useState(initialAction);
   const [childOverlayOpen, setChildOverlayOpen] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   const [dismissChildOverlay, setDismissChildOverlay] = useState(0);
   const editorEscapeHandlerRef = useRef<ImageEditorEscapeHandler | null>(null);
   const previewConfig = getMessageCardAttachmentPreviewConfig(previewKind);
-  const dialogIsFullscreen = isFullscreen && previewConfig.supportsFullscreen;
   const registerEditorEscapeHandler = useCallback<RegisterImageEditorEscapeHandler>((handler) => {
     editorEscapeHandlerRef.current = handler;
   }, []);
@@ -90,10 +92,6 @@ export function MessageCardAttachmentPreviewDialog({
           return;
         }
         consumeEvent(event);
-        if (previewKind !== 'image' && previewConfig.layout === 'media' && dialogIsFullscreen) {
-          setIsFullscreen(false);
-          return;
-        }
         closeDialog();
         return;
       }
@@ -118,27 +116,25 @@ export function MessageCardAttachmentPreviewDialog({
 
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [childOverlayOpen, dialogIsFullscreen, isEditing, navigation, previewConfig, previewKind]);
+  }, [childOverlayOpen, isEditing, navigation]);
 
   const closeDialog = () => {
     blurActiveAttachmentPreviewElement();
-    setIsFullscreen(true);
+    setReportVisible(false);
     onClose();
   };
   const paperSx: Record<string, unknown> = {
     display: 'flex',
     flexDirection: 'column',
-    width: dialogIsFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
-    height: dialogIsFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
-    maxWidth: dialogIsFullscreen ? '100vw' : { xs: '100vw', sm: '92vw' },
-    maxHeight: dialogIsFullscreen ? '100svh' : { xs: '100svh', sm: '92svh' },
-    borderRadius: dialogIsFullscreen ? 0 : { xs: 0, sm: 2 },
+    width: '100vw',
+    height: '100svh',
+    maxWidth: '100vw',
+    maxHeight: '100svh',
+    borderRadius: 0,
     m: 0,
   };
   const rendererProps = {
     navigation,
-    isFullscreen: dialogIsFullscreen,
-    onFullscreenChange: setIsFullscreen,
     onClose: closeDialog,
     isDownloadStarting,
     onDownloadStart,
@@ -151,13 +147,13 @@ export function MessageCardAttachmentPreviewDialog({
         if (!isEditing) closeDialog();
       }}
       maxWidth={false}
-      fullScreen={dialogIsFullscreen}
+      fullScreen
       disableEscapeKeyDown
       disableRestoreFocus={previewConfig.disableRestoreFocus}
       PaperProps={{
         'aria-label': dialogLabel,
         sx: {
-          ...getAttachmentPreviewDialogPaperSx(dialogIsFullscreen),
+          ...getAttachmentPreviewDialogPaperSx(),
           backgroundColor: (theme) => getAttachmentPreviewStageBg(theme),
           ...paperSx,
         },
@@ -176,6 +172,9 @@ export function MessageCardAttachmentPreviewDialog({
           registerEditorEscapeHandler={registerEditorEscapeHandler}
           onChildOverlayChange={setChildOverlayOpen}
           dismissChildOverlay={dismissChildOverlay}
+          reportDraft={reportDraft}
+          reportVisible={reportVisible}
+          onReportVisibleChange={setReportVisible}
           {...rendererProps}
         />
       ) : item.type === 'video' ? (
@@ -183,16 +182,23 @@ export function MessageCardAttachmentPreviewDialog({
           video={item.value}
           onChildOverlayChange={setChildOverlayOpen}
           dismissChildOverlay={dismissChildOverlay}
+          reportDraft={reportDraft}
+          reportVisible={reportVisible}
+          onReportVisibleChange={setReportVisible}
           {...rendererProps}
         />
       ) : item.type === 'document' ? (
-        <DocumentAttachmentPreviewRenderer document={item.value} {...rendererProps} />
+        <DocumentAttachmentPreviewRenderer
+          document={item.value}
+          reportDraft={reportDraft}
+          reportVisible={reportVisible}
+          onReportVisibleChange={setReportVisible}
+          {...rendererProps}
+        />
       ) : (
         <CoordinateAttachmentPreviewRenderer
           points={item.points}
           navigation={navigation}
-          isFullscreen={dialogIsFullscreen}
-          onFullscreenChange={setIsFullscreen}
           onClose={closeDialog}
         />
       )}
