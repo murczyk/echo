@@ -280,7 +280,7 @@ fn proposed_name_change(
     if cleared_echelons.is_empty() && !removed_other {
         return None;
     }
-    if proposed_name.is_empty() {
+    if proposed_name.is_empty() || proposed_name == unit.name {
         return None;
     }
     Some(UnitNameChange {
@@ -347,10 +347,13 @@ fn proposed_name(
     if !crate::sigint::unit::unit_has_name_echelon_below_corps(unit) {
         return (unit.name.clone(), false);
     }
+    let retained_echelons = retained_echelons(unit, cleared_echelons);
     let (mut proposed_name, removed_other) =
-        remove_phrase(&unit.name, &unit.other);
+        remove_phrase(&unit.name, &unit.other, &retained_echelons);
     for echelon in cleared_echelons {
-        proposed_name = remove_phrase(&proposed_name, &echelon.current).0;
+        proposed_name =
+            remove_phrase(&proposed_name, &echelon.current, &retained_echelons)
+                .0;
     }
     (
         proposed_name
@@ -361,30 +364,155 @@ fn proposed_name(
     )
 }
 
-fn remove_phrase(value: &str, phrase: &str) -> (String, bool) {
+fn retained_echelons<'a>(
+    unit: &'a sigint_unit::Model,
+    cleared_echelons: &[ClearedEchelon],
+) -> Vec<&'a str> {
+    crate::sigint::unit::unit_hierarchy(unit)
+        .into_iter()
+        .enumerate()
+        .skip(1)
+        .filter(|(index, value)| {
+            !value.trim().is_empty()
+                && !echelon_is_cleared(*index, cleared_echelons)
+        })
+        .map(|(_, value)| value)
+        .collect()
+}
+
+fn echelon_is_cleared(
+    index: usize,
+    cleared_echelons: &[ClearedEchelon],
+) -> bool {
+    let attribute = match index {
+        index if index == EchoEchelon::Corps.index() => "corps",
+        index if index == EchoEchelon::Army.index() => "army",
+        index if index == EchoEchelon::MilitaryDistrict.index() => {
+            "military_district"
+        }
+        index if index == EchoEchelon::ArmyRegion.index() => "army_region",
+        _ => return false,
+    };
+    cleared_echelons
+        .iter()
+        .any(|echelon| echelon.attribute == attribute)
+}
+
+fn phrases_equal(left: &str, right: &str) -> bool {
+    left.split_whitespace()
+        .map(str::to_lowercase)
+        .eq(right.split_whitespace().map(str::to_lowercase))
+}
+
+fn remove_phrase(
+    value: &str,
+    phrase: &str,
+    retained_echelons: &[&str],
+) -> (String, bool) {
     let value_words = value.split_whitespace().collect::<Vec<_>>();
     let phrase_words = phrase.split_whitespace().collect::<Vec<_>>();
     if phrase_words.is_empty() {
         return (value.to_string(), false);
     }
+    let matching_echelons = retained_echelons
+        .iter()
+        .filter(|echelon| phrases_equal(echelon, phrase))
+        .count();
+    let mut removals = removable_phrase_occurrence_count(
+        &value_words,
+        &phrase_words,
+        phrase,
+        retained_echelons,
+    )
+    .saturating_sub(matching_echelons);
     let mut kept_words = Vec::new();
     let mut removed = false;
     let mut index = 0;
     while index < value_words.len() {
         let end = index + phrase_words.len();
-        if end <= value_words.len()
-            && value_words[index..end].iter().zip(&phrase_words).all(
-                |(value, phrase)| value.to_lowercase() == phrase.to_lowercase(),
-            )
-        {
+        if phrase_matches_at(&value_words, &phrase_words, index) {
+            if removals == 0
+                || phrase_overlaps_retained_echelon(
+                    &value_words,
+                    &phrase_words,
+                    phrase,
+                    index,
+                    retained_echelons,
+                )
+            {
+                kept_words.extend_from_slice(&value_words[index..end]);
+            } else {
+                removals -= 1;
+                removed = true;
+            }
             index = end;
-            removed = true;
         } else {
             kept_words.push(value_words[index]);
             index += 1;
         }
     }
     (kept_words.join(" "), removed)
+}
+
+fn removable_phrase_occurrence_count(
+    value_words: &[&str],
+    phrase_words: &[&str],
+    phrase: &str,
+    retained_echelons: &[&str],
+) -> usize {
+    let mut count = 0;
+    let mut index = 0;
+    while index < value_words.len() {
+        if phrase_matches_at(value_words, phrase_words, index) {
+            if !phrase_overlaps_retained_echelon(
+                value_words,
+                phrase_words,
+                phrase,
+                index,
+                retained_echelons,
+            ) {
+                count += 1;
+            }
+            index += phrase_words.len();
+        } else {
+            index += 1;
+        }
+    }
+    count
+}
+
+fn phrase_overlaps_retained_echelon(
+    value_words: &[&str],
+    phrase_words: &[&str],
+    phrase: &str,
+    phrase_index: usize,
+    retained_echelons: &[&str],
+) -> bool {
+    let phrase_end = phrase_index + phrase_words.len();
+    retained_echelons.iter().any(|retained_echelon| {
+        if phrases_equal(retained_echelon, phrase) {
+            return false;
+        }
+        let retained_words =
+            retained_echelon.split_whitespace().collect::<Vec<_>>();
+        (0..value_words.len()).any(|retained_index| {
+            phrase_matches_at(value_words, &retained_words, retained_index)
+                && phrase_index < retained_index + retained_words.len()
+                && retained_index < phrase_end
+        })
+    })
+}
+
+fn phrase_matches_at(
+    value_words: &[&str],
+    phrase_words: &[&str],
+    index: usize,
+) -> bool {
+    let end = index + phrase_words.len();
+    end <= value_words.len()
+        && value_words[index..end].iter().zip(phrase_words).all(
+            |(value, phrase)| value.to_lowercase() == phrase.to_lowercase(),
+        )
 }
 
 fn display_cleared_echelons(change: &UnitNameChange) -> Vec<String> {
@@ -588,42 +716,18 @@ mod tests {
     }
 
     #[test]
-    fn clears_invalid_echelon_when_its_value_is_absent_from_the_name() {
+    fn leaves_unit_unchanged_when_invalid_echelon_is_absent_from_name() {
         let mut unit = sigint_unit("custom unit name", "", "");
         unit.corps = "МВО".to_string();
 
-        assert_eq!(
-            proposed_name_change(&unit, Some(&HashSet::new())),
-            Some(UnitNameChange {
-                unit_id: 1,
-                current_name: unit.name.clone(),
-                proposed_name: unit.name,
-                cleared_echelons: vec![ClearedEchelon {
-                    attribute: "corps",
-                    current: "МВО".to_string(),
-                }],
-                removed_other: None,
-            })
-        );
+        assert_eq!(proposed_name_change(&unit, Some(&HashSet::new())), None);
     }
 
     #[test]
-    fn removes_complete_echelon_phrases_only() {
+    fn leaves_unit_unchanged_when_echelon_is_only_part_of_name_word() {
         let unit = sigint_unit("1 МВОк", "МВО", "");
 
-        assert_eq!(
-            proposed_name_change(&unit, Some(&HashSet::new())),
-            Some(UnitNameChange {
-                unit_id: 1,
-                current_name: unit.name.clone(),
-                proposed_name: unit.name,
-                cleared_echelons: vec![ClearedEchelon {
-                    attribute: "military_district",
-                    current: "МВО".to_string(),
-                }],
-                removed_other: None,
-            })
-        );
+        assert_eq!(proposed_name_change(&unit, Some(&HashSet::new())), None);
     }
 
     #[test]
@@ -644,6 +748,91 @@ mod tests {
     }
 
     #[test]
+    fn keeps_other_value_when_it_matches_company() {
+        let mut unit = sigint_unit("1 р 9 мсп", "", "");
+        unit.other = "1 р".to_string();
+        unit.company = "1 р".to_string();
+
+        assert_eq!(proposed_name_change(&unit, None), None);
+    }
+
+    #[test]
+    fn keeps_other_value_when_it_is_part_of_company() {
+        let mut unit = sigint_unit("1 р 9 мсп", "", "");
+        unit.other = "1".to_string();
+        unit.company = "1 р".to_string();
+
+        assert_eq!(proposed_name_change(&unit, None), None);
+    }
+
+    #[test]
+    fn removes_standalone_other_without_cropping_company() {
+        let mut unit = sigint_unit("1 1 р 9 мсп", "", "");
+        unit.other = "1".to_string();
+        unit.company = "1 р".to_string();
+
+        assert_eq!(
+            proposed_name_change(&unit, None),
+            Some(UnitNameChange {
+                unit_id: 1,
+                current_name: unit.name,
+                proposed_name: "1 р 9 мсп".to_string(),
+                cleared_echelons: Vec::new(),
+                removed_other: Some("1".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn keeps_company_when_it_is_part_of_other_value() {
+        let mut unit = sigint_unit("1 р 9 мсп", "", "");
+        unit.other = "1 р".to_string();
+        unit.company = "1".to_string();
+
+        assert_eq!(proposed_name_change(&unit, None), None);
+    }
+
+    #[test]
+    fn removes_only_extra_other_occurrence_when_it_matches_company() {
+        let mut unit = sigint_unit("1 р 1 р 9 мсп", "", "");
+        unit.other = "1 р".to_string();
+        unit.company = "1 р".to_string();
+
+        assert_eq!(
+            proposed_name_change(&unit, None),
+            Some(UnitNameChange {
+                unit_id: 1,
+                current_name: unit.name,
+                proposed_name: "1 р 9 мсп".to_string(),
+                cleared_echelons: Vec::new(),
+                removed_other: Some("1 р".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn keeps_company_occurrence_matching_removed_other_and_corps() {
+        let mut unit = sigint_unit("1 р 1 р 1 р 9 мсп", "", "");
+        unit.other = "1 р".to_string();
+        unit.company = "1 р".to_string();
+        unit.corps = "1 р".to_string();
+
+        assert_eq!(
+            proposed_name_change(&unit, Some(&HashSet::new())),
+            Some(UnitNameChange {
+                unit_id: 1,
+                current_name: unit.name,
+                proposed_name: "1 р 9 мсп".to_string(),
+                cleared_echelons: vec![ClearedEchelon {
+                    attribute: "corps",
+                    current: "1 р".to_string(),
+                }],
+                removed_other: Some("1 р".to_string()),
+            })
+        );
+    }
+
+    #[test]
     fn keeps_name_when_clearing_echelons_would_empty_it() {
         let unit = sigint_unit("МВО ЗС РФ", "МВО", "ЗС РФ");
 
@@ -651,24 +840,13 @@ mod tests {
     }
 
     #[test]
-    fn keeps_name_when_only_echelons_are_corps_or_above() {
+    fn leaves_unit_unchanged_when_only_echelons_are_corps_or_above() {
         let mut unit = sigint_unit("Повна назва корпусу", "", "");
         unit.regiment.clear();
         unit.corps = "ТН".to_string();
         let orbit_echelons = HashSet::from([EchoEchelon::Corps]);
 
-        let change =
-            proposed_name_change(&unit, Some(&orbit_echelons)).unwrap();
-
-        assert_eq!(change.current_name, "Повна назва корпусу");
-        assert_eq!(change.proposed_name, "Повна назва корпусу");
-        assert_eq!(
-            change.cleared_echelons,
-            vec![ClearedEchelon {
-                attribute: "corps",
-                current: "ТН".to_string(),
-            }]
-        );
+        assert_eq!(proposed_name_change(&unit, Some(&orbit_echelons)), None);
     }
 
     #[test]
@@ -817,6 +995,59 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(changelog.len(), 1);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cleanup_modes_keep_echelon_value_matching_other() {
+        let env = crate::functest::tests::cleanup().await.unwrap();
+        for cleanup_mode in [tui::LinkMode::Manual, tui::LinkMode::Automatic] {
+            let unit = crate::functest::tests::mk_sigint_unit(
+                &env.dbx,
+                sigint_unit::ActiveModel {
+                    other: Set("Shared".to_string()),
+                    company: Set("Shared Company".to_string()),
+                    regiment: Set("RegimentToken".to_string()),
+                    corps: Set("ТН".to_string()),
+                    name: Set("Shared Company RegimentToken ТН".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            let reviewed = load_name_changes(
+                &env.dbx,
+                Some(&[unit.id]),
+                false,
+                tui::UnitActivityScope::Both,
+            )
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+
+            assert_eq!(reviewed.proposed_name, "Shared Company RegimentToken");
+
+            let actions = persist_change_batch(
+                &env.dbx,
+                &[reviewed],
+                cleanup_mode,
+                tui::UnitActivityScope::Both,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(actions.len(), 1);
+            let unit = sigint_unit::Entity::find_by_id(unit.id)
+                .one(&env.dbx)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(unit.name, "Shared Company RegimentToken");
+            assert_eq!(unit.other, "Shared");
+            assert_eq!(unit.company, "Shared Company");
+            assert_eq!(unit.corps, "");
+        }
     }
 
     fn sigint_unit(

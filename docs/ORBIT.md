@@ -223,8 +223,10 @@ absent from the unit's single linked ORBIT generative hierarchy.
 Automatic mode applies every safe proposal; manual mode shows the current and
 proposed name diff one unit at a time. Accepted changes clear invalid echelon
 fields and remove their complete phrases from the SIGINT name. An `other` value
-is removed from the name without clearing its hierarchy field. Automatic mode
-can target active units, inactive units, or both.
+is removed from the name without clearing its hierarchy field, but matching or
+overlapping complete values belonging to other echelons are retained. Automatic
+mode can target active units, inactive units, or both. Units whose names would
+not change are left untouched, including their echelon fields.
 
 ### Review SIGINT unit names generated from echelons
 
