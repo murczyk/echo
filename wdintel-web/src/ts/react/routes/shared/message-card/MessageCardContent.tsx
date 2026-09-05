@@ -665,6 +665,7 @@ export function MessageCardMessageBody({
   const messageTextSection = hasMessageText ? (
     <div className="message-card-main-section message-card-message-text">
       <div
+        data-message-card-text-content="true"
         className={
           msg.textMarked && msg.textMarked.length > 0
             ? 'text-marked whitespace-pre-wrap wrap-break-word'
@@ -672,7 +673,9 @@ export function MessageCardMessageBody({
         }
       >
         {textPrimary}
-        {hasMessageTextOverflow ? (
+      </div>
+      {hasMessageTextOverflow ? (
+        <div className="message-card-text-toggle-row">
           <Button
             size="small"
             color="inherit"
@@ -693,8 +696,8 @@ export function MessageCardMessageBody({
           >
             {isMessageTextExpanded ? 'згорнути' : 'розгорнути'}
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   ) : null;
 

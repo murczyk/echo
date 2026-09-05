@@ -161,6 +161,12 @@ async function installMixedTagVisualFixture(
 }
 
 test.describe('message card visual regression', () => {
+  const longMessageText = Array.from({ length: 21 }, (_, index) =>
+    index === 6
+      ? 'Довгий рядок для перевірки перенесення тексту на вузькій картці повідомлення без горизонтального переповнення'
+      : `Рядок довгого повідомлення ${index + 1}`,
+  ).join('\n');
+
   test('ECHO-3324 anchors and resolves the mixed bot tag Popover without focus warnings', async ({
     page,
   }) => {
@@ -408,6 +414,77 @@ test.describe('message card visual regression', () => {
       'display',
       'flex',
     );
+  });
+
+  test('ECHO-3324 keeps the long-message toggle attached and stable in Duty and Analysis', async ({
+    page,
+  }) => {
+    const assertToggleGeometry = async (card: Locator) => {
+      const textContent = card.locator('[data-message-card-text-content="true"]');
+      const messageSection = textContent.locator('..');
+      const toggleRow = card.locator('.message-card-text-toggle-row');
+      const button = toggleRow.getByRole('button');
+      const divider = messageSection.locator('xpath=./following-sibling::*[1]');
+      await expect(textContent).toBeVisible();
+      await expect(toggleRow).toBeVisible();
+      await expect(button).toBeVisible();
+      expect(
+        await button.evaluate(
+          (element) => element.closest('[data-message-card-text-content="true"]') === null,
+        ),
+      ).toBe(true);
+      const [textBox, rowBox, buttonBox, cardBox, paddingLeft] = await Promise.all([
+        textContent.boundingBox(),
+        toggleRow.boundingBox(),
+        button.boundingBox(),
+        card.boundingBox(),
+        button.evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingLeft)),
+      ]);
+      expect((rowBox?.y ?? 0) - (textBox?.y ?? 0) - (textBox?.height ?? 0)).toBeGreaterThanOrEqual(
+        1,
+      );
+      expect((rowBox?.y ?? 0) - (textBox?.y ?? 0) - (textBox?.height ?? 0)).toBeLessThanOrEqual(3);
+      expect(Math.abs((buttonBox?.x ?? 0) + paddingLeft - (textBox?.x ?? 0))).toBeLessThanOrEqual(
+        1,
+      );
+      expect((rowBox?.x ?? 0) + (rowBox?.width ?? 0)).toBeLessThanOrEqual(
+        (cardBox?.x ?? 0) + (cardBox?.width ?? 0) + 1,
+      );
+      await expect(divider).toHaveClass(/message-card-divider/);
+      await expect(divider).toBeVisible();
+      expect((await divider.boundingBox())?.y ?? 0).toBeGreaterThan(
+        (rowBox?.y ?? 0) + (rowBox?.height ?? 0),
+      );
+      const metrics = await buildMetrics(card);
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth + 1);
+    };
+
+    for (const host of ['duty', 'analysis'] as const) {
+      for (const cardWidth of [920, 330] as const) {
+        await openMessageCardPreviewHost(page, host, { messageText: longMessageText });
+        const card = page.locator('.message-card-root').first();
+        await card.evaluate((element, width) => {
+          const item = element.closest<HTMLElement>('.message-card-item');
+          if (item) item.style.width = `${width}px`;
+        }, cardWidth);
+        const button = card.getByRole('button', {
+          name: /Показати текст повідомлення|Згорнути текст повідомлення/,
+        });
+        await expect(button).toHaveAttribute('aria-expanded', 'false');
+        await assertToggleGeometry(card);
+        await button.focus();
+        await button.click();
+        await expect(button).toHaveAttribute('aria-expanded', 'true');
+        await expect(button).toBeFocused();
+        await assertToggleGeometry(card);
+        await expect(card.getByText('Рядок довгого повідомлення 21')).toBeVisible();
+        await button.click();
+        await expect(button).toHaveAttribute('aria-expanded', 'false');
+        await expect(button).toBeFocused();
+        await assertToggleGeometry(card);
+        await expect(card.getByText('Рядок довгого повідомлення 21')).toBeHidden();
+      }
+    }
   });
 
   for (const cardWidth of [920, 330] as const) {

@@ -103,12 +103,14 @@ function buildMessageCardMediaPreviewMessage({
   withCompleteCoordinateError = false,
   coordinateLabel,
   coordinatePointCount = 1,
+  messageText,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
   withCompleteCoordinateError?: boolean;
   coordinateLabel?: string;
   coordinatePointCount?: number;
+  messageText?: string;
 } = {}): Record<string, unknown> {
   const image1 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`;
   const image2 = `${MESSAGE_CARD_MEDIA_PREVIEW_ASSET_PREFIX}/${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image2}`;
@@ -121,7 +123,7 @@ function buildMessageCardMediaPreviewMessage({
 
   return {
     messageUid: 'e2e-message-card-preview',
-    text: 'E2E message-card media preview fixture',
+    text: messageText ?? 'E2E message-card media preview fixture',
     media: [
       {
         id: 'e2e-video-1',
@@ -234,12 +236,14 @@ export function buildMessageCardMediaPreviewInboxResponse({
   withCompleteCoordinateError = false,
   coordinateLabel,
   coordinatePointCount = 1,
+  messageText,
 }: {
   withPolishContent?: boolean;
   withPartialCoordinateError?: boolean;
   withCompleteCoordinateError?: boolean;
   coordinateLabel?: string;
   coordinatePointCount?: number;
+  messageText?: string;
 } = {}): InboxMessagesRspRaw {
   return {
     inbox_items: [
@@ -251,6 +255,7 @@ export function buildMessageCardMediaPreviewInboxResponse({
           withCompleteCoordinateError,
           coordinateLabel,
           coordinatePointCount,
+          messageText,
         }) as never,
       ],
     ],
@@ -337,6 +342,7 @@ async function installMessageCardMediaPreviewHostFixture(
   withCompleteCoordinateError: boolean,
   coordinateLabel: string | undefined,
   coordinatePointCount: number,
+  messageText: string | undefined,
 ): Promise<void> {
   const inboxResponse = buildMessageCardMediaPreviewInboxResponse({
     withPolishContent,
@@ -344,6 +350,7 @@ async function installMessageCardMediaPreviewHostFixture(
     withCompleteCoordinateError,
     coordinateLabel,
     coordinatePointCount,
+    messageText,
   });
 
   const networkInfoResponse = withPolishContent ? MESSAGE_CARD_POLISH_NETWORKS : undefined;
@@ -393,6 +400,7 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError = false,
     coordinateLabel,
     coordinatePointCount = 1,
+    messageText,
     deferredImageResponse,
   }: {
     revealAudio?: boolean;
@@ -402,6 +410,7 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError?: boolean;
     coordinateLabel?: string;
     coordinatePointCount?: number;
+    messageText?: string;
     deferredImageResponse?: DeferredMediaResponse;
   } = {},
 ): Promise<void> {
@@ -414,6 +423,7 @@ export async function openMessageCardPreviewHost(
     withCompleteCoordinateError,
     coordinateLabel,
     coordinatePointCount,
+    messageText,
   );
   await page.goto(
     host === 'analysis' ? '/rer-analysis-neo' : '/rer-duty-neo',

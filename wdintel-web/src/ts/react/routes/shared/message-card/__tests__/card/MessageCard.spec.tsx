@@ -1358,7 +1358,7 @@ describe('MessageCard', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it('folds marked message text after twenty source rows', async () => {
+  it('ECHO-3324 folds marked message text after twenty source rows', async () => {
     const rows = Array.from({ length: 21 }, (_, index) => `Рядок ${index + 1}`);
     const textMarked: ContentNode[] = rows.flatMap((row, index) => [
       index === 0
@@ -1372,6 +1372,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const messageText = view.container.querySelector('.text-marked');
+    const textContent = view.container.querySelector('[data-message-card-text-content="true"]');
+    const toggleRow = view.container.querySelector('.message-card-text-toggle-row');
     expect(messageText?.textContent).toContain('Рядок 1');
     expect(messageText?.textContent).toContain('Рядок 20');
     expect(messageText?.textContent).not.toContain('Рядок 21');
@@ -1380,8 +1382,11 @@ describe('MessageCard', () => {
       'button[aria-label="Показати текст повідомлення"]',
     );
     if (showMoreButton == null) throw new Error('Show more button not found');
+    expect(textContent?.contains(showMoreButton)).toBe(false);
+    expect(toggleRow?.contains(showMoreButton)).toBe(true);
     expect(showMoreButton.getAttribute('aria-expanded')).toBe('false');
 
+    showMoreButton.focus();
     await click(showMoreButton);
 
     expect(messageText?.textContent).toContain('Рядок 21');
@@ -1389,11 +1394,15 @@ describe('MessageCard', () => {
       'button[aria-label="Згорнути текст повідомлення"]',
     );
     if (collapseButton == null) throw new Error('Collapse button not found');
+    expect(view.container.querySelector('.message-card-text-toggle-row')).not.toBeNull();
     expect(collapseButton.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(collapseButton);
 
     await click(collapseButton);
 
     expect(messageText?.textContent).not.toContain('Рядок 21');
+    expect(collapseButton.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(collapseButton);
   });
 
   it('does not fold message text with twenty source rows', async () => {
