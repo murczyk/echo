@@ -34,10 +34,13 @@ use std::time::Instant;
 use tokio::sync::Mutex;
 
 pub(crate) mod bl;
+mod diagnostics;
 pub mod metadata;
 pub mod query;
 pub(crate) mod submit_bl;
+pub(crate) mod verification;
 
+use diagnostics::InboxReadDiagnostics;
 use submit_bl::*;
 
 type InboxDigest = (i64, Option<NaiveDateTime>);
@@ -3027,18 +3030,52 @@ async fn get_inbox_messages_with_analytics_candidates(
     env: &Env,
     req: &InboxMessagesReq,
 ) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    let mut diagnostics = InboxReadDiagnostics::new(req.page_id.as_deref());
+    let result = get_inbox_messages_with_analytics_candidates_inner(
+        login,
+        logins,
+        env,
+        req,
+        &mut diagnostics,
+    )
+    .await;
+    diagnostics.finish(&result);
+    result
+}
+
+async fn get_inbox_messages_with_analytics_candidates_inner(
+    login: &uuid::Uuid,
+    logins: &Vec<uuid::Uuid>,
+    env: &Env,
+    req: &InboxMessagesReq,
+    diagnostics: &mut InboxReadDiagnostics,
+) -> Result<Vec<(i64, InboxMessage)>, AppError> {
+    diagnostics.reason = if env.analytics.is_none() {
+        "unconfigured"
+    } else if !analytics_inbox_candidates_supported(req) {
+        "query_policy"
+    } else {
+        "none"
+    };
     let now = Utc::now().naive_utc();
     let freshness_max_age_ms = analytics_freshness_max_age_ms(env);
     match rer_analysis_inbox_route(req, now, freshness_max_age_ms) {
         RerAnalysisInboxRoute::AnalyticsHybrid => {
             if analytics_inbox_candidates_supported(req) {
-                if let Some(messages) =
-                    try_load_rer_analysis_inbox_hybrid(login, logins, env, req)
-                        .await?
+                if let Some(messages) = try_load_rer_analysis_inbox_hybrid(
+                    login,
+                    logins,
+                    env,
+                    req,
+                    diagnostics,
+                )
+                .await
+                .context(h!())?
                 {
                     return Ok(messages);
                 }
             }
+            diagnostics.start_postgres();
             return get_inbox_messages_with_internal_lower_bound(
                 login, logins, env, req, None,
             )
@@ -3049,7 +3086,7 @@ async fn get_inbox_messages_with_analytics_candidates(
 
     if rer_duty_fresh_tail_candidates_supported(req) {
         if let Some(messages) =
-            try_load_rer_duty_inbox_hybrid(login, logins, env, req)
+            try_load_rer_duty_inbox_hybrid(login, logins, env, req, diagnostics)
                 .await
                 .context(h!())?
         {
@@ -3067,13 +3104,20 @@ async fn get_inbox_messages_with_analytics_candidates(
                 env,
                 req,
                 &candidate_ids,
+                diagnostics,
             )
-            .await?
+            .await
+            .context(h!())?
             {
+                diagnostics.route = "analytics_candidates";
+                diagnostics.reason = "none";
                 return Ok(messages);
             }
+        } else {
+            diagnostics.fallback("candidates_unavailable");
         }
     }
+    diagnostics.start_postgres();
     let internal_lower_bound =
         rer_duty_neo_adaptive_lower_bound(login, env, req).await;
     get_inbox_messages_with_internal_lower_bound(
@@ -3130,6 +3174,7 @@ async fn try_load_rer_analysis_inbox_hybrid(
     logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
+    diagnostics: &mut InboxReadDiagnostics,
 ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
     let started = Instant::now();
     let candidates = match load_hybrid_inbox_candidate_ids(
@@ -3143,6 +3188,7 @@ async fn try_load_rer_analysis_inbox_hybrid(
     {
         Ok(Some(candidates)) => candidates,
         Ok(None) => {
+            diagnostics.fallback("candidates_unavailable");
             warn!(
                 target: "rer_analysis_inbox_route",
                 "rer_analysis_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
@@ -3151,6 +3197,8 @@ async fn try_load_rer_analysis_inbox_hybrid(
             return Ok(None);
         }
         Err(error) => {
+            diagnostics.stage = "postgres_tail";
+            diagnostics.fallback("postgres_tail_error");
             warn!(
                 target: "rer_analysis_inbox_route",
                 "rer_analysis_inbox_route route=postgres_fallback postgres_tail_failed=true elapsed_ms={} error={error:?}",
@@ -3160,14 +3208,17 @@ async fn try_load_rer_analysis_inbox_hybrid(
         }
     };
     let merged_candidate_count = candidates.ids.len();
+    diagnostics.candidate_count = Some(merged_candidate_count);
     let Some(messages) = hydrate_hybrid_inbox_candidates(
         login,
         logins,
         env,
         req,
         &candidates.ids,
+        diagnostics,
     )
-    .await?
+    .await
+    .context(h!())?
     else {
         warn!(
             target: "rer_analysis_inbox_route",
@@ -3187,6 +3238,8 @@ async fn try_load_rer_analysis_inbox_hybrid(
         candidates.postgres_tail_ms,
         started.elapsed().as_millis(),
     );
+    diagnostics.route = "analytics_hybrid";
+    diagnostics.reason = "none";
     Ok(Some(messages))
 }
 
@@ -3195,6 +3248,7 @@ async fn try_load_rer_duty_inbox_hybrid(
     logins: &Vec<uuid::Uuid>,
     env: &Env,
     req: &InboxMessagesReq,
+    diagnostics: &mut InboxReadDiagnostics,
 ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
     let started = Instant::now();
     let candidates = match load_hybrid_inbox_candidate_ids(
@@ -3208,6 +3262,7 @@ async fn try_load_rer_duty_inbox_hybrid(
     {
         Ok(Some(candidates)) => candidates,
         Ok(None) => {
+            diagnostics.fallback("candidates_unavailable");
             warn!(
                 target: "rer_duty_inbox_route",
                 "rer_duty_inbox_route route=postgres_fallback analytics_candidates_available=false elapsed_ms={}",
@@ -3216,6 +3271,8 @@ async fn try_load_rer_duty_inbox_hybrid(
             return Ok(None);
         }
         Err(error) => {
+            diagnostics.stage = "postgres_tail";
+            diagnostics.fallback("postgres_tail_error");
             warn!(
                 target: "rer_duty_inbox_route",
                 "rer_duty_inbox_route route=postgres_fallback postgres_tail_failed=true elapsed_ms={} error={error:?}",
@@ -3225,14 +3282,17 @@ async fn try_load_rer_duty_inbox_hybrid(
         }
     };
     let merged_candidate_count = candidates.ids.len();
+    diagnostics.candidate_count = Some(merged_candidate_count);
     let Some(messages) = hydrate_hybrid_inbox_candidates(
         login,
         logins,
         env,
         req,
         &candidates.ids,
+        diagnostics,
     )
-    .await?
+    .await
+    .context(h!())?
     else {
         warn!(
             target: "rer_duty_inbox_route",
@@ -3252,6 +3312,8 @@ async fn try_load_rer_duty_inbox_hybrid(
         candidates.postgres_tail_ms,
         started.elapsed().as_millis(),
     );
+    diagnostics.route = "analytics_hybrid";
+    diagnostics.reason = "none";
     Ok(Some(messages))
 }
 
@@ -3397,7 +3459,11 @@ async fn hydrate_analytics_inbox_candidates(
     env: &Env,
     req: &InboxMessagesReq,
     candidate_ids: &[i64],
+    diagnostics: &mut InboxReadDiagnostics,
 ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+    diagnostics.stage = "hydration";
+    diagnostics.candidate_count = Some(candidate_ids.len());
+    diagnostics.hydrated_count = Some(0);
     let query = build_inbox_query_for_candidate_ids(
         &env.dbx,
         login,
@@ -3413,6 +3479,9 @@ async fn hydrate_analytics_inbox_candidates(
     )
     .await
     .context(h!())?;
+    diagnostics.hydrated_count = Some(messages.len());
+    diagnostics.stage = "ordering";
+    diagnostics.ordered_count = Some(candidate_ids.len());
     if restore_analytics_candidate_order(&mut messages, candidate_ids) {
         return Ok(Some(messages));
     }
@@ -3422,6 +3491,7 @@ async fn hydrate_analytics_inbox_candidates(
         candidate_ids.len(),
         messages.len()
     );
+    diagnostics.fallback("candidate_revalidation_incomplete");
     Ok(None)
 }
 
@@ -3431,6 +3501,7 @@ async fn hydrate_hybrid_inbox_candidates(
     env: &Env,
     req: &InboxMessagesReq,
     candidate_ids: &[i64],
+    diagnostics: &mut InboxReadDiagnostics,
 ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
     match hydrate_hybrid_inbox_candidates_inner(
         login,
@@ -3438,11 +3509,13 @@ async fn hydrate_hybrid_inbox_candidates(
         env,
         req,
         candidate_ids,
+        diagnostics,
     )
     .await
     {
         Ok(messages) => Ok(messages),
         Err(error) => {
+            diagnostics.fallback("revalidation_error");
             warn!(target: "analytics_route", "operation=inbox_hydration route=postgres reason=revalidation_error error={error:?}");
             Ok(None)
         }
@@ -3455,7 +3528,11 @@ async fn hydrate_hybrid_inbox_candidates_inner(
     env: &Env,
     req: &InboxMessagesReq,
     candidate_ids: &[i64],
+    diagnostics: &mut InboxReadDiagnostics,
 ) -> Result<Option<Vec<(i64, InboxMessage)>>, AppError> {
+    diagnostics.stage = "hydration";
+    diagnostics.candidate_count = Some(candidate_ids.len());
+    diagnostics.hydrated_count = Some(0);
     if candidate_ids.is_empty() {
         return Ok(Some(Vec::new()));
     }
@@ -3473,14 +3550,21 @@ async fn hydrate_hybrid_inbox_candidates_inner(
             .await
             .context(h!())?,
         );
+        diagnostics.hydrated_count = Some(messages.len());
     }
     if !analytics_candidate_revalidation_is_complete(&messages, candidate_ids) {
+        diagnostics.fallback("candidate_revalidation_incomplete");
+        warn!(target: "analytics_inbox_revalidation", "hybrid candidate revalidation incomplete candidate_count={} hydrated_count={}", candidate_ids.len(), messages.len());
         return Ok(None);
     }
+    diagnostics.stage = "ordering";
     let ordered_ids = order_inbox_candidate_ids(&env.dbx, req, candidate_ids)
         .await
         .context(h!())?;
+    diagnostics.ordered_count = Some(ordered_ids.len());
     if !restore_analytics_candidate_order(&mut messages, &ordered_ids) {
+        diagnostics.fallback("candidate_ordering_incomplete");
+        warn!(target: "analytics_inbox_revalidation", "hybrid candidate ordering incomplete candidate_count={} hydrated_count={} ordered_count={}", candidate_ids.len(), messages.len(), ordered_ids.len());
         return Ok(None);
     }
     retain_hybrid_inbox_page(&mut messages, req);
@@ -5750,6 +5834,18 @@ mod tests {
             nolimit: Some(true),
             ..Default::default()
         };
+        let tail_query = build_postgres_fresh_tail_inbox_digest_query(
+            &login.id,
+            &env,
+            &req,
+            now - Duration::minutes(5),
+        )
+        .await
+        .unwrap();
+        let tail_digest = query_inbox_digest(env.dbx.clone(), tail_query)
+            .await
+            .unwrap();
+        assert_eq!(tail_digest, (2, first.timestamp));
         let tail = load_postgres_fresh_tail_inbox_candidates(
             &env.dbx,
             &login.id,
@@ -5768,6 +5864,7 @@ mod tests {
             &env,
             &req,
             &candidates,
+            &mut InboxReadDiagnostics::new(None),
         )
         .await
         .unwrap()
@@ -5785,6 +5882,102 @@ mod tests {
             &env,
             &req,
             &candidates,
+            &mut InboxReadDiagnostics::new(None),
+        )
+        .await
+        .unwrap()
+        .is_none());
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn hybrid_inbox_preserves_messages_without_inbox_rows() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let group = find_test_datasource_group(&env.dbx).await.unwrap();
+        let first = seed_message_with_media(&env, &group, None, "with-inbox")
+            .await
+            .unwrap();
+        let second =
+            seed_message_with_media(&env, &group, None, "without-inbox")
+                .await
+                .unwrap();
+        sigint_inbox_item::Entity::delete_by_id(second.id)
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        signal_message::Entity::update_many()
+            .col_expr(
+                signal_message::Column::Timestamp,
+                Expr::value(first.timestamp),
+            )
+            .filter(signal_message::Column::Id.eq(second.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        let candidates = vec![second.id, first.id];
+        for sort_by in [
+            InboxMessagesSortBy::IMSDatetime,
+            InboxMessagesSortBy::IMSTimestamp,
+        ] {
+            for load_latest in [false, true] {
+                if sort_by == InboxMessagesSortBy::IMSDatetime && !load_latest {
+                    continue;
+                }
+                let req = InboxMessagesReq {
+                    sort_by: Some(sort_by),
+                    load_latest: Some(load_latest),
+                    since_date_inclusive_ms: (sort_by
+                        == InboxMessagesSortBy::IMSTimestamp)
+                        .then_some(
+                            first
+                                .timestamp
+                                .unwrap()
+                                .and_utc()
+                                .timestamp_millis()
+                                - 1000,
+                        ),
+                    nolimit: Some(true),
+                    ..Default::default()
+                };
+                let primary =
+                    get_inbox_messages(&login.id, &vec![login.id], &env, &req)
+                        .await
+                        .unwrap();
+                assert_eq!(primary.len(), 2);
+                let hybrid = hydrate_hybrid_inbox_candidates(
+                    &login.id,
+                    &vec![login.id],
+                    &env,
+                    &req,
+                    &candidates,
+                    &mut InboxReadDiagnostics::new(None),
+                )
+                .await
+                .unwrap()
+                .expect("authorized messages without inbox rows must survive ordering");
+                assert_eq!(
+                    serde_json::to_value(hybrid).unwrap(),
+                    serde_json::to_value(primary).unwrap()
+                );
+            }
+        }
+        signal_message::Entity::update_many()
+            .col_expr(signal_message::Column::Deleted, Expr::value(true))
+            .filter(signal_message::Column::Id.eq(second.id))
+            .exec(&env.dbx)
+            .await
+            .unwrap();
+        assert!(hydrate_hybrid_inbox_candidates(
+            &login.id,
+            &vec![login.id],
+            &env,
+            &InboxMessagesReq {
+                load_latest: Some(true),
+                ..Default::default()
+            },
+            &candidates,
+            &mut InboxReadDiagnostics::new(None),
         )
         .await
         .unwrap()

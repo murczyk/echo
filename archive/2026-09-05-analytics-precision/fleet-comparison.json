@@ -1,0 +1,4804 @@
+{
+  "release": "0.1.1-rc.202609051117",
+  "application": {
+    "version": "0.1.1~rc.202609051117-1",
+    "package_sha256": "5a131f9c7caa55e9100d06fb70ee3f82253f4389b449d411a50cf2cae99f7fe4",
+    "binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+    "source_commit": "46e7f48d0d92278509c7853896372c34734c60e8",
+    "ci_run": 33962950485
+  },
+  "extension": {
+    "commit": "6e00148a1849452d5a96086b5454bc186bf52c99",
+    "version": "v0.3.2-echo.2",
+    "postgresql_major": 18,
+    "library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68"
+  },
+  "extension_archive_sha256": "4d73deaf996cd13feb3bf0e55efee5ecb938874a3720231502a8748a92ecf8ee",
+  "observation_policy": {
+    "user_override_at": "2026-09-05T10:45:22.924831+00:00",
+    "instruction": "that's ok, move on to others we don't have this much time",
+    "policy": "No further timed observation minimum; retain sequential deployment and immediate artifact, health, replication, bounded parity and complete-operation replay gates."
+  },
+  "rollback_policy": {
+    "user_instruction": "Use the least disruptive recovery; rollback only for seriously bad deployments; fix forward and redeploy query failures",
+    "recorded_at": "2026-09-05T11:10:55.746801+00:00"
+  },
+  "forward_correction": {
+    "changes": [
+      "Projected created_at in indexed digest lateral query",
+      "Preserved missing-inbox-row candidates with primary-compatible LEFT JOIN",
+      "Compared complete primary/hybrid digests in read-only verifier"
+    ],
+    "fixtures": {
+      "inbox": 135,
+      "analysis": 148,
+      "stats": 52,
+      "stats_ignored": 2
+    },
+    "ordering_plan": {
+      "host": "echo-pivnich",
+      "bounded_candidate_ids": 50,
+      "actual_rows": 50,
+      "execution_ms": 1.186
+    },
+    "production_ordering_cause": "Exact IDs were not logged for the two original fallbacks; missing-inbox-row behavior is proven by an isolated fixture, not attributed conclusively to those live requests.",
+    "commit": "fafcbc4af3578a121d967ec12a7e1807835a5395"
+  },
+  "active_servers": [
+    "echo-staging",
+    "echo-kharkiv2",
+    "echo-zp2",
+    "echo-siversk",
+    "echo-skhid",
+    "echo-pivnich",
+    "echo-cbr-staging",
+    "echo-cbr",
+    "echo-kupiansk"
+  ],
+  "audit_at": "2026-09-05T11:43:57.574579+00:00",
+  "servers": [
+    {
+      "host": "echo-staging",
+      "analytics_configured": true,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "b455706b44dcbfa371e3d7246c896590f614da4a73460da6c153f38281b4ae84",
+      "observation": {
+        "original_minimum_seconds": 300,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788607504.553168,
+        "started_at": "2026-09-05 11:25:04 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 0,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {},
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:25:31.589989+00:00",
+        "elapsed_seconds": 27.036834716796875,
+        "controlled_hybrid_successes": 4,
+        "observed_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": []
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:38:05 UTC",
+      "audit_since_epoch": null,
+      "audit_error_counts_by_module": {},
+      "audit_analytics_warning_count": 0,
+      "audit_inbox_operations": {
+        "complete_operations": 0,
+        "final_hybrid_successes": 0,
+        "complete_fallbacks": 0,
+        "final_outcomes": [],
+        "candidate_postgres_reasons": {},
+        "warning_counts": {},
+        "duration_ms": {
+          "count": 0,
+          "total": 0,
+          "max": null
+        }
+      },
+      "audit_all_query_postgres_routes": [],
+      "slow_statement_warnings": {
+        "observation_count": 0,
+        "audit_count": 0
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:23:25 UTC",
+        "since_epoch": 1788607405.913003,
+        "until": "2026-09-05 11:25:04 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": [],
+        "analytics_warning_count": 0,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": []
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": []
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 1.8163621160201728,
+              "results": [
+                {
+                  "digest_count": 3,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "6f12f022ba609cecdf3e6821d85e8ae43536f77f06d6be03bb4d02b99331deca",
+                  "result_sha256": "0f43a11fae504d49982c1fe5f3524e885f6c15eaf1e0e816e9d522ac99cb3051",
+                  "route": "analytics_hybrid",
+                  "rows": 3
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 424,
+                  "max": 424
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 1.4757520309649408,
+              "results": [
+                {
+                  "digest_count": 3,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "9ac79700e255a982502530ca9043ee06807b293ec41f2a1adbff8001f6ad085d",
+                  "result_sha256": "0f43a11fae504d49982c1fe5f3524e885f6c15eaf1e0e816e9d522ac99cb3051",
+                  "route": "analytics_hybrid",
+                  "rows": 3
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 188,
+                  "max": 188
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 1.3382881660945714,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "dedfa2929b09ab24862c678f86c2d79a3beae6c37d74a156b94526fd72deb14d",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "analytics_hybrid",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 92,
+                  "max": 92
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 1.5280716459965333,
+              "results": [
+                {
+                  "digest_count": 3,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "ec44426a0d64a7d3b2c66c208b4ccb96c8fb9ac26f1560b036d083ad39e2800c",
+                  "result_sha256": "0f43a11fae504d49982c1fe5f3524e885f6c15eaf1e0e816e9d522ac99cb3051",
+                  "route": "analytics_hybrid",
+                  "rows": 3
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 232,
+                  "max": 232
+                }
+              },
+              "postgres_routes": []
+            }
+          ]
+        }
+      ],
+      "gateway_configuration_unchanged": true,
+      "extension_library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68",
+      "replication_healthy": true,
+      "rollback_extension": "/var/backups/echo-analytics-precision-20260905/gateway-attempt3",
+      "input_fingerprints_matched": true,
+      "source_inputs_unchanged": true,
+      "bounded_result_rows": 5,
+      "precision": {
+        "boundary": "2026-09-04 14:56:45.079708",
+        "column": "created_at",
+        "result_rows": 0,
+        "remote_sql": "SELECT id, created_at FROM echo_analytics.signal_message WHERE ((created_at > cast('2026-09-04 14:56:45.079708' as DateTime64(6, 'UTC')))) AND ((id = 3507435))"
+      },
+      "bounded_remote_executions": [
+        {
+          "query_id": "2b237d4e-5d75-4bf4-935d-e2947c71c139",
+          "query_duration_ms": 21,
+          "read_rows": 24514,
+          "read_bytes": 412274,
+          "result_rows": 5,
+          "memory_usage": 60460871,
+          "exception_code": 0
+        }
+      ]
+    },
+    {
+      "host": "echo-kharkiv2",
+      "analytics_configured": true,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "1ef9854a6462a01d8dbd4361831e756213a662861b8ee80c22cb0ecb27e92fcc",
+      "observation": {
+        "original_minimum_seconds": 300,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788607634.4646053,
+        "started_at": "2026-09-05 11:27:14 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 0,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {},
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:27:41.861913+00:00",
+        "elapsed_seconds": 27.397324800491333,
+        "controlled_hybrid_successes": 4,
+        "observed_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": []
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:38:05 UTC",
+      "audit_since_epoch": null,
+      "audit_error_counts_by_module": {},
+      "audit_analytics_warning_count": 0,
+      "audit_inbox_operations": {
+        "complete_operations": 0,
+        "final_hybrid_successes": 0,
+        "complete_fallbacks": 0,
+        "final_outcomes": [],
+        "candidate_postgres_reasons": {},
+        "warning_counts": {},
+        "duration_ms": {
+          "count": 0,
+          "total": 0,
+          "max": null
+        }
+      },
+      "audit_all_query_postgres_routes": [],
+      "slow_statement_warnings": {
+        "observation_count": 0,
+        "audit_count": 0
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:25:31 UTC",
+        "since_epoch": 1788607531.707055,
+        "until": "2026-09-05 11:27:14 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": [],
+        "analytics_warning_count": 0,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": []
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": []
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 1.6619977400405332,
+              "results": [
+                {
+                  "digest_count": 1,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "9259410e133acdbb7de031f50beacfc707be2628513b94b3b356cce7a593f513",
+                  "result_sha256": "79512c2d21c1bf5e8b1fcd0b2461cbeff86493a9946bc70b31905f6d09ae3c0b",
+                  "route": "analytics_hybrid",
+                  "rows": 1
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 308,
+                  "max": 308
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 1.5842393280472606,
+              "results": [
+                {
+                  "digest_count": 1,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "9cb89511081097236defc5857ba47d0921886ad1fe41b2098275c0d9c5a14c4d",
+                  "result_sha256": "79512c2d21c1bf5e8b1fcd0b2461cbeff86493a9946bc70b31905f6d09ae3c0b",
+                  "route": "analytics_hybrid",
+                  "rows": 1
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 349,
+                  "max": 349
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 1.1725805120076984,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "d2a8156f352232a38c859a1aefa838ce31f3f97388cfd6cd98fb0d02c598184c",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "analytics_hybrid",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 142,
+                  "max": 142
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 1.5897451209602877,
+              "results": [
+                {
+                  "digest_count": 1,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "144ae24b566e69d8ed8c8c92defede38e1aebc198e7c2c1c57c732b65a7e5042",
+                  "result_sha256": "79512c2d21c1bf5e8b1fcd0b2461cbeff86493a9946bc70b31905f6d09ae3c0b",
+                  "route": "analytics_hybrid",
+                  "rows": 1
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 375,
+                  "max": 375
+                }
+              },
+              "postgres_routes": []
+            }
+          ]
+        }
+      ],
+      "gateway_configuration_unchanged": true,
+      "extension_library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68",
+      "replication_healthy": true,
+      "rollback_extension": "/var/backups/echo-analytics-precision-20260905/gateway",
+      "input_fingerprints_matched": true,
+      "source_inputs_unchanged": true,
+      "bounded_result_rows": 6,
+      "precision": {
+        "boundary": "2026-09-05 11:25:07.850528",
+        "column": "timestamp",
+        "result_rows": 0,
+        "remote_sql": "SELECT id, \"timestamp\" FROM echo_analytics.signal_message WHERE ((\"timestamp\" > cast('2026-09-05 11:25:07.850528' as DateTime64(6, 'UTC')))) AND ((id = 9218706))"
+      },
+      "bounded_remote_executions": [
+        {
+          "query_id": "52c808ad-3af4-4aad-9f39-5a4974abe8b8",
+          "query_duration_ms": 64,
+          "read_rows": 440217,
+          "read_bytes": 10752551,
+          "result_rows": 6,
+          "memory_usage": 60021056,
+          "exception_code": 0
+        }
+      ]
+    },
+    {
+      "host": "echo-zp2",
+      "analytics_configured": true,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "4379351597511f7e09190cf05d00aec0d01c774a57ae780d2e2aadec7b0b8753",
+      "observation": {
+        "original_minimum_seconds": 1800,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788607764.4092512,
+        "started_at": "2026-09-05 11:29:24 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 5,
+        "controlled_primary_successes": 0,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {},
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:29:51.739832+00:00",
+        "elapsed_seconds": 27.330596208572388,
+        "controlled_hybrid_successes": 5,
+        "observed_operations": {
+          "complete_operations": 461,
+          "final_hybrid_successes": 461,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 461
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 461,
+            "total": 28127,
+            "max": 154
+          }
+        },
+        "all_query_postgres_routes": []
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:38:05 UTC",
+      "audit_since_epoch": null,
+      "audit_error_counts_by_module": {
+        "wdintel_rs::messenger::worker::recovery": 1
+      },
+      "audit_analytics_warning_count": 0,
+      "audit_inbox_operations": {
+        "complete_operations": 6435,
+        "final_hybrid_successes": 6435,
+        "complete_fallbacks": 0,
+        "final_outcomes": [
+          {
+            "route": "analytics_hybrid",
+            "reason": "none",
+            "outcome": "success",
+            "failed_stage": "none",
+            "count": 6435
+          }
+        ],
+        "candidate_postgres_reasons": {},
+        "warning_counts": {},
+        "duration_ms": {
+          "count": 6435,
+          "total": 426894,
+          "max": 2508
+        }
+      },
+      "audit_all_query_postgres_routes": [
+        {
+          "operation": "analysis stats posts",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 1
+        }
+      ],
+      "slow_statement_warnings": {
+        "observation_count": 0,
+        "audit_count": 2
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:27:41 UTC",
+        "since_epoch": 1788607661.95711,
+        "until": "2026-09-05 11:29:24 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 1199,
+          "final_hybrid_successes": 1199,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 1199
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 1199,
+            "total": 94912,
+            "max": 3404
+          }
+        },
+        "all_query_postgres_routes": [],
+        "analytics_warning_count": 0,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 294,
+              "final_hybrid_successes": 294,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "analytics_hybrid",
+                  "reason": "none",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 294
+                }
+              ],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 294,
+                "total": 22310,
+                "max": 960
+              }
+            },
+            "all_query_postgres_routes": []
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 905,
+              "final_hybrid_successes": 905,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "analytics_hybrid",
+                  "reason": "none",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 905
+                }
+              ],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 905,
+                "total": 72602,
+                "max": 3404
+              }
+            },
+            "all_query_postgres_routes": []
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 1.6258034399943426,
+              "results": [
+                {
+                  "digest_count": 3,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "8d6dae3734991d35f26ebac3fc6f13e6297589787bdea2391acdca13709b432d",
+                  "result_sha256": "fd9333cf65e70ac6f2a90758c5ca37249c0988edb3e6aac0c7d82ec4af2fd725",
+                  "route": "analytics_hybrid",
+                  "rows": 3
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 316,
+                  "max": 316
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 1.3259641119511798,
+              "results": [
+                {
+                  "digest_count": 3,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "cd5acdb97baaa819a76eb3787a1f283ed8690a91ff8bd572ef33b69a68848ae9",
+                  "result_sha256": "fd9333cf65e70ac6f2a90758c5ca37249c0988edb3e6aac0c7d82ec4af2fd725",
+                  "route": "analytics_hybrid",
+                  "rows": 3
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 193,
+                  "max": 193
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 1.246558161918074,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "aed5de9a6f7a857cd6e94c309f749cb4f91b58e90b1a94dbb8e988c85909e5a2",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "analytics_hybrid",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 188,
+                  "max": 188
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 1.421542307944037,
+              "results": [
+                {
+                  "digest_count": 3,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "a41fdffbc2c226ff7e220f42aa149f732db8b02778a8af1f66218e451ff3cf1d",
+                  "result_sha256": "fd9333cf65e70ac6f2a90758c5ca37249c0988edb3e6aac0c7d82ec4af2fd725",
+                  "route": "analytics_hybrid",
+                  "rows": 3
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 271,
+                  "max": 271
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "precision_cursor",
+              "elapsed_seconds": 1.187470818986185,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "cad20af4d2274201b3b1207ef928e076fee517846c9192fe8f2749c510e18964",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "analytics_hybrid",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 183,
+                  "max": 183
+                }
+              },
+              "postgres_routes": []
+            }
+          ]
+        }
+      ],
+      "gateway_configuration_unchanged": true,
+      "extension_library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68",
+      "replication_healthy": true,
+      "rollback_extension": "/var/backups/echo-analytics-precision-20260905/gateway",
+      "input_fingerprints_matched": true,
+      "source_inputs_unchanged": true,
+      "bounded_result_rows": 3,
+      "precision": {
+        "boundary": "2026-09-05 09:07:59.026668",
+        "column": "timestamp",
+        "result_rows": 0,
+        "remote_sql": "SELECT id, \"timestamp\" FROM echo_analytics.signal_message WHERE ((\"timestamp\" > cast('2026-09-05 09:07:59.026668' as DateTime64(6, 'UTC')))) AND ((id = 12823417))"
+      },
+      "bounded_remote_executions": [
+        {
+          "query_id": "24878ca2-dc36-4611-9df8-eb8f0ec51653",
+          "query_duration_ms": 39,
+          "read_rows": 1113029,
+          "read_bytes": 27401896,
+          "result_rows": 3,
+          "memory_usage": 120042048,
+          "exception_code": 0
+        }
+      ]
+    },
+    {
+      "host": "echo-siversk",
+      "analytics_configured": true,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "b09d546d3c9c16816816b684bc74cf5011d93ba8bf09816684a5da8c917d7b82",
+      "observation": {
+        "original_minimum_seconds": 1800,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788607906.3168683,
+        "started_at": "2026-09-05 11:31:46 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 0,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {
+          "error_patterns": [
+            "wdintel_rs::delta::login] Failed to login, probably EXO account is missing:"
+          ]
+        },
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:32:14.297210+00:00",
+        "elapsed_seconds": 27.980356693267822,
+        "controlled_hybrid_successes": 4,
+        "observed_operations": {
+          "complete_operations": 239,
+          "final_hybrid_successes": 239,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 239
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 239,
+            "total": 13276,
+            "max": 256
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "analysis stats freqs",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats tags",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          }
+        ]
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:38:05 UTC",
+      "audit_since_epoch": null,
+      "audit_error_counts_by_module": {},
+      "audit_analytics_warning_count": 0,
+      "audit_inbox_operations": {
+        "complete_operations": 849,
+        "final_hybrid_successes": 849,
+        "complete_fallbacks": 0,
+        "final_outcomes": [
+          {
+            "route": "analytics_hybrid",
+            "reason": "none",
+            "outcome": "success",
+            "failed_stage": "none",
+            "count": 849
+          }
+        ],
+        "candidate_postgres_reasons": {},
+        "warning_counts": {},
+        "duration_ms": {
+          "count": 849,
+          "total": 58964,
+          "max": 317
+        }
+      },
+      "audit_all_query_postgres_routes": [
+        {
+          "operation": "analysis stats freqs",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 2
+        },
+        {
+          "operation": "analysis stats tags",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 2
+        }
+      ],
+      "slow_statement_warnings": {
+        "observation_count": 0,
+        "audit_count": 0
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:29:51 UTC",
+        "since_epoch": 1788607791.827159,
+        "until": "2026-09-05 11:31:46 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 663,
+          "final_hybrid_successes": 663,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 663
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 663,
+            "total": 36837,
+            "max": 1185
+          }
+        },
+        "all_query_postgres_routes": [],
+        "analytics_warning_count": 0,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 238,
+              "final_hybrid_successes": 238,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "analytics_hybrid",
+                  "reason": "none",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 238
+                }
+              ],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 238,
+                "total": 9659,
+                "max": 114
+              }
+            },
+            "all_query_postgres_routes": []
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 425,
+              "final_hybrid_successes": 425,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "analytics_hybrid",
+                  "reason": "none",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 425
+                }
+              ],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 425,
+                "total": 27178,
+                "max": 1185
+              }
+            },
+            "all_query_postgres_routes": []
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 1.569817611016333,
+              "results": [
+                {
+                  "digest_count": 8,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "f36383fd3f080227e7779d46ad467d4f792c7bc0c9302f62f5a4b47707713a4c",
+                  "result_sha256": "26b16768ee7c9514d100b35d2cf30d2270a21a00a2eba00133c63473257a9125",
+                  "route": "analytics_hybrid",
+                  "rows": 8
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 278,
+                  "max": 278
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 1.4234384699957445,
+              "results": [
+                {
+                  "digest_count": 4,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "6734337348fa4ce7d8a1c07d1faf79f6c653c79543ac9428b0dffeccb43c81b8",
+                  "result_sha256": "49179f3d3aaff2bc50611feb668c437cdfe8617f8c0fbc166174565eb49469d5",
+                  "route": "analytics_hybrid",
+                  "rows": 4
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 200,
+                  "max": 200
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 1.3528040800010785,
+              "results": [
+                {
+                  "digest_count": 3,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "130fab787ff58ddc238e7bfc14fc5a54a02f020430c8ca7b178eadc5e5eb639d",
+                  "result_sha256": "0124612dda0c597570c5b7897ed9ae2e000e2b04db3fdf9800e865badbc09eae",
+                  "route": "analytics_hybrid",
+                  "rows": 3
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 200,
+                  "max": 200
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 1.5308152299840003,
+              "results": [
+                {
+                  "digest_count": 8,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "5c9dabbf5432dcffe68032881d98ec2c287449267325959782329ffd0c5600d8",
+                  "result_sha256": "26b16768ee7c9514d100b35d2cf30d2270a21a00a2eba00133c63473257a9125",
+                  "route": "analytics_hybrid",
+                  "rows": 8
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 293,
+                  "max": 293
+                }
+              },
+              "postgres_routes": []
+            }
+          ]
+        }
+      ],
+      "gateway_configuration_unchanged": true,
+      "extension_library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68",
+      "replication_healthy": true,
+      "rollback_extension": "/var/backups/echo-analytics-precision-20260905/gateway",
+      "input_fingerprints_matched": true,
+      "source_inputs_unchanged": true,
+      "bounded_result_rows": 7,
+      "precision": {
+        "boundary": "2026-09-05 11:29:50.093902",
+        "column": "timestamp",
+        "result_rows": 0,
+        "remote_sql": "SELECT id, \"timestamp\" FROM echo_analytics.signal_message WHERE ((\"timestamp\" > cast('2026-09-05 11:29:50.093902' as DateTime64(6, 'UTC')))) AND ((id = 9537459))"
+      },
+      "bounded_remote_executions": [
+        {
+          "query_id": "768d16f2-6579-4db0-9fd8-c48a5e9026af",
+          "query_duration_ms": 24,
+          "read_rows": 379621,
+          "read_bytes": 9263489,
+          "result_rows": 7,
+          "memory_usage": 120042048,
+          "exception_code": 0
+        }
+      ]
+    },
+    {
+      "host": "echo-skhid",
+      "analytics_configured": true,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "92347792f1f61409f9a18b613a9f6960a10e6ec6dfaed6b92139b0bc2a02aeec",
+      "observation": {
+        "original_minimum_seconds": 900,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788608048.213517,
+        "started_at": "2026-09-05 11:34:08 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 0,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {
+          "error_patterns": []
+        },
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:34:36.539809+00:00",
+        "elapsed_seconds": 28.326340913772583,
+        "controlled_hybrid_successes": 4,
+        "observed_operations": {
+          "complete_operations": 287,
+          "final_hybrid_successes": 287,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 287
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 287,
+            "total": 35087,
+            "max": 6784
+          }
+        },
+        "all_query_postgres_routes": []
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:38:05 UTC",
+      "audit_since_epoch": null,
+      "audit_error_counts_by_module": {
+        "wdintel_rs::sigint::aor::worker": 6
+      },
+      "audit_analytics_warning_count": 0,
+      "audit_inbox_operations": {
+        "complete_operations": 6242,
+        "final_hybrid_successes": 6242,
+        "complete_fallbacks": 0,
+        "final_outcomes": [
+          {
+            "route": "analytics_hybrid",
+            "reason": "none",
+            "outcome": "success",
+            "failed_stage": "none",
+            "count": 6242
+          }
+        ],
+        "candidate_postgres_reasons": {},
+        "warning_counts": {},
+        "duration_ms": {
+          "count": 6242,
+          "total": 442071,
+          "max": 2940
+        }
+      },
+      "audit_all_query_postgres_routes": [
+        {
+          "operation": "analysis stats freqs",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 3
+        },
+        {
+          "operation": "analysis stats groups",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 1
+        },
+        {
+          "operation": "analysis stats networks",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 3
+        },
+        {
+          "operation": "analysis stats senders",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 1
+        },
+        {
+          "operation": "analysis stats tags",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 4
+        }
+      ],
+      "slow_statement_warnings": {
+        "observation_count": 2,
+        "audit_count": 30
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:32:14 UTC",
+        "since_epoch": 1788607934.383569,
+        "until": "2026-09-05 11:34:08 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 1031,
+          "final_hybrid_successes": 1031,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 1031
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 1031,
+            "total": 98791,
+            "max": 5277
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "analysis stats posts",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats tags",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          }
+        ],
+        "analytics_warning_count": 2,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 346,
+              "final_hybrid_successes": 346,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "analytics_hybrid",
+                  "reason": "none",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 346
+                }
+              ],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 346,
+                "total": 26026,
+                "max": 497
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "analysis stats tags",
+                "reason": "query_policy",
+                "outcome": "success",
+                "count": 1
+              }
+            ]
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 685,
+              "final_hybrid_successes": 685,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "analytics_hybrid",
+                  "reason": "none",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 685
+                }
+              ],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 685,
+                "total": 72765,
+                "max": 5277
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "analysis stats posts",
+                "reason": "query_policy",
+                "outcome": "success",
+                "count": 1
+              }
+            ]
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          },
+          {
+            "phase": "current",
+            "module": "wdintel_rs::sigint::aor::worker",
+            "count": 3
+          },
+          {
+            "phase": "current",
+            "module": "wdintel_rs::sigint::network::etalon_calc::consistency",
+            "count": 2
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 1.6540771530708298,
+              "results": [
+                {
+                  "digest_count": 1,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "79dbcb698c62928d6df0f0c6d18a1e04f7cc9e6f926447c23f044a4b65f92d4a",
+                  "result_sha256": "c1196b33d6cef8c72ce0780808d92363c280745059a0380f90df71394a882171",
+                  "route": "analytics_hybrid",
+                  "rows": 1
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 340,
+                  "max": 340
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 1.5368980249622837,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "e59b6bc1d26265a3e0db9b446c818c9c9adee33a21a298469aa2218be681add9",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "analytics_hybrid",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 242,
+                  "max": 242
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 1.5985334559809417,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "a8ac8e0d7df8b6c64935cbe990035cbf4db9ddab633e42b93d1ed9a2b42d2a44",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "analytics_hybrid",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 268,
+                  "max": 268
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 1.7600349700078368,
+              "results": [
+                {
+                  "digest_count": 1,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "f5592f5a17bc0d91e73f23dd01e143ebb15bf22227cad07604a1661ebb0cc890",
+                  "result_sha256": "c1196b33d6cef8c72ce0780808d92363c280745059a0380f90df71394a882171",
+                  "route": "analytics_hybrid",
+                  "rows": 1
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 414,
+                  "max": 414
+                }
+              },
+              "postgres_routes": []
+            }
+          ]
+        }
+      ],
+      "gateway_configuration_unchanged": true,
+      "extension_library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68",
+      "replication_healthy": true,
+      "rollback_extension": "/var/backups/echo-analytics-precision-20260905/gateway",
+      "input_fingerprints_matched": true,
+      "source_inputs_unchanged": true,
+      "bounded_result_rows": 3,
+      "precision": {
+        "boundary": "2026-09-05 11:32:12.247696",
+        "column": "timestamp",
+        "result_rows": 0,
+        "remote_sql": "SELECT id, \"timestamp\" FROM echo_analytics.signal_message WHERE ((\"timestamp\" > cast('2026-09-05 11:32:12.247696' as DateTime64(6, 'UTC')))) AND ((id = 39113973))"
+      },
+      "bounded_remote_executions": [
+        {
+          "query_id": "1e88b29c-6127-4bca-bc72-bfb9fd8bdc62",
+          "query_duration_ms": 41,
+          "read_rows": 2195699,
+          "read_bytes": 53620553,
+          "result_rows": 3,
+          "memory_usage": 120042048,
+          "exception_code": 0
+        }
+      ]
+    },
+    {
+      "host": "echo-pivnich",
+      "analytics_configured": true,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "5917d676aa69461c4c948d52fe4ed0afc207d12cd733d6d842c83dd20ef0782a",
+      "observation": {
+        "original_minimum_seconds": 900,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788608221.6423151,
+        "started_at": "2026-09-05 11:37:01 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 0,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {
+          "error_patterns": [
+            "ERROR iggy::clients::client] There was an error when sending a heartbeat. Client shutdown"
+          ]
+        },
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:37:31.834453+00:00",
+        "elapsed_seconds": 30.19215488433838,
+        "controlled_hybrid_successes": 4,
+        "observed_operations": {
+          "complete_operations": 669,
+          "final_hybrid_successes": 669,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 669
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 669,
+            "total": 53580,
+            "max": 441
+          }
+        },
+        "all_query_postgres_routes": []
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:38:05 UTC",
+      "audit_since_epoch": null,
+      "audit_error_counts_by_module": {
+        "iggy::clients::client": 6
+      },
+      "audit_analytics_warning_count": 0,
+      "audit_inbox_operations": {
+        "complete_operations": 5732,
+        "final_hybrid_successes": 5732,
+        "complete_fallbacks": 0,
+        "final_outcomes": [
+          {
+            "route": "analytics_hybrid",
+            "reason": "none",
+            "outcome": "success",
+            "failed_stage": "none",
+            "count": 5732
+          }
+        ],
+        "candidate_postgres_reasons": {},
+        "warning_counts": {},
+        "duration_ms": {
+          "count": 5732,
+          "total": 495099,
+          "max": 3872
+        }
+      },
+      "audit_all_query_postgres_routes": [
+        {
+          "operation": "analysis stats tags",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 1
+        }
+      ],
+      "slow_statement_warnings": {
+        "observation_count": 8,
+        "audit_count": 79
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:34:36 UTC",
+        "since_epoch": 1788608076.63323,
+        "until": "2026-09-05 11:37:01 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 1913,
+          "final_hybrid_successes": 938,
+          "complete_fallbacks": 975,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 938
+            },
+            {
+              "route": "postgres_fallback",
+              "reason": "candidates_unavailable",
+              "outcome": "success",
+              "failed_stage": "candidate_retrieval",
+              "count": 975
+            }
+          ],
+          "candidate_postgres_reasons": {
+            "analytics_error": 1,
+            "circuit_open": 974
+          },
+          "warning_counts": {
+            "analytics_candidates_available=false": 1240
+          },
+          "duration_ms": {
+            "count": 1913,
+            "total": 135279,
+            "max": 3582
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "admin report history dashboard",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats posts",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "analysis stats tags",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "group activity enrichment",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "group activity enrichment",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 14
+          },
+          {
+            "operation": "inbox message candidates",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "inbox message candidates",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 974
+          },
+          {
+            "operation": "network group activity",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "network group activity",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 4
+          },
+          {
+            "operation": "report history dashboard",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "report history dashboard",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 10
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "circuit_open",
+            "outcome": "error",
+            "count": 1
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 408
+          }
+        ],
+        "analytics_warning_count": 1266,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {
+                "analytics_candidates_available=false": 265
+              },
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": []
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 1913,
+              "final_hybrid_successes": 938,
+              "complete_fallbacks": 975,
+              "final_outcomes": [
+                {
+                  "route": "analytics_hybrid",
+                  "reason": "none",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 938
+                },
+                {
+                  "route": "postgres_fallback",
+                  "reason": "candidates_unavailable",
+                  "outcome": "success",
+                  "failed_stage": "candidate_retrieval",
+                  "count": 975
+                }
+              ],
+              "candidate_postgres_reasons": {
+                "analytics_error": 1,
+                "circuit_open": 974
+              },
+              "warning_counts": {
+                "analytics_candidates_available=false": 975
+              },
+              "duration_ms": {
+                "count": 1913,
+                "total": 135279,
+                "max": 3582
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "admin report history dashboard",
+                "reason": "analytics_error",
+                "outcome": "success",
+                "count": 1
+              },
+              {
+                "operation": "analysis stats posts",
+                "reason": "query_policy",
+                "outcome": "success",
+                "count": 2
+              },
+              {
+                "operation": "analysis stats tags",
+                "reason": "query_policy",
+                "outcome": "success",
+                "count": 1
+              },
+              {
+                "operation": "group activity enrichment",
+                "reason": "analytics_error",
+                "outcome": "success",
+                "count": 1
+              },
+              {
+                "operation": "group activity enrichment",
+                "reason": "circuit_open",
+                "outcome": "success",
+                "count": 14
+              },
+              {
+                "operation": "inbox message candidates",
+                "reason": "analytics_error",
+                "outcome": "success",
+                "count": 1
+              },
+              {
+                "operation": "inbox message candidates",
+                "reason": "circuit_open",
+                "outcome": "success",
+                "count": 974
+              },
+              {
+                "operation": "network group activity",
+                "reason": "analytics_error",
+                "outcome": "success",
+                "count": 1
+              },
+              {
+                "operation": "network group activity",
+                "reason": "circuit_open",
+                "outcome": "success",
+                "count": 4
+              },
+              {
+                "operation": "report history dashboard",
+                "reason": "analytics_error",
+                "outcome": "success",
+                "count": 1
+              },
+              {
+                "operation": "report history dashboard",
+                "reason": "circuit_open",
+                "outcome": "success",
+                "count": 10
+              },
+              {
+                "operation": "rer duty inbox messages count",
+                "reason": "analytics_error",
+                "outcome": "success",
+                "count": 1
+              },
+              {
+                "operation": "rer duty inbox messages count",
+                "reason": "circuit_open",
+                "outcome": "error",
+                "count": 1
+              },
+              {
+                "operation": "rer duty inbox messages count",
+                "reason": "circuit_open",
+                "outcome": "success",
+                "count": 408
+              }
+            ]
+          }
+        },
+        "postgres_runtime_timeouts": [
+          {
+            "phase": "current",
+            "operation": "rer duty inbox messages count",
+            "sqlstate": "57014",
+            "count": 1
+          },
+          {
+            "phase": "previous",
+            "operation": "inbox messages count",
+            "sqlstate": "57014",
+            "count": 2
+          }
+        ],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          },
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server::analytics_health",
+            "count": 1
+          },
+          {
+            "phase": "current",
+            "module": "wdintel_rs::sigint::network",
+            "count": 1
+          },
+          {
+            "phase": "previous",
+            "module": "iggy::clients::client",
+            "count": 1
+          },
+          {
+            "phase": "previous",
+            "module": "wdintel_rs::ai_callsign::worker",
+            "count": 1
+          },
+          {
+            "phase": "previous",
+            "module": "wdintel_rs::error",
+            "count": 2
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 2.426951635046862,
+              "results": [
+                {
+                  "digest_count": 26,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "d4682fe71e83a74be57fd44d8d824962041676516ab26cf401d09cbcf3640bfa",
+                  "result_sha256": "04c92d5bd92f95a51b667cb0f3c55634dd25935388eeeda32e5269f58765eba6",
+                  "route": "analytics_hybrid",
+                  "rows": 20
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 535,
+                  "max": 535
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 2.03465257701464,
+              "results": [
+                {
+                  "digest_count": 11,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "dd1c7b51059af2345ff08827551fa595abc30058a4b6cd31bfeb514c1ae822b4",
+                  "result_sha256": "4247ec4bd5ede80d59d787bdb27835e78f3eced333e2dc0cf612f6c4c86104d7",
+                  "route": "analytics_hybrid",
+                  "rows": 11
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 410,
+                  "max": 410
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 2.0508938189595938,
+              "results": [
+                {
+                  "digest_count": 14,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "fdf81efd57390d137c89a34f02ad934eb6b4caa8886b5f3d2265a71b39d3420f",
+                  "result_sha256": "5cd3184f0525f432b0451a3dac7afa8e82b65d43b79661805eed9d5d17645d86",
+                  "route": "analytics_hybrid",
+                  "rows": 14
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 374,
+                  "max": 374
+                }
+              },
+              "postgres_routes": []
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 2.2735136379487813,
+              "results": [
+                {
+                  "digest_count": 26,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "none",
+                  "request_sha256": "8522857ccea0b0f737290a447e771cfa917913b22bcd10c820ea5243756a289a",
+                  "result_sha256": "04c92d5bd92f95a51b667cb0f3c55634dd25935388eeeda32e5269f58765eba6",
+                  "route": "analytics_hybrid",
+                  "rows": 20
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 1,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "analytics_hybrid",
+                    "reason": "none",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {},
+                "warning_counts": {},
+                "duration_ms": {
+                  "count": 1,
+                  "total": 501,
+                  "max": 501
+                }
+              },
+              "postgres_routes": []
+            }
+          ]
+        }
+      ],
+      "gateway_configuration_unchanged": true,
+      "extension_library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68",
+      "replication_healthy": true,
+      "rollback_extension": "/var/backups/echo-analytics-precision-20260905/gateway-forward",
+      "input_fingerprints_matched": true,
+      "source_inputs_unchanged": true,
+      "bounded_result_rows": 2,
+      "precision": {
+        "boundary": "2026-09-05 11:35:06.152821",
+        "column": "timestamp",
+        "result_rows": 0,
+        "remote_sql": "SELECT id, \"timestamp\" FROM echo_analytics.signal_message WHERE ((\"timestamp\" > cast('2026-09-05 11:35:06.152821' as DateTime64(6, 'UTC')))) AND ((id = 29071384))"
+      },
+      "bounded_remote_executions": [
+        {
+          "query_id": "2cab1f60-b9d5-4428-88fa-8f7ad4ea04aa",
+          "query_duration_ms": 68,
+          "read_rows": 1791016,
+          "read_bytes": 44041931,
+          "result_rows": 2,
+          "memory_usage": 120042112,
+          "exception_code": 0
+        }
+      ]
+    },
+    {
+      "host": "echo-cbr-staging",
+      "analytics_configured": false,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "847980118366cc54cea0e892b5b4cfa24e66e1e661eb2b0e16723146e01da987",
+      "observation": {
+        "original_minimum_seconds": 900,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788608417.212499,
+        "started_at": "2026-09-05 11:40:17 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 4,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {},
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:40:22.308417+00:00",
+        "elapsed_seconds": 5.095934867858887,
+        "controlled_hybrid_successes": 0,
+        "observed_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 1
+          }
+        ]
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:40:17 UTC",
+      "audit_since_epoch": 1788608417.212499,
+      "audit_error_counts_by_module": {},
+      "audit_analytics_warning_count": 0,
+      "audit_inbox_operations": {
+        "complete_operations": 0,
+        "final_hybrid_successes": 0,
+        "complete_fallbacks": 0,
+        "final_outcomes": [],
+        "candidate_postgres_reasons": {},
+        "warning_counts": {},
+        "duration_ms": {
+          "count": 0,
+          "total": 0,
+          "max": null
+        }
+      },
+      "audit_all_query_postgres_routes": [
+        {
+          "operation": "rer duty inbox messages count",
+          "reason": "unconfigured",
+          "outcome": "success",
+          "count": 4
+        }
+      ],
+      "slow_statement_warnings": {
+        "observation_count": 0,
+        "audit_count": 6
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:37:31 UTC",
+        "since_epoch": 1788608251.94868,
+        "until": "2026-09-05 11:40:17 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 2
+          }
+        ],
+        "analytics_warning_count": 0,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "rer duty inbox messages count",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 1
+              }
+            ]
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "rer duty inbox messages count",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 1
+              }
+            ]
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::sigint::aor::worker",
+            "count": 1
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 1.1878899909788743,
+              "results": [
+                {
+                  "digest_count": 2,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "fe5f9c6832cde01d1c3391f20d91983cdb72e83dfdbc47c0072e9cedb5d4ad20",
+                  "result_sha256": "b1548903e82f5eeec29c1b0e5e57401e2fa84cd33f7c630c4048939fc7023441",
+                  "route": "postgres",
+                  "rows": 2
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 43,
+                  "max": 43
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 1.1183162569068372,
+              "results": [
+                {
+                  "digest_count": 1,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "b88ce97850b68ab3db716ba14a0d7c2d45ba6e692c84bc315f8e95c9b8fef476",
+                  "result_sha256": "68534876b8eba456e607fcacfb609adb99ce6cb84618e641a6224aa0c91fce31",
+                  "route": "postgres",
+                  "rows": 1
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 36,
+                  "max": 36
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 1.0673492300556973,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "1df9aff61861ce66c0c81d36b32e87f0de050136e8d35a170cfea46433c4b026",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "postgres",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 21,
+                  "max": 21
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 1.103723985957913,
+              "results": [
+                {
+                  "digest_count": 2,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "4dd42b1d4f730d3d2fc8e26b0ffef4d1faad8777bdc2f96ae819323fb492c0a0",
+                  "result_sha256": "b1548903e82f5eeec29c1b0e5e57401e2fa84cd33f7c630c4048939fc7023441",
+                  "route": "postgres",
+                  "rows": 2
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 42,
+                  "max": 42
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "host": "echo-cbr",
+      "analytics_configured": false,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "1eb2986ce00f2229352354ec3314f775c491528337d80d104e6772b6694c6b6e",
+      "observation": {
+        "original_minimum_seconds": 900,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788608492.2825313,
+        "started_at": "2026-09-05 11:41:32 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 4,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {},
+        "observed_analytics_warning_count": 0,
+        "finished_at": "2026-09-05T11:41:41.145170+00:00",
+        "elapsed_seconds": 8.862654447555542,
+        "controlled_hybrid_successes": 0,
+        "observed_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": []
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:41:32 UTC",
+      "audit_since_epoch": 1788608492.2825313,
+      "audit_error_counts_by_module": {},
+      "audit_analytics_warning_count": 3,
+      "audit_inbox_operations": {
+        "complete_operations": 3,
+        "final_hybrid_successes": 0,
+        "complete_fallbacks": 0,
+        "final_outcomes": [
+          {
+            "route": "postgres",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "failed_stage": "none",
+            "count": 3
+          }
+        ],
+        "candidate_postgres_reasons": {
+          "unconfigured": 3
+        },
+        "warning_counts": {
+          "analytics_candidates_available=false": 3
+        },
+        "duration_ms": {
+          "count": 3,
+          "total": 154,
+          "max": 55
+        }
+      },
+      "audit_all_query_postgres_routes": [
+        {
+          "operation": "inbox message candidates",
+          "reason": "unconfigured",
+          "outcome": "success",
+          "count": 3
+        }
+      ],
+      "slow_statement_warnings": {
+        "observation_count": 0,
+        "audit_count": 0
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:40:22 UTC",
+        "since_epoch": 1788608422.4141681,
+        "until": "2026-09-05 11:41:32 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 2,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "postgres",
+              "reason": "unconfigured",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 2
+            }
+          ],
+          "candidate_postgres_reasons": {
+            "unconfigured": 2
+          },
+          "warning_counts": {
+            "analytics_candidates_available=false": 2
+          },
+          "duration_ms": {
+            "count": 2,
+            "total": 239,
+            "max": 138
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "analysis stats count",
+            "reason": "analytics_skipped",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "analysis stats count",
+            "reason": "unconfigured",
+            "outcome": "unknown",
+            "count": 2
+          },
+          {
+            "operation": "analysis stats freqs",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "analysis stats networks",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "inbox message candidates",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 2
+          }
+        ],
+        "analytics_warning_count": 2,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {},
+              "warning_counts": {},
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": []
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 2,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 2
+                }
+              ],
+              "candidate_postgres_reasons": {
+                "unconfigured": 2
+              },
+              "warning_counts": {
+                "analytics_candidates_available=false": 2
+              },
+              "duration_ms": {
+                "count": 2,
+                "total": 239,
+                "max": 138
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "analysis stats count",
+                "reason": "analytics_skipped",
+                "outcome": "success",
+                "count": 2
+              },
+              {
+                "operation": "analysis stats count",
+                "reason": "unconfigured",
+                "outcome": "unknown",
+                "count": 2
+              },
+              {
+                "operation": "analysis stats freqs",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 2
+              },
+              {
+                "operation": "analysis stats networks",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 2
+              },
+              {
+                "operation": "inbox message candidates",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 2
+              },
+              {
+                "operation": "rer duty inbox messages count",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 2
+              }
+            ]
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          },
+          {
+            "phase": "current",
+            "module": "wdintel_rs::sigint::network::etalon_calc::consistency",
+            "count": 2
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 1.4843613719567657,
+              "results": [
+                {
+                  "digest_count": 2,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "5a5df7b04c6e90b9b23e6ff217d075a25bbda4292dab6403c611800462451679",
+                  "result_sha256": "59f6370ff4ac43907ed9a0e0a4d5f0f2630e20f94cde1194aa4f69e3ea31f59d",
+                  "route": "postgres",
+                  "rows": 2
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 60,
+                  "max": 60
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 1.382643949938938,
+              "results": [
+                {
+                  "digest_count": 1,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "f8bd608fb6ee71bb2b11d8b49d02c267d947984273e5a66d102ef2e3fc35c12c",
+                  "result_sha256": "81dfa5df0dc45392cd350d9872657768bdbcc1a8a14858af992fcbf087de4d72",
+                  "route": "postgres",
+                  "rows": 1
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 31,
+                  "max": 31
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 1.661715522990562,
+              "results": [
+                {
+                  "digest_count": 0,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "a42a477ffea936da421734b9504077d1e3643fbb95229646c0e6d8b0a8079823",
+                  "result_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                  "route": "postgres",
+                  "rows": 0
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 58,
+                  "max": 58
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "1"
+                }
+              ]
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 1.4888131100451574,
+              "results": [
+                {
+                  "digest_count": 2,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "6c73c6d1e59f7bb602217499dd9d1d95c5a0ed16c1174c3ebe1a62d707705aac",
+                  "result_sha256": "59f6370ff4ac43907ed9a0e0a4d5f0f2630e20f94cde1194aa4f69e3ea31f59d",
+                  "route": "postgres",
+                  "rows": 2
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 69,
+                  "max": 69
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "host": "echo-kupiansk",
+      "analytics_configured": false,
+      "application_version": "0.1.1~rc.202609051117-1",
+      "application_binary_sha256": "45d2866b5725c3e21c4701d0a8e459c69bbd3a3a8f44cd48d32674cc37b0940b",
+      "application_payload_sha256_verified": true,
+      "application_config_sha256": "00741fd9b7e3b501d4d8979dd12c384d2a367b940a796da022f1f7cf4053818e",
+      "observation": {
+        "original_minimum_seconds": 900,
+        "shortened_at_user_request": true,
+        "started_epoch": 1788608541.1669946,
+        "started_at": "2026-09-05 11:42:21 UTC",
+        "minimum_seconds": 0,
+        "controlled_complete_operations": 4,
+        "controlled_primary_successes": 4,
+        "controlled_complete_fallbacks": 0,
+        "classified_log_findings": {},
+        "observed_analytics_warning_count": 22,
+        "finished_at": "2026-09-05T11:42:26.825684+00:00",
+        "elapsed_seconds": 5.658745765686035,
+        "controlled_hybrid_successes": 0,
+        "observed_operations": {
+          "complete_operations": 21,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "postgres",
+              "reason": "unconfigured",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 21
+            }
+          ],
+          "candidate_postgres_reasons": {
+            "unconfigured": 22
+          },
+          "warning_counts": {
+            "analytics_candidates_available=false": 22
+          },
+          "duration_ms": {
+            "count": 21,
+            "total": 1393,
+            "max": 215
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "group activity enrichment",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "inbox message candidates",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 22
+          }
+        ]
+      },
+      "http": {
+        "frontend": "200",
+        "login": "200",
+        "nlp": "200",
+        "inbox_auth": "401"
+      },
+      "maintenance_cleared": true,
+      "audit_healthy": true,
+      "audit_since": "2026-09-05 11:42:21 UTC",
+      "audit_since_epoch": 1788608541.1669946,
+      "audit_error_counts_by_module": {},
+      "audit_analytics_warning_count": 341,
+      "audit_inbox_operations": {
+        "complete_operations": 339,
+        "final_hybrid_successes": 0,
+        "complete_fallbacks": 0,
+        "final_outcomes": [
+          {
+            "route": "postgres",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "failed_stage": "none",
+            "count": 339
+          }
+        ],
+        "candidate_postgres_reasons": {
+          "unconfigured": 341
+        },
+        "warning_counts": {
+          "analytics_candidates_available=false": 341
+        },
+        "duration_ms": {
+          "count": 339,
+          "total": 21990,
+          "max": 1193
+        }
+      },
+      "audit_all_query_postgres_routes": [
+        {
+          "operation": "analysis stats count",
+          "reason": "analytics_skipped",
+          "outcome": "success",
+          "count": 4
+        },
+        {
+          "operation": "analysis stats count",
+          "reason": "unconfigured",
+          "outcome": "unknown",
+          "count": 4
+        },
+        {
+          "operation": "analysis stats tags",
+          "reason": "query_policy",
+          "outcome": "success",
+          "count": 1
+        },
+        {
+          "operation": "analysis stats tags",
+          "reason": "unconfigured",
+          "outcome": "success",
+          "count": 3
+        },
+        {
+          "operation": "group activity enrichment",
+          "reason": "unconfigured",
+          "outcome": "success",
+          "count": 23
+        },
+        {
+          "operation": "inbox message candidates",
+          "reason": "unconfigured",
+          "outcome": "success",
+          "count": 341
+        },
+        {
+          "operation": "rer duty inbox messages count",
+          "reason": "unconfigured",
+          "outcome": "success",
+          "count": 26
+        }
+      ],
+      "slow_statement_warnings": {
+        "observation_count": 2,
+        "audit_count": 24
+      },
+      "deployment_transition": {
+        "since": "2026-09-05 11:41:41 UTC",
+        "since_epoch": 1788608501.251952,
+        "until": "2026-09-05 11:42:21 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 62,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "postgres",
+              "reason": "unconfigured",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 62
+            }
+          ],
+          "candidate_postgres_reasons": {
+            "unconfigured": 92
+          },
+          "warning_counts": {
+            "analytics_candidates_available=false": 92
+          },
+          "duration_ms": {
+            "count": 62,
+            "total": 4836,
+            "max": 297
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "group activity enrichment",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 7
+          },
+          {
+            "operation": "inbox message candidates",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 92
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "unconfigured",
+            "outcome": "success",
+            "count": 2
+          }
+        ],
+        "analytics_warning_count": 92,
+        "by_application_invocation": {
+          "previous": {
+            "complete_inbox_operations": {
+              "complete_operations": 0,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [],
+              "candidate_postgres_reasons": {
+                "unconfigured": 30
+              },
+              "warning_counts": {
+                "analytics_candidates_available=false": 30
+              },
+              "duration_ms": {
+                "count": 0,
+                "total": 0,
+                "max": null
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "group activity enrichment",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 3
+              },
+              {
+                "operation": "inbox message candidates",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 30
+              },
+              {
+                "operation": "rer duty inbox messages count",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 2
+              }
+            ]
+          },
+          "current": {
+            "complete_inbox_operations": {
+              "complete_operations": 62,
+              "final_hybrid_successes": 0,
+              "complete_fallbacks": 0,
+              "final_outcomes": [
+                {
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "failed_stage": "none",
+                  "count": 62
+                }
+              ],
+              "candidate_postgres_reasons": {
+                "unconfigured": 62
+              },
+              "warning_counts": {
+                "analytics_candidates_available=false": 62
+              },
+              "duration_ms": {
+                "count": 62,
+                "total": 4836,
+                "max": 297
+              }
+            },
+            "all_query_postgres_routes": [
+              {
+                "operation": "group activity enrichment",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 4
+              },
+              {
+                "operation": "inbox message candidates",
+                "reason": "unconfigured",
+                "outcome": "success",
+                "count": 62
+              }
+            ]
+          }
+        },
+        "postgres_runtime_timeouts": [],
+        "error_counts_by_module": [
+          {
+            "phase": "current",
+            "module": "wdintel_rs::server",
+            "count": 1
+          },
+          {
+            "phase": "previous",
+            "module": "wdintel_rs::error",
+            "count": 4
+          }
+        ]
+      },
+      "rollback_application": "/var/backups/echo-analytics-precision-20260905/app-forward",
+      "controlled_replays": [
+        {
+          "label": "initial",
+          "cases": [
+            {
+              "name": "latest",
+              "elapsed_seconds": 0.9624581210082397,
+              "results": [
+                {
+                  "digest_count": 8,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "5fe0b94f7a835dedffcfa49e3b5bcb79d0778cb525d5f229cfd43fd890552254",
+                  "result_sha256": "b32c7133b5e8b98f7e0161d25853c096512cbdaf1a8aca60b5a5bcae5ab566bd",
+                  "route": "postgres",
+                  "rows": 8
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 84,
+                  "max": 84
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "2"
+                }
+              ]
+            },
+            {
+              "name": "after",
+              "elapsed_seconds": 0.8357446850277483,
+              "results": [
+                {
+                  "digest_count": 2,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "a69ca0b433668f62736d5faa92aaa6c678d2a5584c788aa9368dda8c04f08f14",
+                  "result_sha256": "990017ea86af370b8594c3b5a98fb1e344b62cf3c71d08986f5c88549539a930",
+                  "route": "postgres",
+                  "rows": 2
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 40,
+                  "max": 40
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "1"
+                }
+              ]
+            },
+            {
+              "name": "before",
+              "elapsed_seconds": 0.8080126560525969,
+              "results": [
+                {
+                  "digest_count": 5,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "943b0f6bd28bfbdbe776f10c963c2cd83def42cb0c29f77db68841b307247db8",
+                  "result_sha256": "ea5712224094240afdd17a9a60641c1d401079e4fb7c7930311f7220566cd50f",
+                  "route": "postgres",
+                  "rows": 5
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 31,
+                  "max": 31
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            },
+            {
+              "name": "analysis",
+              "elapsed_seconds": 0.8507034759968519,
+              "results": [
+                {
+                  "digest_count": 8,
+                  "digest_matched": true,
+                  "matched": true,
+                  "reason": "unconfigured",
+                  "request_sha256": "cf7b0b4b2914423664178b44ee57e245d32a21887eaa1dedf80d7d7a66a278cd",
+                  "result_sha256": "b32c7133b5e8b98f7e0161d25853c096512cbdaf1a8aca60b5a5bcae5ab566bd",
+                  "route": "postgres",
+                  "rows": 8
+                }
+              ],
+              "operations": {
+                "complete_operations": 1,
+                "final_hybrid_successes": 0,
+                "complete_fallbacks": 0,
+                "final_outcomes": [
+                  {
+                    "route": "postgres",
+                    "reason": "unconfigured",
+                    "outcome": "success",
+                    "failed_stage": "none",
+                    "count": 1
+                  }
+                ],
+                "candidate_postgres_reasons": {
+                  "unconfigured": 1
+                },
+                "warning_counts": {
+                  "analytics_candidates_available=false": 1
+                },
+                "duration_ms": {
+                  "count": 1,
+                  "total": 48,
+                  "max": 48
+                }
+              },
+              "postgres_routes": [
+                {
+                  "operation": "inbox message candidates",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                },
+                {
+                  "operation": "rer duty inbox messages count",
+                  "route": "postgres",
+                  "reason": "unconfigured",
+                  "outcome": "success",
+                  "elapsed_ms": "0"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "incidents": [
+    {
+      "host": "echo-staging",
+      "phase": "extension check",
+      "reason": "pgch_version is in pgch schema; unqualified call failed",
+      "rollback": "automatic library restore verified; application unchanged",
+      "resolution": "catalog-based check; published corrected application package 0.1.1-rc.202609051001"
+    },
+    {
+      "host": "echo-staging",
+      "phase": "initial read-only primary baseline",
+      "reason": "existing hydration attempted network-link backfill for unlinked messages; read-only guard rejected DELETE before hybrid operation",
+      "rollback": "saved application and extension restored; original binary/configuration hashes and HTTP/replication health verified",
+      "resolution": "prevalidated historical fixtures 3002520..3002532, existing network 5; nonempty complete hydrated results match without writes"
+    },
+    {
+      "host": "echo-pivnich",
+      "phase": "application observation",
+      "reason": "recurring candidate_ordering_incomplete fallback plus primary fresh-tail count query missing projected created_at",
+      "rollback": "already underway before user changed recovery policy; saved app/library restored and HTTP/services/configuration verified",
+      "resolution": "Fixture-proven ordering and count corrections were deployed forward in 0.1.1-rc.202609051117; all nine servers and the final fleet audit passed, with no further rollback."
+    }
+  ],
+  "verification_harness_findings": [
+    "Successful SQLx queries exceeding the one-second diagnostic threshold are counted separately from analytics failures; ZP2 had one 1.883-second completed query during its verification window.",
+    "Journal windows use the saved microsecond start boundary, avoiding inclusion of startup fallbacks earlier in the same second. Transition capture retains those records.",
+    "Python 3.10 timestamp parsing pads variable fractional digits; PostgreSQL heartbeat precision is preserved.",
+    "Journal capture requests complete fields and decodes byte arrays before counting."
+  ],
+  "unrelated_findings": [
+    {
+      "host": "echo-zp2",
+      "message_id": 12823417,
+      "finding": "sigint_inbox_item.datetime is NULL identically in primary and gateway; default IMSDatetime cursor correctly falls back before candidate retrieval",
+      "baseline_fallback": {
+        "route": "postgres_fallback",
+        "reason": "candidates_unavailable",
+        "candidate_reason": "analytics_error",
+        "result_matches": true
+      },
+      "resolution": "Precision cursor fixture explicitly uses IMSTimestamp; application ordering and NULL cursor fallback are unchanged."
+    },
+    {
+      "host": "echo-pivnich",
+      "finding": "Iggy logs a heartbeat error when a client has shut down; five matching records precede deployment.",
+      "evidence": "echo-pivnich-preexisting-iggy-heartbeat.jsonl",
+      "current_health": "Background worker remains active with zero restarts; ingestion continues."
+    },
+    {
+      "finding": "Signal CLI startup configuration requests can be refused on localhost:8083; startup evidence is retained and this is separate from analytics health."
+    },
+    {
+      "host": "echo-skhid",
+      "finding": "Three networks have no AOR assigned; the same data-quality checks fail before this correction. Six records occur in the audit window."
+    },
+    {
+      "finding": "Network membership consistency warnings occur at startup on existing data; baseline examples precede deployment on Skhid, CBR and Kupiansk."
+    },
+    {
+      "host": "echo-zp2",
+      "finding": "Recovery intentionally skipped one deleted messenger inbox entry during the audit."
+    },
+    {
+      "hosts": [
+        "echo-cbr",
+        "echo-kupiansk"
+      ],
+      "finding": "Legacy candidate-route warnings say postgres_fallback on hosts without analytics; final diagnostics correctly record successful primary operations with reason=unconfigured. Warnings were retained."
+    },
+    {
+      "host": "echo-cbr-staging",
+      "finding": "The standard maintenance wakeup iterated 10,433 session-set members; deployment completed without changing session data or the lifecycle."
+    },
+    {
+      "host": "echo-siversk",
+      "finding": "Earlier rollout observations included Delta EXO login/account-configuration errors; no such error occurred in the final fleet-audit window."
+    }
+  ],
+  "resolved_first_attempt_findings": [
+    {
+      "finding": "Primary fresh-tail count SQL referenced created_at outside an indexed lateral projection",
+      "fix_commit": "fafcbc4af3578a121d967ec12a7e1807835a5395",
+      "verification": "Restored-database count fixture, bounded production plans, complete count parity on every site, no recurring affected-query errors after verification."
+    },
+    {
+      "finding": "Candidate ordering used an INNER JOIN while primary hydration used LEFT JOIN",
+      "fix_commit": "fafcbc4af3578a121d967ec12a7e1807835a5395",
+      "verification": "Isolated missing-row fixture and full hydrated parity passed; deleted-candidate revalidation retained. Two initial Pivnich ordering fallbacks remain unattributed to exact live IDs."
+    }
+  ],
+  "startup_recovery": {
+    "host": "echo-pivnich",
+    "cause": "Analytics desired-state health was temporarily unhealthy during source reconciliation; the candidate/count circuits recovered before the verification window.",
+    "new_application_complete_inbox_fallbacks": 975,
+    "new_application_fallback_outcomes": "all 975 succeeded through PostgreSQL",
+    "new_application_count_timeouts": 1,
+    "previous_application_count_timeout_completions_during_rollout": 2,
+    "legacy_count_route_limitation": "The previous September 3 application did not emit complete-operation diagnostics for these count failures; timeout records are retained separately.",
+    "post_recovery": "No incomplete revalidation, precision mismatch or affected-query timeout/circuit recurrence was observed in the verification and fleet-audit windows."
+  },
+  "fleet_audit_summary": {
+    "at": "2026-09-05T11:43:57.574579+00:00",
+    "hybrid_inbox_successes": 19258,
+    "primary_inbox_successes": 342,
+    "final_inbox_fallbacks": 0,
+    "all_payloads_and_configurations_verified": true
+  },
+  "performance_claim": "No production slowlog reduction percentage is claimed.",
+  "forward_digest_plans": [
+    {
+      "role": "primary_total",
+      "execution_ms": 0.301,
+      "planning_ms": 2.264,
+      "sql_sha256": "3c255678dfd2e1877d37f8ec62286c49d065a971dc41276533c5e6780d5796c6"
+    },
+    {
+      "role": "primary_fresh_tail",
+      "execution_ms": 0.381,
+      "planning_ms": 2.425,
+      "sql_sha256": "aa5a99865f5bced2acf80724593bdc8266bb3a2f69cf32feb075eeb701bf1449"
+    },
+    {
+      "role": "gateway_historical",
+      "execution_ms": 41.533,
+      "planning_ms": 5.207,
+      "sql_sha256": "f8c98e926697bd6f0bc8790ab42fd09b5bfba675f9aab747e8a86b0511d6104d"
+    }
+  ],
+  "forward_digest_remote_executions": [
+    {
+      "query_duration_ms": 40,
+      "read_rows": 90118,
+      "result_rows": 1,
+      "exception_code": 0
+    }
+  ],
+  "first_rollout_attempt": {
+    "application": {
+      "version": "0.1.1~rc.202609051001-1",
+      "package_sha256": "799e0d1c1de203f42fc455983ab0befef0e5eeefa988ab86d00e6aec188c38a8",
+      "binary_sha256": "c2cc9337711a9a3714c0e5bb1350ccb361ab10c91381ab06c337ae9899638a58",
+      "source_commit": "a727a3e7942098d61b6130197a4ebaf1999637c6",
+      "ci_run": 33959532004
+    },
+    "release": "0.1.1-rc.202609051001",
+    "release_commit": "a727a3e7942098d61b6130197a4ebaf1999637c6",
+    "superseded_by": "0.1.1-rc.202609051117",
+    "discarded_candidate": {
+      "release": "0.1.1-rc.202609050954",
+      "reason": "installer verification used a function outside the gateway search_path; automatic rollback passed; application not deployed"
+    },
+    "servers": [
+      {
+        "host": "echo-staging",
+        "since": "2026-09-05 10:21:21 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": [],
+        "analytics_warning_count": 0,
+        "deployment_transition": {
+          "since": "2026-09-05 10:18:48 UTC",
+          "until": "2026-09-05 10:21:21 UTC",
+          "complete_inbox_operations": {
+            "complete_operations": 0,
+            "final_hybrid_successes": 0,
+            "complete_fallbacks": 0,
+            "final_outcomes": [],
+            "candidate_postgres_reasons": {},
+            "warning_counts": {},
+            "duration_ms": {
+              "count": 0,
+              "total": 0,
+              "max": null
+            }
+          },
+          "all_query_postgres_routes": [
+            {
+              "operation": "group activity enrichment",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "group activity enrichment",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 9
+            }
+          ],
+          "analytics_warning_count": 1
+        }
+      },
+      {
+        "host": "echo-kharkiv2",
+        "since": "2026-09-05 10:30:19 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 0,
+          "final_hybrid_successes": 0,
+          "complete_fallbacks": 0,
+          "final_outcomes": [],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 0,
+            "total": 0,
+            "max": null
+          }
+        },
+        "all_query_postgres_routes": [],
+        "analytics_warning_count": 0,
+        "deployment_transition": {
+          "since": "2026-09-05 10:28:57 UTC",
+          "until": "2026-09-05 10:30:19 UTC",
+          "complete_inbox_operations": {
+            "complete_operations": 0,
+            "final_hybrid_successes": 0,
+            "complete_fallbacks": 0,
+            "final_outcomes": [],
+            "candidate_postgres_reasons": {},
+            "warning_counts": {},
+            "duration_ms": {
+              "count": 0,
+              "total": 0,
+              "max": null
+            }
+          },
+          "all_query_postgres_routes": [],
+          "analytics_warning_count": 0
+        }
+      },
+      {
+        "host": "echo-zp2",
+        "since": "2026-09-05 10:38:01 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 10255,
+          "final_hybrid_successes": 10255,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 10255
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 10255,
+            "total": 665070,
+            "max": 3549
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "analysis stats freqs",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats posts",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats tags",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 2
+          }
+        ],
+        "analytics_warning_count": 0,
+        "deployment_transition": {
+          "since": "2026-09-05 10:36:38 UTC",
+          "until": "2026-09-05 10:38:01 UTC",
+          "complete_inbox_operations": {
+            "complete_operations": 1409,
+            "final_hybrid_successes": 631,
+            "complete_fallbacks": 778,
+            "final_outcomes": [
+              {
+                "route": "analytics_hybrid",
+                "reason": "none",
+                "outcome": "success",
+                "failed_stage": "none",
+                "count": 631
+              },
+              {
+                "route": "postgres_fallback",
+                "reason": "candidates_unavailable",
+                "outcome": "success",
+                "failed_stage": "candidate_retrieval",
+                "count": 778
+              }
+            ],
+            "candidate_postgres_reasons": {
+              "analytics_error": 1,
+              "circuit_open": 977
+            },
+            "warning_counts": {
+              "analytics_candidates_available=false": 978
+            },
+            "duration_ms": {
+              "count": 1409,
+              "total": 65512,
+              "max": 1578
+            }
+          },
+          "all_query_postgres_routes": [
+            {
+              "operation": "inbox message candidates",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "inbox message candidates",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 977
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 151
+            }
+          ],
+          "analytics_warning_count": 980
+        }
+      },
+      {
+        "host": "echo-siversk",
+        "since": "2026-09-05 10:49:28 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 845,
+          "final_hybrid_successes": 845,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 845
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 845,
+            "total": 47663,
+            "max": 174
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 1
+          }
+        ],
+        "analytics_warning_count": 0,
+        "deployment_transition": {
+          "since": "2026-09-05 10:47:20 UTC",
+          "until": "2026-09-05 10:49:28 UTC",
+          "complete_inbox_operations": {
+            "complete_operations": 341,
+            "final_hybrid_successes": 18,
+            "complete_fallbacks": 323,
+            "final_outcomes": [
+              {
+                "route": "analytics_hybrid",
+                "reason": "none",
+                "outcome": "success",
+                "failed_stage": "none",
+                "count": 18
+              },
+              {
+                "route": "postgres_fallback",
+                "reason": "candidates_unavailable",
+                "outcome": "success",
+                "failed_stage": "candidate_retrieval",
+                "count": 323
+              }
+            ],
+            "candidate_postgres_reasons": {
+              "analytics_error": 3,
+              "circuit_open": 320
+            },
+            "warning_counts": {
+              "analytics_candidates_available=false": 323
+            },
+            "duration_ms": {
+              "count": 341,
+              "total": 9515,
+              "max": 1196
+            }
+          },
+          "all_query_postgres_routes": [
+            {
+              "operation": "analysis stats posts",
+              "reason": "query_policy",
+              "outcome": "success",
+              "count": 2
+            },
+            {
+              "operation": "inbox message candidates",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 3
+            },
+            {
+              "operation": "inbox message candidates",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 320
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 2
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 195
+            }
+          ],
+          "analytics_warning_count": 328
+        }
+      },
+      {
+        "host": "echo-skhid",
+        "since": "2026-09-05 10:54:29 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 3751,
+          "final_hybrid_successes": 3751,
+          "complete_fallbacks": 0,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 3751
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {},
+          "duration_ms": {
+            "count": 3751,
+            "total": 313861,
+            "max": 4648
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "analysis stats freqs",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats networks",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats posts",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 4
+          },
+          {
+            "operation": "analysis stats tags",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 247
+          }
+        ],
+        "analytics_warning_count": 1,
+        "deployment_transition": {
+          "since": "2026-09-05 10:52:33 UTC",
+          "until": "2026-09-05 10:54:29 UTC",
+          "complete_inbox_operations": {
+            "complete_operations": 1308,
+            "final_hybrid_successes": 1308,
+            "complete_fallbacks": 0,
+            "final_outcomes": [
+              {
+                "route": "analytics_hybrid",
+                "reason": "none",
+                "outcome": "success",
+                "failed_stage": "none",
+                "count": 1308
+              }
+            ],
+            "candidate_postgres_reasons": {
+              "circuit_open": 352
+            },
+            "warning_counts": {
+              "analytics_candidates_available=false": 352
+            },
+            "duration_ms": {
+              "count": 1308,
+              "total": 121218,
+              "max": 2818
+            }
+          },
+          "all_query_postgres_routes": [
+            {
+              "operation": "analysis stats count",
+              "reason": "analytics_skipped",
+              "outcome": "success",
+              "count": 2
+            },
+            {
+              "operation": "analysis stats count",
+              "reason": "circuit_open",
+              "outcome": "unknown",
+              "count": 2
+            },
+            {
+              "operation": "analysis stats freqs",
+              "reason": "query_policy",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "analysis stats networks",
+              "reason": "query_policy",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "analysis stats posts",
+              "reason": "query_policy",
+              "outcome": "success",
+              "count": 3
+            },
+            {
+              "operation": "inbox message candidates",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 352
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 2
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 201
+            }
+          ],
+          "analytics_warning_count": 356
+        }
+      },
+      {
+        "host": "echo-pivnich",
+        "since": "2026-09-05 11:00:16 UTC",
+        "complete_inbox_operations": {
+          "complete_operations": 5475,
+          "final_hybrid_successes": 5473,
+          "complete_fallbacks": 2,
+          "final_outcomes": [
+            {
+              "route": "analytics_hybrid",
+              "reason": "none",
+              "outcome": "success",
+              "failed_stage": "none",
+              "count": 5473
+            },
+            {
+              "route": "postgres_fallback",
+              "reason": "candidate_ordering_incomplete",
+              "outcome": "success",
+              "failed_stage": "ordering",
+              "count": 2
+            }
+          ],
+          "candidate_postgres_reasons": {},
+          "warning_counts": {
+            "candidate_revalidation_complete=false": 2,
+            "hybrid candidate ordering incomplete": 2
+          },
+          "duration_ms": {
+            "count": 5475,
+            "total": 470437,
+            "max": 3954
+          }
+        },
+        "all_query_postgres_routes": [
+          {
+            "operation": "analysis stats callsigns",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 1
+          },
+          {
+            "operation": "analysis stats freqs",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 2
+          },
+          {
+            "operation": "analysis stats tags",
+            "reason": "query_policy",
+            "outcome": "success",
+            "count": 3
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "analytics_error",
+            "outcome": "success",
+            "count": 3
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "circuit_open",
+            "outcome": "error",
+            "count": 3
+          },
+          {
+            "operation": "rer duty inbox messages count",
+            "reason": "circuit_open",
+            "outcome": "success",
+            "count": 765
+          }
+        ],
+        "analytics_warning_count": 5,
+        "deployment_transition": {
+          "since": "2026-09-05 10:58:08 UTC",
+          "until": "2026-09-05 11:00:16 UTC",
+          "complete_inbox_operations": {
+            "complete_operations": 1893,
+            "final_hybrid_successes": 74,
+            "complete_fallbacks": 1819,
+            "final_outcomes": [
+              {
+                "route": "analytics_hybrid",
+                "reason": "none",
+                "outcome": "success",
+                "failed_stage": "none",
+                "count": 74
+              },
+              {
+                "route": "postgres_fallback",
+                "reason": "candidates_unavailable",
+                "outcome": "success",
+                "failed_stage": "candidate_retrieval",
+                "count": 1819
+              }
+            ],
+            "candidate_postgres_reasons": {
+              "analytics_error": 3,
+              "circuit_open": 1816
+            },
+            "warning_counts": {
+              "analytics_candidates_available=false": 1819
+            },
+            "duration_ms": {
+              "count": 1893,
+              "total": 103667,
+              "max": 3427
+            }
+          },
+          "all_query_postgres_routes": [
+            {
+              "operation": "analysis stats callsigns",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "analysis stats count",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "analysis stats count",
+              "reason": "analytics_skipped",
+              "outcome": "success",
+              "count": 5
+            },
+            {
+              "operation": "analysis stats count",
+              "reason": "circuit_open",
+              "outcome": "unknown",
+              "count": 5
+            },
+            {
+              "operation": "analysis stats freqs",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "analysis stats networks",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "analysis stats posts",
+              "reason": "query_policy",
+              "outcome": "success",
+              "count": 8
+            },
+            {
+              "operation": "analysis stats tags",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "analysis stats tags",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 4
+            },
+            {
+              "operation": "analysis stats tags",
+              "reason": "query_policy",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "group activity enrichment",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "group activity enrichment",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 10
+            },
+            {
+              "operation": "inbox message candidates",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 3
+            },
+            {
+              "operation": "inbox message candidates",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 1816
+            },
+            {
+              "operation": "report history dashboard",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 1
+            },
+            {
+              "operation": "report history dashboard",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 5
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "analytics_error",
+              "outcome": "success",
+              "count": 2
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "circuit_open",
+              "outcome": "error",
+              "count": 1
+            },
+            {
+              "operation": "rer duty inbox messages count",
+              "reason": "circuit_open",
+              "outcome": "success",
+              "count": 756
+            }
+          ],
+          "analytics_warning_count": 1832
+        }
+      }
+    ]
+  },
+  "mattermost_notifications": {
+    "echo-staging-0.1.1-rc.202609051001": {
+      "sent_at": "2026-09-05T10:27:28.373797+00:00",
+      "http_status": 200,
+      "text": "echo-staging: 0.1.1-rc.202609051001 deployed and verified. 6.1 min observation; services/HTTP/replication healthy; artifact hashes matched. 12 controlled complete hybrid successes, zero final inbox fallbacks or analytics warnings during observation."
+    },
+    "echo-kharkiv2-0.1.1-rc.202609051001": {
+      "sent_at": "2026-09-05T10:36:06.577337+00:00",
+      "http_status": 200,
+      "text": "echo-kharkiv2: 0.1.1-rc.202609051001 deployed and verified. 5.8 min observation; services/HTTP/replication healthy; artifact hashes matched. 12 controlled complete hybrid successes, zero final inbox fallbacks or analytics warnings during observation."
+    },
+    "echo-zp2-0.1.1-rc.202609051001": {
+      "sent_at": "2026-09-05T10:46:50.499095+00:00",
+      "http_status": 200,
+      "text": "echo-zp2: 0.1.1-rc.202609051001 deployed and verified. 8.8 min observation; services/HTTP/replication healthy; artifact hashes matched. 15 controlled complete hybrid successes, zero final inbox fallbacks or analytics warnings during observation."
+    },
+    "echo-siversk-0.1.1-rc.202609051001": {
+      "sent_at": "2026-09-05T10:52:08.135165+00:00",
+      "http_status": 200,
+      "text": "echo-siversk: 0.1.1-rc.202609051001 deployed and verified. 2.7 min observation; services/HTTP/replication healthy; artifact hashes matched. 8 controlled complete hybrid successes, zero final inbox fallbacks or analytics warnings during observation. Timed observation minimum waived at user request."
+    },
+    "echo-skhid-0.1.1-rc.202609051001": {
+      "sent_at": "2026-09-05T10:57:42.304940+00:00",
+      "http_status": 200,
+      "text": "echo-skhid: 0.1.1-rc.202609051001 deployed and verified. 3.2 min observation; services/HTTP/replication healthy; artifact hashes matched. 8 controlled complete hybrid successes; 0 final inbox fallbacks, 1 classified analytics warnings during verification. Timed observation minimum waived at user request."
+    },
+    "echo-staging-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:25:31.698284+00:00",
+      "http_status": 200,
+      "text": "echo-staging: 0.1.1-rc.202609051117 deployed and verified. 0.5 min observation; services/HTTP/replication healthy; artifact hashes matched. 4 controlled complete hybrid successes; 0 final inbox fallbacks, 0 classified analytics warnings during verification. Timed observation minimum waived at user request."
+    },
+    "echo-kharkiv2-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:27:41.948389+00:00",
+      "http_status": 200,
+      "text": "echo-kharkiv2: 0.1.1-rc.202609051117 deployed and verified. 0.5 min observation; services/HTTP/replication healthy; artifact hashes matched. 4 controlled complete hybrid successes; 0 final inbox fallbacks, 0 classified analytics warnings during verification. Timed observation minimum waived at user request."
+    },
+    "echo-zp2-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:29:51.818546+00:00",
+      "http_status": 200,
+      "text": "echo-zp2: 0.1.1-rc.202609051117 deployed and verified. 0.5 min observation; services/HTTP/replication healthy; artifact hashes matched. 5 controlled complete hybrid successes; 0 final inbox fallbacks, 0 classified analytics warnings during verification. Timed observation minimum waived at user request."
+    },
+    "echo-siversk-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:32:14.375667+00:00",
+      "http_status": 200,
+      "text": "echo-siversk: 0.1.1-rc.202609051117 deployed and verified. 0.5 min observation; services/HTTP/replication healthy; artifact hashes matched. 4 controlled complete hybrid successes; 0 final inbox fallbacks, 0 classified analytics warnings during verification. Timed observation minimum waived at user request."
+    },
+    "echo-skhid-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:34:36.622512+00:00",
+      "http_status": 200,
+      "text": "echo-skhid: 0.1.1-rc.202609051117 deployed and verified. 0.5 min observation; services/HTTP/replication healthy; artifact hashes matched. 4 controlled complete hybrid successes; 0 final inbox fallbacks, 0 classified analytics warnings during verification. Timed observation minimum waived at user request."
+    },
+    "echo-pivnich-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:37:31.926438+00:00",
+      "http_status": 200,
+      "text": "echo-pivnich: 0.1.1-rc.202609051117 deployed and verified. 0.5 min observation; services/HTTP/replication healthy; artifact hashes matched. 4 controlled complete hybrid successes; 0 final inbox fallbacks, 0 classified analytics warnings during verification. Timed observation minimum waived at user request."
+    },
+    "echo-cbr-staging-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:40:22.391723+00:00",
+      "http_status": 200,
+      "text": "echo-cbr-staging: 0.1.1-rc.202609051117 deployed and verified. 0.1 min observation; services/HTTP/replication healthy; artifact hashes matched. Analytics remains unconfigured; 4 controlled primary inbox reads matched. Timed observation minimum waived at user request."
+    },
+    "echo-cbr-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:41:41.230532+00:00",
+      "http_status": 200,
+      "text": "echo-cbr: 0.1.1-rc.202609051117 deployed and verified. 0.1 min observation; services/HTTP/replication healthy; artifact hashes matched. Analytics remains unconfigured; 4 controlled primary inbox reads matched. Timed observation minimum waived at user request."
+    },
+    "echo-kupiansk-0.1.1-rc.202609051117": {
+      "sent_at": "2026-09-05T11:42:26.930146+00:00",
+      "http_status": 200,
+      "text": "echo-kupiansk: 0.1.1-rc.202609051117 deployed and verified. 0.1 min observation; services/HTTP/replication healthy; artifact hashes matched. Analytics remains unconfigured; 4 controlled primary inbox reads matched. Timed observation minimum waived at user request."
+    }
+  }
+}

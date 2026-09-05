@@ -1,0 +1,6 @@
+{
+  "commit": "6e00148a1849452d5a96086b5454bc186bf52c99",
+  "version": "v0.3.2-echo.2",
+  "postgresql_major": 18,
+  "library_sha256": "75660258aa6a9d8a3dabf272eb500907eac5fb2e28e2505088d4afdf6140cd68"
+}

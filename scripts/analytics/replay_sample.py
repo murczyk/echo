@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import uuid
 
 from compare_reads import comparisons, json_query
 
@@ -30,6 +31,7 @@ def main():
     parser.add_argument("--revised", required=True, type=Path)
     parser.add_argument("--clickhouse", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--sample", type=Path, help="reuse an archived sample without rereading the source")
     args = parser.parse_args()
     if not args.source.endswith("-dev") or not 0 <= args.high - args.low <= 10_000:
         parser.error("use a dev source and at most 10,001 message IDs")
@@ -44,7 +46,7 @@ def main():
         "signal_group": ("", "master_key String, deleted Bool"),
     }
     sample = {}
-    for table, (key, definition) in tables.items():
+    for table, (key, definition) in (tables.items() if args.sample is None else []):
         columns = ",".join(column.split()[0] for column in definition.split(", "))
         predicate = f"{key} BETWEEN {args.low} AND {args.high}"
         if table == "sigint_unit":
@@ -52,7 +54,16 @@ def main():
         if table == "signal_group":
             predicate = f"master_key IN (SELECT group_master_key FROM signal_message_group WHERE signal_message_id BETWEEN {args.low} AND {args.high})"
         sample[table] = json_query(args.source, "wd", f"SELECT coalesce(json_agg(t),'[]'::json) FROM (SELECT {columns} FROM {table} WHERE {predicate}) t")
-    (args.out / "sample.json").write_text(json.dumps(sample, ensure_ascii=False) + "\n")
+    if args.sample is not None:
+        sample = json.loads(args.sample.read_text())
+        if set(sample) != set(tables):
+            parser.error("archived sample has unexpected tables")
+        for table, (key, _) in tables.items():
+            if key and any(not args.low <= row[key] <= args.high for row in sample[table]):
+                parser.error(f"archived {table} sample is outside the requested ID bounds")
+        shutil.copyfile(args.sample, args.out / "sample.json")
+    else:
+        (args.out / "sample.json").write_text(json.dumps(sample, ensure_ascii=False) + "\n")
 
     def clickhouse(sql, data=None):
         return subprocess.run([str(args.clickhouse), "client", "--host", "127.0.0.1", "--max_execution_time", "15", "--query", sql],
@@ -81,19 +92,31 @@ def main():
     media_ids = {row["signal_message_id"] for row in sample["signal_message_media"]}
     counts = Counter(row["unit_id"] for row in sample["sigint_inbox_item_unit"] if row["item_id"] in media_ids)
     unit_id = counts.most_common(1)[0][0]
-    evidence = {"source": args.source, "low": args.low, "high": args.high, "unit_id": unit_id,
+    run_id = uuid.uuid4().hex
+    evidence = {"run_id": run_id, "source": args.source, "low": args.low, "high": args.high, "unit_id": unit_id,
                 "sample_sha256": hashlib.sha256((args.out / "sample.json").read_bytes()).hexdigest(),
+                "library_sha256": {name: hashlib.sha256(path.read_bytes()).hexdigest()
+                                   for name, path in [("baseline", args.baseline), ("revised", args.revised)]},
                 "rows": {name: len(rows) for name, rows in sample.items()}, "runs": []}
     library = args.runtime / "pg/lib/postgresql/18/lib/pg_clickhouse.so"
+
+    def replace_library(build):
+        pg_ctl = args.runtime / "pg/lib/postgresql/18/bin/pg_ctl"
+        subprocess.run([str(pg_ctl), "-D", str(args.runtime / "pgdata"), "stop", "-m", "fast"],
+                       check=True, capture_output=True, timeout=30)
+        replacement = library.with_name("pg_clickhouse-next.so")
+        shutil.copyfile(build, replacement)
+        replacement.replace(library)
+        subprocess.run([str(pg_ctl), "-D", str(args.runtime / "pgdata"), "-l", str(args.runtime / "postgres.log"),
+                        "-o", "-p 55432 -k /tmp", "start"], check=True, capture_output=True, timeout=30)
+
     try:
         for version, build in [("baseline", args.baseline), ("revised", args.revised)]:
-            replacement = library.with_name("pg_clickhouse-next.so")
-            shutil.copyfile(build, replacement)
-            replacement.replace(library)
+            replace_library(build)
             for driver in ["binary", "http"]:
                 postgres(f"ALTER SERVER analytics_sample OPTIONS(SET driver '{driver}');")
                 for name, variant, sql in comparisons(args.low, args.high, unit_id):
-                    tag = f"sample_{version}_{driver}_{name}_{variant}"
+                    tag = f"sample_{run_id}_{version}_{driver}_{name}_{variant}"
                     settings = f"SET search_path=analytics_sample_remote,public; SET pg_clickhouse.session_settings='join_use_nulls 1,group_by_use_nulls 1,final 1,log_comment {tag}';"
                     wrapped = "SELECT coalesce(json_agg(t),'[]'::json) FROM (" + sql + ") t;"
                     expected = postgres("SET search_path=analytics_sample_local,public;" + wrapped)
@@ -103,11 +126,9 @@ def main():
                                              "sql": sql, "log_comment": tag, "expected": expected, "actual": actual, "plans": plans})
                     (args.out / "comparison.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
     finally:
-        replacement = library.with_name("pg_clickhouse-next.so")
-        shutil.copyfile(args.revised, replacement)
-        replacement.replace(library)
+        replace_library(args.revised)
     clickhouse("SYSTEM FLUSH LOGS")
-    logs = clickhouse("SELECT log_comment, query_id, query_duration_ms, read_rows, result_rows, exception_code, query FROM system.query_log WHERE startsWith(log_comment,'sample_') AND type IN ('QueryFinish','ExceptionWhileProcessing') ORDER BY event_time_microseconds FORMAT JSONEachRow")
+    logs = clickhouse(f"SELECT log_comment, query_id, query_duration_ms, read_rows, result_rows, exception_code, query FROM system.query_log WHERE startsWith(log_comment,'sample_{run_id}_') AND type IN ('QueryFinish','ExceptionWhileProcessing') ORDER BY event_time_microseconds FORMAT JSONEachRow")
     (args.out / "clickhouse.jsonl").write_text(logs)
     print(args.out / "comparison.json")
 

@@ -50,6 +50,17 @@ fn systemd_listener() -> Result<Option<TcpListener>, AppError> {
 }
 
 pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+    Ok(new_env_with_initialization(mode, true).await.c(h!())?)
+}
+
+pub(crate) async fn new_readonly_env(mode: Mode) -> Result<Arc<Env>, AppError> {
+    Ok(new_env_with_initialization(mode, false).await.c(h!())?)
+}
+
+async fn new_env_with_initialization(
+    mode: Mode,
+    initialize: bool,
+) -> Result<Arc<Env>, AppError> {
     let config = read_config(mode).c(h!())?;
     let metrics = crate::telemetry::Metrics::from_config(&config);
     let redis = new_redis(&config).await.c(h!())?;
@@ -76,12 +87,14 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
     };
     let mil_geo = MilGeo::new(&mk_conn_string(&config)[..]);
     let dbx = crate::new_pg_pool_from_config(&config).await.c(h!())?;
-    crate::ai_agent::dispatcher::import_legacy_config(
-        &dbx,
-        config.ai_agent_dispatcher.as_ref(),
-    )
-    .await
-    .c(h!())?;
+    if initialize {
+        crate::ai_agent::dispatcher::import_legacy_config(
+            &dbx,
+            config.ai_agent_dispatcher.as_ref(),
+        )
+        .await
+        .c(h!())?;
+    }
     let echo_gpu_client = Arc::new(
         echo_gpu_client::EchoGpuClient::new(
             dbx.clone(),
@@ -214,12 +227,21 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         )),
         palitra_worker_context: Arc::new(Default::default()),
     };
-    crate::location::aor_config::init_aor_location_config(
-        &dbx,
-        settlements.clone(),
-    )
-    .await
-    .c(h!())?;
+    if initialize {
+        crate::location::aor_config::init_aor_location_config(
+            &dbx,
+            settlements.clone(),
+        )
+        .await
+        .c(h!())?;
+    } else {
+        crate::location::aor_config::refresh_settlements_aor_map(
+            &dbx,
+            settlements.clone(),
+        )
+        .await
+        .c(h!())?;
+    }
     Ok(Arc::new(env))
 }
 

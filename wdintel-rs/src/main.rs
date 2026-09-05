@@ -755,6 +755,16 @@ pub struct CompareRerCountsPs {
     pub request_path: String,
 }
 
+#[derive(clap::Args, Debug)]
+pub struct CompareInboxPs {
+    #[arg(long)]
+    pub login: String,
+    #[arg(long)]
+    pub request_path: String,
+    #[arg(long)]
+    pub require_hybrid: bool,
+}
+
 #[derive(clap::Args, Debug, Clone)]
 pub struct OneoffFixEchoimGroupsPs {
     #[arg(long, default_value = "false")]
@@ -1085,6 +1095,7 @@ enum Cmd {
     OneoffDeleteDeletedGoiKnowledge(OneoffDeleteDeletedGoiKnowledgePs),
     OneoffGetNetworksActivityStats(OneoffGetNetworksActivityStatsPs),
     OneoffCompareRerCounts(CompareRerCountsPs),
+    OneoffCompareInbox(CompareInboxPs),
     OneoffPopulateSignalMessageGroupIds,
     OneoffFixEchoimGroups(OneoffFixEchoimGroupsPs),
     OneoffUnlinkReserveGroupDupes,
@@ -1819,6 +1830,10 @@ async fn async_main(
         }
         Cmd::OneoffCompareRerCounts(ps) => {
             oneoff_compare_rer_counts(mode, ps).await
+        }
+        Cmd::OneoffCompareInbox(ps) => {
+            rer_importer::inbox::verification::run(mode, ps).await.c(h!())?;
+            Ok(())
         }
         Cmd::OneoffPopulateSignalMessageGroupIds => {
             messenger::group::oneoff::oneoff_populate_signal_message_group_ids(

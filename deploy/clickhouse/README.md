@@ -48,7 +48,7 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 
 - ClickHouse `26.3.12.3` LTS from its signed apt repository.
 - PeerDB `v0.37.1` at its release commit.
-- `pg_clickhouse` `v0.3.2-echo.1`, built specifically for PostgreSQL 18 from
+- `pg_clickhouse` `v0.3.2-echo.2`, built specifically for PostgreSQL 18 from
   the `codex/v0.3.2-search-backports` fork branch. The pinned commit
   includes the foreign-scan RTE fix from upstream PR #319, the concurrent
   binary-scan fix from upstream PR #296, local compatible `DISTINCT` pushdown,
@@ -56,7 +56,12 @@ All pins and downloadable checksums live in [versions.env](versions.env):
   upstream SubPlan pushdown for compatible correlated and uncorrelated
   subqueries. It also backports JSONB top-level existence (`?`) pushdown from
   upstream PR #325 for native ClickHouse JSON and String-backed compatibility
-  views. The first prevents
+  views. Revision 2 retains microseconds in constants, timestamp casts, prepared
+  parameters, and HTTP inserts; includes the upstream formatter and
+  `to_timestamp()` fixes; and composes correlated INNER and SEMI/ANTI joins.
+  Inner-dependent SEMI/ANTI restrictions remain in `ON`, adapted from upstream
+  PR #347 at `f49ddb02`. NULL parameters and naive timestamp roundtrips agree
+  across both drivers. Imported table schemas remain unchanged. The first prevents
   `cache lookup failed for foreign table 0` in affected pushed-down joins and
   uses PostgreSQL's executor-populated user and foreign-server metadata.
   The second gives simultaneously active scans separate native connections,
@@ -79,6 +84,48 @@ All pins and downloadable checksums live in [versions.env](versions.env):
 
 Exact ClickHouse packages are held after installation. Upgrades are explicit:
 update pins/checksums, rebuild artifacts, test in development, then staging.
+
+### Extension-only hotfixes
+
+Run `bin/build-gateway-extension.sh <artifact-directory>` on the Debian 13
+builder after updating the exact fork commit and artifact revision in
+`versions.env`. Reuse the resulting archive, `build-info.json`, and
+`SHA256SUMS` across all gateways. This path builds only `pg_clickhouse`.
+
+Copy the reviewed bundle and artifact to the gateway, then run
+`sudo bin/install-gateway-extension.sh <archive> <archive-sha256> <backup-directory>`.
+The installer verifies the pinned commit, PostgreSQL major, artifact revision,
+and library checksum. It holds the analytics reconciliation lock, pauses active
+reconciliation/health timers, saves the current library and configuration
+hashes, stops PostgreSQL 18/main, replaces only the library, restarts, and checks
+gateway reads. A failure restores the saved library. Roll back a later failed
+promotion gate with `sudo bin/install-gateway-extension.sh --rollback <backup-directory>`.
+No imported table schema or other analytics component is reinstalled.
+
+Before advancing, verify catalog connections, CDC recovery, analytics health,
+the application deployment lifecycle, bounded source/gateway parity, and the
+required observation window. `inbox_operation` records final hybrid successes
+and all complete fallback outcomes, including fallback duration; candidate
+query successes alone are insufficient. Its `failed_stage` distinguishes
+candidate retrieval, primary-tail loading, hydration/revalidation, and ordering.
+Retain the existing warning logs and attribute CDC freshness failures separately.
+
+Use a bounded `InboxMessagesReq` JSON file and an existing RER login for controlled
+read-only replays on quiet hosts:
+
+```bash
+sudo env PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify' \
+  /usr/bin/wdintel-rs --mode=live oneoff-compare-inbox \
+  --login <login> --request-path <request.json> --require-hybrid
+```
+
+The command applies normal primary authorization, compares complete hydrated
+results with PostgreSQL reads before and after the operation, and fails on
+changing inputs, mismatches, or missing required hybrid completion. It emits
+request/result fingerprints and final-operation diagnostics. Omit
+`--require-hybrid` for requests or hosts that intentionally use PostgreSQL.
+Summarize archived application logs with
+`python3 scripts/analytics/summarize_inbox_operations.py <journal.jsonl>`.
 
 ## Network and ports
 

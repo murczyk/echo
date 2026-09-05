@@ -1,0 +1,586 @@
+{
+  "run_id": "b2a62445af3447e296aacb79a84af8f5",
+  "source": "echo-pivnich-dev",
+  "low": 28980000,
+  "high": 28982000,
+  "unit_id": 445,
+  "sample_sha256": "a634d687c312f0f48757a3b628b7763c5522cf83c93d73c6777e24df289d5a25",
+  "library_sha256": {
+    "baseline": "1a8b230599d928903c93136de9c0168564b948144d7b89ad9b6ced39ab1b8f52",
+    "revised": "5ac9627a2992fd602543da78cc5b3b14f11e3f4983125e6198845ecdaab81173"
+  },
+  "rows": {
+    "signal_message": 1920,
+    "sigint_inbox_item": 1103,
+    "sigint_inbox_item_unit": 1396,
+    "signal_message_media": 210,
+    "signal_message_group": 1809,
+    "sigint_unit": 200,
+    "signal_group": 87
+  },
+  "all_results_match": true,
+  "runs": [
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "unit_count",
+      "variant": "original",
+      "execution_ms_median": 6.243,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "unit_exclusion",
+      "variant": "original",
+      "execution_ms_median": 6.001,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "media_count",
+      "variant": "original",
+      "execution_ms_median": 4.52,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "unit_media_count",
+      "variant": "original",
+      "execution_ms_median": 10.715,
+      "remote_queries": 12,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 5452
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "frequency_facet",
+      "variant": "original",
+      "execution_ms_median": 8.617,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "candidates",
+      "variant": "original",
+      "execution_ms_median": 5.934,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "group_activity",
+      "variant": "original",
+      "execution_ms_median": 7.697,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "unit_count",
+      "variant": "revised",
+      "execution_ms_median": 7.082,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "unit_exclusion",
+      "variant": "revised",
+      "execution_ms_median": 7.45,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "media_count",
+      "variant": "revised",
+      "execution_ms_median": 4.239,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "unit_media_count",
+      "variant": "revised",
+      "execution_ms_median": 8.011,
+      "remote_queries": 12,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 5452
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "frequency_facet",
+      "variant": "revised",
+      "execution_ms_median": 6.414,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "candidates",
+      "variant": "revised",
+      "execution_ms_median": 4.774,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "baseline",
+      "driver": "binary",
+      "name": "group_activity",
+      "variant": "revised",
+      "execution_ms_median": 6.486,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "unit_count",
+      "variant": "original",
+      "execution_ms_median": 5.34,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "unit_exclusion",
+      "variant": "original",
+      "execution_ms_median": 5.347,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "media_count",
+      "variant": "original",
+      "execution_ms_median": 3.929,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "unit_media_count",
+      "variant": "original",
+      "execution_ms_median": 6.894,
+      "remote_queries": 12,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 5452
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "frequency_facet",
+      "variant": "original",
+      "execution_ms_median": 5.699,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "candidates",
+      "variant": "original",
+      "execution_ms_median": 4.68,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "group_activity",
+      "variant": "original",
+      "execution_ms_median": 5.832,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "unit_count",
+      "variant": "revised",
+      "execution_ms_median": 5.955,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "unit_exclusion",
+      "variant": "revised",
+      "execution_ms_median": 5.698,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "media_count",
+      "variant": "revised",
+      "execution_ms_median": 4.42,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "unit_media_count",
+      "variant": "revised",
+      "execution_ms_median": 7.431,
+      "remote_queries": 12,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 5452
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "frequency_facet",
+      "variant": "revised",
+      "execution_ms_median": 6.139,
+      "remote_queries": 8,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 4612
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "candidates",
+      "variant": "revised",
+      "execution_ms_median": 4.308,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "baseline",
+      "driver": "http",
+      "name": "group_activity",
+      "variant": "revised",
+      "execution_ms_median": 5.566,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "unit_count",
+      "variant": "original",
+      "execution_ms_median": 4.795,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 35
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "unit_exclusion",
+      "variant": "original",
+      "execution_ms_median": 4.588,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 1074
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "media_count",
+      "variant": "original",
+      "execution_ms_median": 4.449,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "unit_media_count",
+      "variant": "original",
+      "execution_ms_median": 5.56,
+      "remote_queries": 4,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 13
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "frequency_facet",
+      "variant": "original",
+      "execution_ms_median": 5.867,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 44
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "candidates",
+      "variant": "original",
+      "execution_ms_median": 4.254,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "group_activity",
+      "variant": "original",
+      "execution_ms_median": 6.31,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "unit_count",
+      "variant": "revised",
+      "execution_ms_median": 5.83,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 35
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "unit_exclusion",
+      "variant": "revised",
+      "execution_ms_median": 5.366,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 1074
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "media_count",
+      "variant": "revised",
+      "execution_ms_median": 4.793,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "unit_media_count",
+      "variant": "revised",
+      "execution_ms_median": 6.798,
+      "remote_queries": 4,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 13
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "frequency_facet",
+      "variant": "revised",
+      "execution_ms_median": 6.438,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 44
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "candidates",
+      "variant": "revised",
+      "execution_ms_median": 4.743,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "revised",
+      "driver": "binary",
+      "name": "group_activity",
+      "variant": "revised",
+      "execution_ms_median": 6.85,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "unit_count",
+      "variant": "original",
+      "execution_ms_median": 5.185,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 35
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "unit_exclusion",
+      "variant": "original",
+      "execution_ms_median": 6.122,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 1074
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "media_count",
+      "variant": "original",
+      "execution_ms_median": 3.88,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "unit_media_count",
+      "variant": "original",
+      "execution_ms_median": 5.086,
+      "remote_queries": 4,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 13
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "frequency_facet",
+      "variant": "original",
+      "execution_ms_median": 4.749,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 44
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "candidates",
+      "variant": "original",
+      "execution_ms_median": 4.15,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "group_activity",
+      "variant": "original",
+      "execution_ms_median": 6.511,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "unit_count",
+      "variant": "revised",
+      "execution_ms_median": 6.333,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 35
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "unit_exclusion",
+      "variant": "revised",
+      "execution_ms_median": 5.428,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 1074
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "media_count",
+      "variant": "revised",
+      "execution_ms_median": 3.905,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 149
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "unit_media_count",
+      "variant": "revised",
+      "execution_ms_median": 7.051,
+      "remote_queries": 4,
+      "remote_rows_read": 19316,
+      "remote_rows_returned": 13
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "frequency_facet",
+      "variant": "revised",
+      "execution_ms_median": 8.278,
+      "remote_queries": 4,
+      "remote_rows_read": 18476,
+      "remote_rows_returned": 44
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "candidates",
+      "variant": "revised",
+      "execution_ms_median": 4.113,
+      "remote_queries": 4,
+      "remote_rows_read": 12932,
+      "remote_rows_returned": 80
+    },
+    {
+      "version": "revised",
+      "driver": "http",
+      "name": "group_activity",
+      "variant": "revised",
+      "execution_ms_median": 5.551,
+      "remote_queries": 4,
+      "remote_rows_read": 19676,
+      "remote_rows_returned": 348
+    }
+  ],
+  "remote_executions": 304,
+  "remote_exceptions": 0
+}

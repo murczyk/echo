@@ -416,6 +416,8 @@ pub const REPORT_HISTORY_RECORD_LIMIT: usize = 1_000_000;
 pub const REPORT_HISTORY_RECORD_LIMIT_ERROR_STATUS: &str =
     "Звіт містить понад 1 млн. записів. Зменшіть період або звузьте фільтри.";
 pub const RER_DUTY_TEST_REPLAY_SOURCE_MAX: i64 = 10_000;
+pub const ANALYTICS_VERIFY_TIMEOUT_MS: u64 = 15_000;
+pub const ANALYTICS_VERIFY_PGOPTIONS: &str = "-c default_transaction_read_only=on -c statement_timeout=15000 -c application_name=echo-analytics-verify";
 pub const RER_DUTY_TEST_REPLAY_INTERVAL_SEC_MAX: i64 = 31_536_000;
 pub const RER_DUTY_TEST_REPLAY_COMMENT: &str = "[duplicate]";
 pub const RER_DUTY_TEST_REPLAY_CLEANUP_BATCH_SIZE: u64 = 500;

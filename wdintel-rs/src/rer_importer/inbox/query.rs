@@ -250,6 +250,7 @@ fn build_inbox_query_base(
             .columns([
                 signal_message::Column::Id,
                 signal_message::Column::Timestamp,
+                signal_message::Column::CreatedAt,
                 signal_message::Column::Deleted,
                 signal_message::Column::DatasourceGroupId,
                 signal_message::Column::MessageUid,
@@ -1151,7 +1152,7 @@ pub(crate) async fn order_inbox_candidate_ids(
         candidates.extend(
             signal_message::Entity::find()
                 .join(
-                    JoinType::InnerJoin,
+                    JoinType::LeftJoin,
                     signal_message::Relation::SigintInboxItem.def(),
                 )
                 .select_only()
