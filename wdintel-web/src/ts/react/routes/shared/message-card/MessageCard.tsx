@@ -2,6 +2,7 @@ import { styled } from '@mui/material/styles';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import { memo, useMemo } from 'react';
+import type { MouseEvent } from 'react';
 import type {
   CallsignInfoRes,
   InboxMessage,
@@ -12,7 +13,7 @@ import type {
   Tag,
   Unit,
 } from '../../../../../Bindings';
-import { MessageCardContent } from './MessageCardContent';
+import { MessageCardContentWithDownloadGuard } from './MessageCardContent';
 import { MessageCardWatermark } from './MessageCardWatermark';
 import type { AnalysisCallsignActions, MessageCardBotTagAction } from './message-card.types';
 import {
@@ -41,6 +42,15 @@ import { resolveMessageCardEtalonDisplayModel } from './message-card.utils';
 import type { AddPointHighlightBlacklistRequest } from './point-highlight-blacklist';
 import type { MessageTextPreviewLineLimit } from '../../../services/api/user-settings';
 import { DEFAULT_MEDIA_SUMMARY_ENABLED } from '../../../hooks/duty-settings-defaults';
+import {
+  canDownloadAllMessageAttachments,
+  guardMessageCardDownloadClick,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME,
+  MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+  messageCardAttachmentsArchiveHref,
+  useMessageCardDownloadGuard,
+} from './MessageCardMedia';
 
 dayjs.extend(customParseFormat);
 
@@ -202,6 +212,7 @@ function MessageCardComponent({
   messageTextPreviewLines = 20,
 }: MessageCardProps) {
   const [messageRootRef, relativeTimeMs] = useRelativeTimeDisplayMs(referenceTimeMs, msg.timestamp);
+  const downloadGuard = useMessageCardDownloadGuard();
   const compactLayout = feedCount >= 3;
   const derivedNetworkMap = useMemo(() => {
     if (Object.keys(networkMap).length > 0) return networkMap;
@@ -289,6 +300,27 @@ function MessageCardComponent({
     displayMode === 'analysis' && hasVisibleDmrMetadata(msg) ? (
       <MessageCardDmrMetadataPopover msg={msg} />
     ) : undefined;
+  const canDownloadAllAttachments = canDownloadAllMessageAttachments(msg.media ?? []);
+  const archiveDownloadStarting = downloadGuard.isDownloadStarting(
+    MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY,
+  );
+  const attachmentArchiveDownload = canDownloadAllAttachments
+    ? {
+        href: messageCardAttachmentsArchiveHref(id),
+        download: MESSAGE_CARD_ATTACHMENTS_ARCHIVE_FILE_NAME,
+        label: MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+        disabled: archiveDownloadStarting,
+        ariaBusy: archiveDownloadStarting,
+        ariaLabel: archiveDownloadStarting
+          ? 'Завантаження…'
+          : MESSAGE_CARD_ATTACHMENTS_ARCHIVE_LABEL,
+        onClick: (event: MouseEvent<HTMLElement>) =>
+          guardMessageCardDownloadClick(event, MESSAGE_CARD_ATTACHMENTS_ARCHIVE_DOWNLOAD_KEY, {
+            isDownloadStarting: downloadGuard.isDownloadStarting,
+            onDownloadStart: downloadGuard.onDownloadStart,
+          }),
+      }
+    : undefined;
 
   const headerProps: MessageCardHeaderProps = {
     compact: compactLayout,
@@ -318,6 +350,7 @@ function MessageCardComponent({
     onExcludeMessageEntity,
     metadataTrigger,
     excludeMenuOptions,
+    attachmentArchiveDownload,
     readOnly,
   };
   const visibleMessageComments = messageComments;
@@ -338,7 +371,7 @@ function MessageCardComponent({
           </div>
         )}
         <MessageCardHeader {...headerProps} />
-        <MessageCardContent
+        <MessageCardContentWithDownloadGuard
           messageId={id}
           msg={msg}
           tagsMap={tagsMap}
@@ -366,6 +399,8 @@ function MessageCardComponent({
           collapseMediaPreviews={collapseMediaPreviews ?? false}
           mediaSummaryEnabled={mediaSummaryEnabled}
           messageTextPreviewLines={messageTextPreviewLines}
+          isDownloadStarting={downloadGuard.isDownloadStarting}
+          onDownloadStart={downloadGuard.onDownloadStart}
         />
       </MessageCardRoot>
     </li>

@@ -70,6 +70,17 @@ test.describe('@smoke', () => {
     test(`${host} message card preview smoke covers the shared contract`, async ({ page }) => {
       await openMessageCardPreviewHost(page, host);
 
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.image1}`,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('link', {
+          name: `Завантажити вкладення: ${MESSAGE_CARD_MEDIA_PREVIEW_ATTACHMENT_NAMES.video1}`,
+        }),
+      ).toBeVisible();
+
       const imageDialog = await openImagePreview(page);
       await expect(imageDialog).toBeVisible();
       await expect(imageDialog.getByRole('button', { name: 'Інформація' })).toBeVisible();
