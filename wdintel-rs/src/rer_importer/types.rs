@@ -1490,6 +1490,10 @@ pub struct RerDutyQueryStateWf {
     pub posts_denied: Option<Vec<String>>,
     pub units_selected: Option<Vec<String>>,
     pub units_denied: Option<Vec<String>>,
+    #[serde(default)]
+    pub selected_unit_ids: Option<Vec<i64>>,
+    #[serde(default)]
+    pub denied_unit_ids: Option<Vec<i64>>,
     pub units_exact_match_only: Option<bool>,
     pub last_viewed_message_id: Option<i64>,
     pub highlight_keywords_enabled: Option<bool>,

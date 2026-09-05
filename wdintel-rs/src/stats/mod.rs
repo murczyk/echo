@@ -999,6 +999,17 @@ pub async fn read_group_stats_timeline_cached(
         .into_iter()
         .map(|b| (b.id, batch_key_to_group_keys(b.group_master_keys)))
         .collect::<HashMap<i64, Vec<_>>>();
+    let cached_keys = batches_map.values().flatten().collect::<HashSet<_>>();
+    if master_keys.iter().any(|key| !cached_keys.contains(key)) {
+        return read_group_stats_timeline_with_analytics(
+            env,
+            master_keys,
+            dt_since,
+            dt_till,
+        )
+        .await
+        .context(h!());
+    }
 
     let mut grouped_points = master_keys
         .iter()
@@ -1014,15 +1025,16 @@ pub async fn read_group_stats_timeline_cached(
             Ok(buckets) => buckets,
             Err(error) => {
                 warn!(
-                    "Redis group timeline missed a bucket; using raw PostgreSQL query: {error:#}"
+                    "Redis group timeline missed a bucket; using raw query: {error:#}"
                 );
-                return read_group_stats_timeline_raw(
-                    &env.dbx,
+                return read_group_stats_timeline_with_analytics(
+                    env,
                     master_keys,
                     dt_since,
                     dt_till,
                 )
-                .await;
+                .await
+                .context(h!());
             }
         };
         for (timestamp, bucket) in timestamps.into_iter().zip(buckets) {
@@ -1067,6 +1079,42 @@ struct GroupStatsTimelineRawRow {
     master_key: String,
     bucket: NaiveDateTime,
     count: i64,
+}
+
+async fn read_group_stats_timeline_with_analytics(
+    env: &Env,
+    master_keys: Vec<String>,
+    dt_since: NaiveDateTime,
+    dt_till: NaiveDateTime,
+) -> anyhow::Result<Vec<SignalGroupStatsTimelineEntry>> {
+    let analytics_keys = master_keys.clone();
+    crate::rer_importer::analysis::with_analytics_read_fallback(
+        env,
+        "group timeline raw miss",
+        true,
+        |db| async move {
+            Ok(read_group_stats_timeline_raw(
+                &db,
+                analytics_keys,
+                dt_since,
+                dt_till,
+            )
+            .await
+            .context(h!())?)
+        },
+        |db| async move {
+            Ok(read_group_stats_timeline_raw(
+                &db,
+                master_keys,
+                dt_since,
+                dt_till,
+            )
+            .await
+            .context(h!())?)
+        },
+    )
+    .await
+    .context(h!())
 }
 
 pub async fn read_group_stats_timeline_raw(
@@ -1179,7 +1227,7 @@ async fn load_redis_group_counts(
         Ok(result) => Ok(result),
         Err(error) => {
             warn!(
-                "Redis group stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
+                "Redis group stats read missed a bucket; rebuilding: {error:#}"
             );
             repair_redis_general_stats(env, intervals_5min, days).await?;
             load_redis_group_counts_once(env, intervals_5min, days).await
@@ -1225,7 +1273,7 @@ async fn load_redis_detail_buckets(
         Ok(result) => Ok(result),
         Err(error) => {
             warn!(
-                "Redis detail stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
+                "Redis detail stats read missed a bucket; rebuilding: {error:#}"
             );
             repair_redis_general_stats(env, intervals_5min, days).await?;
             load_redis_detail_buckets_once(env, intervals_5min, days).await
@@ -1326,15 +1374,21 @@ async fn repair_redis_five_minute_buckets(
         for (since, till) in
             consecutive_five_minute_ranges(&missing_owned_timestamps)
         {
-            write_redis_5min_range(
-                &env.dbx,
-                stats_redis,
+            let buckets = calculate_redis_5min_range_for_env(
+                env,
                 since,
                 till,
                 batches_map,
             )
             .await
-            .c(h!())?;
+            .context(h!())?;
+            write_redis_5min_buckets(
+                stats_redis,
+                &buckets,
+                StatsSelection::ALL,
+            )
+            .await
+            .context(h!())?;
         }
         Ok(())
     }
@@ -1408,12 +1462,16 @@ async fn repair_redis_general_day(
         }
         let since = start_of_day(date).c(h!())?;
         let till = start_of_day(date + Duration::days(1)).c(h!())?;
+        let buckets =
+            calculate_redis_5min_range_for_env(env, since, till, batches_map)
+                .await
+                .context(h!())?;
         write_redis_general_days(
             &env.dbx,
             stats_redis,
             since,
             till,
-            None,
+            Some(&buckets),
             batches_map,
             StatsSelection::ALL,
         )
@@ -1580,7 +1638,7 @@ pub async fn read_redis_network_days(
         Ok(buckets) => buckets,
         Err(error) => {
             warn!(
-                "Redis network stats read missed a bucket; rebuilding from PostgreSQL: {error:#}"
+                "Redis network stats read missed a bucket; rebuilding: {error:#}"
             );
             let missing_dates = stats_redis
                 .missing_network_days(&dates, network_ids)
@@ -1639,16 +1697,36 @@ async fn repair_redis_network_day(
         {
             return Ok(());
         }
-        recalculate_network_stats_redis(
-            &env.dbx,
-            stats_redis,
-            start_of_day(date).c(h!())?,
-            start_of_day(date + Duration::days(1)).c(h!())?,
-            None,
-            batches_map,
-        )
-        .await
-        .c(h!())
+        let since = start_of_day(date).context(h!())?;
+        let till = start_of_day(date + Duration::days(1)).context(h!())?;
+        let rows =
+                crate::rer_importer::analysis::with_analytics_read_fallback(
+                    env,
+                    "Redis network stats raw miss",
+                    true,
+                    |db| async move {
+                        load_network_stats(&db, since, till, None).await
+                    },
+                    |db| async move {
+                        load_network_stats(&db, since, till, None).await
+                    },
+                )
+                .await
+                .context(h!())?;
+        update_network_freq_last_seen(&env.dbx, &rows, None)
+            .await
+            .context(h!())?;
+        let mut buckets =
+            redis::build_network_days(&env.dbx, &rows, batches_map)
+                .await
+                .context(h!())?;
+        stats_redis
+            .replace_network_day(
+                date,
+                &buckets.remove(&date).unwrap_or_default(),
+            )
+            .await
+            .context(h!())
     }
     .await;
     let release_result = repair_lock.release().await;
@@ -2380,28 +2458,6 @@ async fn recalculate_group_stats_redis(
     Ok(())
 }
 
-async fn write_redis_5min_range(
-    dbx: &DatabaseConnection,
-    stats_redis: &redis::GroupStatsRedis,
-    since_ts: NaiveDateTime,
-    till_ts: NaiveDateTime,
-    batches_map: &mut HashMap<String, i64>,
-) -> Result<(), AppError> {
-    if till_ts <= since_ts {
-        return Ok(());
-    }
-    let buckets = calculate_redis_5min_range(
-        dbx,
-        since_ts,
-        till_ts,
-        batches_map,
-        StatsSelection::ALL,
-    )
-    .await
-    .c(h!())?;
-    write_redis_5min_buckets(stats_redis, &buckets, StatsSelection::ALL).await
-}
-
 async fn calculate_redis_5min_range(
     dbx: &DatabaseConnection,
     since_ts: NaiveDateTime,
@@ -2409,6 +2465,33 @@ async fn calculate_redis_5min_range(
     batches_map: &mut HashMap<String, i64>,
     selection: StatsSelection,
 ) -> Result<BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>, AppError> {
+    let (generic_stats, network_stats, network_aors) =
+        load_redis_stats_inputs(dbx, since_ts, till_ts, selection)
+            .await
+            .context(h!())?;
+    let buckets = redis::build_5min_buckets(
+        dbx,
+        &generic_stats,
+        &network_stats,
+        &network_aors,
+        since_ts,
+        till_ts,
+        batches_map,
+    )
+    .await
+    .c(h!())?;
+    Ok(buckets)
+}
+
+async fn load_redis_stats_inputs(
+    dbx: &DatabaseConnection,
+    since_ts: NaiveDateTime,
+    till_ts: NaiveDateTime,
+    selection: StatsSelection,
+) -> Result<
+    (Vec<StatsRow>, Vec<NetworkStatsRow>, HashMap<i64, Vec<i64>>),
+    AppError,
+> {
     let generic_stats = load_generic_stats_selected(
         dbx,
         since_ts,
@@ -2433,18 +2516,36 @@ async fn calculate_redis_5min_range(
     } else {
         (Vec::new(), HashMap::new())
     };
-    let buckets = redis::build_5min_buckets(
-        dbx,
-        &generic_stats,
-        &network_stats,
-        &network_aors,
-        since_ts,
-        till_ts,
-        batches_map,
+    Ok((generic_stats, network_stats, network_aors))
+}
+
+async fn calculate_redis_5min_range_for_env(
+    env: &Env,
+    since: NaiveDateTime,
+    till: NaiveDateTime,
+    batches: &mut HashMap<String, i64>,
+) -> Result<BTreeMap<NaiveDateTime, redis::FiveMinuteBucket>, AppError> {
+    let (rows, networks, aors) =
+        crate::rer_importer::analysis::with_analytics_read_fallback(
+            env,
+            "Redis stats raw miss",
+            true,
+            |db| async move {
+                load_redis_stats_inputs(&db, since, till, StatsSelection::ALL)
+                    .await
+            },
+            |db| async move {
+                load_redis_stats_inputs(&db, since, till, StatsSelection::ALL)
+                    .await
+            },
+        )
+        .await
+        .context(h!())?;
+    Ok(redis::build_5min_buckets(
+        &env.dbx, &rows, &networks, &aors, since, till, batches,
     )
     .await
-    .c(h!())?;
-    Ok(buckets)
+    .context(h!())?)
 }
 
 async fn write_redis_5min_buckets(

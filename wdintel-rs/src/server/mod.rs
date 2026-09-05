@@ -199,6 +199,9 @@ pub async fn new_env(mode: Mode) -> Result<Arc<Env>, AppError> {
         replicas,
         analytics,
         tag_keyword_regex_cache: Arc::new(RwLock::new(Default::default())),
+        orbit_matcher_cache: Arc::new(tokio::sync::RwLock::new(
+            Default::default(),
+        )),
         session_activity_tx,
         session_activity_rx: Arc::new(tokio::sync::Mutex::new(
             session_activity_rx,

@@ -1008,9 +1008,7 @@ enum Cmd {
     NetworkInvalidationTui,
     /// Import ORBIT units from the latest snapshot in an interactive TUI.
     TuiImportOrbitUnits,
-    /// Link database SIGINT units to synchronized ORBIT units.
-    OneoffTestLinkUnits,
-    /// Merge safe ORBIT-backed unit duplicates in automatic or manual mode.
+    /// Merge ORBIT-backed unit duplicates in manual mode.
     TuiMergeOrbitUnitDuplicates(OrbitReviewWorkflowPs),
     /// Resolve unparsed unit labels in automatic or manual mode.
     TuiResolveOrbitUnparsedUnits(OrbitReviewWorkflowPs),
@@ -1121,6 +1119,8 @@ enum Cmd {
     OneoffReprocessInboxMetadata(OneoffReprocessInboxMetadataPs),
     OneoffAuditMissingEchoImMessages(OneoffAuditMissingEchoImMessagesPs),
     OneoffReprocessInboxPosts(OneoffReprocessInboxPostsPs),
+    /// Review and migrate saved unit filters from labels to unit IDs.
+    OneoffMigrateSavedFilterUnitIds,
     OneoffRestartEcho(OneoffRestartEchoPs),
     OneoffKillOldQueries(OneoffKillOldQueriesPs),
     OneoffRefreshAiModels,
@@ -1937,11 +1937,13 @@ async fn async_main(
         Cmd::OneoffReprocessInboxPosts(ps) => {
             rer_importer::oneoff_reprocess_inbox_posts(mode, &ps).await
         }
+        Cmd::OneoffMigrateSavedFilterUnitIds => {
+            rer_importer::saved_filter_unit_ids::run(mode).await
+        }
         Cmd::NetworkInvalidationTui => {
            sigint::network::etalon_calc::tui::run_network_invalidation_tui(mode).await
         }
         Cmd::TuiImportOrbitUnits => orbit::run_import_tui(mode).await,
-        Cmd::OneoffTestLinkUnits => orbit::oneoff_test_link_units(mode).await,
         Cmd::TuiMergeOrbitUnitDuplicates(ps) => {
             orbit::tui_merge_unit_duplicates(mode, ps.dry_run).await
         }

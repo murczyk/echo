@@ -1,6 +1,6 @@
 use crate::config::{
-    INBOX_COUNT_INDEXED_MAX_DAYS, INBOX_MESSAGES_PAGE_LIMIT,
-    TAG_MINIMUM_CONFIDENCE,
+    ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE, INBOX_COUNT_INDEXED_MAX_DAYS,
+    INBOX_MESSAGES_PAGE_LIMIT, TAG_MINIMUM_CONFIDENCE,
 };
 use crate::entities::{prelude::*, *};
 use crate::error::AppError;
@@ -44,8 +44,10 @@ fn inbox_items_cte_cursor_expr(req_sort_by: InboxMessagesSortBy) -> SimpleExpr {
     }
 }
 
-fn message_has_media_exists() -> SimpleExpr {
-    let media_query = Query::select()
+fn message_has_media_exists(
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> SimpleExpr {
+    let mut media_query = Query::select()
         .expr(Expr::value(1))
         .from(signal_message_media::Entity)
         .and_where(
@@ -56,7 +58,12 @@ fn message_has_media_exists() -> SimpleExpr {
             .equals((signal_message::Entity, signal_message::Column::Id)),
         )
         .to_owned();
-
+    if let Some(scope) = scope {
+        media_query.and_where(scope.condition((
+            signal_message_media::Entity,
+            signal_message_media::Column::SignalMessageId,
+        )));
+    }
     Expr::exists(media_query)
 }
 
@@ -669,9 +676,15 @@ where
         )?,
     };
     let q = match unit_lookup_strategy {
-        InboxUnitLookupStrategy::Default => {
-            filter_denied_unit_ids(q, &req.denied_unit_ids)
-        }
+        InboxUnitLookupStrategy::Default => q.apply_if(
+            req.denied_unit_ids.as_ref().filter(|ids| !ids.is_empty()),
+            |query, ids| {
+                query.filter(
+                    message_has_linked_unit_ids_with_scope(ids, false, scope)
+                        .not(),
+                )
+            },
+        ),
         InboxUnitLookupStrategy::Correlated => {
             filter_denied_unit_ids_correlated(q, &req.denied_unit_ids)
         }
@@ -707,7 +720,7 @@ where
     )?;
     q = filter_selected_metadata_for_inbox_messages(q, req)?;
     if req.only_with_media == Some(true) {
-        q = q.filter(message_has_media_exists());
+        q = q.filter(message_has_media_exists(scope));
     }
     if let Some(internal_lower_bound) = internal_lower_bound {
         q = q.filter(inbox_date_gte_expr(
@@ -1017,13 +1030,13 @@ async fn build_analytics_inbox_digest_query_with_created_at_upper_bound(
     Ok(Some(render_inbox_digest_query(q)))
 }
 
-pub(crate) async fn build_analytics_inbox_candidates_query(
+pub(crate) async fn load_analytics_inbox_candidates(
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
     db: &DatabaseConnection,
     freshness_max_age_ms: u64,
-) -> Result<Option<String>, AppError> {
+) -> Result<Option<Vec<i64>>, AppError> {
     let Some((query, _)) = build_analytics_filtered_inbox_query(
         login,
         env,
@@ -1031,13 +1044,16 @@ pub(crate) async fn build_analytics_inbox_candidates_query(
         db,
         freshness_max_age_ms,
     )
-    .await?
+    .await
+    .context(h!())?
     else {
         return Ok(None);
     };
-    Ok(Some(render_inbox_digest_query(
-        finish_inbox_candidates_query(query, req),
-    )))
+    Ok(Some(
+        scan_inbox_candidate_pages(db, query, req)
+            .await
+            .context(h!())?,
+    ))
 }
 
 pub(crate) async fn scan_analytics_inbox_candidate_ids(
@@ -1075,24 +1091,144 @@ pub(crate) async fn scan_analytics_inbox_candidate_ids(
         };
     }
     query = extra(query);
-    // Analytics unit/group LEFT JOINs can duplicate rows; GROUP BY id, not DISTINCT.
-    let mut query = query
+    let query = query
         .select_only()
         .column_as(signal_message::Column::Id, "id")
-        .group_by(signal_message::Column::Id);
-    if let Some(max_ids) = max_ids {
-        query = query.limit(max_ids);
-    }
+        .group_by(signal_message::Column::Id)
+        .order_by_asc(signal_message::Column::Id);
     #[derive(FromQueryResult)]
     struct AnalyticsInboxIdRow {
         id: i64,
     }
-    let rows = query
-        .into_model::<AnalyticsInboxIdRow>()
-        .all(analytics_db)
-        .await
-        .context(h!())?;
-    Ok(Some(rows.into_iter().map(|row| row.id).collect()))
+    let mut ids = Vec::new();
+    loop {
+        let remaining =
+            max_ids.unwrap_or(u64::MAX).saturating_sub(ids.len() as u64);
+        if remaining == 0 {
+            break;
+        }
+        let limit = std::cmp::min(
+            remaining,
+            ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE as u64,
+        );
+        let mut page = query.clone().limit(limit);
+        if let Some(id) = ids.last().copied() {
+            page = page
+                .filter(signal_message::Column::Id.gt(id))
+                .filter(sigint_inbox_item::Column::Id.gt(id));
+        }
+        let rows = page
+            .into_model::<AnalyticsInboxIdRow>()
+            .all(analytics_db)
+            .await
+            .context(h!())?;
+        let exhausted = rows.len() < limit as usize;
+        ids.extend(rows.into_iter().map(|row| row.id));
+        if exhausted {
+            break;
+        }
+    }
+    Ok(Some(ids))
+}
+
+#[derive(FromQueryResult)]
+struct InboxCandidate {
+    id: i64,
+    ordering_value: Option<NaiveDateTime>,
+}
+
+pub(crate) async fn order_inbox_candidate_ids(
+    db: &DatabaseConnection,
+    req: &InboxMessagesReq,
+    ids: &[i64],
+) -> Result<Vec<i64>, AppError> {
+    let mut candidates = Vec::with_capacity(ids.len());
+    for ids in ids.chunks(ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE) {
+        candidates.extend(
+            signal_message::Entity::find()
+                .join(
+                    JoinType::InnerJoin,
+                    signal_message::Relation::SigintInboxItem.def(),
+                )
+                .select_only()
+                .column_as(signal_message::Column::Id, "id")
+                .column_as(analytics_inbox_ordering_expr(req), "ordering_value")
+                .filter(signal_message::Column::Id.is_in(ids.to_vec()))
+                .into_model::<InboxCandidate>()
+                .all(db)
+                .await
+                .context(h!())?,
+        );
+    }
+    candidates.sort_by_key(|row| {
+        (row.ordering_value.is_none(), row.ordering_value, row.id)
+    });
+    if analytics_inbox_order_is_descending(req)
+        != inbox_results_reverse_query_order(req)
+    {
+        candidates.reverse();
+    }
+    Ok(candidates.into_iter().map(|row| row.id).collect())
+}
+
+async fn scan_inbox_candidate_pages(
+    db: &DatabaseConnection,
+    query: Select<signal_message::Entity>,
+    req: &InboxMessagesReq,
+) -> Result<Vec<i64>, AppError> {
+    let mut ids = Vec::new();
+    let mut cursor = None;
+    loop {
+        let mut page = query.clone();
+        if let Some(cursor) = cursor {
+            page = page.filter(inbox_candidate_seek_condition(req, cursor));
+        }
+        let rows = finish_inbox_candidates_query(page, req)
+            .into_model::<InboxCandidate>()
+            .all(db)
+            .await
+            .context(h!())?;
+        let exhausted = rows.len() < inbox_candidate_page_size(req);
+        cursor = rows.last().map(|row| (row.ordering_value, row.id));
+        ids.extend(rows.into_iter().map(|row| row.id));
+        if req.nolimit != Some(true) || exhausted {
+            break;
+        }
+    }
+    Ok(ids)
+}
+
+fn inbox_candidate_seek_condition(
+    req: &InboxMessagesReq,
+    (value, id): (Option<NaiveDateTime>, i64),
+) -> SimpleExpr {
+    let ordering = analytics_inbox_ordering_expr(req);
+    let message_id =
+        Expr::col((signal_message::Entity, signal_message::Column::Id));
+    match (analytics_inbox_order_is_descending(req), value) {
+        (true, Some(value)) => ordering
+            .clone()
+            .lt(value)
+            .or(ordering.eq(value).and(message_id.lt(id))),
+        (true, None) => ordering
+            .clone()
+            .is_not_null()
+            .or(ordering.is_null().and(message_id.lt(id))),
+        (false, Some(value)) => ordering
+            .clone()
+            .gt(value)
+            .or(ordering.clone().eq(value).and(message_id.gt(id)))
+            .or(ordering.is_null()),
+        (false, None) => ordering.is_null().and(message_id.gt(id)),
+    }
+}
+
+fn inbox_candidate_page_size(req: &InboxMessagesReq) -> usize {
+    if req.nolimit == Some(true) {
+        ANALYTICS_INBOX_CANDIDATE_PAGE_SIZE
+    } else {
+        INBOX_MESSAGES_PAGE_LIMIT
+    }
 }
 
 fn finish_inbox_candidates_query(
@@ -1128,7 +1264,7 @@ fn finish_inbox_candidates_query(
                 signal_message::Column::Id,
             )))
     };
-    query.limit(INBOX_MESSAGES_PAGE_LIMIT as u64)
+    query.limit(inbox_candidate_page_size(req) as u64)
 }
 
 fn analytics_inbox_ordering_expr(req: &InboxMessagesReq) -> SimpleExpr {
@@ -1664,13 +1800,13 @@ where
     finish_inbox_query(dbx, login, req, q, true).await
 }
 
-pub(crate) async fn build_postgres_fresh_tail_inbox_candidates_query(
+pub(crate) async fn load_postgres_fresh_tail_inbox_candidates(
     dbx: &DatabaseConnection,
     login: &uuid::Uuid,
     env: &Env,
     req: &InboxMessagesReq,
     created_at_lower_bound: NaiveDateTime,
-) -> Result<String, AppError> {
+) -> Result<Vec<i64>, AppError> {
     let query = build_filtered_inbox_query_with_scope(
         dbx,
         login,
@@ -1684,9 +1820,9 @@ pub(crate) async fn build_postgres_fresh_tail_inbox_candidates_query(
     .await
     .context(h!())?
     .filter(signal_message::Column::CreatedAt.gte(created_at_lower_bound));
-    Ok(render_inbox_digest_query(finish_inbox_candidates_query(
-        query, req,
-    )))
+    Ok(scan_inbox_candidate_pages(dbx, query, req)
+        .await
+        .context(h!())?)
 }
 
 pub(crate) async fn build_inbox_query_for_candidate_ids(

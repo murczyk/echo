@@ -892,6 +892,14 @@ fn message_has_linked_unit_ids(
     unit_ids: &[i64],
     force_correlation: bool,
 ) -> SimpleExpr {
+    message_has_linked_unit_ids_with_scope(unit_ids, force_correlation, None)
+}
+
+pub(in crate::rer_importer) fn message_has_linked_unit_ids_with_scope(
+    unit_ids: &[i64],
+    force_correlation: bool,
+    scope: Option<&AnalyticsMessageIdScope>,
+) -> SimpleExpr {
     let link_alias = Alias::new("selected_unit_link");
     let unit_alias = Alias::new("selected_unit_by_id");
     let mut query = Query::select();
@@ -915,12 +923,23 @@ fn message_has_linked_unit_ids(
             .equals((sigint_inbox_item::Entity, sigint_inbox_item::Column::Id)),
         )
         .and_where(
-            Expr::col((link_alias, sigint_inbox_item_unit::Column::UnitId))
-                .is_in(unit_ids.to_vec()),
+            Expr::col((
+                link_alias.clone(),
+                sigint_inbox_item_unit::Column::UnitId,
+            ))
+            .is_in(unit_ids.to_vec()),
         )
         .and_where(
             Expr::col((unit_alias, sigint_unit::Column::Deleted)).eq(false),
         );
+    if let Some(scope) = scope {
+        query.and_where(
+            scope.condition((
+                link_alias,
+                sigint_inbox_item_unit::Column::ItemId,
+            )),
+        );
+    }
     if force_correlation {
         query.offset(0);
     }
@@ -7235,7 +7254,7 @@ async fn group_stats(
     };
     let group_names = collect_group_names(
         &groups,
-        &env.dbx,
+        &env,
         is_admin,
         analytics_group_stats.as_ref(),
     )
@@ -7453,6 +7472,7 @@ async fn freq_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let freqs = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats freqs",
@@ -7462,6 +7482,7 @@ async fn freq_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 analytics_freshness_max_age_ms,
             )
@@ -7506,6 +7527,7 @@ async fn callsign_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let callsigns = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats callsigns",
@@ -7521,6 +7543,7 @@ async fn callsign_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 &message_id_scope,
             )
@@ -7565,6 +7588,7 @@ async fn metadata_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let metadata = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats metadata",
@@ -7580,6 +7604,7 @@ async fn metadata_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 &message_id_scope,
             )
@@ -7626,6 +7651,7 @@ async fn tag_stats(
         .as_ref()
         .map(AnalyticsConfig::freshness_max_age_ms)
         .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let analytics_source_db = env.dbx.clone();
     let tags = with_analytics_read_fallback(
         env.get_ref(),
         "analysis stats tags",
@@ -7641,6 +7667,7 @@ async fn tag_stats(
                 analytics_req,
                 analytics_user,
                 &db,
+                &analytics_source_db,
                 analytics_master_keys,
                 analytics_tag_access.as_ref().c(h!())?,
                 &message_id_scope,
@@ -8092,6 +8119,10 @@ async fn count_stats(
         .map(AnalyticsConfig::retry_cooldown_ms)
         .unwrap_or(ANALYTICS_RETRY_COOLDOWN_MS_DEFAULT);
     let postgres_query = query_count_stats_postgres(&req, &user, &env, access);
+    if analytics_query.is_none() {
+        info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={}",
+            if analytics.is_none() { "unconfigured" } else { "circuit_open" });
+    }
     let response = with_count_stats_analytics_fallback(
         analytics_query,
         core::time::Duration::from_millis(timeout_ms),
@@ -8104,8 +8135,8 @@ async fn count_stats(
     Ok(Json(response))
 }
 
-fn analytics_count_request_supported(req: &AnalysisStatsReq) -> bool {
-    !analysis_request_has_unit_filters(req)
+fn analytics_count_request_supported(_req: &AnalysisStatsReq) -> bool {
+    true
 }
 
 fn analytics_summary_table_request_supported(req: &AnalysisStatsReq) -> bool {
@@ -8141,34 +8172,14 @@ async fn resolve_analytics_tag_access_if_enabled(
 pub(crate) fn analytics_inbox_request_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    analytics_inbox_filter_supported(req)
-        && !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+    !crate::rer_importer::inbox::query::inbox_request_is_unbounded(req)
+        || (req.load_latest == Some(true) && req.nolimit != Some(true))
 }
 
 pub(crate) fn analytics_inbox_candidates_supported(
     req: &InboxMessagesReq,
 ) -> bool {
-    analytics_inbox_request_supported(req) && req.nolimit != Some(true)
-}
-
-fn analytics_inbox_filter_supported(req: &InboxMessagesReq) -> bool {
-    req.only_with_media != Some(true) && !inbox_request_has_unit_filters(req)
-}
-
-fn analysis_request_has_unit_filters(req: &AnalysisStatsReq) -> bool {
-    option_vec_has_values(&req.selected_units)
-        || option_vec_has_values(&req.selected_unit_ids)
-}
-
-fn inbox_request_has_unit_filters(req: &InboxMessagesReq) -> bool {
-    option_vec_has_values(&req.selected_units)
-        || option_vec_has_values(&req.denied_units)
-        || option_vec_has_values(&req.selected_unit_ids)
-        || option_vec_has_values(&req.denied_unit_ids)
-}
-
-fn option_vec_has_values<T>(values: &Option<Vec<T>>) -> bool {
-    values.as_ref().is_some_and(|values| !values.is_empty())
+    analytics_inbox_request_supported(req)
 }
 
 #[derive(Clone)]
@@ -8255,6 +8266,7 @@ where
     let _retry_cancellation_guard = retry_attempt
         .as_ref()
         .map(AnalyticsRetryAttempt::cancellation_guard);
+    let mut reason = "analytics_skipped";
     if let Some(analytics_query) = analytics_query {
         let started = std::time::Instant::now();
         match tokio::time::timeout(timeout, analytics_query).await {
@@ -8262,30 +8274,37 @@ where
                 if let Some(retry_attempt) = retry_attempt {
                     retry_attempt.record_success();
                 }
-                trace!(
-                    "analysis stats count used analytics in {:?}",
-                    started.elapsed()
-                );
+                info!(target: "analytics_route", "operation=\"analysis stats count\" route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(response);
             }
-            Ok(Err(err)) => warn!(
-                "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
-                started.elapsed(),
-                err
-            ),
-            Err(_) => warn!(
-                "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
-                started.elapsed()
-            ),
+            Ok(Err(err)) => {
+                reason = "analytics_error";
+                warn!(
+                    "analysis stats count analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
+                    started.elapsed(),
+                    err
+                );
+            }
+            Err(_) => {
+                reason = "analytics_timeout";
+                warn!(
+                    "analysis stats count analytics query timed out after {:?}, retrying via PostgreSQL",
+                    started.elapsed()
+                );
+            }
         }
         if let Some(retry_attempt) = retry_attempt {
             retry_attempt.record_failure(retry_cooldown);
         }
     }
 
-    postgres_query.await.map_err(|error| {
+    let started = std::time::Instant::now();
+    let response = postgres_query.await.map_err(|error| {
         map_postgres_runtime_timeout(error, "analysis stats count")
-    })
+    });
+    info!(target: "analytics_route", "operation=\"analysis stats count\" route=postgres reason={reason} outcome={} elapsed_ms={}",
+        if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
+    response
 }
 
 pub(crate) async fn with_analytics_read_fallback<T, A, AFut, P, PFut>(
@@ -8369,6 +8388,13 @@ where
                 .map(|retry_attempt| (analytics, retry_attempt))
         });
 
+    let mut reason = if !analytics_supported {
+        "query_policy"
+    } else if env.analytics.is_none() {
+        "unconfigured"
+    } else {
+        "circuit_open"
+    };
     if let Some((analytics, retry_attempt)) = analytics_attempt {
         let _retry_cancellation_guard = retry_attempt.cancellation_guard();
         let started = std::time::Instant::now();
@@ -8396,18 +8422,21 @@ where
         match response {
             Some(Ok(response)) => {
                 retry_attempt.record_success();
-                trace!("{operation} used analytics in {:?}", started.elapsed());
+                info!(target: "analytics_route", "operation={operation:?} route=analytics outcome=success elapsed_ms={}", started.elapsed().as_millis());
                 return Ok(response);
             }
-            Some(Err(err)) => warn!(
-                "{operation} analytics query failed after {:?}, retrying via PostgreSQL: {:?}",
-                started.elapsed(),
-                err
-            ),
-            None => warn!(
-                "{operation} analytics query timed out after {:?}, retrying via PostgreSQL",
-                started.elapsed()
-            ),
+            Some(Err(err)) => {
+                reason = "analytics_error";
+                warn!(
+                    "{operation} analytics query failed; retrying via PostgreSQL: {err:?}"
+                );
+            }
+            None => {
+                reason = "analytics_timeout";
+                warn!(
+                    "{operation} analytics query timed out; retrying via PostgreSQL"
+                );
+            }
         }
         let retry_cooldown = core::time::Duration::from_millis(
             analytics_config
@@ -8424,9 +8453,10 @@ where
     let started = std::time::Instant::now();
     let response = postgres_query(env.replica())
         .await
-        .map_err(|error| map_postgres_runtime_timeout(error, operation))?;
-    trace!("{operation} used PostgreSQL in {:?}", started.elapsed());
-    Ok(response)
+        .map_err(|error| map_postgres_runtime_timeout(error, operation));
+    info!(target: "analytics_route", "operation={operation:?} route=postgres reason={reason} outcome={} elapsed_ms={}",
+        if response.is_ok() { "success" } else { "error" }, started.elapsed().as_millis());
+    response
 }
 
 pub(crate) fn map_postgres_runtime_timeout(
@@ -9709,39 +9739,75 @@ async fn stats_deprecated(
     let master_keys = get_identity_sigint_groups(&env.dbx, &login)
         .await
         .context(h!())?;
-    let master_keys_noimport = master_keys.clone();
+    let freshness = env
+        .config
+        .analytics
+        .as_ref()
+        .map(AnalyticsConfig::freshness_max_age_ms)
+        .unwrap_or(ANALYTICS_FRESHNESS_MAX_AGE_MS_DEFAULT);
+    let response = with_analytics_read_fallback(
+        env.get_ref(),
+        "analysis combined stats",
+        analytics_stats_request_supported(&req, &env),
+        |db| {
+            query_combined_stats_analytics(
+                &req,
+                &user,
+                &env,
+                db,
+                master_keys.clone(),
+                freshness,
+            )
+        },
+        |_| {
+            query_combined_stats_postgres(
+                &req,
+                &user,
+                &env,
+                master_keys.clone(),
+            )
+        },
+    )
+    .await
+    .context(h!())?;
+    debug!("[stats] get stats: {:?}", instant.elapsed());
+    Ok(Json(response))
+}
 
-    let groups = stats::fetch_groups(&req, &user, &env, master_keys_noimport)
+async fn query_combined_stats_postgres(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &actix_web::web::Data<Env>,
+    master_keys: Vec<String>,
+) -> Result<AnalysisStatsRsp, AppError> {
+    let groups = stats::fetch_groups(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let senders = stats::fetch_senders(&req, &user, &env, master_keys.clone())
+    let senders = stats::fetch_senders(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let posts = stats::fetch_posts(&req, &user, &env, master_keys.clone())
+    let posts = stats::fetch_posts(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let freqs = stats::fetch_freqs(&req, &user, &env, master_keys.clone())
+    let freqs = stats::fetch_freqs(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let callsigns =
-        stats::fetch_callsigns(&req, &user, &env, master_keys.clone())
-            .await
-            .context(h!())?;
-    let tags = stats::fetch_tags(&req, &user, &env, master_keys.clone())
+    let callsigns = stats::fetch_callsigns(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let units = stats::fetch_units(&req, &user, &env, master_keys.clone())
+    let tags = stats::fetch_tags(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    let locations = fetch_locations(&user, &env, &req, master_keys.clone())
+    let units = stats::fetch_units(req, user, env, master_keys.clone())
+        .await
+        .context(h!())?;
+    let locations = fetch_locations(user, env, req, master_keys.clone())
         .await
         .c(h!())?;
-    let count = stats::fetch_counts(&req, &user, &env, master_keys.clone())
+    let count = stats::fetch_counts(req, user, env, master_keys.clone())
         .await
         .context(h!())?;
-    debug!("[stats] get stats: {:?}", instant.elapsed());
-
-    Ok(Json(AnalysisStatsRsp {
+    Ok(AnalysisStatsRsp {
         groups,
         senders,
         posts,
@@ -9752,7 +9818,135 @@ async fn stats_deprecated(
         tags,
         count_overall: count.0,
         count_selected: count.1,
-    }))
+    })
+}
+
+async fn query_combined_stats_analytics(
+    req: &Json<AnalysisStatsReq>,
+    user: &Identity,
+    env: &Env,
+    db: DatabaseConnection,
+    master_keys: Vec<String>,
+    freshness: u64,
+) -> Result<AnalysisStatsRsp, AppError> {
+    let login = login_id_from_identity(user).context(h!())?;
+    let scope =
+        stats::resolve_analytics_message_id_scope(&req.0, &db, freshness)
+            .await
+            .context(h!())?;
+    let access = stats::resolve_analytics_tag_access(
+        &env.dbx,
+        &login,
+        req.report_tags_only_this_unit.unwrap_or(false),
+    )
+    .await
+    .context(h!())?;
+    let groups = stats::fetch_groups_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        Some(&scope),
+        None,
+    )
+    .await
+    .context(h!())?;
+    let senders = stats::fetch_senders_raw_with_db(
+        req,
+        user,
+        env,
+        &db,
+        master_keys.clone(),
+        freshness,
+    )
+    .await
+    .context(h!())?;
+    let posts = stats::fetch_posts_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let freqs = stats::fetch_freqs_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        freshness,
+    )
+    .await
+    .context(h!())?;
+    let callsigns = stats::fetch_callsigns_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let tags = stats::fetch_tags_raw_with_db(
+        req,
+        user,
+        &db,
+        &env.dbx,
+        master_keys.clone(),
+        &access,
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let units = stats::fetch_units_raw_with_db(
+        req,
+        user,
+        &db,
+        master_keys.clone(),
+        &scope,
+    )
+    .await
+    .context(h!())?;
+    let locations = merge_locations(
+        stats::fetch_locations_raw_with_db(
+            req,
+            user,
+            &db,
+            &env.dbx,
+            master_keys.clone(),
+            &scope,
+        )
+        .await
+        .context(h!())?,
+    );
+    let count = stats::fetch_counts_raw_with_db(
+        req,
+        user,
+        env,
+        &db,
+        master_keys,
+        Some(&scope),
+        None,
+    )
+    .await
+    .context(h!())?;
+    Ok(AnalysisStatsRsp {
+        groups,
+        senders,
+        posts,
+        freqs,
+        callsigns,
+        units,
+        locations,
+        tags,
+        count_overall: count.0,
+        count_selected: count.1,
+    })
 }
 
 async fn collect_sender_names(
@@ -9777,12 +9971,35 @@ async fn collect_sender_names(
         })
         .collect())
 }
+pub(crate) async fn read_group_activity(
+    env: &Env,
+    keys: Vec<String>,
+) -> Result<BTreeMap<String, SignalGroupStats>, AppError> {
+    let analytics_keys = keys.clone();
+    with_analytics_read_fallback(
+        env,
+        "group activity enrichment",
+        true,
+        |db| async move {
+            stats::fetch_group_activity_stats_with_db(&db, analytics_keys)
+                .await
+                .context(h!())
+                .map_err(AppError::from)
+        },
+        |db| async move { collect_group_stats(keys, &db).await },
+    )
+    .await
+    .context(h!())
+    .map_err(AppError::from)
+}
+
 async fn collect_group_names(
     groups: &Vec<AnalysisStatsGroup>,
-    txn: &DatabaseConnection,
+    env: &Env,
     is_admin: bool,
     analytics_group_stats: Option<&BTreeMap<String, SignalGroupStats>>,
 ) -> anyhow::Result<Vec<SignalGroupEntry>> {
+    let txn = &env.dbx;
     let mut result = vec![];
     let group_keys = groups.iter().map(|x| x.master_key.clone()).collect_vec();
     let signal_groups = signal_group::Entity::find()
@@ -9814,7 +10031,7 @@ async fn collect_group_names(
         .collect();
     let stats = match analytics_group_stats {
         Some(analytics_group_stats) => analytics_group_stats.clone(),
-        None => collect_group_stats(keys.clone(), txn).await.context(h!())?,
+        None => read_group_activity(env, keys.clone()).await.context(h!())?,
     };
 
     let group_aors = if is_admin {
