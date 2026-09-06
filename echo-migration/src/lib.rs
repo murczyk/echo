@@ -1,3 +1,4 @@
+mod m20260906_094818_ai_callsign_feedback;
 pub use sea_orm_migration::prelude::*;
 
 mod m20220101_000001_create_table;
@@ -1019,6 +1020,7 @@ impl MigratorTrait for Migrator {
             Box::new(
                 m20260917_123830_unresolved_unit_message_order::Migration,
             ),
+            Box::new(m20260906_094818_ai_callsign_feedback::Migration),
         ]
     }
 }

@@ -1631,9 +1631,17 @@ where
         crate::inbox::message_is_aviation_group(dbx, message)
             .await
             .c(h!())?;
-    let after = parse_reprocess_callsigns(rq, &body, is_aviation_group, ai)
-        .await
-        .c(h!())?;
+    let after =
+        parse_reprocess_callsigns(dbx, rq, &body, is_aviation_group, ai)
+            .await
+            .c(h!())?;
+    let after = crate::ai_callsign::feedback::apply_overrides(
+        dbx,
+        inbox_item.id,
+        after,
+    )
+    .await
+    .c(h!())?;
     let callsign_tokens = serde_json::to_value(
         highlight_callsigns(rq, &body, &after).await.c(h!())?,
     )
@@ -1649,31 +1657,31 @@ where
     }))
 }
 
-async fn parse_reprocess_callsigns(
+async fn parse_reprocess_callsigns<C: ConnectionTrait>(
+    db: &C,
     rq: &reqwest::Client,
     body: &str,
     is_aviation_group: bool,
     ai: Option<&crate::ai_callsign::worker::WorkerConfig>,
-) -> Result<Vec<String>, AppError> {
-    let regular = parse_primary_callsigns(rq, body, is_aviation_group)
+) -> anyhow::Result<Vec<String>> {
+    match ai {
+        Some(ai) => crate::ai_callsign::parse_with_feedback(
+            db,
+            rq,
+            &ai.ai_engine,
+            &ai.prompt,
+            body,
+            is_aviation_group,
+        )
         .await
-        .c(h!())?;
-    let Some(ai) = ai else {
-        return Ok(regular);
-    };
-    let ai_callsigns = crate::ai_callsign::extract_ai_callsigns(
-        &ai.ai_engine,
-        &ai.prompt,
-        body,
-    )
-    .await?;
-    Ok(crate::ai_callsign::worker::merge_current_and_ai_callsigns(
-        regular,
-        ai_callsigns,
-    ))
+        .c(h!()),
+        None => parse_primary_callsigns(rq, body, is_aviation_group)
+            .await
+            .c(h!()),
+    }
 }
 
-async fn parse_primary_callsigns(
+pub(crate) async fn parse_primary_callsigns(
     rq: &reqwest::Client,
     body: &str,
     is_aviation_group: bool,
@@ -1703,6 +1711,34 @@ pub(crate) async fn persist_recomputed_inbox_item_callsigns<C>(
 where
     C: ConnectionTrait,
 {
+    SigintInboxItem::find_by_id(inbox_item.id)
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let message = SignalMessage::find_by_id(inbox_item.id)
+        .lock_exclusive()
+        .one(dbx)
+        .await
+        .c(h!())?
+        .c(h!())?;
+    let desired = crate::ai_callsign::feedback::apply_overrides(
+        dbx,
+        inbox_item.id,
+        recomputed.after.clone(),
+    )
+    .await
+    .c(h!())?;
+    if message.deleted
+        || message.body.as_deref() != Some(recomputed.body.as_str())
+        || desired != recomputed.after
+    {
+        return Err(anyhow::anyhow!(
+            "Message changed during callsign reprocessing"
+        )
+        .into());
+    }
     let inbox_item_uuid = inbox_item.id_uuid;
     let mut inbox_item = inbox_item.into_active_model();
     inbox_item.callsign_tokens = Set(Some(recomputed.callsign_tokens.clone()));

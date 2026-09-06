@@ -1,3 +1,6 @@
+pub mod feedback;
+pub mod feedback_admin;
+pub mod reparse;
 pub mod types;
 pub mod worker;
 
@@ -133,7 +136,8 @@ pub async fn test_ai_callsign_parsing(
     let prompt = validate_prompt(req.prompt)?;
     let engines = load_enabled_engines(&env.dbx, req.ai_engine_ids).await?;
     let messages = load_test_messages(&env.dbx).await?;
-    let results = run_parsing(prompt, engines, messages).await;
+    let results =
+        run_parsing(&env.dbx, &env.rq, prompt, engines, messages).await;
     Ok(Json(AiCallsignParsingRsp { results }))
 }
 
@@ -162,7 +166,8 @@ pub async fn recalculate_ai_callsign_parsing(
     let prompt = validate_prompt(req.prompt)?;
     let engines = load_enabled_engines(&env.dbx, req.ai_engine_ids).await?;
     let messages = load_test_messages(&env.dbx).await?;
-    let results = run_parsing(prompt.clone(), engines, messages).await;
+    let results =
+        run_parsing(&env.dbx, &env.rq, prompt.clone(), engines, messages).await;
     let results = save_prompt_and_results(&env.dbx, prompt, results).await?;
     Ok(Json(AiCallsignParsingRsp { results }))
 }
@@ -424,6 +429,8 @@ fn result_item_from_db(
 }
 
 async fn run_parsing(
+    db: &DatabaseConnection,
+    rq: &reqwest::Client,
     prompt: String,
     engines: Vec<ai_engine::Model>,
     messages: Vec<ai_callsign_test_message::Model>,
@@ -433,7 +440,7 @@ async fn run_parsing(
         messages.clone().into_iter().map(move |message| {
             let engine = engine.clone();
             let prompt = prompt.clone();
-            async move { parse_one(prompt, engine, message).await }
+            async move { parse_one(db, rq, prompt, engine, message).await }
         })
     });
     stream::iter(jobs)
@@ -443,24 +450,21 @@ async fn run_parsing(
 }
 
 async fn parse_one(
+    db: &DatabaseConnection,
+    rq: &reqwest::Client,
     prompt: String,
     engine: ai_engine::Model,
     message: ai_callsign_test_message::Model,
 ) -> AiCallsignParseResultItem {
-    let response = request_ai_response(
-        &engine,
-        vec![
-            AiEngineMessage {
-                role: AI_CHAT_ROLE_SYSTEM.to_string(),
-                content: prompt,
-            },
-            AiEngineMessage {
-                role: AI_CHAT_ROLE_USER.to_string(),
-                content: message.message,
-            },
-        ],
-    )
-    .await;
+    let response =
+        parse_with_feedback(db, rq, &engine, &prompt, &message.message, false)
+            .await
+            .and_then(|callsigns| {
+                serde_json::to_string(
+                    &serde_json::json!({"callsigns": callsigns}),
+                )
+                .c(h!())
+            });
     match response {
         Ok(response_text) => match parse_callsigns(&response_text) {
             Ok(callsigns) => AiCallsignParseResultItem {
@@ -489,6 +493,28 @@ async fn parse_one(
             updated_at: None,
         },
     }
+}
+
+pub(crate) async fn parse_with_feedback<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    rq: &reqwest::Client,
+    engine: &ai_engine::Model,
+    prompt: &str,
+    body: &str,
+    is_aviation_group: bool,
+) -> anyhow::Result<Vec<String>> {
+    let templates = crate::rer_importer::callsigns::parse_primary_callsigns(
+        rq,
+        body,
+        is_aviation_group,
+    )
+    .await
+    .c(h!())?;
+    let initial = extract_ai_callsigns(engine, prompt, body).await.c(h!())?;
+    let ai = feedback::refine(db, engine, prompt, body, initial, &templates)
+        .await
+        .c(h!())?;
+    Ok(worker::merge_current_and_ai_callsigns(templates, ai))
 }
 
 pub(crate) async fn extract_ai_callsigns(
@@ -892,3 +918,6 @@ mod tests {
         assert!(!page.prompt_overridden);
     }
 }
+
+#[cfg(test)]
+mod feedback_tests;

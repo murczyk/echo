@@ -18,6 +18,8 @@ import List.Extra as ListX
 import Maybe exposing (withDefault)
 import Maybe.Extra as MaybeX
 import Pages_.RerAnalysis.Utils
+import Random
+import Uuid.Barebones
 import Route exposing (Route)
 import Set exposing (Set)
 import Shared.Callsign
@@ -107,6 +109,7 @@ type Msg
     | AddCallsignS Int String
     | EditCancel Int
     | EditSave Int
+    | EditSaveWithAction Int String
     | InboxSubmitDone Int Bool (Result ApiError ())
     | CommentSaveDone Int (Result ApiError ())
     | ExtendedFormChanged Int String
@@ -479,6 +482,13 @@ update vps msg model =
             }
 
         EditSave id_ ->
+            { model = model
+            , cmds = E.sendCmd (Random.generate (EditSaveWithAction id_) Uuid.Barebones.uuidStringGenerator)
+            , sigs = []
+            , messages = vps.messages
+            }
+
+        EditSaveWithAction id_ actionId ->
             case Dict.get id_ model.edited of
                 Nothing ->
                     { model = model
@@ -533,6 +543,14 @@ update vps msg model =
                                                   , sanitizeMessageForSubmit message2
                                                   )
                                                 ]
+                                            , callsignEdits =
+                                                Just
+                                                    [ { messageId = id_
+                                                      , actionId = actionId
+                                                      , added = callsignDifference message2.callsigns edited.original.callsigns
+                                                      , removed = callsignDifference edited.original.callsigns message2.callsigns
+                                                      }
+                                                    ]
                                             }
 
                                     else
@@ -1693,3 +1711,17 @@ renderRow vps _ model ( i_, ( msgId, message ) ) =
             ]
         , Watermark.new vps.user.name |> Watermark.withPositioning ( 65, 75 ) |> Watermark.withFontSize "1.8rem" |> Watermark.view
         ]
+
+
+callsignDifference : List String -> List String -> List String
+callsignDifference left right =
+    let
+        normalize =
+            String.trim >> String.toLower
+
+        excluded =
+            List.map normalize right
+    in
+    left
+        |> List.map normalize
+        |> List.filter (\callsign -> not (List.member callsign excluded))

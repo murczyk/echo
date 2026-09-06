@@ -1,5 +1,37 @@
 {
   "migrations": {
+    "echo:m20260906_094818_ai_callsign_feedback": {
+      "changes": [
+        {
+          "table": "public.ai_callsign_feedback",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.ai_callsign_feedback_summary",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.ai_callsign_override",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.ai_callsign_action",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.ai_callsign_reparse_run",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.ai_callsign_reparse_target",
+          "strategy": "excluded"
+        },
+        {
+          "table": "public.ai_callsign_reparse_job",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260917_123830_unresolved_unit_message_order": {
       "changes": [
         {

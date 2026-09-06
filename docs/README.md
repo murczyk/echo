@@ -264,6 +264,13 @@ network-link `created_at`. Networks without links remain null. It processes
 networks in ID order, reports a resume cursor, and accepts `--after-id` with a
 network ID when resuming an interrupted run. The periodic worker subsequently
 revalidates these seeds against valid interception timestamps.
+`wdintel-rs-bgworker` owns callsign feedback re-parsing alongside normal AI callsign
+jobs, under one monitored PostgreSQL advisory lease. Successful user removals are
+recorded transactionally; hourly runs revisit matching messages from the previous
+14 days, and administrators can launch longer windows. Template parsing and explicit
+user edits are preserved. Operational feedback and queues stay in PostgreSQL and
+are excluded from ClickHouse. See [Callsign feedback](CALLSIGN_FEEDBACK.md) for
+limits, recovery, storage measurements and production-scale query evidence.
 
 ## Statistics storage
 

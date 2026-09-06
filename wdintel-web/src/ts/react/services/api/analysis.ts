@@ -480,8 +480,11 @@ export async function downloadAnalysisReportTaskResult(taskId: number): Promise<
 }
 
 export async function submitAnalysisInboxMessages(req: InboxSubmitReq): Promise<void> {
-  const snakeBody = transformCamelToSnake(req) as JsonValue;
-  await postVoid('/api/rer-importer/inbox/submit', restoreContentNodeVariantKeys(snakeBody));
+  const snakeBody = transformCamelToSnake({ messages: req.messages }) as JsonValue;
+  await postVoid('/api/rer-importer/inbox/submit', {
+    ...(restoreContentNodeVariantKeys(snakeBody) as Record<string, JsonValue>),
+    callsignEdits: req.callsignEdits ?? null,
+  });
 }
 
 export async function editAnalysisFreqUnitName(req: EditFreqUnitNameReq): Promise<void> {

@@ -133,6 +133,11 @@ where
         .into_iter()
         .map(|x| x.to_lowercase())
         .collect();
+    let callsigns = crate::ai_callsign::feedback::apply_overrides(
+        txn, message_id, callsigns,
+    )
+    .await
+    .c(h!())?;
     let callsign_tokens = if callsigns.is_empty() {
         vec![]
     } else {

@@ -1171,3 +1171,10 @@ restart ClickHouse. Run the analytics health check; the policy `--check` is
 expected to report drift after this intentional rollback. Previously truncated
 diagnostic rows cannot be recovered; replicated application data, MinIO,
 PostgreSQL, and ZFS snapshots are unaffected.
+
+### Callsign feedback operational tables
+
+Callsign removal feedback, overrides, action deduplication and re-parsing queues are
+excluded from replication. Deployment synchronizes these exclusions before the
+additive migration; no existing replicated table is changed or backfilled. See
+[the storage and query measurements](../../docs/CALLSIGN_FEEDBACK.md).

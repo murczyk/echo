@@ -1,0 +1,65 @@
+[
+  {
+    "id": "3167-fipka",
+    "initial": [
+      "косой",
+      "фипка"
+    ],
+    "final": [
+      "косой"
+    ],
+    "refined": true,
+    "passed": true,
+    "seconds": 1.12
+  },
+  {
+    "id": "3167-numeric-position",
+    "initial": [
+      "кипа"
+    ],
+    "final": [
+      "кипа"
+    ],
+    "refined": false,
+    "passed": true,
+    "seconds": 0.61
+  },
+  {
+    "id": "3167-guests",
+    "initial": [
+      "евген",
+      "меченый"
+    ],
+    "final": [
+      "евген",
+      "меченый"
+    ],
+    "refined": false,
+    "passed": true,
+    "seconds": 0.73
+  },
+  {
+    "id": "3167-numeric-template",
+    "initial": [],
+    "final": [
+      "44408"
+    ],
+    "refined": false,
+    "passed": true,
+    "seconds": 0.42
+  },
+  {
+    "id": "synthetic-valid-alligator",
+    "initial": [
+      "аллигатор",
+      "косой"
+    ],
+    "final": [
+      "аллигатор",
+      "косой"
+    ],
+    "refined": true,
+    "passed": true,
+    "seconds": 1.61
+  }
+]

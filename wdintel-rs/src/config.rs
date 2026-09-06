@@ -76,6 +76,20 @@ pub const AI_ENGINE_TOKEN_MAX_CHARS: usize = 16_384;
 pub const AI_ENGINE_ERROR_BODY_MAX_CHARS: usize = 2_000;
 pub const AI_CHAT_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_CHAT_TITLE_MAX_CHARS: usize = 120;
+pub const AI_CALLSIGN_FEEDBACK_PAGE_SIZE: i64 = 100;
+pub const AI_CALLSIGN_FEEDBACK_EXAMPLE_SCAN_LIMIT: i64 = 12;
+pub const AI_CALLSIGN_WORKER_LEASE_SECS: u64 = 5;
+pub const AI_CALLSIGN_REPARSE_CLEANUP_BATCH_SIZE: i64 = 1_000;
+pub const AI_CALLSIGN_FEEDBACK_EXAMPLES: usize = 3;
+pub const AI_CALLSIGN_FEEDBACK_EXAMPLE_CHARS: usize = 1_000;
+pub const AI_CALLSIGN_FEEDBACK_HISTORY_CHARS: usize = 6_000;
+pub const AI_CALLSIGN_FEEDBACK_INPUT_CHARS: usize = 24_000;
+pub const AI_CALLSIGN_REPARSE_DAYS: i64 = 14;
+pub const AI_CALLSIGN_REPARSE_INTERVAL_SECS: i64 = 3_600;
+pub const AI_CALLSIGN_REPARSE_BATCH_SIZE: i64 = 1_000;
+pub const AI_CALLSIGN_WORKER_LOCK: i64 = 316_700_001;
+pub const AI_CALLSIGN_FEEDBACK_PROMPT: &str =
+    include_str!("ai_callsign/feedback_prompt.txt");
 pub const AI_CALLSIGN_SETTINGS_ID: i16 = 1;
 pub const AI_CALLSIGN_PROMPT_MAX_CHARS: usize = 100_000;
 pub const AI_CALLSIGN_MESSAGE_MAX_CHARS: usize = 100_000;
@@ -942,6 +956,11 @@ pub const SYSTEM_LOGIN_NAME: &str = "system";
 pub const FUNCTEST_CLEANUP_SQL: &str = r#"
 LOCK TABLE signal_message IN SHARE MODE;
 DELETE FROM group_stats_recalculation_day;
+DELETE FROM ai_callsign_reparse_run;
+DELETE FROM ai_callsign_feedback;
+DELETE FROM ai_callsign_feedback_summary;
+DELETE FROM ai_callsign_override;
+DELETE FROM ai_callsign_action;
 UPDATE ai_intel_report_settings
 SET quick_suggestion_enabled = false,
     quick_ai_engine_id = NULL,

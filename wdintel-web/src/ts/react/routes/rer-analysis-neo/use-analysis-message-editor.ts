@@ -233,7 +233,20 @@ export function useAnalysisMessageEditor({
 
         onError('');
         try {
-          await submitAnalysisInboxMessages({ messages: [[messageId, nextMessage]] });
+          const normalize = (callsign: string) => callsign.trim().toLowerCase();
+          const before = (currentMessage.callsigns ?? []).map(normalize);
+          const after = (nextMessage.callsigns ?? []).map(normalize);
+          await submitAnalysisInboxMessages({
+            messages: [[messageId, nextMessage]],
+            callsignEdits: [
+              {
+                messageId,
+                actionId: crypto.randomUUID(),
+                added: after.filter((callsign) => !before.includes(callsign)),
+                removed: before.filter((callsign) => !after.includes(callsign)),
+              },
+            ],
+          });
           onUpdateLocalMessage(messageId, () => nextMessage);
           return true;
         } catch (error) {
