@@ -794,7 +794,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     ).toBe(false);
   });
 
-  it('delivers a still-mounted count result after its aggregation window ends', async () => {
+  it('accepts a count after 25 seconds and its aggregation window ends', async () => {
     await mountLoadedFeed();
     await startPoll();
     hoisted.beginDutyNotificationPollCycle.mockClear();
@@ -807,12 +807,18 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     const pendingCount = deferred<{ quantity: number; firstElementTs: number | null }>(
       'late count',
     );
-    hoisted.fetchInboxCount.mockReturnValueOnce(pendingCount.promise);
+    let countSignal: AbortSignal | undefined;
+    hoisted.fetchInboxCount.mockImplementationOnce((_, options?: { signal?: AbortSignal }) => {
+      countSignal = options?.signal;
+      countSignal?.addEventListener('abort', () => pendingCount.reject(countSignal?.reason));
+      return pendingCount.promise;
+    });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(26_000);
       await flushMicrotasks();
     });
+    expect(countSignal?.aborted).toBe(false);
     expect(hoisted.endDutyNotificationPollCycle).toHaveBeenCalledWith(cycle);
     expect(hoisted.cancelDutyNotificationPollCycle).not.toHaveBeenCalledWith(cycle);
 
@@ -938,6 +944,7 @@ describe('useRerDutyFeedState — polling and tail availability', () => {
     });
 
     expect(stalledSignal?.aborted).toBe(false);
+    expect(feedBCountRequests).toBe(1);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1);
