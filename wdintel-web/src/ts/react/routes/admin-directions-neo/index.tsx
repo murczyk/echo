@@ -2,6 +2,7 @@ import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline';
 import ArchiveOutlinedIcon from '@mui/icons-material/ArchiveOutlined';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import UnarchiveOutlinedIcon from '@mui/icons-material/UnarchiveOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import {
@@ -99,6 +100,7 @@ import {
   listSigintZones,
   listZoneDatasourceGroups,
   listZoneDatasources,
+  unarchiveSignalGroup,
   updateZoneDatasourceGroup,
 } from '../../services/api/zones';
 import { NO_DATA_LABEL, formatDate } from '../../utils/misc';
@@ -220,6 +222,8 @@ type ArchiveState = {
   isSaving: boolean;
   error: string | null;
 };
+
+type UnarchiveState = ArchiveState;
 
 function getSelectedGroupMasterKey() {
   return new URLSearchParams(window.location.search).get('group');
@@ -770,6 +774,7 @@ function OrphanGroupsTable(props: {
   onAssign?: (group: OrphanSignalGroupEntry) => void;
   onEdit?: (group: OrphanSignalGroupEntry) => void;
   onArchive?: (group: OrphanSignalGroupEntry) => void;
+  onUnarchive?: (group: OrphanSignalGroupEntry) => void;
   onView?: (group: OrphanSignalGroupEntry) => void;
 }) {
   const tableStateContext = useTableStateContext();
@@ -951,7 +956,10 @@ function OrphanGroupsTable(props: {
     columnSizing: { ...tableStateContext.columnSizing, 'mrt-row-actions': 76 },
   };
   const rowActionCount =
-    (props.onAssign ? 1 : 0) + (props.onEdit ? 1 : 0) + (props.onArchive ? 1 : 0);
+    (props.onAssign ? 1 : 0) +
+    (props.onEdit ? 1 : 0) +
+    (props.onArchive ? 1 : 0) +
+    (props.onUnarchive ? 1 : 0);
 
   const table = useAppMaterialReactTable({
     columns,
@@ -1011,6 +1019,15 @@ function OrphanGroupsTable(props: {
                 label="Архівувати"
                 onClick={() => props.onArchive?.(row.original)}
                 icon={<ArchiveOutlinedIcon fontSize="small" />}
+                tone="warning"
+                opensModal
+              />
+            ) : null}
+            {props.onUnarchive ? (
+              <MrtRowActionButton
+                label="Розархівувати"
+                onClick={() => props.onUnarchive?.(row.original)}
+                icon={<UnarchiveOutlinedIcon fontSize="small" />}
                 tone="warning"
                 opensModal
               />
@@ -1559,6 +1576,7 @@ function OrphanGroupsSection(props: {
   onAssign?: (group: OrphanSignalGroupEntry) => void;
   onEdit?: (group: OrphanSignalGroupEntry) => void;
   onArchive?: (group: OrphanSignalGroupEntry) => void;
+  onUnarchive?: (group: OrphanSignalGroupEntry) => void;
   onView?: (group: OrphanSignalGroupEntry) => void;
 }) {
   return (
@@ -1578,6 +1596,7 @@ function OrphanGroupsSection(props: {
           onAssign={props.onAssign}
           onEdit={props.onEdit}
           onArchive={props.onArchive}
+          onUnarchive={props.onUnarchive}
           onView={props.onView}
         />
       </div>
@@ -1661,6 +1680,7 @@ function AdminDirectionsNeoPageBody() {
   const [assignDialog, setAssignDialog] = useState<OrphanAssignState | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<DeleteState | null>(null);
   const [archiveDialog, setArchiveDialog] = useState<ArchiveState | null>(null);
+  const [unarchiveDialog, setUnarchiveDialog] = useState<UnarchiveState | null>(null);
   const [activeTab, setActiveTab] = useState(0);
   const [selectedGroupMasterKey, setSelectedGroupMasterKey] = useState(getSelectedGroupMasterKey);
 
@@ -1733,6 +1753,7 @@ function AdminDirectionsNeoPageBody() {
               datasourceById={datasourceById}
               aorFilterOptions={aorFilterOptions}
               onEdit={openOrphanEditDialog}
+              onUnarchive={openUnarchiveDialog}
               onView={(group) => openGroupCard(group.masterKey)}
             />
           ),
@@ -1824,6 +1845,7 @@ function AdminDirectionsNeoPageBody() {
             datasourceById={datasourceById}
             aorFilterOptions={aorFilterOptions}
             onEdit={openOrphanEditDialog}
+            onUnarchive={openUnarchiveDialog}
             onView={(group) => openGroupCard(group.masterKey)}
           />
         ),
@@ -2023,6 +2045,15 @@ function AdminDirectionsNeoPageBody() {
     });
   }
 
+  function openUnarchiveDialog(group: OrphanSignalGroupEntry) {
+    setUnarchiveDialog({
+      masterKey: group.masterKey,
+      groupName: getOrphanGroupName(group),
+      isSaving: false,
+      error: null,
+    });
+  }
+
   function openArchiveZoneDialog(
     _zoneId: number,
     _datasourceId: number,
@@ -2060,6 +2091,22 @@ function AdminDirectionsNeoPageBody() {
         ...archiveDialog,
         isSaving: false,
         error: 'Не вдалося архівувати групу',
+      });
+    }
+  }
+
+  async function handleUnarchiveGroup() {
+    if (!unarchiveDialog) return;
+    setUnarchiveDialog({ ...unarchiveDialog, isSaving: true, error: null });
+    try {
+      await unarchiveSignalGroup({ masterKey: unarchiveDialog.masterKey });
+      setUnarchiveDialog(null);
+      await loadData();
+    } catch (err) {
+      setUnarchiveDialog({
+        ...unarchiveDialog,
+        isSaving: false,
+        error: 'Не вдалося розархівувати групу',
       });
     }
   }
@@ -2838,6 +2885,24 @@ function AdminDirectionsNeoPageBody() {
         ) : null}
         <Typography variant="body2" className="text-muted-foreground">
           Група {archiveDialog?.groupName} буде відвʼязана від напрямків і перенесена в архів.
+        </Typography>
+      </ConfirmDangerDialog>
+
+      <ConfirmDangerDialog
+        open={Boolean(unarchiveDialog)}
+        onClose={() => setUnarchiveDialog(null)}
+        onConfirm={handleUnarchiveGroup}
+        submitting={Boolean(unarchiveDialog?.isSaving)}
+        disabled={!unarchiveDialog}
+        title="Розархівувати групу"
+        confirmLabel="Розархівувати"
+        disableRestoreFocus
+      >
+        {unarchiveDialog?.error ? (
+          <PowerAlert severity="error">{unarchiveDialog.error}</PowerAlert>
+        ) : null}
+        <Typography variant="body2" className="text-muted-foreground">
+          Розархівувати групу {unarchiveDialog?.groupName} і повернути її до списку орфан груп?
         </Typography>
       </ConfirmDangerDialog>
 
