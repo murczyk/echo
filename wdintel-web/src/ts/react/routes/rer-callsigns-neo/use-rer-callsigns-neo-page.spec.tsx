@@ -102,7 +102,10 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
   it('exposes selectable units without blank-name entries', () => {
     const page = renderHookHarness();
 
-    expect(page.selectableUnits).toEqual([{ id: 1, name: '11 АК', active: true }]);
+    expect(page.selectableUnits).toEqual([
+      { id: 1, name: '11 АК', active: true },
+      { id: 2, name: '11 АК', active: true },
+    ]);
   });
 
   it('calculates duplicate hints immediately after quick paste', () => {

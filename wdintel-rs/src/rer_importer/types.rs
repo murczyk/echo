@@ -1801,6 +1801,7 @@ mod tests {
             "keyword_tokens".to_string(),
             "message_comments".to_string(),
             "message_uid".to_string(),
+            "message_uuid".to_string(),
             "network_name".to_string(),
             "parent_messages".to_string(),
             "signal_tokens".to_string(),
