@@ -30,6 +30,8 @@ export type FeedColumnModel = {
     isWatchMode?: boolean;
     /** Current global permission for automatic positioning/following. */
     autoScrollAllowed?: boolean;
+    /** Whether the persisted auto-scroll preference has finished loading. */
+    initialPositioningReady?: boolean;
     scrollTrackingEnabled?: boolean;
     loadingNewer?: boolean;
     arrowResultMessage?: string | null;

@@ -45,6 +45,7 @@ export function useWindowedFeedScroll({
   resetKey = null,
   isWatchMode = true,
   autoScrollAllowed = true,
+  initialPositioningReady = true,
   enabled = true,
   debugFeedId,
   unreadPrefetchNeeded = true,
@@ -201,8 +202,12 @@ export function useWindowedFeedScroll({
     }
 
     if (!refs.hasInitialScrolledRef.current) {
-      refs.hasInitialScrolledRef.current = true;
       refs.previousItemIdsRef.current = currentItemIds;
+      if (!initialPositioningReady) {
+        anchors.captureAnchorSnapshot();
+        return;
+      }
+      refs.hasInitialScrolledRef.current = true;
       if (refs.autoScrollAllowedRef.current) {
         follow.scrollToBottom('auto', ScrollNavigationIntent.Initial);
         follow.startBottomSettle();
@@ -273,6 +278,7 @@ export function useWindowedFeedScroll({
     topStatus,
     tracking,
     itemIds,
+    initialPositioningReady,
   ]);
 
   useLayoutEffect(() => {
@@ -323,6 +329,9 @@ export function useWindowedFeedScroll({
   const handleScroll = useCallback<UIEventHandler<HTMLDivElement>>(() => {
     if (!refs.enabledRef.current) return;
     if (refs.isRestoringAnchorRef.current) return;
+    if (!initialPositioningReady && !refs.hasInitialScrolledRef.current) {
+      refs.hasInitialScrolledRef.current = true;
+    }
     const scroller = refs.scrollerRef.current;
     if (refs.followAnimatingRef.current) {
       if (!scroller) return;
@@ -397,7 +406,16 @@ export function useWindowedFeedScroll({
       tracking.updateScrollState({ allowPendingFlush: true });
       refs.handleScrollRafRef.current = null;
     });
-  }, [anchors, bottomLoadBufferPx, debugFeedId, follow, refs, topLoadBufferPx, tracking]);
+  }, [
+    anchors,
+    bottomLoadBufferPx,
+    debugFeedId,
+    follow,
+    initialPositioningReady,
+    refs,
+    topLoadBufferPx,
+    tracking,
+  ]);
 
   const setItemRef = useCallback(
     (id: number) => {
@@ -422,7 +440,9 @@ export function useWindowedFeedScroll({
     listRef: refs.listRef,
     handleScroll,
     setItemRef,
-    scrollToBottom: (behavior, intent, navigation) =>
-      follow.scrollToBottom(behavior, intent, undefined, navigation),
+    scrollToBottom: (behavior, intent, navigation) => {
+      if (intent === ScrollNavigationIntent.Explicit) refs.hasInitialScrolledRef.current = true;
+      follow.scrollToBottom(behavior, intent, undefined, navigation);
+    },
   };
 }

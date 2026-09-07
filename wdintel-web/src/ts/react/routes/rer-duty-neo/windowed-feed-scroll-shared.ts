@@ -88,6 +88,8 @@ export type UseWindowedFeedScrollOptions = {
   isWatchMode?: boolean;
   /** Global authorization for automatic positioning. Explicit arrow navigation bypasses this. */
   autoScrollAllowed?: boolean;
+  /** The persisted auto-scroll preference has resolved (including a safe failed-OFF result). */
+  initialPositioningReady?: boolean;
   enabled?: boolean;
   debugFeedId?: string;
   /**

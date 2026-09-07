@@ -78,6 +78,116 @@ async function readBottomDistance(scroller: Locator) {
   );
 }
 
+const initialInboxIds = Array.from({ length: 40 }, (_, index) => index + 1);
+
+test('#3360 lands initially when ON settings resolve before the inbox', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const inboxResponse = createDeferred<InboxMessagesRspRaw>();
+  await installRerDutyShortStateMocks(page, {
+    inboxResponse: inboxResponse.promise,
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  inboxResponse.resolve(buildInboxResponse(initialInboxIds));
+
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+});
+
+test('#3360 defers an ON initial landing until settings resolve', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const settingsResponse = createDeferred<{ tagsLayout: string; disableAutoScroll: boolean }>();
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: settingsResponse.promise,
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+
+  settingsResponse.resolve({ tagsLayout: 'compact', disableAutoScroll: false });
+  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+});
+
+test('#3360 finalizes an OFF initial position after settings resolve', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const settingsResponse = createDeferred<{ tagsLayout: string; disableAutoScroll: boolean }>();
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: settingsResponse.promise,
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+
+  settingsResponse.resolve({ tagsLayout: 'compact', disableAutoScroll: true });
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+});
+
+test('#3360 preserves manual reading while ON settings are pending', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const settingsResponse = createDeferred<{ tagsLayout: string; disableAutoScroll: boolean }>();
+  await installRerDutyShortStateMocks(page, {
+    userSettingsResponse: settingsResponse.promise,
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await setBottomDistance(scroller, 200);
+  const anchorBefore = await readVisibleAnchor(scroller);
+
+  settingsResponse.resolve({ tagsLayout: 'compact', disableAutoScroll: false });
+  await expect.poll(() => readVisibleAnchor(scroller)).toMatchObject({ id: anchorBefore.id });
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+});
+
+test('#3360 does not restart OFF initialization when ON is selected while reading history', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    disableAutoScroll: true,
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await setBottomDistance(scroller, 200);
+  const anchorBefore = await readVisibleAnchor(scroller);
+
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new CustomEvent('user-settings-updated', {
+        detail: { tagsLayout: 'compact', disableAutoScroll: false },
+      }),
+    );
+  });
+
+  await expect.poll(() => readVisibleAnchor(scroller)).toMatchObject({ id: anchorBefore.id });
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+});
+
+test('#3360 blocks initial landing when settings fail to load', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await installRerDutyShortStateMocks(page, {
+    userSettingsFailure: true,
+    inboxResponse: buildInboxResponse(initialInboxIds),
+  });
+
+  await page.goto('/rer-duty-neo?state-short=short-1');
+  const scroller = page.locator('[data-duty-feed-scroller="true"]');
+  await expect(page.locator('[data-duty-message-id="40"]')).toBeAttached();
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+});
+
 test('follows only while the bottom arrow is hidden and preserves the reading anchor @smoke', async ({
   page,
 }) => {

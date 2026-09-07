@@ -610,6 +610,7 @@ export const FeedColumnContent = memo(
       physicallyAtBottom = true,
       isWatchMode = false,
       autoScrollAllowed = false,
+      initialPositioningReady = true,
       unreadPrefetchNeeded = true,
       pendingNewerFlushNeeded = false,
       workspaceFabAvoidance = 'none',
@@ -672,6 +673,7 @@ export const FeedColumnContent = memo(
       debugFeedId: feed.id,
       isWatchMode,
       autoScrollAllowed,
+      initialPositioningReady,
       enabled: scrollTrackingEnabled,
       loadingOlder: feed.loadingOlder,
       loadingNewer,
@@ -883,6 +885,7 @@ export const FeedColumnContent = memo(
       prevView.maxWidth !== nextView.maxWidth ||
       prevView.isWatchMode !== nextView.isWatchMode ||
       prevView.autoScrollAllowed !== nextView.autoScrollAllowed ||
+      prevView.initialPositioningReady !== nextView.initialPositioningReady ||
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||

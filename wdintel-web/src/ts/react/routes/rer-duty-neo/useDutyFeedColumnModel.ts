@@ -36,6 +36,7 @@ function buildFeedColumnView(
   const {
     messageFeeds,
     dutyDisableAutoScroll,
+    initialPositioningReady,
     watchModeByFeedId,
     loadingNewerFeedIds,
     arrowResultByFeedId,
@@ -51,6 +52,7 @@ function buildFeedColumnView(
     maxWidth: dutyFeedColumnMaxWidth(messageFeeds.length, deps.narrowScreen),
     isWatchMode: !dutyDisableAutoScroll && (watchModeByFeedId[feed.id] ?? true),
     autoScrollAllowed: !dutyDisableAutoScroll,
+    initialPositioningReady,
     loadingNewer: loadingNewerFeedIds.has(feed.id),
     arrowResultMessage: arrowResultByFeedId[feed.id] ?? null,
     bottomUnreadCount: feedIndicatorUnreadCount(feed, confirmedTailPreviewByFeedId[feed.id], {
