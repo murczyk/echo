@@ -2100,15 +2100,16 @@ function AdminDirectionsNeoPageBody() {
     setUnarchiveDialog({ ...unarchiveDialog, isSaving: true, error: null });
     try {
       await unarchiveSignalGroup({ masterKey: unarchiveDialog.masterKey });
-      setUnarchiveDialog(null);
-      await loadData();
     } catch (err) {
       setUnarchiveDialog({
         ...unarchiveDialog,
         isSaving: false,
         error: 'Не вдалося розархівувати групу',
       });
+      return;
     }
+    setUnarchiveDialog(null);
+    await loadData();
   }
 
   async function handleSaveGroupEdit() {
