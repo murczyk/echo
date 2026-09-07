@@ -351,12 +351,12 @@ pub async fn closest_orbit_matches_for_sigint_unit(
         .as_ref()
         .is_none_or(|cached| cached.orbit_sync != orbit_sync)
     {
-        let units = persistence::load_synced_source_units(db, &orbit_sync)
+        let matcher = persistence::load_test_link_matcher(db, &orbit_sync)
             .await
             .c(h!())?;
         cache.cached = Some(CachedOrbitMatcher {
             orbit_sync,
-            matcher: matching::TestLinkMatcher::from_units(units),
+            matcher,
         });
     }
     Ok(cache
