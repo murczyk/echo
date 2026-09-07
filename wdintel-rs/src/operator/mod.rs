@@ -390,13 +390,6 @@ async fn move_datasource_group_to_source_group(
     signal_group: Option<&signal_group::Model>,
     group_name: &str,
 ) -> anyhow::Result<datasource_group::Model> {
-    let fallback_signal_group = signal_group::Entity::find_by_id(
-        datasource_group.group_master_key.clone(),
-    )
-    .one(txn)
-    .await
-    .c(h!())?
-    .c(h!())?;
     let signal_group = ensure_source_signal_group(
         txn,
         datasource_group.datasource_id,
@@ -412,18 +405,7 @@ async fn move_datasource_group_to_source_group(
     datasource_group.deleted = Set(false);
     datasource_group.name = Set(group_name.to_string());
     datasource_group.last_sync_at = Set(Utc::now().naive_utc());
-    let datasource_group = datasource_group.update(txn).await.c(h!())?;
-
-    merge_signal_group_references(
-        txn,
-        datasource_group.id,
-        fallback_signal_group,
-        &signal_group,
-    )
-    .await
-    .c(h!())?;
-
-    Ok(datasource_group)
+    datasource_group.update(txn).await.c(h!())
 }
 
 async fn merge_signal_group_references(
@@ -522,9 +504,17 @@ async fn ensure_source_signal_group(
     group_name: &str,
 ) -> anyhow::Result<signal_group::Model> {
     if let Some(signal_group) = signal_group {
-        return sync_signal_group(txn, datasource_id, signal_group, group_name)
-            .await
-            .c(h!());
+        let signal_group =
+            sync_signal_group(txn, datasource_id, signal_group, group_name)
+                .await
+                .c(h!())?;
+        if !signal_group.deleted {
+            return Ok(signal_group);
+        }
+
+        let mut signal_group = signal_group.into_active_model();
+        signal_group.deleted = Set(false);
+        return signal_group.update(txn).await.c(h!());
     }
 
     signal_group::ActiveModel {
@@ -662,7 +652,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     // Regression: https://github.com/echoua/echo/issues/3391
-    async fn ensure_group_moves_existing_echo_mapping_and_messages() {
+    async fn ensure_group_moves_mapping_to_reactivated_shared_source_group() {
         let env = cleanup().await.unwrap();
         let txn = env.dbx.begin().await.unwrap();
         let group_name = "BBC NEWS";
@@ -693,6 +683,7 @@ mod tests {
                 master_key: Set(source_group_key.to_string()),
                 name: Set(Some(group_name.to_string())),
                 datasource_id: Set(Some(messenger_datasource.id)),
+                deleted: Set(true),
                 ..Default::default()
             },
         )
@@ -785,9 +776,10 @@ mod tests {
         assert_eq!(datasource_group.datasource_id, operator_datasource.id);
         assert_eq!(
             historical_message_group.group_master_key.as_deref(),
-            Some(source_group_key)
+            Some(echo_group_key.as_str())
         );
-        assert!(fallback_signal_group.deleted);
+        assert!(!fallback_signal_group.deleted);
+        assert!(!source_signal_group.deleted);
         assert_eq!(
             source_signal_group.datasource_id,
             Some(messenger_datasource.id)
