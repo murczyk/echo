@@ -601,26 +601,6 @@ describe('useRerAnalysisNeoPage', () => {
     expect(latest?.centerTab).toBe('messages');
   });
 
-  it('adds a frequency filter through the stats sidebar without dropping existing selections', async () => {
-    renderHook();
-    await flushEffects();
-
-    await act(async () => {
-      latest?.updateQueryState({ freqsSelected: ['111.1'] });
-    });
-    await flushEffects();
-
-    await act(async () => {
-      latest?.addFrequencyToFilter('123.4');
-    });
-    await flushEffects();
-
-    expect(latest?.rightPanelOpen).toBe(true);
-    expect(latest?.rightSidebarTab).toBe('stats');
-    expect(latest?.queryState.freqsSelected).toEqual(['111.1', '123.4']);
-    expect(latest?.queryState.includeOnlyNewFreqs).toBe(false);
-  });
-
   it('syncs include-only-new frequencies through targeted invalidation when the option list changes', async () => {
     renderHook();
     await flushEffects();
@@ -728,23 +708,6 @@ describe('useRerAnalysisNeoPage', () => {
     await flushEffects();
 
     expect(latest?.queryState.unitsExactMatchOnly).toBeNull();
-  });
-
-  it('does not duplicate a frequency already in the analysis filter', async () => {
-    renderHook();
-    await flushEffects();
-
-    await act(async () => {
-      latest?.updateQueryState({ freqsSelected: ['123.4'] });
-    });
-    await flushEffects();
-
-    await act(async () => {
-      latest?.addFrequencyToFilter('123.4');
-    });
-    await flushEffects();
-
-    expect(latest?.queryState.freqsSelected).toEqual(['123.4']);
   });
 
   it('normalizes legacy undefined-unit selections before toggling the map unit filter off', async () => {

@@ -1,4 +1,7 @@
 import { Tooltip } from '@mui/material';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import SubtitlesIcon from '@mui/icons-material/Subtitles';
 import {
   createContext,
@@ -127,7 +130,7 @@ export function MessageCardAudioTranscription({ transcription }: { transcription
         <blockquote
           data-audio-transcription
           className={
-            'audio-transcription m-0 mt-0.5 mb-1 px-2 py-1.5 text-sm leading-[1.4] ' +
+            'audio-transcription m-0 mt-0.5 mb-1 flex gap-1 px-2 py-1.5 text-sm leading-5 ' +
             'whitespace-pre-wrap wrap-break-word' +
             (collapsedByDefault ? ' audio-transcription--with-toggle' : '') +
             (!expanded ? ' audio-transcription--clamped' : '') +
@@ -139,11 +142,30 @@ export function MessageCardAudioTranscription({ transcription }: { transcription
           onClick={toggleExpanded}
           onKeyDown={onTranscriptionKeyDown}
         >
-          <span ref={textRef} className="audio-transcription-text">
-            {normalizedTranscription}
+          <SmartToyOutlinedIcon
+            className="audio-transcription-icon"
+            data-audio-transcription-icon="robot"
+            aria-hidden
+          />
+          <span className="min-w-0 flex-1">
+            <span ref={textRef} className="audio-transcription-text">
+              {normalizedTranscription}
+            </span>
           </span>
-          {hasOverflow && !expanded ? (
-            <span className="audio-transcription-show-more">ПОКАЗАТИ БІЛЬШЕ</span>
+          {hasOverflow ? (
+            expanded ? (
+              <KeyboardArrowUpIcon
+                className="audio-transcription-arrow"
+                data-audio-transcription-arrow="up"
+                aria-hidden
+              />
+            ) : (
+              <KeyboardArrowDownIcon
+                className="audio-transcription-arrow"
+                data-audio-transcription-arrow="down"
+                aria-hidden
+              />
+            )
           ) : null}
         </blockquote>
       ) : null}

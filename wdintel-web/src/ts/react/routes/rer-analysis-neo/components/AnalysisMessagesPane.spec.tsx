@@ -193,7 +193,6 @@ function buildProps(
     onToggleMessageBookmark: vi.fn(),
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
-    onAddFrequencyToFilter: vi.fn(),
     profiles: {},
     tagsMap: {},
     tagsOrder: [],

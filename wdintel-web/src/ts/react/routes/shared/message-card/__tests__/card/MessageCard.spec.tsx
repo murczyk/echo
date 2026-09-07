@@ -22,7 +22,7 @@ import { inboxMessageWithMockImages } from '../../../../rer-duty-neo/inbox-messa
 import { emptyFilter } from '../../../../rer-duty-neo/utils';
 import { formatMessageCardTooltipTime, MessageCard } from '../../MessageCard';
 import { MessageCardContent } from '../../MessageCardContent';
-import { MessageCardHeader } from '../../MessageCardHeader';
+import { MessageCardHeader, MessageCardMetadata } from '../../MessageCardHeader';
 import {
   canDownloadAllMessageAttachments,
   isAudioMediaAttachment,
@@ -45,6 +45,12 @@ const latestMenuProps: Array<{
   anchorPosition?: { top: number; left: number } | null;
   open?: boolean;
   id?: string;
+}> = [];
+const latestPopoverProps: Array<{
+  anchorEl?: HTMLElement | null;
+  anchorOrigin?: unknown;
+  transformOrigin?: unknown;
+  onClose?: () => void;
 }> = [];
 const latestDocumentDialogProps: Array<{
   currentIndex?: number;
@@ -367,8 +373,16 @@ vi.mock('@mui/material', () => ({
     children,
     open,
     ...props
-  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) =>
-    open ? <div {...omitMuiLayoutProps(props)}>{children}</div> : null,
+  }: { children?: ReactNode; open?: boolean } & Record<string, unknown>) => {
+    if (!open) return null;
+    latestPopoverProps.push({
+      anchorEl: (props.anchorEl as HTMLElement | null | undefined) ?? null,
+      anchorOrigin: props.anchorOrigin,
+      transformOrigin: props.transformOrigin,
+      onClose: props.onClose as (() => void) | undefined,
+    });
+    return <div {...omitMuiLayoutProps(props)}>{children}</div>;
+  },
   Menu: ({
     children,
     open,
@@ -672,7 +686,6 @@ async function renderCard(
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
-    onAddFrequencyToFilter: vi.fn(),
     onCreateReport: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
     onToggleTag: vi.fn(),
@@ -700,10 +713,17 @@ async function renderHeader(
   document.body.appendChild(container);
   const root = createRoot(container);
   const msg = overrides.msg ?? buildMessage();
+  const metadataOverrides = overrides as Partial<{
+    groupName: string | null;
+    senderName: string | null;
+  }>;
   const etalonDisplayModel = resolveMessageCardEtalonDisplayModel(msg, {
     featureStrictNetworks: false,
-    networkDisplayMap: { 7: 'р/м Alpha' },
-    networkMap: { 7: { id: 7, name: 'Alpha', unitIds: [], location: null } as Network },
+    networkDisplayMap: { 7: 'р/м Alpha', 8: 'р/м Bravo' },
+    networkMap: {
+      7: { id: 7, name: 'Alpha', unitIds: [1], location: null } as Network,
+      8: { id: 8, name: 'Bravo', unitIds: [], location: null } as Network,
+    },
     networks: undefined,
   });
   const props: ComponentProps<typeof MessageCardHeader> = {
@@ -727,7 +747,6 @@ async function renderHeader(
     onCopyFreq: vi.fn(),
     onCopyEtalon: vi.fn(),
     onCopyLocation: vi.fn(),
-    onAddFrequencyToFilter: vi.fn(),
     onDelete: vi.fn(),
     onEditDetails: vi.fn(),
     onExcludeMessageEntity: vi.fn(),
@@ -735,7 +754,17 @@ async function renderHeader(
   };
 
   await act(async () => {
-    root.render(<MessageCardHeader {...props} />);
+    root.render(
+      <div data-message-header-grid="true">
+        <MessageCardHeader {...props} />
+        <MessageCardMetadata
+          msg={msg}
+          groupName={metadataOverrides.groupName ?? "Куп'янськ пеленг"}
+          senderName={metadataOverrides.senderName ?? 'Dow_Jones_2'}
+          etalonDisplayModel={props.etalonDisplayModel}
+        />
+      </div>,
+    );
   });
 
   return { container, root, headerProps: props };
@@ -795,12 +824,12 @@ function getTagButtonLabels(container: HTMLElement): string[] {
     .filter((label) => tagLabels.has(label));
 }
 
-function getHeaderBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
+function getMetadataBody2ElementByText(container: HTMLElement, text: string): HTMLElement {
   const element = Array.from(container.querySelectorAll('[data-message-card-text="body2"]')).find(
     (node) => node.textContent?.trim() === text,
   );
   if (!(element instanceof HTMLElement)) {
-    throw new Error(`Header body2 element not found for text: ${text}`);
+    throw new Error(`Metadata body2 element not found for text: ${text}`);
   }
   return element;
 }
@@ -864,6 +893,7 @@ describe('MessageCard', () => {
     resizeObserverCallbacks.splice(0);
     resizeObserverTargets.clear();
     latestMenuProps.splice(0);
+    latestPopoverProps.splice(0);
     latestDocumentDialogProps.splice(0);
     if (typeof window.localStorage?.clear === 'function') {
       window.localStorage.clear();
@@ -980,6 +1010,58 @@ describe('MessageCard', () => {
       copyLocationValue: null,
       showInlineLocationTooltip: false,
     });
+  });
+
+  it('ECHO-3324 renders resolved networks as independent metadata items without changing fallback metadata', async () => {
+    const networkView = await renderHeader({
+      msg: buildMessage({ networkIds: [7, 8], location: 'ЛИМАН' }),
+    });
+    rendered.push(networkView);
+
+    const networkItems = Array.from(
+      networkView.container.querySelectorAll<HTMLElement>(
+        '[data-message-card-network-item="true"]',
+      ),
+    );
+    expect(networkItems).toHaveLength(2);
+    expect(networkItems.map((item) => item.dataset.networkId)).toEqual(['7', '8']);
+    expect(networkItems.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('р/м Alpha'),
+      expect.stringContaining('р/м Bravo'),
+    ]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('[data-message-card-metadata-icon-kind="network"]').length,
+      ),
+    ).toEqual([1, 1]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('svg[data-testid="PeopleOutlineOutlinedIcon"]').length,
+      ),
+    ).toEqual([1, 1]);
+    expect(
+      networkItems.map(
+        (item) => item.querySelectorAll('svg[data-testid="GraphicEqOutlinedIcon"]').length,
+      ),
+    ).toEqual([0, 0]);
+    expect(
+      networkView.container.querySelector(
+        '[data-message-card-metadata-icon-kind="group"] svg[data-testid="GraphicEqOutlinedIcon"]',
+      ),
+    ).not.toBeNull();
+    expect(networkItems[0].textContent).not.toContain('в дорозвідці');
+    expect(networkItems[1].textContent).toContain('в дорозвідці');
+    expect(networkView.container.textContent).toContain('Лиман');
+
+    const fallbackView = await renderHeader({
+      msg: buildMessage({ networkIds: [], unit: '1-й танк', location: 'ЛИМАН' }),
+    });
+    rendered.push(fallbackView);
+    expect(
+      fallbackView.container.querySelectorAll('[data-message-card-network-item="true"]'),
+    ).toHaveLength(0);
+    expect(fallbackView.container.textContent).toContain('1-й танк');
+    expect(fallbackView.container.textContent).toContain('Лиман');
   });
 
   it('renders compact divider layout content for narrow multi-feed columns', async () => {
@@ -1109,10 +1191,10 @@ describe('MessageCard', () => {
       });
       rendered.push(view);
 
-      const headerText = view.container.querySelector(
+      const metadataText = view.container.querySelector(
         '[data-message-header-grid="true"]',
       )?.textContent;
-      if (headerText == null) throw new Error('header text not found');
+      if (metadataText == null) throw new Error('metadata text not found');
 
       const expectedValues = [
         '02:45',
@@ -1120,31 +1202,25 @@ describe('MessageCard', () => {
         '153.6250',
         'Група A',
         'Відправник B',
-        '12.34568, -98.76543',
         'Радіостанція',
         'Харків',
       ] as const;
       for (const value of expectedValues) {
-        const textElement = getHeaderBody2ElementByText(view.container, value);
+        const textElement = getMetadataBody2ElementByText(view.container, value);
         expect(textElement.getAttribute('data-message-card-text')).toBe('body2');
-        expect(headerText).toContain(value);
+        expect(metadataText).toContain(value);
       }
       expect(view.container.querySelector('[title="Пристрій"]')).not.toBeNull();
 
-      expect(headerText.indexOf('Група A')).toBeLessThan(headerText.indexOf('Відправник B'));
-      expect(headerText.indexOf('Відправник B')).toBeLessThan(headerText.indexOf('153.6250'));
-      expect(headerText.indexOf('153.6250')).toBeLessThan(headerText.indexOf('Радіостанція'));
-      expect(headerText.indexOf('Радіостанція')).toBeLessThan(
-        headerText.indexOf('12.34568, -98.76543'),
-      );
-      expect(headerText.indexOf('12.34568, -98.76543')).toBeLessThan(
-        headerText.indexOf('1-й танк'),
-      );
-      expect(headerText.indexOf('1-й танк')).toBeLessThan(headerText.indexOf('Харків'));
+      expect(metadataText.indexOf('Група A')).toBeLessThan(metadataText.indexOf('Відправник B'));
+      expect(metadataText.indexOf('Відправник B')).toBeLessThan(metadataText.indexOf('153.6250'));
+      expect(metadataText.indexOf('153.6250')).toBeLessThan(metadataText.indexOf('Радіостанція'));
+      expect(metadataText.indexOf('Радіостанція')).toBeLessThan(metadataText.indexOf('1-й танк'));
+      expect(metadataText.indexOf('1-й танк')).toBeLessThan(metadataText.indexOf('Харків'));
     },
   );
 
-  it('shows the WGS coordinates in the header without locality', async () => {
+  it('keeps coordinates out of the header metadata', async () => {
     const view = await renderHeader({
       displayMode: 'duty',
       msg: buildMessage({
@@ -1167,7 +1243,7 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const text = view.container.querySelector('[data-message-header-grid="true"]')?.textContent;
-    expect(text).toContain('49.1, 37.2');
+    expect(text).not.toContain('49.1, 37.2');
     expect(text).not.toContain('Степногірськ');
   });
 
@@ -1282,7 +1358,7 @@ describe('MessageCard', () => {
     expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
   });
 
-  it('folds marked message text after twenty source rows', async () => {
+  it('ECHO-3324 folds marked message text after twenty source rows', async () => {
     const rows = Array.from({ length: 21 }, (_, index) => `Рядок ${index + 1}`);
     const textMarked: ContentNode[] = rows.flatMap((row, index) => [
       index === 0
@@ -1296,6 +1372,8 @@ describe('MessageCard', () => {
     rendered.push(view);
 
     const messageText = view.container.querySelector('.text-marked');
+    const textContent = view.container.querySelector('[data-message-card-text-content="true"]');
+    const toggleRow = view.container.querySelector('.message-card-text-toggle-row');
     expect(messageText?.textContent).toContain('Рядок 1');
     expect(messageText?.textContent).toContain('Рядок 20');
     expect(messageText?.textContent).not.toContain('Рядок 21');
@@ -1304,8 +1382,11 @@ describe('MessageCard', () => {
       'button[aria-label="Показати текст повідомлення"]',
     );
     if (showMoreButton == null) throw new Error('Show more button not found');
+    expect(textContent?.contains(showMoreButton)).toBe(false);
+    expect(toggleRow?.contains(showMoreButton)).toBe(true);
     expect(showMoreButton.getAttribute('aria-expanded')).toBe('false');
 
+    showMoreButton.focus();
     await click(showMoreButton);
 
     expect(messageText?.textContent).toContain('Рядок 21');
@@ -1313,11 +1394,15 @@ describe('MessageCard', () => {
       'button[aria-label="Згорнути текст повідомлення"]',
     );
     if (collapseButton == null) throw new Error('Collapse button not found');
+    expect(view.container.querySelector('.message-card-text-toggle-row')).not.toBeNull();
     expect(collapseButton.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(collapseButton);
 
     await click(collapseButton);
 
     expect(messageText?.textContent).not.toContain('Рядок 21');
+    expect(collapseButton.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(collapseButton);
   });
 
   it('does not fold message text with twenty source rows', async () => {
@@ -1656,13 +1741,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).toContain('Харків');
+    expect(view.container.querySelector('.message-card-main')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(
-      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="GraphicEqOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
     const copyButton = view.container.querySelector(`button[aria-label="${COPY_TITLE}"]`);
     if (!(copyButton instanceof HTMLButtonElement)) throw new Error('copy button not found');
@@ -1677,13 +1758,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).toContain('Харків');
+    expect(view.container.querySelector('.message-card-main')?.textContent).toContain('Харків');
     expect(view.container.textContent).toContain('р/м Alpha');
-    expect(
-      view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
-    ).not.toBeNull();
+    expect(view.container.querySelector('svg[data-testid="GraphicEqOutlinedIcon"]')).not.toBeNull();
     expect(view.container.querySelector('[aria-label^="Локація:"]')).toBeNull();
   });
 
@@ -1711,9 +1788,9 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(
-      view.container.querySelector('[data-message-header-grid="true"]')?.textContent,
-    ).not.toContain('Не встановлена');
+    expect(view.container.querySelector('.message-card-main')?.textContent).not.toContain(
+      'Не встановлена',
+    );
     expect(view.container.textContent).toContain('—');
     expect(
       view.container.querySelector('svg[data-testid="PeopleOutlineOutlinedIcon"]'),
@@ -1799,9 +1876,9 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
-      'Редагувати',
       NAVIGATE_TITLE,
       EXCLUDE_TITLE,
+      'Більше дій',
     ]);
   });
 
@@ -1824,7 +1901,6 @@ describe('MessageCard', () => {
       'Позначити як важливе',
       'Додати в закладки',
       COPY_TITLE,
-      'Редагувати',
       NAVIGATE_TITLE,
       'Більше дій',
     ]);
@@ -1910,7 +1986,7 @@ describe('MessageCard', () => {
     expect(toolbar.getAttribute('role')).toBeNull();
   });
 
-  it('recalculates toolbar fit when the available action count changes', async () => {
+  it('ECHO-3324 recalculates toolbar stacking when the available action count changes', async () => {
     vi.stubGlobal('ResizeObserver', ResizeObserverMock as unknown as typeof ResizeObserver);
     Object.defineProperty(window, 'ResizeObserver', {
       configurable: true,
@@ -1952,9 +2028,34 @@ describe('MessageCard', () => {
     await act(async () => {
       view.root.render(<MessageCardHeader {...view.headerProps!} onEditDetails={vi.fn()} />);
     });
-    expect(
-      view.container.querySelector('[aria-label="Дії повідомлення"]')?.getAttribute('role'),
-    ).toBe('group');
+    const updatedHeaderRow = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-row="true"]',
+    );
+    const updatedLeft = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-left="true"]',
+    );
+    const updatedRight = view.container.querySelector<HTMLElement>(
+      '[data-message-card-header-right="true"]',
+    );
+    if (
+      !(updatedHeaderRow instanceof HTMLElement) ||
+      !(updatedLeft instanceof HTMLElement) ||
+      !(updatedRight instanceof HTMLElement)
+    ) {
+      throw new Error('updated toolbar measurements not found');
+    }
+    setClientWidth(updatedHeaderRow, 220);
+    setScrollWidth(updatedLeft, 0);
+    setScrollWidth(updatedRight, 0);
+    await act(async () => {
+      resizeObserverCallbacks.forEach((callback) => callback());
+    });
+    const updatedToolbar = view.container.querySelector<HTMLElement>(
+      '[aria-label="Дії повідомлення"]',
+    );
+    if (!(updatedToolbar instanceof HTMLElement)) throw new Error('updated toolbar not found');
+    expect(updatedToolbar.getAttribute('role')).toBeNull();
+    expect(updatedToolbar.classList).not.toContain('message-card-action-group--stacked');
   });
 
   it.each([
@@ -2141,15 +2242,35 @@ describe('MessageCard', () => {
     expect(document.activeElement).not.toBe(reportButton);
   });
 
-  it('shows the edit action in the toolbar and only delete in the overflow menu', async () => {
+  it('orders edit, archive download, and delete in the overflow menu', async () => {
     const view = await renderCard({
       displayMode: 'analysis',
       onEditDetails: vi.fn(),
       onDelete: vi.fn(),
+      msg: {
+        ...buildMessage(),
+        media: [
+          {
+            id: 'first',
+            href: '/api/messenger/media/first',
+            contentType: 'text/plain',
+            fileName: 'first.txt',
+            sizeBytes: 1,
+          },
+          {
+            id: 'second',
+            href: '/api/messenger/media/second',
+            contentType: 'text/plain',
+            fileName: 'second.txt',
+            sizeBytes: 1,
+          },
+        ] as InboxMessage['media'],
+      },
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('button[aria-label="Редагувати"]')).not.toBeNull();
+    expect(view.container.querySelector('button[aria-label="Редагувати"]')).toBeNull();
+    expect(queryArchiveDownloadLink(view.container)).toBeNull();
 
     const overflowButton = view.container.querySelector('button[aria-label="Більше дій"]');
     if (!(overflowButton instanceof HTMLButtonElement))
@@ -2161,7 +2282,20 @@ describe('MessageCard', () => {
     expect(view.container.querySelector(`[id="${overflowMenuId}"]`)).not.toBeNull();
 
     expect(view.container.textContent).not.toContain('Редагувати додаткові поля та позивні');
-    expect(view.container.textContent).toContain('Видалити');
+    const menuItems = Array.from(
+      view.container.querySelectorAll(
+        `[id="${overflowMenuId}"] button, [id="${overflowMenuId}"] a`,
+      ),
+    );
+    expect(menuItems.map((item) => item.textContent?.trim())).toEqual([
+      'Редагувати',
+      'Завантажити все',
+      'Видалити',
+    ]);
+    const archiveLink = queryArchiveDownloadLink(view.container);
+    expect(archiveLink?.tagName).toBe('A');
+    expect(archiveLink?.getAttribute('href')).toBe('/api/rer-importer/messages/42/attachments.zip');
+    expect(archiveLink?.getAttribute('download')).toBe('attachments.zip');
   });
 
   it('anchors the overflow menu by position instead of a button element', async () => {
@@ -2218,31 +2352,6 @@ describe('MessageCard', () => {
     expect(activeView.container.querySelector('svg[data-testid="BookmarkIcon"]')).not.toBeNull();
   });
 
-  it('renders the frequency filter button when frequency is present and calls the handler', async () => {
-    const onAddFrequencyToFilter = vi.fn();
-    const view = await renderCard({
-      onAddFrequencyToFilter,
-    });
-    rendered.push(view);
-
-    const filterButton = view.container.querySelector('button[aria-label="В фільтр"]');
-    if (!(filterButton instanceof HTMLButtonElement))
-      throw new Error('frequency filter button not found');
-    await click(filterButton);
-
-    expect(onAddFrequencyToFilter).toHaveBeenCalledWith('153.6250');
-  });
-
-  it('hides the frequency filter button when frequency is missing or blank', async () => {
-    const view = await renderCard({
-      msg: buildMessage({ freq: '   ' }),
-      onAddFrequencyToFilter: vi.fn(),
-    });
-    rendered.push(view);
-
-    expect(view.container.querySelector('button[aria-label="В фільтр"]')).toBeNull();
-  });
-
   it('uses the selected important and bookmark labels in the toolbar', async () => {
     const view = await renderCard({
       msg: buildMessage({ important: true, bookmarked: true }),
@@ -2287,14 +2396,26 @@ describe('MessageCard', () => {
     await click(bookmarkButton);
     expect(onBookmark).toHaveBeenCalledTimes(1);
 
-    const editButton = view.container.querySelector('button[aria-label="Редагувати"]');
-    if (!(editButton instanceof HTMLButtonElement)) throw new Error('edit button not found');
-    await click(editButton);
-    expect(onEditDetails).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    try {
+      await click(overflowButton);
+      await click(getButton(view.container, 'Редагувати'));
+      expect(view.container.querySelector('[aria-label="Додаткові дії повідомлення"]')).toBeNull();
+      expect(onEditDetails).toHaveBeenCalledTimes(1);
 
-    await click(overflowButton);
-    await click(getButton(view.container, 'Видалити'));
-    expect(onDelete).toHaveBeenCalledTimes(1);
+      await click(overflowButton);
+      await click(getButton(view.container, 'Видалити'));
+      expect(onDelete).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('renders overflow for an edit-only card', async () => {
+    const view = await renderCard({ onEditDetails: vi.fn(), onDelete: undefined });
+    rendered.push(view);
+
+    expect(view.container.querySelector('button[aria-label="Більше дій"]')).not.toBeNull();
   });
 
   it('omits edit and delete from the overflow menu when handlers are absent', async () => {
@@ -2606,7 +2727,7 @@ describe('MessageCard', () => {
     expect(view.container.textContent).toContain('GHOST');
   });
 
-  it('shows human and bot contribution badges and renders the bot-error prompt', async () => {
+  it('ECHO-3324 cancels the Popover anchored to the matching mixed-provenance tag', async () => {
     const onToggleTag = vi.fn();
     const onMarkBotTagWrong = vi.fn();
     const onCancelBotTagAction = vi.fn();
@@ -2624,8 +2745,8 @@ describe('MessageCard', () => {
     });
     rendered.push(view);
 
-    expect(view.container.querySelector('[title="Боти"]')?.textContent).toContain('1');
-    expect(view.container.querySelector('[title="Користувачі"]')?.textContent).toContain('1');
+    expect(view.container.querySelector('.message-card-tag-provenance--mixed')).not.toBeNull();
+    expect(view.container.querySelector('[data-message-card-tag-id="3"] sup')).toBeNull();
     const tagButton = getButton(view.container, 'переміщення');
     const tipId = tagButton.getAttribute('aria-describedby');
     expect(tipId).toMatch(/^message-card-tag-3-tip-/);
@@ -2635,15 +2756,81 @@ describe('MessageCard', () => {
     expect(tipId != null ? document.getElementById(tipId)?.textContent : null).toContain(
       'Боти: bot (92%)',
     );
-    expect(view.container.textContent).toContain('бот помилився');
-    expect(view.container.textContent).toContain('закрити');
+    const popover = latestPopoverProps.at(-1);
+    expect(popover?.anchorEl).toBe(tagButton);
+    expect(popover?.anchorOrigin).toEqual({ vertical: 'bottom', horizontal: 'left' });
+    expect(popover?.transformOrigin).toEqual({ vertical: 'top', horizontal: 'left' });
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
 
-    await click(getButton(view.container, 'бот помилився'));
-    await click(getButton(view.container, 'закрити'));
+    await click(getButton(view.container, 'СКАСУВАТИ'));
 
-    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
     expect(onCancelBotTagAction).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).not.toHaveBeenCalled();
     expect(onToggleTag).not.toHaveBeenCalled();
+  });
+
+  it('ECHO-3324 confirms the matching bot action exactly once', async () => {
+    const onMarkBotTagWrong = vi.fn();
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onMarkBotTagWrong,
+      onCancelBotTagAction,
+    });
+    rendered.push(view);
+
+    const promptButtons = Array.from(view.container.querySelectorAll('[role="dialog"] button'));
+    expect(promptButtons.map((button) => button.textContent)).toEqual([
+      'СКАСУВАТИ',
+      'БОТ ПОМИЛИВСЯ',
+    ]);
+    await click(getButton(view.container, 'БОТ ПОМИЛИВСЯ'));
+    expect(onMarkBotTagWrong).toHaveBeenCalledTimes(1);
+    expect(onMarkBotTagWrong).toHaveBeenCalledWith(42, 3);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  it('ECHO-3324 retains the active tag anchor through unrelated card rerenders', async () => {
+    const onCancelBotTagAction = vi.fn();
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction,
+      onMarkBotTagWrong: vi.fn(),
+    });
+    rendered.push(view);
+    const initialAnchor = latestPopoverProps.at(-1)?.anchorEl;
+
+    await act(async () => {
+      view.root.render(
+        <AudioTranscriptionPreferencesProvider collapsedByDefault={false}>
+          <MessageCard {...view.props} messageTextPreviewLines={40} />
+        </AudioTranscriptionPreferencesProvider>,
+      );
+    });
+
+    expect(latestPopoverProps.at(-1)?.anchorEl).toBe(initialAnchor);
+    expect(onCancelBotTagAction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['read-only card', { readOnly: true }],
+    ['different message', { botTagAction: { messageId: 43, tagId: 3 } }],
+    ['missing tag', { botTagAction: { messageId: 42, tagId: 99 } }],
+  ] as const)('ECHO-3324 does not show a bot Popover for a %s', async (_, overrides) => {
+    const view = await renderCard({
+      botTagAction: { messageId: 42, tagId: 3 },
+      onCancelBotTagAction: vi.fn(),
+      onMarkBotTagWrong: vi.fn(),
+      ...overrides,
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('[role="dialog"]')).toBeNull();
+    expect(latestPopoverProps).toHaveLength(0);
   });
 
   it('keeps contribution description ids unique across mounted cards with the same tag', async () => {
@@ -2712,12 +2899,188 @@ describe('MessageCard', () => {
     expect(players).toHaveLength(2);
     const audioHost = view.container.querySelector('[data-audio-player-host]');
     expect(audioHost?.tagName).toBe('DIV');
-    expect(audioHost?.className).toBe(
-      'relative z-0 flex w-full min-h-12 min-w-0 max-w-[460px] items-stretch overflow-hidden pb-1',
-    );
-    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('48');
+    expect(audioHost?.classList).toContain('message-card-audio-host');
+    expect(audioHost?.getAttribute('data-audio-player-min-height-px')).toBe('40');
     expect(audioHost?.getAttribute('data-audio-player-top-padding-px')).toBe('0');
     expect(audioHost?.getAttribute('data-audio-player-z-index')).toBe('0');
+  });
+
+  it('renders combined attachments without controls when previews are not collapsed', async () => {
+    const view = await renderCard({
+      msg: buildMessage({
+        images: ['https://example.test/files/image.png'],
+        media: [
+          {
+            id: 'video',
+            href: 'https://example.test/files/video.mp4',
+            contentType: 'video/mp4',
+          },
+          {
+            id: 'audio',
+            href: 'https://example.test/files/audio.mp3',
+            contentType: 'audio/mpeg',
+          },
+        ] as InboxMessage['media'],
+        coordsWithLocality: [
+          { coords: { lat: 49.1, lon: 37.2 }, locality: null },
+          { coords: { lat: 49.2, lon: 37.3 }, locality: null },
+        ],
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('.message-card-attachment-counters')).toBeNull();
+    expect(
+      view.container.querySelectorAll('[data-picture-thumb-layout], [data-video-thumb-state]'),
+    ).toHaveLength(2);
+  });
+
+  it('omits attachment summaries and text dividers when the message has no body or attachments', async () => {
+    const view = await renderCard({
+      msg: buildMessage({
+        text: null,
+        textMarked: null,
+        images: [],
+        media: [],
+        coords: null,
+        extendedForm: null,
+      }),
+    });
+    rendered.push(view);
+
+    expect(view.container.querySelector('.message-card-attachment-counters')).toBeNull();
+    expect(view.container.querySelector('.message-card-main .message-card-divider')).toBeNull();
+  });
+
+  it.each([
+    { displayMode: 'duty' as const, collapseMediaPreviews: true, attachmentState: 'collapsed' },
+    { displayMode: 'duty' as const, collapseMediaPreviews: false, attachmentState: 'expanded' },
+    { displayMode: 'analysis' as const, collapseMediaPreviews: true, attachmentState: 'collapsed' },
+    {
+      displayMode: 'analysis' as const,
+      collapseMediaPreviews: false,
+      attachmentState: 'expanded',
+    },
+  ])(
+    'ECHO-3324 preserves raw coordinate fallback in $displayMode with $attachmentState attachments',
+    async ({ displayMode, collapseMediaPreviews }) => {
+      const rawCoordinates = '  somewhere near the ridge\nwith no map point  ';
+      const trimmedCoordinates = 'somewhere near the ridge\nwith no map point';
+      const fallback = await renderCard({
+        displayMode,
+        collapseMediaPreviews,
+        msg: buildMessage({ coords: rawCoordinates }),
+      });
+      rendered.push(fallback);
+
+      const fallbackRow = fallback.container.querySelector('[data-message-card-raw-coordinates]');
+      expect(fallbackRow?.textContent).toContain('Координати:');
+      expect(fallbackRow?.textContent).toContain(trimmedCoordinates);
+      expect(
+        fallback.container.querySelector('[data-message-card-header-row="true"]')?.textContent,
+      ).not.toContain(trimmedCoordinates);
+      expect(fallback.container.querySelector('[data-attachment-kind="coordinates"]')).toBeNull();
+      expect(fallback.container.querySelector('[data-coordinate-preview-root]')).toBeNull();
+
+      const preview = await renderCard({
+        displayMode,
+        collapseMediaPreviews,
+        msg: buildMessage({ coords: '49.1, 37.2' }),
+      });
+      rendered.push(preview);
+
+      expect(preview.container.querySelector('[data-message-card-raw-coordinates]')).toBeNull();
+      if (collapseMediaPreviews) {
+        const coordinateControl = preview.container.querySelector(
+          '[data-attachment-kind="coordinates"]',
+        );
+        if (!(coordinateControl instanceof HTMLButtonElement)) {
+          throw new Error('coordinate control not found');
+        }
+        await click(coordinateControl);
+      } else {
+        expect(preview.container.querySelector('.message-card-attachment-counters')).toBeNull();
+      }
+      expect(preview.container.querySelector('[data-coordinate-preview-root]')).not.toBeNull();
+    },
+  );
+
+  it('only reserves a wide sidebar when tags or reports are visible', async () => {
+    const withoutSidebar = await renderCard({
+      tagsMap: {},
+      msg: buildMessage({ tags: [], inboxTags: [], parentMessages: [], intelligenceReports: [] }),
+    });
+    rendered.push(withoutSidebar);
+    expect(withoutSidebar.container.querySelector('.message-card-sidebar')).toBeNull();
+    expect(
+      withoutSidebar.container
+        .querySelector('.message-card-content-layout')
+        ?.classList.contains('message-card-content-layout--with-sidebar'),
+    ).toBe(false);
+
+    const withSidebar = await renderCard();
+    rendered.push(withSidebar);
+    expect(withSidebar.container.querySelector('.message-card-sidebar')).not.toBeNull();
+    expect(
+      withSidebar.container
+        .querySelector('.message-card-content-layout')
+        ?.classList.contains('message-card-content-layout--with-sidebar'),
+    ).toBe(true);
+  });
+
+  it.each([
+    ['metadata only', buildMessage({ text: null, extendedForm: null }), 0],
+    ['metadata and text', buildMessage({ extendedForm: null }), 1],
+    [
+      'metadata and attachment without text',
+      buildMessage({ text: null, extendedForm: null, images: ['https://example.test/image.png'] }),
+      1,
+    ],
+    [
+      'metadata, text, and attachment',
+      buildMessage({ extendedForm: null, images: ['https://example.test/image.png'] }),
+      2,
+    ],
+    ['metadata and empty body', buildMessage({ text: '', extendedForm: null }), 0],
+  ])(
+    'ECHO-3324 renders %s with the expected content-aware dividers',
+    async (_, msg, dividerCount) => {
+      const view = await renderCard({ msg });
+      rendered.push(view);
+      expect(
+        view.container.querySelectorAll('.message-card-main .message-card-divider'),
+      ).toHaveLength(dividerCount);
+    },
+  );
+
+  it('ECHO-3324 includes raw coordinates and visible sidebars in divider boundaries without trailing dividers', async () => {
+    const withRawCoordinates = await renderCard({
+      msg: buildMessage({ text: null, extendedForm: null, coords: 'somewhere near the ridge' }),
+    });
+    rendered.push(withRawCoordinates);
+    expect(
+      withRawCoordinates.container.querySelectorAll('.message-card-main .message-card-divider'),
+    ).toHaveLength(1);
+    expect(
+      withRawCoordinates.container.querySelector('.message-card-main-sidebar-divider'),
+    ).not.toBeNull();
+
+    const withoutSidebar = await renderCard({
+      tagsMap: {},
+      msg: buildMessage({
+        text: null,
+        extendedForm: null,
+        tags: [],
+        inboxTags: [],
+        parentMessages: [],
+        intelligenceReports: [],
+      }),
+    });
+    rendered.push(withoutSidebar);
+    expect(withoutSidebar.container.querySelector('.message-card-main-sidebar-divider')).toBeNull();
+    expect(
+      withoutSidebar.container.querySelector('.message-card-main .message-card-divider'),
+    ).toBeNull();
   });
 
   it('does not treat video/mpeg attachments as audio', async () => {
@@ -2883,9 +3246,9 @@ describe('MessageCard', () => {
     expect(downloadLink?.getAttribute('data-mui-sx')).toContain('action.hover');
     expect(downloadLink?.getAttribute('data-mui-sx')).toContain('"fontSize":14');
     expect(downloadLink?.textContent).toBe('');
-    const audioRow = downloadLink?.closest('.audio-player-row');
+    const audioRow = player?.closest('.audio-player-row');
     expect(audioRow?.classList).toContain('items-stretch');
-    expect(downloadLink?.parentElement?.classList).toContain('self-stretch');
+    expect(downloadLink?.closest('.audio-player-row')).toBe(audioRow);
     expect(downloadLink?.parentElement?.classList).toContain('items-center');
   });
 
@@ -2983,6 +3346,10 @@ describe('MessageCard', () => {
     expect(transcriptions[0]?.tagName).toBe('BLOCKQUOTE');
     expect(transcriptions[0]?.classList).toContain('audio-transcription');
     expect(transcriptions[0]?.textContent).toBe('Перший рядок.\nДругий рядок.');
+    expect(
+      transcriptions[0]?.querySelector('[data-audio-transcription-icon="robot"]'),
+    ).not.toBeNull();
+    expect(transcriptions[0]?.querySelector('[data-audio-transcription-arrow]')).toBeNull();
     expect(view.container.querySelector('button[aria-label="Транскрибувати аудіо"]')).toBeNull();
   });
 
@@ -3074,19 +3441,40 @@ describe('MessageCard', () => {
 
     const transcription = view.container.querySelector('[data-audio-transcription]') as HTMLElement;
     expect(transcription.classList).toContain('audio-transcription--clamped');
-    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.querySelector('[data-audio-transcription-icon="robot"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).toBeNull();
+    expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('false');
+
+    await act(async () => {
+      transcription.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+
+    expect(transcription.getAttribute('aria-expanded')).toBe('true');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).not.toBeNull();
+
+    await act(async () => {
+      transcription.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    });
+
+    expect(transcription.getAttribute('aria-expanded')).toBe('false');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
 
     await click(transcription);
 
     expect(transcription.classList).not.toContain('audio-transcription--clamped');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).not.toBeNull();
     expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('true');
 
     await click(transcription);
 
     expect(transcription.classList).toContain('audio-transcription--clamped');
-    expect(transcription.textContent).toContain('ПОКАЗАТИ БІЛЬШЕ');
+    expect(transcription.querySelector('[data-audio-transcription-arrow="down"]')).not.toBeNull();
+    expect(transcription.querySelector('[data-audio-transcription-arrow="up"]')).toBeNull();
+    expect(transcription.textContent).not.toContain('ПОКАЗАТИ БІЛЬШЕ');
     expect(transcription.getAttribute('aria-expanded')).toBe('false');
   });
 
@@ -3685,7 +4073,7 @@ describe('MessageCard', () => {
     expect(latestDocumentDialogProps.at(-1)?.document?.kind).toBe('md');
   });
 
-  it('shows selected tags first and can reveal the rest on demand', async () => {
+  it('ECHO-3324 keeps compact tag order and moves collapse after the expanded tag flow', async () => {
     const rectSpy = vi
       .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
       .mockImplementation(function (this: HTMLElement) {
@@ -3709,7 +4097,6 @@ describe('MessageCard', () => {
       const view = await renderCard({ tagsLayout: 'compact' });
       rendered.push(view);
 
-      // Compact layout: selected (inbox) tag first, then the rest; row packs until width + «розгорнути» reserve.
       expect(view.container.textContent).toContain('переміщення');
       expect(view.container.textContent).toContain('розгорнути');
       expect(view.container.textContent).not.toContain('іфо');
@@ -3724,6 +4111,13 @@ describe('MessageCard', () => {
       expect(view.container.textContent).toContain('палітра');
       expect(view.container.textContent).toContain('іфо');
       expect(view.container.textContent).toContain('розвідка');
+      const collapseButton = getButton(view.container, 'згорнути');
+      expect(collapseButton.parentElement?.lastElementChild).toBe(collapseButton);
+
+      await click(collapseButton);
+
+      expect(view.container.textContent).toContain('розгорнути');
+      expect(view.container.textContent).not.toContain('іфо');
     } finally {
       rectSpy.mockRestore();
     }
@@ -3894,7 +4288,7 @@ describe('MessageCard', () => {
     }
   });
 
-  it('repacks compact first row when tag metadata changes while expanded', async () => {
+  it('ECHO-3324 repacks the compact first row when tag metadata changes while expanded', async () => {
     const getCompactFirstRowLabels = (container: HTMLElement) => {
       const grid = container.querySelector('.grid');
       const row = grid?.firstElementChild;
@@ -3964,8 +4358,12 @@ describe('MessageCard', () => {
         );
       });
 
+      expect(view.container.textContent).toContain('широкий рух');
       expect(view.container.textContent).toContain('згорнути');
+      await click(getButton(view.container, 'згорнути'));
+      expect(view.container.textContent).toContain('розгорнути');
       expect(getCompactFirstRowLabels(view.container)).toEqual(['широкий рух']);
+      expect(view.container.textContent).not.toContain('іфо');
     } finally {
       rectSpy.mockRestore();
     }

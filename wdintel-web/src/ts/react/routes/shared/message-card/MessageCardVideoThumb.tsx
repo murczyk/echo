@@ -164,12 +164,14 @@ function useVideoThumbnail(thumbnailSrc: string, isActive: boolean) {
 export function MessageCardVideoThumb({
   attachment,
   index,
+  selected = false,
   onOpen,
   isDownloadStarting,
   onDownloadStart,
 }: {
   attachment: MessageMediaInfo;
   index: number;
+  selected?: boolean;
   onOpen: (index: number) => void;
 } & MessageCardDownloadGuardProps) {
   const fullVideoHref = String(attachment.href ?? '');
@@ -184,7 +186,7 @@ export function MessageCardVideoThumb({
   const showThumbnail = thumbnail.state === 'loaded';
 
   return (
-    <div className="relative inline-flex h-[150px] min-w-[85px] max-w-[150px] self-start">
+    <div className="message-card-thumbnail-shell relative inline-flex self-start">
       <ButtonBase
         ref={thumbnailRequest.targetRef}
         component="button"
@@ -193,16 +195,21 @@ export function MessageCardVideoThumb({
         disabled={!canOpen}
         aria-label="Відкрити відео"
         data-video-thumb-state={thumbnail.state}
-        className={`inline-flex h-full w-full overflow-hidden rounded-md border border-solid border-[var(--color-divider)] bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] text-left text-inherit focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
-          canOpen ? 'cursor-pointer' : 'cursor-default'
-        }`}
+        data-summary-selected={selected ? 'true' : undefined}
+        aria-current={selected ? 'true' : undefined}
+        className={`message-card-thumbnail-control inline-flex h-full w-full min-w-full max-w-full flex-[0_0_100%] overflow-hidden rounded-md text-left text-inherit ring-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
+          selected
+            ? 'bg-[color-mix(in_srgb,var(--color-action)_14%,transparent)] ring-[var(--color-action)] shadow-sm'
+            : 'bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] ring-[var(--color-divider)] shadow-none'
+        } ${canOpen ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+        <div className="relative flex h-full w-full min-w-full max-w-full flex-[0_0_100%] items-center justify-center overflow-hidden">
           {thumbnail.state === 'loading' && thumbnailSrc !== '' ? (
             <Skeleton
               variant="rectangular"
               animation="wave"
-              className="absolute inset-0 z-0 h-full! w-full!"
+              data-message-card-thumbnail-skeleton="true"
+              className="absolute inset-0 z-0 !h-full !w-full"
             />
           ) : null}
           {thumbnail.imageSrc !== null ? (
@@ -214,7 +221,7 @@ export function MessageCardVideoThumb({
               fetchPriority="low"
               onLoad={thumbnail.markLoaded}
               onError={thumbnail.markFailed}
-              className={`pointer-events-none block h-[150px] w-auto max-w-[150px] object-cover transition-opacity duration-[120ms] ease-out ${
+              className={`pointer-events-none absolute inset-0 block h-full w-full object-cover transition-opacity duration-[120ms] ease-out ${
                 showThumbnail ? 'opacity-100' : 'opacity-0'
               }`}
             />

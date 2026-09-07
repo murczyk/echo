@@ -739,33 +739,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     [data.invalidateFilterSectionLoadsForPatch],
   );
 
-  const addFrequencyToFilter = useCallback(
-    (freq: string) => {
-      const trimmed = freq.trim();
-      if (trimmed === '') return;
-      data.invalidateFilterSectionLoadsForPatch({ freqsSelected: [trimmed] });
-      setRightPanelOpen(true);
-      setRightSidebarTab('stats');
-      setQueryState((current) => {
-        const nextFreqsSelected = current.freqsSelected.includes(trimmed)
-          ? current.freqsSelected
-          : [...current.freqsSelected, trimmed];
-        if (
-          !current.includeOnlyNewFreqs &&
-          stringArraysEqual(current.freqsSelected, nextFreqsSelected)
-        ) {
-          return current;
-        }
-        return {
-          ...current,
-          includeOnlyNewFreqs: false,
-          freqsSelected: nextFreqsSelected,
-        };
-      });
-    },
-    [data.invalidateFilterSectionLoadsForPatch, setRightSidebarTab],
-  );
-
   const showFreqOnMap = useCallback(
     (freq: string) => {
       startCenterTabTransition(() => {
@@ -964,6 +937,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     countsLoading: data.countsLoading,
     editorMessage: editor.editorMessage,
     editorEditAsReport: editor.editorEditAsReport,
+    editTargetLoadState: editor.editTargetLoadState,
     reportSource: editor.reportSource,
     editorSaveInFlight: editor.editorSaveInFlight,
     error,
@@ -1023,10 +997,12 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     openEditor: editor.openEditor,
     openReportCreator: editor.openReportCreator,
     openReportEditor: editor.openReportEditor,
+    retryEditTargetLoad: editor.retryEditTargetLoad,
     profiles,
     queryState,
     tagsLayout: dutySettings.tagsLayout,
     mediaSummaryEnabled: dutySettings.mediaSummaryEnabled,
+    collapseMediaPreviews: dutySettings.dutyCollapseMediaPreviews,
     messageTextPreviewLines: dutySettings.messageTextPreviewLines,
     audioTranscriptionCollapsed: dutySettings.analysisAudioTranscriptionCollapsed,
     audioTranscriptionEnabled,
@@ -1092,7 +1068,6 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setVisibleMessagesPageIndex,
     setRightSidebarTab,
     setSavedFilterName: savedFilters.setSavedFilterName,
-    addFrequencyToFilter,
     showFreqOnMap,
     toggleLeftPanel,
     toggleRightPanel,

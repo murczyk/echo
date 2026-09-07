@@ -53,7 +53,7 @@ export function MessageCardImageThumb({
   };
 
   return (
-    <div className="relative inline-flex h-[150px] min-w-[85px] max-w-[150px] self-start">
+    <div className="message-card-thumbnail-shell relative inline-flex self-start">
       <ButtonBase
         component="button"
         type="button"
@@ -64,18 +64,19 @@ export function MessageCardImageThumb({
         data-summary-selected={selected ? 'true' : undefined}
         data-picture-thumb-state={failed ? 'failed' : loaded ? 'loaded' : 'loading'}
         data-picture-thumb-layout={variant}
-        className={`inline-flex h-full w-full overflow-hidden rounded-md border border-solid text-left text-inherit focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
+        className={`message-card-thumbnail-control inline-flex h-full w-full min-w-full max-w-full flex-[0_0_100%] overflow-hidden rounded-md text-left text-inherit ring-1 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-action)] disabled:cursor-default disabled:text-[var(--color-text-disabled)] ${
           selected
-            ? 'border-[var(--color-action)] bg-[color-mix(in_srgb,var(--color-action)_14%,transparent)] shadow-sm'
-            : 'border-[var(--color-divider)] bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] shadow-none'
+            ? 'bg-[color-mix(in_srgb,var(--color-action)_14%,transparent)] ring-[var(--color-action)] shadow-sm'
+            : 'bg-[color-mix(in_srgb,var(--color-action)_8%,transparent)] ring-[var(--color-divider)] shadow-none'
         } ${canOpen ? 'cursor-pointer' : 'cursor-default'}`}
       >
-        <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
+        <div className="relative flex h-full w-full min-w-full max-w-full flex-[0_0_100%] items-center justify-center overflow-hidden">
           {!loaded && !failed && (
             <Skeleton
               variant="rectangular"
               animation="wave"
-              className="absolute inset-0 z-0 h-full! w-full!"
+              data-message-card-thumbnail-skeleton="true"
+              className="absolute inset-0 z-0 !h-full !w-full"
             />
           )}
           <img
@@ -90,7 +91,7 @@ export function MessageCardImageThumb({
               setLoaded(false);
             }}
             {...imageLoadingProps}
-            className={`pointer-events-none block h-[150px] w-auto max-w-[150px] object-cover transition-opacity duration-[120ms] ease-out ${
+            className={`pointer-events-none absolute inset-0 block h-full w-full object-cover transition-opacity duration-[120ms] ease-out ${
               showImage ? 'opacity-100' : 'opacity-0'
             }`}
           />

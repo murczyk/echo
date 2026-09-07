@@ -15,6 +15,14 @@ const nextCreatedResponse = vi.hoisted(() => ({
   value: null as null | { signal_message_id: number },
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 vi.mock('../../services/api/user-settings', () => ({
   USER_SETTINGS_UPDATED_EVENT: 'user-settings-updated',
   fetchUserSettings: vi.fn().mockResolvedValue({ tagsLayout: 'compact' }),
@@ -98,6 +106,11 @@ vi.mock('./RerDutyNeoWorkspace', () => ({
           />
           <button
             type="button"
+            aria-label="Редагувати розвіддонесення"
+            onClick={() => buildFeedColumnModel(messageFeeds[0]).actions.onMessageEditReport(91)}
+          />
+          <button
+            type="button"
             aria-label="Створити розвіддонесення"
             onClick={() => {
               const [id, message] = messageFeeds[0].items[0];
@@ -116,6 +129,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onCreated,
     editTarget,
     editAsReport,
+    editTargetLoadState,
     reportSource,
     onSubmitEdit,
     onEditSuccess,
@@ -126,6 +140,7 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onCreated?: (result: { signal_message_id: number }) => Promise<void> | void;
     editTarget?: { id: number; message: any } | null;
     editAsReport?: boolean;
+    editTargetLoadState?: { status: string; reportId?: number };
     reportSource?: { id: number; message: any } | null;
     onSubmitEdit?: (id: number, message: any) => Promise<void> | void;
     onEditSuccess?: (result: { signal_message_id: number }) => Promise<void> | void;
@@ -136,6 +151,8 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
         role="dialog"
         data-testid="composer"
         data-edit-as-report={editAsReport ? 'true' : 'false'}
+        data-edit-target-load-status={editTargetLoadState?.status ?? ''}
+        data-edit-target-id={editTarget?.id ?? ''}
         data-report-source-id={reportSource?.id ?? ''}
       >
         <button type="button" aria-label="Закрити повідомлення" onClick={onClose}>
@@ -670,6 +687,53 @@ describe('RerDutyNeoPage creation workflow', () => {
       freqsDenied: ['153.6250', '154.0000'],
     });
 
+    root.unmount();
+  });
+
+  it('opens and dismisses a loading report editor without applying a stale result', async () => {
+    const request = deferred<Array<[number, any]>>();
+    fetchMessagesByIdsMock.mockReturnValueOnce(request.promise);
+    const { container, root } = await renderPage();
+
+    await click(container.querySelector('button[aria-label="Редагувати розвіддонесення"]'));
+    const drawer = container.querySelector('[data-testid="composer"]');
+    expect(drawer).not.toBeNull();
+    expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('loading');
+    expect(drawer?.getAttribute('data-edit-as-report')).toBe('true');
+    expect(drawer?.getAttribute('data-edit-target-id')).toBe('');
+    const signal = fetchMessagesByIdsMock.mock.calls[0]?.[2]?.signal as AbortSignal;
+    expect(signal).toBeInstanceOf(AbortSignal);
+
+    await click(container.querySelector('button[aria-label="Закрити повідомлення"]'));
+    expect(signal.aborted).toBe(true);
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+
+    await act(async () => {
+      request.resolve([[91, minimalInboxMessage({ text: 'stale' })]]);
+      await request.promise;
+    });
+    expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+    root.unmount();
+  });
+
+  it('keeps a regular editor active when a stale report load resolves', async () => {
+    const request = deferred<Array<[number, any]>>();
+    fetchMessagesByIdsMock.mockReturnValueOnce(request.promise);
+    const { container, root } = await renderPage();
+    await click(container.querySelector('button[aria-label="Редагувати розвіддонесення"]'));
+    const signal = fetchMessagesByIdsMock.mock.calls[0]?.[2]?.signal as AbortSignal;
+    await click(container.querySelector('button[aria-label="Редагувати повідомлення"]'));
+    const drawer = container.querySelector('[data-testid="composer"]');
+    expect(signal.aborted).toBe(true);
+    expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('idle');
+    expect(drawer?.getAttribute('data-edit-target-id')).toBe('42');
+
+    await act(async () => {
+      request.resolve([[91, minimalInboxMessage({ text: 'stale' })]]);
+      await request.promise;
+    });
+    expect(drawer?.getAttribute('data-edit-target-id')).toBe('42');
+    expect(drawer?.getAttribute('data-edit-target-load-status')).toBe('idle');
     root.unmount();
   });
 });

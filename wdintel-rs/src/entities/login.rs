@@ -99,6 +99,8 @@ pub enum Relation {
     RestreamSetup,
     #[sea_orm(has_many = "super::secret_group_user::Entity")]
     SecretGroupUser,
+    #[sea_orm(has_many = "super::sigint_activity_decision_changelog::Entity")]
+    SigintActivityDecisionChangelog,
     #[sea_orm(has_many = "super::sigint_bookmark::Entity")]
     SigintBookmark,
     #[sea_orm(has_many = "super::signal_message::Entity")]
@@ -316,6 +318,12 @@ impl Related<super::restream_setup::Entity> for Entity {
 impl Related<super::secret_group_user::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SecretGroupUser.def()
+    }
+}
+
+impl Related<super::sigint_activity_decision_changelog::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SigintActivityDecisionChangelog.def()
     }
 }
 

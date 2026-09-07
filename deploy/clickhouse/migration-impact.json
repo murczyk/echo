@@ -8,6 +8,14 @@
         }
       ]
     },
+    "echo:m20260903_155454_create_sigint_activity_decision_changelog": {
+      "changes": [
+        {
+          "table": "public.sigint_activity_decision_changelog",
+          "strategy": "excluded"
+        }
+      ]
+    },
     "echo:m20260903_105929_disable_media_summary_for_all_users": {
       "changes": []
     },

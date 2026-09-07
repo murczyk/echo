@@ -24,6 +24,7 @@ import type {
 import type { AnalysisReportState } from './report-helpers';
 import type { TagsLayoutVariant } from '../rer-duty-neo/utils';
 import type { MessageCardBotTagAction } from '../shared/message-card/message-card.types';
+import type { ReportEditLoadState } from '../shared/manage-message/useManageMessageDrawer';
 
 export type AnalysisReportTaskRun = {
   id: number;
@@ -183,6 +184,7 @@ export type AnalysisPageState = {
   error: string | null;
   editorMessage: { id: number; message: InboxMessage } | null;
   editorEditAsReport: boolean;
+  editTargetLoadState: ReportEditLoadState;
   reportSource: { id: number; message: InboxMessage } | null;
   editorSaveInFlight: boolean;
   currentUser: User | null;
@@ -241,6 +243,7 @@ export type AnalysisPageState = {
   queryState: AnalysisQueryState;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled?: boolean;
+  collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   audioTranscriptionCollapsed: boolean;
   audioTranscriptionEnabled: boolean;
@@ -317,7 +320,8 @@ export type AnalysisPageActions = {
   openReport: () => void;
   openEditor: (messageId: number) => void;
   openReportCreator: (messageId: number) => void;
-  openReportEditor: (messageId: number) => Promise<void>;
+  openReportEditor: (messageId: number) => void;
+  retryEditTargetLoad: () => void;
   refreshMapDateRange: (range: { startDate: number; endDate: number }) => void;
   setShowSettlements: (show: boolean) => Promise<void>;
   reload: (options?: AnalysisReloadOptions) => void;
@@ -334,7 +338,6 @@ export type AnalysisPageActions = {
   selectOnlyFreq: (freq: string) => void;
   openPointsOnMap: (etalons: string[], message: InboxMessage) => void;
   setSavedFilterName: (name: string) => void;
-  addFrequencyToFilter: (freq: string) => void;
   showFreqOnMap: (freq: string) => void;
   toggleUnitFromMap: (unitName: string | null) => void;
   updateReport: (patch: Partial<AnalysisReportState>) => void;

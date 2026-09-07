@@ -144,19 +144,23 @@ describe('MessageCardCoordinateAttachment', () => {
       'button[aria-label="Open 50.45044, 30.52355 on map"]',
     ) as HTMLButtonElement | null;
     expect(button).not.toBeNull();
-    expect(button?.getAttribute('style')).toContain('width: 180px');
-    expect(button?.getAttribute('style')).toContain('height: 120px');
+    expect(button?.getAttribute('style')).toContain('width: 100%');
+    expect(button?.getAttribute('style')).toContain('height: 100%');
     expect(button?.getAttribute('style')).toContain('max-width: none');
     expect(button?.getAttribute('style')).toContain('flex-grow: 0');
     expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
-    expect(button?.getAttribute('style')).toContain('flex-basis: 120px');
+    expect(button?.getAttribute('style')).toContain('flex-basis: auto');
     expect(
-      container.querySelector('[data-coordinate-preview-root]')?.getAttribute('style'),
-    ).toContain('width: 180px');
+      container
+        .querySelector('[data-coordinate-preview-root]')
+        ?.classList.contains('message-card-coordinate-preview'),
+    ).toBe(true);
     expect(
       container.querySelector('[data-coordinate-preview-tile]')?.getAttribute('style'),
-    ).toEqual(expect.stringContaining('height: 120px'));
+    ).toEqual(expect.stringContaining('height: 100%'));
     expect(container.textContent).not.toContain('+');
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('1');
+    expect(container.textContent).not.toContain('50.45044, 30.52355');
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -230,7 +234,7 @@ describe('MessageCardCoordinateAttachment', () => {
     rectSpy.mockRestore();
   });
 
-  it('shows one unified preview with the pluralized point count', async () => {
+  it('shows one unified preview with the numeric point count', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
       points: [
@@ -257,18 +261,19 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     expect(container.querySelectorAll('button[aria-label^="Open "]')).toHaveLength(1);
-    expect(container.textContent).toContain('9 точок');
+    expect(container.textContent).toContain('9');
+    expect(container.textContent).not.toContain('точок');
     expect(container.textContent).not.toContain('+1');
     expect(container.querySelectorAll('[data-coordinate-preview-count]')).toHaveLength(1);
-    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9 точок');
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('9');
     const button = container.querySelector('button[aria-label="Open BRAVO on map"]');
     expect(button).not.toBeNull();
-    expect(button?.getAttribute('style')).toContain('width: 180px');
-    expect(button?.getAttribute('style')).toContain('height: 120px');
+    expect(button?.getAttribute('style')).toContain('width: 100%');
+    expect(button?.getAttribute('style')).toContain('height: 100%');
     expect(button?.getAttribute('style')).toContain('max-width: none');
     expect(button?.getAttribute('style')).toContain('flex-grow: 0');
     expect(button?.getAttribute('style')).toContain('flex-shrink: 0');
-    expect(button?.getAttribute('style')).toContain('flex-basis: 120px');
+    expect(button?.getAttribute('style')).toContain('flex-basis: auto');
 
     await act(async () => {
       button?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
@@ -340,9 +345,12 @@ describe('MessageCardCoordinateAttachment', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
-    const retry = container.querySelector('button[aria-label="Повторити"]') as HTMLButtonElement;
+    const retry = container.querySelector(
+      'button[aria-label="Повторити завантаження координат"]',
+    ) as HTMLButtonElement;
     expect(retry).not.toBeNull();
+    expect(retry.getAttribute('aria-describedby')).not.toBeNull();
+    expect(container.querySelector('[data-coordinate-preview-tile]')).toBeNull();
 
     await act(async () => {
       retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -374,9 +382,9 @@ describe('MessageCardCoordinateAttachment', () => {
       await Promise.resolve();
     });
 
-    expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
-
-    const retry = container.querySelector('button[aria-label="Повторити"]') as HTMLButtonElement;
+    const retry = container.querySelector(
+      'button[aria-label="Повторити завантаження координат"]',
+    ) as HTMLButtonElement;
     await act(async () => {
       retry.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
@@ -389,10 +397,13 @@ describe('MessageCardCoordinateAttachment', () => {
     expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
   });
 
-  it('shows working previews alongside a compact retry tile for partial lookup errors', async () => {
+  it('ECHO-3324 keeps partial lookup errors inside the valid coordinate tile', async () => {
     const msg = { pointTokens: [] } as InboxMessage;
     vi.mocked(resolveMessageCoordinatePreview).mockResolvedValue({
-      points: [{ source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' }],
+      points: [
+        { source: 'palitra', lat: 50.45, lng: 30.52, label: 'BRAVO' },
+        { source: 'palitra', lat: 50.46, lng: 30.53, label: 'CHARLIE' },
+      ],
       etalons: ['BRAVO', 'CHARLIE'],
       lookupError: new CoordinatePreviewLookupError(
         'point-search',
@@ -408,9 +419,16 @@ describe('MessageCardCoordinateAttachment', () => {
       await Promise.resolve();
     });
 
-    expect(container.querySelector('button[aria-label="Open BRAVO on map"]')).not.toBeNull();
-    expect(container.textContent).toContain('Не вдалося завантажити точку мапи');
-    expect(container.querySelector('button[aria-label="Повторити"]')).not.toBeNull();
+    const host = container.querySelector('[data-coordinate-preview-root]');
+    const tile = container.querySelector('[data-coordinate-preview-tile]');
+    const overlay = container.querySelector('[data-coordinate-preview-retry-overlay]');
+    expect(host?.contains(tile)).toBe(true);
+    expect(host?.contains(overlay)).toBe(true);
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2');
+    expect(overlay?.getAttribute('title')).toBe('point search failed');
+    expect(
+      overlay?.querySelector('button[aria-label="Повторити завантаження координат"]'),
+    ).not.toBeNull();
   });
 
   it('keeps successful document points visible while retrying a failed document request', async () => {
@@ -421,7 +439,10 @@ describe('MessageCardCoordinateAttachment', () => {
     }>();
     vi.mocked(resolveMessageCoordinatePreview)
       .mockResolvedValueOnce({
-        points: [{ source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' }],
+        points: [
+          { source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' },
+          { source: 'document', lat: 47.2, lng: 35.3, label: 'Міст' },
+        ],
         etalons: [],
         lookupError: new CoordinatePreviewLookupError(
           'document-coordinates',
@@ -436,10 +457,14 @@ describe('MessageCardCoordinateAttachment', () => {
     });
 
     const retryButton = container.querySelector(
-      'button[aria-label="Повторити"]',
+      'button[aria-label="Повторити завантаження координат"]',
     ) as HTMLButtonElement;
-    expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
-    expect(container.textContent).toContain('Не вдалося завантажити координати документа');
+    const host = container.querySelector('[data-coordinate-preview-root]');
+    expect(host?.contains(container.querySelector('[data-coordinate-preview-tile]'))).toBe(true);
+    expect(host?.contains(container.querySelector('[data-coordinate-preview-retry-overlay]'))).toBe(
+      true,
+    );
+    expect(container.querySelector('[data-coordinate-preview-count]')?.textContent).toBe('2');
 
     await act(async () => {
       retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -451,14 +476,19 @@ describe('MessageCardCoordinateAttachment', () => {
 
     await act(async () => {
       retry.resolve({
-        points: [{ source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' }],
+        points: [
+          { source: 'document', lat: 47.1, lng: 35.2, label: 'Дамба' },
+          { source: 'document', lat: 47.2, lng: 35.3, label: 'Міст' },
+        ],
         etalons: [],
         lookupError: null,
       });
       await Promise.resolve();
     });
 
-    expect(container.querySelector('button[aria-label="Повторити"]')).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="Повторити завантаження координат"]'),
+    ).toBeNull();
     expect(container.querySelector('button[aria-label="Open Дамба on map"]')).not.toBeNull();
   });
 

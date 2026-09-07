@@ -51,6 +51,11 @@ export type QuickIntelReportSuggestionState =
   | { status: 'available'; suggestions: string[]; selectedIndex: number }
   | { status: 'error'; message: string };
 
+export type ReportEditLoadState =
+  | { status: 'idle' }
+  | { status: 'loading'; reportId: number }
+  | { status: 'error'; reportId: number; message: string };
+
 export type UseManageMessageDrawerProps = {
   open: boolean;
   cyberEchoEnabled: boolean;
@@ -65,6 +70,7 @@ export type UseManageMessageDrawerProps = {
   editTarget?: { id: number; message: InboxMessage } | null;
   reportSource?: { id: number; message: InboxMessage } | null;
   editAsReport?: boolean;
+  editTargetLoadState?: ReportEditLoadState;
   editSaveInFlight?: boolean;
   onSubmitEdit?: (id: number, message: InboxMessage) => void | Promise<void>;
 };
@@ -78,12 +84,13 @@ export function useManageMessageDrawer({
   editTarget = null,
   reportSource = null,
   editAsReport = false,
+  editTargetLoadState = { status: 'idle' },
   editSaveInFlight,
   onSubmitEdit,
 }: UseManageMessageDrawerProps) {
   const isEditMode = isPresent(editTarget);
   const isReportCreateMode = isPresent(reportSource) && !isEditMode;
-  const isReportEditMode = isEditMode && editAsReport;
+  const isReportEditMode = (isEditMode && editAsReport) || editTargetLoadState.status !== 'idle';
   const reportParents = isPresent(reportSource)
     ? [summarizeIntelligenceMessage(reportSource.id, reportSource.message)]
     : isReportEditMode && isPresent(editTarget)
@@ -92,6 +99,7 @@ export function useManageMessageDrawer({
   const reportParentIds = reportParents.map(({ id }) => id);
   const reportParentIdsKey = reportParentIds.join(',');
   const isReportMode = isReportCreateMode || isReportEditMode;
+  const formReady = open && editTargetLoadState.status === 'idle';
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [signalGroups, setSignalGroups] = useState<SignalGroupEntry[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
@@ -109,7 +117,9 @@ export function useManageMessageDrawer({
 
   const { recentValues, addValues } = useRecentValues();
 
-  const busy = copyLoading || submitting || (isEditMode && Boolean(editSaveInFlight));
+  const saving = submitting || (isEditMode && Boolean(editSaveInFlight));
+  const formLoading = copyLoading;
+  const busy = saving || formLoading;
 
   const [tagOptions, setTagOptions] = useState<string[]>([]);
   const [tagsMap, setTagsMap] = useState<Record<number, Tag>>({});
@@ -147,7 +157,7 @@ export function useManageMessageDrawer({
   const [freqInput, setFreqInput] = useState('');
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     let active = true;
 
     setDeviceNamesLoading(true);
@@ -165,10 +175,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [deviceNameInput, open]);
+  }, [deviceNameInput, formReady]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     let active = true;
 
     setPostLoading(true);
@@ -186,10 +196,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [postInput, open]);
+  }, [postInput, formReady]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     let active = true;
 
     setUnitLoading(true);
@@ -207,10 +217,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [unitInput, open]);
+  }, [unitInput, formReady]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     let active = true;
 
     setNetworkNameLoading(true);
@@ -228,10 +238,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [networkNameInput, open]);
+  }, [networkNameInput, formReady]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     const unitIds = Array.from(
       new Set(networkNameOptions.flatMap((network) => network.unit_ids ?? [])),
     ).filter((unitId) => networkUnitNamesById[unitId] == null);
@@ -251,10 +261,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [networkNameOptions, networkUnitNamesById, open]);
+  }, [networkNameOptions, networkUnitNamesById, formReady]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     let active = true;
 
     setCallsignLoading(true);
@@ -272,10 +282,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [callsignInput, open]);
+  }, [callsignInput, formReady]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     let active = true;
 
     setFreqLoading(true);
@@ -293,7 +303,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [freqInput, open]);
+  }, [freqInput, formReady]);
 
   const resolver = useMemo(
     () => zodResolver(makeMessageSchema(isEditMode, isReportMode, isReportMode)),
@@ -355,10 +365,10 @@ export function useManageMessageDrawer({
   } = useMessageUppy(busy, retainedAttachmentCount);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [open, handlePaste]);
+  }, [formReady, handlePaste]);
 
   const { parsing, handleParse } = useMessageParser(methods, busy, setErrorMsg);
 
@@ -399,7 +409,7 @@ export function useManageMessageDrawer({
   );
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     let active = true;
 
     const fetchGroups = async () => {
@@ -452,10 +462,10 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [formReady]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!formReady) return;
     setDeviceNameInput('');
     setPostInput('');
     setUnitInput('');
@@ -511,7 +521,7 @@ export function useManageMessageDrawer({
       });
     }
   }, [
-    open,
+    formReady,
     isEditMode,
     isReportCreateMode,
     editAsReport,
@@ -521,7 +531,7 @@ export function useManageMessageDrawer({
   ]);
 
   useEffect(() => {
-    if (!open || !isReportMode) return;
+    if (!formReady || !isReportMode) return;
     if (reportParentIds.length === 0) {
       setOriginalReportText('');
       setCopyLoading(false);
@@ -529,7 +539,8 @@ export function useManageMessageDrawer({
     }
     let active = true;
     setCopyLoading(true);
-    copyDirectSubmit(reportParentIds)
+    const controller = new AbortController();
+    copyDirectSubmit(reportParentIds, { signal: controller.signal })
       .then(({ payloads }) => {
         if (!active) return;
         setOriginalReportText(
@@ -563,11 +574,12 @@ export function useManageMessageDrawer({
 
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [open, isReportCreateMode, isReportMode, reportParentIdsKey, reportSource?.id, reset]);
+  }, [formReady, isReportCreateMode, isReportMode, reportParentIdsKey, reportSource?.id, reset]);
 
   useEffect(() => {
-    if (!open || !isReportCreateMode || !reportCopyLoaded || !reportSource) {
+    if (!formReady || !isReportCreateMode || !reportCopyLoaded || !reportSource) {
       setQuickSuggestion({ status: 'idle' });
       return;
     }
@@ -604,7 +616,7 @@ export function useManageMessageDrawer({
       active = false;
       controller.abort();
     };
-  }, [isReportCreateMode, open, quickSuggestionAttempt, reportCopyLoaded, reportSource?.id]);
+  }, [isReportCreateMode, formReady, quickSuggestionAttempt, reportCopyLoaded, reportSource?.id]);
 
   const applyQuickSuggestion = () => {
     if (quickSuggestion.status !== 'available') return;
@@ -630,16 +642,16 @@ export function useManageMessageDrawer({
   };
 
   useEffect(() => {
-    if (!open || !isEditMode || !editTarget) return;
+    if (!formReady || !isEditMode || !editTarget) return;
     if ((getValues('tags') ?? []).length > 0) return;
     const seededTags = mapInboxMessageToForm(editTarget.message, tagsMap).tags;
     if (seededTags.length > 0) {
       setValue('tags', seededTags, { shouldDirty: false });
     }
-  }, [open, isEditMode, editTarget?.id, tagsMap]);
+  }, [formReady, isEditMode, editTarget?.id, tagsMap]);
 
   useEffect(() => {
-    if (!open || !isEditMode || !editTarget) return;
+    if (!formReady || !isEditMode || !editTarget) return;
     let active = true;
     const hydrateNetwork = async () => {
       const linkedNetworkIds = editTarget.message.networkIds ?? [];
@@ -694,7 +706,7 @@ export function useManageMessageDrawer({
     return () => {
       active = false;
     };
-  }, [open, isEditMode, editTarget?.id]);
+  }, [formReady, isEditMode, editTarget?.id]);
 
   const closeDrawerAfterSubmit = () => {
     blurActiveElement();
@@ -707,7 +719,7 @@ export function useManageMessageDrawer({
   };
 
   const handleDrawerClose = () => {
-    if (busy) return;
+    if (saving) return;
     closeDrawerAfterSubmit();
   };
 
@@ -745,6 +757,8 @@ export function useManageMessageDrawer({
     signalGroups,
     groupsLoading,
     busy,
+    formDisabled: busy,
+    saving,
     parsing,
     errorMsg,
     setErrorMsg,

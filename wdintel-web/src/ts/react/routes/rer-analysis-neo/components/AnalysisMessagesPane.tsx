@@ -115,13 +115,13 @@ type Props = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
-  onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   tagsMap: Record<number, Tag>;
   tagsOrder: number[];
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled?: boolean;
+  collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
@@ -318,7 +318,6 @@ type AnalysisMessageCardItemProps = {
   onToggleMessageBookmark: (messageId: number, currentlyBookmarked: boolean) => void;
   onToggleMessageImportant: (messageId: number, currentlyImportant: boolean) => void;
   onToggleMessageTag: (messageId: number, tagId: number) => void;
-  onAddFrequencyToFilter: (freq: string) => void;
   profiles: Record<string, SignalProfileEntry | null>;
   referenceTimeMs: number | null;
   tagsMap: Record<number, Tag>;
@@ -326,6 +325,7 @@ type AnalysisMessageCardItemProps = {
   tagsLoading: boolean;
   tagsLayout: TagsLayoutVariant;
   mediaSummaryEnabled?: boolean;
+  collapseMediaPreviews: boolean;
   messageTextPreviewLines: 20 | 40 | null;
   showCallsignAddForm: boolean;
   searchText?: string | null;
@@ -357,7 +357,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
-  onAddFrequencyToFilter,
   profiles,
   referenceTimeMs,
   tagsMap,
@@ -365,6 +364,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
   tagsLoading,
   tagsLayout,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
+  collapseMediaPreviews,
   messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
@@ -399,6 +399,7 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
       tagsOrder={tagsOrder}
       tagsLoading={tagsLoading}
       tagsLayout={tagsLayout}
+      collapseMediaPreviews={collapseMediaPreviews}
       messageTextPreviewLines={messageTextPreviewLines}
       searchText={searchText}
       onOpenPointsOnMap={onOpenPointsOnMap}
@@ -475,7 +476,6 @@ const AnalysisMessageCardItem = memo(function AnalysisMessageCardItem({
               });
             }
       }
-      onAddFrequencyToFilter={onAddFrequencyToFilter}
       onCreateReport={() => onCreateReport(id)}
       onEditReport={onEditReport}
       onDelete={() => onDeleteOpen(id)}
@@ -538,13 +538,13 @@ function AnalysisMessagesPaneComponent({
   onToggleMessageBookmark,
   onToggleMessageImportant,
   onToggleMessageTag,
-  onAddFrequencyToFilter,
   profiles,
   tagsMap,
   tagsOrder,
   tagsLoading,
   tagsLayout,
   mediaSummaryEnabled = DEFAULT_MEDIA_SUMMARY_ENABLED,
+  collapseMediaPreviews,
   messageTextPreviewLines,
   showCallsignAddForm,
   searchText,
@@ -1142,7 +1142,6 @@ function AnalysisMessagesPaneComponent({
               onToggleMessageBookmark={onToggleMessageBookmark}
               onToggleMessageImportant={onToggleMessageImportant}
               onToggleMessageTag={onToggleMessageTag}
-              onAddFrequencyToFilter={onAddFrequencyToFilter}
               profiles={profiles}
               referenceTimeMs={referenceTimeMsRef.current}
               tagsMap={tagsMap}
@@ -1150,6 +1149,7 @@ function AnalysisMessagesPaneComponent({
               tagsLoading={tagsLoading}
               tagsLayout={tagsLayout}
               mediaSummaryEnabled={mediaSummaryEnabled}
+              collapseMediaPreviews={collapseMediaPreviews}
               messageTextPreviewLines={messageTextPreviewLines}
               showCallsignAddForm={showCallsignAddForm}
               searchText={searchText}

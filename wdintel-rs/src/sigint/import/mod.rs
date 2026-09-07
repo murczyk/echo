@@ -1,3 +1,7 @@
+use crate::config::{
+    SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_FREQUENCY_UPDATED,
+    SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_NETWORK_UPDATED,
+};
 use crate::entities::sea_orm_active_enums::SigintNetworkKind;
 use crate::entities::*;
 use crate::entities::{
@@ -7,6 +11,10 @@ use crate::error::AppError;
 use crate::h;
 use crate::sigint::aor::load_default_aor;
 use crate::sigint::import::types::*;
+use crate::sigint::network::activity_decision::{
+    record_activity_decision_if_changed, ActivityDecisionActor,
+    ActivityDecisionEvidence, ActivityDecisionTarget, ActivityState,
+};
 use crate::types::Mode;
 use crate::types::*;
 use anyhow::Context;
@@ -1112,20 +1120,29 @@ where
     })
 }
 
-async fn import_sigint_network_data<'a, 'async_trait, C>(
-    txn: &C,
+async fn import_sigint_network_data(
+    txn: &DatabaseTransaction,
     origin_id: i64,
     recs: Vec<sigint_network::Model>,
-) -> anyhow::Result<ImportResult<i64>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+) -> anyhow::Result<ImportResult<i64>> {
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
         query::find_existing_sigint_networks(txn, &recs, origin_id)
             .await
             .context(h!())?;
+    let existing_ids =
+        existing_record_ids.values().copied().collect::<Vec<_>>();
+    let existing_records = sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.is_in(existing_ids))
+        .order_by_asc(sigint_network::Column::Id)
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|network| (network.id, network))
+        .collect::<HashMap<_, _>>();
     let mut result = BTreeMap::new();
     let mut new_records = vec![];
     for rec in recs {
@@ -1167,6 +1184,21 @@ where
         }
         .await
         .context(h!())?;
+        if let Some(old_rec) = existing_records.get(&new_rec.id) {
+            record_activity_decision_if_changed(
+                txn,
+                ActivityDecisionTarget::Network {
+                    network_id: new_rec.id,
+                },
+                ActivityDecisionActor::import(),
+                SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_NETWORK_UPDATED,
+                ActivityState::network(old_rec),
+                ActivityState::network(&new_rec),
+                ActivityDecisionEvidence::default(),
+            )
+            .await
+            .context(h!())?;
+        }
         let new_id = new_rec.id;
         result.insert(original_id, new_id);
         new_records.push(new_rec.clone());
@@ -1442,23 +1474,43 @@ where
     })
 }
 
-async fn import_sigint_network_freq_data<'a, 'async_trait, C>(
-    txn: &C,
+async fn import_sigint_network_freq_data(
+    txn: &DatabaseTransaction,
     origin_id: i64,
     recs: Vec<sigint_network_freq::Model>,
     sigint_network_ids_map: BTreeMap<i64, i64>,
     modulation_ids_map: BTreeMap<i32, i32>,
     import_warnings: &mut Vec<String>,
-) -> anyhow::Result<ImportResult<i64>>
-where
-    C: ConnectionTrait + 'async_trait,
-{
+) -> anyhow::Result<ImportResult<i64>> {
     let mut num_created = 0;
     let mut num_updated = 0;
     let existing_record_ids =
         query::find_existing_sigint_network_freqs(txn, &recs, origin_id)
             .await
             .context(h!())?;
+    let mut network_ids =
+        sigint_network_ids_map.values().copied().collect::<Vec<_>>();
+    network_ids.sort_unstable();
+    network_ids.dedup();
+    sigint_network::Entity::find()
+        .filter(sigint_network::Column::Id.is_in(network_ids))
+        .order_by_asc(sigint_network::Column::Id)
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .context(h!())?;
+    let existing_ids =
+        existing_record_ids.values().copied().collect::<Vec<_>>();
+    let existing_records = sigint_network_freq::Entity::find()
+        .filter(sigint_network_freq::Column::Id.is_in(existing_ids))
+        .order_by_asc(sigint_network_freq::Column::Id)
+        .lock_exclusive()
+        .all(txn)
+        .await
+        .context(h!())?
+        .into_iter()
+        .map(|network_freq| (network_freq.id, network_freq))
+        .collect::<HashMap<_, _>>();
     let mut result = BTreeMap::new();
     for rec in recs {
         let Some(sigint_network_id) =
@@ -1518,6 +1570,23 @@ where
         }
         .await
         .context(h!())?;
+        if let Some(old_rec) = existing_records.get(&new_rec.id) {
+            record_activity_decision_if_changed(
+                txn,
+                ActivityDecisionTarget::Frequency {
+                    network_id: new_rec.network_id,
+                    network_freq_id: new_rec.id,
+                    freq: &new_rec.freq,
+                },
+                ActivityDecisionActor::import(),
+                SIGINT_NETWORK_ACTIVITY_REASON_IMPORT_FREQUENCY_UPDATED,
+                ActivityState::frequency(old_rec),
+                ActivityState::frequency(&new_rec),
+                ActivityDecisionEvidence::default(),
+            )
+            .await
+            .context(h!())?;
+        }
         let new_id = new_rec.id;
         result.insert(rec.id, new_id);
     }

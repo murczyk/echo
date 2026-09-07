@@ -349,6 +349,11 @@ export function SettingsNeoPage({ section }: SettingsNeoPageProps = {}) {
                       dutySettings.setMediaSummaryEnabled(value);
                       scheduleDutySettingsSave({ mediaSummaryEnabled: value });
                     }}
+                    collapseMediaPreviews={dutySettings.dutyCollapseMediaPreviews}
+                    onCollapseMediaPreviewsChange={(value) => {
+                      dutySettings.setDutyCollapseMediaPreviews(value);
+                      scheduleDutySettingsSave({ dutyCollapseMediaPreviews: value });
+                    }}
                     loadInProgress={globalSettings.loadInProgress || dutySettings.loadInProgress}
                   />
 

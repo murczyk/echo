@@ -260,6 +260,12 @@ vi.mock('../shared/manage-message/ManageMessageDrawer', () => ({
     onDeleteSuccess?: (messageId: number) => Promise<void> | void;
     editTarget?: unknown;
     editAsReport?: boolean;
+    editTargetLoadState?: {
+      status: 'idle' | 'loading' | 'error';
+      reportId?: number;
+      message?: string;
+    };
+    onRetryEditTargetLoad?: () => void;
     reportSource?: unknown;
   }) => {
     manageMessageDrawerPropsHistory.push(props);
@@ -299,6 +305,7 @@ function buildPage() {
     error: null,
     editorMessage: null,
     editorEditAsReport: false,
+    editTargetLoadState: { status: 'idle' as const },
     reportSource: null,
     editorSaveInFlight: false,
     filtersLoading: false,
@@ -395,6 +402,7 @@ function buildPage() {
     openEditor: vi.fn(),
     openReportCreator: vi.fn(),
     openReportEditor: vi.fn(),
+    retryEditTargetLoad: vi.fn(),
     closeEditor: vi.fn(),
     saveEditor: vi.fn(),
     saveMessageUpdate: vi.fn(),
@@ -403,7 +411,6 @@ function buildPage() {
     onToggleMessageImportant: vi.fn(),
     onToggleMessageTag: vi.fn(),
     onUpdateLocalMessage: vi.fn(),
-    addFrequencyToFilter: vi.fn(),
     closeReport: vi.fn(),
     downloadGeojson: vi.fn(),
     downloadKmz: vi.fn(),
@@ -471,6 +478,29 @@ describe('RerAnalysisNeoPage', () => {
     for (const container of rendered.splice(0)) {
       document.body.removeChild(container);
     }
+  });
+
+  it('opens the report editor drawer from loading state and routes dismissal to closeEditor', async () => {
+    const page = buildPage();
+    page.editorMessage = null;
+    page.reportSource = null;
+    page.editorEditAsReport = true;
+    page.editTargetLoadState = { status: 'loading', reportId: 91 };
+    useRerAnalysisNeoPageMock.mockReturnValue(page);
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    rendered.push(container);
+    const root = createRoot(container);
+    await act(async () => root.render(<RerAnalysisNeoPage />));
+    const drawer = manageMessageDrawerPropsHistory.at(-1);
+    expect(drawer?.open).toBe(true);
+    expect(drawer?.editAsReport).toBe(true);
+    expect(drawer?.editTarget).toBeNull();
+    expect(drawer?.editTargetLoadState).toEqual({ status: 'loading', reportId: 91 });
+    expect(drawer?.onRetryEditTargetLoad).toBe(page.retryEditTargetLoad);
+    act(() => drawer?.onClose());
+    expect(page.closeEditor).toHaveBeenCalledOnce();
+    root.unmount();
   });
 
   it('collapses the narrow sidebar and restores the FAB around a sidebar map', async () => {

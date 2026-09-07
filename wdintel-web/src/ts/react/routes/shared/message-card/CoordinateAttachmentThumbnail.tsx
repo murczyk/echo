@@ -6,10 +6,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { DEFAULT_BASE_LAYER_ID } from '../../../../maps/base-layers';
 import { getTileLayers } from '../../../../web-components/analysis-map/tile-layers';
-import {
-  formatCoordinatePreviewPointCount,
-  type CoordinatePreviewPoint,
-} from './message-coordinate-preview';
+import type { CoordinatePreviewPoint } from './message-coordinate-preview';
 
 const PREVIEW_HEIGHT_PX = 120;
 const PREVIEW_MAX_WIDTH_PX = 180;
@@ -55,10 +52,12 @@ export function CoordinateAttachmentThumbnail({
   points,
   onOpen,
   fullWidth = false,
+  messageCardTile = false,
 }: {
   points: CoordinatePreviewPoint[];
   onOpen: () => void;
   fullWidth?: boolean;
+  messageCardTile?: boolean;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -177,27 +176,28 @@ export function CoordinateAttachmentThumbnail({
     return null;
   }
 
-  const widthStyle = fullWidth ? '100%' : '180px';
-  const heightStyle = fullWidth ? '100%' : '120px';
-  const flexStyle = fullWidth ? '1 1 auto' : '0 0 120px';
+  const widthStyle = fullWidth ? '100%' : messageCardTile ? '100%' : '180px';
+  const heightStyle = fullWidth ? '100%' : messageCardTile ? '100%' : '120px';
+  const flexStyle = fullWidth ? '1 1 auto' : messageCardTile ? '0 0 auto' : '0 0 120px';
   const maxWidthStyle = fullWidth ? '100%' : 'none';
 
   return (
     <Box
       ref={hostRef}
       data-coordinate-preview-tile="true"
+      data-message-card-tile={messageCardTile ? 'true' : undefined}
       style={{
         flex: flexStyle,
         width: widthStyle,
         height: heightStyle,
-        aspectRatio: fullWidth ? '1 / 1' : undefined,
+        aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
         maxWidth: maxWidthStyle,
       }}
       sx={{
         flex: flexStyle,
-        width: fullWidth ? '100%' : 180,
-        height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
-        aspectRatio: fullWidth ? '1 / 1' : undefined,
+        width: fullWidth || messageCardTile ? '100%' : 180,
+        height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
+        aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
         maxWidth: maxWidthStyle,
         alignSelf: 'flex-start',
       }}
@@ -205,13 +205,14 @@ export function CoordinateAttachmentThumbnail({
       {!isNearViewport ? (
         <Skeleton
           variant="rounded"
-          height={fullWidth ? '100%' : PREVIEW_HEIGHT_PX}
+          className="message-card-thumbnail-control"
+          height={fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX}
           animation="wave"
           sx={{
             width: '100%',
-            height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
+            height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
             maxWidth: fullWidth ? '100%' : `${PREVIEW_MAX_WIDTH_PX}px`,
-            aspectRatio: fullWidth ? '1 / 1' : undefined,
+            aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
           }}
         />
       ) : (
@@ -220,11 +221,12 @@ export function CoordinateAttachmentThumbnail({
             type="button"
             onClick={onOpen}
             aria-label={`Open ${point.label} on map`}
+            className="message-card-thumbnail-control"
             style={{
               flex: flexStyle,
               width: widthStyle,
               height: heightStyle,
-              aspectRatio: fullWidth ? '1 / 1' : undefined,
+              aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
               maxWidth: maxWidthStyle,
             }}
             sx={{
@@ -232,10 +234,10 @@ export function CoordinateAttachmentThumbnail({
               isolation: 'isolate',
               zIndex: 0,
               flex: flexStyle,
-              width: fullWidth ? '100%' : 180,
+              width: fullWidth || messageCardTile ? '100%' : 180,
               maxWidth: maxWidthStyle,
-              height: fullWidth ? '100%' : PREVIEW_HEIGHT_PX,
-              aspectRatio: fullWidth ? '1 / 1' : undefined,
+              height: fullWidth || messageCardTile ? '100%' : PREVIEW_HEIGHT_PX,
+              aspectRatio: fullWidth || messageCardTile ? '1 / 1' : undefined,
               overflow: 'hidden',
               borderRadius: 2,
               border: '1px solid',
@@ -279,55 +281,32 @@ export function CoordinateAttachmentThumbnail({
               style={{ zIndex: 2 }}
               sx={{
                 position: 'absolute',
-                left: 8,
-                right: 8,
-                top: 8,
+                right: 4,
+                top: 4,
                 display: 'flex',
                 alignItems: 'flex-start',
-                justifyContent: 'flex-start',
-                gap: 0.75,
+                justifyContent: 'flex-end',
                 pointerEvents: 'none',
                 zIndex: 2,
               }}
             >
-              {points.length === 1 ? (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    px: 0.75,
-                    py: 0.5,
-                    borderRadius: 1.5,
-                    bgcolor: 'rgba(10, 13, 18, 0.7)',
-                    color: 'common.white',
-                    fontWeight: 700,
-                    lineHeight: 1.2,
-                    backdropFilter: 'blur(6px)',
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {point.label}
-                </Typography>
-              ) : (
-                <Typography
-                  variant="caption"
-                  data-coordinate-preview-count="true"
-                  sx={{
-                    px: 0.75,
-                    py: 0.5,
-                    borderRadius: 1.5,
-                    bgcolor: 'rgba(10, 13, 18, 0.7)',
-                    color: 'common.white',
-                    fontWeight: 700,
-                    lineHeight: 1.2,
-                    backdropFilter: 'blur(6px)',
-                  }}
-                >
-                  {formatCoordinatePreviewPointCount(points.length)}
-                </Typography>
-              )}
+              <Typography
+                variant="caption"
+                data-coordinate-preview-count="true"
+                sx={{
+                  px: 0.75,
+                  py: 0.5,
+                  borderRadius: 1.5,
+                  bgcolor: 'rgba(10, 13, 18, 0.7)',
+                  color: 'common.white',
+                  fontSize: 10,
+                  fontWeight: 400,
+                  lineHeight: 1.2,
+                  backdropFilter: 'blur(6px)',
+                }}
+              >
+                {points.length}
+              </Typography>
             </Box>
           </ButtonBase>
         </Tooltip>
