@@ -1,4 +1,5 @@
 delete from sigint_network_description;
+delete from sigint_activity_decision_changelog;
 delete from log_users_report_generation;
 delete from tags_ordering;
 delete from sigint_comment;

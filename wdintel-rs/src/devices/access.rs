@@ -105,10 +105,7 @@ pub(in crate::devices) async fn resolve_login_by_id(
 
     ensure_devices_section_enabled(dbx).await.c(h!())?;
 
-    login
-        .organism_id
-        .ok_or_else(forbidden_device_operation)
-        .c(h!())?;
+    login.organism_id.ok_or(AppError::Unauthenticated).c(h!())?;
     Ok(login)
 }
 
