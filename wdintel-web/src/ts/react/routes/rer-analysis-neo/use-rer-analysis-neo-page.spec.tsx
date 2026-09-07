@@ -497,6 +497,34 @@ describe('useRerAnalysisNeoPage', () => {
     expect(new URL(window.location.href).searchParams.has('messagesPage')).toBe(false);
   });
 
+  it('signals viewport preservation when refreshing the current message page', async () => {
+    const analysisData = buildAnalysisData();
+    let resolveReload!: () => void;
+    const reloadPromise = new Promise<void>((resolve) => {
+      resolveReload = resolve;
+    });
+    analysisData.reload.mockReturnValueOnce(reloadPromise);
+    currentAnalysisData = analysisData;
+    renderHook();
+    await flushEffects();
+
+    expect(latest?.messageViewportPreservationKey).toBe(0);
+    expect(latest?.messageViewportPreserving).toBe(false);
+
+    act(() => latest?.reload({ preserveMessagePage: true }));
+
+    expect(analysisData.reload).toHaveBeenCalledWith({ preserveMessagePage: true });
+    expect(latest?.messageViewportPreservationKey).toBe(1);
+    expect(latest?.messageViewportPreserving).toBe(true);
+
+    await act(async () => {
+      resolveReload();
+      await reloadPromise;
+    });
+
+    expect(latest?.messageViewportPreserving).toBe(false);
+  });
+
   it('retains the first chunk when restoring the second chunk after browser reload', async () => {
     window.history.replaceState({}, '', `${window.location.pathname}?messagesPage=2`);
     const analysisData = buildAnalysisData();

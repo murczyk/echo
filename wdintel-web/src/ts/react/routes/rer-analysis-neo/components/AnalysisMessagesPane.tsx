@@ -95,6 +95,8 @@ type Props = {
   networkDisplayMap: Record<number, string>;
   pageIndex: number;
   pageNavigationTarget: number | null;
+  viewportPreservationKey: number;
+  onViewportCaptureChange: (capture: (() => void) | null) => void;
   scrollResetKey: string;
   noMoreToLoad: boolean;
   onDeleteMessage: (messageId: number) => void;
@@ -521,6 +523,8 @@ function AnalysisMessagesPaneComponent({
   networkDisplayMap,
   pageIndex,
   pageNavigationTarget,
+  viewportPreservationKey,
+  onViewportCaptureChange,
   scrollResetKey,
   noMoreToLoad,
   onDeleteMessage,
@@ -571,6 +575,8 @@ function AnalysisMessagesPaneComponent({
   const preserveTargetAnchorRef = useRef(false);
   const viewportAnchorRef = useRef<MessageViewportAnchor | null>(null);
   const preserveViewportAnchorRef = useRef(false);
+  const refreshViewportAnchorActiveRef = useRef(false);
+  const viewportPreservationKeyRef = useRef(viewportPreservationKey);
   const clearTargetHighlightRef = useRef<(() => void) | null>(null);
   const currentUserLogin = authUserName?.trim() || currentUser?.name?.trim() || null;
 
@@ -635,6 +641,8 @@ function AnalysisMessagesPaneComponent({
 
   useEffect(() => {
     if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    refreshViewportAnchorActiveRef.current = false;
+    viewportAnchorRef.current = null;
   }, [scrollResetKey]);
 
   const handleLoadMoreMessages = useCallback(async () => {
@@ -688,12 +696,24 @@ function AnalysisMessagesPaneComponent({
     viewportAnchorRef.current = captureMessageViewportAnchor(container);
   }, []);
 
+  useLayoutEffect(() => {
+    onViewportCaptureChange(captureViewportAnchor);
+    return () => onViewportCaptureChange(null);
+  }, [captureViewportAnchor, onViewportCaptureChange]);
+
   const restoreViewportAnchor = useCallback(() => {
     const container = scrollContainerRef.current;
     const anchor = viewportAnchorRef.current;
     if (container == null || anchor == null) return;
     if (!restoreMessageViewportAnchor(container, anchor)) captureViewportAnchor();
   }, [captureViewportAnchor]);
+
+  useLayoutEffect(() => {
+    if (viewportPreservationKeyRef.current === viewportPreservationKey) return;
+    viewportPreservationKeyRef.current = viewportPreservationKey;
+    if (viewportAnchorRef.current == null) captureViewportAnchor();
+    refreshViewportAnchorActiveRef.current = viewportAnchorRef.current != null;
+  }, [captureViewportAnchor, viewportPreservationKey]);
 
   const restoreTargetAnchor = useCallback(() => {
     const container = scrollContainerRef.current;
@@ -840,6 +860,18 @@ function AnalysisMessagesPaneComponent({
   }, []);
 
   useLayoutEffect(() => {
+    if (refreshViewportAnchorActiveRef.current) {
+      const container = scrollContainerRef.current;
+      const anchor = viewportAnchorRef.current;
+      if (container != null && anchor != null) {
+        const restored = restoreMessageViewportAnchor(container, anchor);
+        if (!restored) {
+          refreshViewportAnchorActiveRef.current = false;
+          viewportAnchorRef.current = null;
+        }
+      }
+      return;
+    }
     if (directMessageNavigation == null) {
       targetAnchorCenterRef.current = null;
       centeredTargetIdRef.current = null;
@@ -883,7 +915,7 @@ function AnalysisMessagesPaneComponent({
     const container = scrollContainerRef.current;
     const messageList = container?.querySelector('ul');
     if (
-      directMessageNavigation == null ||
+      (directMessageNavigation == null && !refreshViewportAnchorActiveRef.current) ||
       container == null ||
       messageList == null ||
       typeof ResizeObserver === 'undefined'
@@ -891,6 +923,11 @@ function AnalysisMessagesPaneComponent({
       return;
     }
     const observer = new ResizeObserver(() => {
+      if (refreshViewportAnchorActiveRef.current) {
+        restoreViewportAnchor();
+        return;
+      }
+      if (directMessageNavigation == null) return;
       if (preserveViewportAnchorRef.current) {
         restoreViewportAnchor();
         return;
@@ -903,7 +940,14 @@ function AnalysisMessagesPaneComponent({
     observer.observe(messageList);
     for (const messageElement of messageList.children) observer.observe(messageElement);
     return () => observer.disconnect();
-  }, [centerTarget, directMessageNavigation, messages, restoreTargetAnchor, restoreViewportAnchor]);
+  }, [
+    centerTarget,
+    directMessageNavigation,
+    messages,
+    restoreTargetAnchor,
+    restoreViewportAnchor,
+    viewportPreservationKey,
+  ]);
 
   useLayoutEffect(() => {
     if (directMessageNavigation == null) {
@@ -961,6 +1005,7 @@ function AnalysisMessagesPaneComponent({
 
   useLayoutEffect(() => {
     if (pageNavigationTarget == null) return;
+    refreshViewportAnchorActiveRef.current = false;
     const container = scrollContainerRef.current;
     if (container == null) return;
     const targetLocalIndex =
@@ -997,6 +1042,7 @@ function AnalysisMessagesPaneComponent({
   }, [autoLoadCheckVersion, loadMessagesNearScrollBoundary, messages]);
 
   const clearFocusOnScrollStart = useCallback(() => {
+    refreshViewportAnchorActiveRef.current = false;
     captureViewportAnchor();
     preserveViewportAnchorRef.current = true;
     preserveTargetAnchorRef.current = false;

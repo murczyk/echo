@@ -238,6 +238,8 @@ export function AnalysisCenterPanel({
             networkDisplayMap={page.networkDisplayMap}
             pageIndex={page.pageIndex}
             pageNavigationTarget={page.messagePageNavigationTarget}
+            viewportPreservationKey={page.messageViewportPreservationKey}
+            onViewportCaptureChange={page.setMessageViewportCapture}
             onVisiblePageChange={page.setVisibleMessagesPageIndex}
             onPageNavigationHandled={page.clearMessagePageNavigationTarget}
             scrollResetKey={`${page.queryState.fromDateTimeStr}|${page.queryState.toDateTimeStr}`}

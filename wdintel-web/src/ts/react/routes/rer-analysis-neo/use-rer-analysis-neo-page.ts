@@ -98,6 +98,13 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
   const [messagePageNavigationTarget, setMessagePageNavigationTarget] = useState<number | null>(
     null,
   );
+  const [messageViewportPreservationKey, setMessageViewportPreservationKey] = useState(0);
+  const [messageViewportPreserving, setMessageViewportPreserving] = useState(false);
+  const messageViewportPreservationRequestRef = useRef(0);
+  const messageViewportCaptureRef = useRef<(() => void) | null>(null);
+  const setMessageViewportCapture = useCallback((capture: (() => void) | null) => {
+    messageViewportCaptureRef.current = capture;
+  }, []);
   const [visibleMessagesPageIndex, setVisibleMessagesPageIndexState] =
     useState(initialMessagesPageIndex);
   const setVisibleMessagesPageIndex = useCallback(
@@ -281,6 +288,26 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     shouldLoadNewCallsigns: rightPanelOpen && rightSidebarTab === 'newCallsigns',
     queryState,
   });
+  const reload = useCallback(
+    (options: Parameters<typeof data.reload>[0] = {}) => {
+      const requestId = messageViewportPreservationRequestRef.current + 1;
+      messageViewportPreservationRequestRef.current = requestId;
+      if (options.preserveMessagePage !== true) {
+        setMessageViewportPreserving(false);
+        data.reload(options);
+        return;
+      }
+      messageViewportCaptureRef.current?.();
+      setMessageViewportPreserving(true);
+      setMessageViewportPreservationKey((current) => current + 1);
+      void Promise.resolve(data.reload(options)).finally(() => {
+        if (messageViewportPreservationRequestRef.current === requestId) {
+          setMessageViewportPreserving(false);
+        }
+      });
+    },
+    [data.reload],
+  );
   const firstLoadedMessagesPageIndex = getFirstLoadedMessagesPageIndex(
     data.pageIndex,
     data.messages.length,
@@ -982,6 +1009,8 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     nolimitShown: data.nolimitShown,
     pageIndex: data.pageIndex,
     messagePageNavigationTarget,
+    messageViewportPreservationKey,
+    messageViewportPreserving,
     visibleMessagesPageIndex,
     newestFirst,
     options: data.options,
@@ -1056,7 +1085,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     refreshMapDateRange: data.refreshMapDateRange,
     setShowSettlements: data.setShowSettlements,
     renameSummaryUnit: data.renameSummaryUnit,
-    reload: data.reload,
+    reload,
     resetFilters,
     saveAsNew: savedFilters.saveAsNew,
     setIncludeOnlyNewFreqs,
@@ -1065,6 +1094,7 @@ export function useRerAnalysisNeoPage(authUserName: string | null): AnalysisPage
     setCenterTab,
     setNewestFirst,
     clearMessagePageNavigationTarget,
+    setMessageViewportCapture,
     setVisibleMessagesPageIndex,
     setRightSidebarTab,
     setSavedFilterName: savedFilters.setSavedFilterName,

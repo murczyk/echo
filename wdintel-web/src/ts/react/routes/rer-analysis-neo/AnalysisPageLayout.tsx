@@ -45,9 +45,11 @@ export function RerAnalysisNeoPage({ authUserName = null }: RerAnalysisNeoPagePr
     page.messages.some(
       ([messageId]) => messageId === page.directMessageNavigation?.targetMessageId,
     );
+  const keepMessageViewportVisible = page.messageViewportPreserving && page.messages.length > 0;
   const showLoadingSkeletons =
     page.error == null &&
     !keepDirectMessageVisible &&
+    !keepMessageViewportVisible &&
     (page.messagesLoading ||
       page.directMessageLoading ||
       (!page.hasLoadedInitialMessages && page.messages.length === 0));

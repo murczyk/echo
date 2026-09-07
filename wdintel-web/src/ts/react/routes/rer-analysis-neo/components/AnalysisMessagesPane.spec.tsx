@@ -180,6 +180,8 @@ function buildProps(
     networkDisplayMap: {},
     pageIndex: 0,
     pageNavigationTarget: null,
+    viewportPreservationKey: 0,
+    onViewportCaptureChange: vi.fn(),
     scrollResetKey: 'initial',
     noMoreToLoad: false,
     onDeleteMessage: vi.fn(),
@@ -1184,6 +1186,45 @@ describe('AnalysisMessagesPane', () => {
     });
 
     expect(scrollBox.scrollTop).toBe(960);
+    expect(anchor.getBoundingClientRect().top).toBe(20);
+  });
+
+  it('keeps the first visible message anchored when the current page is refreshed', async () => {
+    let captureViewport: (() => void) | null = null;
+    const initialProps = buildProps({
+      messages: [[7, buildMessage({ text: 'before refresh' })]],
+      onViewportCaptureChange: (capture) => {
+        captureViewport = capture;
+      },
+    });
+    const view = await renderComponent(initialProps);
+    rendered.push(view);
+
+    const anchor = view.container.querySelector<HTMLElement>('[data-message-id="7"]');
+    const scrollBox = anchor?.closest('ul')?.parentElement as HTMLElement | null;
+    if (anchor == null || scrollBox == null) throw new Error('Message scroll box is missing');
+    setScrollMetrics(scrollBox, { clientHeight: 600, scrollHeight: 3000, scrollTop: 700 });
+    scrollBox.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    let anchorLayoutTop = 720;
+    anchor.getBoundingClientRect = () =>
+      ({
+        top: anchorLayoutTop - scrollBox.scrollTop,
+        bottom: anchorLayoutTop - scrollBox.scrollTop + 100,
+      }) as DOMRect;
+    act(() => captureViewport?.());
+
+    anchorLayoutTop += 180;
+    await act(async () => {
+      view.root.render(
+        <AnalysisMessagesPane
+          {...initialProps}
+          viewportPreservationKey={1}
+          messages={[[7, buildMessage({ text: 'after refresh' })]]}
+        />,
+      );
+    });
+
+    expect(scrollBox.scrollTop).toBe(880);
     expect(anchor.getBoundingClientRect().top).toBe(20);
   });
 

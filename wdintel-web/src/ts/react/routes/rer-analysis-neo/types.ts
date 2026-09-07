@@ -233,6 +233,8 @@ export type AnalysisPageState = {
   nolimitShown: boolean;
   pageIndex: number;
   messagePageNavigationTarget: number | null;
+  messageViewportPreservationKey: number;
+  messageViewportPreserving: boolean;
   visibleMessagesPageIndex: number;
   newestFirst: boolean;
   unitsExactMatchOnlyDefault: boolean | null;
@@ -331,6 +333,7 @@ export type AnalysisPageActions = {
   setIncludeOnlyNewFreqs: (value: boolean) => void;
   setNewestFirst: (value: boolean) => void;
   clearMessagePageNavigationTarget: () => void;
+  setMessageViewportCapture: (capture: (() => void) | null) => void;
   setVisibleMessagesPageIndex: (pageIndex: number) => void;
   setRightSidebarTab: (tab: AnalysisSidebarTab) => void;
   toggleLeftPanel: () => void;

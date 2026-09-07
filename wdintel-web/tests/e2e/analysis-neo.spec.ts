@@ -428,6 +428,73 @@ test.describe('@smoke', () => {
       .toBe(0);
   });
 
+  test('analysis neo keeps the visible message anchored after using refresh', async ({ page }) => {
+    const initialPage = createOverflowingInboxResponse();
+    const refreshedPage = {
+      ...initialPage,
+      inbox_items: initialPage.inbox_items.map(([id, message], index) => [
+        id,
+        index === 0
+          ? {
+              ...message,
+              text: Array.from(
+                { length: 80 },
+                () => 'Refresh expansion changes the height above the visible message.',
+              ).join(' '),
+            }
+          : message,
+      ]),
+    } as typeof initialPage;
+    let refreshed = false;
+    let inboxRequestCount = 0;
+    await setupAnalysisNeoPage(page, { inboxResponse: initialPage });
+    await page.route('**/api/rer-importer/get-inbox', async (route) => {
+      inboxRequestCount += 1;
+      await route.fulfill({
+        contentType: 'application/json; charset=utf-8',
+        body: JSON.stringify(refreshed ? refreshedPage : initialPage),
+      });
+    });
+    await page.goto('/rer-analysis-neo');
+
+    const anchor = page.locator('[data-message-id="105"]');
+    const messageScrollContainer = anchor.locator('xpath=ancestor::ul/parent::*');
+    await expect(anchor).toBeVisible();
+    await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      container.scrollTop +=
+        element.getBoundingClientRect().top - container.getBoundingClientRect().top - 24;
+      container.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    const offsetBefore = await anchor.evaluate((element) => {
+      const container = element.closest('ul')?.parentElement;
+      if (container == null) throw new Error('Message scroll container is missing');
+      return Math.round(
+        element.getBoundingClientRect().top -
+          container.getBoundingClientRect().top -
+          container.clientTop,
+      );
+    });
+    refreshed = true;
+    await page.getByRole('button', { name: 'Оновити' }).click();
+    await expect.poll(() => inboxRequestCount).toBeGreaterThan(1);
+    await expect(messageScrollContainer).toBeVisible();
+    await expect
+      .poll(() =>
+        anchor.evaluate((element) => {
+          const container = element.closest('ul')?.parentElement;
+          if (container == null) return null;
+          return Math.round(
+            element.getBoundingClientRect().top -
+              container.getBoundingClientRect().top -
+              container.clientTop,
+          );
+        }),
+      )
+      .toBe(offsetBefore);
+  });
+
   test('analysis neo skeleton keeps an 8px narrow outer gutter', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 844 });
     await setupAnalysisNeoPage(page, {
