@@ -777,6 +777,24 @@ pub async fn bl_get_network_callsigns_list(
     .context(h!())?)
 }
 
+pub async fn bl_get_network_callsigns_list_without_activity(
+    req: &ListNetworkCallsignsReq,
+    user_id: &uuid::Uuid,
+    dbx: &DatabaseConnection,
+) -> Result<Vec<NetworkCallsign>, AppError> {
+    Ok(bl_get_network_callsigns_list_impl(
+        req,
+        user_id,
+        dbx,
+        None,
+        None,
+        Some(HashMap::new()),
+        false,
+    )
+    .await
+    .context(h!())?)
+}
+
 pub async fn bl_get_network_callsigns_list_with_activity_info(
     req: &ListNetworkCallsignsReq,
     user_id: &uuid::Uuid,
@@ -808,25 +826,6 @@ pub async fn bl_get_network_callsigns_list_with_activity_period(
         user_id,
         dbx,
         None,
-        Some(filter),
-        None,
-        true,
-    )
-    .await
-    .context(h!())?)
-}
-
-pub async fn bl_get_network_callsigns_list_for_period(
-    req: &ListNetworkCallsignsReq,
-    user_id: &uuid::Uuid,
-    dbx: &DatabaseConnection,
-    filter: &NetworkFreqFilter,
-) -> Result<Vec<NetworkCallsign>, AppError> {
-    Ok(bl_get_network_callsigns_list_impl(
-        req,
-        user_id,
-        dbx,
-        Some(filter),
         Some(filter),
         None,
         true,
