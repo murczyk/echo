@@ -168,6 +168,8 @@ export function useRerDutyInitialLoad(params: Params) {
           });
           current.setGroupInfos((previous) => ({ ...previous, ...groups }));
         }
+        const tail = items.at(-1);
+        return tail ? { id: tail[0], timestamp: tail[1].timestamp } : null;
       } catch (error) {
         if (current.getFeedLoadGeneration(feedId) !== requestGeneration) return;
         const currentFeed = current.messageFeedsRef.current.find(
@@ -190,6 +192,7 @@ export function useRerDutyInitialLoad(params: Params) {
             candidate.id === feedId ? { ...candidate, loading: false } : candidate,
           ),
         );
+        return null;
       }
     },
     [],

@@ -43,6 +43,10 @@ import type { MessageEntityFilterKind, TagsLayoutVariant } from './utils';
 import { feedListRenderStateEqual } from './utils';
 import { dutyTopScrollButtonSx } from './top-action-styles';
 import { useWindowedFeedScroll } from './useWindowedFeedScroll';
+import {
+  ScrollNavigationIntent,
+  type ExplicitScrollNavigation,
+} from './windowed-feed-scroll-shared';
 import { useFeedIdleViewportOffload } from './useFeedIdleViewportOffload';
 import { recordDutyScrollDebugTiming, useDutyScrollDebugEnabled } from './duty-scroll-debug';
 import { useFeedColumnFab } from './feedColumnFab';
@@ -72,6 +76,8 @@ function filterOwnMessageComments(
 export type FeedColumnContentScrollOptions = {
   /** Wake idle offload before scrolling (scroll FAB / arrow). Follow/settle omit this. */
   wakeIdleOffload?: boolean;
+  intent?: ScrollNavigationIntent;
+  navigation?: ExplicitScrollNavigation;
 };
 
 export type FeedColumnContentHandle = {
@@ -485,7 +491,7 @@ const FeedColumnScrollFab = memo(function FeedColumnScrollFab({
   if (
     !hasItems ||
     !isPresent(onArrowClick) ||
-    !(loadingNewer || !isPhysicallyAtBottom || tailAvailability === 'available')
+    !(!isPhysicallyAtBottom || tailAvailability === 'available')
   ) {
     return null;
   }
@@ -603,6 +609,7 @@ export const FeedColumnContent = memo(
       loadingNewer = false,
       physicallyAtBottom = true,
       isWatchMode = false,
+      autoScrollAllowed = false,
       unreadPrefetchNeeded = true,
       pendingNewerFlushNeeded = false,
       workspaceFabAvoidance = 'none',
@@ -664,6 +671,7 @@ export const FeedColumnContent = memo(
       itemIds,
       debugFeedId: feed.id,
       isWatchMode,
+      autoScrollAllowed,
       enabled: scrollTrackingEnabled,
       loadingOlder: feed.loadingOlder,
       loadingNewer,
@@ -722,7 +730,7 @@ export const FeedColumnContent = memo(
               idleOffload.wakeFromOffload();
             });
           }
-          scroll.scrollToBottom(behavior);
+          scroll.scrollToBottom(behavior, options?.intent, options?.navigation);
         },
       }),
       [idleOffload.wakeFromOffload, scroll.scrollToBottom],
@@ -874,6 +882,7 @@ export const FeedColumnContent = memo(
       prevView.canRemove !== nextView.canRemove ||
       prevView.maxWidth !== nextView.maxWidth ||
       prevView.isWatchMode !== nextView.isWatchMode ||
+      prevView.autoScrollAllowed !== nextView.autoScrollAllowed ||
       prevView.scrollTrackingEnabled !== nextView.scrollTrackingEnabled ||
       prevView.loadingNewer !== nextView.loadingNewer ||
       prevView.unreadPrefetchNeeded !== nextView.unreadPrefetchNeeded ||

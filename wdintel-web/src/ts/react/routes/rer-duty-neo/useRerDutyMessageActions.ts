@@ -35,7 +35,14 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     saveFilterNameByFeedId,
     setSaveFilterNameByFeedId,
     dutyDisableAutoScroll,
-    beginFollowTail,
+    beginExplicitNavigation,
+    isExplicitNavigationCurrent,
+    registerExplicitLanding,
+    registerExplicitLoading,
+    cancelExplicitNavigation,
+    registerExplicitScheduledWork,
+    clearExplicitScheduledWork,
+    getExplicitScrollNavigation,
     openPointsOnMap,
   } = deps;
 
@@ -71,7 +78,14 @@ export function useRerDutyMessageActions(deps: MessageActionsDeps) {
     requestValidatedInboxCount,
     catchUpFeedUnreadToTail,
     dutyDisableAutoScroll,
-    beginFollowTail,
+    beginExplicitNavigation,
+    isExplicitNavigationCurrent,
+    registerExplicitLanding,
+    registerExplicitLoading,
+    cancelExplicitNavigation,
+    registerExplicitScheduledWork,
+    clearExplicitScheduledWork,
+    getExplicitScrollNavigation,
     setMessageFeeds,
   });
 

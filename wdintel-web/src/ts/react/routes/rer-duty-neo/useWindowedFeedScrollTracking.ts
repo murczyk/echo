@@ -123,7 +123,10 @@ export function useWindowedFeedScrollTracking(args: {
         'pending-newer:idle-flush',
         `idleMs=${FLUSH_PENDING_SCROLL_IDLE_MS}`,
       );
-      onFlushPendingNewer();
+      onFlushPendingNewer({
+        physicallyAtBottom: refs.physicallyAtBottomRef.current === true,
+        visibleAnchorIds: refs.anchorSnapshotRef.current?.anchors.map((anchor) => anchor.id) ?? [],
+      });
     }, FLUSH_PENDING_SCROLL_IDLE_MS);
   }, [cancelFlushPendingIdle, captureAnchorSnapshot, debugFeedId, refs]);
 
@@ -200,14 +203,19 @@ export function useWindowedFeedScrollTracking(args: {
           `${wasPhysicallyAtBottom ?? '—'}→${physicallyAtBottom}; distance=${bottomDistance.toFixed(1)}`,
         );
         if (physicallyAtBottom && wasPhysicallyAtBottom !== true) {
-          const shouldFollow =
-            onReachedBottom?.({ hasSeenNotAtBottom: refs.hasSeenNotAtBottomRef.current }) !== false;
-          refs.liveBottomFollowRef.current = shouldFollow;
-          recordDutyScrollDebugEvent(
-            debugFeedId,
-            shouldFollow ? 'follow:enable' : 'follow:blocked',
-            `physical bottom reached; returned=${refs.hasSeenNotAtBottomRef.current}`,
-          );
+          if (!refs.autoScrollAllowedRef.current) {
+            refs.liveBottomFollowRef.current = false;
+          } else {
+            const shouldFollow =
+              onReachedBottom?.({ hasSeenNotAtBottom: refs.hasSeenNotAtBottomRef.current }) !==
+              false;
+            refs.liveBottomFollowRef.current = shouldFollow;
+            recordDutyScrollDebugEvent(
+              debugFeedId,
+              shouldFollow ? 'follow:enable' : 'follow:blocked',
+              `physical bottom reached; returned=${refs.hasSeenNotAtBottomRef.current}`,
+            );
+          }
         }
       }
 
@@ -306,15 +314,22 @@ export function useWindowedFeedScrollTracking(args: {
       const shouldFlushPending =
         nearBottom &&
         pendingNewerFlushNeeded &&
+        (opts.allowPendingFlush === true || refs.autoScrollAllowedRef.current) &&
         typeof refs.callbacksRef.current.onFlushPendingNewer === 'function';
       if (shouldFlushPending) {
         if (physicallyAtBottom) {
           cancelFlushPendingIdle();
           captureAnchorSnapshot();
           recordDutyScrollDebugEvent(debugFeedId, 'pending-newer:physical-flush', '');
-          refs.callbacksRef.current.onFlushPendingNewer?.();
-        } else {
+          refs.callbacksRef.current.onFlushPendingNewer?.({
+            physicallyAtBottom: true,
+            visibleAnchorIds:
+              refs.anchorSnapshotRef.current?.anchors.map((anchor) => anchor.id) ?? [],
+          });
+        } else if (!physicallyAtBottom) {
           scheduleFlushPendingIdle();
+        } else {
+          cancelFlushPendingIdle();
         }
       } else {
         cancelFlushPendingIdle();

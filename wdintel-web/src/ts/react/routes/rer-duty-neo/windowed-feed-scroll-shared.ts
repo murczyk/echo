@@ -18,8 +18,25 @@ export type AnchorSnapshot = {
 
 export type TopStatus = 'loading' | 'reached-start' | 'none';
 
+export enum ScrollNavigationIntent {
+  Initial = 'initial',
+  AutomaticFollow = 'automatic-follow',
+  Explicit = 'explicit',
+}
+
+/** A single explicit arrow navigation. The scroll owner is the only producer of landed. */
+export type ExplicitScrollNavigation = {
+  feedId: string;
+  generation: number;
+  targetId: number;
+  isCurrent: () => boolean;
+  onLanded: () => void;
+  onUnavailable: () => void;
+};
+
 export type FollowScrollWait = {
   debugReason: string;
+  intent: ScrollNavigationIntent;
   startedAtMs: number;
   lastHeight: number;
   stableFrames: number;
@@ -30,12 +47,17 @@ export type ScrollStateOpts = {
   allowLoadOlder?: boolean;
   allowLoadNewer?: boolean;
   allowTopReached?: boolean;
+  /** Buffered arrivals are consumed only in response to reader scroll input. */
+  allowPendingFlush?: boolean;
 };
 
 export type WindowedFeedScrollCallbacks = {
   onLoadOlder: () => void;
   onLoadNewer?: () => void;
-  onFlushPendingNewer?: () => void;
+  onFlushPendingNewer?: (context: {
+    physicallyAtBottom: boolean;
+    visibleAnchorIds: readonly number[];
+  }) => void;
   onScrollToTop?: () => void;
   onReachedBottom?: (context: { hasSeenNotAtBottom: boolean }) => boolean | void;
   onLeftBottom?: () => void;
@@ -64,6 +86,8 @@ export type UseWindowedFeedScrollOptions = {
   atBottomThresholdPx?: number;
   resetKey?: string | number | null;
   isWatchMode?: boolean;
+  /** Global authorization for automatic positioning. Explicit arrow navigation bypasses this. */
+  autoScrollAllowed?: boolean;
   enabled?: boolean;
   debugFeedId?: string;
   /**
@@ -73,7 +97,10 @@ export type UseWindowedFeedScrollOptions = {
   unreadPrefetchNeeded?: boolean;
   /** When true, flush buffered newer pages into the window after scroll idle. */
   pendingNewerFlushNeeded?: boolean;
-  onFlushPendingNewer?: () => void;
+  onFlushPendingNewer?: (context: {
+    physicallyAtBottom: boolean;
+    visibleAnchorIds: readonly number[];
+  }) => void;
 };
 
 export type WindowedFeedScrollHandle = {
@@ -81,7 +108,11 @@ export type WindowedFeedScrollHandle = {
   listRef: RefObject<HTMLDivElement>;
   handleScroll: UIEventHandler<HTMLDivElement>;
   setItemRef: (id: number) => (node: HTMLDivElement | null) => void;
-  scrollToBottom: (behavior?: ScrollBehavior) => void;
+  scrollToBottom: (
+    behavior?: ScrollBehavior,
+    intent?: ScrollNavigationIntent,
+    navigation?: ExplicitScrollNavigation,
+  ) => void;
 };
 
 export type WindowedFeedScrollRefs = {
@@ -113,13 +144,20 @@ export type WindowedFeedScrollRefs = {
   followAnimatingRef: MutableRefObject<boolean>;
   followScrollWaitRef: MutableRefObject<FollowScrollWait | null>;
   scheduleFollowScrollWhenStableRef: MutableRefObject<
-    ((debugReason: string, options?: { enableFollow?: boolean }) => void) | null
+    | ((
+        debugReason: string,
+        intent: ScrollNavigationIntent,
+        options?: { enableFollow?: boolean },
+        navigation?: ExplicitScrollNavigation,
+      ) => void)
+    | null
   >;
   isRestoringAnchorRef: MutableRefObject<boolean>;
   previousItemIdsRef: MutableRefObject<readonly number[]>;
   previousResetKeyRef: MutableRefObject<string | number | null>;
   previousTopStatusRef: MutableRefObject<TopStatus>;
   isWatchModeRef: MutableRefObject<boolean>;
+  autoScrollAllowedRef: MutableRefObject<boolean>;
   loadingNewerRef: MutableRefObject<boolean>;
   unreadPrefetchNeededRef: MutableRefObject<boolean>;
   pendingNewerFlushNeededRef: MutableRefObject<boolean>;

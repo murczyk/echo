@@ -598,7 +598,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
   });
 
-  it('marks previous-window unread as read when newer append start-trims them', async () => {
+  it('#3360 preserves previous-window unread identity through a buffered newer flush', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -630,6 +630,15 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems.map(([id]) => id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => DUTY_FEED_MESSAGE_WINDOW_LIMIT + index + 1),
+    );
+    await act(async () =>
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+      }),
+    );
     expect(apiRef.current!.messageFeeds[0].windowedUnreadItems.has(1)).toBe(false);
     expect(apiRef.current!.messageFeeds[0].readIds.has(1)).toBe(true);
 
@@ -649,7 +658,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     expect(feedIndicatorUnreadCount(apiRef.current!.messageFeeds[0])).toBe(20);
   });
 
-  it('retains immediately trimmed unread IDs from an oversized newer batch', async () => {
+  it('#3360 retains unread IDs after safely flushing an oversized newer batch', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -672,6 +681,13 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
       ),
     );
     await act(async () => apiRef.current!.loadFeedNewerMessages('mf-0'));
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems).toHaveLength(50);
+    await act(async () =>
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+      }),
+    );
     const feed = apiRef.current!.messageFeeds[0];
     expect(feed.items).toHaveLength(DUTY_FEED_MESSAGE_WINDOW_LIMIT);
     expect(feed.windowedUnreadItems).toEqual(
@@ -778,7 +794,7 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     );
   });
 
-  it('keeps returning seen chunk messages read when scrolling back toward newer messages', async () => {
+  it('#3360 keeps returning seen chunk messages read after flushing buffered newer messages', async () => {
     hoisted.fetchInboxMessages.mockResolvedValueOnce(
       inboxRsp(
         Array.from({ length: DUTY_FEED_MESSAGE_WINDOW_LIMIT }, (_, index) => [
@@ -824,6 +840,13 @@ describe('useRerDutyFeedState — initial loading and reloads', () => {
     await act(async () => {
       await apiRef.current!.loadFeedNewerMessages('mf-0');
     });
+    expect(apiRef.current!.messageFeeds[0].pendingNewerItems).toHaveLength(20);
+    await act(async () =>
+      apiRef.current!.flushPendingNewerMessages('mf-0', {
+        urgent: true,
+        allowWindowTrim: true,
+      }),
+    );
 
     const feed = apiRef.current!.messageFeeds[0];
     expect(feed.items.map(([id]) => id).slice(-3)).toEqual([58, 59, 60]);

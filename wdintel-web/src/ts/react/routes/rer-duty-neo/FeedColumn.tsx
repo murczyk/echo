@@ -26,6 +26,10 @@ import type { FeedColumnModel } from './types';
 import { DutyScrollDebugPanel } from './DutyScrollDebugPanel';
 import { registerDutyScrollDebugBellPress } from './duty-scroll-debug';
 import { clearFeedColumnFab, publishFeedColumnFab } from './feedColumnFab';
+import type {
+  ExplicitScrollNavigation,
+  ScrollNavigationIntent,
+} from './windowed-feed-scroll-shared';
 
 export type FeedColumnProps = {
   column: FeedColumnModel;
@@ -34,6 +38,8 @@ export type FeedColumnProps = {
 export type FeedColumnScrollOptions = {
   /** Wake idle offload before scrolling (scroll FAB / arrow). Follow/settle omit this. */
   wakeIdleOffload?: boolean;
+  intent?: ScrollNavigationIntent;
+  navigation?: ExplicitScrollNavigation;
 };
 
 export type FeedColumnHandle = {

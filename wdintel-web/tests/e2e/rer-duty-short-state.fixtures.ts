@@ -18,6 +18,7 @@ type ShortStateFixtureOptions = {
   signalGroups?: string[];
   tagsResponse?: unknown[];
   networkInfoResponse?: unknown[];
+  disableAutoScroll?: boolean;
 };
 
 type ShortStateFixtureHandle = {
@@ -52,10 +53,10 @@ function emptyUserResponse() {
   };
 }
 
-function emptyUserSettingsResponse() {
+function emptyUserSettingsResponse(disableAutoScroll = false) {
   return {
     tagsLayout: 'compact',
-    disableAutoScroll: false,
+    disableAutoScroll,
   };
 }
 
@@ -204,7 +205,7 @@ export async function installRerDutyShortStateMocks(
     }
 
     if (pathname === '/api/user/settings') {
-      await fulfillJson(route, emptyUserSettingsResponse());
+      await fulfillJson(route, emptyUserSettingsResponse(options.disableAutoScroll));
       return;
     }
 

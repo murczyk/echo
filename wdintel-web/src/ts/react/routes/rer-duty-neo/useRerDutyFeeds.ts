@@ -149,6 +149,12 @@ export function useRerDutyFeeds(
   const filterOpts = useRerDutyFilterOptions();
   const [pollIntervalSec, setPollIntervalSec] = useState(1);
   const dutySettings = useDutySettings();
+  // Until the persisted preference is known (or after it fails), Duty must not make an
+  // automatic positioning decision from the optimistic default.
+  const dutyDisableAutoScroll =
+    dutySettings.loadInProgress ||
+    dutySettings.loadError !== null ||
+    dutySettings.disableAutoScroll;
   const [callsignRetryVersion, setCallsignRetryVersion] = useState(0);
   const [knownGroupKeys, setKnownGroupKeys] = useState<string[]>([]);
   const loadingCallsignsRef = useRef<Set<string>>(new Set());
@@ -161,7 +167,7 @@ export function useRerDutyFeeds(
     setProfiles: filterOpts.setProfiles,
     setGroupInfos: filterOpts.setGroupInfos,
     pollIntervalSec,
-    disableAutoScroll: dutySettings.disableAutoScroll,
+    disableAutoScroll: dutyDisableAutoScroll,
     onFeedRemoved: filterOpts.pruneSavedFilterUiState,
   });
   const setFeedError = feedState.setError;
@@ -209,8 +215,11 @@ export function useRerDutyFeeds(
   }, []);
 
   useEffect(() => {
-    if (dutySettings.disableAutoScroll) feedState.setWatchModeByFeedId({});
-  }, [dutySettings.disableAutoScroll, feedState.setWatchModeByFeedId]);
+    if (dutyDisableAutoScroll) feedState.setWatchModeByFeedId({});
+  }, [dutyDisableAutoScroll, feedState.setWatchModeByFeedId]);
+  useEffect(() => {
+    if (dutySettings.loadError) feedState.setError(dutySettings.loadError);
+  }, [dutySettings.loadError, feedState.setError]);
 
   useInboxChangedMessageIds({
     onMessageIds: async (messageIds) => {
@@ -409,8 +418,15 @@ export function useRerDutyFeeds(
     setSelectedSavedIdByFeedId: filterOpts.setSelectedSavedIdByFeedId,
     saveFilterNameByFeedId: filterOpts.saveFilterNameByFeedId,
     setSaveFilterNameByFeedId: filterOpts.setSaveFilterNameByFeedId,
-    dutyDisableAutoScroll: dutySettings.disableAutoScroll,
-    beginFollowTail: feedState.beginFollowTail,
+    dutyDisableAutoScroll,
+    beginExplicitNavigation: feedState.beginExplicitNavigation,
+    isExplicitNavigationCurrent: feedState.isExplicitNavigationCurrent,
+    registerExplicitLanding: feedState.registerExplicitLanding,
+    registerExplicitLoading: feedState.registerExplicitLoading,
+    cancelExplicitNavigation: feedState.cancelExplicitNavigation,
+    registerExplicitScheduledWork: feedState.registerExplicitScheduledWork,
+    clearExplicitScheduledWork: feedState.clearExplicitScheduledWork,
+    getExplicitScrollNavigation: feedState.getExplicitScrollNavigation,
   });
 
   const freqs = useMemo(
@@ -461,6 +477,7 @@ export function useRerDutyFeeds(
     messageFeeds: feedState.messageFeeds,
     setMessageFeeds: feedState.setMessageFeeds,
     error: feedState.error,
+    errorNotificationVersion: feedState.errorNotificationVersion,
     clearDutyError: () => feedState.setError(null),
     authUserName,
     columnRefsRef: feedState.columnRefsRef,
@@ -472,7 +489,7 @@ export function useRerDutyFeeds(
     beginFollowTail: feedState.beginFollowTail,
     ensureFollowTail: feedState.ensureFollowTail,
     cancelFollowTail: feedState.cancelFollowTail,
-    dutyDisableAutoScroll: dutySettings.disableAutoScroll,
+    dutyDisableAutoScroll,
     createMessageFeed: feedState.createMessageFeed,
     removeMessageFeed: feedState.removeMessageFeed,
     loadFeedInitialMessages: feedState.loadFeedInitialMessages,

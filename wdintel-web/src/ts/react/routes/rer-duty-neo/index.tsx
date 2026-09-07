@@ -11,7 +11,6 @@ import { feedIndicatorUnreadCount } from './utils';
 import { useRerDutyFeeds } from './useRerDutyFeeds';
 import { useRerDutyPageSettings } from './useRerDutyPageSettings';
 import { useDutyFeedColumnModel } from './useDutyFeedColumnModel';
-import { PowerAlert } from '../../components/PowerAlert';
 import { usePowerSnackbar } from '../../components/PowerSnackbar';
 import { RerDutyNeoWorkspace } from './RerDutyNeoWorkspace';
 import type { InboxMessage } from '../../../../Bindings';
@@ -123,7 +122,7 @@ export function RerDutyNeoPage({
   const {
     messageFeeds,
     error,
-    clearDutyError,
+    errorNotificationVersion,
     columnRefsRef,
     nearBottomByFeedIdRef,
     confirmedTailPreviewByFeedId,
@@ -138,6 +137,17 @@ export function RerDutyNeoPage({
     setDeleteConfirmFeedId,
     deleteConfirmId,
   } = feeds;
+  const notifiedDutyErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!error) {
+      notifiedDutyErrorRef.current = null;
+      return;
+    }
+    const notificationKey = `${errorNotificationVersion}:${error}`;
+    if (notifiedDutyErrorRef.current === notificationKey) return;
+    notifiedDutyErrorRef.current = notificationKey;
+    notify({ message: error, severity: 'error' });
+  }, [error, errorNotificationVersion, notify]);
 
   const buildFeedColumnModel = useDutyFeedColumnModel({
     feeds,
@@ -264,18 +274,6 @@ export function RerDutyNeoPage({
       }}
     >
       <Box className="flex items-center justify-between flex-wrap gap-2 mb-2 shrink-0" />
-
-      {error ? (
-        <PowerAlert
-          severity="error"
-          className="mb-2 shrink-0"
-          onClose={() => clearDutyError()}
-          role="alert"
-          autoHideDuration={10000}
-        >
-          {error}
-        </PowerAlert>
-      ) : null}
 
       <PointBlacklistPaletteNamesCacheProvider>
         <AudioTranscriptionPreferencesProvider
