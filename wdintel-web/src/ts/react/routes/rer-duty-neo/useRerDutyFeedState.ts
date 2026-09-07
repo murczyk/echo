@@ -4,6 +4,8 @@ import { isNullOrUndefined } from '../../utils/misc';
 
 import type { SignalGroupEntry, SignalProfileEntry } from '../../../../Bindings';
 import { fetchInboxCount, fetchInboxMessages } from '../../services/api/inbox';
+import { isUnauthorizedError } from '../../services/api/client';
+import { AUTH_UNAUTHORIZED_EVENT } from '../../auth-redirect';
 import type { FeedColumnHandle } from './FeedColumn';
 import {
   buildInboxReq,
@@ -74,7 +76,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   });
   const [error, setError] = useState<string | null>(null);
   const pollingErrorRef = useRef<string | null>(null);
+  const authenticationFailedRef = useRef(false);
   const reportPollingFailure = useCallback((pollingError: unknown) => {
+    if (isUnauthorizedError(pollingError)) {
+      authenticationFailedRef.current = true;
+      return;
+    }
     if (pollingErrorRef.current !== null) return;
     const message = pollingError instanceof Error ? pollingError.message : String(pollingError);
     pollingErrorRef.current = message;
@@ -825,13 +832,16 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
   }, [messageFeeds, retainFeedIds]);
 
   const pollCountThenLoadNewerIfNeeded = useCallback(async () => {
+    if (authenticationFailedRef.current) return;
     if (activeCountPollPromiseRef.current) {
       countPollRerunRequestedRef.current = true;
       return activeCountPollPromiseRef.current;
     }
     const lifecycleGeneration = pollLifecycleGenerationRef.current;
     const isLifecycleCurrent = () =>
-      pollLifecycleMountedRef.current && pollLifecycleGenerationRef.current === lifecycleGeneration;
+      !authenticationFailedRef.current &&
+      pollLifecycleMountedRef.current &&
+      pollLifecycleGenerationRef.current === lifecycleGeneration;
     const run = async () => {
       if (!isLifecycleCurrent()) return;
       const participatingFeeds = [...messageFeedsRef.current];
@@ -1196,7 +1206,12 @@ export function useRerDutyFeedState(deps: FeedStateDeps) {
 
   useEffect(() => {
     pollLifecycleMountedRef.current = true;
+    const stopPolling = () => {
+      authenticationFailedRef.current = true;
+    };
+    window.addEventListener(AUTH_UNAUTHORIZED_EVENT, stopPolling);
     return () => {
+      window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, stopPolling);
       pollLifecycleMountedRef.current = false;
       pollLifecycleGenerationRef.current += 1;
       pollNotificationCyclesRef.current.forEach(cancelDutyNotificationPollCycle);
