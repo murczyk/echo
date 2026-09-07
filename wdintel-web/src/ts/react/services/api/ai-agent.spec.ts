@@ -31,6 +31,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// @test-scope parser: AI-agent API request and response mapping fixtures.
 describe('AI agent API mapping', () => {
   it('round-trips provider runtime profiles for allowed engines', async () => {
     const response = {

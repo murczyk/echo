@@ -192,48 +192,7 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
-  it('shows paginated transcription results with the processing instance', async () => {
-    mocks.listResults.mockResolvedValue({
-      rows: [
-        {
-          id: '01900000-0000-7000-8000-000000000002',
-          source_id: '01900000-0000-7000-8000-000000000003',
-          file_name: 'recording.mp3',
-          created_at: 1_700_000_000_000,
-          started_transcription_at: 1_700_000_001_000,
-          completion_time_seconds: 5,
-          status: 'completed',
-          transcribed_value: 'Розпізнаний текст',
-          error: null,
-          instance_id: instance.id,
-          instance_name: instance.name,
-        },
-      ],
-      total: 1,
-      has_more: false,
-      next_cursor: null,
-      previous_cursor: null,
-    });
-    const { container, root } = await renderPage();
-
-    await clickButton('Результати транскрибації');
-
-    expect(mocks.listResults).toHaveBeenCalledWith(
-      {
-        globalFilter: '',
-        columnFilters: [],
-        limit: 100,
-      },
-      expect.objectContaining({ signal: expect.anything() }),
-    );
-    expect(container.textContent).toContain('recording.mp3');
-    expect(container.textContent).toContain('00:00:05');
-    expect(container.textContent).toContain('Завершено');
-    expect(container.textContent).toContain('Розпізнаний текст');
-    expect(container.textContent).toContain(instance.name);
-    await act(async () => root.unmount());
-  });
-
+  // @test-scope safeguard: prevents an instance-table filter from being sent to the unrelated transcription-results query.
   it('does not send instance column filters to transcription results', async () => {
     const columnFilters = encodeURIComponent(JSON.stringify([{ id: 'name', value: 'GPU 1' }]));
     window.history.replaceState(
@@ -256,6 +215,7 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
+  // @test-scope safeguard: prevents a failed transcription-results request from leaving the operator without an error signal.
   it('shows transcription-result load failures in a toast', async () => {
     mocks.listResults.mockRejectedValue(new Error('results unavailable'));
     const { root } = await renderPage();
@@ -269,6 +229,7 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
+  // @test-scope safeguard: prevents cursor pagination from skipping or repeating transcription results between pages.
   it('uses the server cursor for the next transcription-results page', async () => {
     mocks.listResults
       .mockResolvedValueOnce({
@@ -302,6 +263,7 @@ describe('AdminTranscriptionSettingsPage', () => {
     await act(async () => root.unmount());
   });
 
+  // @test-scope safeguard: prevents the final transcription-results page from becoming unreachable when the response total changes.
   it('derives the last transcription-results page from the response total', async () => {
     const result = {
       id: '01900000-0000-7000-8000-000000000002',

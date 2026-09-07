@@ -29,6 +29,7 @@ function makeUnit(id: number, name: string): Unit {
   };
 }
 
+// @test-scope parser: unit records to selectable-option normalization fixtures.
 describe('buildSelectableUnitOptions', () => {
   it('drops blank names, trims labels, and keeps duplicate names by id', () => {
     const options = buildSelectableUnitOptions([
@@ -58,6 +59,7 @@ describe('buildSelectableUnitOptions', () => {
   });
 });
 
+// @test-scope parser: persisted unit-filter value normalization fixtures.
 describe('buildUnitFilterOptions', () => {
   it('uses stable ids as filter values', () => {
     const options = buildUnitFilterOptions([
@@ -78,6 +80,7 @@ describe('buildUnitFilterOptions', () => {
   });
 });
 
+// @test-scope parser: active and persisted unit lookup normalization fixture.
 describe('buildUnitLookupOptions', () => {
   it('adds only explicitly referenced inactive units to active options', () => {
     const options = buildUnitLookupOptions(
@@ -93,6 +96,7 @@ describe('buildUnitLookupOptions', () => {
   });
 });
 
+// @test-scope parser: persisted unit-filter value round-trip fixtures.
 describe('unitsFromNames / unitNamesFromUnits', () => {
   const options = buildUnitFilterOptions([makeUnit(2, '3 мсб'), makeUnit(4, '4 мсб')]);
 

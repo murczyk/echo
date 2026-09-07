@@ -106,6 +106,7 @@ describe('AdminApiIntegrationsPage', () => {
     await act(async () => root.unmount());
   });
 
+  // @test-scope safeguard: prevents accidental deletion of an API integration before the explicit confirmation action.
   it('deletes through the overflow action and confirmation dialog', async () => {
     const { container, root } = await renderPage();
 

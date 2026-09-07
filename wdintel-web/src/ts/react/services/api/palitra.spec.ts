@@ -14,6 +14,7 @@ import {
   resolvePalitraNames,
 } from './palitra';
 
+// @test-scope safeguard: preserves the login redirect for an unauthorized multipart upload.
 describe('palitra API 401 handling', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -39,6 +40,7 @@ describe('palitra API 401 handling', () => {
   });
 });
 
+// @test-scope safeguard: prevents role-restricted Palitra reference data from being requested or exposed.
 describe('palitra reference loading', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -104,6 +106,7 @@ describe('palitra reference loading', () => {
   });
 });
 
+// @test-scope parser: Palitra list API response mapping fixture.
 describe('palitra list normalization', () => {
   it('accepts the generated blacklist count and defaults older responses to zero', async () => {
     vi.stubGlobal(
@@ -122,6 +125,7 @@ describe('palitra list normalization', () => {
   });
 });
 
+// @test-scope parser: Palitra download API request mapping fixture.
 describe('palitra downloads', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -143,6 +147,7 @@ describe('palitra downloads', () => {
   });
 });
 
+// @test-scope parser: Palitra highlight-blacklist API request and response mapping fixtures.
 describe('palitra highlight blacklist', () => {
   beforeEach(() => vi.restoreAllMocks());
 
@@ -250,6 +255,7 @@ describe('palitra highlight blacklist', () => {
   });
 });
 
+// @test-scope parser: Palitra name-resolution API response mapping fixtures.
 describe('palitra name resolution', () => {
   beforeEach(() => vi.restoreAllMocks());
 

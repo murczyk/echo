@@ -201,6 +201,7 @@ describe('useDeviceFilesSync', () => {
     });
   });
 
+  // @test-scope safeguard: prevents duplicate file synchronization and silent row changes while a submitted batch is pending.
   it('blocks duplicate submit and row mutation while a request is in flight', async () => {
     const pending = deferred<SyncDeviceFilesRsp>();
     apiMock.syncDeviceFiles.mockReturnValue(pending.promise);
@@ -227,6 +228,7 @@ describe('useDeviceFilesSync', () => {
     });
   });
 
+  // @test-scope safeguard: prevents automatic retries from duplicating a file synchronization whose server outcome is unknown.
   it('does not retry an uncertain transport failure automatically', async () => {
     apiMock.syncDeviceFiles.mockRejectedValue(new HttpRequestError(0, 'network down'));
     await renderHarness();
@@ -245,6 +247,7 @@ describe('useDeviceFilesSync', () => {
     expect(onCommitted).toHaveBeenCalledTimes(1);
   });
 
+  // @test-scope safeguard: prevents edits or synchronization after the operator loses the device file-sync capability.
   it('blocks mutations after sync capability is revoked', async () => {
     await renderHarness();
     act(() => latest?.openSync());

@@ -9,6 +9,7 @@ vi.mock('./client', () => ({
 
 const postJsonMock = vi.mocked(postJson);
 
+// @test-scope parser: settlement API request mapping fixtures.
 describe('settlement API helpers', () => {
   beforeEach(() => {
     postJsonMock.mockReset();

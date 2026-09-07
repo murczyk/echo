@@ -29,8 +29,7 @@ vi.mock('../admin-system-settings-neo/AiEnginesSection', () => ({
   AiEnginesSection: () => null,
 }));
 
-import type { AiAgentAuditRequestDetail } from '../../services/api/ai-agent';
-import { AdminAiAgentPage, RequestDetailsDialog, requestDurationSeconds } from '.';
+import { AdminAiAgentPage } from '.';
 
 const ENGINE = {
   id: 'engine-1',
@@ -73,21 +72,6 @@ const SETTINGS = {
   mattermostWebhookUrl: '',
   clearMattermostWebhook: false,
 };
-
-describe('requestDurationSeconds', () => {
-  it('uses total elapsed request time and keeps active requests current', () => {
-    expect(
-      requestDurationSeconds({
-        createdAt: 1_000,
-        completedAt: 11_550,
-        state: 'completed',
-      }),
-    ).toBe(10.6);
-    expect(
-      requestDurationSeconds({ createdAt: 1_000, completedAt: null, state: 'running' }, 6_000),
-    ).toBe(5);
-  });
-});
 
 let container: HTMLDivElement;
 let root: Root;
@@ -202,29 +186,6 @@ describe('AdminAiAgentPage settings', () => {
     });
   });
 
-  it('places the Mattermost clear control before the chat toggle and webhook field', async () => {
-    mocks.getSettings.mockResolvedValueOnce({
-      ...SETTINGS,
-      mattermostWebhookConfigured: true,
-    });
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await act(async () => root.render(<AdminAiAgentPage section="settings" />));
-    await flush();
-
-    const labels = Array.from(container.querySelectorAll('label'));
-    const indexOfLabel = (text: string) =>
-      labels.findIndex((label) => label.textContent?.trim() === text);
-
-    expect(indexOfLabel('Очистити налаштований Mattermost webhook')).toBeLessThan(
-      indexOfLabel('Надсилати запити ШІ чату до Mattermost'),
-    );
-    expect(indexOfLabel('Надсилати запити ШІ чату до Mattermost')).toBeLessThan(
-      indexOfLabel('Mattermost webhook'),
-    );
-  });
-
   it('selects an HTTPS token reviewer after enabling asynchronous security review', async () => {
     const settings = {
       ...SETTINGS,
@@ -292,85 +253,5 @@ describe('AdminAiAgentPage settings', () => {
     await flush();
 
     expect(mocks.saveSettings).toHaveBeenCalledWith(incompatibleSettings);
-  });
-});
-
-describe('RequestDetailsDialog', () => {
-  it('shows stored technical details only when the request has an error', async () => {
-    const request: AiAgentAuditRequestDetail = {
-      id: 'request-1',
-      humanLoginId: 'human-1',
-      humanLogin: 'alice',
-      conversationId: 'conversation-1',
-      providerName: 'OpenAI',
-      state: 'failed',
-      prompt: 'сивый позивний',
-      response: null,
-      error: 'AI agent harness release is incompatible',
-      progress: [],
-      toolActivity: [],
-      createdAt: 1_700_000_000_000,
-      startedAt: 1_700_000_001_000,
-      completedAt: 1_700_000_002_000,
-      reviewState: 'pending',
-      severity: null,
-      reviewSummary: null,
-      reviewCategories: [],
-      reviewAttemptCount: 0,
-      reviewLastError: null,
-      alertState: null,
-      alertAttemptCount: 0,
-      alertLastError: null,
-      conversation: {
-        id: 'conversation-1',
-        title: 'Контекст',
-        providerId: 'engine-1',
-        createdAt: 1_700_000_000_000,
-        updatedAt: 1_700_000_002_000,
-        messages: [],
-      },
-    };
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await act(async () =>
-      root.render(
-        <RequestDetailsDialog request={request} onClose={vi.fn()} onReviewRetried={vi.fn()} />,
-      ),
-    );
-
-    expect(document.body.textContent).toContain('Технічні деталі помилки');
-    expect(document.body.textContent).toContain('AI agent harness release is incompatible');
-
-    await act(async () =>
-      root.render(
-        <RequestDetailsDialog
-          request={{ ...request, error: null }}
-          onClose={vi.fn()}
-          onReviewRetried={vi.fn()}
-        />,
-      ),
-    );
-
-    expect(document.body.textContent).not.toContain('Технічні деталі помилки');
-  });
-});
-
-describe('AdminAiAgentPage containers', () => {
-  it('renders containers in the standard table with the action column first', async () => {
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    await act(async () => root.render(<AdminAiAgentPage section="containers" />));
-    await flush();
-    await flush();
-
-    expect(container.querySelector('table')).not.toBeNull();
-    expect(mocks.listContainers).toHaveBeenCalledOnce();
-    const headers = Array.from(container.querySelectorAll('thead th')).map((header) =>
-      header.textContent?.trim(),
-    );
-    expect(headers.findIndex((header) => header === 'Дії')).toBeLessThan(
-      headers.findIndex((header) => header?.startsWith('Користувач')),
-    );
   });
 });

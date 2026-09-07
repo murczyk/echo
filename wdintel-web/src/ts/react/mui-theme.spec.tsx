@@ -194,20 +194,6 @@ describe('mui-theme', () => {
     expect(theme.breakpoints.values.lg).toBe(1200);
   });
 
-  it('uses the semantic dialog surface without an elevation image', () => {
-    const light = createNeoMuiTheme('light');
-    const dark = createNeoMuiTheme('dark');
-
-    expect(light.components.MuiDialog?.styleOverrides?.paper).toMatchObject({
-      backgroundColor: '#ffffff',
-      backgroundImage: 'none',
-    });
-    expect(dark.components.MuiDialog?.styleOverrides?.paper).toMatchObject({
-      backgroundColor: '#2c2c2e',
-      backgroundImage: 'none',
-    });
-  });
-
   it('creates a theme independently of document styles', () => {
     const before = createNeoMuiTheme('dark');
     document.documentElement.style.setProperty('--color-primary', '#123456');

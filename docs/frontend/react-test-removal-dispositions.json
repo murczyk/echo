@@ -2723,6 +2723,28 @@
       "recoveredTestFile": null
     },
     {
+      "originalFile": "src/ts/react/routes/rer-duty-neo/FeedColumn.spec.tsx",
+      "identity": "FeedColumn > renders the exact narrow notification label for %s",
+      "subsystem": "rer-duty-neo",
+      "disposition": "removed",
+      "reason": "Static accessibility-label assertion; notification-state safety remains covered by functional safeguards.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
+      "originalFile": "src/ts/react/utils/denseTableQuery.spec.ts",
+      "identity": "denseTableQuery",
+      "subsystem": "react-entrypoints-and-utilities",
+      "disposition": "removed",
+      "reason": "Isolated URL-helper mapping tests; no issue-linked page-level regression.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
       "originalFile": "src/ts/react/mui-theme.spec.tsx",
       "identity": "mui-theme > calibrates shared typography to the 14px application root",
       "subsystem": "react-entrypoints-and-utilities",
@@ -2877,6 +2899,28 @@
       "originatingEchoReference": null,
       "recoveryStatus": "audited-retained",
       "recoveredTestFile": "src/ts/react/routes/admin-ai-agent/__tests__/engine-eligibility.spec.ts"
+    },
+    {
+      "originalFile": "src/ts/react/mui-theme.spec.tsx",
+      "identity": "mui-theme > uses the semantic dialog surface without an elevation image",
+      "subsystem": "shared-routes",
+      "disposition": "removed",
+      "reason": "Static theme-style assertion; no operational failure mode.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
+      "originalFile": "src/ts/react/routes/admin-transcription-settings/index.spec.tsx",
+      "identity": "AdminTranscriptionSettingsPage > shows paginated transcription results with the processing instance",
+      "subsystem": "shared-routes",
+      "disposition": "removed",
+      "reason": "Static table-content assertion; pagination safety remains covered by cursor and last-page safeguards.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
     },
     {
       "originalFile": "src/ts/react/routes/admin-ai-agent/index.spec.tsx",
@@ -3098,13 +3142,13 @@
       "originalFile": "src/ts/react/routes/admin-ai-settlements/AiSettlementsTable.spec.tsx",
       "identity": "AiSettlementsTable > renders saved and temporary results in one column per selected engine",
       "subsystem": "admin-ai-settlements",
-      "disposition": "retained-and-moved",
-      "reason": "User-visible administration or maintenance workspace interaction safeguard.",
-      "behaviorReference": "admin-workspace-interaction-integrity",
-      "userVisibleOrAppearance": "user-visible",
+      "disposition": "removed",
+      "reason": "Static table-content assertion; no operational failure mode.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
       "originatingEchoReference": null,
-      "recoveryStatus": "audited-retained",
-      "recoveredTestFile": "src/ts/react/routes/admin-ai-settlements/__tests__/AiSettlementsTable.spec.tsx"
+      "recoveryStatus": "audited-removed",
+      "recoveredTestFile": null
     },
     {
       "originalFile": "src/ts/react/routes/admin-aor-neo/AorBattleLineWidget.spec.ts",
@@ -14624,6 +14668,61 @@
       "subsystem": "playwright",
       "disposition": "removed",
       "reason": "Static compiled-stylesheet assertion; not an admissible browser behavior regression.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
+      "originalFile": "src/ts/react/routes/admin-ai-agent/index.spec.tsx",
+      "identity": "requestDurationSeconds > uses total elapsed request time and keeps active requests current",
+      "subsystem": "shared-routes",
+      "disposition": "removed",
+      "reason": "Isolated duration-formatting helper assertion; no operational failure mode.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
+      "originalFile": "src/ts/react/routes/admin-ai-agent/index.spec.tsx",
+      "identity": "AdminAiAgentPage settings > places the Mattermost clear control before the chat toggle and webhook field",
+      "subsystem": "shared-routes",
+      "disposition": "removed",
+      "reason": "Static control-order assertion; no operational failure mode.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
+      "originalFile": "src/ts/react/routes/admin-ai-agent/index.spec.tsx",
+      "identity": "RequestDetailsDialog > shows stored technical details only when the request has an error",
+      "subsystem": "shared-routes",
+      "disposition": "removed",
+      "reason": "Static conditional rendering assertion without a linked regression or concrete safeguard.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
+      "originalFile": "src/ts/react/routes/admin-ai-agent/index.spec.tsx",
+      "identity": "AdminAiAgentPage containers > renders containers in the standard table with the action column first",
+      "subsystem": "shared-routes",
+      "disposition": "removed",
+      "reason": "Static table-layout assertion; no operational failure mode.",
+      "behaviorReference": null,
+      "userVisibleOrAppearance": "no",
+      "originatingEchoReference": null,
+      "recoveryStatus": "audited-removed"
+    },
+    {
+      "originalFile": "src/ts/react/routes/admin-ai-agent/url-state.spec.ts",
+      "identity": "readAiAgentRequestDeepLink",
+      "subsystem": "shared-routes",
+      "disposition": "removed",
+      "reason": "Isolated URL-helper mapping tests; no issue-linked page-level regression.",
       "behaviorReference": null,
       "userVisibleOrAppearance": "no",
       "originatingEchoReference": null,

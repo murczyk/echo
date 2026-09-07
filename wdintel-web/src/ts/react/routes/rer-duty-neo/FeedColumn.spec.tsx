@@ -384,6 +384,7 @@ describe('FeedColumn', () => {
     });
   });
 
+  // @test-scope safeguard: prevents failed notification persistence from falsely enabling alerts for a Duty feed.
   it('opens the panel and preserves Off when enabling notifications cannot be stored', async () => {
     notificationApi.setStored.mockReturnValue({ ok: false, error: 'quota exceeded' });
 
@@ -412,6 +413,7 @@ describe('FeedColumn', () => {
     expect(bell?.getAttribute('aria-pressed')).toBe('false');
   });
 
+  // @test-scope safeguard: prevents failed notification persistence from falsely disabling active Duty-feed alerts.
   it('opens the panel and preserves Ready when disabling notifications cannot be stored', async () => {
     notificationApi.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: true });
     notificationApi.getBellState.mockReturnValue('ready');
@@ -440,6 +442,7 @@ describe('FeedColumn', () => {
     expect(bell?.getAttribute('aria-pressed')).toBe('true');
   });
 
+  // @test-scope safeguard: prevents a recovered notification setting from leaving a stale failure visible to the operator.
   it('clears the storage error after a successful bell retry', async () => {
     notificationApi.setStored
       .mockReturnValueOnce({ ok: false, error: 'quota exceeded' })
@@ -469,6 +472,7 @@ describe('FeedColumn', () => {
     );
   });
 
+  // @test-scope safeguard: prevents an already mounted Duty feed from showing stale notification availability.
   it('refreshes the mounted bell after a notification-status transition', async () => {
     notificationApi.getStored.mockReturnValue({ soundEnabled: true, browserEnabled: false });
     notificationApi.getBellState.mockReturnValue('degraded');
@@ -491,25 +495,6 @@ describe('FeedColumn', () => {
     expect(
       container.querySelector('button[aria-label="Вимкнути сповіщення для стрічки"]'),
     ).not.toBeNull();
-  });
-
-  it.each([
-    ['off', 'Сповіщення — Увімкнути сповіщення для стрічки'],
-    ['ready', 'Сповіщення — Вимкнути сповіщення для стрічки'],
-    ['degraded', 'Сповіщення — Сповіщення потребують налаштування або взаємодії'],
-    ['unsupported', 'Сповіщення — Запитані сповіщення не підтримуються'],
-  ] as const)('renders the exact narrow notification label for %s', async (state, label) => {
-    notificationApi.getBellState.mockReturnValue(state);
-    const props = buildProps();
-    props.column.view.feedCount = 4;
-
-    await act(async () => {
-      root.render(<FeedColumn column={props.column} />);
-    });
-
-    const toggle = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
-    expect(toggle).not.toBeNull();
-    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
   });
 
   it('closes the filters panel on outside click', async () => {
