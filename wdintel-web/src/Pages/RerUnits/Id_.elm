@@ -19,6 +19,8 @@ import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path
 import Shared
+import Shared.Components.Button as Button
+import Shared.Components.ModalDialog as ModalDialog
 import Shared.Components.Spinner
 import Time
 import Utils.Api.ErrorHandling
@@ -74,6 +76,8 @@ type alias Model =
     , deviceNetworkDialogOpen : Bool
     , unitEditDialogOpen : Maybe UnitEditSection
     , unitUpdating : Bool
+    , unitDeleteDialogOpen : Bool
+    , unitDeleting : Bool
     , unitLabelInput : String
     , unitLabelSaving : Bool
     , unitLabelDeleting : Maybe Int
@@ -123,6 +127,8 @@ init _ route _ =
       , deviceNetworkDialogOpen = False
       , unitEditDialogOpen = Nothing
       , unitUpdating = False
+      , unitDeleteDialogOpen = False
+      , unitDeleting = False
       , unitLabelInput = ""
       , unitLabelSaving = False
       , unitLabelDeleting = Nothing
@@ -171,6 +177,10 @@ type Msg
     | UnitEditUpdated (Result ApiError B.Unit)
     | SetUnitActive Bool
     | UnitActiveUpdated (Result ApiError B.Unit)
+    | OpenUnitDeleteDialog
+    | CloseUnitDeleteDialog
+    | ConfirmUnitDelete
+    | UnitDeleted (Result ApiError B.Unit)
     | SetUnitLabelInput String
     | SubmitUnitLabel
     | UnitLabelCreated (Result ApiError B.UnitLabel)
@@ -246,6 +256,22 @@ update msg model =
 
         UnitActiveUpdated result ->
             unitActiveUpdated result model
+
+        OpenUnitDeleteDialog ->
+            ( { model | unitDeleteDialogOpen = True }, E.none )
+
+        CloseUnitDeleteDialog ->
+            if model.unitDeleting then
+                ( model, E.none )
+
+            else
+                ( { model | unitDeleteDialogOpen = False }, E.none )
+
+        ConfirmUnitDelete ->
+            confirmUnitDelete model
+
+        UnitDeleted result ->
+            unitDeleted result model
 
         SetUnitLabelInput value ->
             ( { model | unitLabelInput = value }, E.none )
@@ -620,6 +646,40 @@ unitActiveUpdated result model =
                     )
 
 
+confirmUnitDelete : Model -> ( Model, Effect Msg )
+confirmUnitDelete model =
+    case model.unitId of
+        Just unitId ->
+            if model.unitDeleting then
+                ( model, E.none )
+
+            else
+                ( { model | unitDeleting = True }
+                , E.sendCmd <| Api.sigint_unit_delete UnitDeleted unitId
+                )
+
+        Nothing ->
+            ( model, E.none )
+
+
+unitDeleted : Result ApiError B.Unit -> Model -> ( Model, Effect Msg )
+unitDeleted result model =
+    case result of
+        Err err ->
+            ( { model | unitDeleting = False }
+            , Utils.Api.ErrorHandling.formatErrorForShowErrorWithDetails "Помилка видалення підрозділу" err
+            )
+
+        Ok _ ->
+            ( model
+            , E.pushRoute
+                { path = Route.Path.RerUnitsNeo
+                , query = Dict.empty
+                , hash = Nothing
+                }
+            )
+
+
 submitUnitLabel : Model -> ( Model, Effect Msg )
 submitUnitLabel model =
     case model.unitId of
@@ -761,6 +821,7 @@ detailsView : Auth.User -> Shared.Model -> Model -> B.UnitDetailsRsp -> Html Msg
 detailsView user shared model details =
     div [ class "flex flex-col gap-4" ]
         [ detailsHeader user model details
+        , unitDeleteDialog model
         , deviceNetworkDialog model details
         , unitEditDialog model details.unit
         , orbitLinkDialog model details.unit
@@ -817,7 +878,16 @@ detailsHeader user model details =
                 [ i [ class "bi bi-arrow-left me-2" ] []
                 , text "До підрозділів"
                 ]
-            , h1 [ class "mb-0" ] [ text details.unit.name ]
+            , h1 [ class "mb-0 d-flex align-items-center gap-2" ]
+                [ text details.unit.name
+                , if details.unit.active then
+                    text ""
+
+                  else
+                    span
+                        [ class "badge rounded-pill text-bg-secondary fs-6 fw-normal" ]
+                        [ text "Неактивний" ]
+                ]
             ]
         , if Core.Auth.hasRole "UnitsEditor" user then
             unitActions model details
@@ -833,7 +903,13 @@ unitActions model details =
         [ button
             [ class "btn btn-sm btn-link text-secondary p-1"
             , type_ "button"
-            , disabled (model.unitEditDialogOpen /= Nothing || model.deviceNetworkDialogOpen || model.unitUpdating)
+            , disabled
+                (model.unitEditDialogOpen
+                    /= Nothing
+                    || model.deviceNetworkDialogOpen
+                    || model.unitUpdating
+                    || model.unitDeleteDialogOpen
+                )
             , attribute "data-bs-toggle" "dropdown"
             , attribute "aria-expanded" "false"
             , attribute "aria-label" "Дії з підрозділом"
@@ -864,6 +940,43 @@ unitActions model details =
                             "Активувати"
                         )
                     ]
+                ]
+            , li [] [ hr [ class "dropdown-divider" ] [] ]
+            , li []
+                [ button
+                    [ class "dropdown-item d-flex align-items-center gap-2 text-danger"
+                    , type_ "button"
+                    , onClick OpenUnitDeleteDialog
+                    ]
+                    [ i [ class "bi bi-trash" ] []
+                    , text "Видалити"
+                    ]
+                ]
+            ]
+        ]
+
+
+unitDeleteDialog : Model -> Html Msg
+unitDeleteDialog model =
+    ModalDialog.modalDialog model.unitDeleteDialogOpen CloseUnitDeleteDialog []
+        [ div [ class "p-6" ]
+            [ h2 [ class "text-xl font-semibold mb-4" ] [ text "Видалення підрозділу" ]
+            , p [ class "text-gray-600 mb-6" ] [ text "Ви впевнені, що хочете видалити цей підрозділ?" ]
+            , div [ class "flex justify-end gap-3" ]
+                [ Button.new { label = "Скасувати", onClick = CloseUnitDeleteDialog }
+                    |> Button.withStyleSecondary
+                    |> Button.withDisabled model.unitDeleting
+                    |> Button.view
+                , Button.new { label = "Видалити", onClick = ConfirmUnitDelete }
+                    |> Button.withStyleDanger
+                    |> Button.withDisabled model.unitDeleting
+                    |> (if model.unitDeleting then
+                            Button.withIcon [ Shared.Components.Spinner.loadingSpinner2Sm ]
+
+                        else
+                            identity
+                       )
+                    |> Button.view
                 ]
             ]
         ]

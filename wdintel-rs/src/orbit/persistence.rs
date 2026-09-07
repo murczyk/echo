@@ -291,11 +291,12 @@ where
         .await
         .c(h!())?;
     let dictionaries = DictionaryMaps::load(db).await.c(h!())?;
-    Ok(super::matching::TestLinkMatcher::from_models(
+    super::matching::TestLinkMatcher::from_models(
         units,
         &dictionaries,
         excluded_root_ids,
-    ))
+    )
+    .c(h!())
 }
 
 pub(super) async fn load_synced_source_units<C>(

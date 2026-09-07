@@ -146,10 +146,9 @@ async fn run_with_database(
 async fn print_dry_run_report(
     db: &sea_orm::DatabaseConnection,
 ) -> anyhow::Result<()> {
-    let (_, matcher) =
-        persistence::load_latest_test_link_matcher_with_sync(db)
-            .await
-            .c(h!())?;
+    let (_, matcher) = persistence::load_latest_test_link_matcher_with_sync(db)
+        .await
+        .c(h!())?;
     let system_login_id = crate::users::system_login_id(db).await.c(h!())?;
     let rows =
         load_duplicate_report_rows(db, &matcher, system_login_id, false, None)

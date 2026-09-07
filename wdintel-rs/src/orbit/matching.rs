@@ -4,9 +4,11 @@ use crate::config::{
     ORBIT_TEST_LINK_UNITS_NUMBER_MATCH_PENALTY,
 };
 use crate::entities::{orbit_unit, sigint_unit};
+use crate::h;
 use crate::orbit::dictionary::DictionaryMaps;
 use crate::orbit::types::SourceUnit;
 use crate::orbit::{echo_echelon, EchoEchelon};
+use anyhow::Context;
 use lazy_static::lazy_static;
 use regex::RegexBuilder;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -221,12 +223,12 @@ impl TestLinkMatcher {
         orbit_units: Vec<orbit_unit::Model>,
         dictionaries: &DictionaryMaps,
         excluded_root_ids: &BTreeSet<uuid::Uuid>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let orbit_units = orbit_units
             .into_iter()
             .map(|unit| (unit.unit_id, unit))
             .collect::<HashMap<_, _>>();
-        let mut descriptor_name_cache = HashMap::new();
+        let mut path_caches = ModelPathCaches::default();
         let mut roots = orbit_units
             .values()
             .filter(|unit| {
@@ -237,21 +239,22 @@ impl TestLinkMatcher {
         roots.sort_by_key(|unit| unit.unit_id);
         let candidates = roots
             .into_iter()
-            .filter_map(|unit| {
+            .map(|unit| {
                 let path = comparable_path_from_models(
                     unit,
                     &orbit_units,
                     dictionaries,
-                    &mut descriptor_name_cache,
+                    &mut path_caches,
                 )
-                .ok()?;
-                Some(TestLinkCandidate {
+                .context(h!())?;
+                Ok(TestLinkCandidate {
                     orbit_unit: source_unit_from_model(unit, dictionaries),
                     path,
                 })
             })
-            .collect();
-        Self::from_candidates(candidates)
+            .collect::<anyhow::Result<Vec<_>>>()
+            .context(h!())?;
+        Ok(Self::from_candidates(candidates))
     }
 
     fn from_candidates(candidates: Vec<TestLinkCandidate>) -> Self {
@@ -312,21 +315,21 @@ impl TestLinkMatcher {
         &self,
         sigint_hierarchy: &[(EchoEchelon, &str)],
     ) -> Vec<(&SourceUnit, u8)> {
-        let Some((echelon, name)) = first_test_link_echelon(sigint_hierarchy)
-        else {
+        let sigint_hierarchy = normalized_test_link_hierarchy(sigint_hierarchy);
+        let Some((echelon, name)) = sigint_hierarchy.first() else {
             return Vec::new();
         };
         let mut candidate_indices = self
             .exact_index
-            .get(&(echelon, name.clone()))
+            .get(&(*echelon, name.clone()))
             .into_iter()
             .flatten()
             .copied()
             .collect::<BTreeSet<_>>();
-        if let Some(number) = numbered_echelon_number(&name) {
+        if let Some(number) = numbered_echelon_number(name) {
             candidate_indices.extend(
                 self.number_index
-                    .get(&(echelon, number.to_string()))
+                    .get(&(*echelon, number.to_string()))
                     .into_iter()
                     .flatten()
                     .copied(),
@@ -336,14 +339,14 @@ impl TestLinkMatcher {
             .into_iter()
             .filter_map(|index| {
                 let candidate = &self.candidates[index];
-                test_link_rating(&candidate.path, sigint_hierarchy)
+                test_link_rating_normalized(&candidate.path, &sigint_hierarchy)
                     .map(|rating| (candidate, rating))
             })
             .collect::<Vec<_>>();
         matches
             .into_iter()
             .filter(|(candidate, _)| {
-                candidate.path.root_echelon == Some(echelon)
+                candidate.path.root_echelon == Some(*echelon)
             })
             .map(|(candidate, rating)| (&candidate.orbit_unit, rating))
             .collect()
@@ -387,16 +390,13 @@ impl TestLinkMatcher {
         orbit_unit_id: uuid::Uuid,
         normalized_sigint_full_name: &str,
     ) -> Option<(String, usize)> {
-        let candidate = &self.candidates[*self
-            .candidate_index_by_id
-            .get(&orbit_unit_id)?];
+        let candidate = &self.candidates
+            [*self.candidate_index_by_id.get(&orbit_unit_id)?];
         candidate
             .orbit_unit
             .operational_unit_name_full
             .iter()
-            .zip(std::iter::once(
-                &candidate.path.normalized_operational_name,
-            ))
+            .zip(std::iter::once(&candidate.path.normalized_operational_name))
             .chain(
                 candidate
                     .orbit_unit
@@ -462,18 +462,32 @@ fn index_test_link_candidate(
     }
 }
 
-fn first_test_link_echelon(
+fn normalized_test_link_hierarchy(
     sigint_hierarchy: &[(EchoEchelon, &str)],
-) -> Option<(EchoEchelon, String)> {
-    sigint_hierarchy.iter().find_map(|(echelon, name)| {
-        let name = normalize_sigint_name_for_echelon(*echelon, name);
-        (!name.is_empty()).then_some((*echelon, name))
-    })
+) -> Vec<(EchoEchelon, String)> {
+    sigint_hierarchy
+        .iter()
+        .filter_map(|(echelon, name)| {
+            let name = normalize_sigint_name_for_echelon(*echelon, name);
+            (!name.is_empty()).then_some((*echelon, name))
+        })
+        .collect()
 }
 
+#[cfg(test)]
 fn test_link_rating(
     path: &ComparablePath,
     sigint_hierarchy: &[(EchoEchelon, &str)],
+) -> Option<u8> {
+    test_link_rating_normalized(
+        path,
+        &normalized_test_link_hierarchy(sigint_hierarchy),
+    )
+}
+
+fn test_link_rating_normalized(
+    path: &ComparablePath,
+    sigint_hierarchy: &[(EchoEchelon, String)],
 ) -> Option<u8> {
     path.names_by_hierarchy
         .iter()
@@ -485,22 +499,17 @@ fn test_link_rating(
 
 fn test_link_hierarchy_rating(
     names_by_echelon: &HashMap<EchoEchelon, HashSet<String>>,
-    sigint_hierarchy: &[(EchoEchelon, &str)],
+    sigint_hierarchy: &[(EchoEchelon, String)],
 ) -> Option<u8> {
     let mut rating = ORBIT_TEST_LINK_UNITS_MAX_RATING;
     let mut has_echelon = false;
     for (echelon, sigint_name) in sigint_hierarchy {
-        let sigint_name =
-            normalize_sigint_name_for_echelon(*echelon, sigint_name);
-        if sigint_name.is_empty() {
-            continue;
-        }
         has_echelon = true;
         let orbit_names = names_by_echelon.get(echelon)?;
-        if names_match(*echelon, orbit_names, &sigint_name) {
+        if names_match(*echelon, orbit_names, sigint_name) {
             continue;
         }
-        let number = numbered_echelon_number(&sigint_name)?;
+        let number = numbered_echelon_number(sigint_name)?;
         if !orbit_names
             .iter()
             .filter_map(|name| leading_number(name))
@@ -952,35 +961,39 @@ fn comparable_path_from_models(
     unit: &orbit_unit::Model,
     units: &HashMap<uuid::Uuid, orbit_unit::Model>,
     dictionaries: &DictionaryMaps,
-    descriptor_name_cache: &mut HashMap<uuid::Uuid, HashSet<String>>,
+    path_caches: &mut ModelPathCaches,
 ) -> anyhow::Result<ComparablePath> {
-    let operational_full_name =
-        unit.operational_unit_name_full.as_deref().ok_or_else(|| {
-            anyhow::anyhow!("operational_unit_name_full is missing")
-        })?;
-    let operational_segments = split_path(operational_full_name);
+    let operational_full_name = unit
+        .operational_unit_name_full
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("operational_unit_name_full is missing"))
+        .context(h!())?;
+    let operational_segments =
+        path_caches.normalized_path(operational_full_name);
     let generative_segments = unit
         .generative_unit_name_full
         .as_deref()
-        .map(split_path)
+        .map(|name| path_caches.normalized_path(name))
         .unwrap_or_default();
     let operational_parents =
-        model_parent_chain(unit, ModelParentKind::Operational, units)?;
+        model_parent_chain(unit, ModelParentKind::Operational, units)
+            .context(h!())?;
     let generative_parents =
-        model_parent_chain(unit, ModelParentKind::Generative, units)?;
+        model_parent_chain(unit, ModelParentKind::Generative, units)
+            .context(h!())?;
     let operational_names = hierarchy_model_names_by_echelon(
         unit,
         &operational_parents,
         &operational_segments,
         dictionaries,
-        descriptor_name_cache,
+        path_caches,
     );
     let generative_names = hierarchy_model_names_by_echelon(
         unit,
         &generative_parents,
         &generative_segments,
         dictionaries,
-        descriptor_name_cache,
+        path_caches,
     );
     let operational = ModelHierarchy {
         parents: operational_parents,
@@ -997,7 +1010,7 @@ fn comparable_path_from_models(
         operational,
         generative,
         dictionaries,
-        descriptor_name_cache,
+        path_caches,
     );
     Ok(path)
 }
@@ -1044,7 +1057,8 @@ fn model_parent_chain<'a>(
                 root.unit_id,
                 kind.label()
             )
-        })?;
+        })
+        .context(h!())?;
         parent_id = kind.parent_id(parent);
         parents.push(parent);
     }
@@ -1057,15 +1071,59 @@ struct ModelHierarchy<'a> {
     names: HashMap<EchoEchelon, HashSet<String>>,
 }
 
+#[derive(Default)]
+struct ModelPathCaches {
+    descriptor_names: HashMap<uuid::Uuid, HashSet<String>>,
+    normalized_names: HashMap<String, String>,
+}
+
+impl ModelPathCaches {
+    fn normalized_name(&mut self, name: &str) -> String {
+        if let Some(normalized) = self.normalized_names.get(name) {
+            return normalized.clone();
+        }
+        let normalized = normalize_name(name);
+        self.normalized_names
+            .insert(name.to_string(), normalized.clone());
+        normalized
+    }
+
+    fn normalized_path(&mut self, path: &str) -> Vec<String> {
+        path.split(" / ")
+            .map(|segment| self.normalized_name(segment))
+            .filter(|segment| !segment.is_empty())
+            .collect()
+    }
+
+    fn descriptor_names(
+        &mut self,
+        unit: &orbit_unit::Model,
+    ) -> HashSet<String> {
+        if let Some(names) = self.descriptor_names.get(&unit.unit_id) {
+            return names.clone();
+        }
+        let names: HashSet<String> = unit
+            .unit_name_short
+            .iter()
+            .chain(&unit.unit_name)
+            .chain(&unit.unit_name_original)
+            .chain(&unit.unit_number)
+            .chain(unit.unit_alternate_names.iter().flatten())
+            .map(|name| self.normalized_name(name))
+            .collect();
+        self.descriptor_names.insert(unit.unit_id, names.clone());
+        names
+    }
+}
+
 fn comparable_model_path_fields(
     unit: &orbit_unit::Model,
     operational: ModelHierarchy<'_>,
     generative: ModelHierarchy<'_>,
     dictionaries: &DictionaryMaps,
-    descriptor_name_cache: &mut HashMap<uuid::Uuid, HashSet<String>>,
+    path_caches: &mut ModelPathCaches,
 ) -> ComparablePath {
-    let mut root_names =
-        cached_model_descriptor_names(unit, descriptor_name_cache);
+    let mut root_names = path_caches.descriptor_names(unit);
     if let Some(root_segment) = operational.segments.first() {
         root_names.insert(root_segment.clone());
     }
@@ -1105,10 +1163,7 @@ fn comparable_model_path_fields(
         .chain(operational.parents.iter().copied())
         .chain(generative.parents.iter().copied())
     {
-        all_names.extend(cached_model_descriptor_names(
-            descriptor,
-            descriptor_name_cache,
-        ));
+        all_names.extend(path_caches.descriptor_names(descriptor));
     }
     let mut names_by_hierarchy = vec![operational.names];
     if unit.generative_unit_name_full.is_some()
@@ -1132,7 +1187,7 @@ fn hierarchy_model_names_by_echelon(
     parents: &[&orbit_unit::Model],
     segments: &[String],
     dictionaries: &DictionaryMaps,
-    descriptor_name_cache: &mut HashMap<uuid::Uuid, HashSet<String>>,
+    path_caches: &mut ModelPathCaches,
 ) -> HashMap<EchoEchelon, HashSet<String>> {
     let descriptors = std::iter::once(unit)
         .chain(parents.iter().copied())
@@ -1143,8 +1198,7 @@ fn hierarchy_model_names_by_echelon(
     }
     let mut segment_offset = 1;
     for (index, descriptor) in descriptors.iter().enumerate().skip(1) {
-        let names =
-            cached_model_descriptor_names(descriptor, descriptor_name_cache);
+        let names = path_caches.descriptor_names(descriptor);
         if names.is_empty() || segment_offset >= segments.len() {
             continue;
         }
@@ -1165,10 +1219,7 @@ fn hierarchy_model_names_by_echelon(
         .enumerate()
         .filter_map(|(index, descriptor)| {
             let echelon = model_echelon(descriptor, dictionaries)?;
-            let mut names = cached_model_descriptor_names(
-                descriptor,
-                descriptor_name_cache,
-            );
+            let mut names = path_caches.descriptor_names(descriptor);
             if let Some(segment) = segment_indices[index]
                 .and_then(|segment_index| segments.get(segment_index))
             {
@@ -1189,26 +1240,6 @@ fn model_echelon(
     dictionaries
         .unit_echelon_key(unit.unit_echelon_id)
         .and_then(echo_echelon)
-}
-
-fn cached_model_descriptor_names(
-    unit: &orbit_unit::Model,
-    cache: &mut HashMap<uuid::Uuid, HashSet<String>>,
-) -> HashSet<String> {
-    if let Some(names) = cache.get(&unit.unit_id) {
-        return names.clone();
-    }
-    let names: HashSet<String> = unit
-        .unit_name_short
-        .iter()
-        .chain(&unit.unit_name)
-        .chain(&unit.unit_name_original)
-        .chain(&unit.unit_number)
-        .chain(unit.unit_alternate_names.iter().flatten())
-        .map(|name| normalize_name(name))
-        .collect();
-    cache.insert(unit.unit_id, names.clone());
-    names
 }
 
 fn hierarchy_names_by_echelon_with_cache(
@@ -1444,9 +1475,8 @@ pub(super) fn normalize_sigint_name_for_echelon(
 }
 
 fn normalize_army_name(value: &str) -> String {
-    let value = normalize_name(value);
     let Some((number, suffix)) = value.split_once(' ') else {
-        return value;
+        return value.to_string();
     };
     if number.chars().all(|character| character.is_ascii_digit())
         && (suffix.ends_with('а')
@@ -1455,7 +1485,7 @@ fn normalize_army_name(value: &str) -> String {
     {
         format!("{number} а")
     } else {
-        value
+        value.to_string()
     }
 }
 
@@ -2037,6 +2067,118 @@ mod tests {
     }
 
     #[test]
+    fn flat_model_matcher_matches_nested_source_units() {
+        let root_id = Uuid::from_u128(1);
+        let brigade_id = Uuid::from_u128(2);
+        let army_id = Uuid::from_u128(3);
+        let battalion_echelon_id = Uuid::from_u128(11);
+        let brigade_echelon_id = Uuid::from_u128(12);
+        let army_echelon_id = Uuid::from_u128(13);
+        let mut source = source_unit(
+            "1 мсб / 4 омсбр / 3 ЗВА",
+            vec![
+                ("battalion", "1 мсб", 2),
+                ("brigade", "4 омсбр", 1),
+                ("fieldArmy", "3 ЗВА", 0),
+            ],
+        );
+        source.unit_id = root_id;
+        source.operational_parent_units[0].unit_id = brigade_id;
+        source.operational_parent_units[1].unit_id = army_id;
+        let dictionaries = DictionaryMaps::for_unit_echelons([
+            (battalion_echelon_id, "battalion"),
+            (brigade_echelon_id, "brigade"),
+            (army_echelon_id, "fieldArmy"),
+        ]);
+        let models = vec![
+            orbit_model(
+                root_id,
+                "1 мсб",
+                Some("1 мсб / 4 омсбр / 3 ЗВА"),
+                battalion_echelon_id,
+                Some(brigade_id),
+                true,
+            ),
+            orbit_model(
+                brigade_id,
+                "4 омсбр",
+                None,
+                brigade_echelon_id,
+                Some(army_id),
+                false,
+            ),
+            orbit_model(army_id, "3 ЗВА", None, army_echelon_id, None, false),
+        ];
+        let nested_matcher =
+            TestLinkMatcher::new(std::slice::from_ref(&source));
+        let flat_matcher = TestLinkMatcher::from_models(
+            models.clone(),
+            &dictionaries,
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        let hierarchy = [
+            (EchoEchelon::Battalion, "1 мсб"),
+            (EchoEchelon::Brigade, "4 омсбр"),
+            (EchoEchelon::Army, "3 А"),
+        ];
+
+        let nested_matches = nested_matcher
+            .potential_matches(&hierarchy)
+            .into_iter()
+            .map(|(unit, rating)| (unit.unit_id, rating))
+            .collect::<Vec<_>>();
+        let flat_matches = flat_matcher
+            .potential_matches(&hierarchy)
+            .into_iter()
+            .map(|(unit, rating)| (unit.unit_id, rating))
+            .collect::<Vec<_>>();
+        assert_eq!(flat_matches, nested_matches);
+
+        let mut sigint_unit = echo_unit("", "1 мсб", "", "", "3 А");
+        sigint_unit.brigade = "4 омсбр".to_string();
+        assert_eq!(
+            flat_matcher
+                .closest_matches(&sigint_unit)
+                .into_iter()
+                .map(|unit| unit.unit_id)
+                .collect::<Vec<_>>(),
+            nested_matcher
+                .closest_matches(&sigint_unit)
+                .into_iter()
+                .map(|unit| unit.unit_id)
+                .collect::<Vec<_>>()
+        );
+        assert!(TestLinkMatcher::from_models(
+            models.clone(),
+            &dictionaries,
+            &BTreeSet::from([root_id]),
+        )
+        .unwrap()
+        .matchable_units()
+        .next()
+        .is_none());
+
+        let mut missing_parent = models.clone();
+        missing_parent[0].operational_parent_unit_id = Some(Uuid::from_u128(4));
+        assert!(TestLinkMatcher::from_models(
+            missing_parent,
+            &dictionaries,
+            &BTreeSet::new(),
+        )
+        .is_err());
+
+        let mut parent_cycle = models;
+        parent_cycle[2].operational_parent_unit_id = Some(root_id);
+        assert!(TestLinkMatcher::from_models(
+            parent_cycle,
+            &dictionaries,
+            &BTreeSet::new(),
+        )
+        .is_err());
+    }
+
+    #[test]
     fn parent_path_name_does_not_match_descendant_as_root() {
         let unit = source_unit(
             "2 мсб / 1111 бр",
@@ -2295,6 +2437,36 @@ mod tests {
             operational_parent_units: vec![],
             generative_parent_units: vec![],
             path_level: Some(path_level),
+        }
+    }
+
+    fn orbit_model(
+        unit_id: Uuid,
+        name: &str,
+        operational_full_name: Option<&str>,
+        unit_echelon_id: Uuid,
+        operational_parent_unit_id: Option<Uuid>,
+        is_snapshot_root: bool,
+    ) -> orbit_unit::Model {
+        orbit_unit::Model {
+            unit_id,
+            unit_name: Some(name.to_string()),
+            unit_name_original: None,
+            unit_name_short: Some(name.to_string()),
+            operational_unit_name_full: operational_full_name
+                .map(str::to_string),
+            generative_unit_name_full: None,
+            unit_number: None,
+            unit_alternate_names: None,
+            unit_alternate_numbers: None,
+            unit_echelon_id: Some(unit_echelon_id),
+            combat_unit_type_id: None,
+            generative_parent_unit_id: None,
+            operational_parent_unit_id,
+            deleted: false,
+            created_at: Utc::now().naive_utc(),
+            updated_at: Utc::now().naive_utc(),
+            is_snapshot_root,
         }
     }
 
