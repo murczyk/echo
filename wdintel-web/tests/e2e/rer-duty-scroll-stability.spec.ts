@@ -314,19 +314,25 @@ test('#3360 uses a verified nonanimated landing when reduced motion is preferred
   await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
-test('#3360 keeps an OFF feed anchored at the physical bottom when a background arrival is buffered', async ({
+test('#3360 makes OFF arrivals at the physical bottom reachable by scrolling downward', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  const newerRequestStarted = createDeferred<void>();
-  const newerResponse = createDeferred<InboxMessagesRspRaw>();
+  const firstNewerRequestStarted = createDeferred<void>();
+  const firstNewerResponse = createDeferred<InboxMessagesRspRaw>();
+  const secondNewerRequestStarted = createDeferred<void>();
+  const secondNewerResponse = createDeferred<InboxMessagesRspRaw>();
   await installRerDutyShortStateMocks(page, {
     disableAutoScroll: true,
     inboxCountResponseForRequest: () => ({ quantity: 1, first_element_ts: null }),
     inboxResponseForRequest: (requestBody) => {
       if (readSinceId(requestBody) === 40) {
-        newerRequestStarted.resolve();
-        return newerResponse.promise;
+        firstNewerRequestStarted.resolve();
+        return firstNewerResponse.promise;
+      }
+      if (readSinceId(requestBody) === 41) {
+        secondNewerRequestStarted.resolve();
+        return secondNewerResponse.promise;
       }
       if (readSinceId(requestBody) !== null) return buildInboxResponse([]);
       return buildInboxResponse(Array.from({ length: 40 }, (_, index) => index + 1));
@@ -341,13 +347,29 @@ test('#3360 keeps an OFF feed anchored at the physical bottom when a background 
   const anchorBefore = await readVisibleAnchor(scroller);
   const anchor = list.locator(`[data-duty-message-id="${anchorBefore.id}"]`);
   const anchorOffset = await readAnchorOffset(anchor);
-  await newerRequestStarted.promise;
+  await firstNewerRequestStarted.promise;
 
-  newerResponse.resolve(buildInboxResponse([41]));
-  await expect(page.locator('[data-duty-feed-scroll-button]')).toBeVisible();
-  await expect(list.locator('[data-duty-message-id="41"]')).toHaveCount(0);
-  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+  firstNewerResponse.resolve(buildInboxResponse([41]));
+  await expect(list.locator('[data-duty-message-id="41"]')).toBeAttached();
   await expect.poll(() => readAnchorOffset(anchor)).toBeCloseTo(anchorOffset, 0);
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+
+  await scroller.hover();
+  await page.mouse.wheel(0, 2_000);
+  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
+  await secondNewerRequestStarted.promise;
+
+  const secondAnchorBefore = await readVisibleAnchor(scroller);
+  const secondAnchor = list.locator(`[data-duty-message-id="${secondAnchorBefore.id}"]`);
+  const secondAnchorOffset = await readAnchorOffset(secondAnchor);
+  secondNewerResponse.resolve(buildInboxResponse([42]));
+
+  await expect(list.locator('[data-duty-message-id="42"]')).toBeAttached();
+  await expect.poll(() => readAnchorOffset(secondAnchor)).toBeCloseTo(secondAnchorOffset, 0);
+  await expect.poll(() => readBottomDistance(scroller)).toBeGreaterThan(1);
+  await scroller.hover();
+  await page.mouse.wheel(0, 2_000);
+  await expect.poll(() => readBottomDistance(scroller)).toBeLessThanOrEqual(1);
 });
 
 test('#3360 lets manual OFF reading reveal buffered arrivals without following them', async ({
@@ -373,7 +395,7 @@ test('#3360 lets manual OFF reading reveal buffered arrivals without following t
   const scroller = page.locator('[data-duty-feed-scroller="true"]');
   const list = page.locator('[data-duty-feed-list="true"]');
   await expect(list.locator('[data-duty-message-id="40"]')).toBeAttached();
-  await setBottomDistance(scroller, 0);
+  await setBottomDistance(scroller, 200);
   await newerRequestStarted.promise;
   newerResponse.resolve(buildInboxResponse([41]));
   await expect(list.locator('[data-duty-message-id="41"]')).toHaveCount(0);

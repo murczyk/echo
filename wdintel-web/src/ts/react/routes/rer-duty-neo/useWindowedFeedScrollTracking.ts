@@ -314,7 +314,9 @@ export function useWindowedFeedScrollTracking(args: {
       const shouldFlushPending =
         nearBottom &&
         pendingNewerFlushNeeded &&
-        (opts.allowPendingFlush === true || refs.autoScrollAllowedRef.current) &&
+        (opts.allowPendingFlush === true ||
+          refs.autoScrollAllowedRef.current ||
+          physicallyAtBottom) &&
         typeof refs.callbacksRef.current.onFlushPendingNewer === 'function';
       if (shouldFlushPending) {
         if (physicallyAtBottom) {
