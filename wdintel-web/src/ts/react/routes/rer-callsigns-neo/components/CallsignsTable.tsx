@@ -490,7 +490,10 @@ function CallsignsTableComponent({
     columnFilterDisplayMode: 'popover',
     muiFilterTextFieldProps: ({ column }) => ({
       ...getSharedFilterTextFieldProps(column.columnDef.filterVariant),
-      helperText: getFilterModeHelperText(column.columnDef.filterVariant),
+      helperText:
+        column.id === 'unit'
+          ? 'Починається з'
+          : getFilterModeHelperText(column.columnDef.filterVariant),
     }),
     onColumnVisibilityChange: tableStateContext.onColumnVisibilityChange,
     onColumnOrderChange: tableStateContext.onColumnOrderChange,

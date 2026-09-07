@@ -348,7 +348,7 @@ async fn list_callsigns_impl(
         if !filter_unit.is_empty() {
             callsigns = callsigns.filter(Expr::cust_with_values(
                 "lower(sigint_unit.name collate \"ru-x-icu\") ilike $1",
-                vec![format!("%{}%", filter_unit.to_lowercase())],
+                vec![format!("{}%", filter_unit.to_lowercase())],
             ));
         }
     }
@@ -1761,6 +1761,33 @@ mod tests {
         req.filter_unit_military_district = Some("D1".to_string());
         req.filter_unit_army = Some("A".to_string());
         req.filter_unit_division = Some("3".to_string());
+
+        let callsigns = list_callsigns_impl(&env.dbx, &req).await.unwrap();
+
+        assert_eq!(callsigns.len(), 1);
+        assert_eq!(callsigns[0].callsign, "alpha");
+    }
+
+    #[serial]
+    #[tokio::test]
+    async fn test_list_callsigns_unit_filter_prefix_with_hierarchy_echo_3387() {
+        let env = cleanup().await.unwrap();
+        let login = find_test_login(&env.dbx).await.unwrap();
+        let now = Utc::now().naive_utc();
+        let matching_unit =
+            insert_test_unit(&env.dbx, &login.id, "мсб 15 тп 69 мсд 6 А").await;
+        let infix_unit =
+            insert_test_unit(&env.dbx, &login.id, "1 мсб 15 тп 69 мсд 6 А")
+                .await;
+
+        insert_test_callsign(&env.dbx, matching_unit.id, "alpha", now, "")
+            .await;
+        insert_test_callsign(&env.dbx, infix_unit.id, "bravo", now, "").await;
+
+        let mut req =
+            list_req(None, Some(100), ListCallsignsSortBy::CallsignAsc);
+        req.filter_unit = Some("мсб".to_string());
+        req.filter_unit_regiment = Some("R".to_string());
 
         let callsigns = list_callsigns_impl(&env.dbx, &req).await.unwrap();
 

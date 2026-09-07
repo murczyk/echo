@@ -166,8 +166,6 @@ export function useRerCallsignsNeoPageActions({
             if (next.filterUnit.trim() !== selectedSidebarUnitFilter.unitName) {
               setSelectedSidebarUnitFilter(null);
             }
-          } else if (next.filterUnit.trim() !== '') {
-            setSelectedSidebarUnitFilter(null);
           }
         }
         return next;
@@ -467,7 +465,12 @@ export function useRerCallsignsNeoPageActions({
         const nextSelected = areSidebarFiltersEqual(prevSelected, filter) ? null : filter;
         setFilters((prev) => ({
           ...prev,
-          filterUnit: nextSelected?.kind === 'leaf' ? nextSelected.unitName : '',
+          filterUnit:
+            nextSelected?.kind === 'leaf'
+              ? nextSelected.unitName
+              : prevSelected?.kind === 'leaf'
+                ? ''
+                : prev.filterUnit,
         }));
         return nextSelected;
       });
@@ -476,11 +479,15 @@ export function useRerCallsignsNeoPageActions({
   );
 
   const onClearUnitFilter = useCallback(() => {
-    setSelectedSidebarUnitFilter(null);
-    setFilters((prev) => ({
-      ...prev,
-      filterUnit: '',
-    }));
+    setSelectedSidebarUnitFilter((prevSelected) => {
+      if (!prevSelected || prevSelected.kind === 'leaf') {
+        setFilters((prev) => ({
+          ...prev,
+          filterUnit: '',
+        }));
+      }
+      return null;
+    });
   }, [setFilters, setSelectedSidebarUnitFilter]);
 
   return {

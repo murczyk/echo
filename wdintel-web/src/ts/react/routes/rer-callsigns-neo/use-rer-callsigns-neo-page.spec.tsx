@@ -168,3 +168,38 @@ describe('useRerCallsignsNeoPage duplicate hints', () => {
     ]);
   });
 });
+
+describe('useRerCallsignsNeoPage unit filters', () => {
+  it('keeps the selected hierarchy while filtering the unit column for echo-3387', () => {
+    const page = renderHookHarness();
+    const hierarchyFilter = {
+      kind: 'group' as const,
+      label: '15 тп',
+      hierarchy: {
+        armyRegion: null,
+        militaryDistrict: 'ЛВО',
+        army: '6 А',
+        division: '69 мсд',
+        regiment: '15 тп',
+        battalion: null,
+      },
+    };
+
+    act(() => {
+      page.onPickUnitFilter(hierarchyFilter);
+    });
+    act(() => {
+      latestPage?.onFiltersChange((prev) => ({ ...prev, filterUnit: 'мсб' }));
+    });
+
+    expect(latestPage?.selectedSidebarUnitFilter).toEqual(hierarchyFilter);
+    expect(latestPage?.filters.filterUnit).toBe('мсб');
+
+    act(() => {
+      latestPage?.onClearUnitFilter();
+    });
+
+    expect(latestPage?.selectedSidebarUnitFilter).toBeNull();
+    expect(latestPage?.filters.filterUnit).toBe('мсб');
+  });
+});
